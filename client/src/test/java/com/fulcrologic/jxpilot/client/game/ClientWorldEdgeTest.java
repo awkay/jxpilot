@@ -43,6 +43,33 @@ class ClientWorldEdgeTest {
     static final double EPS = 1e-3; // nanosecond rounding of local times
 
     @Nested
+    @DisplayName("shot variant accessors")
+    class ShotVariant {
+        @Test
+        @DisplayName("shotHarmless is bit 7; shotKind (3 bits) and shotColor (4 bits) mask it out")
+        void harmlessBit() {
+            WorldFixture f = new WorldFixture(true);
+            f.world.setInterpolationDelayTicks(0);
+            f.begin(100)
+                .shot(Records.ShotKind.variant(Records.ShotKind.CLUSTER, Records.ObjColor.TEAM, true), 10, 20)
+                .shot(Records.ShotKind.variant(Records.ShotKind.CANNON_SHOT, Records.ObjColor.ENEMY, false), 30, 40)
+                .shot(Records.ShotKind.variant(7, 15, true), 50, 60)
+                .ingestAtTick(100);
+            f.world.update(at(100));
+            ClientWorld w = f.world;
+            List<String> shots = new ArrayList<>();
+            for (int i = 0; i < w.shotCount(); i++) {
+                shots.add(w.shotX(i) + "," + w.shotY(i) + " k" + w.shotKind(i) + " c" + w.shotColor(i)
+                    + (w.shotHarmless(i) ? " harmless" : ""));
+            }
+            assertEquals(List.of("10.0,20.0 k" + Records.ShotKind.CLUSTER + " c" + Records.ObjColor.TEAM + " harmless",
+                    "30.0,40.0 k" + Records.ShotKind.CANNON_SHOT + " c" + Records.ObjColor.ENEMY,
+                    "50.0,60.0 k7 c15 harmless"), shots,
+                "harmless survives the frame's signed byte; kind and colour keep their own bits, all bits set too");
+        }
+    }
+
+    @Nested
     @DisplayName("configure and reset")
     class Setup {
         @Test

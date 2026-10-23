@@ -34,7 +34,6 @@ import com.fulcrologic.jxpilot.client.paint.RadarPainter;
 import com.fulcrologic.jxpilot.client.paint.SceneData;
 import com.fulcrologic.jxpilot.client.paint.ShipPainter;
 import com.fulcrologic.jxpilot.client.render.Palette;
-import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
 import com.fulcrologic.jxpilot.common.math.XMath;
@@ -103,10 +102,10 @@ public final class SceneFiller {
                     w.shipId(i) == lock);
             }
         }
-        boolean selfImmunity = g.options() != null && g.options().getBool(Opt.SELF_IMMUNITY);
         for (int i = 0; i < w.shotCount(); i++) {
             int c = w.shotColor(i);
-            out.addShot(w.shotX(i), w.shotY(i), shotColor(c, selfImmunity), teamShot(c, selfImmunity));
+            boolean harmless = w.shotHarmless(i);
+            out.addShot(w.shotX(i), w.shotY(i), shotColor(c, harmless), teamShot(c, harmless));
         }
         objects(out, w);
         particles(out, w);
@@ -285,28 +284,34 @@ public final class SceneFiller {
     }
 
     /**
-     * Shot colour (C server {@code Frame_shots}): team-immune shots blue, blinking nuclear red, else the
-     * owner's white.
+     * Shot colour (C server {@code frame.c} shot case, client {@code Paint_fastshots}/{@code Paint_teamshots}):
+     * a harmless shot is BLUE (frame.c sets {@code color = BLUE} for every teamshot that cannot hurt the
+     * viewer), a blinking nuclear one RED (XPilot path only), a fast shot keeps BLUE, everything else is the
+     * owner's WHITE (C {@code Paint_fastshots} draws other colours white).
      * <p>
-     * BEHAVIOR: TEAM and BLUE are blue; OWN is blue iff selfImmunity; RED is red; everything else white.
+     * BEHAVIOR: harmless → blue whatever the colour; else RED → red, BLUE → blue, any other colour (OWN,
+     * TEAM, ENEMY, NEUTRAL, WHITE) → white.
      */
-    static int shotColor(int objColor, boolean selfImmunity) {
+    static int shotColor(int objColor, boolean harmless) {
+        if (harmless) {
+            return Palette.BLUE;
+        }
         return switch (objColor) {
-            case Records.ObjColor.TEAM, Records.ObjColor.BLUE -> Palette.BLUE;
-            case Records.ObjColor.OWN -> selfImmunity ? Palette.BLUE : Palette.WHITE;
             case Records.ObjColor.RED -> Palette.RED;
+            case Records.ObjColor.BLUE -> Palette.BLUE;
             default -> Palette.WHITE;
         };
     }
 
     /**
-     * C {@code teamshot}: drawn as an X or + instead of a square.
+     * C {@code teamshot} ({@code Gui_paint_teamshot} → {@code Gui_paint_nastyshot}): drawn as an X or +
+     * instead of a square.
      * <p>
-     * BEHAVIOR: true for TEAM, BLUE and RED, and for OWN iff selfImmunity; false otherwise.
+     * BEHAVIOR: true iff the shot is harmless or RED (the blinking nuclear teamshot); a team mate's or the
+     * own shot that can hurt is a plain square like any other.
      */
-    static boolean teamShot(int objColor, boolean selfImmunity) {
-        return objColor == Records.ObjColor.TEAM || objColor == Records.ObjColor.BLUE
-            || objColor == Records.ObjColor.RED || objColor == Records.ObjColor.OWN && selfImmunity;
+    static boolean teamShot(int objColor, boolean harmless) {
+        return harmless || objColor == Records.ObjColor.RED;
     }
 
     private static void particles(SceneData out, ClientWorld w) {

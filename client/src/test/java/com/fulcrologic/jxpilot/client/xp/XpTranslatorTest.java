@@ -256,12 +256,14 @@ class XpTranslatorTest {
                 .fastshot(type(XpProto.BLUE, 0, 0), 3, 3).end(1));
             assertEquals(List.of(
                 "SHOT kind=0 color=" + Records.ObjColor.RED + " pos=617.0,617.0 vel=0,0",
-                "SHOT kind=0 color=" + Records.ObjColor.BLUE + " pos=1383.0,1127.0 vel=0,0",
                 "SHOT kind=0 color=" + Records.ObjColor.BLUE + " pos=619.0,619.0 vel=0,0",
+                "SHOT kind=0 color=" + Records.ObjColor.BLUE + " pos=1383.0,1127.0 vel=0,0 harmless",
                 "SHOT kind=0 color=" + Records.ObjColor.WHITE + " pos=882.0,1148.0 vel=0,0",
                 "SHOT kind=0 color=" + Records.ObjColor.WHITE + " pos=616.0,616.0 vel=0,0"),
                 SnapDump.only(s, "SHOT"),
-                "red normal shots are white (C Paint_fastshots); team shots keep colour; origin + area * 256 + byte");
+                "red normal shots are white (C Paint_fastshots); team shots keep colour; a blue team shot is harmless "
+                    + "(C frame.c's teamshot), a red one (nuclear blink) is not; one section per colour and flag; "
+                    + "origin + area * 256 + byte");
         }
 
         @Test

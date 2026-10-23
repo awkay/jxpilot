@@ -172,7 +172,11 @@ final class AppFixture {
     }
 
     AppFixture shot(int kind, int color, double x, double y) {
-        w.beginSection(Section.SHOT, Records.ShotKind.variant(kind, color));
+        return shot(kind, color, false, x, y);
+    }
+
+    AppFixture shot(int kind, int color, boolean harmless, double x, double y) {
+        w.beginSection(Section.SHOT, Records.ShotKind.variant(kind, color, harmless));
         Records.Shot.put(w, x, y, 0, 0);
         w.endSection();
         return this;

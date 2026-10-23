@@ -1224,11 +1224,17 @@ public final class ClientWorld {
 
     public float shotY(int i) { return outShotY[i]; }
 
-    /** {@link Records.ShotKind}. */
+    /** {@link Records.ShotKind} (the variant's 3 kind bits). */
     public int shotKind(int i) { return Records.ShotKind.kindOf(outShotVariant[i]); }
 
-    /** {@link Records.ObjColor}. */
+    /** {@link Records.ObjColor} (the variant's colour nibble). */
     public int shotColor(int i) { return Records.ShotKind.colorOf(outShotVariant[i]); }
+
+    /**
+     * True when the shot cannot hurt the own ship ({@link Records.ShotKind#FLAG_HARMLESS}; C frame.c's
+     * teamshot case, drawn as C {@code Gui_paint_teamshot}).
+     */
+    public boolean shotHarmless(int i) { return Records.ShotKind.harmless(outShotVariant[i]); }
 
     public ParticlePool particles() { return particles; }
 
