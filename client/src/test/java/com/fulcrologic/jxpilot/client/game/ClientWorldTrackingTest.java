@@ -224,4 +224,66 @@ class ClientWorldTrackingTest {
                 () -> assertEquals(200f, f.world.pointX(0), EPS, "at frame 100's position"));
         }
     }
+
+    @Nested
+    @DisplayName("objects and own velocity")
+    class ObjectsAndSelf {
+        @Test
+        @DisplayName("balls move between frames by id; reset forgets the objects")
+        void balls() {
+            WorldFixture f = new WorldFixture(true);
+            f.begin(100);
+            f.w.beginSection(Section.BALL);
+            Records.Ball.put(f.w, 4, 100, 50, 1, 0xFFFF);
+            f.w.endSection();
+            f.ingestAtTick(100);
+            f.begin(102);
+            f.w.beginSection(Section.BALL);
+            Records.Ball.put(f.w, 4, 120, 58, 1, 0xFFFF);
+            f.w.endSection();
+            f.ingestAtTick(102);
+            f.world.update(at(104.7));
+            float x = f.world.objects().get(ObjectLists.BALL, 0, 0);
+            float y = f.world.objects().get(ObjectLists.BALL, 0, 1);
+            f.world.reset();
+            assertAll(
+                () -> assertEquals(115f, x, EPS, "render tick 101.5: three quarters of 100 -> 120"),
+                () -> assertEquals(56f, y, EPS, "three quarters of 50 -> 58"),
+                () -> assertEquals(0, f.world.objects().count(ObjectLists.BALL), "reset: no objects"));
+        }
+
+        @Test
+        @DisplayName("an unlinked point particle moves on with its estimated velocity")
+        void pointExtrapolated() {
+            WorldFixture f = new WorldFixture(true);
+            DebrisBurst a = new DebrisBurst();
+            a.count = 1;
+            a.x = 100;
+            a.y = 50;
+            f.begin(98).burst(a, Records.BurstKind.SPARK, Records.ObjColor.WHITE, 0).ingestAtTick(98);
+            a.x = 110;
+            a.y = 54;
+            f.begin(100).burst(a, Records.BurstKind.SPARK, Records.ObjColor.WHITE, 0).ingestAtTick(100);
+            f.begin(102).ingestAtTick(102);
+            f.world.update(at(102.2));
+            f.world.update(at(104.2));
+            assertAll(
+                () -> assertEquals(1, f.world.pointCount(), "still drawn from frame 100"),
+                () -> assertEquals(115f, f.world.pointX(0), EPS, "110 + 20 px/frame * 0.25"),
+                () -> assertEquals(56f, f.world.pointY(0), EPS, "54 + 8 px/frame * 0.25"));
+        }
+
+        @Test
+        @DisplayName("the own ship's velocity is interpolated too")
+        void selfVelocity() {
+            WorldFixture f = new WorldFixture(true);
+            f.begin(100).self(7, 0, 100, 50, 4, 8, 1.5f).ingestAtTick(100);
+            f.begin(102).self(7, 0, 104, 54, 6, 12, 1.5f).ingestAtTick(102);
+            f.world.update(at(104.7));
+            assertAll(
+                () -> assertEquals(5.5f, f.world.selfVx(), 1e-5f, "three quarters of 4 -> 6"),
+                () -> assertEquals(11f, f.world.selfVy(), 1e-5f, "three quarters of 8 -> 12"),
+                () -> assertEquals(53f, f.world.selfY(), 1e-3f, "three quarters of 50 -> 54"));
+        }
+    }
 }
