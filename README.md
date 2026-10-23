@@ -25,6 +25,22 @@ mvn -pl client exec:exec                      # map viewer (default.xp)
 mvn -pl client exec:exec -Dclient.args="--view-map maps/planetx.xp"
 ```
 
+## Playing
+
+The game client (`ClientMain --connect`) plays on a JXPilot server or on an original C XPilot 4.5.5
+server (`xp://host:port`). Build once, then run it from the compiled classes:
+
+```bash
+MAVEN_OPTS= mvn -q -o -pl client -am test-compile
+client/scripts/run-client.sh --connect xp://127.0.0.1:15345 --name Pilot   # C server
+client/scripts/run-client.sh --connect 127.0.0.1:15345 --name Pilot        # JXPilot server
+```
+
+`client/scripts/xp-c-server.sh` runs the C server in Docker (image built by `tools/xpilot-ref/build.sh`),
+e.g. `--map teamball --robots 4 --seconds 900 -- +restrictRobots` for a map with items and balls.
+Keys are XPilot's defaults: `a`/`s` turn, Shift thrust, Return fire, Space shield, `m` talk (Return
+sends, Esc cancels); Esc quits. See `docs/XPILOT-PROTOCOL.md` for what the C path supports.
+
 ## Project layout
 
 - `common/`: map and config parsing, options, wall geometry, ship shapes, network protocol

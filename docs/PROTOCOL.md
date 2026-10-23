@@ -172,8 +172,10 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 | 19 | SELF_ITEMS | 21 | u8 count per `Item` |
 | 20 | TREASURE | 3 | u16 index, u8 flags (has ball) |
 | 21 | TEMP_WORMHOLE | 5 | u16 bx, u16 by, u8 type |
+| 22 | TIMERS | 8 | u16 damaged (frames of ECM damage left), u16 roundDelay (frames, 0 none), i32 timeLeft (seconds, -1 none) — the receiver's HUD timers |
 
-M1 uses 1-8; 9-21 are defined for M2. Indices refer to the `WorldMap` lists, which both sides build
+M1 uses 1-8; 9-22 are defined for M2. A BURST of one particle with no speed and no life is a
+position-only point particle (C debris on the XPilot path) that the client tracks across frames. Indices refer to the `WorldMap` lists, which both sides build
 identically from the same config text.
 
 ### Sparks and debris

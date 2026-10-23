@@ -59,13 +59,15 @@ with a status line and never throws.
 | SELF (+ SELF_ITEMS, MODIFIERS) | SELF record: position, velocity, heading, fuel/max, lock, tanks, current tank; flags from own SHIP + status (DEAD if not visible, PAUSED, SELF_DESTRUCT, AUTOPILOT); SELF_ITEMS; modifiers decoded only |
 | SHIP | SHIP records; shield/cloak/emergency shield/phased/deflector; velocity derived from the previous frame |
 | PAUSED | SHIP with id NO_ID and PAUSED (C sends no id) |
-| REFUEL | REFUELING / REPAIRING flag on the ship at the beam end / start |
-| FASTSHOT | SHOT sections per colour (C rule: non-team shots that are not blue are white), view-area decoding |
-| DEBRIS (128–255) | one-frame, zero-speed BURST particle per C particle |
+| REFUEL | REFUELING / REPAIRING flag on the ship at the beam end / start; the client draws the beam from the nearest station (target) within 90 px, as C |
+| FASTSHOT | SHOT sections per colour (C rule: non-team shots that are not blue are white), view-area decoding; the client links shots across frames (nearest neighbour per colour, velocity-predicted) and interpolates them |
+| DEBRIS (128–255) | one point BURST (1 particle, no speed, no life) per C particle; the client tracks points across frames like shots. The client asks for 4 debris colours (temperature levels, sent as colour `ClientWorld.POINT_LEVEL_BASE + level`) and sparkProb 1 (every particle every frame; the painter does the sparkle) |
 | FASTRADAR / RADAR | RADAR records (friendly, ball, missile/mine, asteroid) plus own ship (C adds it too) |
 | FUEL / CANNON / TARGET | FUEL / CANNON / TARGET state (C number → WorldMap index), acked like C |
-| ITEM, MINE, MISSILE, BALL, LASER, ASTEROID, WRECKAGE, ECM, CONNECTOR, TRANS, WORMHOLE | native M2 sections (ClientWorld does not draw these yet) |
-| DAMAGED, DESTRUCT, SHUTDOWN, THRUSTTIME, SHIELDTIME, PHASINGTIME, ROUNDDELAY, TIME_LEFT, EYES, LOSEITEM | decoded into `XpFrame`; only DESTRUCT reaches the model (SELF_DESTRUCT); no model slot for the rest |
+| ITEM, MINE, MISSILE, BALL, LASER, ASTEROID, WRECKAGE, ECM, CONNECTOR, TRANS | native M2 sections, modelled and drawn (balls and missiles interpolated) |
+| WORMHOLE | TEMP_WORMHOLE section, not drawn yet |
+| DAMAGED, ROUNDDELAY, TIME_LEFT | TIMERS section: ECM flash, round-delay countdown and red ships, HUD time left |
+| DESTRUCT, SHUTDOWN, THRUSTTIME, SHIELDTIME, PHASINGTIME, EYES, LOSEITEM | decoded into `XpFrame`; only DESTRUCT reaches the model (SELF_DESTRUCT); no model slot for the rest |
 | AUDIO | counted (no sound) |
 | RELIABLE | C stream: in-order append, gaps and duplicates acked, overlap trimmed |
 | REPLY, MAGIC, QUIT, TALK_ACK | connection control |
@@ -107,7 +109,8 @@ java -cp common/target/classes:server/target/classes:client/target/classes \
 ## Known gaps
 
 - The C protocol caps the view at 1024×1024 around the ship. Objects outside it are not sent.
-- C sends no velocity for shots or debris. Shots move in 12–14 fps steps, and debris lives one frame.
+- C sends no velocity for shots or debris. The client links them across frames and interpolates, so
+  they move smoothly; a shot or particle seen in only one frame still shows for that frame only.
 - Paused ships have no id on the wire, so their shapes and names are unknown.
 - Base directions are recomputed from the map text. The setup's base orientation is not used, so
   maps with a global gravity angle may draw bases facing the wrong way.
