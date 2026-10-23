@@ -155,6 +155,12 @@ class ServerNetTest {
                 () -> assertEquals(2, h.net.connections(), "two connections"),
                 () -> assertEquals(List.of("join: player 8 'Ann' from " + A + " on channel 0"), h.log,
                     "only the verified join is logged"));
+            h.in(0, B, second.connect("Bo", 2, ""));
+            h.deliver(second, B);
+            confirm(h, second, 0, B);
+            h.tick();
+            h.deliver(second, B);
+            assertEquals("Srv", second.welcome.serverName.toString(), "a second WELCOME's server name is not appended");
         }
 
         @Test
@@ -203,6 +209,30 @@ class ServerNetTest {
                 () -> assertEquals(List.of("join spoof team=255 shape=", "leave 0"), joinsAndLeaves(h.host.calls),
                     "the host is told about the join and the leave"),
                 () -> assertEquals(List.of(), h.log, "unverified sessions are not logged (a spoofed flood cannot spam the log)"));
+        }
+
+        @Test
+        @DisplayName("ACCEPT resends fall due exactly at their time: ticks 4, 12, 28 for a 4-tick interval; expiry at 60")
+        void acceptScheduleExact() {
+            ServerNetConfig cfg = new ServerNetConfig();
+            cfg.acceptResendNanos = 4 * Harness.TICK;
+            Harness h = new Harness(cfg, "x: 1\n");
+            h.in(0, A, new TestClient(1).connect("a", 255, ""));
+            List<Integer> acceptTicks = new ArrayList<>();
+            int expiredAt = -1;
+            for (int i = 0; i <= 70; i++) {
+                if (!h.take(A).isEmpty()) {
+                    acceptTicks.add(i);
+                }
+                if (expiredAt < 0 && h.net.connections() == 0) {
+                    expiredAt = i;
+                }
+                h.tick();
+            }
+            int expired = expiredAt;
+            assertAll(
+                () -> assertEquals(List.of(0, 4, 12, 28), acceptTicks, "resent exactly when due, the interval doubling"),
+                () -> assertEquals(60, expired, "dropped at tick 60, exactly one doubled interval after the last ACCEPT"));
         }
 
         @Test
@@ -306,8 +336,11 @@ class ServerNetTest {
             cfg.maxConnections = 1;
             Harness h = new Harness(cfg, "x: 1\n");
             TestClient empty = new TestClient(5);
-            ByteBuffer emptyConnect = empty.connect("", 255, "");
-            int emptySize = emptyConnect.remaining();
+            ByteBuffer packed = empty.connect("", 255, "");
+            ByteBuffer emptyConnect = ByteBuffer.allocate(packed.remaining() + 9);
+            emptyConnect.position(9);
+            emptyConnect.put(packed).flip().position(9);
+            int emptySize = emptyConnect.remaining(); // the datagram starts at offset 9 of its buffer
             h.in(0, A, emptyConnect);
             List<Harness.Sent> emptyReply = h.take(A);
             empty.onPacket(emptyReply.get(0).data().duplicate(), h.now);
@@ -353,9 +386,19 @@ class ServerNetTest {
             List<Harness.Sent> reply = h.take(A);
             TestClient view = new TestClient(0x01020304);
             view.onPacket(reply.get(0).data().duplicate(), h.now);
-            ByteBuffer tiny = ByteBuffer.wrap(new byte[] {0x4A, 0x58, 9, PacketType.CONNECT, 0, 0, 0, 0, 0, 0});
+            ByteBuffer tiny = ByteBuffer.wrap(new byte[] {0x4A, 0x58, 9, PacketType.CONNECT, 0, 0, 0, 0, 0, 0, 0, 0, 0});
             h.in(0, A, tiny);
             List<Harness.Sent> tinyReply = h.take(A);
+            ByteBuffer headerOnly = ByteBuffer.wrap(new byte[] {0x4A, 0x58, 9, PacketType.CONNECT, 0, 0, 0, 0});
+            h.in(0, A, headerOnly);
+            ByteBuffer offset = ByteBuffer.allocate(40);
+            offset.position(5);
+            offset.put(new byte[] {0x4A, 0x58, 9, PacketType.CONNECT, 0, 0, 0, 0, 0x11, 0x22, 0x33, 0x44, 1, 0});
+            offset.flip().position(5);
+            h.in(0, A, offset);
+            List<Harness.Sent> offsetReply = h.take(A);
+            TestClient offsetView = new TestClient(0x11223344);
+            offsetView.onPacket(offsetReply.get(0).data().duplicate(), h.now);
             ByteBuffer v2Input = new TestClient(1).bare(PacketType.INPUT);
             v2Input.put(2, (byte) 2);
             h.in(0, A, v2Input);
@@ -368,8 +411,11 @@ class ServerNetTest {
                 () -> assertEquals(Msg.Reject.REASON_VERSION, view.rejectReason, "REJECT VERSION"),
                 () -> assertEquals(0x01020304, view.rejectNonce, "echoing the CONNECT's nonce"),
                 () -> assertEquals("incompatible version", view.rejectText, "with its text"),
-                () -> assertEquals(List.of(), tinyReply, "a 10-byte one is not answered: even a bare REJECT would be larger"),
-                () -> assertEquals(2, h.net.versionRejects(), "both are counted as version rejects"),
+                () -> assertEquals(List.of(), tinyReply, "a 13-byte one is not answered: even a bare REJECT (14) would be larger"),
+                () -> assertEquals(4, h.net.versionRejects(), "all four, down to a bare 8-byte header, are version rejects"),
+                () -> assertEquals(14, offsetReply.get(0).data().remaining(), "a 14-byte one at buffer offset 5 gets a bare 14-byte REJECT"),
+                () -> assertEquals(0x11223344, offsetView.rejectNonce, "with the nonce read relative to the datagram start"),
+                () -> assertEquals("", offsetView.rejectText, "and no room for text"),
                 () -> assertEquals(List.of(), silent, "an other-version INPUT and a bad magic get no reply"),
                 () -> assertEquals(2, h.net.malformed(), "and are malformed"),
                 () -> assertEquals(0, h.net.connections(), "no session is created"),
@@ -536,10 +582,13 @@ class ServerNetTest {
             h.in(0, A, withBody(c.bare(PacketType.PING), new byte[] {1, 2, 3}));
             h.in(0, A, withBody(c.bare(PacketType.CONNECT), new byte[] {1, 2}));
             h.in(0, A, withBody(c.bare(PacketType.CONNECT), new byte[] {1, 2, 3, 4, 5, 9, 'a'}));
+            h.host.throwOnJoin = new IllegalStateException("host bug");
+            h.in(0, B, new TestClient(3).connect("thrower", 255, ""));
             assertAll(
+                () -> assertEquals(-1, h.net.sessionOf(0, B), "a host that throws on join creates no session"),
                 () -> assertEquals(2, strays, "unknown peers and wrong sessions are stray"),
-                () -> assertEquals(7, h.net.malformed(), "bad magic, unknown type, bad RELIABLE, short INPUT, short PING, "
-                    + "a short CONNECT and a CONNECT whose name runs past the end are all counted"),
+                () -> assertEquals(8, h.net.malformed(), "bad magic, unknown type, bad RELIABLE, short INPUT, short PING, "
+                    + "a short CONNECT, a CONNECT whose name runs past the end and a host exception are all counted"),
                 () -> assertEquals(1, h.net.connections(), "the connection survives"),
                 () -> assertEquals(List.of(), h.host.callsStartingWith("input"), "nothing malformed reaches the host as input"));
         }
@@ -642,6 +691,7 @@ class ServerNetTest {
             int overBurst = h.take(first).size();
             h.now += 100 * MS;
             h.in(0, first, nat.get(0).ping(100, 100));
+            h.in(0, first, nat.get(0).ping(101, 101));
             int afterRefill = h.take(first).size();
             assertAll(
                 () -> assertTrue(nat.get(0).accepted && nat.get(1).accepted && nat.get(2).accepted,
@@ -651,7 +701,7 @@ class ServerNetTest {
                 () -> assertEquals(1, strayLimited, "a stray from that drained source is limited too"),
                 () -> assertEquals(60, pongsWithinBurst, "each of 3 sessions behind that source gets its own 20-packet burst"),
                 () -> assertEquals(0, overBurst, "the 21st packet of a session in the same instant is limited"),
-                () -> assertEquals(1, afterRefill, "a tenth of a second refills one token at 10/s"));
+                () -> assertEquals(1, afterRefill, "a tenth of a second refills exactly one token at 10/s"));
         }
     }
 
@@ -1046,6 +1096,9 @@ class ServerNetTest {
             h.join(c, 0, A, "a");
             h.host.calls.clear();
             h.host.throwOnBoom = new BufferUnderflowException();
+            h.host.throwOnInput = new IllegalStateException("host bug");
+            h.host.throwOnKeys = 77;
+            h.in(0, A, c.input(77));
             ByteBuffer m = c.ch.begin(ReliableType.CHAT);
             m.put((byte) 0).putShort((short) 0).putShort((short) 9);
             c.ch.end();
@@ -1057,7 +1110,8 @@ class ServerNetTest {
             assertAll(
                 () -> assertEquals(List.of("msg 0 CHAT after"), h.host.callsStartingWith("msg"),
                     "the message after the bad ones reaches the host"),
-                () -> assertEquals(2, h.net.malformed(), "an undecodable message and a host exception count as malformed"),
+                () -> assertEquals(3, h.net.malformed(),
+                    "an undecodable message, a host exception on a message and one on an input count as malformed"),
                 () -> assertEquals(0, c.ch.unacked(), "the client's channel is fully acknowledged (not wedged)"),
                 () -> assertEquals(1, h.net.connections(), "the peer stays"));
         }
@@ -1126,7 +1180,7 @@ class ServerNetTest {
             }
             int gone = deafGoneAfter;
             assertAll(
-                () -> assertTrue(gone >= 60 && gone <= 62, "dropped once its oldest message waited the timeout (" + gone + ")"),
+                () -> assertEquals(61, gone, "dropped once its oldest message waited longer than the timeout (60 ticks)"),
                 () -> assertTrue(h.isConnected(0, B), "an acknowledging peer with the same traffic stays"),
                 () -> assertTrue(h.log.contains("leave: player 0 (reliable data unacknowledged)"), "the cause is logged"));
         }
@@ -1215,6 +1269,8 @@ class ServerNetTest {
             h.join(b, 0, B, "b");
             assertAll(
                 () -> assertTrue(b.accepted, "the pool slot is reusable"),
+                () -> assertTrue(h.log.contains("join: player 1 'b' from " + B + " on channel 0"),
+                    "the reused slot logs its own name, not the previous one's: " + h.log),
                 () -> assertEquals("mapName: test\n", b.configText, "the new peer gets the full config again"),
                 () -> assertEquals(List.of("WELCOME 1", "MAP", "JOIN 1 self"), b.reliableLog, "and its own initial state"),
                 () -> assertEquals("input 1 seq=1 keys=0 aim=0", h.host.callsStartingWith("input").get(0),

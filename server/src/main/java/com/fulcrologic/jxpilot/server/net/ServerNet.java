@@ -203,16 +203,18 @@ public final class ServerNet {
      * BEHAVIOR: a packet carrying a known peer's session id (other than CONNECT) is charged to that
      * session's bucket; anything else to its source's bucket. Over the limit it is dropped, counting
      * {@link #rateLimited()}.
-     * BEHAVIOR: a CONNECT with the right magic but another protocol version gets REJECT VERSION (counted
-     * in {@link #versionRejects()}); any other bad header is dropped as {@link #malformed()}.
+     * BEHAVIOR: a CONNECT with the right magic but another protocol version is counted in
+     * {@link #versionRejects()} and, if at least as large as a bare REJECT, gets REJECT VERSION; any other
+     * bad header is dropped as {@link #malformed()}.
      * BEHAVIOR: bodies that do not decode are dropped as malformed; no exception escapes.
      * BEHAVIOR: CONNECT goes to the join logic; other types need a known peer on this channel and its
      * session id, else they are dropped (counting {@link #stray()}).
      * BEHAVIOR: the first packet with the session id verifies an unverified session and queues WELCOME.
      * BEHAVIOR: any valid packet from a peer refreshes its timeout and feeds the header ack to its
      * reliable channel; RELIABLE delivers client messages to the host in order (a message the host
-     * throws on counts as malformed and is skipped); INPUT applies new inputs; PING is answered with
-     * PONG; DISCONNECT removes the peer.
+     * throws on counts as malformed and is skipped); INPUT applies new inputs (one the host throws on
+     * counts as malformed and is skipped, not retried from redundancy); PING is answered with PONG;
+     * DISCONNECT removes the peer.
      */
     public void onDatagram(int channel, SocketAddress from, ByteBuffer data, long now) {
         int start = data.position();
@@ -226,9 +228,10 @@ public final class ServerNet {
         if (!valid) {
             if (isOtherVersionConnect(data)) {
                 versionRejects++;
-                int nonce = data.remaining() >= PacketHeader.SIZE + 4 ? data.getInt(start + PacketHeader.SIZE) : 0;
-                sendReject(channel, from, nonce, Msg.Reject.REASON_VERSION, rejectText(Msg.Reject.REASON_VERSION),
-                    data.remaining());
+                if (data.remaining() >= REJECT_OVERHEAD) {
+                    sendReject(channel, from, data.getInt(start + PacketHeader.SIZE), Msg.Reject.REASON_VERSION,
+                        rejectText(Msg.Reject.REASON_VERSION), data.remaining());
+                }
             } else {
                 malformed++;
             }
@@ -309,7 +312,6 @@ public final class ServerNet {
             drop(existing, Msg.Disconnect.REASON_QUIT, "reconnected", false);
         }
         Connection c = free[--freeCount];
-        c.ch.reset();
         c.channel = channel;
         c.addr = from;
         c.sourceKey = source;
@@ -370,9 +372,13 @@ public final class ServerNet {
         for (int i = input.count() - 1; i >= 0; i--) {
             int s = input.seq(i);
             if (!c.hasInput || s - c.lastInputSeq > 0) {
-                host.input(c.playerId, s, input.keys(i), input.aimTurn(i));
                 c.lastInputSeq = s;
                 c.hasInput = true;
+                try {
+                    host.input(c.playerId, s, input.keys(i), input.aimTurn(i));
+                } catch (RuntimeException e) {
+                    malformed++;
+                }
             }
         }
     }
@@ -565,13 +571,10 @@ public final class ServerNet {
     }
 
     /**
-     * REJECT with session 0, its text cut so the reply is never larger than the request ({@code maxBytes});
-     * a request smaller than a bare REJECT gets no reply at all.
+     * REJECT with session 0, its text cut so the reply is never larger than the request ({@code maxBytes},
+     * at least {@link #REJECT_OVERHEAD}: a parsed CONNECT always is, an unparsed one is checked first).
      */
     private void sendReject(int channel, SocketAddress to, int nonce, int reason, String text, int maxBytes) {
-        if (maxBytes < REJECT_OVERHEAD) {
-            return;
-        }
         outBuf.clear();
         PacketHeader.write(outBuf, PacketType.REJECT, 0, 0);
         reject.nonce = nonce;

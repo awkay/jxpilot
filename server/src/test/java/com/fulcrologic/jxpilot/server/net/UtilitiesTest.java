@@ -139,7 +139,11 @@ class UtilitiesTest {
                 () -> assertEquals(k.of(u), k.of(java.net.InetSocketAddress.createUnresolved("h", 1)),
                     "an unresolved address keys by its hash"),
                 () -> assertNotEquals(k.of(u), other.of(u), "unresolved keys depend on the secret too"),
-                () -> assertEquals(0x5692161D100B05E5L, SourceKeys.mix(1), "mix is SplitMix64's finalizer"));
+                () -> assertEquals(0x5692161D100B05E5L, SourceKeys.mix(1), "mix is SplitMix64's finalizer"),
+                () -> assertEquals(0xFF4385787155A745L, k.of(v4a), "IPv4 key = mix(mix(secret ^ address) + 4)"),
+                () -> assertEquals(0x252F7DC8A403EE37L, k.of(Harness.addr("2001:db8:1:2::1", 1)),
+                    "IPv6 key = mix(mix(secret ^ first 64 bits) + 6)"),
+                () -> assertEquals(0xA46B02245B9F3AF4L, k.of(u), "unresolved key = mix(secret ^ hash)"));
         }
     }
 

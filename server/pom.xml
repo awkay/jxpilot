@@ -75,6 +75,7 @@
             <param>*AllocationTest*</param>
             <param>*TickBenchmark*</param>
             <param>*LoopbackIntegrationTest*</param>
+            <param>*ServerMainTest*</param>
           </excludedTestClasses>
         </configuration>
       </plugin>

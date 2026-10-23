@@ -55,8 +55,8 @@ client:  GLFW window, Renderer (batch, fonts, map VBO), HUD/radar/messages, inpu
 ## Server network binding (required, configurable)
 Target deployments: a VPN (e.g. a `utunN` WireGuard/corporate tunnel, `10.x` addresses, or
 Tailscale `100.x`), a LAN, and a public internet host (IPv4 and/or IPv6).
-- Options (settable via CLI, server config file, or map, through `Options` like any other
-  option): `port` (XPilot `contactPort`, default 15345) and `bind` (repeatable / comma-list).
+- Options (settable via CLI or the server config file, never from a map, like `contactPort`):
+  `port` (XPilot `contactPort`, default 15345), `bind` (repeatable / comma-list) and `bindWait`.
 - `bind` selectors:
   - an IP literal (`10.224.0.16`, `::1`, `0.0.0.0`, `::`);
   - a hostname (resolved at startup);

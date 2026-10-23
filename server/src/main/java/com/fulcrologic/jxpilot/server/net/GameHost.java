@@ -43,7 +43,13 @@ import java.nio.ByteBuffer;
 public interface GameHost {
 
     /**
-     * A client asks to join (on its first CONNECT).
+     * A client asks to join (on its first CONNECT, or a CONNECT with a new nonce from the same address).
+     * <p>
+     * The client has not yet proven that it receives at its source address (a CONNECT can be spoofed).
+     * The network layer sends it only ACCEPT until a packet carrying the session id arrives; if none
+     * arrives within a few seconds the player gets {@link #leave} without ever having sent anything,
+     * so do not announce the player to others before READY. On a reconnect (new nonce, same address)
+     * this new join happens first and the old player's {@link #leave} follows only if it succeeded.
      *
      * @param name  player name, non-empty; valid only during the call (copy it)
      * @param team  preferred team 0-9, or {@code Protocol.NO_TEAM} for any
@@ -69,14 +75,17 @@ public interface GameHost {
      * @param type    {@code ReliableType} value
      * @param payload positioned after the type byte, limited to the message; decode with the
      *                {@link Msg} codecs; valid only during the call. A truncated payload may throw
-     *                {@link java.nio.BufferUnderflowException}; the network layer contains it.
+     *                {@link java.nio.BufferUnderflowException}: the network layer catches any
+     *                RuntimeException, counts the message as malformed and moves on to the next one
+     *                (the message is not redelivered).
      */
     void clientMessage(int playerId, int type, ByteBuffer payload);
 
     /**
      * One control input, called for each new input sequence in order, oldest first, with no
      * duplicates. Lost inputs beyond the client's redundancy are skipped. Several inputs may
-     * arrive between ticks; derive press/release edges by comparing consecutive masks.
+     * arrive between ticks; derive press/release edges by comparing consecutive masks. An input the
+     * host throws on is counted as malformed and not offered again.
      *
      * @param seq     the client's input sequence number (increasing)
      * @param keys    {@code ControlKey} mask
@@ -115,7 +124,8 @@ public interface GameHost {
      * PLAYER_JOIN for every player (FLAG_SELF for the viewer), BASE_OWNER, SCORE, TEAM_SCORE, and so
      * on, using {@code Msg.*.send(out)}. Called once per connection, after the config transfer is
      * queued. Events that happened earlier are covered by this state. {@link #drainEvents} then
-     * reports changes after this point.
+     * reports changes after this point. Snapshots start only once the client has acknowledged everything
+     * up to and including this state; events queued afterwards do not hold them back.
      */
     void initialState(int viewerId, ReliableChannel out);
 
@@ -124,7 +134,8 @@ public interface GameHost {
      * {@link #initialState}): PLAYER_JOIN/LEAVE/TEAM, SCORE, TEAM_SCORE, MESSAGE (chat), BASE_OWNER,
      * GAME_EVENT (kills etc.) and PLAYER_THRUST, using {@code Msg.*.send(out)}. Called once per tick for
      * every connection whose initial state has been sent. The channel never refuses a message (it
-     * queues overflow), so write everything.
+     * queues overflow), so write everything; a client that stops acknowledging is dropped (with
+     * {@link #leave}) once its backlog exceeds a limit or its oldest message waits past the timeout.
      */
     void drainEvents(int viewerId, ReliableChannel out);
 }

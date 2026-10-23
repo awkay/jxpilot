@@ -56,6 +56,11 @@ final class FakeHost implements GameHost {
     private final int[] drained = new int[1024];
     /** When set, clientMessage throws this for CHAT messages whose text is "boom". */
     RuntimeException throwOnBoom;
+    /** When set, input throws this for an input with these keys. */
+    RuntimeException throwOnInput;
+    long throwOnKeys;
+    /** When set, join throws this. */
+    RuntimeException throwOnJoin;
     /** Snapshot SELF x per viewer is 1000 + id, y is 2000 + id. */
     int ticks;
     int lastTick;
@@ -79,6 +84,9 @@ final class FakeHost implements GameHost {
     public int join(CharSequence name, int t, CharSequence shape) {
         if (record) {
             calls.add("join " + name + " team=" + t + " shape=" + shape);
+        }
+        if (throwOnJoin != null) {
+            throw throwOnJoin;
         }
         if (joinAnswer != null) {
             return joinAnswer;
@@ -117,6 +125,9 @@ final class FakeHost implements GameHost {
 
     @Override
     public void input(int playerId, int seq, long keys, int aimTurn) {
+        if (throwOnInput != null && keys == throwOnKeys) {
+            throw throwOnInput;
+        }
         inputCount++;
         keySum += keys;
         if (record) {

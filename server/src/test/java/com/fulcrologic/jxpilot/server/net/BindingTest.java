@@ -276,14 +276,15 @@ class BindingTest {
         @DisplayName("link-local addresses on two interfaces are both bound; the first interface labels a duplicate")
         void scopesAndDuplicates() {
             List<NetIf> twoLinks = List.of(
-                new NetIf("en0", true, false, List.of(ip("fe80::1%1"), ip("10.0.0.5"))),
                 new NetIf("en1", true, false, List.of(ip("fe80::1%2"), ip("10.0.0.5"))),
+                new NetIf("en0", true, false, List.of(ip("fe80::1%1"), ip("10.0.0.5"))),
                 new NetIf("lo1", true, true, List.of(ip("10.9.9.9"))),
                 new NetIf("en2", true, false, List.of(ip("127.0.0.7"))));
             assertAll(
                 () -> assertEquals(List.of(t("fe80::1%1", "en0"), t("fe80::1%2", "en1")),
-                    BindPlan.choose(sel("fe80::/10"), twoLinks).targets(), "same link-local address, two scopes: two targets"),
-                () -> assertEquals(List.of(t("10.0.0.5", "en0")), BindPlan.choose(sel("10.0.0.0/24"), twoLinks).targets(),
+                    BindPlan.choose(sel("fe80::/10"), twoLinks).targets(),
+                    "same link-local address, two scopes: two targets, ordered by scope"),
+                () -> assertEquals(List.of(t("10.0.0.5", "en1")), BindPlan.choose(sel("10.0.0.0/24"), twoLinks).targets(),
                     "one address on two interfaces is bound once, labelled with the first interface"),
                 () -> assertEquals(List.of(t("10.9.9.9", "lo1"), t("127.0.0.7", "en2")),
                     BindPlan.choose(sel("loopback"), twoLinks).targets(),

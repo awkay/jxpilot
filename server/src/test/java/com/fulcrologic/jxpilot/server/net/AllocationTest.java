@@ -244,4 +244,66 @@ class AllocationTest {
                 () -> assertTrue(snapshots > 40, "snapshots flowed during the measurement (" + snapshots + ")"));
         }
     }
+
+    @Test
+    @DisplayName("the real loop with two peers on one channel: at most 256 B per received datagram (JDK sender address)")
+    void realLoopTwoPeers() throws Exception {
+        InetAddress lo = InetAddress.ofLiteral("127.0.0.1");
+        int port = LoopbackIntegrationTest.freePort(lo);
+        Server.Settings s = LoopbackIntegrationTest.settings(new LoopbackIntegrationTest.MutableInterfaces(lo), new ArrayList<>());
+        try (Server server = Server.start(new String[] {"--map", Path.of("..", "maps", "doggy.xp").toString(),
+                "--port", Integer.toString(port), "--bind", "127.0.0.1"}, s);
+             LoopbackIntegrationTest.UdpClient a = new LoopbackIntegrationTest.UdpClient(21, new InetSocketAddress(lo, port));
+             LoopbackIntegrationTest.UdpClient b = new LoopbackIntegrationTest.UdpClient(22, new InetSocketAddress(lo, port))) {
+            a.connect("alloc-a");
+            b.connect("alloc-b");
+            LoopbackIntegrationTest.UdpClient[] peers = {a, b};
+            Thread loopThread = null;
+            for (Thread t : Thread.getAllStackTraces().keySet()) {
+                if (t.getName().equals("jxpilot-server-loop")) {
+                    loopThread = t;
+                }
+            }
+            long id = loopThread.threadId();
+            long warmEnd = System.nanoTime() + 4_000_000_000L;
+            long end = warmEnd + 4_000_000_000L;
+            long before = 0;
+            long sent = 0;
+            boolean measuring = false;
+            while (System.nanoTime() < end) {
+                if (!measuring && System.nanoTime() > warmEnd) {
+                    Thread.sleep(50);
+                    for (LoopbackIntegrationTest.UdpClient u : peers) {
+                        u.pump();
+                    }
+                    measuring = true;
+                    before = MX.getThreadAllocatedBytes(id);
+                }
+                for (LoopbackIntegrationTest.UdpClient u : peers) {
+                    TestClient c = u.c;
+                    if (c.hasMap() && !c.readySent) {
+                        c.ready();
+                    }
+                    for (ByteBuffer buf : c.frame(System.nanoTime(), ControlKey.THRUST.mask())) {
+                        u.send(buf);
+                        sent += measuring ? 1 : 0;
+                    }
+                }
+                Thread.sleep(16);
+                for (LoopbackIntegrationTest.UdpClient u : peers) {
+                    u.pump();
+                }
+            }
+            Thread.sleep(100);
+            long allocated = MX.getThreadAllocatedBytes(id) - before;
+            long datagrams = sent;
+            double perDatagram = (double) allocated / datagrams;
+            System.out.printf("[AllocationTest] two peers: %d B over %d received datagrams = %.1f B/datagram%n",
+                allocated, datagrams, perDatagram);
+            assertAll(
+                () -> assertTrue(datagrams > 300, "both peers sent steadily (" + datagrams + ")"),
+                () -> assertTrue(perDatagram <= 256, "at most 256 B per received datagram (" + perDatagram + ")"),
+                () -> assertTrue(a.c.snapshotTicks.size() > 40 && b.c.snapshotTicks.size() > 40, "both peers got snapshots"));
+        }
+    }
 }
