@@ -52,11 +52,19 @@
           <excludedClasses>
             <param>com.fulcrologic.jxpilot.server.ServerMain</param>
             <param>com.fulcrologic.jxpilot.server.net.UdpTransport</param>
+            <!-- effectful edges and orchestration, covered by LoopbackIntegrationTest -->
+            <param>com.fulcrologic.jxpilot.server.net.Server</param>
+            <param>com.fulcrologic.jxpilot.server.net.Server$*</param>
+            <param>com.fulcrologic.jxpilot.server.net.JdkInterfaceSource</param>
+            <param>com.fulcrologic.jxpilot.server.net.JdkResolver</param>
+            <!-- placeholder simulation, replaced by the adapter to the real one -->
+            <param>com.fulcrologic.jxpilot.server.net.StubGameHost</param>
           </excludedClasses>
           <excludedTestClasses>
             <param>*AllocationTest*</param>
             <param>*TickBenchmark*</param>
             <param>*LoopbackIntegrationTest*</param>
+            <param>*ServerMainTest*</param>
           </excludedTestClasses>
         </configuration>
       </plugin>

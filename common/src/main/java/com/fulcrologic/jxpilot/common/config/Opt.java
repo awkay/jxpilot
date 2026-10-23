@@ -27,7 +27,10 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Every server option known to XPilot 4.5.5, generated from the option table in
+ * Every server option known to XPilot 4.5.5 (plus the JXPilot-only network options {@code bind},
+ * {@code bindWait}, {@code snapshotDivisor}, {@code radarDivisor}, {@code ipPacketRate},
+ * {@code ipPacketBurst}, {@code sessionPacketRate} and {@code sessionPacketBurst}, which are settable only
+ * from the command line or the server config file, never from a map), generated from the option table in
  * {@code src/server/cmdline.c}: canonical name, alternative (command-line) name, default
  * value string, value type, allowed origins and help text.
  * <p>
@@ -123,6 +126,22 @@ public enum Opt {
         "The name of the map author."),
     CONTACT_PORT("contactPort", "port", "15345", OptionType.INT, F.CMD|F.DEF|F.VIS,
         "The server contact port number."),
+    BIND("bind", "bind", "all", OptionType.LIST, F.CMD|F.DEF,
+        "JXPilot: local addresses to serve on, comma separated: IP literals, host names, interface names, CIDRs, 'loopback' or 'all'. Command line or server config file only. Not visible to clients."),
+    BIND_WAIT("bindWait", "bindWait", "false", OptionType.BOOL, F.CMD|F.DEF,
+        "JXPilot: wait for a matching interface instead of failing when a bind selector matches nothing. Command line or server config file only."),
+    SNAPSHOT_DIVISOR("snapshotDivisor", "snapshotDivisor", "1", OptionType.INT, F.CMD|F.DEF,
+        "JXPilot: send a snapshot every this many simulation ticks (frames); 1 = every frame."),
+    RADAR_DIVISOR("radarDivisor", "radarDivisor", "3", OptionType.INT, F.CMD|F.DEF,
+        "JXPilot: include the radar in every this many snapshots."),
+    IP_PACKET_RATE("ipPacketRate", "ipPacketRate", "400", OptionType.REAL, F.CMD|F.DEF,
+        "JXPilot: sustained packets per second accepted from one IP address (IPv6: one /64) for connection attempts and packets outside a session."),
+    IP_PACKET_BURST("ipPacketBurst", "ipPacketBurst", "800", OptionType.REAL, F.CMD|F.DEF,
+        "JXPilot: burst size, in packets, of ipPacketRate."),
+    SESSION_PACKET_RATE("sessionPacketRate", "sessionPacketRate", "400", OptionType.REAL, F.CMD|F.DEF,
+        "JXPilot: sustained packets per second accepted from one connected client."),
+    SESSION_PACKET_BURST("sessionPacketBurst", "sessionPacketBurst", "800", OptionType.REAL, F.CMD|F.DEF,
+        "JXPilot: burst size, in packets, of sessionPacketRate."),
     SERVER_HOST("serverHost", "serverHost", null, OptionType.STRING, F.CMD|F.DEF|F.VIS,
         "The server's fully qualified domain name (for multihomed hosts)."),
     MAP_DATA("mapData", "mapData", null, OptionType.STRING, F.ANY|F.VIS,
@@ -187,8 +206,8 @@ public enum Opt {
         "Search the local domain for the existence of xpilot.domain?"),
     DENY_HOSTS("denyHosts", "denyHosts", "", OptionType.STRING, F.CMD|F.DEF|F.VIS,
         "List of network addresses of computers which are denied service. Each address may optionally be followed by a slash and a network mask."),
-    MAX_CLIENTS_PER_IP("maxClientsPerIP", "maxPerIP", "2", OptionType.INT, F.CMD|F.DEF|F.VIS,
-        "Maximum number of clients per IP address that are allowed to connect. This prevents unfriendly players from occupying all the bases, effectively 'kicking' paused players and denying other players to join."),
+    MAX_CLIENTS_PER_IP("maxClientsPerIP", "maxPerIP", "4", OptionType.INT, F.CMD|F.DEF|F.VIS,
+        "JXPilot default 4 (XPilot: 2); 0 or less is unlimited; IPv6 counts per /64. Maximum number of clients per IP address that are allowed to connect. This prevents unfriendly players from occupying all the bases, effectively 'kicking' paused players and denying other players to join."),
     LIMITED_VISIBILITY("limitedVisibility", "limitedVisibility", "no", OptionType.BOOL, F.ANY|F.VIS,
         "Should the players have a limited visibility?"),
     MIN_VISIBILITY_DISTANCE("minVisibilityDistance", "minVisibility", "0.0", OptionType.REAL, F.ANY|F.VIS,

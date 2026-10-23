@@ -28,21 +28,34 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
 | id | name | dir | body |
 |---|---|---|---|
 | 1 | CONNECT | C→S | `Msg.Connect`: u32 nonce, u8 team (0-9 or 255), str8 name, str16 shape. Resent every 250 ms until answered. |
-| 2 | ACCEPT | S→C | `Msg.Accept`: u32 nonce, u16 playerId. Header session = new session id. Re-sent for duplicate CONNECTs. |
-| 3 | REJECT | S→C | `Msg.Reject`: u32 nonce, u8 reason, str8 text. |
+| 2 | ACCEPT | S→C | `Msg.Accept`: u32 nonce, u16 playerId. Header session = new random session id. Re-sent for duplicate CONNECTs and on a backoff schedule until the session is verified (below). |
+| 3 | REJECT | S→C | `Msg.Reject`: u32 nonce, u8 reason, str8 text. Header session 0. Never larger than the CONNECT it answers (the text is cut to fit). |
 | 4 | RELIABLE | both | reliable channel body (below). |
 | 5 | INPUT | C→S | input with redundancy (below). |
 | 6 | SNAPSHOT | S→C | world snapshot (below). |
-| 7 | DISCONNECT | both | `Msg.Disconnect`: u8 reason, str8 text. Send 3 times; also timeout after 10 s of silence. |
+| 7 | DISCONNECT | both | `Msg.Disconnect`: u8 reason, str8 text. Send 3 times; also timeout after 10 s of silence. The server never sends it to an unverified session. |
 | 8 | ACK | both | empty. |
 | 9/10 | PING/PONG | both | `Msg.Ping`: u32 id, u64 nanos; PONG echoes. |
 
 ## Connection flow
 
 1. Client sends CONNECT (repeat until ACCEPT/REJECT).
-2. Server answers ACCEPT, then queues reliable `WELCOME`, then `DATA_CHUNK`s, then `PLAYER_JOIN` for all
+   - A CONNECT whose header has the JX magic but another protocol version gets `REJECT` with reason
+     VERSION (if it is at least as large as a bare 14-byte REJECT).
+   - More than `maxClientsPerIP` sessions (default 4; an IPv4 address or an IPv6 /64 counts as one source;
+     0 = unlimited) get `REJECT` FULL.
+   - A CONNECT with a new nonce from an address that already has a session replaces it, but the old
+     session is dropped only after the new join succeeded.
+2. Server answers ACCEPT with a random 16-bit session id. The session is **unverified** (anti-reflection:
+   a CONNECT's source address can be spoofed): until a packet carrying that session id arrives from the
+   client's address, the server sends it nothing but ACCEPT — resent after 250, 500 and 1000 ms (4 in
+   all), and on each duplicate CONNECT, which does not extend its life — and drops it silently 2 s after
+   the last ACCEPT (3.75 s in all). Every ACCEPT (14 bytes) is smaller than a CONNECT (≥ 16 bytes).
+   **The client must send something with the session id after ACCEPT** (it sends INPUT every frame
+   anyway, which is the proof).
+3. On verification the server queues reliable `WELCOME`, then `DATA_CHUNK`s, then `PLAYER_JOIN` for all
    players (one with `FLAG_SELF`), `BASE_OWNER`s and `SCORE`s.
-3. The config blob is the server's **effective configuration as config-file text**
+4. The config blob is the server's **effective configuration as config-file text**
    (`Options.toConfigText()`: every visible map-settable option + unknown options + `mapData`),
    deflated (`ConfigTransfer.encode`). WELCOME gives the uncompressed length, compressed length and CRC32.
    The client reassembles (`ConfigTransfer.Receiver`), inflates, verifies, and parses it with the
@@ -52,8 +65,19 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
    or `"  padded  "` otherwise), and CR before LF is doubled because the reader folds CRLF.
    **Encode once per map load** (≈9 ms for planetx) and share the immutable `Blob`; each client gets its
    own `ConfigTransfer.Sender`. Never encode per client or on the simulation thread.
-4. Client sends reliable `READY`; the server spawns the player. Snapshots may start earlier;
-   the client ignores them until it has the map.
+5. Client sends reliable `READY`; the server spawns the player. Snapshots start once the client has
+   acknowledged every reliable message up to and including the initial state (game events queued after
+   it do not hold snapshots back); the client ignores snapshots until it has the map.
+
+Liveness and limits (server side, all in time units, independent of the tick rate):
+- A verified peer is dropped (DISCONNECT timeout) after 10 s without any packet, **or** when its oldest
+  unacknowledged reliable message is older than 10 s, **or** when more than 256 reliable messages are
+  waiting in its overflow queue: a peer that sends but never acknowledges cannot grow server memory.
+- Packets carrying a known session id are rate limited per session (`sessionPacketRate` 400/s, burst
+  `sessionPacketBurst` 800), so many players behind one NAT do not share a budget. Everything else
+  (CONNECT, strays, garbage) is limited per source (`ipPacketRate` 400/s, burst `ipPacketBurst` 800; a
+  CONNECT that creates a session costs 100 more), keyed by a secret 64-bit hash of the IPv4 address or
+  IPv6 /64. Clients should send INPUT on every key change and otherwise at about the tick rate.
 
 ## Reliable channel — `ReliableChannel`
 
@@ -69,7 +93,12 @@ message is its `ReliableType`.
   `write(buf, now)` packs new messages and messages unacked for ≥ the resend timeout, oldest first,
   ≤255 per body. `onAck(ack, now)` releases acknowledged messages.
 - Resend timeout: adaptive, RFC 6298 (`srtt + 4·rttvar`, Karn's rule — only messages sent once are
-  sampled), initial 150 ms, clamped to [50 ms, 2 s].
+  sampled), initial 150 ms, clamped to [50 ms, 2 s]. Each resend of the oldest unacknowledged message
+  doubles it (exponential backoff), still capped at 2 s, until the next RTT sample. Messages go out only
+  when the owner services the channel (the server: once per tick, at most `reliablePacketsPerSecond`
+  480/s worth of datagrams per tick), so at 14 fps a resend can be up to one tick late.
+- `ReliableChannel.nextSequence()`/`allAckedBefore(seq)` wait for a batch to be acknowledged and
+  `unackedAgeNanos(now)` measures how long the oldest message has waited (first send).
 - Receiver: delivers `seq == expected` immediately plus any buffered successors; buffers up to
   `window-1` ahead; drops older/farther. Sequences are 16-bit and wrap.
 - Window: default **32** messages in flight (memory 2 × 32 × 1100 B = 70 KB per peer), configurable per
@@ -116,8 +145,9 @@ edges by comparing consecutive masks. `aimTurn` is a pointer-control turn in u16
 
 ## SNAPSHOT — `SnapshotWriter` / `SnapshotReader` / `Records`
 
-Default rate: every sim tick, i.e. the map's framesPerSecond (`Protocol.DEFAULT_SNAPSHOT_DIVISOR` = 1;
-WELCOME.snapshotHz tells the client). *(Changed in the server S1 fix round; it was every 2nd 60 Hz tick.)*
+Default rate: every simulation tick, i.e. the map's framesPerSecond (default 14 Hz; one tick per C frame)
+(`Protocol.DEFAULT_SNAPSHOT_DIVISOR` = 1, server option `snapshotDivisor`; WELCOME.simHz and
+WELCOME.snapshotHz tell the client).
 
 Header (15 bytes): `u32 tick, u32 lastInputSeq, u8 part, u8 partCount, u8 flags (1 = last part),
 u16 viewX, u16 viewY` — the receiver's view centre in half pixels. *(S1 fix round: `tick` is the number of
@@ -133,7 +163,7 @@ clamped). The reader (`SnapshotReader.setWorld(w, h, wrap)`) wraps decoded posit
 [0,W)×[0,H) on wrapping maps. **Client interpolation and extrapolation must use `XMath.wrapDelta`**
 between snapshots: an object crossing the seam decodes from e.g. 990 to 5, which is +15 px, not −985.
 
-RADAR is sent in every 3rd snapshot by default (`Protocol.DEFAULT_RADAR_DIVISOR`, configurable).
+RADAR is sent in every 3rd snapshot by default (`Protocol.DEFAULT_RADAR_DIVISOR`, server option `radarDivisor`).
 
 Then sections until the end of the datagram: `u8 type, u8 recordSize, u8 variant, u16 count, records`.
 Readers stride by the transmitted `recordSize`, so fields can be appended to a record later, and skip

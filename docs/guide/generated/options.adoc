@@ -2,10 +2,10 @@
 // by dist/src/test/java/com/fulcrologic/jxpilot/dist/docs/GuideTables.java. Do not edit:
 // run `make -C docs/guide generate` instead. The build fails when this file is stale.
 
-The server knows *293* options, in these groups:
+The server knows *301* options, in these groups:
 
 * <<opts-files,Command line and server files>> (11)
-* <<opts-network,Server and network>> (15)
+* <<opts-network,Server and network>> (23)
 * <<opts-race,Races, rounds and game length>> (9)
 * <<opts-radar,Radar>> (6)
 * <<opts-scoring,Scoring>> (20)
@@ -139,6 +139,62 @@ Where and how the server listens, who may connect and how much traffic it accept
 |command line, config file
 |The server contact port number.
 
+|[[opt-bind]]`+bind+`
+|
+|comma list
+|`+all+`
+|command line, config file
+|JXPilot: local addresses to serve on, comma separated: IP literals, host names, interface names, CIDRs, 'loopback' or 'all'. Command line or server config file only. Not visible to clients.
+
+|[[opt-bindWait]]`+bindWait+`
+|
+|boolean
+|`+false+`
+|command line, config file
+|JXPilot: wait for a matching interface instead of failing when a bind selector matches nothing. Command line or server config file only.
+
+|[[opt-snapshotDivisor]]`+snapshotDivisor+`
+|
+|integer
+|`+1+`
+|command line, config file
+|JXPilot: send a snapshot every this many simulation ticks (frames); 1 = every frame.
+
+|[[opt-radarDivisor]]`+radarDivisor+`
+|
+|integer
+|`+3+`
+|command line, config file
+|JXPilot: include the radar in every this many snapshots.
+
+|[[opt-ipPacketRate]]`+ipPacketRate+`
+|
+|real
+|`+400+`
+|command line, config file
+|JXPilot: sustained packets per second accepted from one IP address (IPv6: one /64) for connection attempts and packets outside a session.
+
+|[[opt-ipPacketBurst]]`+ipPacketBurst+`
+|
+|real
+|`+800+`
+|command line, config file
+|JXPilot: burst size, in packets, of ipPacketRate.
+
+|[[opt-sessionPacketRate]]`+sessionPacketRate+`
+|
+|real
+|`+400+`
+|command line, config file
+|JXPilot: sustained packets per second accepted from one connected client.
+
+|[[opt-sessionPacketBurst]]`+sessionPacketBurst+`
+|
+|real
+|`+800+`
+|command line, config file
+|JXPilot: burst size, in packets, of sessionPacketRate.
+
 |[[opt-serverHost]]`+serverHost+`
 |
 |text
@@ -170,9 +226,9 @@ Where and how the server listens, who may connect and how much traffic it accept
 |[[opt-maxClientsPerIP]]`+maxClientsPerIP+`
 |`+maxPerIP+`
 |integer
-|`+2+`
+|`+4+`
 |command line, config file
-|Maximum number of clients per IP address that are allowed to connect. This prevents unfriendly players from occupying all the bases, effectively 'kicking' paused players and denying other players to join.
+|JXPilot default 4 (XPilot: 2); 0 or less is unlimited; IPv6 counts per /64. Maximum number of clients per IP address that are allowed to connect. This prevents unfriendly players from occupying all the bases, effectively 'kicking' paused players and denying other players to join.
 
 |[[opt-ignore20MaxFPS]]`+ignore20MaxFPS+`
 |
@@ -2290,6 +2346,8 @@ Asteroid appearance and behaviour.
 <<opt-ballSparkCollisions,ballSparkCollisions>> ·
 <<opt-ballsWallBounce,ballsWallBounce>> ·
 <<opt-baseMineRange,baseMineRange>> ·
+<<opt-bind,bind>> ·
+<<opt-bindWait,bindWait>> ·
 <<opt-blockFriction,blockFriction>> ·
 <<opt-blockFrictionVisible,blockFrictionVisible>> ·
 <<opt-cannonDeadTime,cannonDeadTime>> ·
@@ -2364,6 +2422,8 @@ Asteroid appearance and behaviour.
 <<opt-initialTractorBeams,initialTractorBeams>> ·
 <<opt-initialTransporters,initialTransporters>> ·
 <<opt-initialWideangles,initialWideangles>> ·
+<<opt-ipPacketBurst,ipPacketBurst>> ·
+<<opt-ipPacketRate,ipPacketRate>> ·
 <<opt-itemAfterburnerProb,itemAfterburnerProb>> ·
 <<opt-itemArmorProb,itemArmorProb>> ·
 <<opt-itemAutopilotProb,itemAutopilotProb>> ·
@@ -2473,6 +2533,7 @@ Asteroid appearance and behaviour.
 <<opt-playerWallBounceBrakeFactor,playerWallBounceBrakeFactor>> ·
 <<opt-pLockServer,pLockServer>> ·
 <<opt-raceLaps,raceLaps>> ·
+<<opt-radarDivisor,radarDivisor>> ·
 <<opt-randomItemProb,randomItemProb>> ·
 <<opt-reportToMetaServer,reportToMetaServer>> ·
 <<opt-reserveRobotTeam,reserveRobotTeam>> ·
@@ -2499,6 +2560,8 @@ Asteroid appearance and behaviour.
 <<opt-selfImmunity,selfImmunity>> ·
 <<opt-selfKillScoreMult,selfKillScoreMult>> ·
 <<opt-serverHost,serverHost>> ·
+<<opt-sessionPacketBurst,sessionPacketBurst>> ·
+<<opt-sessionPacketRate,sessionPacketRate>> ·
 <<opt-shieldedItemPickup,shieldedItemPickup>> ·
 <<opt-shieldedMining,shieldedMining>> ·
 <<opt-shipMass,shipMass>> ·
@@ -2511,6 +2574,7 @@ Asteroid appearance and behaviour.
 <<opt-shotsWallBounce,shotsWallBounce>> ·
 <<opt-shoveKillScoreMult,shoveKillScoreMult>> ·
 <<opt-smartKillScoreMult,smartKillScoreMult>> ·
+<<opt-snapshotDivisor,snapshotDivisor>> ·
 <<opt-sparksWallBounce,sparksWallBounce>> ·
 <<opt-tankHostName,tankHostName>> ·
 <<opt-tankKillScoreMult,tankKillScoreMult>> ·

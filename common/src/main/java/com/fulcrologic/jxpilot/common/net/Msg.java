@@ -92,6 +92,28 @@ public final class Msg {
             Wire.getString16(b, shape);
             Wire.cap(shape, MAX_SHAPE_LEN);
         }
+
+        /**
+         * Read without throwing, for untrusted input (a malformed CONNECT flood must not allocate an
+         * exception per packet).
+         * <p>
+         * BEHAVIOR: checks every length against the bytes remaining before reading; a body too short
+         * for its nonce, team or either string returns false with the buffer position unchanged.
+         * BEHAVIOR: a complete body is read as by {@link #read} and returns true.
+         */
+        public boolean tryRead(ByteBuffer b) {
+            int p = b.position();
+            int lim = b.limit();
+            if (lim - p < 6) {
+                return false;
+            }
+            int s = p + 6 + (b.get(p + 5) & 0xFF);
+            if (lim - s < 2 || lim - s - 2 < (b.getShort(s) & 0xFFFF)) {
+                return false;
+            }
+            read(b);
+            return true;
+        }
     }
 
     /** ACCEPT body (server to client). The header's sessionId is the new session. */
