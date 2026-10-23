@@ -73,6 +73,8 @@ final class TestClient implements ReliableHandler {
     long lastPongNanos;
     int lastAckTick;
     boolean readySent;
+    /** Session packets dropped because they arrived before ACCEPT or carry another session. */
+    int staleSession;
 
     TestClient(int nonce) {
         this.nonce = nonce;
@@ -200,8 +202,9 @@ final class TestClient implements ReliableHandler {
                 lastPongNanos = p.timeNanos;
             }
             default -> {
-                if (header.session() != session) {
-                    throw new AssertionError("wrong session " + header.session());
+                if (!accepted || header.session() != session) {
+                    staleSession++;
+                    return;
                 }
                 ch.onAck(header.reliableAck(), now);
                 if (header.type() == PacketType.RELIABLE) {

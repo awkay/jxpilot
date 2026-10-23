@@ -73,8 +73,15 @@ final class Harness implements Datagrams {
         return new InetSocketAddress(InetAddress.ofLiteral(ip), port);
     }
 
+    /** When set, datagrams go here instead of being captured (allocation tests). */
+    Datagrams passthrough;
+
     @Override
     public void send(int channel, SocketAddress to, ByteBuffer data) {
+        if (passthrough != null) {
+            passthrough.send(channel, to, data);
+            return;
+        }
         ByteBuffer copy = ByteBuffer.allocate(data.remaining());
         copy.put(data.duplicate()).flip();
         data.position(data.limit());

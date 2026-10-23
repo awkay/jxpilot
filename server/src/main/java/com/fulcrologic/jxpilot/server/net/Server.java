@@ -64,6 +64,7 @@ public final class Server implements AutoCloseable {
     private final Thread loop;
     private final Thread rescan;
     private volatile boolean running = true;
+    private final java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
 
     private Server(Settings s, UdpTransport transport, ServerNet net, List<BindSelector> selectors, boolean rescans) {
         this.s = s;
@@ -210,9 +211,12 @@ public final class Server implements AutoCloseable {
         return transport.localAddress(t);
     }
 
-    /** Stop the loop (peers get DISCONNECT), close all channels and wait for the threads. */
+    /** Stop the loop (peers get DISCONNECT), close all channels and wait for the threads. Idempotent. */
     @Override
     public void close() throws InterruptedException {
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
         running = false;
         if (rescan != null) {
             rescan.interrupt();

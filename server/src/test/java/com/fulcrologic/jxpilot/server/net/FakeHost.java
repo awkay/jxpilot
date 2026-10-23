@@ -58,11 +58,6 @@ final class FakeHost implements GameHost {
     private final Msg.PlayerJoin join = new Msg.PlayerJoin();
     private final Msg.Text text = new Msg.Text();
 
-    private void rec(String s) {
-        if (record) {
-            calls.add(s);
-        }
-    }
 
     List<String> callsStartingWith(String prefix) {
         List<String> out = new ArrayList<>();
@@ -76,7 +71,9 @@ final class FakeHost implements GameHost {
 
     @Override
     public int join(CharSequence name, int t, CharSequence shape) {
-        rec("join " + name + " team=" + t + " shape=" + shape);
+        if (record) {
+            calls.add("join " + name + " team=" + t + " shape=" + shape);
+        }
         if (joinAnswer != null) {
             return joinAnswer;
         }
@@ -90,16 +87,22 @@ final class FakeHost implements GameHost {
 
     @Override
     public void leave(int playerId) {
-        rec("leave " + playerId);
+        if (record) {
+            calls.add("leave " + playerId);
+        }
     }
 
     @Override
     public void clientMessage(int playerId, int type, ByteBuffer payload) {
         if (type == com.fulcrologic.jxpilot.common.net.ReliableType.CHAT) {
             text.read(payload);
-            rec("msg " + playerId + " CHAT " + text.text);
+            if (record) {
+                calls.add("msg " + playerId + " CHAT " + text.text);
+            }
         } else {
-            rec("msg " + playerId + " type=" + type + " len=" + payload.remaining());
+            if (record) {
+                calls.add("msg " + playerId + " type=" + type + " len=" + payload.remaining());
+            }
         }
     }
 
@@ -107,7 +110,9 @@ final class FakeHost implements GameHost {
     public void input(int playerId, int seq, long keys, int aimTurn) {
         inputCount++;
         keySum += keys;
-        rec("input " + playerId + " seq=" + seq + " keys=" + keys + " aim=" + aimTurn);
+        if (record) {
+            calls.add("input " + playerId + " seq=" + seq + " keys=" + keys + " aim=" + aimTurn);
+        }
     }
 
     @Override
@@ -128,7 +133,9 @@ final class FakeHost implements GameHost {
 
     @Override
     public boolean fillSnapshot(int viewerId, int part, boolean radar, SnapshotWriter w) {
-        rec("snapshot " + viewerId + " part=" + part + " radar=" + radar);
+        if (record) {
+            calls.add("snapshot " + viewerId + " part=" + part + " radar=" + radar);
+        }
         if (w.beginSection(Section.SELF)) {
             Records.Self.put(w, viewerId, part, 1000 + viewerId, 2000 + viewerId, 0, 0, 0, 0, 0, Protocol.NO_ID, 0, 0, 0);
             w.endSection();
@@ -142,7 +149,9 @@ final class FakeHost implements GameHost {
 
     @Override
     public void initialState(int viewerId, ReliableChannel out) {
-        rec("initialState " + viewerId);
+        if (record) {
+            calls.add("initialState " + viewerId);
+        }
         join.id = viewerId;
         join.flags = Msg.PlayerJoin.FLAG_SELF;
         join.name.setLength(0);
