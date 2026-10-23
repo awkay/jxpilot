@@ -87,8 +87,20 @@ class DashesTest {
         assertAll(
             () -> assertEquals(List.of("0,0-6,0", "6,0-6,2"), segs(open), "the first dash turns the corner after 6 px"),
             () -> assertEquals(0f, end, EPS, "12 px of line end exactly one period in"),
-            () -> assertEquals(List.of("0,0-6,0", "6,0-6,2", "6,6-0.343,0.343"), segs(closed),
-                "closed: the 8.49 px hypotenuse starts a new 8 px dash at 12 px, ending 0.49 px short of the start"));
+            () -> assertEquals(List.of("0,0-6,0", "6,0-6,2", "6,6-0,0"), segs(closed),
+                "closed: the hypotenuse is 6 px along its major axis, all inside the new 8 px dash at 12 px"));
+    }
+
+    @Test
+    void diagonalEdgesAreMeasuredAlongTheirMajorAxisAsX11ThinLines() {
+        VertexBatch flat = batch();
+        Dashes.segment(flat, 0, 0, 12, 6, 8, 4, 0, 1, C);
+        VertexBatch steep = batch();
+        Dashes.segment(steep, 0, 0, -3, 12, 8, 4, 0, 1, C);
+        assertAll(
+            () -> assertEquals(List.of("0,0-8,4"), segs(flat), "x major: the dash ends after 8 x-pixels, the gap fills the last 4"),
+            () -> assertEquals(List.of("0,0-(-2),8".replace("(", "").replace(")", "")), segs(steep),
+                "y major: 8 y-pixels, whatever the x run"));
     }
 
     @Test

@@ -28,6 +28,7 @@ import com.fulcrologic.jxpilot.client.render.Shapes;
 import com.fulcrologic.jxpilot.client.render.TextWriter;
 import com.fulcrologic.jxpilot.client.render.Trig;
 import com.fulcrologic.jxpilot.client.render.VertexBatch;
+import com.fulcrologic.jxpilot.client.render.WinScale;
 import com.fulcrologic.jxpilot.common.Item;
 
 /**
@@ -41,7 +42,12 @@ import com.fulcrologic.jxpilot.common.Item;
  * {@code (hx, hy)} (C {@code hud_pos_x/y}), converted through {@link ScreenSpace}; font metrics
  * (framebuffer pixels) are divided by the pixel ratio to join them, and C's {@code int / 2} of a
  * pixel width is kept ({@link #half}). Colours are palette indices; lines are 1 logical pixel wide.
- * Allocation-free; the only fields are scratch buffers.
+ * <p>
+ * Window scaling: {@code hx}, {@code hy} and the other window positions passed in are C's unscaled
+ * window coordinates (at zoom z the unscaled view is {@code viewWidth / z} wide), and every expression
+ * C wraps in {@code WINSCALE} is scaled by {@link WinScale#of} at the zoom set with {@link #setScale};
+ * font metrics, item symbols and the offsets C adds after scaling stay in pixels. At zoom 1 nothing
+ * changes. Allocation-free; the fields are the scale and scratch buffers.
  */
 public final class HudPainter {
     /** {@code HUD_SIZE}: half the HUD frame size. */
@@ -80,11 +86,22 @@ public final class HudPainter {
     private final char[] str = new char[32];
     private final float[] shipX = new float[MAX_SHIP_POINTS];
     private final float[] shipY = new float[MAX_SHIP_POINTS];
+    private double scale = 1;
 
     /** {@code text} draws in the C {@code gameFont}. */
     public HudPainter(TextWriter text, Palette palette) {
         this.text = text;
         this.palette = palette;
+    }
+
+    /** The zoom used as C's {@code WINSCALE} factor (1 = unscaled). */
+    public void setScale(double zoom) {
+        this.scale = zoom;
+    }
+
+    /** C {@code WINSCALE(n)} at the current scale. */
+    int ws(int n) {
+        return WinScale.of(n, scale);
     }
 
     // ================================================================== Paint_lock
@@ -115,35 +132,47 @@ public final class HudPainter {
     /**
      * {@code Paint_lock}'s text: the target name and its distance or lives.
      * <p>
-     * BEHAVIOR: the name, HUD colour, centred on hx with baseline {@code hy - 72 - descent}.
+     * BEHAVIOR: the name, HUD colour, at {@code WINSCALE(hx) - name_width / 2} with C's
+     * {@code name_width} = text width + 2 ({@code FIND_NAME_WIDTH}), baseline
+     * {@code WINSCALE(hy - 72) - descent}.
      * BEHAVIOR: with limited lives or a non-zero distance: the first 3 chars of {@code "%03d"} of the
-     * lives (limited lives) or {@code lockDist / 35}, at (hx + 72, same baseline), red iff limited
-     * lives and none left, else HUD colour.
+     * lives (limited lives) or {@code lockDist / 35}, at ({@code WINSCALE(hx + 72)}, same baseline), red
+     * iff limited lives and none left, else HUD colour.
      */
     public void paintLockText(VertexBatch b, ScreenSpace ss, int hx, int hy, CharSequence name, boolean limitedLives,
                               int targetLife, int lockDist, int hudColor) {
         int hud = palette.color(hudColor);
-        double y = hy - HUD_SIZE + HUD_OFFSET - LOCK_BORDER - desc(ss);
-        double nameW = text.width(name) / ss.ratio();
-        text.draw(b, name, ss.edgeX(hx - half(nameW)), ss.baseline(y), hud);
+        double y = ws(hy - HUD_SIZE + HUD_OFFSET - LOCK_BORDER) - desc(ss);
+        double nameW = text.width(name) / ss.ratio() + ShipPainter.NAME_PAD;
+        text.draw(b, name, ss.edgeX(ws(hx) - half(nameW)), ss.baseline(y), hud);
         if (limitedLives || lockDist != 0) {
             CFormat.padInt(limitedLives ? targetLife : lockDist / BLOCK_SZ, 3, true, str, 0);
             int col = limitedLives && targetLife == 0 ? palette.color(Palette.RED) : hud;
-            draw(b, ss, str, 3, hx + HUD_SIZE - HUD_OFFSET + LOCK_BORDER, y, col);
+            draw(b, ss, str, 3, ws(hx + HUD_SIZE - HUD_OFFSET + LOCK_BORDER), y, col);
         }
     }
 
     /**
+     * C shows the lock mini ship only while it is at least about 10 pixels wide:
+     * {@code 10 * scaleFactor <= 15}, i.e. zoom at least 2/3 (with a rounding tolerance for 1/1.5).
+     */
+    public static boolean lockShipShown(double zoom) {
+        return 10 / zoom <= 15 + 1e-9;
+    }
+
+    /**
      * {@code Paint_lock}'s mini ship: the target's ship shape at heading 0 ({@code ship->pts[i][0]},
-     * world units, y up) turned to heading 96, halved, offset (+60, -80) from the HUD centre and
-     * truncated to whole pixels, filled in the HUD colour as a triangle fan from (hx + 60, hy - 80).
+     * world units, y up) turned to heading 96, halved, offset (+60, -80) from the HUD centre,
+     * truncated to whole pixels and scaled ({@code WINSCALE((int)(...))}), filled in the HUD colour as a
+     * triangle fan from {@code WINSCALE(hx + 60, hy - 80)}.
      * <p>
-     * BEHAVIOR: nothing for fewer than 3 points; at most {@link #MAX_SHIP_POINTS} are used.
+     * BEHAVIOR: nothing for fewer than 3 points or when {@link #lockShipShown} is false at the scale;
+     * at most {@link #MAX_SHIP_POINTS} are used.
      */
     public void paintLockShip(VertexBatch b, ScreenSpace ss, int hx, int hy, float[] xs, float[] ys, int n,
                               int hudColor) {
         n = Math.min(n, MAX_SHIP_POINTS);
-        if (n < 3) {
+        if (n < 3 || !lockShipShown(scale)) {
             return;
         }
         int rgba = palette.color(hudColor);
@@ -152,11 +181,11 @@ public final class HudPainter {
         for (int i = 0; i < n; i++) {
             double px = c * xs[i] - sn * ys[i];
             double py = sn * xs[i] + c * ys[i];
-            shipX[i] = ss.edgeX((int) (hx + px / 2 + LOCK_SHIP_DX));
-            shipY[i] = ss.edgeY((int) (hy + py / 2 + LOCK_SHIP_DY));
+            shipX[i] = ss.edgeX(ws((int) (hx + px / 2 + LOCK_SHIP_DX)));
+            shipY[i] = ss.edgeY(ws((int) (hy + py / 2 + LOCK_SHIP_DY)));
         }
-        float cx = ss.edgeX(hx + LOCK_SHIP_DX);
-        float cy = ss.edgeY(hy + LOCK_SHIP_DY);
+        float cx = ss.edgeX(ws(hx + LOCK_SHIP_DX));
+        float cy = ss.edgeY(ws(hy + LOCK_SHIP_DY));
         for (int i = 0; i < n; i++) {
             int j = i + 1 == n ? 0 : i + 1;
             b.triangle(cx, cy, shipX[i], shipY[i], shipX[j], shipY[j], rgba);
@@ -168,8 +197,9 @@ public final class HudPainter {
      * <p>
      * BEHAVIOR: drawn iff {@link #lockDiscShown}: a circle of {@code min(mapDiag / lockDist, 10)} (at
      * least 1) pixels whose bounding box's top-left is {@code (int)(hx + 54 cos(dir) - size / 2)},
-     * {@code (int)(hy - 54 sin(dir) - size / 2)}; an outline in the HUD colour for a friend, else
-     * filled in the lock colour.
+     * {@code (int)(hy - 54 sin(dir) - size / 2)}; an outline in the HUD colour for a friend (C
+     * {@code Arc_add}: box from {@code WINSCALE(x)}, {@code WINSCALE(x + size) - WINSCALE(x)} wide), else
+     * filled in the lock colour ({@code fillArc} of {@code WINSCALE(size)} at {@code WINSCALE(x, y)}).
      */
     public void paintLockDisc(VertexBatch b, ScreenSpace ss, int hx, int hy, int lockDist, int lockDir, int mapDiag,
                               boolean friend, boolean warningPhase, int hudColor, int lockColor) {
@@ -180,19 +210,23 @@ public final class HudPainter {
         int size = Math.max(1, Math.min(mapDiag / lockDist, LOCK_DISC_MAX));
         int x = (int) (hx + HUD_SIZE * 0.6 * Trig.cosRes(lockDir) - size * 0.5);
         int y = (int) (hy - HUD_SIZE * 0.6 * Trig.sinRes(lockDir) - size * 0.5);
-        double r = size / 2.0;
         if (friend) {
-            Shapes.circle(b, ss.x(x + r), ss.y(y + r), ss.len(r), CIRCLE_SEGMENTS, palette.color(hudColor));
+            int sx = ws(x);
+            int sy = ws(y);
+            double r = (ws(x + size) - sx) / 2.0;
+            double ry = (ws(y + size) - sy) / 2.0;
+            Shapes.circle(b, ss.x(sx + r), ss.y(sy + ry), ss.len(r), CIRCLE_SEGMENTS, palette.color(hudColor));
         } else {
-            disc(b, ss.edgeX(x + r), ss.edgeY(y + r), ss.len(r), palette.color(lockColor));
+            double r = ws(size) / 2.0;
+            disc(b, ss.edgeX(ws(x) + r), ss.edgeY(ws(y) + r), ss.len(r), palette.color(lockColor));
         }
     }
 
     // ================================================================== Paint_HUD pieces
 
     /**
-     * Item symbols with their counts, in columns growing leftwards from {@code hx - 73}, starting at
-     * {@code hy - 67}.
+     * Item symbols with their counts, in columns growing leftwards from {@code WINSCALE(hx - 73)},
+     * starting at {@code WINSCALE(hy - 67)} (C: "find the scaled location, then work in pixels").
      * <p>
      * BEHAVIOR: item {@code i} (by {@link Item} ordinal) is listed iff {@code counts[i] >= 0}; fuel
      * never is. (C's choice of counts: with {@code showItems}, counts above 0, others -1; without, a
@@ -200,7 +234,7 @@ public final class HudPainter {
      * BEHAVIOR: each entry: the 16x16 symbol with its top-left at (h - 16, v), the count right-aligned
      * 3 px left of it with its baseline at {@code v + 8 + ascent / 2}; the next entry is
      * {@code max(16, ascent + descent) + 1} lower.
-     * BEHAVIOR: when the next entry would pass {@code hy + 67}, a new column starts at the top,
+     * BEHAVIOR: when the next entry would pass {@code WINSCALE(hy + 67)}, a new column starts at the top,
      * {@code widest (count + 3 + 16) + 6} further left.
      * BEHAVIOR: the {@code loseItem} entry gets an 18x18 outline at (h - 18, v - 2) iff {@code loseActive}.
      */
@@ -209,10 +243,10 @@ public final class HudPainter {
         b.setLineWidth(VertexBatch.DEFAULT_LINE_WIDTH);
         int rgba = palette.color(hudColor);
         double spacing = Math.max(PaintConfig.ITEM_SIZE, asc(ss) + desc(ss)) + 1;
-        double top = hy - HUD_SIZE + HUD_OFFSET + HUD_BORDER;
-        double bottom = hy + HUD_SIZE - HUD_OFFSET - HUD_BORDER;
+        double top = ws(hy - HUD_SIZE + HUD_OFFSET + HUD_BORDER);
+        double bottom = ws(hy + HUD_SIZE - HUD_OFFSET - HUD_BORDER);
         double vert = top;
-        double horiz = hx - HUD_SIZE + HUD_OFFSET - HUD_BORDER;
+        double horiz = ws(hx - HUD_SIZE + HUD_OFFSET - HUD_BORDER);
         double maxWidth = -1;
         int size = PaintConfig.ITEM_SIZE;
         int n = Math.min(counts.length, Item.COUNT);
@@ -240,7 +274,7 @@ public final class HudPainter {
 
     /**
      * BEHAVIOR: iff {@code timeLeft > 0} (seconds), {@code "%3d:%02d"} (minutes, seconds) right-aligned
-     * at {@code hx - 73}, baseline {@code hy - 73 - descent}.
+     * at {@code WINSCALE(hx - 73)}, baseline {@code WINSCALE(hy - 73) - descent}.
      */
     public void paintTimeLeft(VertexBatch b, ScreenSpace ss, int hx, int hy, int timeLeft, int hudColor) {
         if (timeLeft <= 0) {
@@ -250,22 +284,28 @@ public final class HudPainter {
         str[n++] = ':';
         n += CFormat.padInt(timeLeft % 60, 2, true, str, n);
         double w = width(str, n, ss);
-        double edge = hx - HUD_SIZE + HUD_OFFSET - HUD_BORDER;
-        draw(b, ss, str, n, edge - w, hy - HUD_SIZE + HUD_OFFSET - HUD_BORDER - desc(ss), palette.color(hudColor));
+        double edge = ws(hx - HUD_SIZE + HUD_OFFSET - HUD_BORDER);
+        draw(b, ss, str, n, edge - w, ws(hy - HUD_SIZE + HUD_OFFSET - HUD_BORDER) - desc(ss), palette.color(hudColor));
     }
 
-    /** BEHAVIOR: the modifiers string right-aligned at {@code hx - 73}, baseline {@code hy + 73 + ascent}. */
+    /**
+     * BEHAVIOR: the modifiers string right-aligned at {@code WINSCALE(hx - 73)}, baseline
+     * {@code WINSCALE(hy + 73) + ascent}.
+     */
     public void paintMods(VertexBatch b, ScreenSpace ss, int hx, int hy, CharSequence mods, int hudColor) {
         double w = text.width(mods) / ss.ratio();
-        text.draw(b, mods, ss.edgeX(hx - HUD_SIZE + HUD_OFFSET - HUD_BORDER - w),
-            ss.baseline(hy + HUD_SIZE - HUD_OFFSET + HUD_BORDER + asc(ss)), palette.color(hudColor));
+        text.draw(b, mods, ss.edgeX(ws(hx - HUD_SIZE + HUD_OFFSET - HUD_BORDER) - w),
+            ss.baseline(ws(hy + HUD_SIZE - HUD_OFFSET + HUD_BORDER) + asc(ss)), palette.color(hudColor));
     }
 
-    /** BEHAVIOR: "Autopilot" ({@code autopilotLight}) centred on hx, baseline {@code hy - 73 - 2 descent - ascent}. */
+    /**
+     * BEHAVIOR: "Autopilot" ({@code autopilotLight}) at {@code WINSCALE(hx) - width / 2}, baseline
+     * {@code WINSCALE(hy - 73) - 2 descent - ascent}.
+     */
     public void paintAutopilot(VertexBatch b, ScreenSpace ss, int hx, int hy, int hudColor) {
         double w = text.width(AUTOPILOT) / ss.ratio();
-        text.draw(b, AUTOPILOT, ss.edgeX(hx - half(w)),
-            ss.baseline(hy - HUD_SIZE + HUD_OFFSET - HUD_BORDER - 2 * desc(ss) - asc(ss)), palette.color(hudColor));
+        text.draw(b, AUTOPILOT, ss.edgeX(ws(hx) - half(w)),
+            ss.baseline(ws(hy - HUD_SIZE + HUD_OFFSET - HUD_BORDER) - 2 * desc(ss) - asc(ss)), palette.color(hudColor));
     }
 
     // ================================================================== Paint_hudradar
@@ -277,11 +317,13 @@ public final class HudPainter {
      * BEHAVIOR: friend blips are skipped; each other blip sits at
      * {@code (int)(radar * 3 - (world + view / 2) * 768 / mapWidth)} (y likewise with
      * {@code 3 * radarHeight / mapHeight}), relative to the view centre (y up); {@code world} is the view's
-     * lower-left world position ({@code world.x/y}).
+     * lower-left world position ({@code world.x/y}) and {@code view} the unscaled view size
+     * ({@code ext_view_width/height}).
      * BEHAVIOR: blips strictly within 16 px of the centre on both axes are skipped.
      * BEHAVIOR: with wrap play, offsets beyond half the scaled radar wrap by its size.
      * BEHAVIOR: each is a circle outline of {@code 3 * size} (3 for size 0) with its bounding box's
-     * top-left at {@code (viewW/2 + x - sz/2, viewH/2 - y - sz/2)}.
+     * top-left at {@code (viewW/2 + x - sz/2, viewH/2 - y - sz/2)}, scaled as C's {@code Arc_add} does:
+     * the box runs from {@code WINSCALE(left)} to {@code WINSCALE(left + sz)}.
      */
     public void paintHudRadar(VertexBatch b, ScreenSpace ss, int viewW, int viewH, int[] radarX, int[] radarY,
                               int[] radarSize, int n, int radarHeight, int mapWidth, int mapHeight, int worldX,
@@ -307,10 +349,13 @@ public final class HudPainter {
                 y = wrapHalf(y, hrh);
             }
             sz = sz > 0 ? sz * HR_SCALE : HR_SCALE;
-            double r = sz / 2.0;
             int left = x + viewW / 2 - sz / 2;
             int top = -y + viewH / 2 - sz / 2;
-            Shapes.circle(b, ss.x(left + r), ss.y(top + r), ss.len(r), CIRCLE_SEGMENTS, hud);
+            int sl = ws(left);
+            int st = ws(top);
+            double r = (ws(left + sz) - sl) / 2.0;
+            double ry = (ws(top + sz) - st) / 2.0;
+            Shapes.circle(b, ss.x(sl + r), ss.y(st + ry), ss.len(r), CIRCLE_SEGMENTS, hud);
         }
     }
 
@@ -337,13 +382,13 @@ public final class HudPainter {
     }
 
     /**
-     * One on-map score object: {@code msg} centred on {@code x} with its baseline at
-     * {@code y + ascent / 2}, where (x, y) are C window coordinates of the block centre
-     * ({@code X()}/{@code Y()} after {@code wrap}).
+     * One on-map score object: {@code msg} at {@code WINSCALE(x) - width / 2} with its baseline at
+     * {@code WINSCALE(y) + ascent / 2}, where (x, y) are C's unscaled window coordinates of the block
+     * centre ({@code X()}/{@code Y()} after {@code wrap}).
      */
-    public void paintScoreObject(VertexBatch b, ScreenSpace ss, CharSequence msg, double x, double y, int hudColor) {
+    public void paintScoreObject(VertexBatch b, ScreenSpace ss, CharSequence msg, int x, int y, int hudColor) {
         double w = text.width(msg) / ss.ratio();
-        text.draw(b, msg, ss.edgeX(x - half(w)), ss.baseline(y + half(asc(ss))), palette.color(hudColor));
+        text.draw(b, msg, ss.edgeX(ws(x) - half(w)), ss.baseline(ws(y) + half(asc(ss))), palette.color(hudColor));
     }
 
     // ================================================================== primitives in C coordinates
@@ -378,9 +423,10 @@ public final class HudPainter {
         b.line(ss.x(x1), ss.y(y1), ss.x(x2), ss.y(y2), rgba);
     }
 
-    static void dash(VertexBatch b, ScreenSpace ss, double x1, double y1, double x2, double y2, int rgba) {
-        Dashes.segment(b, ss.x(x1), ss.y(y1), ss.x(x2), ss.y(y2), PaintConfig.DASH_ON, PaintConfig.DASH_OFF, 0,
-            (float) ss.ratio(), rgba);
+    /** X11 {@code LineOnOffDash} line between pixel centres, {@code on}/{@code off} logical pixels from offset 0. */
+    static void dash(VertexBatch b, ScreenSpace ss, double x1, double y1, double x2, double y2, int on, int off,
+                     int rgba) {
+        Dashes.segment(b, ss.x(x1), ss.y(y1), ss.x(x2), ss.y(y2), on, off, 0, (float) ss.ratio(), rgba);
     }
 
     /** X11 {@code XDrawRectangle}: an outline through the pixel centres of columns x..x+w, rows y..y+h. */

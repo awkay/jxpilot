@@ -87,6 +87,29 @@ class VertexBatchTest {
         }
 
         @Test
+        void buttCapsAreTheWidthsSignBit() {
+            VertexBatch b = roomy();
+            b.setLineWidth(4);
+            b.line(0, 0, 1, 0, RED);
+            b.setLineCap(VertexBatch.CAP_BUTT);
+            b.line(0, 0, 1, 0, RED);
+            b.setLineWidth(0);
+            b.line(0, 0, 1, 0, RED);
+            b.setLineCap(VertexBatch.CAP_SQUARE);
+            b.line(0, 0, 1, 0, RED);
+            assertAll(
+                () -> assertEquals(VertexBatch.CAP_SQUARE, b.segCap(0), "square by default"),
+                () -> assertEquals(4f, b.segWidth(0), "width 4"),
+                () -> assertEquals(4f, b.segmentBuffer().getFloat(20), "stored as is"),
+                () -> assertEquals(VertexBatch.CAP_BUTT, b.segCap(1), "butt after setLineCap"),
+                () -> assertEquals(4f, b.segWidth(1), "the same width read back"),
+                () -> assertEquals(-4f, b.segmentBuffer().getFloat(VertexBatch.SEGMENT_STRIDE + 20), "stored negated"),
+                () -> assertEquals(VertexBatch.CAP_BUTT, b.segCap(2), "even at width 0 (the sign bit of -0)"),
+                () -> assertEquals(VertexBatch.CAP_SQUARE, b.segCap(3), "square again"),
+                () -> assertEquals(VertexBatch.CAP_SQUARE, b.lineCap(), "cap reads back"));
+        }
+
+        @Test
         void pointIsOneInstanceWithCentreSizeAndColour() {
             VertexBatch b = roomy();
             b.point(1, 2, 3, RED);
@@ -247,6 +270,7 @@ class VertexBatchTest {
             VertexBatch b = roomy();
             b.setTransform(2, 2, 1, 1);
             b.setLineWidth(3);
+            b.setLineCap(VertexBatch.CAP_BUTT);
             b.line(0, 0, 1, 1, RED);
             b.point(0, 0, 1, RED);
             b.triangle(0, 0, 1, 0, 0, 1, RED);
@@ -257,7 +281,8 @@ class VertexBatchTest {
                 () -> assertEquals(0, b.pointCount(), "no points"),
                 () -> assertEquals(0, b.commandCount(), "no commands"),
                 () -> assertEquals(2f, b.scaleX(), "transform kept"),
-                () -> assertEquals(3f, b.lineWidth(), "line width kept"));
+                () -> assertEquals(3f, b.lineWidth(), "line width kept"),
+                () -> assertEquals(VertexBatch.CAP_BUTT, b.lineCap(), "line cap kept"));
         }
     }
 

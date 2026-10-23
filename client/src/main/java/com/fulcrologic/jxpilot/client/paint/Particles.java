@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.client.paint;
 
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.client.render.VertexBatch;
+import com.fulcrologic.jxpilot.client.render.WinScale;
 
 /**
  * Sparks and debris: XPilot's temperature colouring and the 2-pixel spark square.
@@ -77,10 +78,46 @@ public final class Particles {
     }
 
     /**
-     * A spark (C {@code Gui_paint_spark}): a {@link PaintConfig#SPARK_SIZE}-pixel square from
-     * {@code -size/2}, i.e. centred half a pixel left of and above the particle.
+     * A spark (C {@code Gui_paint_spark}): {@code Rectangle_add} of a {@link PaintConfig#SPARK_SIZE}
+     * square from {@code -size/2}, scaled ({@link WinScale}); at zoom 1 centred half a pixel left of
+     * and above the particle.
      */
-    public static void spark(VertexBatch b, Palette p, float x, float y, int colorIndex, float px) {
-        b.point(x - 0.5f * px, y + 0.5f * px, PaintConfig.SPARK_SIZE, p.color(colorIndex));
+    public static void spark(VertexBatch b, Palette p, float x, float y, int colorIndex, double zoom) {
+        int z = -(PaintConfig.SPARK_SIZE / 2);
+        b.point(ObjectPainter.squareCentreX(x, z, PaintConfig.SPARK_SIZE, zoom),
+            ObjectPainter.squareCentreY(y, z, PaintConfig.SPARK_SIZE, zoom),
+            WinScale.of(PaintConfig.SPARK_SIZE, zoom), p.color(colorIndex));
+    }
+
+    /**
+     * C {@code spark_rand} for a {@code sparkProb}: {@code (int)(prob * MAX_SPARK_RAND + 0.5)} with
+     * {@code MAX_SPARK_RAND} = 128 ({@code default.c}, {@code draw.h}).
+     * <p>
+     * BEHAVIOR: the probability is limited to [0, 1] first, so the result is 0..128.
+     */
+    public static int sparkRand(double prob) {
+        double q = Math.max(0, Math.min(1, prob));
+        return (int) (q * MAX_SPARK_RAND + 0.5);
+    }
+
+    /** C {@code MAX_SPARK_RAND}: a particle is always shown at this {@code spark_rand}. */
+    public static final int MAX_SPARK_RAND = 0x80;
+
+    /**
+     * The sparkle (C server {@code Frame_shots}: a spark or debris particle is not sent when
+     * {@code (fuzz & 0x7F) >= spark_rand}): whether particle {@code i} shows at frame {@code loops},
+     * from a hash of the two in place of C's random {@code fuzz} bits, so it is deterministic and needs
+     * no shared random state.
+     * <p>
+     * BEHAVIOR: shown iff 7 hash bits of (i, loops) are below {@code sparkRand}: always at 128, never at 0.
+     */
+    public static boolean sparkShown(int i, long loops, int sparkRand) {
+        int h = (int) (i * 0x632BE5ABL ^ loops * 0x9E3779B97F4A7C15L);
+        h ^= h >>> 16;
+        h *= 0x7FEB352D;
+        h ^= h >>> 15;
+        h *= 0x846CA68B;
+        h ^= h >>> 16;
+        return (h & 0x7F) < sparkRand;
     }
 }

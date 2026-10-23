@@ -46,6 +46,10 @@ public interface MapState {
     /** Index of the next race checkpoint (drawn filled). */
     int nextCheckpoint();
 
-    /** Client frame counter ({@code loops} in C) driving wormhole and concentrator animation. */
+    /**
+     * Frame counter ({@code loops} in C) driving wormhole and concentrator animation: the server's frame
+     * number, advancing once per server tick at the map's {@code framesPerSecond} (one tick = one C frame,
+     * SPEC "Time model"); the same value as {@code SceneData.loops}.
+     */
     long loops();
 }

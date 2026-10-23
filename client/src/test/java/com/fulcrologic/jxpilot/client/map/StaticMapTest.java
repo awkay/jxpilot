@@ -85,6 +85,17 @@ class StaticMapTest {
         }
 
         @Test
+        void aScaledDotIsWinscaledAndShiftedLikeTheMeshShaderDoesIt() {
+            VertexBatch b = Segs.batch();
+            StaticMap.dot(b, 35, 70, BLUE, 1);
+            StaticMap.dot(b, 35, 70, BLUE, 2);
+            StaticMap.dot(b, 35, 70, BLUE, 0.5);
+            assertEquals(List.of("52,88/2", "52.25,87.75/4", "51.5,88.5/1"), Segs.points(b),
+                "zoom 1 as the unscaled dot; zoom 2: WINSCALE(2) = 4 px, centre 0.5 px = 0.25 units right and down; "
+                    + "zoom 0.5: 1 px, centre 0.25 px = 0.5 units left and up");
+        }
+
+        @Test
         void backgroundDotsStayInsideTheMap() {
             String[] rows = new String[9];
             for (int i = 0; i < 9; i++) {
@@ -116,6 +127,31 @@ class StaticMapTest {
             VertexBatch b = Segs.batch();
             StaticMap.gravity(b, type, 0, 0, RED);
             return Segs.lines(b);
+        }
+
+        @Test
+        void circlesAndArcsAreSeparateFromTheLines() {
+            VertexBatch pos = Segs.batch();
+            StaticMap.gravityArcs(pos, BlockType.POS_GRAV, 0, 0, RED);
+            VertexBatch cw = Segs.batch();
+            StaticMap.gravityArcs(cw, BlockType.CWISE_GRAV, 0, 0, RED);
+            VertexBatch up = Segs.batch();
+            StaticMap.gravityArcs(up, BlockType.UP_GRAV, 0, 0, RED);
+            VertexBatch posLines = Segs.batch();
+            StaticMap.gravityLines(posLines, BlockType.POS_GRAV, 0, 0, RED);
+            VertexBatch neg = Segs.batch();
+            StaticMap.gravityArcs(neg, BlockType.NEG_GRAV, 0, 0, RED);
+            VertexBatch acw = Segs.batch();
+            StaticMap.gravityArcs(acw, BlockType.ACWISE_GRAV, 0, 0, RED);
+            assertAll(
+                () -> assertEquals(StaticMap.CIRCLE_SEGMENTS, pos.segmentCount(), "+: the circle"),
+                () -> assertEquals("34,17.5", Segs.lines(pos).get(0).split("-")[0], "radius 16.5 from 3 o'clock"),
+                () -> assertEquals(StaticMap.CIRCLE_SEGMENTS, neg.segmentCount(), "-: the circle"),
+                () -> assertEquals(StaticMap.ARC_SEGMENTS, cw.segmentCount(), "clockwise: the 300 degree arc"),
+                () -> assertEquals("17.5,30", Segs.lines(cw).get(0).split("-")[0], "from 90 degrees, radius 12.5"),
+                () -> assertEquals(StaticMap.ARC_SEGMENTS, acw.segmentCount(), "anticlockwise: the arc"),
+                () -> assertEquals(0, up.segmentCount(), "directional kinds have no arc"),
+                () -> assertEquals(List.of("17,5-17,30", "5,17-30,17"), Segs.lines(posLines), "+ lines: just the cross"));
         }
 
         @Test
@@ -241,8 +277,8 @@ class StaticMapTest {
                 () -> assertEquals(List.of("17,18/2"), Segs.points(b), "one dot, at block (0,0)"),
                 () -> assertEquals(List.of(BLUE, P.color(Palette.DECOR_COLOR), RED, WHITE), Segs.colors(b),
                     "dot blue, decor, gravity red, base white in that order"),
-                () -> assertEquals(4 + StaticMap.CIRCLE_SEGMENTS + 2 + 1, lines.size(),
-                    "decor square, plus marker, one base line"),
+                () -> assertEquals(4 + 2 + 1, lines.size(),
+                    "decor square, the plus marker's cross (its circle is drawn with the arcs), one base line"),
                 () -> assertEquals("35,-1-70,-1", lines.get(lines.size() - 1), "base at (1,0) faces up by default"));
         }
 

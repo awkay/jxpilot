@@ -95,9 +95,49 @@ class ParticlesTest {
         VertexBatch b = batch();
         Particles.spark(b, P, 10, 20, 6, 1);
         Particles.spark(b, P, 10, 20, 3, 2);
+        Particles.spark(b, P, 10, 20, 3, 0.5);
         assertAll(
-            () -> assertEquals(List.of("9.5,20.5/2", "9,21/2"), points(b), "offset by half a pixel (scaled by px)"),
+            () -> assertEquals(List.of("9.5,20.5/2", "9.75,20.25/4", "9,21/1"), points(b),
+                "zoom 1: half a pixel up-left; zoom 2: WINSCALE(2) = 4 px from the world corner (9, 21), centre 1.5 px "
+                    + "= 0.75 units in; zoom 0.5: 1 px at the corner"),
             () -> assertEquals(P.color(6), b.pointColor(0), "in its palette colour"),
             () -> assertEquals(P.color(3), b.pointColor(1), "per spark"));
+    }
+
+    @Test
+    void sparkRandIsTheProbabilityTimes128Rounded() {
+        assertAll(
+            () -> assertEquals(64, Particles.sparkRand(0.5), "default 0.5: 64 (C (int)(0.5 * 128 + 0.5))"),
+            () -> assertEquals(128, Particles.sparkRand(1), "1: always"),
+            () -> assertEquals(0, Particles.sparkRand(0), "0: never"),
+            () -> assertEquals(13, Particles.sparkRand(0.1), "0.1: 12.8 + 0.5 = 13"),
+            () -> assertEquals(128, Particles.sparkRand(3), "limited to 1"),
+            () -> assertEquals(0, Particles.sparkRand(-1), "limited to 0"));
+    }
+
+    @Test
+    void sparkShownIsADeterministicHashBelowSparkRand() {
+        int shown = 0;
+        int changed = 0;
+        for (int i = 0; i < 1000; i++) {
+            shown += Particles.sparkShown(i, 7, 64) ? 1 : 0;
+            changed += Particles.sparkShown(i, 7, 64) != Particles.sparkShown(i, 8, 64) ? 1 : 0;
+        }
+        int count = shown;
+        int flips = changed;
+        boolean always = true;
+        boolean never = false;
+        for (int i = 0; i < 200; i++) {
+            always &= Particles.sparkShown(i, i * 3L, 128);
+            never |= Particles.sparkShown(i, i * 3L, 0);
+        }
+        boolean all = always;
+        boolean none = !never;
+        assertAll(
+            () -> assertEquals(Particles.sparkShown(5, 9, 64), Particles.sparkShown(5, 9, 64), "same inputs, same answer"),
+            () -> assertTrue(count > 430 && count < 570, "about half of 1000 particles show at 64/128: " + count),
+            () -> assertTrue(flips > 380 && flips < 620, "about half change from one frame to the next: " + flips),
+            () -> assertTrue(all, "spark_rand 128: every particle shows"),
+            () -> assertTrue(none, "spark_rand 0: none shows"));
     }
 }

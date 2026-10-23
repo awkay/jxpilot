@@ -45,6 +45,9 @@ import com.fulcrologic.jxpilot.client.viewer.LaunchOptions;
 import com.fulcrologic.jxpilot.client.viewer.MapCatalog;
 import com.fulcrologic.jxpilot.client.viewer.ViewerController;
 import com.fulcrologic.jxpilot.client.viewer.ViewerOverlay;
+import com.fulcrologic.jxpilot.common.config.ConfigParser;
+import com.fulcrologic.jxpilot.common.config.OptionOrigin;
+import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.map.Base;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
@@ -63,8 +66,6 @@ import static org.lwjgl.opengl.GL33C.*;
  * builders, symbols, overlay) to {@link GlRenderer}. Thin glue; not unit tested.
  */
 public final class MapViewerApp {
-    /** Logical font size in pixels. */
-    static final float FONT_PX = 13;
     /** Dynamic batch capacity per stream: triangle vertices, segments, points. */
     static final int DYNAMIC_VERTICES = 65536;
     static final int DYNAMIC_SEGMENTS = 32768;
@@ -76,8 +77,6 @@ public final class MapViewerApp {
     static final int DEMO_PARTICLES = 5000;
     static final String DEMO_MODS = "N C2 F";
     static final String DEMO_SCORE = "+12";
-    /** Game frames per second used to pace the wormhole/concentrator animation (C default). */
-    static final double ANIMATION_FPS = 14;
 
     private final LaunchOptions opts;
     private final Palette palette = Palette.xpilotDefault();
@@ -102,6 +101,8 @@ public final class MapViewerApp {
     private MapCatalog catalog;
     private int mapIndex;
     private WorldMap map;
+    /** The map's framesPerSecond: server ticks (C frames) per second, the rate of {@code loops}. */
+    private int fps = 14;
     private String mapLabel = "";
     private MapSymbols symbols;
     private GlRenderer.Mesh outlineMesh;
@@ -131,7 +132,7 @@ public final class MapViewerApp {
         boolean shot = opts.screenshot() != null;
         window = new Window("JXPilot map viewer", opts.width(), opts.height(), true, opts.vsync());
         try {
-            atlas = new UiAtlas(FONT_PX * (float) window.pixelRatio());
+            atlas = new UiAtlas(opts.fontFile() == null ? null : Path.of(opts.fontFile()), fontPixels());
             gl = new GlRenderer(atlas.texture());
             gpuTimer = opts.gpuTimer() ? new GpuTimer() : null;
             text = new TextWriter(atlas.font());
@@ -163,8 +164,16 @@ public final class MapViewerApp {
         }
     }
 
+    /** The font size in framebuffer pixels: the logical size times the display's pixel ratio. */
+    private float fontPixels() {
+        return (float) (opts.fontSize() * window.pixelRatio());
+    }
+
     private void loadMap(Path file, boolean keepCentre) throws IOException {
-        WorldMap m = WorldMap.load(file);
+        Options mapOptions = new Options();
+        ConfigParser.parseFile(file, OptionOrigin.MAP, mapOptions);
+        WorldMap m = WorldMap.fromOptions(mapOptions);
+        fps = mapOptions.framesPerSecond();
         gl.delete(outlineMesh);
         gl.delete(filledMesh);
         outlineMesh = gl.upload(StaticMap.build(m, palette, false, true));
@@ -177,9 +186,10 @@ public final class MapViewerApp {
         map = m;
         symbols = new MapSymbols(m, palette);
         if (opts.demo()) {
-            demo = new DemoWorld(m.pixelWidth(), m.pixelHeight(), m.edgeWrap(), m.pixelWidth() / 2.0,
+            demo = new DemoWorld(fps, m.pixelWidth(), m.pixelHeight(), m.edgeWrap(), m.pixelWidth() / 2.0,
                 m.pixelHeight() / 2.0, DEMO_SEED,
                 DEMO_SHIPS, DEMO_SHOTS, DEMO_PARTICLES);
+            demo.setCountdowns(opts.demoRoundDelay(), opts.demoDamaged());
         }
         cam.setWorld(m.pixelWidth(), m.pixelHeight(), m.edgeWrap());
         if (keepCentre) {
@@ -190,7 +200,8 @@ public final class MapViewerApp {
         } else {
             ctl.reset(m.pixelWidth() / 2.0, m.pixelHeight() / 2.0, opts.zoom());
         }
-        mapLabel = file.getFileName() + "  " + m.width() + "x" + m.height()
+        ctl.setAltScaleFactor(opts.altScaleFactor());
+        mapLabel = file.getFileName() + "  " + m.width() + "x" + m.height() + "  " + fps + " fps"
             + (m.edgeWrap() ? "  wrap" : "") + (m.name() != null ? "  \"" + m.name() + "\"" : "");
         System.out.println("map " + mapLabel + ": outline mesh " + outlineMesh.describe()
             + "; filled mesh " + filledMesh.describe());
@@ -214,6 +225,7 @@ public final class MapViewerApp {
                     case GLFW_KEY_TAB -> nextMapRequested = true;
                     case GLFW_KEY_F -> filled = !filled;
                     case GLFW_KEY_R -> showRadar = !showRadar;
+                    case GLFW_KEY_S -> ctl.swapScaleFactor(); // C keySwapScaleFactor
                     default -> { }
                 }
             } else if (action == GLFW_RELEASE) {
@@ -283,7 +295,7 @@ public final class MapViewerApp {
 
     /** The window moved to a display with another pixel ratio; bake the font for it. */
     private void rebakeFontIfNeeded() throws IOException {
-        float px = FONT_PX * (float) window.pixelRatio();
+        float px = fontPixels();
         if (px != atlas.fontPixels()) {
             atlas.bakeFont(px);
             text = new TextWriter(atlas.font());
@@ -304,34 +316,50 @@ public final class MapViewerApp {
         cam.setViewport(window.framebufferWidth(), window.framebufferHeight(), window.pixelRatio());
         cam.update();
         ctl.syncFrom(cam);
-        state.setLoops((long) (elapsedNanos / 1e9 * ANIMATION_FPS));
+        long loops = demo != null ? demo.loops() : (long) (elapsedNanos / 1e9 * fps);
+        state.setLoops(loops);
 
         glViewport(0, 0, window.framebufferWidth(), window.framebufferHeight());
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT);
 
         gl.setView(window.framebufferWidth(), window.framebufferHeight(), window.pixelRatio());
+        cam.screenToNdc(xf);
+        gl.setTransform(xf);
+        dyn.clear();
+        if (demo != null) {
+            demo.fill(scene);
+            if (scenePainter.damagedFlash(dyn, cam, scene)) { // C: the blue ECM flash replaces everything
+                gl.setPointScale(0);
+                gl.flush(dyn);
+                dyn.clear();
+                return;
+            }
+        }
         GlRenderer.Mesh mesh = filled ? filledMesh : outlineMesh;
+        gl.setPointScale(cam.zoom()); // background dots hold C sizes: WINSCALE them
         for (int k = 0; k < cam.offsetCount(); k++) {
             cam.worldToNdc(k, xf);
             gl.setTransform(xf);
             gl.draw(mesh);
         }
-
+        gl.setPointScale(0);
         cam.screenToNdc(xf);
         gl.setTransform(xf);
-        dyn.clear();
+        // C's order: map symbols, the scene's direct draws and queues, the HUD, then every Arc_add
         symbols.draw(dyn, text, cam, state);
         if (demo != null) {
-            demo.fill(scene);
-            scenePainter.draw(dyn, text, cam, scene);
+            scenePainter.drawBody(dyn, text, cam, scene);
+            demoHud(false);
+        }
+        symbols.drawArcs(dyn, cam, state);
+        if (demo != null) {
+            scenePainter.drawArcs(dyn, cam, scene);
+            demoHud(true);
         }
         overlay.draw(dyn, text, cam, stats, mapLabel, radarTex, showRadar);
         if (demo != null && showRadar) {
             radarDynamic();
-        }
-        if (demo != null) {
-            demoHud();
         }
         gl.flush(dyn);
         dyn.clear();
@@ -343,38 +371,62 @@ public final class MapViewerApp {
         radarPainter.begin(radarRect[0], radarRect[1], radarRect[2], radarRect[3], radarTex.height(),
             map.pixelWidth(), map.pixelHeight(), map.edgeWrap());
         dyn.identity();
+        // C Paint_radar: the heading line, then the blips (the own ship's steady 3x3 one included)
+        radarPainter.self(dyn, demo.shipX(0), demo.shipY(0), demo.shipHeading(0), scene.loops);
+        radarPainter.selfBlip(dyn, demo.shipX(0), demo.shipY(0));
         for (int i = 0; i < scene.shipCount; i++) {
             if (scene.shipId[i] != scene.selfId) {
                 radarPainter.blip(dyn, scene.shipX[i], scene.shipY[i], 3, scene.shipColor[i] == Palette.BLUE);
             }
         }
-        radarPainter.self(dyn, demo.shipX(0), demo.shipY(0), demo.shipHeading(0), scene.loops);
+        for (int i = 0; i < scene.asteroidCount; i++) {
+            radarPainter.blipByte(dyn, scene.asteroidX[i], scene.asteroidY[i],
+                RadarPainter.asteroidSizeByte(scene.asteroidSize[i]));
+        }
     }
 
-    /** Demo HUD: the fake draw list (game-client layout) plus the pieces drawn directly. */
-    private void demoHud() {
+    /**
+     * Demo HUD: the fake draw list (game-client layout) plus the pieces drawn directly, at C's window
+     * scaling for the zoom. {@code arcs}: only the parts C queues with {@code Arc_add} (the HUD radar
+     * is not shown in the demo; the friend lock circle), else everything else.
+     */
+    private void demoHud(boolean arcs) {
         screen.set(window.framebufferHeight(), window.pixelRatio());
+        double zoom = cam.zoom();
         int viewW = screen.logicalWidth(window.framebufferWidth());
         int viewH = screen.logicalHeight();
         long loops = scene.loops;
         int hud = PaintConfig.HUD_COLOR;
         dyn.identity();
-        int scoreTop = (int) ViewerOverlay.MARGIN + (showRadar ? radarTex.height() : 0) + 4;
-        demoHud.build(viewW, viewH, scoreTop, loops, text, window.pixelRatio());
-        hudList.paint(dyn, screen, demoHud);
-        int hx = viewW / 2;
-        int hy = viewH / 2;
+        hudPainter.setScale(zoom);
+        // C's hud_pos: the centre of the unscaled view
+        int hx = (int) (viewW / zoom) / 2;
+        int hy = (int) (viewH / zoom) / 2;
         int target = Math.min(5, scene.shipCount - 1);
         double dx = map.wrapDx(scene.shipX[target] - scene.shipX[0]);
         double dy = map.wrapDy(scene.shipY[target] - scene.shipY[0]);
         int dist = (int) Math.sqrt(dx * dx + dy * dy);
         int dir = (int) Math.round(Math.atan2(dy, dx) * 128 / (2 * Math.PI)) & 127;
+        boolean friend = scene.shipColor[target] == Palette.BLUE;
+        if (arcs) {
+            if (friend) {
+                hudPainter.paintLockDisc(dyn, screen, hx, hy, dist, dir, HudPainter.mapDiag(map.width(), map.height()),
+                    true, (loops & 1) == 0, hud, PaintConfig.HUD_LOCK_COLOR);
+            }
+            return;
+        }
+        int scoreTop = (int) ViewerOverlay.MARGIN + (showRadar ? radarTex.height() : 0) + 4;
+        demoHud.build(viewW, viewH, scoreTop, loops, text, window.pixelRatio(), zoom);
+        hudList.setScale(zoom);
+        hudList.paint(dyn, screen, demoHud);
         hudPainter.paintLockText(dyn, screen, hx, hy, scene.shipName[target], false, 0, dist, hud);
         hudPainter.paintLockShip(dyn, screen, hx, hy, lockShipX, lockShipY, ShipShape.defaultShip().numPoints(), hud);
-        hudPainter.paintLockDisc(dyn, screen, hx, hy, dist, dir, HudPainter.mapDiag(map.width(), map.height()), false,
-            (loops & 1) == 0, hud, PaintConfig.HUD_LOCK_COLOR);
+        if (!friend) {
+            hudPainter.paintLockDisc(dyn, screen, hx, hy, dist, dir, HudPainter.mapDiag(map.width(), map.height()),
+                false, (loops & 1) == 0, hud, PaintConfig.HUD_LOCK_COLOR);
+        }
         hudPainter.paintItems(dyn, screen, hx, hy, itemCounts, 9, (loops & 4) != 0, hud);
-        hudPainter.paintTimeLeft(dyn, screen, hx, hy, 754 - (int) (loops / 14), hud);
+        hudPainter.paintTimeLeft(dyn, screen, hx, hy, 754 - (int) (loops / fps), hud);
         hudPainter.paintMods(dyn, screen, hx, hy, DEMO_MODS, hud);
         hudPainter.paintAutopilot(dyn, screen, hx, hy, hud);
         if (HudPainter.scoreObjectVisible((int) (loops % 100) + 1)) {

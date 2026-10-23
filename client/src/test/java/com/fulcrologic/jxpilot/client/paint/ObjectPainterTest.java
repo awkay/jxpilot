@@ -51,9 +51,9 @@ class ObjectPainterTest {
         @Test
         void shotIsAThreePixelWhiteOrBlueSquare() {
             VertexBatch b = batch();
-            OP.shot(b, 10, 20, Palette.WHITE);
-            OP.shot(b, 10, 20, Palette.BLUE);
-            OP.shot(b, 10, 20, Palette.RED);
+            OP.shot(b, 10, 20, Palette.WHITE, 1);
+            OP.shot(b, 10, 20, Palette.BLUE, 1);
+            OP.shot(b, 10, 20, Palette.RED, 1);
             assertAll(
                 () -> assertEquals(List.of("10,20/3", "10,20/3", "10,20/3"), points(b), "3-pixel squares centred on the shot"),
                 () -> assertEquals(WHITE, b.pointColor(0), "white"),
@@ -62,15 +62,31 @@ class ObjectPainterTest {
         }
 
         @Test
+        void shotSquaresScaleByWinscaleFromTheirWorldCorner() {
+            VertexBatch b = batch();
+            OP.shot(b, 10, 20, Palette.WHITE, 2);
+            OP.shot(b, 10, 20, Palette.WHITE, 0.25);
+            OP.shot(b, 10, 20, Palette.WHITE, 4);
+            assertEquals(List.of("10.25,19.75/6", "9,21/1", "10.375,19.625/12"), points(b),
+                "corner at world (x-1, y+1); side WINSCALE(3) = 6, 1 (at least one pixel), 12; centre the corner "
+                    + "pixel plus (side-1)/2 pixels: 2.5 px = 1.25, 0, 5.5 px = 1.375 world");
+        }
+
+        @Test
         void teamShotIsAnXOrAPlusWithOnePixelArms() {
             VertexBatch x = batch();
             OP.teamShot(x, 10, 20, Palette.BLUE, true, 1);
             VertexBatch plus = batch();
-            OP.teamShot(plus, 10, 20, Palette.RED, false, 2);
+            OP.teamShot(plus, 10, 20, Palette.RED, false, 0.5);
+            VertexBatch near = batch();
+            OP.teamShot(near, 10, 20, Palette.RED, false, 2.5);
             assertAll(
                 () -> assertEquals(List.of("9,21-11,19", "11,21-9,19"), segs(x), "diagonal: screen (x-1,y-1)-(x+1,y+1) and (x+1,y-1)-(x-1,y+1)"),
                 () -> assertEquals(BLUE, x.segColor(0), "in the given colour"),
-                () -> assertEquals(List.of("8,20-12,20", "10,22-10,18"), segs(plus), "plus; arms scale with px"),
+                () -> assertEquals(List.of("8,20-12,20", "10,22-10,18"), segs(plus),
+                    "plus; zoom 0.5: WINSCALE(1) is still 1 pixel = 2 world units"),
+                () -> assertEquals(List.of("8.8,20-11.2,20", "10,21.2-10,18.8"), segs(near),
+                    "zoom 2.5: WINSCALE(1) = 3 pixels = 1.2 world units (rounded, not 2.5 pixels)"),
                 () -> assertEquals(RED, plus.segColor(1), "red (nuclear blink)"));
         }
 
@@ -83,8 +99,10 @@ class ObjectPainterTest {
                 () -> assertEquals(List.of("100,100-85,100", "100,100-100,80"), segs(b),
                     "heading right: tail to the left; heading up: tail below"),
                 () -> assertEquals(4f, b.segWidth(0), "4 pixels wide"),
+                () -> assertEquals(VertexBatch.CAP_BUTT, b.segCap(0), "butt caps (C CapButt): ends exactly at its ends"),
                 () -> assertEquals(WHITE, b.segColor(1), "white"),
-                () -> assertEquals(1f, b.lineWidth(), "line width restored"));
+                () -> assertEquals(1f, b.lineWidth(), "line width restored"),
+                () -> assertEquals(VertexBatch.CAP_SQUARE, b.lineCap(), "square caps restored"));
         }
 
         @Test
@@ -98,6 +116,8 @@ class ObjectPainterTest {
                 () -> assertEquals(List.of("0,0-0,50", "0,0-(-50),0".replace("(", "").replace(")", ""), "0,0-50,0", "0,0-50,0"), segs(b),
                     "forward along the heading: up, left, right, right"),
                 () -> assertEquals(3f, b.segWidth(0), "3 pixels wide"),
+                () -> assertEquals(VertexBatch.CAP_BUTT, b.segCap(3), "butt caps"),
+                () -> assertEquals(VertexBatch.CAP_SQUARE, b.lineCap(), "square caps restored"),
                 () -> assertEquals(BLUE, b.segColor(0), "blue"),
                 () -> assertEquals(RED, b.segColor(1), "red (index 3)"),
                 () -> assertEquals(WHITE, b.segColor(2), "index 4 is past C's 4 colours: white"),
@@ -138,19 +158,29 @@ class ObjectPainterTest {
         }
 
         @Test
-        void mineOutlineScalesWithPx() {
-            VertexBatch b = batch();
-            OP.mineOutline(b, 0, 0, 2);
-            assertEquals("-16,2--14,2", segs(b).get(0), "two world units per pixel");
+        void mineOutlineMovesScaleByWinscaleFromTheWorldStart() {
+            VertexBatch half = batch();
+            OP.mineOutline(half, 0, 0, 0.5);
+            VertexBatch twice = batch();
+            OP.mineOutline(twice, 0, 0, 2);
+            assertAll(
+                () -> assertEquals("-8,1--6,1", segs(half).get(0), "zoom 0.5: from world (-8, 1); WINSCALE(1) = 1 px = 2 units"),
+                () -> assertEquals("-6,1--6,3", segs(half).get(1), "then 1 px up"),
+                () -> assertEquals("-6,3--2,3", segs(half).get(2), "WINSCALE(4) = 2 px = 4 units (not 8)"),
+                () -> assertEquals("-8,1--7,1", segs(twice).get(0), "zoom 2: WINSCALE(1) = 2 px = 1 unit"),
+                () -> assertEquals("-7,2--3,2", segs(twice).get(2), "WINSCALE(4) = 8 px = 4 units"));
         }
 
         @Test
         void mineNameIsCentredUnderTheMine() {
             VertexBatch b = batch();
-            OP.mineName(b, TEXT, 100, 200, "ab", 2);
+            OP.mineName(b, TEXT, 100, 200, "ab", 2, 1);
+            VertexBatch zoomed = batch();
+            OP.mineName(zoomed, TEXT, 100, 200, "ab", 2, 2);
             assertAll(
                 () -> assertEquals(94f, b.x(0), "pen 100 - 14/2 = 93, xoff 1"),
-                () -> assertEquals(188f, b.y(2), "baseline 200 - 8 - 10 - 2 = 180; glyph top 8 above"),
+                () -> assertEquals(188f, b.y(2), "baseline 200 - (4 + 1) * 2 - 10 = 180; glyph top 8 above"),
+                () -> assertEquals(180f, zoomed.y(2), "zoom 2: WINSCALE(4) = 8: baseline 200 - (8 + 1) * 2 - 10 = 172"),
                 () -> assertEquals(WHITE, b.color(0), "white"));
         }
     }
@@ -186,17 +216,39 @@ class ObjectPainterTest {
             OP.dashedLink(b, 0, 0, 30, 0, 0, 1);
             VertexBatch later = batch();
             OP.dashedLink(later, 0, 0, 30, 0, 4, 1);
+            VertexBatch half = batch();
+            OP.dashedLink(half, 0, 0, 30, 0, 1, 0.5);
             assertAll(
                 () -> assertEquals(List.of("0,0-8,0", "12,0-20,0", "24,0-30,0"), segs(b), "loops 0: offset 12 = 0"),
                 () -> assertEquals(List.of("4,0-12,0", "16,0-24,0", "28,0-30,0"), segs(later), "loops 4: offset 8 starts in the gap"),
+                () -> assertEquals(List.of("0,0-8,0", "12,0-20,0", "24,0-30,0"), segs(half),
+                    "zoom 0.5, loops 1: dashes WINSCALE 4/2 px, offset WINSCALE(11) = 6 px = one whole period"),
                 () -> assertEquals(WHITE, b.segColor(0), "white"));
         }
 
         @Test
-        void tractorBeamUsesThreeOnNineOff() {
+        void tractorBeamUsesThreeOnNineOffFromOffsetZero() {
             VertexBatch b = batch();
-            OP.tractorBeam(b, 0, 0, 30, 0, 0, 1);
-            assertEquals(List.of("0,0-3,0", "12,0-15,0", "24,0-27,0"), segs(b), "3 on, 9 off");
+            OP.tractorBeam(b, 0, 0, 30, 0, 1);
+            VertexBatch half = batch();
+            OP.tractorBeam(half, 0, 0, 30, 0, 0.5);
+            assertAll(
+                () -> assertEquals(List.of("0,0-3,0", "12,0-15,0", "24,0-27,0"), segs(b), "3 on, 9 off, from the start"),
+                () -> assertEquals(List.of("0,0-4,0", "14,0-18,0", "28,0-30,0"), segs(half),
+                    "zoom 0.5: WINSCALE(3) = 2 px = 4 units on, WINSCALE(9) = 5 px = 10 units off"));
+        }
+
+        @Test
+        void ballConnectingIsShipDashesFromOffsetZero() {
+            VertexBatch b = batch();
+            OP.connector(b, 0, 0, 30, 0, 1);
+            VertexBatch half = batch();
+            OP.connector(half, 0, 0, 30, 0, 0.5);
+            assertAll(
+                () -> assertEquals(List.of("0,0-8,0", "12,0-20,0", "24,0-30,0"), segs(half),
+                    "zoom 0.5: WINSCALE 4 px on, 2 off at 2 units per pixel: the same world pattern"),
+                () -> assertEquals(List.of("0,0-8,0", "12,0-20,0", "24,0-30,0"), segs(b), "8 on, 4 off, from the start"),
+                () -> assertEquals(WHITE, b.segColor(0), "white"));
         }
     }
 
@@ -319,20 +371,33 @@ class ObjectPainterTest {
     @Nested
     class Scaling {
         @Test
-        void pixelSizedShapesScaleWithPx() {
+        void itemsKeepTheirPixelSizeWhileMinesScaleByWinscale() {
             VertexBatch tri = batch();
-            OP.itemTriangle(tri, 0, 0, 2);
+            OP.itemTriangle(tri, 0, 0, 0.5);
             VertexBatch sym = batch();
-            OP.itemSymbol(sym, 0, 0, 0, 2);
+            OP.itemSymbol(sym, 0, 0, 0, 0.5);
             VertexBatch fill = batch();
-            OP.mineFill(fill, 0, 0, 2);
-            VertexBatch outline = batch();
-            OP.mineOutline(outline, 0, 0, 2);
+            OP.mineFill(fill, 0, 0, 0.5);
+            VertexBatch big = batch();
+            OP.mineFill(big, 0, 0, 2);
             assertAll(
-                () -> assertEquals("-24,24-0,-24", segs(tri).get(0), "triangle half-size 12 px = 24 units"),
-                () -> assertEquals("-16,-12 16,-12 16,20", tris(sym).get(0), "symbol: left x - 16, top y + 20, 32 units square"),
-                () -> assertEquals("-15,-5 15,-5 15,5", tris(fill).get(0), "mine block 15x5 px = 30x10 units"),
-                () -> assertEquals("-14,2--14,4", segs(outline).get(1), "second mine move: 1 px up = 2 units"));
+                () -> assertEquals("-24,24-0,-24", segs(tri).get(0), "triangle half-size 12 px at any zoom = 24 units at 0.5"),
+                () -> assertEquals("-16,-12 16,-12 16,20", tris(sym).get(0), "symbol: 16 px = 32 units square, left x - 8 px, top y + 10 px"),
+                () -> assertEquals("-8,-3 8,-3 8,3", tris(fill).get(0),
+                    "zoom 0.5: corner world (-7, 2) less half a pixel; WINSCALE(15) = 8 px = 16, WINSCALE(5) = 3 px = 6 units"),
+                () -> assertEquals("-7.25,-2.75 7.75,-2.75 7.75,2.25", tris(big).get(0),
+                    "zoom 2: from (-7.25, 2.25), WINSCALE 30 x 10 px = 15 x 5 units"));
+        }
+
+        @Test
+        void squareCentresAreTheCornerPixelPlusHalfTheScaledSideLessOne() {
+            assertAll(
+                () -> assertEquals(-0.5f, ObjectPainter.squareCentreX(0, -1, 2, 1), "spark at zoom 1: half a pixel left"),
+                () -> assertEquals(0.5f, ObjectPainter.squareCentreY(0, -1, 2, 1), "and half a pixel above"),
+                () -> assertEquals(0.5f, ObjectPainter.squareCentreX(0, -2, 6, 1), "light square at zoom 1: half a pixel right"),
+                () -> assertEquals(-0.5f, ObjectPainter.squareCentreY(0, -2, 6, 1), "and half a pixel below"),
+                () -> assertEquals(-0.25f, ObjectPainter.squareCentreX(0, -1, 2, 2), "spark at zoom 2: -1 + 1.5 px / 2"),
+                () -> assertEquals(0.25f, ObjectPainter.squareCentreY(0, -1, 2, 2), "y mirrored"));
         }
 
         @Test

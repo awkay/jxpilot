@@ -33,12 +33,20 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.lwjgl.stb.STBTruetype.*;
 
 /**
  * Bakes a TrueType font (STB) into the UI atlas and returns its {@link Font} metrics. The font
  * bitmap is single-channel; {@link UiAtlas} expands it to white RGBA with coverage in alpha.
+ * <p>
+ * Known deviation: C's {@code gameFont} is {@code -*-times-*-*-*--18-*-*-*-*-*-iso8859-1}, a
+ * proportional serif. This client bundles Fira Code (OFL) at 13 logical pixels by default; any
+ * TrueType file and size can be chosen instead ({@code --font}, {@code --font-size}). The font is
+ * baked at size times the display's pixel ratio and rebaked when that ratio changes, so text is
+ * crisp on HiDPI displays at the same logical size.
  */
 public final class FontBaker {
     private FontBaker() {}
@@ -47,12 +55,13 @@ public final class FontBaker {
     public static final String DEFAULT_FONT = "/fonts/FiraCode-Regular.ttf";
 
     /**
-     * Bake printable ASCII at {@code pixelHeight} into {@code alpha} ({@code w x h}, row-major),
-     * starting at row {@code rowOffset} of an atlas of {@code atlasW x atlasH}.
+     * Bake printable ASCII of the TrueType {@code file} (null: the bundled {@link #DEFAULT_FONT}) at
+     * {@code pixelHeight} into {@code alpha} ({@code w x h}, row-major), starting at row
+     * {@code rowOffset} of an atlas of {@code atlasW x atlasH}.
      */
-    public static Font bake(String resource, float pixelHeight, ByteBuffer alpha, int w, int h,
+    public static Font bake(Path file, float pixelHeight, ByteBuffer alpha, int w, int h,
                             int rowOffset, int atlasW, int atlasH) throws IOException {
-        ByteBuffer ttf = load(resource);
+        ByteBuffer ttf = file == null ? load(DEFAULT_FONT) : loadFile(file);
         try (MemoryStack stack = MemoryStack.stackPush();
              STBTTBakedChar.Buffer chars = STBTTBakedChar.malloc(Font.LAST - Font.FIRST + 1)) {
             int r = stbtt_BakeFontBitmap(ttf, pixelHeight, alpha, w, h, Font.FIRST, chars);
@@ -75,6 +84,13 @@ public final class FontBaker {
         } finally {
             MemoryUtil.memFree(ttf);
         }
+    }
+
+    private static ByteBuffer loadFile(Path file) throws IOException {
+        byte[] bytes = Files.readAllBytes(file);
+        ByteBuffer b = MemoryUtil.memAlloc(bytes.length);
+        b.put(bytes).flip();
+        return b;
     }
 
     private static ByteBuffer load(String resource) throws IOException {

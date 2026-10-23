@@ -35,8 +35,10 @@ import static org.lwjgl.opengl.GL33C.*;
  * <ul>
  *   <li>textured triangles from an ordinary vertex buffer;</li>
  *   <li>segments, expanded in the vertex shader into quads of their width in framebuffer pixels
- *   with square caps;</li>
- *   <li>points, expanded into axis-aligned squares.</li>
+ *   with square or butt caps (the sign bit of the stored width, see {@link VertexBatch#CAP_BUTT});</li>
+ *   <li>points, expanded into axis-aligned squares. For static meshes drawn with a
+ *   {@link #setPointScale point scale}, a point's side is a C size scaled by C's {@code WINSCALE}
+ *   rule and its centre moves by {@code WinScale.squareShift} (background dots at any zoom).</li>
  * </ul>
  * Segments and points use vertex pulling: their records sit unchanged in buffer textures
  * ({@code RG32UI}, 3 texels per 24-byte segment; {@code RGBA32UI}, 1 texel per 16-byte point) and a
@@ -99,22 +101,32 @@ public final class GlRenderer implements VertexBatch.Sink {
             float len = length(d);
             vec2 t = len > 1e-4 ? d / len : vec2(1.0, 0.0);
             vec2 n = vec2(-t.y, t.x);
-            float hw = 0.5 * uintBitsToFloat(cw.y) * u_ratio;
+            float hw = 0.5 * abs(uintBitsToFloat(cw.y)) * u_ratio;
+            float ext = (cw.y & 0x80000000u) != 0u ? 0.0 : hw;
             vec2 c = CORNER[gl_VertexID - 6 * i];
-            gl_Position = fromPixels(mix(p1 - t * hw, p2 + t * hw, c.x) + n * (hw * c.y));
+            gl_Position = fromPixels(mix(p1 - t * ext, p2 + t * ext, c.x) + n * (hw * c.y));
             v_col = unpack(cw.x);
         }
         """;
     private static final String PT_VS = """
         #version 330 core
         uniform usamplerBuffer u_items;
+        uniform float u_winscale;
         """ + COMMON + """
         void main() {
             int i = gl_VertexID / 6;
             uvec4 r = texelFetch(u_items, i);
-            float h = 0.5 * uintBitsToFloat(r.z) * u_ratio;
+            float s = uintBitsToFloat(r.z);
+            vec2 p = toPixels(uintBitsToFloat(r.xy));
+            if (u_winscale > 0.0) {
+                float w = max(1.0, floor(s * u_winscale + 0.5));
+                float shift = ((w - 1.0) - (s - 1.0) * u_winscale) * 0.5 * u_ratio;
+                p += vec2(shift, -shift);
+                s = w;
+            }
+            float h = 0.5 * s * u_ratio;
             vec2 c = CORNER[gl_VertexID - 6 * i];
-            gl_Position = fromPixels(toPixels(uintBitsToFloat(r.xy)) + vec2(mix(-h, h, c.x), h * c.y));
+            gl_Position = fromPixels(p + vec2(mix(-h, h, c.x), h * c.y));
             v_col = unpack(r.w);
         }
         """;
@@ -139,6 +151,7 @@ public final class GlRenderer implements VertexBatch.Sink {
         final int uXf;
         final int uView;
         final int uRatio;
+        final int uWinscale;
         int version = -1;
 
         Program(int id) {
@@ -146,6 +159,7 @@ public final class GlRenderer implements VertexBatch.Sink {
             uXf = glGetUniformLocation(id, "u_xf");
             uView = glGetUniformLocation(id, "u_view");
             uRatio = glGetUniformLocation(id, "u_ratio");
+            uWinscale = glGetUniformLocation(id, "u_winscale");
         }
     }
 
@@ -210,6 +224,7 @@ public final class GlRenderer implements VertexBatch.Sink {
     private float viewW = 1;
     private float viewH = 1;
     private float ratio = 1;
+    private float pointScale;
     private int version;
     private Program current;
     private int boundSegTex = -1;
@@ -308,6 +323,17 @@ public final class GlRenderer implements VertexBatch.Sink {
         version++;
     }
 
+    /**
+     * C {@code WINSCALE} factor for the point sizes of subsequent draws: the zoom for static meshes
+     * whose points hold C sizes (background dots), 0 for batches whose sizes are already final.
+     */
+    public void setPointScale(double scale) {
+        if ((float) scale != pointScale) {
+            pointScale = (float) scale;
+            version++;
+        }
+    }
+
     private void use(Program p) {
         if (current != p) {
             glUseProgram(p.id);
@@ -318,6 +344,9 @@ public final class GlRenderer implements VertexBatch.Sink {
             if (p.uView >= 0) {
                 glUniform2f(p.uView, viewW, viewH);
                 glUniform1f(p.uRatio, ratio);
+            }
+            if (p.uWinscale >= 0) {
+                glUniform1f(p.uWinscale, pointScale);
             }
             p.version = version;
         }

@@ -38,10 +38,11 @@ import java.util.SplittableRandom;
  * missiles, lasers, mines, balls on connectors, all 21 items, wreckage, asteroids, ECM bursts, paused
  * markers and beams. Deterministic for a seed; positions are pure functions of time, so
  * {@link #fill} allocates nothing. Ship 0 is "self" and the rest gather around it.
+ * <p>
+ * {@code loops} advances at the map's {@code framesPerSecond} (one server tick per C frame); an
+ * optional round delay and ECM damage count down from the start in those frames.
  */
 public final class DemoWorld {
-    /** Game frames per second used for {@code loops} and particle life (C default 14). */
-    static final double FPS = 14;
     /** Seconds a shot flies before it is fired again. */
     static final double SHOT_LIFE = 1.5;
     /** Particle life in game frames. */
@@ -74,14 +75,19 @@ public final class DemoWorld {
     private final float[] partSpeed;
     private final float[] partPhase;
 
+    private final int fps;
+    private int roundDelayFrames;
+    private int damagedFrames;
     private double time;
 
     /**
      * A demo of {@code ships} ships, {@code shots} shots and {@code particles} particles gathered
-     * around world point ({@code homeX}, {@code homeY}).
+     * around world point ({@code homeX}, {@code homeY}), with {@code loops} at {@code fps} frames per
+     * second (the map's {@code framesPerSecond}).
      */
-    public DemoWorld(double worldW, double worldH, boolean wrap, double homeX, double homeY, long seed,
+    public DemoWorld(int fps, double worldW, double worldH, boolean wrap, double homeX, double homeY, long seed,
                      int ships, int shots, int particles) {
+        this.fps = Math.max(1, fps);
         this.worldW = worldW;
         this.worldH = worldH;
         this.wrap = wrap;
@@ -141,7 +147,21 @@ public final class DemoWorld {
 
     /** Game frame counter at the current time. */
     public long loops() {
-        return (long) (time * FPS);
+        return (long) (time * fps);
+    }
+
+    /** Frames per second of {@link #loops}. */
+    public int fps() {
+        return fps;
+    }
+
+    /**
+     * Start with a round delay of {@code roundDelay} frames and {@code damaged} frames of ECM damage on
+     * the own ship, both counting down with {@link #loops} (0 = none).
+     */
+    public void setCountdowns(int roundDelay, int damaged) {
+        this.roundDelayFrames = roundDelay;
+        this.damagedFrames = damaged;
     }
 
     /** Ship i's x at the current time. */
@@ -181,9 +201,12 @@ public final class DemoWorld {
         s.clear();
         long loops = loops();
         s.loops = loops;
+        s.fps = fps;
         s.selfId = 0;
+        s.roundDelay = (int) Math.max(0, roundDelayFrames - loops);
+        s.damaged = (int) Math.max(0, damagedFrames - loops);
         for (int i = 0; i < ships; i++) {
-            int color = ShipPainter.shipColor(i % 3 == 1, i == 0, false);
+            int color = ShipPainter.shipColor(i % 3 == 1, i == 0, s.roundDelay > 0);
             s.addShip(shipX(i), shipY(i), shipHeading(i), shape, i, shipFlags(i), color, i == 5, names[i]);
         }
         fillShots(s);
@@ -207,12 +230,12 @@ public final class DemoWorld {
     }
 
     private void fillParticles(SceneData s) {
-        double frames = time * FPS;
+        double frames = time * fps;
         for (int i = 0; i < particles; i++) {
             int k = partShip[i];
             double age = (frames + partPhase[i]) % PARTICLE_LIFE;
-            double born = (frames - age) / FPS;
-            float d = (float) (partSpeed[i] * age / FPS);
+            double born = (frames - age) / fps;
+            float d = (float) (partSpeed[i] * age / fps);
             float x = xAt(k, born) + d * (float) Math.cos(partDir[i]);
             float y = yAt(k, born) + d * (float) Math.sin(partDir[i]);
             s.addParticle(wrapX(x), wrapY(y), Particles.colorIndex(PARTICLE_LIFE - (int) age, false));
@@ -252,10 +275,15 @@ public final class DemoWorld {
         s.addEcm(wrapX(homeX + 330), wrapY(homeY - 220), 10 + (loops % 20) * 4);
         s.addPaused(wrapX(homeX - 330), wrapY(homeY - 220), 0);
         s.addPaused(wrapX(homeX - 260), wrapY(homeY - 220), 10);
+        if (ships > 1) { // a paused marker riding on ship 1, among its sparks: shows the draw order
+            s.addPaused(shipX(1) + 30, shipY(1), 0);
+        }
         if (ships > 7) {
             s.addLink(sx, sy, shipX(6), shipY(6), SceneData.LINK_REFUEL);
             s.addLink(shipX(2), shipY(2), shipX(7), shipY(7), SceneData.LINK_TRANSPORTER);
             s.addLink(sx, sy, shipX(3), shipY(3), SceneData.LINK_TRACTOR);
+            s.addBall(wrapX(homeX + 200), wrapY(homeY - 300)); // a ball being connected to ship 4
+            s.addLink(wrapX(homeX + 200), wrapY(homeY - 300), shipX(4), shipY(4), SceneData.LINK_CONNECTOR);
         }
     }
 

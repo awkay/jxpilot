@@ -107,6 +107,42 @@ class RadarPainterTest {
     @Nested
     class Blips {
         @Test
+        void serverBlipsTruncateTheOwnShipsBlipRounds() {
+            VertexBatch blip = batch();
+            radar(false).blip(blip, 1285, 645, 3, false);
+            VertexBatch self = batch();
+            radar(false).selfBlip(self, 1285, 645);
+            assertAll(
+                () -> assertEquals(List.of("127,63 130,63 130,66", "127,63 130,66 127,66"), tris(blip),
+                    "(int)(1285 * 256 / 2560) = 128 (128.5 truncated), row (int)(645 * 128 / 1280) = 64"),
+                () -> assertEquals(List.of("128,64 131,64 131,67", "128,64 131,67 128,67"), tris(self),
+                    "own ship (C Handle_ship): (int)(128.5 + 0.5) = 129, (int)(64.5 + 0.5) = 65, a 3x3 square"),
+                () -> assertEquals(WHITE, self.color(0), "white"));
+        }
+
+        @Test
+        void aSquareStartingLeftOfTheRadarMovesOneRadarWidthRight() {
+            VertexBatch b = batch();
+            radar(false).blip(b, 0, 640, 3, false);
+            assertEquals(List.of("255,63 256,63 256,66", "255,63 256,66 255,66"), tris(b),
+                "corner x -1 is not positive: moved to 255 and clipped to its one column (C)");
+        }
+
+        @Test
+        void sizeBytesCarryTheFriendBitAndAsteroidsAreSizePlusOneWithIt() {
+            VertexBatch b = batch();
+            radar(false).blipByte(b, 1280, 640, RadarPainter.asteroidSizeByte(1));
+            radar(false).blipByte(b, 1280, 640, 2);
+            assertAll(
+                () -> assertEquals(0x82, RadarPainter.asteroidSizeByte(1), "C Frame_radar: (size + 1) | 0x80"),
+                () -> assertEquals(List.of("127,64 129,64 129,66", "127,64 129,66 127,66",
+                        "127,64 129,64 129,66", "127,64 129,66 127,66"), tris(b),
+                    "both 2-pixel squares from column 128 - 1, row 128 - 64 - 1 - 1"),
+                () -> assertEquals(GREEN, b.color(0), "the 0x80 bit draws in colour 4"),
+                () -> assertEquals(WHITE, b.color(6), "without it white"));
+        }
+
+        @Test
         void blipIsASizedSquareAroundTheRadarPixel() {
             VertexBatch b = batch();
             radar(false).blip(b, 1280, 640, 3, false);
@@ -126,9 +162,10 @@ class RadarPainterTest {
             VertexBatch h = batch();
             radar(false).blip(h, 2555, 640, 3, false);
             assertAll(
-                () -> assertEquals(List.of("255,63 256,63 256,66", "255,63 256,66 255,66",
-                    "0,63 2,63 2,66", "0,63 2,66 0,66"), tris(w),
-                    "column 255 clipped to the radar, the rest from column 0"),
+                () -> assertEquals(List.of("254,63 256,63 256,66", "254,63 256,66 254,66",
+                    "0,63 1,63 1,66", "0,63 1,66 0,66"), tris(w),
+                    "x truncates like the fast radar, (int)(2555 * 256 / 2560) = 255: the square from 254 is clipped"
+                        + " to 254..255 and its third column repeats at column 0"),
                 () -> assertEquals(2, h.vertexCount() / 3, "hard edges: just the clipped square"));
         }
 

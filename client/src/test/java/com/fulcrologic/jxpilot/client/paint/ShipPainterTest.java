@@ -90,24 +90,46 @@ class ShipPainterTest {
             SP.ship(phased, SHIP, 0, 0, 0, Palette.WHITE, ShipPainter.PHASING, 0, 1);
             VertexBatch later = batch();
             SP.ship(later, SHIP, 0, 0, 0, Palette.WHITE, ShipPainter.CLOAKED, 2, 1);
-            // loops 0: offset 12 = 0 mod 12; edge (15,0)->(-9,8) is 25.3 px: dashes at 0-8, 12-20, 24-25.3
+            // loops 0: offset 12 = 0 mod 12; edge (15,0)->(-9,8) is 24 px along its major axis (x), as X11
+            // dashes thin lines: dashes at 0-8, 12-20, 24
             assertAll(
-                () -> assertEquals("15,0-7.411,2.53", segs(cloaked).get(0), "first 8 px dash along the first edge"),
-                () -> assertEquals("3.616,3.795-(-3.974),6.325".replace("(", "").replace(")", ""), segs(cloaked).get(1),
+                () -> assertEquals("15,0-7,2.667", segs(cloaked).get(0), "first 8 px dash: 8 of the edge's 24 x-pixels"),
+                () -> assertEquals("3,4-(-5),6.667".replace("(", "").replace(")", ""), segs(cloaked).get(1),
                     "then 4 px gap and the next dash"),
                 () -> assertEquals(segs(cloaked), segs(phased), "phasing looks the same"),
-                () -> assertEquals("13.103,0.632-5.513,3.162", segs(later).get(0),
+                () -> assertEquals("13,0.667-5,3.333", segs(later).get(0),
                     "loops 2: offset 10 is 2 px into the gap, so the first dash starts 2 px along"),
                 () -> assertTrue(segs(cloaked).size() > 3, "more pieces than a solid hull"));
         }
 
         @Test
-        void dashOffsetCountsDownFromTwelve() {
+        void aZoomedDashedHullKeepsItsWorldPattern() {
+            VertexBatch one = batch();
+            SP.ship(one, SHIP, 0, 0, 0, Palette.WHITE, ShipPainter.CLOAKED, 0, 1);
+            VertexBatch two = batch();
+            SP.ship(two, SHIP, 0, 0, 0, Palette.WHITE, ShipPainter.CLOAKED, 0, 2);
+            assertEquals(segs(one), segs(two), "zoom 2: 16/8 px dashes at half a unit per pixel");
+        }
+
+        @Test
+        void dashOffsetCountsDownFromTwelveAndScalesByWinscale() {
             assertAll(
                 () -> assertEquals(12, ShipPainter.dashOffset(0), "loops 0"),
                 () -> assertEquals(11, ShipPainter.dashOffset(1), "loops 1"),
                 () -> assertEquals(1, ShipPainter.dashOffset(11), "loops 11"),
-                () -> assertEquals(12, ShipPainter.dashOffset(24), "loops 24 wraps"));
+                () -> assertEquals(12, ShipPainter.dashOffset(24), "loops 24 wraps"),
+                () -> assertEquals(22, ShipPainter.dashOffset(1, 2), "zoom 2: WINSCALE(11) = 22"),
+                () -> assertEquals(1, ShipPainter.dashOffset(11, 0.25), "zoom 0.25: WINSCALE(1) stays 1"),
+                () -> assertEquals(3, ShipPainter.dashOffset(0, 0.25), "zoom 0.25: WINSCALE(12) = 3"));
+        }
+
+        @Test
+        void lockedFillIsShownOnlyForALockedSolidHull() {
+            assertAll(
+                () -> assertTrue(ShipPainter.lockedFillShown(true, ShipPainter.SHIELD), "locked, shielded: filled"),
+                () -> assertFalse(ShipPainter.lockedFillShown(false, 0), "not locked: no fill"),
+                () -> assertFalse(ShipPainter.lockedFillShown(true, ShipPainter.CLOAKED), "cloaked: no fill (C fills only the solid hull)"),
+                () -> assertFalse(ShipPainter.lockedFillShown(true, ShipPainter.PHASING), "phasing: no fill"));
         }
 
         @Test
@@ -197,12 +219,16 @@ class ShipPainterTest {
         }
 
         @Test
-        void dashLengthsScaleWithPx() {
-            VertexBatch b = batch();
-            SP.shields(b, SHIP, 0, 0, Palette.WHITE, ShipPainter.SHIELD, 0, 0.5f);
-            VertexBatch c = batch();
-            SP.shields(c, SHIP, 0, 0, Palette.WHITE, ShipPainter.SHIELD, 0, 1);
-            assertTrue(b.segmentCount() > c.segmentCount(), "zoomed in (px 0.5) the same circle has more dashes");
+        void dashLengthsScaleWithTheZoomSoTheWorldPatternIsKept() {
+            VertexBatch two = batch();
+            SP.shields(two, SHIP, 0, 0, Palette.WHITE, ShipPainter.SHIELD, 0, 2);
+            VertexBatch one = batch();
+            SP.shields(one, SHIP, 0, 0, Palette.WHITE, ShipPainter.SHIELD, 0, 1);
+            VertexBatch odd = batch();
+            SP.shields(odd, SHIP, 0, 0, Palette.WHITE, ShipPainter.SHIELD, 0, 0.3);
+            assertAll(
+                () -> assertEquals(segs(one), segs(two), "zoom 2: WINSCALE doubles dashes and offset, same world pieces"),
+                () -> assertNotEquals(segs(one), segs(odd), "zoom 0.3: rounded WINSCALE lengths (2, 1 px) change the pattern"));
         }
     }
 
@@ -213,7 +239,8 @@ class ShipPainterTest {
             VertexBatch b = batch();
             SP.markingLights(b, SHIP, 100, 100, 0, 3, 13, 1);
             assertAll(
-                () -> assertEquals(List.of("92,107/6"), points(b), "left light (-9,8): square centred 1 px right and down"),
+                () -> assertEquals(List.of("91.5,107.5/6"), points(b),
+                    "left light (-9,8): the 6 px square from (-2,-2) is centred half a pixel right and down"),
                 () -> assertEquals(List.of("83,108-99,108", "91,100-91,116"), segs(b), "cross of 8 px arms"),
                 () -> assertEquals(RED, b.pointColor(0), "red"),
                 () -> assertEquals(List.of(VertexBatch.POINTS, VertexBatch.LINES), modes(b), "points then lines"));
@@ -222,12 +249,17 @@ class ShipPainterTest {
         @Test
         void rightLightsFlashInColourFourTwoFramesLater() {
             VertexBatch b = batch();
-            SP.markingLights(b, SHIP, 0, 0, Math.PI, 0, 18, 2);
+            SP.markingLights(b, SHIP, 0, 0, Math.PI, 0, 18, 0.5);
+            VertexBatch big = batch();
+            SP.markingLights(big, SHIP, 0, 0, Math.PI, 0, 18, 2);
             assertAll(
-                () -> assertEquals(List.of("11,6/6"), points(b),
-                    "right light (-9,-8) turned 180 degrees is (9,8); +2 world px right, -2 down at px 2"),
+                () -> assertEquals(List.of("9,8/3"), points(b),
+                    "right light (-9,-8) turned 180 degrees is (9,8); zoom 0.5: corner world (7, 10), WINSCALE(6) = 3 px, "
+                        + "centre 1 px = 2 units in"),
                 () -> assertEquals(GREEN, b.pointColor(0), "colour 4"),
-                () -> assertEquals("-7,8-25,8", segs(b).get(0), "arms of 8 px are 16 world units at px 2"));
+                () -> assertEquals("1,8-17,8", segs(b).get(0), "arms WINSCALE(8) = 4 px = 8 world units at zoom 0.5"),
+                () -> assertEquals(List.of("9.75,7.25/12"), points(big), "zoom 2: 12 px square from (7, 10), centre 5.5 px in"),
+                () -> assertEquals("1,8-17,8", segs(big).get(0), "zoom 2: WINSCALE(8) = 16 px = 8 units"));
         }
 
         @Test
@@ -247,10 +279,16 @@ class ShipPainterTest {
         @Test
         void nameIsCentredSixteenPixelsAndAnAscentBelowTheShip() {
             VertexBatch b = batch();
-            SP.name(b, text, 200, 300, "abc", 2);
+            SP.name(b, text, 200, 300, "abc", 2, 1);
+            VertexBatch zoomed = batch();
+            SP.name(zoomed, text, 200, 300, "abc", 2, 2);
+            VertexBatch flat = batch();
+            SP.name(flat, text, 200, 300, "abc", 1, 1);
             assertAll(
-                () -> assertEquals(191f, b.x(0), "pen 200 - 21/2 (int 10) = 190, glyph xoff 1"),
+                () -> assertEquals(189f, b.x(0), "pen 200 - (21 + 2 px * 2) / 2 (int 12) = 188 (name width is text + 2), glyph xoff 1"),
                 () -> assertEquals(266f, b.y(2), "baseline 300 - 16 * 2 - 10 = 258; the glyph top is 8 above"),
+                () -> assertEquals(234f, zoomed.y(2), "zoom 2: WINSCALE(16) = 32: baseline 300 - 64 - 10 = 226"),
+                () -> assertEquals(190f, flat.x(0), "ratio 1: pen 200 - (21 + 2) / 2 = 189, one pixel left of the text's centre"),
                 () -> assertEquals(WHITE, b.color(0), "white"));
         }
 

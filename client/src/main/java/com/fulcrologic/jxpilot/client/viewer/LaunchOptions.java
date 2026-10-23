@@ -37,6 +37,11 @@ package com.fulcrologic.jxpilot.client.viewer;
  *   --filled               filled walls instead of XPilot's default outlines
  *   --at X,Y               initial camera centre in world pixels (default: first base, else map centre)
  *   --no-vsync             render as fast as possible (for measuring frame rate)
+ *   --alt-scale-factor F   C altScaleFactor: the zoom preset (1/F) the S key swaps to (default 2.0)
+ *   --font FILE            TrueType font for all text (default: the bundled Fira Code)
+ *   --font-size PX         font size in logical pixels (default 13), baked at the display's pixel ratio
+ *   --demo-round-delay N   demo: a round delay of N frames counting down from the start
+ *   --demo-damaged N       demo: N frames of ECM damage on the own ship from the start
  * </pre>
  *
  * @param viewMap    map file, or null
@@ -44,7 +49,11 @@ package com.fulcrologic.jxpilot.client.viewer;
  */
 public record LaunchOptions(String viewMap, String screenshot, int frames, int width, int height,
                             double zoom, boolean filled, boolean hasCentre, double centreX, double centreY,
-                            boolean vsync, int warmup, boolean gpuTimer, boolean demo) {
+                            boolean vsync, int warmup, boolean gpuTimer, boolean demo, double altScaleFactor,
+                            String fontFile, double fontSize, int demoRoundDelay, int demoDamaged) {
+
+    /** Default font size in logical pixels. */
+    public static final double DEFAULT_FONT_SIZE = 13;
 
     /**
      * First measured frame: {@code --warmup} if given, else half the frames.
@@ -61,6 +70,8 @@ public record LaunchOptions(String viewMap, String screenshot, int frames, int w
      * BEHAVIOR: unknown flags, missing values and malformed numbers throw IllegalArgumentException
      * with a message naming the flag; frames, sizes and zoom must be positive.
      * BEHAVIOR: {@code --warmup} must be at least 0 and below {@code --frames}; -1 (absent) means default.
+     * BEHAVIOR: {@code --alt-scale-factor} and {@code --font-size} must be positive; the demo countdowns
+     * not negative.
      */
     public static LaunchOptions parse(String[] args) {
         String viewMap = null;
@@ -77,6 +88,11 @@ public record LaunchOptions(String viewMap, String screenshot, int frames, int w
         int warmup = -1;
         boolean gpuTimer = false;
         boolean demo = false;
+        double altScaleFactor = 2.0;
+        String fontFile = null;
+        double fontSize = DEFAULT_FONT_SIZE;
+        int demoRoundDelay = 0;
+        int demoDamaged = 0;
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
             switch (a) {
@@ -92,16 +108,16 @@ public record LaunchOptions(String viewMap, String screenshot, int frames, int w
                     width = positiveInt(v.substring(0, x), a);
                     height = positiveInt(v.substring(x + 1), a);
                 }
-                case "--zoom" -> {
-                    zoom = number(value(args, ++i, a), a);
-                    if (!(zoom > 0)) {
-                        throw new IllegalArgumentException(a + " must be positive: " + zoom);
-                    }
-                }
+                case "--zoom" -> zoom = positive(value(args, ++i, a), a);
                 case "--filled" -> filled = true;
                 case "--no-vsync" -> vsync = false;
                 case "--gpu-timer" -> gpuTimer = true;
                 case "--demo" -> demo = true;
+                case "--alt-scale-factor" -> altScaleFactor = positive(value(args, ++i, a), a);
+                case "--font" -> fontFile = value(args, ++i, a);
+                case "--font-size" -> fontSize = positive(value(args, ++i, a), a);
+                case "--demo-round-delay" -> demoRoundDelay = positiveInt(value(args, ++i, a), a, 0);
+                case "--demo-damaged" -> demoDamaged = positiveInt(value(args, ++i, a), a, 0);
                 case "--warmup" -> warmup = positiveInt(value(args, ++i, a), a, 0);
                 case "--at" -> {
                     String v = value(args, ++i, a);
@@ -119,7 +135,8 @@ public record LaunchOptions(String viewMap, String screenshot, int frames, int w
         if (warmup >= frames) {
             throw new IllegalArgumentException("--warmup must be less than --frames: " + warmup + " >= " + frames);
         }
-        return new LaunchOptions(viewMap, screenshot, frames, width, height, zoom, filled, hasCentre, cx, cy, vsync, warmup, gpuTimer, demo);
+        return new LaunchOptions(viewMap, screenshot, frames, width, height, zoom, filled, hasCentre, cx, cy, vsync,
+            warmup, gpuTimer, demo, altScaleFactor, fontFile, fontSize, demoRoundDelay, demoDamaged);
     }
 
     private static String value(String[] args, int i, String flag) {
@@ -144,6 +161,14 @@ public record LaunchOptions(String viewMap, String screenshot, int frames, int w
             throw new IllegalArgumentException(flag + (min > 0 ? " must be positive: " : " must not be negative: ") + n);
         }
         return n;
+    }
+
+    private static double positive(String v, String flag) {
+        double d = number(v, flag);
+        if (!(d > 0)) {
+            throw new IllegalArgumentException(flag + " must be positive: " + d);
+        }
+        return d;
     }
 
     private static double number(String v, String flag) {

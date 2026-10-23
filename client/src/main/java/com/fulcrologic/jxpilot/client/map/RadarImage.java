@@ -27,6 +27,8 @@ import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
 
+import java.util.function.IntPredicate;
+
 /**
  * The static radar picture of the map (C {@code Paint_world_radar} in {@code paintradar.c}),
  * rendered once into an RGBA pixel array for a texture.
@@ -40,10 +42,12 @@ import com.fulcrologic.jxpilot.common.map.WorldMap;
  * <p>
  * Pixels are packed like {@link Palette} and stored row-major with row 0 at the TOP.
  * <p>
- * Deferred to the game phase: C hides destroyed targets on the radar ({@code Paint_world_radar}
- * checks {@code Target_alive}). The hook is {@link #colorIndex}: give it the target's liveness from
- * {@link MapState#targetAlive} and rebuild the picture (once, not per frame) when a target dies or
- * respawns. The map viewer has no target state, so every target is shown.
+ * After the walk, C repaints every live target's block in {@code targetRadarColor}
+ * ({@code Paint_world_radar} calling {@code Paint_radar_block}), which restores target pixels the
+ * walk's run logic painted over; {@link #build(WorldMap, Palette, boolean, IntPredicate)} takes the
+ * targets' liveness ({@link MapState#targetAlive}) for that. A game rebuilds the picture (once, not
+ * per frame) when a target dies or respawns. The map viewer has no target state, so every target is
+ * alive.
  */
 public final class RadarImage {
     private RadarImage() {}
@@ -75,8 +79,17 @@ public final class RadarImage {
         return -1;
     }
 
-    /** Build the radar pixels ({@code WIDTH * height(m)} entries). */
+    /** Build the radar pixels ({@code WIDTH * height(m)} entries) with every target alive. */
     public static int[] build(WorldMap m, Palette p, boolean showDecor) {
+        return build(m, p, showDecor, i -> true);
+    }
+
+    /**
+     * Build the radar pixels, repainting the targets whose index passes {@code targetAlive}.
+     * <p>
+     * BEHAVIOR: the walk as {@link Walker}, then each live target's block painted by {@link #block}.
+     */
+    public static int[] build(WorldMap m, Palette p, boolean showDecor, IntPredicate targetAlive) {
         int h = height(m);
         int[] px = new int[WIDTH * h];
         java.util.Arrays.fill(px, p.color(Palette.BLACK));
@@ -102,7 +115,53 @@ public final class RadarImage {
                 }
             }
         }
+        int target = p.color(Palette.TARGET_RADAR_COLOR);
+        for (int i = 0; i < m.targets().size(); i++) {
+            if (targetAlive.test(i)) {
+                block(px, h, m.width(), m.height(), m.targets().get(i).bx(), m.targets().get(i).by(), target);
+            }
+        }
         return px;
+    }
+
+    /**
+     * C {@code Paint_radar_block}: paint the radar area of block (xi, yi) (y up) in {@code rgba}.
+     * <p>
+     * BEHAVIOR: a map at least {@link #WIDTH} blocks wide sets the single pixel
+     * {@code ((int)(xi * xs + 0.5), height - 1 - (int)(yi * ys + 0.5))} with {@code xs = 255 / (w - 1)},
+     * {@code ys = (height - 1) / (h - 1)}.
+     * BEHAVIOR: a narrower map fills the pixels that sample the block: x from
+     * {@code (int)((xi - 0.5) / xs) + 1} to {@code (int)((xi + 0.5) / xs)}, y likewise (flipped), with
+     * {@code xs = (w - 1) / 255}, {@code ys = (h - 1) / (height - 1)}; pixels outside the radar are skipped.
+     */
+    static void block(int[] px, int h, int mapW, int mapH, int xi, int yi, int rgba) {
+        if (mapW >= WIDTH) {
+            float xs = (float) (WIDTH - 1) / (mapW - 1);
+            float ys = (float) (h - 1) / Math.max(1, mapH - 1);
+            set(px, h, (int) (xi * xs + 0.5f), h - 1 - (int) (yi * ys + 0.5f), rgba);
+        } else {
+            float xs = (float) (mapW - 1) / (WIDTH - 1);
+            float ys = (float) Math.max(1, mapH - 1) / Math.max(1, h - 1);
+            int xp = (int) ((xi - 0.5) / xs) + 1;
+            int xw = (int) ((xi + 0.5) / xs);
+            int yw = (int) ((yi - 0.5) / ys) + 1;
+            int yp = (int) ((yi + 0.5) / ys);
+            xw -= xp;
+            yw = yp - yw;
+            yp = h - 1 - yp;
+            for (int y = yp; y <= yp + yw; y++) {
+                for (int x = xp; x <= xp + xw; x++) {
+                    set(px, h, x, y, rgba);
+                }
+            }
+        }
+    }
+
+    /** Set radar pixel (x, row y from the top) if it is on the radar. */
+    private static void set(int[] px, int h, int x, int y, int rgba) {
+        if (x >= 0 && x < WIDTH && y >= 0 && y < h) {
+            px[y * WIDTH + x] = rgba;
+        }
     }
 
     /**
