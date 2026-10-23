@@ -73,7 +73,9 @@ class AllocationTest {
                 }
             }
         };
-        for (int i = 0; i < 4000; i++) {
+        // Warm-up: methods called once per tick reach their final (C2) compile after about 5000 calls, and a
+        // compile request shows up as a few hundred thread-allocated bytes; measure after that.
+        for (int i = 0; i < 8000; i++) {
             step.run();
         }
         long objectsBefore = w.objects.count();
@@ -92,5 +94,42 @@ class AllocationTest {
             () -> assertTrue(eventsAfter > eventsBefore, "the measured ticks produced reliable events"),
             () -> assertTrue(burstsAfter > burstsBefore, "the measured ticks produced debris bursts"),
             () -> assertTrue(partsSeen[0] > 0, "snapshots were written"));
+    }
+
+    @Test
+    @DisplayName("16 robots flying, fighting, dying, leaving and joining allocate zero bytes per tick")
+    void robotTickIsAllocationFree() {
+        Simulation s = new Simulation(new World(TestWorlds.options(
+            "gravity: -0.14\nmaxRobots: 16\nminRobots: 16\nrobotsTalk: yes\nrobotLeaveLife: 3\n", Arena.rows()), 5));
+        World w = s.world;
+        s.robots.setEnabled(true);
+        long[] in = new long[w.players.length];
+        for (int i = 0; i < 20000; i++) {
+            s.tick(in);
+        }
+        long robotsBefore = s.robots.numRobots();
+        long eventsBefore = w.events.seq();
+        int joinsBefore = joins(s);
+        long start = MX.getCurrentThreadAllocatedBytes();
+        for (int i = 0; i < 4000; i++) {
+            s.tick(in);
+        }
+        long allocated = MX.getCurrentThreadAllocatedBytes() - start;
+        long eventsAfter = w.events.seq();
+        int joined = joins(s) - joinsBefore;
+        assertAll(
+            () -> assertEquals(0, allocated, "4000 ticks with 16 robots allocate no bytes"),
+            () -> assertTrue(joined > 0, "robots left and new ones joined in the measured ticks (" + joined + ")"),
+            () -> assertEquals(16, robotsBefore, "16 robots were playing"),
+            () -> assertTrue(eventsAfter > eventsBefore + 100, "the robots were busy (" + (eventsAfter - eventsBefore)
+                + " events)"));
+    }
+
+    private static int joins(Simulation s) {
+        int n = 0;
+        for (int i = 0; i < s.robots.roster().size(); i++) {
+            n += s.robots.roster().used(i);
+        }
+        return n;
     }
 }

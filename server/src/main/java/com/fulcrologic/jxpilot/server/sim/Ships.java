@@ -84,11 +84,22 @@ public final class Ships {
      * score out among the members (netserver.c Handle_login: TEAM_SCORE(team, 0)).
      */
     public Player join(CharSequence name, int team) {
+        return join(name, team, false);
+    }
+
+    /**
+     * {@link #join(CharSequence, int)} for a human or a robot.
+     * <p>
+     * BEHAVIOR: a robot may take the reserved robot team (C Robot_create picks its own team); JOIN carries
+     * {@code Msg.PlayerJoin.FLAG_ROBOT} in b for robots.
+     */
+    public Player join(CharSequence name, int team, boolean robot) {
         Player pl = w.addPlayer();
         if (pl == null) {
             return null;
         }
         initPlayer(pl, name);
+        pl.robot = robot;
         if (w.params.teamPlay) {
             pl.team = chooseTeam(team, pl);
             if (pl.team == Const.TEAM_NOT_SET) {
@@ -109,7 +120,7 @@ public final class Ships {
                 sim.scoring.teamScore(pl.team, 0);
             }
         }
-        w.events.add(Events.JOIN, pl.id, 0, 0, 0f);
+        w.events.add(Events.JOIN, pl.id, robot ? Msg.PlayerJoin.FLAG_ROBOT : 0, 0, 0f);
         w.events.add(Events.BASE_OWNER, pl.homeBase, pl.id, 0, 0f);
         goHome(pl);
         pl.scoreDirty = true;
@@ -159,7 +170,7 @@ public final class Ships {
      */
     private int chooseTeam(int team, Player joining) {
         Params p = w.params;
-        if (team >= 0 && team < Const.MAX_TEAMS && !(p.reserveRobotTeam && team == p.robotTeam)
+        if (team >= 0 && team < Const.MAX_TEAMS && (joining.robot || !(p.reserveRobotTeam && team == p.robotTeam))
             && w.map.teamBaseCount(team) > 0 && w.teamMembers[team] < w.map.teamBaseCount(team)) {
             return team;
         }

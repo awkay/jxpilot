@@ -42,6 +42,8 @@ public final class Player {
     /** Wire id (stable while the player is in the game). */
     public int id;
     public boolean inUse;
+    /** A computer-controlled player (C {@code IS_ROBOT_PTR}); set at join, shown as 'R' on scoreboards. */
+    public boolean robot;
     public final StringBuilder name = new StringBuilder(Const.MAX_CHARS);
     public int team = Const.TEAM_NOT_SET;
     public int pseudoTeam;
