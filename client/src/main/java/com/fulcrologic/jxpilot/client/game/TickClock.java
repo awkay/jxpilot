@@ -32,7 +32,13 @@ package com.fulcrologic.jxpilot.client.game;
  * A sample more than {@link #RESYNC_SECONDS} ahead of the estimate (we fell behind: reconnect, clock jump)
  * replaces it at once. A sample that far behind is usually a late burst, so it is ignored, unless
  * {@link #BACKWARD_RESYNC_SAMPLES} such samples arrive in a row (the server really went back: pause,
- * restart). Pure, allocation free.
+ * restart).
+ * <p>
+ * The estimate the renderer reads ({@link #serverTick}) never jumps on a smoothed sample: it slews toward
+ * the smoothed offset at most {@link #SLEW} ticks per tick of local time, so a correction changes the
+ * apparent speed of everything by a few percent for a moment instead of displacing it in one frame
+ * (at 12 Hz a 0.014-tick jump moves a fast ship 1-2 px at once). The first sample and resyncs still jump.
+ * Pure, allocation free.
  */
 public final class TickClock {
     /** Weight of a new sample in the smoothed offset. */
@@ -44,11 +50,17 @@ public final class TickClock {
     public static final double RESYNC_SECONDS = 0.5;
     /** Consecutive outliers behind the estimate needed before it moves back. */
     public static final int BACKWARD_RESYNC_SAMPLES = 4;
+    /** Largest change of the shown offset per tick of local time (a 3% rate change). */
+    public static final double SLEW = 0.03;
 
     private double simHz = 60;
     private boolean synced;
     private double offset;
     private int behind;
+    /** Offset {@link #serverTick} uses: slews toward {@link #offset}. */
+    private double shown;
+    private boolean jump = true;
+    private double lastLocal;
 
     /** Set the simulation rate (from WELCOME) and forget the estimate. */
     public void reset(double simHz) {
@@ -56,6 +68,8 @@ public final class TickClock {
         synced = false;
         offset = 0;
         behind = 0;
+        shown = 0;
+        jump = true;
     }
 
     public boolean synced() {
@@ -94,10 +108,12 @@ public final class TickClock {
             offset = s;
             synced = true;
             behind = 0;
+            jump = true;
         } else if (d < -resync) {
             if (++behind >= BACKWARD_RESYNC_SAMPLES) {
                 offset = s;
                 behind = 0;
+                jump = true;
             }
         } else {
             offset += d * SMOOTHING;
@@ -105,8 +121,31 @@ public final class TickClock {
         }
     }
 
-    /** BEHAVIOR: estimated server tick (fractional) at {@code nowNanos}; 0 before the first sample. */
+    /**
+     * Estimated server tick (fractional) at {@code nowNanos}; call it once per rendered frame.
+     * <p>
+     * BEHAVIOR: 0 before the first sample. After the first sample or a resync the estimate is exactly
+     * {@code local ticks + offset}; otherwise the offset it uses moves toward the smoothed offset by at most
+     * {@link #SLEW} times the local ticks elapsed since the previous call (none when time went backwards).
+     */
     public double serverTick(long nowNanos) {
-        return synced ? localTicks(nowNanos) + offset : 0;
+        if (!synced) {
+            return 0;
+        }
+        double local = localTicks(nowNanos);
+        if (jump) {
+            shown = offset;
+            jump = false;
+        } else {
+            double max = Math.max(0, local - lastLocal) * SLEW;
+            shown += Math.max(-max, Math.min(max, offset - shown));
+        }
+        lastLocal = local;
+        return local + shown;
+    }
+
+    /** The smoothed offset samples converge to (ticks; {@link #serverTick} slews toward it). */
+    public double offset() {
+        return offset;
     }
 }

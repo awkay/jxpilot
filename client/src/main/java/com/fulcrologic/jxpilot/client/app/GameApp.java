@@ -77,6 +77,18 @@ public final class GameApp {
         /** @param frame 0-based frame number */
         void beforeFrame(int frame, ClientFrame f, long nowNanos);
 
+        /** Called after the frame's step and drawing, before the buffer swap. */
+        default void afterFrame(int frame, ClientFrame f, long nowNanos) { }
+
+        /**
+         * A framebuffer rectangle {x, y, w, h} (pixels, origin bottom-left) to read back without encoding
+         * after this frame is drawn (for frame-by-frame captures that must not stall the loop), or null.
+         */
+        default int[] grabAfter(int frame, int fbWidth, int fbHeight) { return null; }
+
+        /** The pixels of a {@link #grabAfter} rectangle (RGBA rows bottom-up, valid only during the call). */
+        default void grabbed(int frame, java.nio.ByteBuffer rgba, int w, int h) { }
+
         /** A PNG path to save after this frame is drawn, or null. */
         default Path screenshotAfter(int frame) { return null; }
 
@@ -201,6 +213,13 @@ public final class GameApp {
             window.refreshSize();
             rebakeFontIfNeeded();
             renderFrame(now);
+            if (script != null) {
+                script.afterFrame(n, frame, now);
+                int[] g = script.grabAfter(n, window.framebufferWidth(), window.framebufferHeight());
+                if (g != null) {
+                    grab(n, g);
+                }
+            }
             Path shot = script != null ? script.screenshotAfter(n) : null;
             boolean last = opts.screenshot() != null && n + 1 >= opts.frames();
             if (last && shot == null) {
@@ -218,6 +237,18 @@ public final class GameApp {
             if (last || script != null && script.done(n - 1)) {
                 break;
             }
+        }
+    }
+
+    private void grab(int n, int[] r) {
+        ByteBuffer px = MemoryUtil.memAlloc(r[2] * r[3] * 4);
+        try {
+            glPixelStorei(GL_PACK_ALIGNMENT, 1);
+            glReadBuffer(GL_BACK);
+            glReadPixels(r[0], r[1], r[2], r[3], GL_RGBA, GL_UNSIGNED_BYTE, px);
+            script.grabbed(n, px, r[2], r[3]);
+        } finally {
+            MemoryUtil.memFree(px);
         }
     }
 

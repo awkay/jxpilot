@@ -201,7 +201,7 @@ class ClientWorldTest {
         }
 
         @Test
-        @DisplayName("the own ship is extrapolated from SELF to the present, not while dead")
+        @DisplayName("the own ship is drawn at the render tick: the later SELF as is, the latest extrapolated (capped)")
         void self() {
             WorldFixture f = new WorldFixture(true);
             f.begin(100).self(7, 0, 100, 50, 4, 8, 1.5f).ingestAtTick(100);
@@ -210,22 +210,70 @@ class ClientWorldTest {
             float x = w.selfX();
             float y = w.selfY();
             w.update(at(130));
-            float xCap = w.selfX();
-            f.begin(102).self(7, ShipFlags.DEAD, 100, 50, 4, 8, 1.5f).ingestAtTick(102);
-            w.update(at(104));
             assertAll(
                 () -> assertTrue(w.hasSelf(), "own ship present"),
                 () -> assertEquals(7, w.selfId(), "own id"),
-                () -> assertEquals(102.0, x, CLOCK_EPS, "2 ticks ahead (0.5 frames) at 4 px/frame, ignoring the render delay"),
-                () -> assertEquals(54.0, y, CLOCK_EPS, "8 px/frame"),
-                () -> assertEquals(104.0, xCap, CLOCK_EPS, "capped at 4 ticks"),
-                () -> assertEquals(100.0, w.selfX(), 1e-6, "a dead ship stays put"),
+                () -> assertEquals(100.0, x, CLOCK_EPS, "render tick 98.8 is before tick 100: drawn at tick 100"),
+                () -> assertEquals(50.0, y, CLOCK_EPS, "y as sent"),
+                () -> assertEquals(104.0, w.selfX(), CLOCK_EPS, "render tick 126.8: extrapolated, capped at 4 ticks"),
+                () -> assertEquals(58.0, w.selfY(), CLOCK_EPS, "8 px/frame for 1 frame"),
                 () -> assertEquals(1.5f, w.selfHeading(), "full-precision heading"),
                 () -> assertEquals(700f, w.selfFuel(), "fuel"),
                 () -> assertEquals(1000f, w.selfFuelMax(), "fuel max"),
                 () -> assertEquals(2, w.selfNumTanks(), "tanks"),
                 () -> assertEquals(1, w.selfCurrentTank(), "current tank"),
                 () -> assertEquals(Protocol.NO_ID, w.selfLockId(), "no lock"));
+        }
+
+        @Test
+        @DisplayName("the own ship is interpolated between the SELF records around the render tick")
+        void selfInterpolated() {
+            WorldFixture f = new WorldFixture(true);
+            f.begin(100).self(7, 0, 100, 50, 4, 8, 1.5f).ingestAtTick(100);
+            f.begin(102).self(7, ShipFlags.SHIELD, 104, 54, 6, 8, 1.7f).ingestAtTick(102);
+            ClientWorld w = f.world;
+            w.update(at(104.2));
+            float x = w.selfX();
+            float y = w.selfY();
+            float h = w.selfHeading();
+            float vx = w.selfVx();
+            w.update(at(104.8));
+            assertAll(
+                () -> assertEquals(102.0, x, CLOCK_EPS, "halfway between 100 and 104"),
+                () -> assertEquals(52.0, y, CLOCK_EPS, "halfway between 50 and 54"),
+                () -> assertEquals(1.6f, h, 1e-5f, "heading halfway"),
+                () -> assertEquals(5.0f, vx, 1e-5f, "velocity halfway"),
+                () -> assertEquals(103.2, w.selfX(), CLOCK_EPS, "render tick 101.6: 0.8 of the way"),
+                () -> assertEquals(ShipFlags.SHIELD, w.selfFlags(), "flags from the nearer (later) record"));
+        }
+
+        @Test
+        @DisplayName("a dead own ship is not interpolated or extrapolated: it snaps to the nearer record and stays put")
+        void selfDead() {
+            WorldFixture f = new WorldFixture(true);
+            f.begin(100).self(7, 0, 100, 50, 4, 8, 1.5f).ingestAtTick(100);
+            f.begin(102).self(7, ShipFlags.DEAD, 110, 50, 4, 8, 1.5f).ingestAtTick(102);
+            ClientWorld w = f.world;
+            w.update(at(104.6));
+            float near = w.selfX();
+            w.update(at(106));
+            assertAll(
+                () -> assertEquals(110.0, near, CLOCK_EPS, "render tick 101.4: snapped to the nearer, dead record"),
+                () -> assertEquals(110.0, w.selfX(), CLOCK_EPS, "after the last record: stays put while dead"));
+        }
+
+        @Test
+        @DisplayName("a teleport (respawn) between SELF records snaps instead of sliding across the map")
+        void selfTeleport() {
+            WorldFixture f = new WorldFixture(false);
+            f.begin(100).self(7, 0, 10, 50, 0, 0, 0).ingestAtTick(100);
+            f.begin(102).self(7, 0, 600, 300, 0, 0, 0).ingestAtTick(102);
+            f.world.update(at(104.0));
+            float early = f.world.selfX();
+            f.world.update(at(104.6));
+            assertAll(
+                () -> assertEquals(10.0, early, CLOCK_EPS, "t = 0.4: the earlier record, no slide"),
+                () -> assertEquals(600.0, f.world.selfX(), CLOCK_EPS, "t = 0.7: the later record, no slide"));
         }
 
         @Test

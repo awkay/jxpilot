@@ -116,7 +116,7 @@ class ModelsTest {
     @DisplayName("TickClock")
     class Clock {
         @Test
-        @DisplayName("first sample sets the estimate; later samples smooth; far samples resync")
+        @DisplayName("first sample sets the estimate; later samples smooth and are slewed in; far samples resync")
         void samples() {
             TickClock c = new TickClock();
             c.reset(60);
@@ -124,14 +124,35 @@ class ModelsTest {
             c.sample(600, 1_000_000_000L);
             double first = c.serverTick(2_000_000_000L);
             c.sample(663, 2_000_000_000L);
-            double smoothed = c.serverTick(2_000_000_000L);
-            c.sample(5000, 2_000_000_000L);
+            double offset = c.offset();
+            double same = c.serverTick(2_000_000_000L);
+            double fiveTicks = c.serverTick(2_000_000_000L + 5_000_000_000L / 60);
+            double later = c.serverTick(3_000_000_000L);
+            c.sample(5000, 3_000_000_000L);
             assertAll(
                 () -> assertEquals(0.0, before, "0 before any sample"),
                 () -> assertEquals(660.0, first, 1e-9, "600 at 1 s, 60 ticks per second later"),
-                () -> assertEquals(660.3, smoothed, 1e-9, "a sample 3 ticks ahead moves the estimate by 10%"),
-                () -> assertEquals(5000.0, c.serverTick(2_000_000_000L), 1e-9, "a sample 30+ ticks away resyncs"),
+                () -> assertEquals(540.3, offset, 1e-9, "a sample 3 ticks ahead moves the smoothed offset by 10% (0.3)"),
+                () -> assertEquals(660.0, same, 1e-9, "no local time elapsed: the shown estimate has not moved yet"),
+                () -> assertEquals(665.15, fiveTicks, 1e-6, "5 ticks later (nanosecond rounding): slewed by 5 * 3% = 0.15"),
+                () -> assertEquals(720.3, later, 1e-9, "1 s later: the whole 0.3 is in"),
+                () -> assertEquals(5000.0, c.serverTick(3_000_000_000L), 1e-9, "a sample 30+ ticks away resyncs at once"),
                 () -> assertTrue(c.synced(), "synced"));
+        }
+
+        @Test
+        @DisplayName("slewing works downwards too and never moves when time goes backwards")
+        void slewDown() {
+            TickClock c = new TickClock();
+            c.reset(10);
+            c.sample(100, 0);
+            c.serverTick(0);
+            c.sample(98, 0);
+            double back = c.serverTick(-1_000_000_000L);
+            double fwd = c.serverTick(1_000_000_000L);
+            assertAll(
+                () -> assertEquals(90.0, back, 1e-9, "time went back: local -10 ticks, offset unchanged"),
+                () -> assertEquals(109.8, fwd, 1e-9, "20 local ticks since the last call allow 0.6: the whole -0.2 is in"));
         }
     }
 

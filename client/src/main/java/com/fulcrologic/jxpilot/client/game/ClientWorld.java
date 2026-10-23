@@ -54,8 +54,9 @@ import java.util.Arrays;
  * ingested since the last update). The render tick is the estimated server tick minus
  * {@link #interpolationDelayTicks()} (one snapshot interval plus a {@link #JITTER_MARGIN_SECONDS} margin).
  * Ships are interpolated between the snapshots around it, wrap-aware via {@link XMath#wrapDelta}; shots
- * are extrapolated from the snapshot at or before it; the own ship is extrapolated from the newest SELF
- * record to the present; particles are advanced to the render tick, the own exhaust to the present.
+ * are extrapolated from the snapshot at or before it; the own ship is interpolated between SELF records
+ * like the others (one consistent render time, so the camera following it is smooth); particles are
+ * advanced to the render tick.
  * Nothing assumes a tick rate: rates come from WELCOME (the server ticks at the map's framesPerSecond).
  * Read results with the accessors (valid until the next update).
  * <p>
@@ -566,10 +567,12 @@ public final class ClientWorld {
      * flags come from the nearer frame. With no B, ships are extrapolated from A by their velocity, at most
      * 2 snapshot intervals; with no A, B is drawn as is. The own ship is not in the ship list.
      * BEHAVIOR: shots are extrapolated from A (or B when there is no A) by their velocity.
-     * BEHAVIOR: the own ship is the newest SELF record extrapolated to the estimated server tick now
-     * (not while dead), at most 2 snapshot intervals.
-     * BEHAVIOR: particles are advanced to the render tick; the own ship's exhaust to the estimated server
-     * tick now, where the own ship is drawn.
+     * BEHAVIOR: the own ship is drawn at the render tick like the others: interpolated between the SELF
+     * records around it (heading the short way round; fuel, flags and other state from the nearer record);
+     * snapped to the nearer record when either is dead or it moved more than {@link #TELEPORT_PX}; with no
+     * later SELF extrapolated from the latest by its velocity (not while dead, at most 2 snapshot
+     * intervals); with no earlier SELF the later one as is.
+     * BEHAVIOR: particles, the own exhaust included, are advanced to the render tick.
      */
     public void update(long nowNanos) {
         outShips = 0;
@@ -601,8 +604,8 @@ public final class ClientWorld {
         }
         interpolateShips(a, b);
         extrapolateShots(a != null ? a : b);
-        extrapolateSelf();
-        particles.step(renderTick, serverTickNow, frameFraction, worldW, worldH, wrap);
+        interpolateSelf();
+        particles.step(renderTick, renderTick, frameFraction, worldW, worldH, wrap);
     }
 
     private void interpolateShips(SnapshotFrame a, SnapshotFrame b) {
@@ -695,26 +698,64 @@ public final class ClientWorld {
         outShots = Math.min(base.shots, shotCap);
     }
 
-    private void extrapolateSelf() {
-        SnapshotFrame s = null;
+    /**
+     * The own ship at the render tick, like every other ship: interpolated between the SELF records around
+     * it (wrap-aware), so it and the camera that follows it move smoothly at display rate whatever the
+     * server's tick rate (extrapolating to the present overshoots under thrust and gravity and snaps back
+     * on each snapshot: a 12 Hz sawtooth).
+     */
+    private void interpolateSelf() {
+        SnapshotFrame a = null;
+        SnapshotFrame b = null;
         for (SnapshotFrame f : ring) {
-            if (f.valid && f.hasSelf && (s == null || f.tick - s.tick > 0)) {
-                s = f;
+            if (!f.valid || !f.hasSelf) {
+                continue;
+            }
+            if (f.tick - renderTick <= 0) {
+                if (a == null || f.tick - a.tick > 0) {
+                    a = f;
+                }
+            } else if (b == null || f.tick - b.tick < 0) {
+                b = f;
             }
         }
-        if (s == null) {
+        if (a == null && b == null) {
             return;
         }
         outSelf = true;
+        if (a == null) {
+            putSelf(b, b.selfX, b.selfY, b.selfHeading);
+            return;
+        }
+        if (b == null) {
+            double dt = (a.selfFlags & Records.ShipFlags.DEAD) != 0 ? 0
+                : clampExtrapolation(renderTick - a.tick) * frameFraction;
+            putSelf(a, wrapX(a.selfX + a.selfVx * dt), wrapY(a.selfY + a.selfVy * dt), a.selfHeading);
+            return;
+        }
+        double t = (renderTick - a.tick) / (double) (b.tick - a.tick);
+        SnapshotFrame near = t < 0.5 ? a : b;
+        double dx = XMath.wrapDelta(b.selfX - a.selfX, worldW, wrap);
+        double dy = XMath.wrapDelta(b.selfY - a.selfY, worldH, wrap);
+        boolean dead = ((a.selfFlags | b.selfFlags) & Records.ShipFlags.DEAD) != 0;
+        if (dead || dx * dx + dy * dy > TELEPORT_PX * TELEPORT_PX) {
+            putSelf(near, near.selfX, near.selfY, near.selfHeading);
+            return;
+        }
+        double h = a.selfHeading + XMath.angleDiff(a.selfHeading, b.selfHeading) * t;
+        putSelf(near, wrapX(a.selfX + dx * t), wrapY(a.selfY + dy * t), (float) XMath.normalizeAngle(h));
+        outSelfVx = (float) (a.selfVx + (b.selfVx - a.selfVx) * t);
+        outSelfVy = (float) (a.selfVy + (b.selfVy - a.selfVy) * t);
+    }
+
+    private void putSelf(SnapshotFrame s, float x, float y, float heading) {
         outSelfId = s.selfId;
         outSelfFlags = s.selfFlags;
-        double dt = (s.selfFlags & Records.ShipFlags.DEAD) != 0 ? 0
-            : clampExtrapolation(serverTickNow - s.tick) * frameFraction;
-        outSelfX = wrapX(s.selfX + s.selfVx * dt);
-        outSelfY = wrapY(s.selfY + s.selfVy * dt);
+        outSelfX = x;
+        outSelfY = y;
         outSelfVx = s.selfVx;
         outSelfVy = s.selfVy;
-        outSelfHeading = s.selfHeading;
+        outSelfHeading = heading;
         outSelfFuel = s.selfFuel;
         outSelfFuelMax = s.selfFuelMax;
         outSelfLock = s.selfLockId;
