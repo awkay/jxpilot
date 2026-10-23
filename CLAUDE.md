@@ -28,3 +28,5 @@ Java 25 / Maven / LWJGL reimplementation of XPilot 4.5.5 (C source: `/Users/tony
   `perf-reviewer` checks allocation, GC, CPU and wire size. The lead triages findings and
   relays the accepted ones to the implementer. Each module passes both reviews before the
   next phase builds on it.
+- Git: only the lead commits, as a checkpoint after each reviewed phase (on `main`; no remote yet).
+  Implementation agents and reviewers never commit, reset, checkout, or stash.
