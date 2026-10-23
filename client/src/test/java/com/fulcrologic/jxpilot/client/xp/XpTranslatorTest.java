@@ -48,7 +48,7 @@ class XpTranslatorTest {
     XpFrame f;
     XpMap.Built built;
 
-    /** 100x100 wrapping map: cannon at (10, 99), fuel at (20, 99), target at (30, 99), base at (40, 99). */
+    /** 100x100 wrapping map: cannons at (10, 99) and (11, 99), fuel (20, 99), target (30, 99), bases (40, 99) and (50, 99). */
     static String[] rows() {
         String[] r = new String[W];
         for (int i = 0; i < W; i++) {
@@ -60,6 +60,7 @@ class XpTranslatorTest {
         top[20] = '#';
         top[30] = '!';
         top[40] = '_';
+        top[50] = '_';
         r[0] = new String(top);
         return r;
     }

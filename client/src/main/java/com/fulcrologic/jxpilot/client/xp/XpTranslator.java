@@ -111,6 +111,10 @@ public final class XpTranslator {
         for (int i = 0; i < NAME_CAP; i++) {
             names[i] = new StringBuilder(XpProto.MAX_CHARS);
         }
+        // final sizes up front, so messages never grow them while playing
+        text.text.ensureCapacity(2 * XpProto.MSG_LEN);
+        join.name.ensureCapacity(XpProto.MAX_CHARS);
+        join.shape.ensureCapacity(2 * XpProto.MSG_LEN);
     }
 
     /**
