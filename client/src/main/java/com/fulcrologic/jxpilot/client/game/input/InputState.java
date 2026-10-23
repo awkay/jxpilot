@@ -23,17 +23,39 @@
  */
 package com.fulcrologic.jxpilot.client.game.input;
 
+import com.fulcrologic.jxpilot.common.net.ControlKey;
+
 /**
- * Pressed keys to the 64-bit {@link com.fulcrologic.jxpilot.common.net.ControlKey} mask sent every
- * frame. Feed GLFW key events; the mask is the OR of the masks of all held keys, so two keys bound to
- * the same function (both shift keys) behave like XPilot. While the talk line is open game keys are
- * ignored (the talk window has the keyboard in C). Allocation free.
+ * Key events to the 64-bit {@link ControlKey} mask sent to the server, a port of C {@code keyv}
+ * handling ({@code Key_init}, {@code Key_press}, {@code Key_release}, {@code Reset_shields} in
+ * {@code src/client/xevent.c}). A press sets every function bound to the key; a release clears every
+ * function bound to the key, even if another key bound to the same function is still held (C semantics).
+ * While the talk line is open game keys are ignored (the talk window has the keyboard in C).
+ * <p>
+ * Shields: the mask starts with SHIELD set (C {@code Key_init}). With {@link #autoShield} (C default on)
+ * pressing a fire key (shot, laser, missile, torpedo, heat, drop/detach mine) lowers the shield, and
+ * releasing the last held one raises it again while the shields are "considered up"; pressing the shield
+ * key sets that, releasing it clears it. With {@link #toggleShield} (default off) the shield key toggles.
+ * {@link #setPlaying} re-raises the shield when the player (re)enters play, like C {@code Reset_shields}.
+ * Allocation free.
  */
 public final class InputState {
+    /** The fire keys of C's auto-shield hack. */
+    public static final long FIRE_KEYS = ControlKey.FIRE_SHOT.mask() | ControlKey.FIRE_LASER.mask()
+        | ControlKey.FIRE_MISSILE.mask() | ControlKey.FIRE_TORPEDO.mask() | ControlKey.FIRE_HEAT.mask()
+        | ControlKey.DROP_MINE.mask() | ControlKey.DETACH_MINE.mask();
+    private static final long SHIELD = ControlKey.SHIELD.mask();
+
+    /** C {@code autoShield} (default on): shields drop for fire. */
+    public boolean autoShield = true;
+    /** C {@code toggleShield} (default off): the shield key toggles. */
+    public boolean toggleShield;
+
     private final KeyBindings bindings;
-    private final boolean[] down = new boolean[KeyBindings.SIZE];
-    private long keys;
+    private long keys = SHIELD;
+    private boolean shields = true;
     private boolean talking;
+    private boolean playing;
 
     public InputState(KeyBindings bindings) {
         this.bindings = bindings;
@@ -46,7 +68,9 @@ public final class InputState {
     /**
      * A key went down.
      * <p>
-     * BEHAVIOR: while not talking, the key's game mask joins the wire mask.
+     * BEHAVIOR: while not talking, every game function bound to the key is set; a fire function with
+     * autoShield first clears SHIELD; the shield key with toggleShield toggles SHIELD (and the shields
+     * state), with autoShield marks the shields as up.
      * BEHAVIOR: returns the key's {@link ClientAction} mask; while talking only the talk-cursor actions
      * are returned, and while not talking the talk-cursor actions are not (C semantics).
      * BEHAVIOR: out-of-range codes are ignored (0).
@@ -60,8 +84,20 @@ public final class InputState {
         if (talking) {
             return acts & cursor;
         }
-        down[glfwKey] = true;
-        keys |= bindings.gameMask(glfwKey);
+        long m = bindings.gameMask(glfwKey);
+        if ((m & FIRE_KEYS) != 0 && autoShield) {
+            keys &= ~SHIELD;
+        }
+        if ((m & SHIELD) != 0) {
+            if (toggleShield) {
+                shields = !shields;
+                keys = shields ? keys | SHIELD : keys & ~SHIELD;
+                m &= ~SHIELD;
+            } else if (autoShield) {
+                shields = true;
+            }
+        }
+        keys |= m;
         return acts & ~cursor;
     }
 
@@ -73,31 +109,68 @@ public final class InputState {
     /**
      * A key went up.
      * <p>
-     * BEHAVIOR: the mask is recomputed from the keys still held, so a function stays on while any of
-     * its keys is held.
+     * BEHAVIOR: every game function bound to the key is cleared, even if another key bound to it is
+     * still held (C {@code Key_release}).
+     * BEHAVIOR: with autoShield and the shields up, releasing a fire function while the shield is down
+     * raises SHIELD once no fire function remains set.
+     * BEHAVIOR: the shield key: ignored with toggleShield; with autoShield it marks the shields as down.
+     * BEHAVIOR: ignored while talking and for out-of-range codes.
      */
     public void release(int glfwKey) {
-        if (glfwKey < 0 || glfwKey >= KeyBindings.SIZE || !down[glfwKey]) {
+        if (talking || glfwKey < 0 || glfwKey >= KeyBindings.SIZE) {
             return;
         }
-        down[glfwKey] = false;
-        recompute();
-    }
-
-    private void recompute() {
-        long m = 0;
-        for (int k = 0; k < KeyBindings.SIZE; k++) {
-            if (down[k]) {
-                m |= bindings.gameMask(k);
+        long m = bindings.gameMask(glfwKey);
+        if ((m & FIRE_KEYS) != 0 && autoShield && shields && (keys & SHIELD) == 0) {
+            keys &= ~m;
+            if ((keys & FIRE_KEYS) == 0) {
+                keys |= SHIELD;
             }
         }
-        keys = m;
+        if ((m & SHIELD) != 0) {
+            if (toggleShield) {
+                m &= ~SHIELD;
+            } else if (autoShield) {
+                shields = false;
+            }
+        }
+        keys &= ~m;
     }
 
-    /** BEHAVIOR: releases everything (focus lost). */
+    /**
+     * BEHAVIOR: releases every game function (focus lost); the shield stays up iff the shields are
+     * considered up under autoShield or toggleShield.
+     */
     public void releaseAll() {
-        java.util.Arrays.fill(down, false);
-        keys = 0;
+        keys = shields && (autoShield || toggleShield) ? SHIELD : 0;
+    }
+
+    /**
+     * C {@code Reset_shields} on entering play.
+     * <p>
+     * BEHAVIOR: with autoShield or toggleShield: SHIELD set and the shields up; with autoShield and a
+     * fire function held, SHIELD stays down. Without either option nothing changes.
+     */
+    public void resetShields() {
+        if (toggleShield || autoShield) {
+            keys |= SHIELD;
+            shields = true;
+            if (autoShield && (keys & FIRE_KEYS) != 0) {
+                keys &= ~SHIELD;
+            }
+        }
+    }
+
+    /**
+     * Feed whether the own ship is in play (alive) each frame (C {@code Game_over_action}).
+     * <p>
+     * BEHAVIOR: {@link #resetShields()} on each transition from not playing to playing.
+     */
+    public void setPlaying(boolean inPlay) {
+        if (inPlay && !playing) {
+            resetShields();
+        }
+        playing = inPlay;
     }
 
     /** BEHAVIOR: opening the talk line releases all game keys. */
@@ -112,7 +185,12 @@ public final class InputState {
         return talking;
     }
 
-    /** The current {@link com.fulcrologic.jxpilot.common.net.ControlKey} mask. */
+    /** True while the shields are considered up (C {@code shields}). */
+    public boolean shieldsUp() {
+        return shields;
+    }
+
+    /** The current {@link ControlKey} mask. */
     public long keys() {
         return keys;
     }

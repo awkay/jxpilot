@@ -90,7 +90,7 @@ class InputEdgeTest {
         long down = in.press(GLFW_KEY_DOWN);
         assertAll(
             () -> assertEquals(0L, past, "past the table: ignored"),
-            () -> assertEquals(ControlKey.TURN_RIGHT.mask(), afterStaleRelease,
+            () -> assertEquals(ControlKey.SHIELD.mask() | ControlKey.TURN_RIGHT.mask(), afterStaleRelease,
                 "releasing a key cleared by releaseAll does not resurrect it"),
             () -> assertTrue(talking, "talking"),
             () -> assertTrue(KeyBindings.has(right, ClientAction.TALK_CURSOR_RIGHT), "Right"),
@@ -139,7 +139,7 @@ class InputEdgeTest {
         assertAll(
             () -> assertTrue(open, "open"),
             () -> assertEquals("yyyynnnn", accepted.toString(), "32, 126, 160, 255 accepted; 31, 127, 159, 256 not"),
-            () -> assertEquals("  ÿ", afterDelete, "the char after the cursor was deleted"),
+            () -> assertEquals("~\u00a0\u00ff", afterDelete, "DEL erased the char before the cursor (C '\\177')"),
             () -> assertEquals(afterDelete, up1, "the only history line"),
             () -> assertEquals(afterDelete, up2, "up again skips the empty slots back to it"),
             () -> assertEquals("b", two.text().toString(), "down from the older line reaches the newest"));

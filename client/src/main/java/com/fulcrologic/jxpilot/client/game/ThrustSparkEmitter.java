@@ -29,6 +29,7 @@ import com.fulcrologic.jxpilot.common.math.Rng;
 import com.fulcrologic.jxpilot.common.math.ThrustSparks;
 import com.fulcrologic.jxpilot.common.math.XMath;
 import com.fulcrologic.jxpilot.common.net.Records;
+import com.fulcrologic.jxpilot.common.net.Wire;
 
 /**
  * Client-side thrust sparks (PROTOCOL.md "Sparks and debris"): for each sim tick a ship is thrusting,
@@ -36,7 +37,11 @@ import com.fulcrologic.jxpilot.common.net.Records;
  * server does, and expands the red (normal) and blue (afterburner) bursts into a {@link ParticlePool}.
  * The engine position is the ship position plus the shape's engine offset rotated to the RES heading
  * with StrictMath cos/sin tables (as C {@code Rotate_point} / the server's ship geometry).
- * Allocation free.
+ * <p>
+ * Inputs must be what the server seeds from (PROTOCOL.md "Sparks and debris"): the wire-quantized
+ * position (half pixels), velocity (1/16 px per frame) and the integer RES heading. SHIP records already
+ * carry exactly that; the full-precision SELF record is quantized with {@link #quantizePos},
+ * {@link #quantizeVel} and {@link #resDir} first. Allocation free.
  */
 public final class ThrustSparkEmitter {
     private static final double[] SIN = new double[Const.RES];
@@ -53,7 +58,7 @@ public final class ThrustSparkEmitter {
     private int shotLife = 60;
     private int fps = 14;
     private float frameFraction = 14f / 60f;
-    private float hypotenuse;
+    private int hypotenuse;
     private double worldW = 65536;
     private double worldH = 65536;
     private boolean wrap;
@@ -66,12 +71,37 @@ public final class ThrustSparkEmitter {
         this.worldW = worldW;
         this.worldH = worldH;
         this.wrap = wrap;
-        this.hypotenuse = (float) Math.sqrt(worldW * worldW + worldH * worldH);
+        this.hypotenuse = hypotenuse(worldW, worldH);
     }
 
-    /** World diagonal used as {@link DebrisBurst#hypotenuse}. */
-    public float hypotenuse() {
+    /** BEHAVIOR: C's {@code World.hypotenuse}: the world diagonal truncated to an int. */
+    public static int hypotenuse(double worldW, double worldH) {
+        return (int) Math.hypot(worldW, worldH);
+    }
+
+    /** World diagonal used as {@link DebrisBurst#hypotenuse} (an int, as in C). */
+    public int hypotenuse() {
         return hypotenuse;
+    }
+
+    /**
+     * The RES heading (0..RES-1) of a heading in radians: round(heading * RES / 2pi) mod RES.
+     * <p>
+     * BEHAVIOR: the server's integer dir sent as SELF f32 (dir * 2pi/RES) or SHIP u16 (dir * 512) comes
+     * back exactly; half steps round up, like {@link ThrustSparks#dirFromU16}.
+     */
+    public static int resDir(double heading) {
+        return (int) Math.floor(heading * (Const.RES / (2 * Math.PI)) + 0.5) & (Const.RES - 1);
+    }
+
+    /** BEHAVIOR: a coordinate rounded to the wire's half pixels ({@code Wire.posToU16(x) * 0.5}), as the server seeds. */
+    public static double quantizePos(double x) {
+        return Wire.posToU16(x) * 0.5;
+    }
+
+    /** BEHAVIOR: a velocity rounded to the wire's 1/16 px per frame ({@code Wire.i16ToVel(Wire.velToI16(v))}). */
+    public static float quantizeVel(double v) {
+        return Wire.i16ToVel(Wire.velToI16(v));
     }
 
     /** BEHAVIOR: x of the engine offset (ex, ey) rotated to RES heading dir (any int, taken mod RES). */
@@ -105,17 +135,19 @@ public final class ThrustSparkEmitter {
     /**
      * Emit one sim tick of exhaust for a ship.
      * <p>
-     * BEHAVIOR: seed = ThrustSparks.seed(tick, shipId); dir = ThrustSparks.dirFromRadians(heading).
+     * BEHAVIOR: seed = ThrustSparks.seed(tick, shipId); dir = {@link #resDir}(heading).
      * BEHAVIOR: the engine is at (x, y) + rotated engine offset, wrapped into the world when it wraps.
      * BEHAVIOR: the normal burst becomes RED SPARK particles and the afterburner burst BLUE SPARK
-     * particles, all born at {@code tick}.
+     * particles, all born at {@code tick}, marked as own exhaust iff {@code own}.
      *
-     * @param heading radians (the wire-quantized heading for other ships)
-     * @param vx      px per original frame
+     * @param x       wire-quantized (see the class comment)
+     * @param heading radians
+     * @param vx      px per original frame, wire-quantized
+     * @param own     the own ship's exhaust ({@link ParticlePool} steps it at the present)
      */
     public void emit(int tick, int shipId, double x, double y, double heading, float vx, float vy, float power,
-                     int afterburners, int engineX, int engineY, ParticlePool pool) {
-        int dir = ThrustSparks.dirFromRadians(heading);
+                     int afterburners, int engineX, int engineY, boolean own, ParticlePool pool) {
+        int dir = resDir(heading);
         double ex = x + rotX(engineX, engineY, dir);
         double ey = y + rotY(engineX, engineY, dir);
         if (wrap) {
@@ -124,7 +156,7 @@ public final class ThrustSparkEmitter {
         }
         ThrustSparks.compute(ThrustSparks.seed(tick, shipId), (float) ex, (float) ey, dir, vx, vy, power,
             afterburners, shotLife, fps, frameFraction, hypotenuse, rng, normal, alt);
-        pool.spawn(normal, rng, tick, Records.BurstKind.SPARK, Records.ObjColor.RED);
-        pool.spawn(alt, rng, tick, Records.BurstKind.SPARK, Records.ObjColor.BLUE);
+        pool.spawn(normal, rng, tick, Records.BurstKind.SPARK, Records.ObjColor.RED, own);
+        pool.spawn(alt, rng, tick, Records.BurstKind.SPARK, Records.ObjColor.BLUE, own);
     }
 }

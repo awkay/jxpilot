@@ -50,11 +50,14 @@ import java.util.Arrays;
  * of a thrusting ship ({@link ThrustSparkEmitter}); map object state (cannons, fuel, targets,
  * treasures), radar and own items are applied from the newest tick only.
  * <p>
- * <b>Render</b> ({@link #update}): the render tick is the estimated server tick minus
- * {@link #interpolationDelayTicks()} (about one snapshot interval). Ships are interpolated between the
- * snapshots around it, wrap-aware via {@link XMath#wrapDelta}; shots are extrapolated from the snapshot
- * at or before it; the own ship is extrapolated from the newest SELF record to the present; particles
- * are advanced to the render tick. Read results with the accessors (valid until the next update).
+ * <b>Render</b> ({@link #update}): the tick clock takes one sample per receive batch (the newest tick
+ * ingested since the last update). The render tick is the estimated server tick minus
+ * {@link #interpolationDelayTicks()} (one snapshot interval plus a {@link #JITTER_MARGIN_SECONDS} margin).
+ * Ships are interpolated between the snapshots around it, wrap-aware via {@link XMath#wrapDelta}; shots
+ * are extrapolated from the snapshot at or before it; the own ship is extrapolated from the newest SELF
+ * record to the present; particles are advanced to the render tick, the own exhaust to the present.
+ * Nothing assumes a tick rate: rates come from WELCOME (the server ticks at the map's framesPerSecond).
+ * Read results with the accessors (valid until the next update).
  * <p>
  * Single threaded: call ingest and update from the same thread.
  */
@@ -65,6 +68,10 @@ public final class ClientWorld {
     public static final int MAX_SPARK_TICKS = 8;
     /** A ship moving farther than this between two snapshots is snapped, not interpolated (respawn). */
     public static final double TELEPORT_PX = 10 * 35.0;
+    /** Render delay beyond one snapshot interval, for network jitter (a time, so any tick rate works). */
+    public static final double JITTER_MARGIN_SECONDS = 0.02;
+    /** Snapshot parts are numbered 0..63 (64 x 1200 bytes is far beyond any tick); higher parts are malformed. */
+    public static final int MAX_PARTS = 64;
 
     /** {@link #ingest} result: a new newest tick. */
     public static final int NEW_TICK = 1;
@@ -99,6 +106,8 @@ public final class ClientWorld {
     private final ThrustSparkEmitter sparks = new ThrustSparkEmitter();
     private final ParticlePool particles;
     private final TickClock clock = new TickClock();
+    private final ShipIndex shipIndex;
+    private final boolean[] usedA;
 
     private boolean configured;
     private double worldW = 65536;
@@ -106,13 +115,16 @@ public final class ClientWorld {
     private boolean wrap;
     private float frameFraction = 14f / 60f;
     private double snapshotInterval = Protocol.DEFAULT_SNAPSHOT_DIVISOR;
-    private double delayTicks = Protocol.DEFAULT_SNAPSHOT_DIVISOR + 1;
+    private double delayTicks = Protocol.DEFAULT_SNAPSHOT_DIVISOR + JITTER_MARGIN_SECONDS * 60;
     private double maxExtrapolateTicks = 2.0 * Protocol.DEFAULT_SNAPSHOT_DIVISOR;
     private int defaultEngineX = ShipShape.defaultShip().engineX;
     private int defaultEngineY = ShipShape.defaultShip().engineY;
 
     private boolean haveNewest;
     private int newestTick;
+    private boolean samplePending;
+    private int sampleTick;
+    private long sampleNanos;
     private long ingested;
     private long malformedCount;
 
@@ -194,6 +206,8 @@ public final class ClientWorld {
         outShotX = new float[shotCap];
         outShotY = new float[shotCap];
         outShotVariant = new int[shotCap];
+        shipIndex = new ShipIndex(shipCap);
+        usedA = new boolean[shipCap];
     }
 
     /** Default capacities: 128 ships, 2048 shots, 16384 particles, 1024 radar blips. */
@@ -207,7 +221,8 @@ public final class ClientWorld {
      * Configure for a new map (after the config transfer). Allocates map-state arrays.
      * <p>
      * BEHAVIOR: world size and wrap from the map; frameFraction = gameFps / simHz; snapshot interval =
-     * simHz / snapshotHz ticks; delay = interval + 1 tick; extrapolation cap = 2 intervals.
+     * simHz / snapshotHz ticks; delay = interval + {@link #JITTER_MARGIN_SECONDS} * simHz ticks;
+     * extrapolation cap = 2 intervals; the clock runs at simHz.
      * BEHAVIOR: cannons alive, fuel stations full, targets intact, no base owners; clears all state.
      */
     public void configure(WorldMap map, Options opts, Msg.Welcome w) {
@@ -220,7 +235,7 @@ public final class ClientWorld {
         float gameFps = w.gameFps > 0 ? w.gameFps : opts.framesPerSecond();
         frameFraction = gameFps / simHz;
         snapshotInterval = (double) simHz / snapHz;
-        delayTicks = snapshotInterval + 1;
+        delayTicks = snapshotInterval + JITTER_MARGIN_SECONDS * simHz;
         maxExtrapolateTicks = 2 * snapshotInterval;
         sparks.configure(opts.getInt(Opt.SHOT_LIFE), opts.framesPerSecond(), frameFraction, worldW, worldH, wrap);
         clock.reset(simHz);
@@ -266,14 +281,15 @@ public final class ClientWorld {
     /**
      * Decode one SNAPSHOT body (position at the snapshot header, limit at its end).
      * <p>
-     * BEHAVIOR: a tick newer than all others recycles the oldest frame ({@link #NEW_TICK}) and feeds the
-     * tick clock; another part of a tick in the ring is merged ({@link #PART_ADDED}); a repeated part is
+     * BEHAVIOR: a tick newer than all others recycles the oldest frame ({@link #NEW_TICK}) and becomes the
+     * pending clock sample (taken at the next {@link #update}); another part of a tick in the ring is merged ({@link #PART_ADDED}); a repeated part is
      * ignored ({@link #DUPLICATE}); an older tick is inserted if newer than the oldest frame or a slot
      * is free ({@link #LATE_TICK}), else ignored ({@link #STALE}).
      * BEHAVIOR: thrust sparks are generated only for ticks after the previous newest tick (each tick
      * once), at most {@link #MAX_SPARK_TICKS} per ship; late ticks generate none.
      * BEHAVIOR: map object state, radar and own items are applied only from the newest tick.
-     * BEHAVIOR: malformed data stops decoding at the error and returns {@link #MALFORMED}.
+     * BEHAVIOR: malformed data stops decoding at the error and returns {@link #MALFORMED}; so does a part
+     * number of {@link #MAX_PARTS} or more (nothing is merged, so repeats cannot double a frame).
      */
     public int ingest(ByteBuffer body, long nowNanos) {
         if (!configured) {
@@ -285,7 +301,11 @@ public final class ClientWorld {
         }
         int tick = reader.tick();
         int part = reader.part();
-        long partBit = part < 64 ? 1L << part : 0;
+        if (part >= MAX_PARTS) {
+            malformedCount++;
+            return MALFORMED;
+        }
+        long partBit = 1L << part;
         int result;
         SnapshotFrame f = frameFor(tick);
         if (f != null) {
@@ -299,7 +319,9 @@ public final class ClientWorld {
                 : tick - snapshotIntervalInt() + 1);
             newestTick = tick;
             haveNewest = true;
-            clock.sample(tick, nowNanos);
+            samplePending = true;
+            sampleTick = tick;
+            sampleNanos = nowNanos;
             result = NEW_TICK;
         } else {
             SnapshotFrame o = oldestOrFree();
@@ -491,17 +513,24 @@ public final class ClientWorld {
         }
     }
 
+    /**
+     * BEHAVIOR: the own ship sparks from its SELF record quantized like the wire (what the server seeds
+     * from: half-pixel position, 1/16 px velocity, RES heading) and is marked as own exhaust; other ships
+     * spark from their SHIP records (already wire-quantized).
+     */
     private void generateSparks(SnapshotFrame f, int firstShip, boolean selfInPart) {
         if (f.sparkFrom - f.tick > 0) {
             return;
         }
         int selfId = f.hasSelf ? f.selfId : players.selfId();
         if (selfInPart && thrusting(f.selfFlags)) {
-            emitTicks(f, f.selfId, f.selfX, f.selfY, f.selfHeading, f.selfVx, f.selfVy);
+            emitTicks(f, f.selfId, ThrustSparkEmitter.quantizePos(f.selfX), ThrustSparkEmitter.quantizePos(f.selfY),
+                f.selfHeading, ThrustSparkEmitter.quantizeVel(f.selfVx), ThrustSparkEmitter.quantizeVel(f.selfVy),
+                true);
         }
         for (int i = firstShip; i < f.ships; i++) {
             if (f.shipId[i] != selfId && thrusting(f.shipFlags[i])) {
-                emitTicks(f, f.shipId[i], f.shipX[i], f.shipY[i], f.shipHeading[i], f.shipVx[i], f.shipVy[i]);
+                emitTicks(f, f.shipId[i], f.shipX[i], f.shipY[i], f.shipHeading[i], f.shipVx[i], f.shipVy[i], false);
             }
         }
     }
@@ -510,7 +539,8 @@ public final class ClientWorld {
         return (flags & Records.ShipFlags.THRUSTING) != 0 && (flags & Records.ShipFlags.DEAD) == 0;
     }
 
-    private void emitTicks(SnapshotFrame f, int id, float x, float y, float heading, float vx, float vy) {
+    private void emitTicks(SnapshotFrame f, int id, double x, double y, float heading, float vx, float vy,
+                           boolean own) {
         int slot = players.slotOf(id);
         float power = slot >= 0 ? players.power(slot) : 45f;
         int ab = slot >= 0 ? players.afterburners(slot) : 0;
@@ -518,7 +548,7 @@ public final class ClientWorld {
         int ey = slot >= 0 ? players.engineY(slot) : defaultEngineY;
         for (int t = f.sparkFrom; t - f.tick <= 0; t++) {
             double back = (double) (f.tick - t) * frameFraction;
-            sparks.emit(t, id, x - vx * back, y - vy * back, heading, vx, vy, power, ab, ex, ey, particles);
+            sparks.emit(t, id, x - vx * back, y - vy * back, heading, vx, vy, power, ab, ex, ey, own, particles);
         }
     }
 
@@ -527,16 +557,19 @@ public final class ClientWorld {
     /**
      * Compute everything the renderer draws for local time {@code nowNanos}.
      * <p>
-     * BEHAVIOR: renderTick = estimated server tick - delay.
+     * BEHAVIOR: first feeds the pending clock sample (the newest tick of the batch ingested since the
+     * last update) to the clock; renderTick = estimated server tick - delay.
      * BEHAVIOR: ships come from the earliest frame after the render tick (B), interpolated from the latest
      * frame at or before it (A) by t = (renderTick - A)/(B - A) with wrap-aware deltas; ships only in B
-     * are drawn at B; ships that moved more than {@link #TELEPORT_PX} are snapped to B; flags come from
-     * the nearer frame. With no B, ships are extrapolated from A by their velocity, at most
+     * are drawn at B; ships only in A (B's part lost, or the ship left) are extrapolated from A like the
+     * no-B case, so they do not flicker; ships that moved more than {@link #TELEPORT_PX} are snapped to B;
+     * flags come from the nearer frame. With no B, ships are extrapolated from A by their velocity, at most
      * 2 snapshot intervals; with no A, B is drawn as is. The own ship is not in the ship list.
      * BEHAVIOR: shots are extrapolated from A (or B when there is no A) by their velocity.
      * BEHAVIOR: the own ship is the newest SELF record extrapolated to the estimated server tick now
      * (not while dead), at most 2 snapshot intervals.
-     * BEHAVIOR: particles are advanced to the render tick.
+     * BEHAVIOR: particles are advanced to the render tick; the own ship's exhaust to the estimated server
+     * tick now, where the own ship is drawn.
      */
     public void update(long nowNanos) {
         outShips = 0;
@@ -544,6 +577,10 @@ public final class ClientWorld {
         outSelf = false;
         if (!haveNewest) {
             return;
+        }
+        if (samplePending) {
+            clock.sample(sampleTick, sampleNanos);
+            samplePending = false;
         }
         serverTickNow = clock.serverTick(nowNanos);
         renderTick = serverTickNow - delayTicks;
@@ -565,21 +602,21 @@ public final class ClientWorld {
         interpolateShips(a, b);
         extrapolateShots(a != null ? a : b);
         extrapolateSelf();
-        particles.step(renderTick, frameFraction, worldW, worldH, wrap);
+        particles.step(renderTick, serverTickNow, frameFraction, worldW, worldH, wrap);
     }
 
     private void interpolateShips(SnapshotFrame a, SnapshotFrame b) {
         int selfId = players.selfId();
         if (b == null) {
-            double dt = clampExtrapolation(renderTick - a.tick) * frameFraction;
-            for (int i = 0; i < a.ships; i++) {
-                if (a.shipId[i] == selfId) {
-                    continue;
-                }
-                putShip(a, i, wrapX(a.shipX[i] + a.shipVx[i] * dt), wrapY(a.shipY[i] + a.shipVy[i] * dt),
-                    a.shipHeading[i], a.shipFlags[i]);
-            }
+            extrapolateShips(a, selfId, false);
             return;
+        }
+        if (a != null) {
+            shipIndex.clear();
+            for (int j = 0; j < a.ships; j++) {
+                shipIndex.put(a.shipId[j], j);
+                usedA[j] = false;
+            }
         }
         double t = a == null ? 1 : (renderTick - a.tick) / (double) (b.tick - a.tick);
         for (int i = 0; i < b.ships; i++) {
@@ -587,7 +624,10 @@ public final class ClientWorld {
             if (id == selfId) {
                 continue;
             }
-            int j = a == null ? -1 : a.findShip(id);
+            int j = a == null ? -1 : shipIndex.get(id);
+            if (j >= 0) {
+                usedA[j] = true;
+            }
             if (j < 0) {
                 putShip(b, i, b.shipX[i], b.shipY[i], b.shipHeading[i], b.shipFlags[i]);
                 continue;
@@ -601,6 +641,21 @@ public final class ClientWorld {
             double h = a.shipHeading[j] + XMath.angleDiff(a.shipHeading[j], b.shipHeading[i]) * t;
             putShip(b, i, wrapX(a.shipX[j] + dx * t), wrapY(a.shipY[j] + dy * t),
                 (float) XMath.normalizeAngle(h), t < 0.5 ? a.shipFlags[j] : b.shipFlags[i]);
+        }
+        if (a != null) {
+            extrapolateShips(a, selfId, true);
+        }
+    }
+
+    /** Ships of {@code a} (all, or only those B did not have) moved by velocity to the render tick. */
+    private void extrapolateShips(SnapshotFrame a, int selfId, boolean onlyUnused) {
+        double dt = clampExtrapolation(renderTick - a.tick) * frameFraction;
+        for (int i = 0; i < a.ships; i++) {
+            if (a.shipId[i] == selfId || onlyUnused && usedA[i]) {
+                continue;
+            }
+            putShip(a, i, wrapX(a.shipX[i] + a.shipVx[i] * dt), wrapY(a.shipY[i] + a.shipVy[i] * dt),
+                a.shipHeading[i], a.shipFlags[i]);
         }
     }
 
@@ -670,11 +725,22 @@ public final class ClientWorld {
 
     // ================================================================ reliable-event state
 
-    /** BEHAVIOR: BASE_OWNER; out-of-range base indices are ignored. */
+    /**
+     * BASE_OWNER, as C {@code Handle_base} (client.c): a player owns one base at a time.
+     * <p>
+     * BEHAVIOR: every other base owned by {@code playerId} is released, then the base gets the owner;
+     * {@link Protocol#NO_ID} releases the base. Out-of-range base indices are ignored (nothing changes).
+     */
     public void setBaseOwner(int baseIndex, int playerId) {
-        if (baseIndex >= 0 && baseIndex < baseOwner.length) {
-            baseOwner[baseIndex] = playerId;
+        if (baseIndex < 0 || baseIndex >= baseOwner.length) {
+            return;
         }
+        for (int i = 0; i < baseOwner.length; i++) {
+            if (baseOwner[i] == playerId) {
+                baseOwner[i] = Protocol.NO_ID;
+            }
+        }
+        baseOwner[baseIndex] = playerId;
     }
 
     // ================================================================ accessors

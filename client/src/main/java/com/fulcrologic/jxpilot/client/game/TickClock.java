@@ -25,24 +25,37 @@ package com.fulcrologic.jxpilot.client.game;
 
 /**
  * Estimates the server's simulation tick from the local clock, from snapshot arrivals (SPEC "Time
- * model"). Each arrival gives a sample {@code offset = tick - now * simHz}; the estimate follows
- * samples smoothly and jumps when it is off by more than {@link #RESYNC_TICKS}. Pure, allocation free.
+ * model"). Each sample gives {@code offset = tick - now * simHz}; the estimate follows samples smoothly.
+ * Feed one sample per receive batch (its newest tick, see {@link ClientWorld}): packets queued behind a
+ * stall arrive together, and only the newest of them says anything about the present.
+ * <p>
+ * A sample more than {@link #RESYNC_SECONDS} ahead of the estimate (we fell behind: reconnect, clock jump)
+ * replaces it at once. A sample that far behind is usually a late burst, so it is ignored, unless
+ * {@link #BACKWARD_RESYNC_SAMPLES} such samples arrive in a row (the server really went back: pause,
+ * restart). Pure, allocation free.
  */
 public final class TickClock {
     /** Weight of a new sample in the smoothed offset. */
     public static final double SMOOTHING = 0.1;
-    /** A sample this many ticks away from the estimate replaces it outright (pause, reconnect, clock jump). */
-    public static final double RESYNC_TICKS = 30;
+    /**
+     * A sample this far (in time, so it holds at any tick rate: 30 ticks at 60 Hz, 7 at 14 Hz) from the
+     * estimate is an outlier (see the class comment).
+     */
+    public static final double RESYNC_SECONDS = 0.5;
+    /** Consecutive outliers behind the estimate needed before it moves back. */
+    public static final int BACKWARD_RESYNC_SAMPLES = 4;
 
     private double simHz = 60;
     private boolean synced;
     private double offset;
+    private int behind;
 
     /** Set the simulation rate (from WELCOME) and forget the estimate. */
     public void reset(double simHz) {
         this.simHz = simHz;
         synced = false;
         offset = 0;
+        behind = 0;
     }
 
     public boolean synced() {
@@ -51,6 +64,11 @@ public final class TickClock {
 
     public double simHz() {
         return simHz;
+    }
+
+    /** {@link #RESYNC_SECONDS} in ticks at the current rate. */
+    public double resyncTicks() {
+        return RESYNC_SECONDS * simHz;
     }
 
     /** Local time in ticks. */
@@ -62,16 +80,28 @@ public final class TickClock {
      * Feed a snapshot's tick and arrival time.
      * <p>
      * BEHAVIOR: the first sample sets the estimate exactly.
-     * BEHAVIOR: later samples move the offset by {@link #SMOOTHING} of the difference.
-     * BEHAVIOR: a sample more than {@link #RESYNC_TICKS} away replaces the offset.
+     * BEHAVIOR: samples within {@link #resyncTicks()} move the offset by {@link #SMOOTHING} of the difference.
+     * BEHAVIOR: a sample more than {@link #resyncTicks()} ahead replaces the offset at once.
+     * BEHAVIOR: a sample more than {@link #resyncTicks()} behind is ignored, unless it is the
+     * {@link #BACKWARD_RESYNC_SAMPLES}th such sample in a row, which replaces the offset; any other sample
+     * restarts that count.
      */
     public void sample(int tick, long nowNanos) {
         double s = tick - localTicks(nowNanos);
-        if (!synced || Math.abs(s - offset) > RESYNC_TICKS) {
+        double d = s - offset;
+        double resync = resyncTicks();
+        if (!synced || d > resync) {
             offset = s;
             synced = true;
+            behind = 0;
+        } else if (d < -resync) {
+            if (++behind >= BACKWARD_RESYNC_SAMPLES) {
+                offset = s;
+                behind = 0;
+            }
         } else {
-            offset += (s - offset) * SMOOTHING;
+            offset += d * SMOOTHING;
+            behind = 0;
         }
     }
 

@@ -182,6 +182,8 @@ class GameEdgeTest {
             assertAll(
                 () -> assertEquals(List.of("D 0     5   0  Team 0@5", "  1     2   3  Team 1@6", "  2     2   3  Team 2@7"),
                     teamRows, "higher score first; equal scores keep team order; out-of-lives team is D; team 12 ignored"),
+                () -> assertEquals(List.of(true, false, false), List.of(sb.dimmed(4), sb.dimmed(5), sb.dimmed(6)),
+                    "the dead (D) team row is dimmed like a dead player (C client.c:1407)"),
                 () -> assertEquals(-1, empty.bestRow(), "no players: no best row"),
                 () -> assertEquals(0, empty.rowCount(), "no rows"),
                 () -> assertEquals(0f, reconfigured.teamScore(3), "configure forgets team scores"));
@@ -191,6 +193,41 @@ class GameEdgeTest {
     @Nested
     @DisplayName("small models")
     class Small {
+        @Test
+        @DisplayName("ScoreObjects: C formats, HUD text rules, positions, ageing past SCORE_OBJECT_COUNT, clear")
+        void scoreObjects() {
+            ScoreObjects so = new ScoreObjects();
+            so.add(2.25f, "Robby", true, 3, 4);
+            so.add(-1.5f, "", false, 0, 0);
+            so.setDecimals(0);
+            so.add(2.5f, null, false, 0, 0);
+            so.add(3.5f, "x", false, 0, 0);
+            List<String> huds = new java.util.ArrayList<>();
+            for (int i = 0; i < 4; i++) {
+                huds.add(so.hudText(i).toString());
+            }
+            so.tick(99);
+            boolean aliveAt100 = so.active(0);
+            so.tick(1);
+            boolean aliveAt101 = so.active(0);
+            ScoreObjects c = new ScoreObjects();
+            c.add(1, "a", false, 0, 0);
+            c.clear();
+            assertAll(
+                () -> assertEquals(List.of("Robby 2.2", "", "2", "x 4"), huds,
+                    "msg + %.1f (printf ties to even); empty msg: no HUD text (C); decimals 0: %d of rint; "
+                        + "unknown reason: points only"),
+                () -> assertEquals("2.2", so.text(0).toString(), "game-area text: the points"),
+                () -> assertTrue(so.hasPosition(0), "with a place"),
+                () -> assertEquals(List.of(3, 4), List.of(so.blockX(0), so.blockY(0)), "at its block"),
+                () -> assertEquals("-1.5", so.text(1).toString(), "an empty msg keeps the game-area text"),
+                () -> assertTrue(aliveAt100, "count 100 is still alive"),
+                () -> assertFalse(aliveAt101, "count 101 > SCORE_OBJECT_COUNT dies"),
+                () -> assertEquals("", so.hudText(0).toString(), "and loses its HUD text"),
+                () -> assertFalse(c.active(0), "clear forgets objects"),
+                () -> assertEquals(0, c.hudOrder(0), "and restarts the ring"));
+        }
+
         @Test
         @DisplayName("GameEvents with an odd capacity index the ring after it wrapped")
         void eventsOdd() {
@@ -242,17 +279,30 @@ class GameEdgeTest {
         }
 
         @Test
-        @DisplayName("SnapshotFrame.findShip only searches the live ships")
-        void findShip() {
-            SnapshotFrame f = new SnapshotFrame(4, 4);
-            f.shipId[0] = 5;
-            f.shipId[1] = 6;
-            f.shipId[2] = 7;
-            f.ships = 2;
+        @DisplayName("ShipIndex: put/get, overwrite, clear, misses and collisions in a full table")
+        void shipIndex() {
+            ShipIndex ix = new ShipIndex(4);
+            ix.put(5, 0);
+            ix.put(6, 1);
+            ix.put(5, 2);
+            int five = ix.get(5);
+            int six = ix.get(6);
+            int missing = ix.get(7);
+            ix.clear();
+            int afterClear = ix.get(5);
+            ShipIndex full = new ShipIndex(4);
+            for (int i = 0; i < 4; i++) {
+                full.put(1000 + i * full.tableSize(), i);
+            }
             assertAll(
-                () -> assertEquals(0, f.findShip(5), "first"),
-                () -> assertEquals(1, f.findShip(6), "second"),
-                () -> assertEquals(-1, f.findShip(7), "a stale slot is not searched"));
+                () -> assertEquals(2, five, "a repeated id is overwritten"),
+                () -> assertEquals(1, six, "another id"),
+                () -> assertEquals(-1, missing, "absent id"),
+                () -> assertEquals(-1, afterClear, "clear forgets everything"),
+                () -> assertEquals(8, full.tableSize(), "table is a power of two >= 2 x capacity"),
+                () -> assertEquals(3, full.get(1000 + 3 * full.tableSize()), "colliding keys probe onward"),
+                () -> assertEquals(0, full.get(1000), "the first colliding key is still found"),
+                () -> assertEquals(-1, full.get(999), "a miss terminates in a full-capacity table"));
         }
 
         @Test
@@ -289,9 +339,9 @@ class GameEdgeTest {
         void emitter() {
             ThrustSparkEmitter em = new ThrustSparkEmitter();
             em.configure(60, 14, 0.25f, 300, 400, false);
-            em.emit(1, 1, 10, 10, 0, 0, 0, 45, 3, -9, 0, new ParticlePool(100));
+            em.emit(1, 1, 10, 10, 0, 0, 0, 45, 3, -9, 0, false, new ParticlePool(100));
             assertAll(
-                () -> assertEquals(500f, em.hypotenuse(), "3-4-5 diagonal"),
+                () -> assertEquals(500, em.hypotenuse(), "3-4-5 diagonal"),
                 () -> assertEquals(500f, em.lastNormal().hypotenuse, "normal burst uses it"),
                 () -> assertTrue(em.lastAlt().count > 0, "afterburners fill the alt burst"));
         }
@@ -383,15 +433,19 @@ class GameEdgeTest {
             g.onStateChange(ConnectionState.PLAYING, "Playing");
             int logged = g.messages().gameCount();
             g.onReliable(ReliableType.PLAYER_JOIN, ClientGameTest.payload(ClientGameTest.join(7, 0, "me")));
+            g.onReliable(ReliableType.SCORE, ClientGameTest.payload(ClientGameTest.score(7, 0.5f)));
             g.onReliable(ReliableType.SCORE, ClientGameTest.payload(ClientGameTest.score(7, 1)));
-            g.frame(WorldFixture.at(100), 100.0 / 15);
-            double lifeAt100 = g.scoreMessageLife();
+            g.frame(WorldFixture.at(100), 99.0 / 15);
+            boolean aliveAt99 = g.scoreObjects().active(0);
+            g.frame(WorldFixture.at(100), 1.0 / 15);
+            boolean aliveAt100 = g.scoreObjects().active(0);
             assertAll(
                 () -> assertEquals(1, logged, "only the loss while joining was logged"),
                 () -> assertEquals("lost while joining", g.messages().game(0).text().toString(), "its text"),
                 () -> assertEquals(2, g.scoreboard().rowCount(), "the frame rebuilt the scoreboard: the player and team 0"),
-                () -> assertEquals(1024 - 100.0, g.messages().game(0).life(), 1e-9, "messages aged 100 frames"),
-                () -> assertEquals(0.0, lifeAt100, 1e-9, "the score message ends after exactly 100 frames"));
+                () -> assertTrue(aliveAt99, "the score object lives 99 frames later (count 100)"),
+                () -> assertFalse(aliveAt100, "and ends after exactly 100 frames (count 101 > SCORE_OBJECT_COUNT)"),
+                () -> assertEquals(1024 - 100.0, g.messages().game(0).life(), 1e-9, "messages aged 100 frames"));
         }
     }
 }

@@ -64,7 +64,7 @@ class ClientWorldEdgeTest {
                 () -> assertTrue(wraps, "wrap from the map"),
                 () -> assertEquals(0.25f, ff, "gameFps / simHz"),
                 () -> assertEquals(2.0, interval, "simHz / snapshotHz"),
-                () -> assertEquals(3.0, delay, "one interval plus one tick"),
+                () -> assertEquals(2.0 + 0.02 * 60, delay, 1e-12, "one interval plus 20 ms of ticks"),
                 () -> assertEquals(0.25f, w.frameFraction(), "zero gameFps falls back to framesPerSecond, simHz to 60"),
                 () -> assertEquals(2.0, w.snapshotIntervalTicks(), "zero snapshotHz falls back to simHz / 2"),
                 () -> assertEquals(60.0, w.clock().simHz(), "the clock runs at simHz"),
@@ -72,13 +72,13 @@ class ClientWorldEdgeTest {
         }
 
         @Test
-        @DisplayName("the default render delay is one snapshot interval plus a tick")
+        @DisplayName("the default render delay is one snapshot interval plus 20 ms")
         void defaultDelay() {
             WorldFixture f = new WorldFixture(true);
             f.begin(100).ship(9, 0, 100, 100, 0, 0, 0).ingestAtTick(100);
             f.world.update(at(103));
             assertAll(
-                () -> assertEquals(100.0, f.world.renderTick(), EPS, "103 - 3"),
+                () -> assertEquals(103 - 2 - 1.2, f.world.renderTick(), EPS, "103 - (2 + 0.02 * 60)"),
                 () -> assertEquals(103.0, f.world.serverTickNow(), EPS, "estimated server tick"));
         }
 
@@ -101,6 +101,7 @@ class ClientWorldEdgeTest {
             ClientWorld w = f.world;
             f.begin(100).fuel(0, 0.25).target(0, Records.TargetState.FLAG_DEAD, 0.5).treasure(0, 1).items(3)
                 .ingestAtTick(100);
+            w.update(at(100));
             w.setBaseOwner(0, 9);
             boolean before = w.clock().synced();
             w.reset();
@@ -150,17 +151,25 @@ class ClientWorldEdgeTest {
         }
 
         @Test
-        @DisplayName("part numbers from 64 up are never treated as duplicates of low parts")
+        @DisplayName("parts 64 and up are malformed and never merged, so repeats cannot double a frame")
         void highParts() {
             WorldFixture f = new WorldFixture(true);
+            f.world.setInterpolationDelayTicks(0);
             f.begin(100, 0, 65).ingestAtTick(100);
-            int p64 = f.begin(100, 64, 65).ingestAtTick(100);
-            int p63 = f.begin(100, 63, 65).ingestAtTick(100);
-            int p63again = f.begin(100, 63, 65).ingestAtTick(100);
+            long bad = f.world.malformedSnapshots();
+            int p64 = f.begin(100, 64, 65).ship(9, 0, 100, 100, 0, 0, 0).ingestAtTick(100);
+            int p64again = f.begin(100, 64, 65).ship(9, 0, 100, 100, 0, 0, 0).ingestAtTick(100);
+            int p63 = f.begin(100, 63, 65).ship(10, 0, 50, 100, 0, 0, 0).ingestAtTick(100);
+            int p63again = f.begin(100, 63, 65).ship(10, 0, 50, 100, 0, 0, 0).ingestAtTick(100);
+            f.world.update(at(100));
             assertAll(
-                () -> assertEquals(ClientWorld.PART_ADDED, p64, "part 64 is merged"),
+                () -> assertEquals(ClientWorld.MALFORMED, p64, "part 64 is malformed"),
+                () -> assertEquals(ClientWorld.MALFORMED, p64again, "and so is its repeat"),
+                () -> assertEquals(bad + 2, f.world.malformedSnapshots(), "both counted"),
                 () -> assertEquals(ClientWorld.PART_ADDED, p63, "part 63 is merged"),
-                () -> assertEquals(ClientWorld.DUPLICATE, p63again, "part 63 repeated is a duplicate"));
+                () -> assertEquals(ClientWorld.DUPLICATE, p63again, "part 63 repeated is a duplicate"),
+                () -> assertEquals(1, f.world.shipCount(), "only part 63's ship, once"),
+                () -> assertEquals(10, f.world.shipId(0), "the ship of part 63"));
         }
 
         @Test
@@ -323,7 +332,7 @@ class ClientWorldEdgeTest {
             for (int t = from; t <= to; t++) {
                 double back = (snap - t) * 0.25;
                 em.emit(t, 9, x - vx * back, y - vy * back, 0, vx, vy, power, ab, ShipShape.defaultShip().engineX,
-                    ShipShape.defaultShip().engineY, p);
+                    ShipShape.defaultShip().engineY, false, p);
             }
             return list(p);
         }

@@ -35,8 +35,19 @@ class TalkLineTest {
         }
     }
 
+    static TalkLine with(String s, int cursor) {
+        TalkLine t = new TalkLine();
+        t.open();
+        type(t, s);
+        t.home();
+        for (int i = 0; i < cursor; i++) {
+            t.right();
+        }
+        return t;
+    }
+
     @Test
-    @DisplayName("editing: insert at the cursor, bounded movement, backspace and delete")
+    @DisplayName("editing: insert at the cursor, bounded movement; Backspace and DEL both erase before the cursor")
     void editing() {
         TalkLine t = new TalkLine();
         boolean closed = t.type('x');
@@ -47,11 +58,11 @@ class TalkLineTest {
         t.home();
         t.left();
         t.backspace();
-        t.delete();
-        String afterDelete = t.text().toString();
+        String atStart = t.text().toString();
         t.end();
         t.right();
         t.delete();
+        String afterDel = t.text().toString();
         t.backspace();
         boolean control = t.type(7);
         boolean high = t.type(200);
@@ -59,8 +70,9 @@ class TalkLineTest {
         boolean wide = t.type(0x263A);
         assertAll(
             () -> assertFalse(closed, "typing into a closed line is ignored"),
-            () -> assertEquals("ello", afterDelete, "inserted l before o, then deleted the h at the start"),
-            () -> assertEquals("ellÈ", t.text().toString(), "backspace at the end; Latin-1 200 typed"),
+            () -> assertEquals("hello", atStart, "inserted l before o; backspace at the start does nothing"),
+            () -> assertEquals("hell", afterDel, "DEL erases the char before the cursor, like Backspace in C"),
+            () -> assertEquals("helÈ", t.text().toString(), "Latin-1 200 typed"),
             () -> assertFalse(control, "control chars rejected"),
             () -> assertTrue(high, "Latin-1 letters accepted"),
             () -> assertFalse(c1, "C1 controls rejected"),
@@ -69,27 +81,135 @@ class TalkLineTest {
     }
 
     @Test
-    @DisplayName("at most 80 chars")
+    @DisplayName("at most MAX_CHARS - 2 = 78 chars; with a width limit no wider than the talk window allows")
     void full() {
         TalkLine t = new TalkLine();
         t.open();
         type(t, "a".repeat(85));
-        assertEquals(TalkLine.MAX_CHARS, t.text().length(), "capped at MAX_CHARS");
+        TalkLine w = new TalkLine();
+        w.limitWidth(HudTest.M, 100);
+        w.open();
+        type(w, "a".repeat(20));
+        int at100 = w.text().length();
+        TalkLine edge = new TalkLine();
+        edge.limitWidth(HudTest.M, 2 * Hud.TALK_INSIDE_BORDER + 5 + 70);
+        edge.open();
+        type(edge, "a".repeat(20));
+        assertAll(
+            () -> assertEquals(78, t.text().length(), "capped at 78"),
+            () -> assertEquals(TalkLine.MAX_LEN, t.text().length(), "MAX_LEN"),
+            () -> assertEquals(13, at100, "7 px chars: 12 chars are 84 px < 100-11; the 13th is refused at 91 px"),
+            () -> assertEquals(10, edge.text().length(), "a line exactly as wide as the limit takes no more"),
+            () -> assertEquals(488, Hud.talkWindowWidth(588), "talk window width viewW - 2 * (48 + 2)"));
     }
 
     @Test
-    @DisplayName("submit sends, records history and closes; history browses with wrap and skips empty slots")
-    void submitAndHistory() {
+    @DisplayName("Ctrl-W/U/K erase like C; Ctrl-A/E/B/F move; other letters are not handled")
+    void controlKeys() {
+        TalkLine w = with("hello big  world  ", 3);
+        w.control('w');
+        TalkLine w2 = with("hello big", 9);
+        w2.control('W');
+        w2.control('W');
+        w2.control('W');
+        TalkLine u = with("hello", 2);
+        u.control('U');
+        TalkLine k = with("hello", 2);
+        k.control('K');
+        TalkLine m = with("hello", 2);
+        m.control('E');
+        int e = m.cursor();
+        m.control('B');
+        int b = m.cursor();
+        m.control('A');
+        int a = m.cursor();
+        m.control('F');
+        boolean other = m.control('Z');
+        assertAll(
+            () -> assertEquals("hello big  ", w.text().toString(), "W: trailing blanks and the last word, wherever the cursor is"),
+            () -> assertEquals(3, w.cursor(), "the cursor stays when still inside"),
+            () -> assertEquals("", w2.text().toString(), "W repeatedly erases word by word to empty"),
+            () -> assertEquals(0, w2.cursor(), "cursor clamped to the new length"),
+            () -> assertEquals("", u.text().toString(), "U erases the line"),
+            () -> assertEquals(0, u.cursor(), "cursor at 0"),
+            () -> assertEquals("he", k.text().toString(), "K erases from the cursor to the end"),
+            () -> assertEquals(5, e, "E goes to the end"),
+            () -> assertEquals(4, b, "B one back"),
+            () -> assertEquals(0, a, "A to the start"),
+            () -> assertEquals(1, m.cursor(), "F one forward"),
+            () -> assertFalse(other, "Z is not a talk control key"));
+    }
+
+    @Test
+    @DisplayName("Ctrl-D: the char under the cursor; on or after the last char the one before; nothing at 0")
+    void ctrlD() {
+        TalkLine mid = with("abcd", 1);
+        mid.control('d');
+        TalkLine last = with("abcd", 3);
+        last.control('d');
+        TalkLine end = with("abcd", 4);
+        end.control('d');
+        TalkLine start = with("abcd", 0);
+        start.control('d');
+        assertAll(
+            () -> assertEquals("acd", mid.text().toString(), "under the cursor"),
+            () -> assertEquals(1, mid.cursor(), "cursor stays"),
+            () -> assertEquals("abd", last.text().toString(), "on the last char C erases the one before (C quirk)"),
+            () -> assertEquals(2, last.cursor(), "and moves back"),
+            () -> assertEquals("abc", end.text().toString(), "at the end: the last char"),
+            () -> assertEquals("abcd", start.text().toString(), "at position 0 nothing (C quirk)"));
+    }
+
+    @Test
+    @DisplayName("Return sends; a line is saved in the history only if it was typed; Escape clears and closes")
+    void submitAndEscape() {
         TalkLine t = new TalkLine();
         StringBuilder out = new StringBuilder("junk");
         t.open();
         boolean empty = t.submit(out);
+        String untouched = out.toString();
         t.open();
         type(t, "one");
         t.submit(out);
         t.open();
-        type(t, "two");
-        boolean sent = t.submit(out);
+        t.historyUp();
+        boolean recalled = t.submit(out);
+        String resent = out.toString();
+        t.open();
+        type(t, "draft");
+        t.escape();
+        boolean openAfterEscape = t.isOpen();
+        t.open();
+        String afterEscape = t.text().toString();
+        TalkLine k = new TalkLine();
+        k.open();
+        type(k, "keep");
+        k.close();
+        k.open();
+        assertAll(
+            () -> assertFalse(empty, "an empty line is not sent"),
+            () -> assertEquals("junk", untouched, "nothing copied for an empty line"),
+            () -> assertTrue(recalled, "a recalled line is sent"),
+            () -> assertEquals("one", resent, "as it was"),
+            () -> assertEquals("one", t.history(0).toString(), "typed line saved"),
+            () -> assertEquals(0, t.history(1).length(), "the recalled line was not saved again"),
+            () -> assertFalse(openAfterEscape, "Escape closes"),
+            () -> assertEquals("", afterEscape, "Escape clears the text"),
+            () -> assertEquals(0, t.history(1).length(), "the escaped draft is not saved"),
+            () -> assertEquals("keep", k.text().toString(), "closing with the talk key keeps the text"),
+            () -> assertEquals(4, k.cursor(), "cursor at its end when reopened"));
+    }
+
+    @Test
+    @DisplayName("history browses with wrap and skips empty slots; Up first saves an unfinished typed line")
+    void history() {
+        TalkLine t = new TalkLine();
+        StringBuilder out = new StringBuilder();
+        for (String s : new String[] {"one", "two"}) {
+            t.open();
+            type(t, s);
+            t.submit(out);
+        }
         t.open();
         t.historyUp();
         String up1 = t.text().toString();
@@ -99,24 +219,36 @@ class TalkLineTest {
         String wrapped = t.text().toString();
         t.historyDown();
         String down = t.text().toString();
-        t.cancel();
-        boolean open = t.isOpen();
+        t.close();
         t.open();
-        int cursor = t.cursor();
+        t.end();
+        type(t, "x");
+        t.historyUp();
+        String cleared = t.text().toString();
+        String saved = t.history(0).toString();
+        t.historyUp();
+        String afterSave = t.text().toString();
         TalkLine none = new TalkLine();
         none.open();
+        type(none, "a");
+        none.submit(out);
+        none.open();
+        type(none, "q");
+        none.backspace();
         none.historyUp();
+        TalkLine empty = new TalkLine();
+        empty.open();
+        empty.historyDown();
         assertAll(
-            () -> assertFalse(empty, "an empty line is not sent"),
-            () -> assertTrue(sent, "a line is sent"),
-            () -> assertEquals("two", out.toString(), "the sent text"),
-            () -> assertEquals("two", t.history(0).toString(), "newest history first"),
             () -> assertEquals("two", up1, "up: most recent"),
             () -> assertEquals("one", up2, "up again: older"),
             () -> assertEquals("two", wrapped, "past the oldest wraps to the newest, skipping empty slots"),
             () -> assertEquals("one", down, "down goes back the other way, wrapping"),
-            () -> assertFalse(open, "cancel closes"),
-            () -> assertEquals(3, cursor, "the cancelled text is kept with the cursor at its end"),
-            () -> assertEquals(0, none.text().length(), "no history: nothing happens"));
+            () -> assertEquals("", cleared, "Up with a typed unfinished line clears it"),
+            () -> assertEquals("onex", saved, "after saving it as the newest entry"),
+            () -> assertEquals("two", afterSave, "the next Up continues after the saved entry (C history_pos = 0)"),
+            () -> assertEquals("a", none.history(0).toString(), "a typed line erased to empty is not saved"),
+            () -> assertEquals("", none.text().toString(), "and the line is cleared"),
+            () -> assertEquals("", empty.text().toString(), "no history: the line is cleared"));
     }
 }

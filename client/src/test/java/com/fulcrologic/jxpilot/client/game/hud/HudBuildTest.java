@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.client.game.hud;
 
 import com.fulcrologic.jxpilot.client.game.ClientGame;
+import com.fulcrologic.jxpilot.client.game.ScoreObjects;
 import com.fulcrologic.jxpilot.client.net.ConnectionState;
 import com.fulcrologic.jxpilot.common.config.ConfigParser;
 import com.fulcrologic.jxpilot.common.config.OptionOrigin;
@@ -99,18 +100,41 @@ class HudBuildTest {
         }
 
         @Test
-        @DisplayName("a dead ship gets no HUD; a lost connection shows the status centred")
+        @DisplayName("a dead ship keeps HUD and meters (C paints them) but no speed pointer; a lost connection shows the status")
         void deadAndStatus() {
-            ClientGame g = game(300, Records.ShipFlags.DEAD, 0, 0);
+            ClientGame g = game(300, Records.ShipFlags.DEAD, 10, 5);
             g.onStateChange(ConnectionState.CONNECTING, "Lost");
             HudFrame f = new HudFrame();
             Hud h = new Hud();
+            h.ptrMoveFact = 2;
+            h.fuelMeter = true;
             h.build(f, g, new TalkLine(), 800, 600, M, 0);
             assertAll(
-                () -> assertEquals(0, f.lineCount(), "no HUD lines"),
-                () -> assertEquals(0, f.rectCount(), "no gauge"),
-                () -> assertEquals(List.of("10,587 ", "386,300 Lost"), texts(f),
+                () -> assertFalse(lines(f).contains("400,300-380,310"), "no speed pointer while dead (selfVisible)"),
+                () -> assertTrue(lines(f).contains("310,230-490,230 dashed"), "HUD lines while dead"),
+                () -> assertTrue(texts(f).contains("557,29 Fuel"), "meters while dead"),
+                () -> assertTrue(texts(f).contains("473,383 0300"), "fuel text while dead"),
+                () -> assertTrue(rects(f).contains("box 475,235 11x131"), "fuel gauge while dead"),
+                () -> assertEquals(List.of("10,587 ", "386,300 Lost"), texts(f).subList(texts(f).size() - 2, texts(f).size()),
                     "the (not yet typed) loss message and the status at ((800-28)/2, 300)"));
+        }
+
+        @Test
+        @DisplayName("fuel notify: a refill seen while the ship was visible notifies, the respawn refill after death does not")
+        void fuelNotifyGate() {
+            Hud h = new Hud();
+            h.advance(1, 100, 14, true);
+            h.advance(1, 120, 14, true);
+            double whileVisible = h.fuelCount();
+            Hud d = new Hud();
+            d.advance(1, 100, 14, false);
+            d.advance(1, 1000, 14, true);
+            double afterDeath = d.fuelCount();
+            d.advance(1, 1100, 14, true);
+            assertAll(
+                () -> assertEquals(42.0, whileVisible, "refuelling while visible: 3 s at 14 fps"),
+                () -> assertEquals(0.0, afterDeath, "the refill arriving with the respawn (not visible before) is silent"),
+                () -> assertEquals(42.0, d.fuelCount(), "the next increase while visible notifies"));
         }
 
         @Test
@@ -124,8 +148,12 @@ class HudBuildTest {
             g.onReliable(com.fulcrologic.jxpilot.common.net.ReliableType.PLAYER_JOIN, jb.flip());
             Msg.Score s = new Msg.Score();
             s.id = 7;
-            s.score = 3;
+            s.score = 1;
             ByteBuffer sb = ByteBuffer.allocate(20);
+            s.write(sb);
+            g.onReliable(com.fulcrologic.jxpilot.common.net.ReliableType.SCORE, sb.flip());
+            s.score = 4;
+            sb.clear();
             s.write(sb);
             g.onReliable(com.fulcrologic.jxpilot.common.net.ReliableType.SCORE, sb.flip());
             Hud h = new Hud();
@@ -158,12 +186,12 @@ class HudBuildTest {
             boolean belowNotify = h.fuelText(f, 0, 0, 499, 0, 0, M);
             int textsNoTank = f.textCount();
             boolean gaugeAtNotify = h.fuelGaugeVisible(500);
-            h.advance(1, 0, 14);
+            h.advance(1, 0, 14, true);
             boolean critPhase1 = h.fuelGaugeVisible(50);
-            h.advance(2, 0, 14);
+            h.advance(2, 0, 14, true);
             boolean warnPhase3 = h.fuelGaugeVisible(150);
             boolean critPhase3 = h.fuelGaugeVisible(50);
-            h.advance(1, 0, 14);
+            h.advance(1, 0, 14, true);
             boolean equalFuel = h.fuelCount() == 0;
             h.notifyFuel(14);
             double notified = h.fuelCount();
@@ -186,7 +214,9 @@ class HudBuildTest {
         @DisplayName("a score message exactly as wide as the HUD stays on the first line")
         void scoreWidth() {
             HudFrame f = new HudFrame();
-            new Hud().scoreMessage(f, 400, 300, 12.5f, true, new Mono(35));
+            ScoreObjects so = new ScoreObjects();
+            so.add(12.5f, null, false, 0, 0);
+            new Hud().scoreStack(f, 400, 300, so, true, new Mono(35));
             assertEquals("330,383 12.5", texts(f).get(0), "width 140 is not wider than 140");
         }
 

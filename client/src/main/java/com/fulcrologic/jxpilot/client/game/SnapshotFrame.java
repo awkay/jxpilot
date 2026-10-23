@@ -96,14 +96,4 @@ final class SnapshotFrame {
         ships = 0;
         shots = 0;
     }
-
-    /** BEHAVIOR: index of ship id in this frame, -1 when absent. */
-    int findShip(int id) {
-        for (int i = 0; i < ships; i++) {
-            if (shipId[i] == id) {
-                return i;
-            }
-        }
-        return -1;
-    }
 }

@@ -26,14 +26,21 @@ package com.fulcrologic.jxpilot.client.game.hud;
 import com.fulcrologic.jxpilot.client.game.CharBuf;
 
 /**
- * The talk line editor of C {@code talk.c}: up to {@link #MAX_CHARS} characters with a cursor,
- * insert/delete editing and a history of sent lines browsed with the talk cursor up/down keys
- * (C {@code Get_msg_from_history}: up goes to older lines, down to newer, both wrap, empty slots are
- * skipped). Allocation free.
+ * The talk line editor of C {@code talk.c} ({@code Talk_do_event}, with selectionAndHistory on, its
+ * default): at most {@link #MAX_CHARS}-2 characters and, when a width limit is set, no wider than the
+ * talk window; a cursor; Backspace, DEL (also backspace, as X delivers it) and the Ctrl-A/B/D/E/F/K/U/W
+ * line editing keys; a history of sent lines browsed with the talk cursor up/down keys. Allocation free.
+ * <p>
+ * History (C {@code Add_msg_to_history}/{@code Get_msg_from_history}): a line is saved only when
+ * something was typed into it (a line recalled from the history and sent unchanged is not saved again);
+ * Up/Down with an unfinished typed line first saves it and clears the line; otherwise Up goes to older
+ * lines and Down to newer, both wrapping and skipping empty slots. The repeat-key "hopping" erase of C is not reproduced.
  */
 public final class TalkLine {
-    /** C {@code MAX_CHARS}. */
+    /** C {@code MAX_CHARS}; the line holds at most MAX_CHARS - 2. */
     public static final int MAX_CHARS = 80;
+    /** Longest line (C {@code oldlen >= MAX_CHARS - 2} refuses more). */
+    public static final int MAX_LEN = MAX_CHARS - 2;
     /** C default {@code maxLinesInHistory}. */
     public static final int HISTORY = 32;
 
@@ -41,7 +48,11 @@ public final class TalkLine {
     private final CharBuf[] history = new CharBuf[HISTORY];
     private int cursor;
     private boolean open;
-    private int historyPos;
+    private int historyPos = -1;
+    /** C {@code save_talk_str}: something was typed since the line was last saved, sent or cleared. */
+    private boolean typed;
+    private TextMetrics metrics;
+    private int maxWidth;
 
     public TalkLine() {
         for (int i = 0; i < HISTORY; i++) {
@@ -57,34 +68,59 @@ public final class TalkLine {
     /** Cursor position 0..length. */
     public int cursor() { return cursor; }
 
-    /** History entry i, 0 = most recently sent. */
+    /** History entry i, 0 = most recently saved. */
     public CharBuf history(int i) { return history[i]; }
 
-    /** BEHAVIOR: opens the line (text kept from an aborted edit, cursor at its end). */
+    /** True when the line holds typed text that is not yet in the history. */
+    public boolean typed() { return typed; }
+
+    /**
+     * Also refuse input once the text is as wide as the talk window allows (C
+     * {@code TALK_WINDOW_WIDTH - 2*TALK_INSIDE_BORDER - 5}).
+     *
+     * @param windowWidth the talk window width ({@link Hud#talkWindowWidth})
+     */
+    public void limitWidth(TextMetrics m, int windowWidth) {
+        metrics = m;
+        maxWidth = windowWidth - 2 * Hud.TALK_INSIDE_BORDER - 5;
+    }
+
+    /** BEHAVIOR: opens the line (text kept from a line closed with the talk key, cursor at its end). */
     public void open() {
         open = true;
         cursor = line.length();
         historyPos = -1;
     }
 
-    /** BEHAVIOR: closes without sending; the text is kept for next time (C keeps an unfinished line). */
-    public void cancel() {
+    /** The talk key while open (C toggles the window): closes and keeps the text. */
+    public void close() {
         open = false;
+        historyPos = -1;
+    }
+
+    /** BEHAVIOR: Escape: clears the text (nothing is saved) and closes. */
+    public void escape() {
+        line.clear();
+        cursor = 0;
+        typed = false;
+        close();
     }
 
     /**
-     * BEHAVIOR: inserts a printable Latin-1 char (32..126, 160..255) at the cursor when not full;
-     * others are ignored; returns whether it was inserted.
+     * BEHAVIOR: inserts a printable Latin-1 char (32..126, 160..255) at the cursor, marking the line as
+     * typed; refused (false) when the line has {@link #MAX_LEN} chars or, with a width limit, is already
+     * that wide; other codes are ignored.
      */
     public boolean type(int codepoint) {
-        if (!open || line.length() >= MAX_CHARS) {
+        if (!open || codepoint < 32 || codepoint > 255 || (codepoint > 126 && codepoint < 160)) {
             return false;
         }
-        if (codepoint < 32 || codepoint > 255 || (codepoint > 126 && codepoint < 160)) {
+        typed = true;
+        int n = line.length();
+        if (n >= MAX_LEN || metrics != null && metrics.width(line, n) >= maxWidth) {
             return false;
         }
         char[] c = line.array();
-        int n = line.length();
         System.arraycopy(c, cursor, c, cursor + 1, n - cursor);
         c[cursor] = (char) codepoint;
         line.setLength(n + 1);
@@ -92,7 +128,7 @@ public final class TalkLine {
         return true;
     }
 
-    /** BEHAVIOR: deletes the char before the cursor (no-op at the start). */
+    /** BEHAVIOR: Backspace: deletes the char before the cursor (no-op at the start). */
     public void backspace() {
         if (cursor > 0) {
             cursor--;
@@ -100,11 +136,9 @@ public final class TalkLine {
         }
     }
 
-    /** BEHAVIOR: deletes the char under the cursor (no-op at the end). */
+    /** BEHAVIOR: DEL: X delivers it as '\177', which C erases like Backspace. */
     public void delete() {
-        if (cursor < line.length()) {
-            deleteAt(cursor);
-        }
+        backspace();
     }
 
     private void deleteAt(int i) {
@@ -112,6 +146,53 @@ public final class TalkLine {
         int n = line.length();
         System.arraycopy(c, i + 1, c, i, n - i - 1);
         line.truncate(n - 1);
+    }
+
+    /**
+     * A control key, C {@code Talk_do_event}.
+     * <p>
+     * BEHAVIOR: A start, E end, B back, F forward; D erases like C (the char under the cursor, but with the
+     * cursor on or after the last char the one before it, and nothing at position 0); W erases trailing
+     * blanks and then the last word of the line; U erases the line; K erases from the cursor to the end.
+     * The cursor is clamped to the new length. Returns false for other letters.
+     */
+    public boolean control(char letter) {
+        int n = line.length();
+        switch (Character.toUpperCase(letter)) {
+            case 'A' -> home();
+            case 'E' -> end();
+            case 'B' -> left();
+            case 'F' -> right();
+            case 'D' -> {
+                if (cursor > 0) {
+                    if (cursor >= n - 1) {
+                        cursor--;
+                    }
+                    deleteAt(cursor);
+                }
+            }
+            case 'W' -> {
+                int k = n;
+                while (k > 0 && line.array()[k - 1] == ' ') {
+                    k--;
+                }
+                while (k > 0 && line.array()[k - 1] != ' ') {
+                    k--;
+                }
+                cut(k);
+            }
+            case 'U' -> cut(0);
+            case 'K' -> cut(cursor);
+            default -> {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void cut(int len) {
+        line.truncate(len);
+        cursor = Math.min(cursor, line.length());
     }
 
     /** BEHAVIOR: moves the cursor one left, stopping at 0. */
@@ -136,20 +217,25 @@ public final class TalkLine {
         cursor = line.length();
     }
 
-    /**
-     * BEHAVIOR: up = older history line, wrapping to the newest after the oldest; empty slots are
-     * skipped; nothing happens when the history is empty. The line and cursor (at the end) are replaced.
-     */
+    /** BEHAVIOR: talk cursor up: older history line (see the class comment). */
     public void historyUp() {
         browse(1);
     }
 
-    /** BEHAVIOR: down = newer history line, wrapping (see {@link #historyUp}). */
+    /** BEHAVIOR: talk cursor down: newer history line (see the class comment). */
     public void historyDown() {
         browse(-1);
     }
 
     private void browse(int dir) {
+        if (typed) {
+            if (line.length() > 0) {
+                save();
+            }
+            typed = false;
+            clearLine();
+            return;
+        }
         int pos = historyPos;
         for (int i = 0; i < HISTORY; i++) {
             pos += dir;
@@ -165,27 +251,41 @@ public final class TalkLine {
                 return;
             }
         }
+        // empty history: the line is empty too (any text in it would be typed text, handled above)
+    }
+
+    private void clearLine() {
+        line.clear();
+        cursor = 0;
+    }
+
+    /** C {@code Add_msg_to_history}: newest first, oldest dropped; browsing restarts at the newest. */
+    private void save() {
+        CharBuf oldest = history[HISTORY - 1];
+        System.arraycopy(history, 0, history, 1, HISTORY - 1);
+        history[0] = oldest.clear().append(line);
+        historyPos = 0;
+        typed = false;
     }
 
     /**
      * Finish the line (Return).
      * <p>
-     * BEHAVIOR: copies the text into {@code out}, pushes it onto the history (newest first, oldest
-     * dropped), clears the line and closes; returns false (nothing copied, line closed) when empty.
+     * BEHAVIOR: with text: copies it into {@code out}, saves it in the history iff it was typed, clears
+     * the line and returns true. Empty: returns false with nothing copied. Closes either way.
      */
     public boolean submit(StringBuilder out) {
-        open = false;
-        if (line.length() == 0) {
-            return false;
+        boolean sent = line.length() > 0;
+        if (sent) {
+            out.setLength(0);
+            out.append(line.array(), 0, line.length());
+            if (typed) {
+                save();
+            }
+            clearLine();
         }
-        out.setLength(0);
-        out.append(line.array(), 0, line.length());
-        CharBuf oldest = history[HISTORY - 1];
-        System.arraycopy(history, 0, history, 1, HISTORY - 1);
-        history[0] = oldest.clear().append(line);
-        line.clear();
-        cursor = 0;
-        historyPos = -1;
-        return true;
+        typed = false;
+        close();
+        return sent;
     }
 }

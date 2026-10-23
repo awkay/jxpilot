@@ -37,7 +37,6 @@ import com.fulcrologic.jxpilot.common.net.ReliableHandler;
 import com.fulcrologic.jxpilot.common.net.ReliableType;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 
 /**
@@ -47,12 +46,30 @@ import java.nio.ByteBuffer;
  * <p>
  * Time is passed in (nanoseconds, any monotonic origin) so the class is deterministic under test.
  * Single threaded. Per client frame call, in order: {@link #update(long)} (receive and timers),
- * {@link #sendInput(long, int, long)}, then {@link #flush(long)} (reliable resends, idle ACK).
+ * {@link #sendInput(long, int, long)} (it decides itself whether an INPUT goes out this frame), then
+ * {@link #flush(long)} (reliable resends, idle ACK).
+ * <p>
+ * Hostile or broken servers cannot crash the client: every datagram is decoded under a
+ * {@code RuntimeException} guard and counted as {@link #malformed()} when it fails, and a failing reliable
+ * message is skipped so it cannot wedge the channel. Transport {@link IOException}s (VPN or Wi-Fi drop, ICMP
+ * port unreachable) count as "nothing received" / "not sent", so the normal timeout and reconnect run.
+ * <p>
  * Allocation free while {@link ConnectionState#PLAYING}; the handshake and map build allocate.
  */
 public final class ClientConnection {
-    /** INPUT entries per packet (PROTOCOL.md: "the last 4 inputs"). */
-    public static final int INPUT_REDUNDANCY = 4;
+    /** Most INPUT entries per packet ({@link InputHistory#MAX_REDUNDANCY}). */
+    public static final int MAX_INPUT_REDUNDANCY = InputHistory.MAX_REDUNDANCY;
+    /**
+     * Shortest gap between two INPUT datagrams (a 120/s ceiling). A time, not a fraction of the tick: at
+     * 14 Hz a key change must still go out at once, or it can miss the server's next frame.
+     */
+    public static final long MIN_INPUT_GAP_NANOS = 1_000_000_000L / 120;
+    /** After a transport error INPUT, reliable data and ACKs pause this long (CONNECT keeps its own timer). */
+    public static final long IO_BACKOFF_NANOS = Protocol.CONNECT_RESEND_MS * 1_000_000L;
+    /** Reject/disconnect text shown in the status line at most (C {@code MAX_CHARS}). */
+    public static final int MAX_STATUS_TEXT = 80;
+    /** Size of a PING body ({@link Msg.Ping}: u32 id, u64 nanos); a PONG echoes exactly this. */
+    public static final int PING_SIZE = 12;
     /** Upper bound of datagrams processed per {@link #update} call. */
     public static final int MAX_RECEIVE_PER_UPDATE = 256;
     /** Upper bound of RELIABLE datagrams sent per {@link #flush} call. */
@@ -76,7 +93,8 @@ public final class ClientConnection {
     private final Msg.Reject reject = new Msg.Reject();
     private final Msg.Disconnect disconnectMsg = new Msg.Disconnect();
     private final Msg.Welcome welcome = new Msg.Welcome();
-    private final StringBuilder status = new StringBuilder(128);
+    private final Msg.Ping ping = new Msg.Ping();
+    private final StringBuilder status = new StringBuilder(256);
     private final ReliableHandler rxHandler = this::onReliable;
 
     /** CONNECT body; set name, team and shape before {@link #start(long)}. */
@@ -95,6 +113,20 @@ public final class ClientConnection {
     private boolean haveTick;
     private int latestTick;
     private long now;
+
+    // INPUT rate control (see sendInput)
+    private long inputIntervalNanos = 1_000_000_000L / 60;
+    private boolean inputSent;
+    private long lastInputSend;
+    private long nextInputDue;
+    private long lastSentKeys;
+    private int pendingAim;
+    private int ackedInputSeq;
+
+    // transport errors
+    private boolean ioBackoff;
+    private long ioBackoffUntil;
+    private long ioErrors;
 
     private long packetsReceived;
     private long packetsSent;
@@ -142,8 +174,17 @@ public final class ClientConnection {
 
     public long packetsSent() { return packetsSent; }
 
-    /** Datagrams dropped as malformed (bad header, truncated body, bad reliable framing). */
+    /** Datagrams (or reliable messages) dropped as malformed: bad header, truncated or undecodable body. */
     public long malformed() { return malformed; }
+
+    /** Transport IOExceptions on send or receive (each counts as not sent / nothing received). */
+    public long ioErrors() { return ioErrors; }
+
+    /** Newest INPUT sequence the server echoed in a snapshot header (lastInputSeq). */
+    public int ackedInputSeq() { return ackedInputSeq; }
+
+    /** Minimum time between two INPUT datagrams without a key change: 1 / simHz (from WELCOME). */
+    public long inputIntervalNanos() { return inputIntervalNanos; }
 
     public long snapshotsReceived() { return snapshots; }
 
@@ -177,6 +218,10 @@ public final class ClientConnection {
         haveTick = false;
         latestTick = 0;
         lastReceive = nowNanos;
+        inputSent = false;
+        pendingAim = 0;
+        ackedInputSeq = input.latestSeq();
+        ioBackoff = false;
     }
 
     /**
@@ -217,6 +262,9 @@ public final class ClientConnection {
      * BEHAVIOR: after {@link Protocol#TIMEOUT_MS} ms of silence an established session is lost: it
      * reconnects when auto-reconnect is on (status says so), else CLOSED. While CONNECTING the attempt
      * cycle restarts (auto-reconnect) or the connection closes ("no answer").
+     * BEHAVIOR: a receive IOException counts in {@link #ioErrors()}, ends the receive loop as "nothing
+     * received" and starts the {@link #IO_BACKOFF_NANOS} send pause; it never escapes.
+     * BEHAVIOR: a datagram whose decoding throws any RuntimeException counts as malformed; it never escapes.
      */
     public void update(long nowNanos) {
         now = nowNanos;
@@ -230,15 +278,34 @@ public final class ClientConnection {
             try {
                 n = transport.receive(rx);
             } catch (IOException e) {
-                throw new UncheckedIOException(e);
+                ioError(nowNanos);
+                break;
             }
             if (n <= 0) {
                 break;
             }
             rx.flip();
-            handlePacket(rx);
+            try {
+                handlePacket(rx);
+            } catch (RuntimeException e) {
+                malformed++;
+            }
         }
         timers(nowNanos);
+    }
+
+    private void ioError(long nowNanos) {
+        ioErrors++;
+        ioBackoff = true;
+        ioBackoffUntil = nowNanos + IO_BACKOFF_NANOS;
+    }
+
+    /** True while sends pause after a transport error (cleared by the pause ending or any valid datagram). */
+    private boolean inIoBackoff(long nowNanos) {
+        if (ioBackoff && nowNanos - ioBackoffUntil >= 0) {
+            ioBackoff = false;
+        }
+        return ioBackoff;
     }
 
     private void timers(long nowNanos) {
@@ -277,11 +344,20 @@ public final class ClientConnection {
     }
 
     /**
-     * Record this frame's input and send an INPUT datagram with the last {@link #INPUT_REDUNDANCY}
-     * inputs.
+     * Offer this frame's input; an INPUT datagram goes out only when it is due, so a fast render loop does
+     * not flood the server (PROTOCOL.md "INPUT").
      * <p>
-     * BEHAVIOR: only while PLAYING (before that the server has not spawned the player); returns the
-     * input sequence or 0 when nothing was sent.
+     * BEHAVIOR: only while PLAYING (before that the server has not spawned the player); returns the new
+     * input sequence, or 0 when nothing was sent this frame.
+     * BEHAVIOR: sends at once when the key mask differs from the last one sent (and for the first input);
+     * otherwise when {@link #inputIntervalNanos()} (1/simHz) has passed since the last periodic send.
+     * BEHAVIOR: never two sends closer than {@link #MIN_INPUT_GAP_NANOS} (a 120/s ceiling at any tick
+     * rate): a change inside that window waits and goes out with whatever mask is current then (coalesced).
+     * BEHAVIOR: aimTurn of frames that sent nothing is summed into the next INPUT (clamped to i16).
+     * BEHAVIOR: a sequence is recorded only for a datagram actually sent; it carries every history entry
+     * newer than the lastInputSeq the server echoed in its newest snapshot, at least 1 and at most
+     * {@link #MAX_INPUT_REDUNDANCY}.
+     * BEHAVIOR: nothing is sent during the transport-error pause ({@link #IO_BACKOFF_NANOS}).
      *
      * @param keys    {@link com.fulcrologic.jxpilot.common.net.ControlKey} mask
      * @param aimTurn pointer-control turn in u16 angle units (0 = none)
@@ -291,22 +367,57 @@ public final class ClientConnection {
         if (state != ConnectionState.PLAYING) {
             return 0;
         }
-        int seq = input.record(keys, aimTurn);
+        pendingAim = clampAim(pendingAim + aimTurn);
+        if (inIoBackoff(nowNanos)) {
+            return 0;
+        }
+        boolean changed = !inputSent || keys != lastSentKeys;
+        boolean timer = !inputSent || nowNanos - nextInputDue >= 0;
+        if (!changed && !timer) {
+            return 0;
+        }
+        if (inputSent && nowNanos - lastInputSend < MIN_INPUT_GAP_NANOS) {
+            return 0;
+        }
+        int seq = input.record(keys, pendingAim);
         begin(PacketType.INPUT);
-        input.write(tx, latestTick, INPUT_REDUNDANCY);
+        input.write(tx, latestTick, inputRedundancy());
         transmit();
+        if (!inputSent) {
+            nextInputDue = nowNanos + inputIntervalNanos;
+        } else if (timer) {
+            nextInputDue += inputIntervalNanos;
+            if (nextInputDue - nowNanos <= 0) {
+                nextInputDue = nowNanos + inputIntervalNanos;
+            }
+        }
+        inputSent = true;
+        lastInputSend = nowNanos;
+        lastSentKeys = keys;
+        pendingAim = 0;
         return seq;
+    }
+
+    private static int clampAim(int aim) {
+        return Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, aim));
+    }
+
+    /** BEHAVIOR: entries newer than the echoed lastInputSeq, clamped to 1..{@link #MAX_INPUT_REDUNDANCY}. */
+    int inputRedundancy() {
+        int d = input.latestSeq() - ackedInputSeq;
+        return Math.max(1, Math.min(MAX_INPUT_REDUNDANCY, d));
     }
 
     /**
      * Send reliable messages that are new or due for resend; send a header-only ACK if reliable data
      * arrived and no datagram went out since (the ack rides in every header).
      * <p>
-     * BEHAVIOR: nothing is sent unless a session exists (JOINING or PLAYING).
+     * BEHAVIOR: nothing is sent unless a session exists (JOINING or PLAYING), nor during the
+     * transport-error pause.
      */
     public void flush(long nowNanos) {
         now = nowNanos;
-        if (state != ConnectionState.JOINING && state != ConnectionState.PLAYING) {
+        if (state != ConnectionState.JOINING && state != ConnectionState.PLAYING || inIoBackoff(nowNanos)) {
             return;
         }
         for (int i = 0; i < MAX_RELIABLE_PER_FLUSH; i++) {
@@ -343,21 +454,18 @@ public final class ClientConnection {
         }
         packetsReceived++;
         lastReceive = now;
+        ioBackoff = false;
         channel.onAck(header.reliableAck(), now);
-        try {
-            switch (type) {
-                case PacketType.RELIABLE -> {
-                    if (channel.read(in, rxHandler) < 0) {
-                        malformed++;
-                    }
+        switch (type) {
+            case PacketType.RELIABLE -> {
+                if (channel.read(in, rxHandler) < 0) {
+                    malformed++;
                 }
-                case PacketType.SNAPSHOT -> onSnapshot(in);
-                case PacketType.PING -> onPing(in);
-                case PacketType.DISCONNECT -> onDisconnect(in);
-                default -> { } // ACK, PONG, duplicate ACCEPT: header already processed
             }
-        } catch (java.nio.BufferUnderflowException e) {
-            malformed++;
+            case PacketType.SNAPSHOT -> onSnapshot(in);
+            case PacketType.PING -> onPing(in);
+            case PacketType.DISCONNECT -> onDisconnect(in);
+            default -> { } // ACK, PONG, duplicate ACCEPT: header already processed
         }
     }
 
@@ -381,18 +489,14 @@ public final class ClientConnection {
     }
 
     private void onReject(ByteBuffer in) {
-        try {
-            reject.read(in);
-        } catch (java.nio.BufferUnderflowException e) {
-            malformed++;
-            return;
-        }
+        reject.read(in);
         if (reject.nonce != connect.nonce) {
             return;
         }
         packetsReceived++;
         status.setLength(0);
-        status.append("Rejected by ").append(serverLabel).append(": ").append(reject.text);
+        status.append("Rejected by ").append(serverLabel).append(": ");
+        appendCapped(reject.text);
         setState(ConnectionState.CLOSED);
     }
 
@@ -401,17 +505,25 @@ public final class ClientConnection {
         status.setLength(0);
         status.append("Server ").append(serverLabel).append(" closed the connection");
         if (disconnectMsg.text.length() > 0) {
-            status.append(": ").append(disconnectMsg.text);
+            status.append(": ");
+            appendCapped(disconnectMsg.text);
         }
         setState(ConnectionState.CLOSED);
     }
 
+    /** BEHAVIOR: server-supplied text goes into the status line cut at {@link #MAX_STATUS_TEXT} chars. */
+    private void appendCapped(CharSequence text) {
+        status.append(text, 0, Math.min(text.length(), MAX_STATUS_TEXT));
+    }
+
+    /**
+     * BEHAVIOR: PONG echoes exactly the 12-byte PING body; a shorter body underflows before anything is
+     * sent and counts as malformed.
+     */
     private void onPing(ByteBuffer in) {
-        int start = in.position();
-        int len = in.remaining();
+        ping.read(in);
         begin(PacketType.PONG);
-        tx.put(tx.position(), in, start, len);
-        tx.position(tx.position() + len);
+        ping.write(tx);
         transmit();
     }
 
@@ -427,33 +539,58 @@ public final class ClientConnection {
         if (!haveTick || tick - latestTick > 0) {
             latestTick = tick;
             haveTick = true;
+            if (in.remaining() >= 8) {
+                int seq = in.getInt(in.position() + 4);
+                if (seq - ackedInputSeq > 0 && seq - input.latestSeq() <= 0) {
+                    ackedInputSeq = seq;
+                }
+            }
         }
         snapshots++;
         listener.onSnapshot(in, now);
     }
 
+    /**
+     * One reliable message, in order.
+     * <p>
+     * BEHAVIOR: a message whose handling throws counts as malformed and is skipped (the channel moves on,
+     * so one bad message cannot wedge the session); a bad WELCOME or DATA_CHUNK is a bad config.
+     */
     private void onReliable(int type, ByteBuffer payload) {
-        switch (type) {
-            case ReliableType.WELCOME -> {
-                welcome.read(payload);
-                config = new ConfigTransfer.Receiver(welcome);
-                listener.onWelcome(welcome);
-                if (config.complete()) {
-                    finishConfig();
-                }
-            }
-            case ReliableType.DATA_CHUNK -> {
-                if (config != null && state == ConnectionState.JOINING) {
-                    try {
-                        if (config.onChunk(payload)) {
-                            finishConfig();
+        try {
+            switch (type) {
+                case ReliableType.WELCOME -> onWelcome(payload);
+                case ReliableType.DATA_CHUNK -> {
+                    if (config != null && state == ConnectionState.JOINING) {
+                        try {
+                            if (config.onChunk(payload)) {
+                                finishConfig();
+                            }
+                        } catch (RuntimeException e) {
+                            badConfig(e);
                         }
-                    } catch (IllegalStateException e) {
-                        badConfig(e);
                     }
                 }
+                default -> listener.onReliable(type, payload);
             }
-            default -> listener.onReliable(type, payload);
+        } catch (RuntimeException e) {
+            malformed++;
+        }
+    }
+
+    /** BEHAVIOR: sets the INPUT interval from simHz; announced config sizes out of range are a bad config. */
+    private void onWelcome(ByteBuffer payload) {
+        welcome.read(payload);
+        inputIntervalNanos = 1_000_000_000L / (welcome.simHz > 0 ? welcome.simHz : 60);
+        try {
+            config = new ConfigTransfer.Receiver(welcome);
+        } catch (RuntimeException e) {
+            badConfig(e);
+            return;
+        }
+        listener.onWelcome(welcome);
+        if (config.complete()) {
+            finishConfig();
         }
     }
 
@@ -500,6 +637,7 @@ public final class ClientConnection {
         PacketHeader.write(tx, type, session, channel.ack());
     }
 
+    /** BEHAVIOR: a send IOException counts in {@link #ioErrors()} as "not sent" and starts the send pause. */
     private void transmit() {
         tx.flip();
         try {
@@ -507,7 +645,7 @@ public final class ClientConnection {
                 packetsSent++;
             }
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            ioError(now);
         }
         sentThisFrame = true;
     }

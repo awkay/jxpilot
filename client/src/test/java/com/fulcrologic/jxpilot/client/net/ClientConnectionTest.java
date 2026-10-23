@@ -38,6 +38,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -48,15 +49,66 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ClientConnectionTest {
     static final long MS = 1_000_000L;
+    static final long FRAME = 1_000_000_000L / 60;
+    static final long INTERVAL = 1_000_000_000L / 60;
     static final int SESSION = 0x2345;
+
+    /** A decoded INPUT datagram. */
+    record Input(int type, int latest, int ackTick, List<Long> keys, List<Integer> aims) {
+        static Input of(ByteBuffer p) {
+            PacketHeader h = new PacketHeader();
+            h.read(p);
+            int latest = p.getInt();
+            int ack = p.getInt();
+            int n = p.get();
+            List<Long> keys = new ArrayList<>();
+            List<Integer> aims = new ArrayList<>();
+            for (int i = 0; i < n; i++) {
+                keys.add(p.getLong());
+                aims.add((int) p.getShort());
+            }
+            return new Input(h.type(), latest, ack, keys, aims);
+        }
+    }
+
+    /** INPUT datagrams sent so far. */
+    List<Input> inputs() {
+        List<Input> r = new ArrayList<>();
+        for (ByteBuffer b : t.out) {
+            if ((b.get(3) & 0xFF) == PacketType.INPUT) {
+                r.add(Input.of(b.duplicate()));
+            }
+        }
+        return r;
+    }
+
+    /** A snapshot body: tick and the echoed lastInputSeq. */
+    static byte[] snapshot(int tick, int lastInputSeq) {
+        return pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(tick).putInt(lastInputSeq));
+    }
 
     /** Transport fake: scripted incoming datagrams, recorded outgoing ones. */
     static final class Scripted implements Transport {
         final ArrayDeque<byte[]> in = new ArrayDeque<>();
         final List<ByteBuffer> out = new ArrayList<>();
+        /** When set, send/receive throw it (network down). */
+        IOException failSend;
+        IOException failReceive;
+        /** Server port closed: every datagram sent comes back as one ICMP error on a later receive. */
+        boolean portClosed;
+        int pendingIcmp;
+        int sendAttempts;
+        int receiveAttempts;
 
         @Override
-        public boolean send(ByteBuffer packet) {
+        public boolean send(ByteBuffer packet) throws IOException {
+            sendAttempts++;
+            if (failSend != null) {
+                throw failSend;
+            }
+            if (portClosed) {
+                pendingIcmp++;
+            }
             ByteBuffer c = ByteBuffer.allocate(packet.remaining());
             c.put(packet).flip();
             out.add(c);
@@ -64,7 +116,15 @@ class ClientConnectionTest {
         }
 
         @Override
-        public int receive(ByteBuffer buf) {
+        public int receive(ByteBuffer buf) throws IOException {
+            receiveAttempts++;
+            if (failReceive != null) {
+                throw failReceive;
+            }
+            if (pendingIcmp > 0) {
+                pendingIcmp--;
+                throw new java.net.PortUnreachableException("ICMP port unreachable");
+            }
             byte[] a = in.pollFirst();
             if (a == null) {
                 return 0;
@@ -91,7 +151,7 @@ class ClientConnectionTest {
     }
 
     /** Records listener calls. */
-    static final class Rec implements ConnectionListener {
+    static class Rec implements ConnectionListener {
         final List<String> calls = new ArrayList<>();
         WorldMap map;
         final List<Integer> snapshotTicks = new ArrayList<>();
@@ -221,6 +281,18 @@ class ClientConnectionTest {
         }
 
         @Test
+        @DisplayName("CONNECT resend timing is relative to the last send, also when time does not start at 0")
+        void connectResendLaterStart() {
+            c.start(5_000 * MS);
+            c.update(5_249 * MS);
+            int early = t.out.size();
+            c.update(5_250 * MS);
+            assertAll(
+                () -> assertEquals(1, early, "not resent 249 ms after the first"),
+                () -> assertEquals(2, t.out.size(), "resent at 250 ms"));
+        }
+
+        @Test
         @DisplayName("ACCEPT with the right nonce starts the session; bad datagrams are ignored or counted")
         void accepting() {
             c.start(0);
@@ -315,7 +387,7 @@ class ClientConnectionTest {
     @DisplayName("while playing")
     class Playing {
         @Test
-        @DisplayName("INPUT carries the last 4 inputs and the newest snapshot tick; nothing before PLAYING")
+        @DisplayName("INPUT carries the unacknowledged inputs and the newest snapshot tick; nothing before PLAYING")
         void input() {
             c.start(0);
             int early = c.sendInput(1, 0, 0);
@@ -328,27 +400,18 @@ class ClientConnectionTest {
             t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(498)));
             c.update(MS);
             for (int i = 1; i <= 5; i++) {
-                c.sendInput(i, i * 10, MS);
+                c.sendInput(i, i * 10, i * FRAME);
             }
-            ByteBuffer p = t.last();
-            PacketHeader h = new PacketHeader();
-            h.read(p);
-            int latest = p.getInt();
-            int ack = p.getInt();
-            int n = p.get();
-            long k0 = p.getLong();
-            short a0 = p.getShort();
-            long k1 = p.getLong();
+            Input in = Input.of(t.last());
             assertAll(
                 () -> assertEquals(0, early, "no input before PLAYING"),
                 () -> assertEquals(1, sentEarly, "only the CONNECT went out"),
-                () -> assertEquals(PacketType.INPUT, h.type(), "INPUT"),
-                () -> assertEquals(5, latest, "latest sequence"),
-                () -> assertEquals(500, ack, "the newest snapshot tick, not the late one"),
-                () -> assertEquals(4, n, "four redundant entries"),
-                () -> assertEquals(5L, k0, "newest keys first"),
-                () -> assertEquals(50, a0, "aim of the newest"),
-                () -> assertEquals(4L, k1, "then the previous"),
+                () -> assertEquals(PacketType.INPUT, in.type, "INPUT"),
+                () -> assertEquals(5, in.latest, "latest sequence"),
+                () -> assertEquals(500, in.ackTick, "the newest snapshot tick, not the late one"),
+                () -> assertEquals(5, in.keys.size(), "all five inputs: the server echoed none yet"),
+                () -> assertEquals(List.of(5L, 4L, 3L, 2L, 1L), in.keys, "newest keys first"),
+                () -> assertEquals(List.of(50, 40, 30, 20, 10), in.aims, "aims of the entries"),
                 () -> assertEquals(List.of(500, 498), rec.snapshotTicks, "snapshots delivered in arrival order"),
                 () -> assertEquals(2, c.snapshotsReceived(), "counted"));
         }
@@ -526,11 +589,11 @@ class ClientConnectionTest {
         }
 
         @Test
-        @DisplayName("sendInput returns the sequence; header acks release our reliable messages")
+        @DisplayName("sendInput returns the sequence (0 when nothing went out); header acks release our reliable messages")
         void sequenceAndAck() {
             playing(0);
             int s1 = c.sendInput(0, 0, MS);
-            int s2 = c.sendInput(0, 0, MS);
+            int s2 = c.sendInput(1, 0, MS + FRAME);
             c.flush(MS);
             int unackedBefore = c.channel().unacked();
             t.in.add(pkt(PacketType.ACK, SESSION, 1, b -> { }));
@@ -608,6 +671,393 @@ class ClientConnectionTest {
             assertAll(
                 () -> assertEquals(ConnectionState.CLOSED, c.state(), "an empty config is a bad config"),
                 () -> assertTrue(c.status().toString().startsWith("Bad map/config from srv:1"), "reason"));
+        }
+    }
+
+    @Nested
+    @DisplayName("INPUT rate")
+    class InputRate {
+        @Test
+        @DisplayName("a 1000 fps render loop sends at most 120 INPUTs per second; steady keys at simHz")
+        void thousandFps() {
+            playing(0);
+            int steady = 0;
+            for (long f = 1; f <= 1000; f++) {
+                if (c.sendInput(7, 0, f * MS) != 0) {
+                    steady++;
+                }
+            }
+            int toggling = 0;
+            for (long f = 1001; f <= 2000; f++) {
+                if (c.sendInput(f & 1, 0, f * MS) != 0) {
+                    toggling++;
+                }
+            }
+            int fSteady = steady;
+            int fToggling = toggling;
+            assertAll(
+                () -> assertTrue(fSteady >= 58 && fSteady <= 61, "unchanged keys: about simHz = 60 per second, got " + fSteady),
+                () -> assertTrue(fToggling >= 110 && fToggling <= 120, "keys changing every frame: capped near 120/s, got "
+                    + fToggling),
+                () -> assertEquals(fSteady + fToggling, c.input().latestSeq(), "a sequence only for each datagram sent"),
+                () -> assertEquals(fSteady + fToggling, inputs().size(), "one INPUT datagram per sequence"));
+        }
+
+        @Test
+        @DisplayName("a key change at 60 fps is sent the same frame; unchanged keys wait for 1/simHz")
+        void changeSentAtOnce() {
+            playing(0);
+            long t0 = 100 * MS;
+            int first = c.sendInput(0, 0, t0);
+            int sameKeysNextFrame = c.sendInput(0, 0, t0 + INTERVAL - 1);
+            int sameKeysDue = c.sendInput(0, 0, t0 + INTERVAL);
+            int pressed = c.sendInput(4, 0, t0 + INTERVAL + FRAME);
+            assertAll(
+                () -> assertEquals(1, first, "the first input goes out at once"),
+                () -> assertEquals(0, sameKeysNextFrame, "unchanged keys are not resent before 1/simHz"),
+                () -> assertEquals(2, sameKeysDue, "unchanged keys are resent at exactly 1/simHz"),
+                () -> assertEquals(3, pressed, "a changed mask goes out in the frame it changed"),
+                () -> assertEquals(4L, inputs().get(2).keys.get(0), "with the new mask"));
+        }
+
+        @Test
+        @DisplayName("a change within 1/120 s is coalesced: sent at the ceiling with the current mask and summed aim")
+        void coalesce() {
+            playing(0);
+            long t0 = 100 * MS;
+            c.sendInput(1, 5, t0);
+            int tooSoon = c.sendInput(2, 7, t0 + 2 * MS);
+            int stillSoon = c.sendInput(3, 11, t0 + ClientConnection.MIN_INPUT_GAP_NANOS - 1);
+            int atCeiling = c.sendInput(3, 13, t0 + ClientConnection.MIN_INPUT_GAP_NANOS);
+            Input last = inputs().get(inputs().size() - 1);
+            assertAll(
+                () -> assertEquals(0, tooSoon, "2 ms after a send: held back"),
+                () -> assertEquals(0, stillSoon, "just under 1/120 s: held back"),
+                () -> assertEquals(2, atCeiling, "1/120 s after the last send: sent"),
+                () -> assertEquals(3L, last.keys.get(0), "the coalesced INPUT carries the current mask"),
+                () -> assertEquals(7 + 11 + 13, (int) last.aims.get(0), "aim of the held frames is summed"),
+                () -> assertEquals(5, (int) last.aims.get(1), "the earlier input keeps its own aim"),
+                () -> assertEquals(2, c.input().latestSeq(), "held frames record no sequence"));
+        }
+
+        @Test
+        @DisplayName("summed aim saturates at the i16 range")
+        void aimClamp() {
+            playing(0);
+            c.sendInput(1, 0, 100 * MS);
+            c.sendInput(1, 30_000, 101 * MS);
+            c.sendInput(1, 30_000, 102 * MS);
+            c.sendInput(1, 0, 100 * MS + INTERVAL);
+            c.sendInput(1, -30_000, 100 * MS + INTERVAL + MS);
+            c.sendInput(1, -30_000, 100 * MS + INTERVAL + 2 * MS);
+            c.sendInput(1, -30_000, 100 * MS + INTERVAL + 3 * MS);
+            c.sendInput(1, 0, 100 * MS + 2 * INTERVAL);
+            List<Input> in = inputs();
+            assertAll(
+                () -> assertEquals(32767, (int) in.get(1).aims.get(0), "positive sum clamps to 32767"),
+                () -> assertEquals(-32768, (int) in.get(2).aims.get(0), "negative sum clamps to -32768"));
+        }
+
+        @Test
+        @DisplayName("redundancy: every entry newer than the echoed lastInputSeq, at least 1 and at most 8")
+        void redundancyFollowsAck() {
+            playing(0);
+            for (int i = 1; i <= 12; i++) {
+                c.sendInput(i, 0, i * INTERVAL);
+            }
+            int capped = inputs().get(11).keys.size();
+            t.in.add(snapshot(100, 9));
+            c.update(13 * INTERVAL);
+            c.sendInput(13, 0, 13 * INTERVAL);
+            Input afterAck = inputs().get(12);
+            t.in.add(snapshot(102, 13));
+            c.update(14 * INTERVAL);
+            c.sendInput(14, 0, 14 * INTERVAL);
+            int allAcked = inputs().get(13).keys.size();
+            t.in.add(snapshot(104, 99));
+            t.in.add(snapshot(103, 14));
+            c.update(15 * INTERVAL);
+            int ignored = c.ackedInputSeq();
+            assertAll(
+                () -> assertEquals(8, capped, "12 unacknowledged inputs: capped at 8"),
+                () -> assertEquals(List.of(13L, 12L, 11L, 10L), afterAck.keys, "acked up to 9: entries 10..13"),
+                () -> assertEquals(1, allAcked, "everything older acked: only the new entry"),
+                () -> assertEquals(13, ignored, "a lastInputSeq ahead of anything sent, or from an older tick, is ignored"));
+        }
+
+        @Test
+        @DisplayName("a new session starts with nothing acknowledged: one entry, not the old session's backlog")
+        void redundancyResetsWithSession() {
+            playing(0);
+            for (int i = 1; i <= 12; i++) {
+                c.sendInput(i, 0, i * INTERVAL);
+            }
+            c.start(20 * INTERVAL);
+            accept(20 * INTERVAL);
+            welcome(blob(), 0);
+            reliable(20 * INTERVAL);
+            c.update(20 * INTERVAL);
+            c.sendInput(1, 0, 21 * INTERVAL);
+            Input first = inputs().get(inputs().size() - 1);
+            assertAll(
+                () -> assertEquals(13, first.latest, "sequences continue across sessions"),
+                () -> assertEquals(List.of(1L), first.keys, "only the new session's input"));
+        }
+
+        @Test
+        @DisplayName("WELCOME's simHz sets the interval; after a long stall the schedule restarts without a burst")
+        void intervalAndStall() {
+            c.start(0);
+            accept(0);
+            Msg.Welcome w = new Msg.Welcome();
+            w.simHz = 30;
+            w.snapshotHz = 15;
+            blob().fill(w);
+            w.send(server);
+            new ConfigTransfer.Sender(blob()).pump(server, 0);
+            reliable(0);
+            c.update(0);
+            long iv = c.inputIntervalNanos();
+            long t0 = 100 * MS;
+            c.sendInput(0, 0, t0);
+            int changeSoon = c.sendInput(5, 0, t0 + ClientConnection.MIN_INPUT_GAP_NANOS);
+            int beforeInterval = c.sendInput(5, 0, t0 + iv - 1);
+            int atInterval = c.sendInput(5, 0, t0 + iv);
+            int afterStall = c.sendInput(5, 0, t0 + 50 * iv + 3);
+            int nextFrame = c.sendInput(5, 0, t0 + 50 * iv + 3 + FRAME);
+            int nextInterval = c.sendInput(5, 0, t0 + 51 * iv + 3);
+            assertAll(
+                () -> assertEquals(1_000_000_000L / 30, iv, "1/30 s at simHz 30"),
+                () -> assertEquals(2, changeSoon, "a key change 8.3 ms later goes out at once, not after half a tick"),
+                () -> assertEquals(0, beforeInterval, "unchanged keys: not before the interval"),
+                () -> assertEquals(3, atInterval, "at the interval"),
+                () -> assertEquals(4, afterStall, "after a stall: sent at once"),
+                () -> assertEquals(0, nextFrame, "no catch-up burst after a stall"),
+                () -> assertEquals(5, nextInterval, "one interval after the stall send"));
+        }
+    }
+
+    @Nested
+    @DisplayName("hostile server packets")
+    class Hostile {
+        @Test
+        @DisplayName("PONG echoes only the 12-byte PING body; an oversized PING cannot overflow the send buffer")
+        void oversizePing() {
+            playing(0);
+            byte[] big = new byte[1600];
+            ByteBuffer.wrap(big).put(pkt(PacketType.PING, SESSION, 0, b -> b.putInt(42).putLong(777L)));
+            t.in.add(big);
+            c.update(MS);
+            ByteBuffer pong = t.last();
+            int size = pong.remaining();
+            new PacketHeader().read(pong);
+            Msg.Ping p = new Msg.Ping();
+            p.read(pong);
+            assertAll(
+                () -> assertEquals(PacketType.PONG, pong.get(3), "a PONG went out"),
+                () -> assertEquals(PacketHeader.SIZE + ClientConnection.PING_SIZE, size, "header plus 12 bytes"),
+                () -> assertEquals(42, p.id, "the id echoed"),
+                () -> assertEquals(777L, p.timeNanos, "the time echoed"),
+                () -> assertEquals(ConnectionState.PLAYING, c.state(), "still playing"));
+        }
+
+        @Test
+        @DisplayName("a PING shorter than 12 bytes is malformed and answered with nothing")
+        void shortPing() {
+            playing(0);
+            int before = t.out.size();
+            long bad = c.malformed();
+            t.in.add(pkt(PacketType.PING, SESSION, 0, b -> b.putInt(42).putInt(1)));
+            c.update(MS);
+            assertAll(
+                () -> assertEquals(before, t.out.size(), "no PONG"),
+                () -> assertEquals(bad + 1, c.malformed(), "counted as malformed"));
+        }
+
+        @Test
+        @DisplayName("WELCOME announcing a negative or huge config size closes as a bad config without throwing")
+        void hostileWelcome() {
+            for (int[] sizes : new int[][] {{10, -5}, {-1, 10}, {10, ConfigTransfer.MAX_LENGTH + 1}}) {
+                Scripted tt = new Scripted();
+                ClientConnection cc = new ClientConnection(tt, new Rec(), "srv:1", 99);
+                ReliableChannel srv = new ReliableChannel();
+                cc.start(0);
+                int nonce = cc.connect.nonce;
+                tt.in.add(pkt(PacketType.ACCEPT, SESSION, 0, b -> {
+                    Msg.Accept a = new Msg.Accept();
+                    a.nonce = nonce;
+                    a.playerId = 7;
+                    a.write(b);
+                }));
+                cc.update(0);
+                Msg.Welcome w = new Msg.Welcome();
+                w.simHz = 60;
+                w.configLength = sizes[0];
+                w.configCompressedLength = sizes[1];
+                w.send(srv);
+                tt.in.add(pkt(PacketType.RELIABLE, SESSION, 0, b -> srv.write(b, 0)));
+                assertDoesNotThrow(() -> cc.update(MS), "update never throws");
+                assertAll(
+                    () -> assertEquals(ConnectionState.CLOSED, cc.state(), "closed for sizes " + sizes[0] + "/" + sizes[1]),
+                    () -> assertEquals("Bad map/config from srv:1: config size out of range", cc.status().toString(),
+                        "the reason"),
+                    () -> assertEquals(3, tt.types().stream().filter(x -> x == PacketType.DISCONNECT).count(),
+                        "the server is told three times"));
+            }
+        }
+
+        @Test
+        @DisplayName("a reliable message whose handling throws is counted and skipped; the next one still arrives")
+        void poisonReliable() {
+            List<String> seen = new ArrayList<>();
+            Rec throwing = new Rec() {
+                @Override
+                public void onReliable(int type, ByteBuffer p) {
+                    if (type == ReliableType.BASE_OWNER) {
+                        throw new IndexOutOfBoundsException("boom");
+                    }
+                    seen.add("reliable " + type);
+                }
+            };
+            ClientConnection cc = new ClientConnection(t, throwing, "srv:1", 99);
+            cc.start(0);
+            int nonce = cc.connect.nonce;
+            t.in.add(pkt(PacketType.ACCEPT, SESSION, 0, b -> {
+                Msg.Accept a = new Msg.Accept();
+                a.nonce = nonce;
+                a.playerId = 7;
+                a.write(b);
+            }));
+            cc.update(0);
+            welcome(blob(), 0);
+            reliable(0);
+            cc.update(0);
+            long bad = cc.malformed();
+            Msg.BaseOwner bo = new Msg.BaseOwner();
+            bo.send(server);
+            Msg.Text m = new Msg.Text();
+            m.text.append("after");
+            m.send(server);
+            reliable(MS);
+            assertDoesNotThrow(() -> cc.update(MS), "update never throws");
+            m.send(server);
+            reliable(2 * MS);
+            cc.update(2 * MS);
+            assertAll(
+                () -> assertEquals(bad + 1, cc.malformed(), "the throwing message counts as malformed"),
+                () -> assertEquals(List.of("reliable " + ReliableType.MESSAGE, "reliable " + ReliableType.MESSAGE), seen,
+                    "the channel moved on: both later messages arrived"),
+                () -> assertEquals(ConnectionState.PLAYING, cc.state(), "still playing"));
+        }
+
+        @Test
+        @DisplayName("a snapshot whose decoding throws is counted as malformed and does not escape update")
+        void throwingSnapshot() {
+            Rec throwing = new Rec() {
+                @Override
+                public void onSnapshot(ByteBuffer body, long now) {
+                    throw new java.nio.BufferUnderflowException();
+                }
+            };
+            ClientConnection cc = new ClientConnection(t, throwing, "srv:1", 99);
+            cc.start(0);
+            int nonce = cc.connect.nonce;
+            t.in.add(pkt(PacketType.ACCEPT, SESSION, 0, b -> {
+                Msg.Accept a = new Msg.Accept();
+                a.nonce = nonce;
+                a.playerId = 7;
+                a.write(b);
+            }));
+            cc.update(0);
+            welcome(blob(), 0);
+            reliable(0);
+            cc.update(0);
+            long bad = cc.malformed();
+            t.in.add(snapshot(10, 0));
+            t.in.add(snapshot(12, 0));
+            assertDoesNotThrow(() -> cc.update(MS), "update never throws");
+            assertAll(
+                () -> assertEquals(bad + 2, cc.malformed(), "both counted"),
+                () -> assertEquals(12, cc.latestTick(), "later datagrams of the batch were still read"));
+        }
+
+        @Test
+        @DisplayName("server text in the status line is cut at 80 chars")
+        void longReject() {
+            c.start(0);
+            int nonce = c.connect.nonce;
+            t.in.add(pkt(PacketType.REJECT, 0, 0, b -> {
+                Msg.Reject r = new Msg.Reject();
+                r.nonce = nonce;
+                r.text.append("x".repeat(200));
+                r.write(b);
+            }));
+            c.update(MS);
+            assertEquals("Rejected by srv:1: " + "x".repeat(80), c.status().toString(), "80 chars of the reason");
+        }
+    }
+
+    @Nested
+    @DisplayName("transport errors")
+    class TransportErrors {
+        @Test
+        @DisplayName("a receive IOException is 'nothing received': counted, sends pause, the timeout still reconnects")
+        void receiveFails() {
+            playing(0);
+            c.sendInput(0, 0, MS);
+            t.failReceive = new IOException("network is unreachable");
+            int before = t.out.size();
+            assertDoesNotThrow(() -> c.update(10 * MS), "update never throws");
+            int paused = c.sendInput(1, 0, 10 * MS);
+            c.flush(10 * MS);
+            int sentInPause = t.out.size() - before;
+            t.failReceive = null;
+            int resumed = c.sendInput(1, 0, 10 * MS + ClientConnection.IO_BACKOFF_NANOS);
+            long errors = c.ioErrors();
+            int fResumed = resumed;
+            assertAll(
+                () -> assertEquals(1, errors, "one error counted"),
+                () -> assertEquals(0, paused, "no INPUT during the pause"),
+                () -> assertEquals(0, sentInPause, "nothing at all sent during the pause"),
+                () -> assertTrue(fResumed > 0, "INPUT resumes after the pause"));
+        }
+
+        @Test
+        @DisplayName("server port closed (ICMP per datagram): the pause keeps errors far below one per frame; the timeout reconnects")
+        void portUnreachableOutage() {
+            playing(0);
+            t.portClosed = true;
+            for (long ms = 1; ms <= 10_100; ms += 1) {
+                c.update(ms * MS);
+                c.sendInput(ms / 50 & 1, 0, ms * MS);
+                c.flush(ms * MS);
+            }
+            assertAll(
+                () -> assertTrue(c.ioErrors() > 0, "errors are seen"),
+                () -> assertTrue(c.ioErrors() <= 2 * 10_100 / 250 + 2,
+                    "about one error per send pause (250 ms), not one per 1 ms frame: " + c.ioErrors()),
+                () -> assertEquals(ConnectionState.CONNECTING, c.state(), "10 s without data: timed out and reconnecting"),
+                () -> assertEquals(1, c.reconnects(), "counted as a reconnect"));
+        }
+
+        @Test
+        @DisplayName("a send IOException is 'not sent': counted, nothing escapes, and a valid datagram ends the pause")
+        void sendFails() {
+            playing(0);
+            t.failSend = new IOException("no route to host");
+            long sent = c.packetsSent();
+            int seq = c.sendInput(1, 0, MS);
+            int paused = c.sendInput(2, 0, MS + FRAME);
+            t.failSend = null;
+            t.in.add(pkt(PacketType.ACK, SESSION, 0, b -> { }));
+            c.update(MS + 2 * FRAME);
+            int afterValid = c.sendInput(3, 0, MS + 2 * FRAME);
+            assertAll(
+                () -> assertEquals(1, seq, "the attempt recorded a sequence"),
+                () -> assertEquals(sent, c.packetsSent() - 1, "only the later INPUT counts as sent"),
+                () -> assertEquals(1, c.ioErrors(), "the failure counted"),
+                () -> assertEquals(0, paused, "the next frame is inside the pause"),
+                () -> assertEquals(2, afterValid, "a valid datagram from the server ends the pause at once"));
         }
     }
 }

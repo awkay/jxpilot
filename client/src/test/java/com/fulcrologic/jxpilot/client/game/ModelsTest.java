@@ -67,7 +67,19 @@ class ModelsTest {
                 () -> assertEquals("   12.3", s(b -> b.appendFixed(12.34, 1, 7)), "%7.1f"),
                 () -> assertEquals("   -3.5", s(b -> b.appendFixed(-3.5, 1, 7)), "negative"),
                 () -> assertEquals("0.0", s(b -> b.appendFixed(-0.04, 1, 0)), "rounds to zero without a sign"),
-                () -> assertEquals("  3", s(b -> b.appendFixed(2.5, 0, 3)), "no decimals: no point"),
+                () -> assertEquals("  2", s(b -> b.appendFixed(2.5, 0, 3)), "no decimals: no point; a tie goes to even"),
+                () -> assertEquals("4", s(b -> b.appendFixed(3.5, 0, 0)), "3.5 ties to 4"),
+                () -> assertEquals("2.2", s(b -> b.appendFixed(2.25, 1, 0)), "exact tie 2.25 to even, like printf"),
+                () -> assertEquals("-2.2", s(b -> b.appendFixed(-2.25, 1, 0)), "negative tie to even"),
+                () -> assertEquals("2.4", s(b -> b.appendFixed(2.35, 1, 0)), "2.35 is really above the tie"),
+                () -> assertEquals("1.00", s(b -> b.appendFixed(1.005, 2, 0)), "1.005 is really below the tie"),
+                () -> assertEquals("0.38", s(b -> b.appendFixed(0.375, 2, 0)), "exact 0.375 ties up to even 8"),
+                () -> assertEquals("0.12", s(b -> b.appendFixed(0.125, 2, 0)), "exact 0.125 ties down to even 2"),
+                () -> assertEquals("0.1", s(b -> b.appendFixed(0.05f, 1, 0)), "float 0.05 is above the tie"),
+                () -> assertEquals("0.5", s(b -> b.appendFixed(0.45, 1, 0)), "0.45 is above the tie although 4.5 is"),
+                () -> assertEquals("0.7", s(b -> b.appendFixed(0.65, 1, 0)), "0.65 is above the tie: not to even 6"),
+                () -> assertEquals("0.1", s(b -> b.appendFixed(0.15, 1, 0)), "0.15 is below the tie: not to even 2"),
+                () -> assertEquals("2.67", s(b -> b.appendFixed(2.675, 2, 0)), "2.675 is below the tie"),
                 () -> assertEquals("1.05", s(b -> b.appendFixed(1.049, 2, 0)), "leading fraction zeros kept"),
                 () -> assertEquals("0.000001", s(b -> b.appendFixed(0.000001, 9, 0)), "decimals clamped to 6"));
         }
@@ -178,12 +190,20 @@ class ModelsTest {
         void shapeAndName() {
             Players p = new Players();
             int s = p.join(join(1, 0, 0, "N".repeat(40), "(SH: 15,0 -9,8 -9,-8)(EN: -7,1)"));
-            float d = p.setScore(1, 2.5f, 3, 0);
-            float d2 = p.setScore(1, 1.5f, 3, 0);
+            float first = p.setScore(1, 1, 3, 0);
+            float d = p.setScore(1, 3.5f, 3, 0);
+            float d2 = p.setScore(1, 2.5f, 3, 0);
+            Players q = new Players();
+            q.join(join(1, 0, 0, "a", ""));
+            q.setScore(1, 4, 3, 0);
+            q.join(join(1, 0, 0, "again", ""));
+            float rejoined = q.setScore(1, 9, 3, 0);
             assertAll(
                 () -> assertEquals(-7, p.engineX(s), "engine x from the shape"),
                 () -> assertEquals(1, p.engineY(s), "engine y from the shape"),
                 () -> assertEquals(32, p.name(s).length(), "name capped"),
+                () -> assertEquals(0f, first, "the first SCORE after joining is the baseline, not a change"),
+                () -> assertEquals(0f, rejoined, "also after a rejoin"),
                 () -> assertEquals(2.5f, d, "score delta"),
                 () -> assertEquals(-1f, d2, "negative delta"));
         }

@@ -27,6 +27,7 @@ import com.fulcrologic.jxpilot.client.game.CharBuf;
 import com.fulcrologic.jxpilot.client.game.ClientGame;
 import com.fulcrologic.jxpilot.client.game.ClientWorld;
 import com.fulcrologic.jxpilot.client.game.MessageLog;
+import com.fulcrologic.jxpilot.client.game.ScoreObjects;
 import com.fulcrologic.jxpilot.client.game.Scoreboard;
 import com.fulcrologic.jxpilot.client.net.ConnectionState;
 import com.fulcrologic.jxpilot.common.net.Records;
@@ -96,6 +97,7 @@ public final class Hud {
     private double loops;
     private double fuelCount;
     private float lastFuel = -1;
+    private boolean wasVisible;
     private final CharBuf scratch = new CharBuf(32);
 
     /** Original frames elapsed (C {@code loops}). */
@@ -108,15 +110,20 @@ public final class Hud {
      * Advance the counters by {@code frames} original frames.
      * <p>
      * BEHAVIOR: loops advances; fuel notify counts down to 0, and restarts at 3 * fps frames when the
-     * fuel went up (refuelling, C paintdata.c) or when {@link #notifyFuel(double)} is called (fuel key).
+     * fuel went up while the own ship was visible in the previous frame (refuelling; C paintdata.c gates
+     * on {@code selfVisible}, so the refill at respawn does not notify) or when {@link #notifyFuel(double)}
+     * is called (fuel key).
+     *
+     * @param selfVisible the own ship is drawn this frame (it exists and is not dead)
      */
-    public void advance(double frames, float fuel, double fps) {
+    public void advance(double frames, float fuel, double fps, boolean selfVisible) {
         loops += frames;
         fuelCount = Math.max(0, fuelCount - frames);
-        if (lastFuel >= 0 && fuel > lastFuel) {
+        if (lastFuel >= 0 && fuel > lastFuel && wasVisible) {
             fuelCount = FUEL_NOTIFY_SECONDS * fps;
         }
         lastFuel = fuel;
+        wasVisible = selfVisible;
     }
 
     /** C {@code Key_press_fuel}: show the fuel for {@link #FUEL_NOTIFY_SECONDS}. */
@@ -127,17 +134,20 @@ public final class Hud {
     /**
      * Build the whole HUD for one frame.
      * <p>
-     * BEHAVIOR: clears {@code out}; draws the ship HUD only when the own ship exists and is not dead;
-     * messages, the talk window (when open) and the connection status (when not playing) always.
+     * BEHAVIOR: clears {@code out}; draws the ship HUD and meters whenever the own ship exists, also while
+     * dead (C paints them every frame); only the speed pointer needs a visible (not dead) ship (C
+     * {@code selfVisible}); messages, the talk window (when open) and the connection status (when not
+     * playing) always.
      */
     public void build(HudFrame out, ClientGame g, TalkLine talk, int viewW, int viewH, TextMetrics m,
                       double frames) {
         out.clear();
         ClientWorld w = g.world();
         float fuel = w.hasSelf() ? w.selfFuel() : 0;
-        advance(frames, fuel, g.gameFps());
-        if (w.hasSelf() && (w.selfFlags() & Records.ShipFlags.DEAD) == 0) {
-            shipHud(out, w, viewW, viewH, m, g);
+        boolean visible = w.hasSelf() && (w.selfFlags() & Records.ShipFlags.DEAD) == 0;
+        advance(frames, fuel, g.gameFps(), visible);
+        if (w.hasSelf()) {
+            shipHud(out, w, viewW, viewH, m, g, visible);
         }
         messages(out, g.messages(), viewH, m, g.gameFps());
         if (talk.isOpen()) {
@@ -153,10 +163,13 @@ public final class Hud {
         }
     }
 
-    private void shipHud(HudFrame out, ClientWorld w, int viewW, int viewH, TextMetrics m, ClientGame g) {
+    private void shipHud(HudFrame out, ClientWorld w, int viewW, int viewH, TextMetrics m, ClientGame g,
+                         boolean visible) {
         float vx = w.selfVx();
         float vy = w.selfVy();
-        speedPointer(out, viewW, viewH, vx, vy);
+        if (visible) {
+            speedPointer(out, viewW, viewH, vx, vy);
+        }
         float fuel = w.selfFuel();
         float fuelMax = w.selfFuelMax();
         if (fuelMeter) {
@@ -170,9 +183,7 @@ public final class Hud {
         int hy = hudY(viewH, vy);
         hudLines(out, hx, hy);
         boolean didFuel = fuelText(out, hx, hy, fuel, w.selfNumTanks(), w.selfCurrentTank(), m);
-        if (g.scoreMessageLife() > 0) {
-            scoreMessage(out, hx, hy, g.scoreDelta(), didFuel, m);
-        }
+        scoreStack(out, hx, hy, g.scoreObjects(), didFuel, m);
         if (fuelGaugeVisible(fuel)) {
             fuelGauge(out, hx, hy, fuel, fuelMax);
         }
@@ -275,19 +286,31 @@ public final class Hud {
     }
 
     /**
-     * The own score change centred under the HUD (C score object hud_msg).
+     * The HUD score stack (C painthud.c): every live score object with a HUD text, oldest first, centred
+     * under the HUD.
      * <p>
-     * BEHAVIOR: at baseline hy + 73 + ascent, one line lower when wider than the HUD inner width (140)
-     * and the fuel text or vertical lines occupy the space.
+     * BEHAVIOR: line j at baseline hy + 73 + ascent + j * (ascent + descent), j counting the texts drawn;
+     * the first text starts one line lower when it is wider than the HUD inner width (140) and the fuel
+     * text or vertical lines occupy the space.
      */
-    void scoreMessage(HudFrame out, int hx, int hy, float delta, boolean didFuel, TextMetrics m) {
-        scratch.clear().appendFixed(delta, 1, 0);
-        int width = m.width(scratch, scratch.length());
-        int j = width > 2 * HUD_SIZE - HUD_OFFSET * 2 && (didFuel || verticalLines) ? 1 : 0;
-        CharBuf t = out.text(hx - width / 2, hy + HUD_SIZE - HUD_OFFSET + BORDER + m.ascent()
-            + j * (m.ascent() + m.descent()), HudColor.HUD);
-        if (t != null) {
-            t.append(scratch);
+    void scoreStack(HudFrame out, int hx, int hy, ScoreObjects so, boolean didFuel, TextMetrics m) {
+        int j = 0;
+        for (int i = 0; i < ScoreObjects.MAX_SCORE_OBJECTS; i++) {
+            int s = so.hudOrder(i);
+            CharBuf msg = so.hudText(s);
+            if (msg.length() == 0) {
+                continue;
+            }
+            int width = m.width(msg, msg.length());
+            if (j == 0 && width > 2 * HUD_SIZE - HUD_OFFSET * 2 && (didFuel || verticalLines)) {
+                j++;
+            }
+            CharBuf t = out.text(hx - width / 2, hy + HUD_SIZE - HUD_OFFSET + BORDER + m.ascent()
+                + j * (m.ascent() + m.descent()), HudColor.HUD);
+            if (t != null) {
+                t.append(msg);
+            }
+            j++;
         }
     }
 
@@ -370,7 +393,7 @@ public final class Hud {
         int h = m.ascent() + m.descent();
         int wh = h + 2 * TALK_INSIDE_BORDER;
         int wy = viewH * 3 / 4 - wh / 2;
-        int ww = viewW - 2 * (TALK_WINDOW_X + TALK_OUTSIDE_BORDER);
+        int ww = talkWindowWidth(viewW);
         int ix = TALK_WINDOW_X + TALK_OUTSIDE_BORDER;
         int iy = wy + TALK_OUTSIDE_BORDER;
         out.rect(ix, iy, ww, wh, true, HudColor.BLACK);
@@ -382,6 +405,11 @@ public final class Hud {
         }
         int cx = tx + m.width(talk.text(), talk.cursor());
         out.line(cx, iy + TALK_INSIDE_BORDER, cx, iy + TALK_INSIDE_BORDER + h, HudFrame.SOLID, HudColor.WHITE);
+    }
+
+    /** BEHAVIOR: C {@code TALK_WINDOW_WIDTH} = viewW - 2 * (TALK_WINDOW_X + TALK_OUTSIDE_BORDER). */
+    public static int talkWindowWidth(int viewW) {
+        return viewW - 2 * (TALK_WINDOW_X + TALK_OUTSIDE_BORDER);
     }
 
     /**

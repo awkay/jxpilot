@@ -318,7 +318,7 @@ class ClientWorldTest {
             for (int t = fromTick; t <= toTick; t++) {
                 double back = (snapTick - t) * 0.25;
                 em.emit(t, 9, x - vx * back, y, 0, vx, 0, 50, 2, com.fulcrologic.jxpilot.common.math.ShipShape.defaultShip().engineX,
-                    com.fulcrologic.jxpilot.common.math.ShipShape.defaultShip().engineY, p);
+                    com.fulcrologic.jxpilot.common.math.ShipShape.defaultShip().engineY, false, p);
             }
             return p.count();
         }

@@ -25,11 +25,14 @@ package com.fulcrologic.jxpilot.client.game;
 
 import com.fulcrologic.jxpilot.client.net.ConnectionState;
 import com.fulcrologic.jxpilot.common.net.Msg;
+import com.fulcrologic.jxpilot.common.net.Protocol;
 import com.fulcrologic.jxpilot.common.net.ReliableType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -125,25 +128,124 @@ class ClientGameTest {
             () -> assertTrue(g.teamPlay(), "team play from WELCOME"));
     }
 
+    static Msg.GameEvent event(int kind, int a, int b) {
+        Msg.GameEvent e = new Msg.GameEvent();
+        e.kind = kind;
+        e.a = a;
+        e.b = b;
+        return e;
+    }
+
+    /** HUD texts of the live score objects, oldest first. */
+    static List<String> hud(ClientGame g) {
+        List<String> r = new ArrayList<>();
+        ScoreObjects so = g.scoreObjects();
+        for (int i = 0; i < ScoreObjects.MAX_SCORE_OBJECTS; i++) {
+            int s = so.hudOrder(i);
+            if (so.active(s)) {
+                r.add(so.hudText(s) + (so.hasPosition(s) ? " @" + so.blockX(s) + "," + so.blockY(s) : ""));
+            }
+        }
+        return r;
+    }
+
+    static ClientGame withPlayers() {
+        ClientGame g = configured();
+        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(7, 0, "me")));
+        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(9, 0, "Robby")));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 10)));
+        g.onReliable(ReliableType.SCORE, payload(score(9, 10)));
+        return g;
+    }
+
     @Test
-    @DisplayName("an own score change is shown for 100 frames; others are not")
-    void scoreMessage() {
+    @DisplayName("own score changes become score objects; others, the join baseline and resets to 0 do not")
+    void scoreObjects() {
         ClientGame g = configured();
         g.onReliable(ReliableType.PLAYER_JOIN, payload(join(7, 0, "me")));
         g.onReliable(ReliableType.PLAYER_JOIN, payload(join(9, 0, "it")));
         g.onReliable(ReliableType.SCORE, payload(score(9, 4)));
-        double otherLife = g.scoreMessageLife();
-        g.onReliable(ReliableType.SCORE, payload(score(7, 2.5f)));
-        double life = g.scoreMessageLife();
-        g.frame(WorldFixture.at(100), 1.0);
-        double afterSecond = g.scoreMessageLife();
-        g.frame(WorldFixture.at(100), 10.0);
+        g.onReliable(ReliableType.SCORE, payload(score(9, 6)));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 150)));
+        List<String> afterBaseline = hud(g);
+        g.onReliable(ReliableType.SCORE, payload(score(7, 152.5f)));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 0)));
+        ScoreObjects so = g.scoreObjects();
+        int s = so.hudOrder(ScoreObjects.MAX_SCORE_OBJECTS - 1);
+        List<String> objects = hud(g);
+        String text = so.text(s).toString();
+        float points = so.score(s);
+        boolean placed = so.hasPosition(s);
+        g.onAccepted(7);
+        boolean afterNewSession = g.scoreObjects().active(s);
         assertAll(
-            () -> assertEquals(0.0, otherLife, "another player's score shows nothing"),
-            () -> assertEquals(100.0, life, "own change shown for 100 frames"),
-            () -> assertEquals(2.5f, g.scoreDelta(), "the change"),
-            () -> assertEquals(85.0, afterSecond, 1e-9, "one second at 15 fps ages it 15 frames"),
-            () -> assertEquals(0.0, g.scoreMessageLife(), "never below 0"));
+            () -> assertFalse(afterNewSession, "a new session forgets score objects"),
+            () -> assertEquals(List.of(), afterBaseline, "another player's change and the join baseline make none"),
+            () -> assertEquals(List.of("2.5"), objects, "one object; the reset to 0 makes none; unknown reason: points only"),
+            () -> assertEquals("2.5", text, "game-area text: the points"),
+            () -> assertEquals(2.5f, points, "points"),
+            () -> assertFalse(placed, "no place without an event"));
+    }
+
+    @Test
+    @DisplayName("kill events name the other player and place the object at the victim")
+    void killReasons() {
+        WorldFixture f = new WorldFixture(true);
+        ClientGame g = withPlayers();
+        f.begin(100).self(7, 0, 100, 100, 0, 0, 0).ship(9, 0, 350, 175, 0, 0, 0);
+        f.buf.flip();
+        g.onSnapshot(f.buf, WorldFixture.at(100));
+        g.frame(WorldFixture.at(100), 0);
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.KILL, 7, 9)));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 13)));
+        g.frame(WorldFixture.at(100), 0);
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.KILL, 9, 7)));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 12)));
+        g.frame(WorldFixture.at(100), 0);
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.KILL, 7, 7)));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 11)));
+        g.frame(WorldFixture.at(100), 0);
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.KILL, Protocol.NO_ID, 7)));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 10)));
+        g.frame(WorldFixture.at(100), 0);
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.KILL, 9, 4)));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 9)));
+        assertEquals(List.of("Robby 3.0 @10,5", "Robby -1.0 @2,2", "me -1.0 @2,2", "-1.0", "-1.0"), hud(g),
+            "killer: victim's name at the victim; victim: killer's name; self-kill: own name; "
+                + "killed by nobody: points only; another pair's kill is no reason");
+    }
+
+    @Test
+    @DisplayName("crash, target and treasure reasons; a reason does not outlive its batch")
+    void otherReasons() {
+        WorldFixture f = new WorldFixture(true);
+        ClientGame g = withPlayers();
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.CRASH, 7, 0)));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 9)));
+        g.frame(WorldFixture.at(100), 0);
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.TARGET_DESTROYED, 7, 0)));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 11)));
+        g.frame(WorldFixture.at(100), 0);
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.TREASURE_DESTROYED, 7, 0)));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 12)));
+        g.frame(WorldFixture.at(100), 0);
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.TARGET_DESTROYED, 7, 5)));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 13)));
+        g.frame(WorldFixture.at(100), 0);
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.CRASH, 9, 0)));
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.TARGET_DESTROYED, 9, 0)));
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.SPAWN, 7, 0)));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 14)));
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.CRASH, 7, 0)));
+        g.frame(WorldFixture.at(100), 0);
+        g.onReliable(ReliableType.SCORE, payload(score(7, 15)));
+        String target = "@" + f.map.targets().get(0).bx() + "," + f.map.targets().get(0).by();
+        String treasure = "@" + f.map.treasures().get(0).bx() + "," + f.map.treasures().get(0).by();
+        assertEquals(List.of("[Wall] -1.0", "Target:  2.0 " + target, "Treasure:  1.0 " + treasure,
+                "Target:  1.0", "1.0", "1.0"), hud(g),
+            "crash at an unknown own ship: no place; target/treasure at their block (C's double space); "
+                + "a bad index: no place; other players' events and SPAWN are no reason; a reason after the "
+                + "SCORE is forgotten at the frame");
     }
 
     @Test
