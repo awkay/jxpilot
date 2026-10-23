@@ -57,6 +57,7 @@
           <excludes>
             <exclude>**/AllocationTest.java</exclude>
             <exclude>**/*NetAllocationTest.java</exclude>
+            <exclude>**/AppAllocationTest.java</exclude>
           </excludes>
         </configuration>
         <executions>
@@ -72,6 +73,20 @@
               <excludes combine.self="override"/>
               <includes>
                 <include>**/AllocationTest.java</include>
+              </includes>
+              <argLine>-XX:-DoEscapeAnalysis</argLine>
+            </configuration>
+          </execution>
+          <execution>
+            <id>app-allocation-tests</id>
+            <phase>test</phase>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <excludes combine.self="override"/>
+              <includes>
+                <include>**/AppAllocationTest.java</include>
               </includes>
               <argLine>-XX:-DoEscapeAnalysis</argLine>
             </configuration>
@@ -104,15 +119,18 @@
             <param>com.fulcrologic.jxpilot.client.net.*</param>
             <param>com.fulcrologic.jxpilot.client.game.*</param>
             <param>com.fulcrologic.jxpilot.client.xp.*</param>
+            <param>com.fulcrologic.jxpilot.client.app.*</param>
           </targetClasses>
           <!-- DemoWorld and DemoHud are fake animation data for the demo viewer mode; UdpTransport and
-               ClientSim are I/O edges covered by loopback tests. -->
+               ClientSim are I/O edges covered by loopback tests; GameApp and AppLauncher are GL/GLFW glue. -->
           <excludedClasses>
             <param>com.fulcrologic.jxpilot.client.viewer.DemoWorld</param>
             <param>com.fulcrologic.jxpilot.client.viewer.DemoHud</param>
             <param>com.fulcrologic.jxpilot.client.net.UdpTransport</param>
             <param>com.fulcrologic.jxpilot.client.net.ClientSim</param>
             <param>com.fulcrologic.jxpilot.client.xp.XpClientSim*</param>
+            <param>com.fulcrologic.jxpilot.client.app.GameApp*</param>
+            <param>com.fulcrologic.jxpilot.client.app.AppLauncher</param>
           </excludedClasses>
           <targetTests>
             <param>com.fulcrologic.jxpilot.client.*</param>
@@ -120,6 +138,7 @@
           <excludedTestClasses>
             <param>com.fulcrologic.jxpilot.client.AllocationTest</param>
             <param>*NetAllocationTest*</param>
+            <param>*AppAllocationTest*</param>
             <param>*UdpLoopbackTest*</param>
           </excludedTestClasses>
         </configuration>

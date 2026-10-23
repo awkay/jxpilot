@@ -40,7 +40,8 @@ import static org.lwjgl.glfw.GLFW.*;
  *   DevRun [ClientMain --connect options...] --out DIR --start F --every N --count K [--script NAME]
  * </pre>
  * Screenshots {@code DIR/shot-NN.png} are taken after frames F, F+N, ... (K of them); the run ends after
- * the last. Scripts: {@code fly} (from frame 60: thrust, turn left, fire in bursts), {@code talk} (opens the
+ * the last. {@code --scripted-server MAP} first starts a {@link ScriptedServer} for MAP on loopback UDP and
+ * connects to it. Scripts: {@code fly} (from frame 60: thrust, turn left, fire in bursts), {@code talk} (opens the
  * talk line at frame 40 and types a line, leaves it open), {@code chat} (as talk, then sends it at frame
  * 160), {@code none}.
  */
@@ -54,6 +55,12 @@ public final class DevRun {
         int every = Integer.parseInt(take(rest, "--every", "10"));
         int count = Integer.parseInt(take(rest, "--count", "1"));
         String script = take(rest, "--script", "none");
+        String scripted = take(rest, "--scripted-server", null);
+        if (scripted != null) {
+            int port = ScriptedServer.startUdp(Path.of(scripted));
+            rest.add("--connect");
+            rest.add("127.0.0.1:" + port);
+        }
         AppOptions o = AppOptions.parse(rest.toArray(new String[0]), System.getProperty("user.name"));
         ClientGame game = new ClientGame();
         GameConnection conn = GameConnector.open(o.target(), o.bind(), game, o.name(), o.team(), o.shape(),
