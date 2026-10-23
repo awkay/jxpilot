@@ -1,0 +1,213 @@
+/*
+ * JXPilot, a Java reimplementation of XPilot, a multiplayer gravity war game.
+ * Copyright (C) 2026 Tony Kay and the JXPilot contributors.
+ *
+ * Derived from XPilot 4.5.5, Copyright (C) 1991-2002 by Bjørn Stabell,
+ * Ken Ronny Schouten, Bert Gijsbers and Dick Balaska. JXPilot is an
+ * independent derivative port: the original XPilot authors were not involved
+ * in it and do not endorse it. Ported to Java and modified starting in 2026;
+ * see the git history for the changes.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ */
+package com.fulcrologic.jxpilot.server.net;
+
+import com.fulcrologic.jxpilot.common.config.ConfigParser;
+import com.fulcrologic.jxpilot.common.config.Opt;
+import com.fulcrologic.jxpilot.common.config.OptionOrigin;
+import com.fulcrologic.jxpilot.common.config.Options;
+import com.fulcrologic.jxpilot.common.map.WorldMap;
+import com.fulcrologic.jxpilot.common.net.Msg;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import java.nio.file.Path;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+@DisplayName("Server net utilities")
+class UtilitiesTest {
+    static final long S = 1_000_000_000L;
+
+    @Nested
+    @DisplayName("RateLimiter")
+    class Rate {
+        @Test
+        @DisplayName("token bucket per source: burst, refill, cap, refusals are free")
+        void bucket() {
+            RateLimiter r = new RateLimiter(16, 10, 5);
+            boolean[] burst = new boolean[6];
+            for (int i = 0; i < 6; i++) {
+                burst[i] = r.allow(7, 1, 0);
+            }
+            boolean otherSource = r.allow(8, 1, 0);
+            boolean afterTenthSecond = r.allow(7, 1, S / 10);
+            boolean onlyOne = r.allow(7, 1, S / 10);
+            boolean bigRefused = r.allow(9, 6, 0);
+            boolean smallAfterBigRefused = r.allow(9, 5, 0);
+            RateLimiter cap = new RateLimiter(16, 10, 5);
+            cap.allow(1, 5, 0);
+            boolean capped = cap.allow(1, 5, 100 * S);
+            boolean overCap = cap.allow(1, 1, 100 * S);
+            assertAll(
+                () -> assertArrayEquals(new boolean[] {true, true, true, true, true, false}, burst,
+                    "a new source gets a full burst, then is refused"),
+                () -> assertTrue(otherSource, "sources have separate buckets"),
+                () -> assertTrue(afterTenthSecond, "a tenth of a second refills one token at 10/s"),
+                () -> assertFalse(onlyOne, "and only one"),
+                () -> assertFalse(bigRefused, "a cost above the bucket is refused"),
+                () -> assertTrue(smallAfterBigRefused, "a refused request costs nothing"),
+                () -> assertTrue(capped, "a long idle refills to the burst"),
+                () -> assertFalse(overCap, "but never beyond it"));
+        }
+
+        @Test
+        @DisplayName("colliding sources evict each other with a fresh bucket; table rounds to a power of two")
+        void collisions() {
+            RateLimiter r = new RateLimiter(2, 1, 1);
+            int a = 0;
+            int b = 1;
+            while (r.slot(b) != r.slot(a)) {
+                b++;
+            }
+            boolean aFirst = r.allow(a, 1, 0);
+            boolean aAgain = r.allow(a, 1, 0);
+            boolean bEvicts = r.allow(b, 1, 0);
+            boolean aFresh = r.allow(a, 1, 0);
+            assertAll(
+                () -> assertTrue(aFirst && !aAgain, "a single-token bucket allows one"),
+                () -> assertTrue(bEvicts, "a colliding source starts full"),
+                () -> assertTrue(aFresh, "the evicted source starts full again"),
+                () -> assertEquals(1024, new RateLimiter(1000, 1, 1).capacity(), "1000 slots round up to 1024"),
+                () -> assertEquals(1024, new RateLimiter(1024, 1, 1).capacity(), "a power of two is kept"),
+                () -> assertEquals(2, new RateLimiter(1, 1, 1).capacity(), "the minimum table is 2"));
+        }
+
+        @Test
+        @DisplayName("slot spreads neighbouring keys")
+        void spread() {
+            RateLimiter r = new RateLimiter(1024, 1, 1);
+            java.util.Set<Integer> slots = new java.util.HashSet<>();
+            for (int k = 0; k < 64; k++) {
+                int s = r.slot(0x0A000000 + k);
+                slots.add(s);
+                assertTrue(s >= 0 && s < 1024, "slot within the table");
+            }
+            assertTrue(slots.size() > 56, "64 consecutive addresses use (nearly) distinct slots: " + slots.size());
+        }
+    }
+
+    @Nested
+    @DisplayName("TickScheduler")
+    class Ticks {
+        @Test
+        @DisplayName("counts due ticks, waits, and re-bases after a stall")
+        void schedule() {
+            TickScheduler t = new TickScheduler(60, 5, 1000);
+            long p = t.periodNanos();
+            int early = t.due(1000 + p - 1);
+            long wait = t.nanosUntilNext(1000 + p - 1);
+            int one = t.due(1000 + p);
+            int two = t.due(1000 + 3 * p + 5);
+            long waitAfter = t.nanosUntilNext(1000 + 3 * p + 5);
+            int stall = t.due(1000 + 100 * p);
+            long skipped = t.skipped();
+            long waitAfterStall = t.nanosUntilNext(1000 + 100 * p);
+            int exactlyFive = new TickScheduler(60, 5, 0).due(5 * p);
+            assertAll(
+                () -> assertEquals(16_666_666L, p, "60 Hz period in ns"),
+                () -> assertEquals(0, early, "no tick before the first deadline"),
+                () -> assertEquals(1, wait, "waits until the deadline"),
+                () -> assertEquals(1, one, "a tick is due exactly at its deadline"),
+                () -> assertEquals(2, two, "two elapsed periods give two ticks"),
+                () -> assertEquals(p - 5, waitAfter, "the schedule keeps its phase"),
+                () -> assertEquals(5, stall, "a stall runs at most maxCatchUp ticks"),
+                () -> assertEquals(97 - 5, skipped, "the rest are counted as skipped"),
+                () -> assertEquals(p, waitAfterStall, "after a stall the next tick is one period away"),
+                () -> assertEquals(5, exactlyFive, "exactly maxCatchUp due ticks all run"),
+                () -> assertEquals(0, t.nanosUntilNext(1000 + 200 * p), "a passed deadline needs no wait"));
+        }
+    }
+
+    @Nested
+    @DisplayName("ServerArgs")
+    class Args {
+        @Test
+        @DisplayName("joinRepeated merges every --bind into one list")
+        void join() {
+            String[] in = {"--map", "m.xp", "--bind", "utun4", "-port", "1", "-BIND", "loopback", "cfg", "--bind"};
+            assertAll(
+                () -> assertArrayEquals(new String[] {"--map", "m.xp", "--bind", "utun4,loopback", "-port", "1", "cfg", "--bind"},
+                    ServerArgs.joinRepeated(in, Opt.BIND),
+                    "values merge at the first occurrence; a trailing flag without value stays"),
+                () -> assertArrayEquals(new String[] {"--map", "m.xp"}, ServerArgs.joinRepeated(new String[] {"--map", "m.xp"}, Opt.BIND),
+                    "without the option the arguments are unchanged"),
+                () -> assertArrayEquals(new String[] {"-", "x", "+bind", "y"},
+                    ServerArgs.joinRepeated(new String[] {"-", "x", "+bind", "y"}, Opt.BIND),
+                    "a lone dash and a +flag are not the option"));
+        }
+
+        @Test
+        @DisplayName("configFile finds the single positional argument")
+        void config() {
+            assertAll(
+                () -> assertNull(ServerArgs.configFile(List.of()), "no positional argument, no config file"),
+                () -> assertEquals(Path.of("server.cfg"), ServerArgs.configFile(List.of("server.cfg")), "one positional is the file"),
+                () -> assertEquals(Path.of("-"), ServerArgs.configFile(List.of("-")), "a lone dash is a path"),
+                () -> assertThrows(IllegalArgumentException.class, () -> ServerArgs.configFile(List.of("--nope")),
+                    "an unconsumed option is unknown"),
+                () -> assertThrows(IllegalArgumentException.class, () -> ServerArgs.configFile(List.of("+nope")),
+                    "an unconsumed +option is unknown"),
+                () -> assertThrows(IllegalArgumentException.class, () -> ServerArgs.configFile(List.of("a", "b")),
+                    "two positionals are an error"));
+        }
+    }
+
+    @Test
+    @DisplayName("ServerNetConfig.of mirrors the map")
+    void configOf() {
+        Options plain = new Options();
+        ConfigParser.parse("mapWidth: 3\nmapHeight: 2\nmapName: Tiny\nmapData: \\multiline: E\nxxx\nx_x\nE\n",
+            "t", OptionOrigin.MAP, plain);
+        Options team = new Options();
+        ConfigParser.parse("mapWidth: 3\nmapHeight: 2\nteamPlay: yes\nedgeWrap: yes\nframesPerSecond: 50\n"
+            + "mapData: \\multiline: E\nxxx\nx_x\nE\n", "t", OptionOrigin.MAP, team);
+        Options race = new Options();
+        ConfigParser.parse("mapWidth: 4\nmapHeight: 2\ntiming: yes\n"
+            + "mapData: \\multiline: E\nxxxx\nxA_x\nE\n", "t", OptionOrigin.MAP, race);
+        ServerNetConfig p = ServerNetConfig.of(plain, WorldMap.fromOptions(plain));
+        ServerNetConfig f = ServerNetConfig.of(team, WorldMap.fromOptions(team));
+        ServerNetConfig r = ServerNetConfig.of(race, WorldMap.fromOptions(race));
+        assertAll(
+            () -> assertEquals(0, p.welcomeFlags, "no flags for a plain map"),
+            () -> assertEquals(Msg.Welcome.FLAG_TEAM_PLAY | Msg.Welcome.FLAG_EDGE_WRAP, f.welcomeFlags,
+                "teamPlay and edgeWrap set their flags"),
+            () -> assertEquals(Msg.Welcome.FLAG_TIMING, r.welcomeFlags, "timing (race mode) sets its flag"),
+            () -> assertEquals(14f, p.gameFps, "gameFps defaults to 14"),
+            () -> assertEquals(50f, f.gameFps, "gameFps follows framesPerSecond"),
+            () -> assertEquals("JXPilot: Tiny", p.serverName, "the server name carries the map name"),
+            () -> assertEquals(105.0, p.worldWidth, "world width in pixels"),
+            () -> assertEquals(70.0, p.worldHeight, "world height in pixels"),
+            () -> assertFalse(p.edgeWrap, "no wrap"),
+            () -> assertTrue(f.edgeWrap, "wrap"));
+    }
+}

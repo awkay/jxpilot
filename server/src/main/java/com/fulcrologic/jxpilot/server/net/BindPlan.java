@@ -229,7 +229,7 @@ public final class BindPlan {
     private static List<String> addresses(Iterable<BindTarget> ts) {
         List<String> out = new ArrayList<>();
         for (BindTarget t : ts) {
-            out.add(t.address().getHostAddress());
+            out.add(BindTarget.text(t.address()));
         }
         return out;
     }

@@ -39,12 +39,55 @@ public record BindTarget(InetAddress address, String interfaceName) {
      * scope suffix (the interface name is shown anyway).
      */
     public String describe(int port) {
-        String host = address.getHostAddress();
-        int pct = host.indexOf('%');
-        if (pct >= 0) {
-            host = host.substring(0, pct);
-        }
+        String host = text(address);
         String hp = address instanceof Inet6Address ? "[" + host + "]:" + port : host + ":" + port;
         return hp + " (" + interfaceName + ")";
+    }
+
+    /**
+     * Operator-friendly address text.
+     * <p>
+     * BEHAVIOR: IPv4 as a dotted quad; IPv6 in RFC 5952 form: lower-case hex without leading zeros,
+     * the longest run (first if tied) of two or more zero groups shortened to {@code ::}, no scope.
+     */
+    public static String text(InetAddress a) {
+        byte[] b = a.getAddress();
+        if (b.length == 4) {
+            return a.getHostAddress();
+        }
+        int[] g = new int[8];
+        for (int i = 0; i < 8; i++) {
+            g[i] = ((b[2 * i] & 0xFF) << 8) | (b[2 * i + 1] & 0xFF);
+        }
+        int bestStart = -1;
+        int bestLen = 1;
+        for (int i = 0; i < 8; ) {
+            if (g[i] != 0) {
+                i++;
+                continue;
+            }
+            int j = i;
+            while (j < 8 && g[j] == 0) {
+                j++;
+            }
+            if (j - i > bestLen) {
+                bestStart = i;
+                bestLen = j - i;
+            }
+            i = j;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 8; i++) {
+            if (i == bestStart) {
+                sb.append("::");
+                i += bestLen - 1;
+                continue;
+            }
+            if (sb.length() > 0 && sb.charAt(sb.length() - 1) != ':') {
+                sb.append(':');
+            }
+            sb.append(Integer.toHexString(g[i]));
+        }
+        return sb.toString();
     }
 }

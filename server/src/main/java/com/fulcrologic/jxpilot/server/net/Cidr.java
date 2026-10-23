@@ -99,6 +99,6 @@ public record Cidr(InetAddress network, int prefix) {
 
     @Override
     public String toString() {
-        return network.getHostAddress() + "/" + prefix;
+        return BindTarget.text(network) + "/" + prefix;
     }
 }

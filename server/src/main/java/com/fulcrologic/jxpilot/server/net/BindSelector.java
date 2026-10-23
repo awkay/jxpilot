@@ -54,7 +54,7 @@ public sealed interface BindSelector {
         public boolean wildcard() { return address.isAnyLocalAddress(); }
 
         @Override
-        public String toString() { return address.getHostAddress(); }
+        public String toString() { return BindTarget.text(address); }
     }
 
     /** Every local address inside the network; survives interfaces being renumbered. */
