@@ -25,7 +25,8 @@ mvn -pl client exec:exec -Dclient.args="--view-map ../maps/default.xp ..."  # fr
 ----
 
 Without `--view-map` the client prints a usage line and exits with status 2, as it does for an
-unknown flag, a missing value or a malformed number (with a message naming the flag).
+unknown flag, a missing value or a malformed number (with a message naming the flag). The usage line
+lists only the most common flags; the table below has all of them.
 
 [[viewer-flags]]
 == Viewer flags (available now)
@@ -80,6 +81,26 @@ than `--frames`).
 |`--gpu-timer`
 |off
 |Measure GPU time per frame with OpenGL timer queries (costs CPU time on some drivers).
+
+|`--alt-scale-factor F`
+|`2.0`
+|XPilot's `altScaleFactor`: the alternative zoom (1/F) that kbd:[S] swaps to; positive.
+
+|`--font FILE`
+|bundled Fira Code
+|A TrueType font file for all text.
+
+|`--font-size PX`
+|`13`
+|Text size in logical pixels; positive.
+
+|`--demo-round-delay N`
+|`0`
+|With `--demo`: show a round-start countdown of N frames (0 or more).
+
+|`--demo-damaged N`
+|`0`
+|With `--demo`: show N frames of ECM damage on the own ship from the start (0 or more).
 |===
 
 The viewer prints one line describing each map it loads, and with `--screenshot` the file written and

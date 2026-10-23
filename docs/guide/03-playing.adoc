@@ -101,6 +101,8 @@ The map viewer (`--view-map`, available now) has its own keys:
 |kbd:[Tab] |Next map in the same directory
 |kbd:[F] |Filled or outlined walls
 |kbd:[R] |Show or hide the radar
+|kbd:[S] |Swap between the current zoom and the alternative zoom (`--alt-scale-factor`), as XPilot's
+swap-scale-factor key
 |kbd:[Esc] or kbd:[Q] |Quit
 |===
 

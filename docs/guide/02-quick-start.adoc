@@ -81,7 +81,7 @@ java -jar jxpilot-client-VERSION.jar --view-map jxpilot-maps-VERSION/maps/defaul
 
 Use the arrow keys to pan, kbd:[+] and kbd:[-] (or the mouse wheel) to zoom, kbd:[Tab] for the next
 map in the same directory, kbd:[F] to switch between outlined and filled walls, kbd:[R] to toggle the
-radar and kbd:[Esc] or kbd:[Q] to quit. Add `--demo` to see ships, shots and the HUD in action. All
+radar, kbd:[S] to swap to the alternative zoom and kbd:[Esc] or kbd:[Q] to quit. Add `--demo` to see ships, shots and the HUD in action. All
 client flags are in <<07-client-reference.adoc#client-reference,Client reference>>.
 
 [[platform-notes]]
