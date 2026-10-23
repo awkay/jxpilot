@@ -248,7 +248,7 @@ class ReliableChannelTest {
                 () -> assertEquals(1, straightIntoWindow, "once drained, new messages go straight into the window"),
                 () -> assertEquals(4, pooledAfterDrain, "the 3 drained overflow buffers and the aborted one are pooled"),
                 () -> assertEquals(3, pooledWhileOverflowing, "an overflowing message takes a pooled buffer"),
-                () -> assertEquals(4, pooledAfterReset, "reset returns overflowing buffers to the pool"),
+                () -> assertEquals(2, pooledAfterReset, "reset returns overflowing buffers to the pool, keeping at most window (2)"),
                 () -> assertEquals(0, tx.overflowing(), "reset clears the overflow"),
                 () -> assertEquals(0, tx.unacked(), "reset clears the window"));
         }
@@ -334,7 +334,7 @@ class ReliableChannelTest {
             long second = ch.resendTimeoutNanos();
             queue(ch, 1, 3);
             ch.write(ByteBuffer.allocate(100), 200 * MS);
-            ch.write(ByteBuffer.allocate(100), 400 * MS); // resent: Karn's rule, no sample
+            ch.write(ByteBuffer.allocate(100), 400 * MS); // resent: Karn's rule, no sample; backoff doubles
             ch.onAck(3, 410 * MS);
             long afterRetransmit = ch.resendTimeoutNanos();
             ReliableChannel fast = new ReliableChannel(8, 16, 150, 50, 2000);
@@ -350,11 +350,40 @@ class ReliableChannelTest {
                 () -> assertEquals(150 * MS, before, "starts at the initial timeout"),
                 () -> assertEquals(120 * MS, first, "first sample: srtt + 4 * (R/2) = 3R"),
                 () -> assertEquals(117_500_000L, second, "second sample smooths srtt and rttvar"),
-                () -> assertEquals(117_500_000L, afterRetransmit, "a retransmitted message gives no sample"),
+                () -> assertEquals(235_000_000L, afterRetransmit,
+                    "a retransmitted message gives no sample (the backed-off timeout stays)"),
                 () -> assertEquals(50 * MS, fast.resendTimeoutNanos(), "the timeout never drops below the floor"),
                 () -> assertEquals(2000 * MS, slow.resendTimeoutNanos(), "the timeout never exceeds the ceiling"),
                 () -> assertEquals(Protocol.RELIABLE_RESEND_MS * MS, dflt.resendTimeoutNanos(),
                     "the default channel starts at RELIABLE_RESEND_MS"));
+        }
+
+        @Test
+        @DisplayName("resending the oldest message doubles the timeout up to the cap; a newer one alone does not")
+        void backoff() {
+            ReliableChannel ch = new ReliableChannel(8, 16, 100, 50, 700);
+            queue(ch, 1, 1);
+            queue(ch, 1, 2);
+            ch.write(ByteBuffer.allocate(100), 0);
+            long sentOnce = ch.resendTimeoutNanos();
+            ch.write(ByteBuffer.allocate(1 + 4 + 2), 100 * MS); // room for one message: the oldest
+            long afterOldest = ch.resendTimeoutNanos();
+            int newerOnly = ch.write(ByteBuffer.allocate(100), 250 * MS); // message 2 is due, message 1 is not
+            long afterNewer = ch.resendTimeoutNanos();
+            ch.write(ByteBuffer.allocate(100), 300 * MS);
+            long third = ch.resendTimeoutNanos();
+            ch.write(ByteBuffer.allocate(100), 700 * MS);
+            long capped = ch.resendTimeoutNanos();
+            boolean notDueBeforeBackoff = !ch.wantsSend(700 * MS + 699 * MS);
+            boolean dueAtBackoff = ch.wantsSend(700 * MS + 700 * MS);
+            assertAll(
+                () -> assertEquals(100 * MS, sentOnce, "a first send does not back off"),
+                () -> assertEquals(200 * MS, afterOldest, "resending the oldest doubles the timeout"),
+                () -> assertEquals(1, newerOnly, "the newer message is resent on its own"),
+                () -> assertEquals(200 * MS, afterNewer, "which does not back off again"),
+                () -> assertEquals(400 * MS, third, "the next resend of the oldest doubles again"),
+                () -> assertEquals(700 * MS, capped, "the backoff is capped at maxRto"),
+                () -> assertTrue(notDueBeforeBackoff && dueAtBackoff, "the next resend waits the backed-off timeout"));
         }
 
         @Test
@@ -388,6 +417,65 @@ class ReliableChannelTest {
             assertAll(
                 () -> assertEquals(150 * MS, afterReset, "reset restores the initial timeout"),
                 () -> assertEquals(300 * MS, ch.resendTimeoutNanos(), "the next sample is treated as the first (3R)"));
+        }
+    }
+
+    @Nested
+    @DisplayName("acknowledgement progress")
+    class Progress {
+        @Test
+        @DisplayName("nextSequence counts window and overflow; allAckedBefore tracks the cumulative ack")
+        void sequences() {
+            ReliableChannel ch = new ReliableChannel(2, 16, 10);
+            int empty = ch.nextSequence();
+            boolean emptyAcked = ch.allAckedBefore(empty);
+            for (int i = 0; i < 5; i++) {
+                queue(ch, 1, i);
+            }
+            ch.begin(1);
+            int mark = ch.nextSequence();
+            ch.abort();
+            ch.write(ByteBuffer.allocate(200), 0);
+            ch.onAck(2, 1 * MS);
+            boolean partly = ch.allAckedBefore(mark);
+            boolean firstTwo = ch.allAckedBefore(2);
+            ch.write(ByteBuffer.allocate(200), 2 * MS);
+            ch.onAck(4, 3 * MS);
+            ch.write(ByteBuffer.allocate(200), 4 * MS);
+            ch.onAck(5, 5 * MS);
+            boolean all = ch.allAckedBefore(mark);
+            boolean notBeyond = ch.allAckedBefore(mark + 1);
+            assertAll(
+                () -> assertEquals(0, empty, "a fresh channel starts at 0"),
+                () -> assertTrue(emptyAcked, "nothing queued counts as all acknowledged"),
+                () -> assertEquals(5, mark, "2 in the window + 3 overflowing; an open message is not counted"),
+                () -> assertFalse(partly, "an ack of 2 of 5 is not all"),
+                () -> assertTrue(firstTwo, "but covers everything before 2"),
+                () -> assertTrue(all, "an ack of 5 covers everything before the mark"),
+                () -> assertFalse(notBeyond, "and nothing after it"));
+        }
+
+        @Test
+        @DisplayName("unackedAge measures from the first send of the oldest message")
+        void age() {
+            ReliableChannel ch = new ReliableChannel(4, 16, 10);
+            long none = ch.unackedAgeNanos(50 * MS);
+            queue(ch, 1, 1);
+            long unsent = ch.unackedAgeNanos(50 * MS);
+            ch.write(ByteBuffer.allocate(100), 100 * MS);
+            queue(ch, 1, 2);
+            ch.write(ByteBuffer.allocate(100), 130 * MS); // resends 1 and sends 2
+            long aged = ch.unackedAgeNanos(400 * MS);
+            ch.onAck(1, 410 * MS);
+            long second = ch.unackedAgeNanos(500 * MS);
+            ch.onAck(2, 510 * MS);
+            long drained = ch.unackedAgeNanos(600 * MS);
+            assertAll(
+                () -> assertEquals(0, none, "an empty window has no age"),
+                () -> assertEquals(0, unsent, "a queued but unsent message has no age"),
+                () -> assertEquals(300 * MS, aged, "the age counts from the first send, not the latest resend"),
+                () -> assertEquals(370 * MS, second, "after an ack the next oldest message's first send counts"),
+                () -> assertEquals(0, drained, "everything acknowledged has no age"));
         }
     }
 

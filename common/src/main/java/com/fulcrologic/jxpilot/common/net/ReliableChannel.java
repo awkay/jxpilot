@@ -38,7 +38,9 @@ import java.util.ArrayDeque;
  * every {@link PacketHeader}) to {@link #onAck(int, long)}.
  * <p>
  * The resend timeout adapts to the round-trip time as in RFC 6298 (smoothed RTT + 4 * RTT variance,
- * Karn's rule: only messages sent once are sampled), clamped to [minRto, maxRto].
+ * Karn's rule: only messages sent once are sampled), clamped to [minRto, maxRto]. Each resend of the
+ * oldest unacknowledged message doubles the timeout (exponential backoff, RFC 6298 5.5), capped at
+ * maxRto, until the next RTT sample.
  * <p>
  * Receiving: {@link #read(ByteBuffer, ReliableHandler)} parses a RELIABLE body, buffers out-of-order
  * messages within the window and delivers in order. Put {@link #ack()} in every outgoing header.
@@ -60,6 +62,7 @@ public final class ReliableChannel {
     private final ByteBuffer[] tx;
     private final long[] txSent;
     private final int[] txSends;
+    private final long[] txFirstSent;
     private int txBase;
     private int txNext;
     private boolean building;
@@ -99,6 +102,7 @@ public final class ReliableChannel {
         }
         txSent = new long[window];
         txSends = new int[window];
+        txFirstSent = new long[window];
         rxHave = new boolean[window];
     }
 
@@ -117,6 +121,8 @@ public final class ReliableChannel {
      * Reset all state (new session).
      * <p>
      * BEHAVIOR: forgets queued, overflowing and buffered messages, sequences, and RTT estimates.
+     * BEHAVIOR: keeps at most {@code window} pooled overflow buffers, releasing the rest, so a peer that
+     * once overflowed heavily does not pin that memory for the next session.
      */
     public void reset() {
         txBase = 0;
@@ -126,6 +132,9 @@ public final class ReliableChannel {
         overflowBuilding = null;
         while (!overflow.isEmpty()) {
             pool.addLast(overflow.pollFirst());
+        }
+        while (pool.size() > window) {
+            pool.pollLast();
         }
         ackPending = false;
         rto = initialRto;
@@ -152,6 +161,38 @@ public final class ReliableChannel {
     /** Messages waiting in the overflow queue for window slots. */
     public int overflowing() {
         return overflow.size();
+    }
+
+    /**
+     * Sequence number the next queued message will get: every message queued so far (window and
+     * overflow) has a smaller one. Pair with {@link #allAckedBefore(int)} to wait for a batch of messages.
+     * <p>
+     * BEHAVIOR: counts window and overflowing messages; an open (unfinished) message is not counted.
+     */
+    public int nextSequence() {
+        return txNext + overflow.size();
+    }
+
+    /**
+     * BEHAVIOR: true iff the peer has acknowledged every message with a sequence before {@code seq}
+     * (a value from {@link #nextSequence()}); compared wrap-safely.
+     */
+    public boolean allAckedBefore(int seq) {
+        return txBase - seq >= 0;
+    }
+
+    /**
+     * How long the oldest unacknowledged message has been waiting for its ack.
+     * <p>
+     * BEHAVIOR: {@code now} minus the first send time of the oldest window message; 0 when the window is
+     * empty or its oldest message was never sent.
+     */
+    public long unackedAgeNanos(long nowNanos) {
+        if (txNext == txBase) {
+            return 0;
+        }
+        int slot = txBase & mask;
+        return txSends[slot] == 0 ? 0 : nowNanos - txFirstSent[slot];
     }
 
     /** Overflow buffers kept for reuse (allocation-free steady state). */
@@ -259,6 +300,7 @@ public final class ReliableChannel {
      * BEHAVIOR: first moves overflowing messages into free window slots.
      * BEHAVIOR: includes, oldest first, messages never sent or whose last send is at least the resend
      * timeout ago, up to 255 and while they fit; records the send time and count.
+     * BEHAVIOR: resending the oldest unacknowledged message doubles the resend timeout, capped at maxRto.
      * BEHAVIOR: writes nothing (buffer untouched) when nothing is due or fits.
      *
      * @return number of messages written (0 means nothing was written)
@@ -270,6 +312,7 @@ public final class ReliableChannel {
         }
         int countPos = out.position();
         int count = 0;
+        boolean oldestResent = false;
         out.put((byte) 0);
         for (int s = txBase; s != txNext && count < 255; s++) {
             int slot = s & mask;
@@ -285,6 +328,11 @@ public final class ReliableChannel {
             out.putShort((short) len);
             out.put(out.position(), m, 0, len);
             out.position(out.position() + len);
+            if (txSends[slot] == 0) {
+                txFirstSent[slot] = nowNanos;
+            } else if (s == txBase) {
+                oldestResent = true;
+            }
             txSends[slot]++;
             txSent[slot] = nowNanos;
             count++;
@@ -292,6 +340,9 @@ public final class ReliableChannel {
         if (count == 0) {
             out.position(countPos);
             return 0;
+        }
+        if (oldestResent) {
+            rto = Math.min(rto * 2, maxRto);
         }
         out.put(countPos, (byte) count);
         return count;

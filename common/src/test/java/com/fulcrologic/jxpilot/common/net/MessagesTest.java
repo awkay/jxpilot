@@ -181,6 +181,46 @@ class MessagesTest {
         }
 
         @Test
+        @DisplayName("Connect.tryRead refuses every truncation without throwing and reads a complete body")
+        void connectTryRead() {
+            Msg.Connect c = new Msg.Connect();
+            c.nonce = 77;
+            c.team = 2;
+            c.name.append("ab");
+            c.shape.append("xyz");
+            ByteBuffer full = ByteBuffer.allocate(64);
+            c.write(full);
+            full.flip();
+            int size = full.remaining();
+            List<Integer> accepted = new ArrayList<>();
+            List<Integer> moved = new ArrayList<>();
+            for (int n = 0; n <= size; n++) {
+                ByteBuffer b = ByteBuffer.allocate(80);
+                b.position(3);
+                b.put(full.duplicate().limit(n));
+                b.flip().position(3);
+                if (new Msg.Connect().tryRead(b)) {
+                    accepted.add(n);
+                } else if (b.position() != 3) {
+                    moved.add(n);
+                }
+            }
+            ByteBuffer withTrailer = ByteBuffer.allocate(64).put(full.duplicate()).put((byte) 9).flip();
+            Msg.Connect r = new Msg.Connect();
+            boolean ok = r.tryRead(withTrailer);
+            assertAll(
+                () -> assertEquals(13, size, "the test body is 13 bytes"),
+                () -> assertEquals(List.of(13), accepted, "only the complete body is accepted (every shorter prefix refused)"),
+                () -> assertEquals(List.of(), moved, "a refused body leaves the position unchanged"),
+                () -> assertTrue(ok, "a body followed by extra bytes is read"),
+                () -> assertEquals(77, r.nonce, "tryRead fills the nonce"),
+                () -> assertEquals(2, r.team, "and the team"),
+                () -> assertEquals("ab", r.name.toString(), "and the name"),
+                () -> assertEquals("xyz", r.shape.toString(), "and the shape"),
+                () -> assertEquals(1, withTrailer.remaining(), "and stops at the end of the body"));
+        }
+
+        @Test
         @DisplayName("unsigned accessors")
         void unsigned() {
             ByteBuffer b = ByteBuffer.wrap(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF});
