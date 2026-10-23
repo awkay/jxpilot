@@ -64,6 +64,9 @@ server:  World (pools), Simulation.tick(), rules, robots, UDP server (ServerNet)
 client:  GLFW window, Renderer (batch, fonts, map VBO), HUD/radar/messages, input→ control bitmask, ClientNet, `ClientMain [--connect host:port | --local --map ...]`
 ```
 `--local` starts an embedded server thread in-process and connects over loopback (same code path, no special casing).
+The server module provides it through common's `LocalServer.Provider` (ServiceLoader), so the client has no
+compile-time dependency on server code. The server's `GameHost` is `server.host.SimGameHost` (the real
+simulation); `StubGameHost` remains only for network tests.
 
 ## Server network binding (required, configurable)
 Target deployments: a VPN (e.g. a `utunN` WireGuard/corporate tunnel, `10.x` addresses, or

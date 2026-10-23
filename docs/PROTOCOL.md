@@ -29,11 +29,11 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
 |---|---|---|---|
 | 1 | CONNECT | C→S | `Msg.Connect`: u32 nonce, u8 team (0-9 or 255), str8 name, str16 shape. Resent every 250 ms until answered. |
 | 2 | ACCEPT | S→C | `Msg.Accept`: u32 nonce, u16 playerId. Header session = new random session id. Re-sent for duplicate CONNECTs and on a backoff schedule until the session is verified (below). |
-| 3 | REJECT | S→C | `Msg.Reject`: u32 nonce, u8 reason, str8 text. Header session 0. Never larger than the CONNECT it answers (the text is cut to fit). |
+| 3 | REJECT | S→C | `Msg.Reject`: u32 nonce, u8 reason, str8 text. Header session 0. Never larger than the CONNECT it answers (the text is cut to fit). Reasons: 1 FULL (no slot after kicking a robot, else paused players; or the requested team is full), 2 VERSION, 3 BAD_NAME (empty, or already in use: compared without case after trailing blanks are cut and the name is clamped to 16 Latin-1 chars), 4 OTHER (team play with `teamAssign: no` and no valid team requested, or no team can be picked; C contact.c `Check_queue`). |
 | 4 | RELIABLE | both | reliable channel body (below). |
 | 5 | INPUT | C→S | input with redundancy (below). |
 | 6 | SNAPSHOT | S→C | world snapshot (below). |
-| 7 | DISCONNECT | both | `Msg.Disconnect`: u8 reason, str8 text. Send 3 times; also timeout after 10 s of silence. The server never sends it to an unverified session. |
+| 7 | DISCONNECT | both | `Msg.Disconnect`: u8 reason (0 quit, 1 timeout, 2 kicked, 3 shutdown), str8 text. Send 3 times; also timeout after 10 s of silence. The server never sends it to an unverified session. The server kicks (reason 2) a player paused longer than `maxPauseTime` ("auto-kicked: paused too long"), paused players when a newcomer needs room ("no pause with full game" / "no pause with full team", C `Kick_paused_players`), and a player READY finds no base for ("no free base"). |
 | 8 | ACK | both | empty. |
 | 9/10 | PING/PONG | both | `Msg.Ping`: u32 id, u64 nanos; PONG echoes exactly these 12 bytes (anything after them is ignored). |
 
@@ -51,10 +51,13 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
    client's address, the server sends it nothing but ACCEPT — resent after 250, 500 and 1000 ms (4 in
    all), and on each duplicate CONNECT, which does not extend its life — and drops it silently 2 s after
    the last ACCEPT (3.75 s in all). Every ACCEPT (14 bytes) is smaller than a CONNECT (≥ 16 bytes).
-   **The client must send something with the session id after ACCEPT** (it sends INPUT every frame
-   anyway, which is the proof).
-3. On verification the server queues reliable `WELCOME`, then `DATA_CHUNK`s, then `PLAYER_JOIN` for all
-   players (one with `FLAG_SELF`), `BASE_OWNER`s and `SCORE`s.
+   **The client must send something with the session id after ACCEPT**: the JXPilot client answers every
+   ACCEPT (the first and each repeat) with a bare `ACK` carrying the session id. (It sends INPUT only once
+   it plays, so INPUT cannot be the proof.)
+3. On verification the server queues reliable `WELCOME`, then `DATA_CHUNK`s, then `PLAYER_JOIN`,
+   `BASE_OWNER` and `SCORE` for every player already in the game, and `TEAM_SCORE` for every team with
+   members in team play. The client's own `PLAYER_JOIN` (with `FLAG_SELF`) comes when READY puts it in
+   the game.
 4. The config blob is the server's **effective configuration as config-file text**
    (`Options.toConfigText()`: every visible map-settable option + unknown options + `mapData`),
    deflated (`ConfigTransfer.encode`). WELCOME gives the uncompressed length, compressed length and CRC32.
@@ -67,7 +70,9 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
    own `ConfigTransfer.Sender`. Never encode per client or on the simulation thread.
    A receiver rejects announced lengths outside 0..`ConfigTransfer.MAX_LENGTH` (8 MB); the client treats
    that like a CRC failure (bad config: DISCONNECT and close).
-5. Client sends reliable `READY`; the server spawns the player. Snapshots start once the client has
+5. Client sends reliable `READY`; the server spawns the player (until then it holds a reserved slot and is
+   invisible to everyone; its view centre is a base of its team). The game runs (the simulation ticks,
+   robots play) only while a human is in it or with `rawMode`, as C's main loop. Snapshots start once the client has
    acknowledged every reliable message up to and including the initial state (game events queued after
    it do not hold snapshots back); the client ignores snapshots until it has the map.
 

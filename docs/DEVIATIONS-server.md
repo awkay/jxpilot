@@ -18,7 +18,10 @@ are deliberate.
 | `Init_player` limited-lives "too late" check | uses the slot's stale `team` | runs after the team is chosen | Lead decision S10. |
 | Rounds | race mode (`Race_game_over`), treasure destruction and hover pause | not ported (S1 has no race scoring, treasures or autopilot); timing maps play without rounds | Scope. Team rounds end by lives or by `maxRoundTime`. |
 | `Give_best_player_bonus` with nobody eligible | reads an unset array entry | announces nothing | C undefined behaviour. |
-| Login messages (`Handle_login`) | "Welcome to ...", "X has entered ..." | not emitted by the simulation (the round-delay message is) | They belong to the network layer. |
+| Login messages (`Handle_login`) | "Welcome to ...", "X (realname) has entered ..." | the network layer (`SimGameHost`) sets them in C's place (before the round-delay message), without the real name: "X has entered ..." / "X (team N) has entered ..." | Our CONNECT carries no real name. |
+| Login name check (`Check_names`) | nick must start with 'A'..'Z' (the C client capitalizes it), else E_INVAL | any non-empty name; duplicates are refused case-insensitively | Clients other than C's do not capitalize. |
+| Chat (`Handle_talk`) | "god:" lines go to the server admin log; partial names also match the real name | "god:" lines are dropped; names only | No admin log, no real names. |
+| CHANGE_TEAM / SHAPE messages | team change and ship shape change while playing | ignored | Not needed for play yet. |
 | Paused ships on the wire | `Send_paused(x, y, count)` | a SHIP record with the PAUSED flag (no count) | Our protocol. |
 | Floating point | GCC may fuse multiply-adds (arm64 `fmadd`) | separate float operations | Matters only for products of non-trivial floats added together (coriolis, local gravity tables); the golden traces show no difference. |
 | Robot war on shoves (walls.c `Player_crash`) | `Robot_war` with a random pusher (`rfrac() * num_pushers`) | war on the last pusher, the killer of the KILL event the shove produces (no extra `rfrac()` draw) | The robot manager reacts to sim events; only the RNG sequence differs. |
