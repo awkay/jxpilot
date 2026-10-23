@@ -1,0 +1,14 @@
+JXPilot, a Java reimplementation of XPilot, a multiplayer gravity war game.
+Copyright (C) 2026 Tony Kay and the JXPilot contributors.
+
+Derived from XPilot 4.5.5, Copyright (C) 1991-2002 by Bjørn Stabell, Ken Ronny Schouten,
+Bert Gijsbers and Dick Balaska. JXPilot is an independent derivative port: the original
+XPilot authors were not involved in it and do not endorse it.
+
+JXPilot is free software under the GNU General Public License, version 2 or (at your option)
+any later version; see META-INF/LICENSE. Source code: https://github.com/awkay/jxpilot
+(each release's source is attached to its GitHub release as a tag archive).
+
+Bundled third-party components:
+  - Fira Code font (SIL Open Font License 1.1): fonts/FiraCode-LICENSE.txt (client jar)
+  - LWJGL 3 and its native libraries: META-INF/licenses/lwjgl/ (client jar)

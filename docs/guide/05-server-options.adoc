@@ -1,0 +1,68 @@
+[[server-options]]
+= Server configuration reference
+ifdef::env-github[]
+:toc:
+:toclevels: 2
+:experimental:
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+This chapter lists every server option. The tables are generated from the server's option registry
+(`Opt` in the `common` module), and the build fails if they fall out of date, so they always match the
+code of this release.
+
+IMPORTANT: The option set is XPilot 4.5.5's (plus a few JXPilot additions), with XPilot's defaults
+and help texts. JXPilot *accepts* all of them, in all the places listed, but many control features
+that are not implemented yet (<<01-introduction.adoc#status,Status>>). Those options are kept so that
+original XPilot maps and config files load unchanged, and take effect as the features arrive. Unknown
+option names are kept and ignored, as XPilot does.
+
+NOTE: *Unmerged branch* (`server-net`). The JXPilot network options `bind`, `bindWait`,
+`snapshotDivisor`, `radarDivisor`, `ipPacketRate`, `ipPacketBurst`, `sessionPacketRate` and
+`sessionPacketBurst`, and the JXPilot default of 4 for `maxClientsPerIP`, appear in these tables once
+that branch is merged. Until then they are described in
+<<04-running-a-server.adoc#abuse-limits,Connection and traffic limits>>.
+
+[[reading-the-tables]]
+== Reading the tables
+
+Option:: The full name, as used in config and map files. Names are not case-sensitive, and spaces
+inside them are ignored (`max robots` is `maxRobots`).
+Short name:: An alternative name, usually the command-line name from XPilot (for example `port` for
+`contactPort`). It works everywhere the full name does. Blank when there is none.
+Type:: How the value is written:
++
+[cols="1,4",options="header"]
+|===
+|Type |Values
+|integer |A whole number. As in C: `0x1F` is hexadecimal and a leading `0` means octal (`010` is 8).
+|real |A decimal number, with an optional exponent: `0.5`, `-0.14`, `5e-7`.
+|boolean |`yes`, `on` or `true`; `no`, `off` or `false` (any case). On the command line, booleans
+take no value: `-name` sets true and `+name` sets false.
+|seconds |A time in seconds (a real number). The server converts it to frames using `framesPerSecond`.
+|per second |A rate per second, converted to per frame using `framesPerSecond`.
+|position `x,y` |Two integers separated by a comma, in blocks: `12,40`.
+|text |Any text up to the end of the line; use `\multiline:` for several lines
+(<<06-config-and-maps.adoc#multiline,Multiline values>>).
+|comma list |Comma-separated values: `a,b,c`.
+|switch (no value) |A command-line switch.
+|===
+Default:: The built-in value. _(none)_ means unset; _(empty)_ means the empty text.
+Set from:: Where the option may be set: `command line`, `map` (a map file), `config file` (the server
+configuration file), and for `password` also the password file. A value from anywhere else is refused
+with a warning. When an option is set in several places, the
+<<06-config-and-maps.adoc#precedence,precedence rules>> pick the winner.
+
+[[option-tables]]
+== Option tables
+
+ifdef::env-github[]
+GitHub does not show included files. The tables are in link:generated/options.adoc[generated/options.adoc].
+endif::[]
+ifndef::env-github[]
+include::generated/options.adoc[leveloffset=+1]
+endif::[]

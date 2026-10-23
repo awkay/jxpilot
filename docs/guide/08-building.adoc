@@ -1,0 +1,180 @@
+[[building]]
+= Building from source and contributing
+ifdef::env-github[]
+:toc:
+:toclevels: 2
+:experimental:
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+This chapter is for developers. The design documents are in the repository: `docs/SPEC.md` (the
+plan, architecture, performance rules and milestones), `docs/PROTOCOL.md` (the wire protocol) and
+`docs/TESTING.md` (the testing standard, which is mandatory for contributions).
+
+[[build-requirements]]
+== Requirements
+
+* JDK 25 (any distribution; see <<02-quick-start.adoc#java,Installing Java 25>>).
+* Maven 3.9 or newer.
+* For the user guide: Asciidoctor (`gem install asciidoctor` or `brew install asciidoctor`).
+
+[[build-commands]]
+== Building and running
+
+[source,shell]
+----
+git clone https://github.com/awkay/jxpilot.git
+cd jxpilot
+mvn install                                     # build and test every module
+mvn -pl client exec:exec                        # map viewer on maps/default.xp
+mvn -pl client exec:exec -Dclient.args="--view-map ../maps/planetx.xp --demo"
+mvn -Prelease verify                            # also build the release jars (below)
+----
+
+The `exec:exec` run adds the right Java options for your system, including `-XstartOnFirstThread` on
+macOS. It runs in the `client/` directory, so relative map paths in `client.args` start with `../maps/`.
+
+[[modules]]
+=== Modules
+
+[cols="1,4",options="header"]
+|===
+|Directory |Contents
+|`common/` |Map and config parsing, the option registry (`Opt`, `Options`), wall geometry, ship shapes,
+the network protocol codecs.
+|`server/` |The game simulation and the network server.
+|`client/` |The LWJGL/OpenGL renderer, HUD, radar, input and client networking.
+|`dist/` |Release packaging: the client jar launcher, the release jars (`-Prelease`), and the generator
+of this guide's reference tables.
+|`maps/` |The original XPilot maps, unmodified. Never change these files.
+|`docs/` |Design documents; `docs/guide/` is this guide.
+|`tools/xpilot-ref/` |A Docker harness that runs the original C XPilot 4.5.5 server and client
+headlessly, for screenshots and physics traces to compare against.
+|===
+
+[[release-jars]]
+=== The release jars
+
+`mvn -Prelease verify` (from the repository root) writes two jars to `dist/target/release/`:
+
+`jxpilot-client-VERSION.jar`:: The client and all its dependencies, with LWJGL's native libraries
+for macOS (arm64, x64), Linux (x64, arm64) and Windows (x64). LWJGL picks the right one at run time.
+About 5.4 MB. Its main class is the launcher (<<07-client-reference.adoc#launcher,The jar launcher>>).
+`jxpilot-server-VERSION.jar`:: The server with `common`; no LWJGL. About 0.3 MB. Main class
+`com.fulcrologic.jxpilot.server.ServerMain`.
+
+Both carry the GPL (`META-INF/LICENSE`) and a notice (`META-INF/NOTICE.txt`); the client jar also
+carries the licenses of LWJGL and its native libraries (`META-INF/licenses/lwjgl/`). The jars are built
+with the maven-shade-plugin; the configuration is in `dist/pom.xml`.
+
+[[testing]]
+== Tests
+
+* `mvn install` runs every module's unit tests, the allocation tests (hot paths must not allocate;
+  they run in their own JVM with escape analysis off), and the license-header check.
+* The OpenGL smoke test needs a display and is off by default: `mvn -pl client test -Djxpilot.glTest=true`.
+* Mutation testing with PIT, per module:
+  `mvn -pl common org.pitest:pitest-maven:mutationCoverage`. The target is a mutation score of at least
+  85% on logic packages; surviving mutants are justified in `docs/PIT-SURVIVORS*.md`.
+* `docs/TESTING.md` describes how tests are written: every behavior enumerated in the method's Javadoc,
+  labelled assertions, each test checked by breaking the behavior it tests.
+
+[[license-headers]]
+=== License headers
+
+Every `.java` file must start with the notice in `license-header.txt`; the build fails without it.
+Add it with `mvn license:format` (or `mvn license:format -pl MODULE`).
+
+[[generated-docs]]
+=== Generated reference tables
+
+The option tables (<<05-server-options.adoc#server-options,Server configuration reference>>) and the
+key table (<<03-playing.adoc#all-keys,All game keys>>) are generated from the code into
+`docs/guide/generated/` by `dist/src/test/java/.../docs/GuideTables.java`. A test in the `dist` module
+fails the build when the committed files differ from what the code generates, with a message saying
+how to fix it. After adding or changing an option or a control key, run:
+
+[source,shell]
+----
+make -C docs/guide generate     # or: mvn -pl dist -am test -Djxpilot.regenerateDocs=true
+----
+
+and commit the changed files. New options are grouped by the category rules in `GuideTables`; an option
+that matches no rule is listed under "Other options".
+
+[[guide]]
+== Building this guide
+
+The guide is AsciiDoc: `docs/guide/JXPilotGuide.adoc` includes one file per chapter. Each chapter also
+renders on its own on GitHub.
+
+[source,shell]
+----
+make -C docs/guide          # writes docs/guide/build/index.html (with images/)
+make -C docs/guide clean
+----
+
+The build treats Asciidoctor warnings as errors. `VERSION=1.2.3` sets the version shown in the guide.
+Releases attach the HTML as `jxpilot-guide-VERSION.zip`, and the `docs` workflow publishes it to GitHub
+Pages (<<pages>>).
+
+[[contributing]]
+== Contributing
+
+* Open an issue or a pull request on https://github.com/awkay/jxpilot. Bug reports about JXPilot go
+  there, never to the original XPilot authors.
+* Contributions are under the GPL, version 2 or later. Keep the license header in every Java file.
+* Follow `docs/SPEC.md` (in particular the zero-allocation rules for the simulation, networking and
+  rendering hot paths) and `docs/TESTING.md`.
+* Any new bundled asset (font, sound, image) needs a GPL-compatible license, its license text committed
+  next to it, and a row in the README's third-party table. Don't change the files in `maps/`.
+* The project is mostly built by a lead with AI agents. The rules they follow are in `CLAUDE.md`: work on
+  a branch in its own git worktree, build in-reactor (`mvn -o -pl MODULE -am test`) rather than
+  `mvn install` from a worktree, and only the lead merges into `main`. Human contributors can simply use
+  normal pull requests.
+
+[[releasing]]
+== Making a release
+
+Releases are built by the `release` workflow (`.github/workflows/release.yml`) when a version tag is
+pushed:
+
+[source,shell]
+----
+git checkout main && git pull
+git tag -a v0.2.0 -m "JXPilot 0.2.0"
+git push origin v0.2.0
+----
+
+The workflow:
+
+. sets the Maven version from the tag (`v0.2.0` becomes `0.2.0`; the committed `pom.xml` versions stay
+  `-SNAPSHOT`);
+. runs the full build with tests, the license-header check and the generated-docs check, and builds
+  the two jars (`mvn -Prelease verify`), then smoke-tests the server jar;
+. zips the maps and builds this guide;
+. builds a client application with its own Java runtime on macOS (arm64, x64), Linux (x64, arm64) and
+  Windows (x64) with `jpackage`;
+. writes `SHA256SUMS.txt` and publishes a GitHub Release with all files and release notes
+  (`.github/release-notes.md` plus GitHub's generated change list). A tag with a suffix, such as
+  `v0.3.0-rc1`, makes a pre-release.
+
+The jars and the maps are enough for a release: if an application image fails on one platform, the
+release is still published, with a note. Running the workflow by hand ("Run workflow" on the Actions
+tab) on a branch builds everything as workflow artifacts without publishing.
+
+The macOS applications are not signed. Signing and notarizing them needs an Apple Developer ID and
+`jpackage --mac-sign`; until then users remove the quarantine flag
+(<<02-quick-start.adoc#gatekeeper,Gatekeeper>>). Installers (`.dmg`, `.msi`, `.deb`) and a server
+application image are possible next steps.
+
+[[pages]]
+=== Publishing the guide on GitHub Pages
+
+The `docs` workflow (`.github/workflows/docs.yml`) builds the guide on every push to `main` that changes
+`docs/guide/` and publishes it to `https://awkay.github.io/jxpilot/`. It needs a one-time repository
+setting: *Settings → Pages → Build and deployment → Source: GitHub Actions*.

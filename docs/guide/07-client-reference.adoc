@@ -1,0 +1,216 @@
+[[client-reference]]
+= Client reference
+ifdef::env-github[]
+:toc:
+:toclevels: 2
+:experimental:
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+This chapter lists every flag of the client. Each section says whether its flags are available now,
+on an unmerged development branch, or planned.
+
+[[client-synopsis]]
+== Starting the client
+
+[source,shell]
+----
+java -jar jxpilot-client-VERSION.jar --view-map MAPFILE [FLAGS]        # release jar
+JXPilot.app/Contents/MacOS/JXPilot --view-map MAPFILE [FLAGS]           # macOS application download
+mvn -pl client exec:exec -Dclient.args="--view-map ../maps/default.xp ..."  # from source
+----
+
+Without `--view-map` the client prints a usage line and exits with status 2, as it does for an
+unknown flag, a missing value or a malformed number (with a message naming the flag). The usage line
+lists only the most common flags; the table below has all of them.
+
+[[viewer-flags]]
+== Viewer flags (available now)
+
+[cols="2,1,4",options="header"]
+|===
+|Flag |Default |Meaning
+
+|`--view-map FILE`
+|required
+|Open the free-flying map viewer on an XPilot `.xp` map. kbd:[Tab] cycles through the other maps in the
+same directory (<<03-playing.adoc#map-viewer-keys,Map viewer keys>>).
+
+|`--demo`
+|off
+|Animate fake ships, shots, particles, items and a HUD over the map, to show what the game draws.
+
+|`--size WxH`
+|`1280x800`
+|Window size in logical pixels (on a Retina or HiDPI screen the framebuffer is larger).
+
+|`--zoom Z`
+|`1`
+|Initial zoom; must be positive. The keys and mouse wheel zoom between 0.05 and 8.
+
+|`--at X,Y`
+|first base, else the map centre
+|Initial camera centre in world pixels (one block is 35 pixels; y grows upwards).
+
+|`--filled`
+|off
+|Draw walls filled instead of XPilot's default outlines (kbd:[F] toggles it).
+
+|`--screenshot FILE.png`
+|none
+|Render, save a PNG of the window's framebuffer, print frame statistics and exit. Useful for
+scripts and bug reports.
+
+|`--frames N`
+|`3`
+|With `--screenshot`: frames to render before taking it (positive).
+
+|`--warmup N`
+|half of `--frames`
+|With `--screenshot`: frames left out of the printed timing and allocation statistics (0 or more, less
+than `--frames`).
+
+|`--no-vsync`
+|vsync on
+|Render as fast as possible instead of at the display's refresh rate (for measuring frame rate).
+
+|`--gpu-timer`
+|off
+|Measure GPU time per frame with OpenGL timer queries (costs CPU time on some drivers).
+
+|`--alt-scale-factor F`
+|`2.0`
+|XPilot's `altScaleFactor`: the alternative zoom (1/F) that kbd:[S] swaps to; positive.
+
+|`--font FILE`
+|bundled Fira Code
+|A TrueType font file for all text.
+
+|`--font-size PX`
+|`13`
+|Text size in logical pixels; positive.
+
+|`--demo-round-delay N`
+|`0`
+|With `--demo`: show a round-start countdown of N frames (0 or more).
+
+|`--demo-damaged N`
+|`0`
+|With `--demo`: show N frames of ECM damage on the own ship from the start (0 or more).
+|===
+
+The viewer prints one line describing each map it loads, and with `--screenshot` the file written and
+frame statistics, for example:
+
+----
+map planetx.xp  310x267  "Planet X": outline mesh 32325 segments, 0 triangles, 1036 points; filled mesh ...
+screenshot out.png (2560x1600) after 30 frames, 1 world copies, 5 draw calls/frame
+  frames 15..30: mean 8.318 ms (120 fps), p99 20.79 ms, max 20.78 ms; cpu before swap: mean 0.781 ms; ...
+  render thread allocated 0 bytes over frames 15..30
+----
+
+[[launcher]]
+== The jar launcher and Java options
+
+The release client jar starts in a small launcher (`com.fulcrologic.jxpilot.dist.ClientLauncher`)
+before the client itself:
+
+* *On macOS*, GLFW must run on the process's first thread, which needs the Java option
+  `-XstartOnFirstThread`. If Java was started without it, the launcher runs the same `java` again with
+  the same class path, Java options and client flags, plus `-XstartOnFirstThread` and the recommended
+  options below. The second process shares the terminal, and its exit status becomes the launcher's.
+  Java debugger agents (`-agentlib:jdwp`) are not passed on, because the first process holds their port.
+* *On Windows and Linux*, and on macOS when `-XstartOnFirstThread` is already set, it starts the client
+  directly.
+
+[cols="2,5",options="header"]
+|===
+|Environment variable |Effect
+|`JXPILOT_NO_RELAUNCH=1` |Never start a second process. Any value except `0`, `false`, `no` or `off`
+counts. On macOS the client then fails with "GLFW may only be used on the main thread" unless you pass
+`-XstartOnFirstThread` yourself.
+|`JXPILOT_RELAUNCHED` |Set by the launcher for the second process, so that it never starts a third.
+Don't set it yourself.
+|===
+
+The recommended Java options, which the macOS relaunch adds when you have not chosen otherwise:
+
+[cols="2,4",options="header"]
+|===
+|Option |Why
+|`-XX:+UseZGC` |A low-pause garbage collector. Not added if you choose another collector (`-XX:+Use...GC`).
+|`--enable-native-access=ALL-UNNAMED` |Lets LWJGL call native code without warnings. The jar's
+manifest also says this, so plain `java -jar` needs no option for it.
+|`--sun-misc-unsafe-memory-access=allow` |Silences the JDK warning about LWJGL's use of `sun.misc.Unsafe`.
+|===
+
+On Windows and Linux you can add them yourself:
+`java -XX:+UseZGC --sun-misc-unsafe-memory-access=allow -jar jxpilot-client-VERSION.jar ...`.
+The application downloads already include them.
+
+[[network-flags]]
+== Network flags (unmerged and planned)
+
+NOTE: *Unmerged branch* (`client-net`). The client's networking (connecting, receiving the map and
+snapshots, the HUD and key handling) is on the `client-net` branch, which has `--connect` and `--bind`
+only in its headless test client, `ClientSim`. The windowed client does not take these flags yet.
+
+The game client will take these flags (from the design in `docs/SPEC.md`):
+
+[cols="2,1,4",options="header"]
+|===
+|Flag |State |Meaning
+
+|`--connect HOST[:PORT]`
+|Planned for the game client; in `ClientSim` on `client-net`
+|The server to join. `HOST` is a name or address; the port defaults to 15345. Write IPv6 addresses in
+brackets with a port (`[2001:db8::1]:15345`); a bare IPv6 address without brackets is allowed when
+there is no port.
+
+|`--bind ADDR[:PORT]`
+|Planned for the game client; in `ClientSim` on `client-net`
+|The local address (and port; 0 or none means any) to send from. Useful on machines with several
+networks, for example to make sure the connection goes over a VPN.
+
+|`--local`
+|Planned
+|Start a server inside the client, listening on the loopback address only, and connect to it.
+|===
+
+[[clientsim]]
+=== The headless test client
+
+`ClientSim` connects to a server without a window, runs the client's per-frame work, and prints a
+summary. It is a testing tool. Once `client-net` is merged it is in the client jar:
+
+[source,shell]
+----
+java -cp jxpilot-client-VERSION.jar com.fulcrologic.jxpilot.client.net.ClientSim --connect HOST[:PORT] [FLAGS]
+----
+
+[cols="2,1,4",options="header"]
+|===
+|Flag |Default |Meaning
+|`--connect HOST[:PORT]` |required |The server (format as above).
+|`--bind ADDR[:PORT]` |any |Local address to send from.
+|`--name NAME` |`jxsim` |Player name.
+|`--team N` |no team |Team number.
+|`--snapshots N` |`100` |Stop after this many snapshots.
+|`--seconds S` |`15` |Give up after this many seconds.
+|===
+
+It exits with status 0 when it received the snapshots, 1 when it gave up or was disconnected, and 2 for
+bad arguments.
+
+[[xpilot-protocol]]
+== Playing on original XPilot servers (planned)
+
+NOTE: *Planned.* JXPilot speaks its own protocol, so it cannot join an original XPilot 4.5.5 server
+today. The `xp-compat` branch has the XPilot 4.5.5 client protocol (packet codecs, the reliable data
+stream, map setup, frame decoding and a translator into the client's model), but no way to choose it
+from the command line yet. The plan is a flag such as `--protocol xpilot`, or an `xp://HOST:PORT`
+server address; the final form is not decided.

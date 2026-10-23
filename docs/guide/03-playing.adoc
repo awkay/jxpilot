@@ -1,0 +1,177 @@
+[[playing]]
+= Playing
+ifdef::env-github[]
+:toc:
+:toclevels: 2
+:experimental:
+:imagesdir: images
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+IMPORTANT: Networked play is not available yet (<<01-introduction.adoc#status,Status>>). This chapter
+describes the game as JXPilot implements it from XPilot 4.5.5: the key bindings and the HUD are
+already in the code, and the `--demo` viewer shows what the screen will look like.
+
+[[basics]]
+== The basics
+
+You fly a ship that turns, thrusts and fires. There are no brakes: to stop, turn around and thrust the
+other way. Gravity (global, or from gravity blocks on the map) pulls on you, and hitting a wall too
+hard kills you. Thrusting, shields and many items use fuel; refuel by holding the refuel key near a
+fuel station. When you die, you restart at your home base.
+
+Your shield protects you from shots and collisions while it is up, but it uses fuel and you cannot
+fire while shielded.
+
+[[controls]]
+== Controls
+
+JXPilot uses XPilot's default keys (from the C client's `default.c`). The most important ones:
+
+[cols="2,3",options="header"]
+|===
+|Key |Function
+|kbd:[A] / kbd:[S] |Turn left / right
+|kbd:[Shift] (left or right) |Thrust
+|kbd:[Enter] |Fire
+|kbd:[Space] |Shield
+|kbd:[F] or kbd:[Ctrl] |Refuel (at a fuel station); kbd:[F] also repairs (at a target)
+|kbd:[Tab] |Drop a mine
+|kbd:[ \ ] |Fire a smart missile
+|kbd:[;] |Fire a heat seeker
+|kbd:['] |Fire a torpedo
+|kbd:[/] |Fire the laser
+|kbd:[Page Down] / kbd:[Page Up] / kbd:[Up] |Lock on the next / previous / closest player
+|kbd:[H] or kbd:[Home] |Change home base (and toggle the autopilot, kbd:[H])
+|kbd:[Pause] |Pause
+|kbd:[End] |Self-destruct
+|kbd:[M] |Talk (type a message, kbd:[Enter] sends it)
+|kbd:[Esc] |Swap settings
+|===
+
+[[all-keys]]
+=== All game keys
+
+Every key the client sends to the server, with its XPilot key id and default keys. The names in
+monospace are X11 key names, as XPilot's `default.c` and `.xpilotrc` files use them. Several functions
+share a key, and some have more than one key, exactly as in XPilot.
+
+This table is generated from the code (`ControlKey`), so it is always current.
+
+ifdef::env-github[]
+On GitHub, see link:generated/keys.adoc[generated/keys.adoc] for the table.
+endif::[]
+
+include::generated/keys.adoc[]
+
+[[client-keys]]
+=== Client-only keys
+
+NOTE: *Unmerged branch* (`client-net`). These keys act in the client and are never sent to the server.
+
+[cols="2,3",options="header"]
+|===
+|Key |Function
+|kbd:[M] |Open the talk line
+|kbd:[Left] / kbd:[Right] / kbd:[Up] / kbd:[Down] |Move in the talk line (only while talking)
+|kbd:[F1] ... kbd:[F12] |Send talk macros 1 to 12 (macros 13 to 20 have no default key)
+|kbd:[U] |ID mode (show player names)
+|Keypad kbd:[8] |Toggle the owned-items display
+|Keypad kbd:[9] |Toggle messages
+|Keypad kbd:[Enter] |Pointer (mouse) control
+|kbd:[Print] |Print messages to standard output
+|===
+
+Changing key bindings with a keys file (`~/.jxpilot/keys`) is planned (milestone M3).
+
+[[map-viewer-keys]]
+=== Map viewer keys
+
+The map viewer (`--view-map`, available now) has its own keys:
+
+[cols="2,3",options="header"]
+|===
+|Key |Function
+|Arrow keys |Pan the camera
+|kbd:[=] or keypad kbd:[+], kbd:[-] or keypad kbd:[-], mouse wheel |Zoom in / out
+|kbd:[Tab] |Next map in the same directory
+|kbd:[F] |Filled or outlined walls
+|kbd:[R] |Show or hide the radar
+|kbd:[S] |Swap between the current zoom and the alternative zoom (`--alt-scale-factor`), as XPilot's
+swap-scale-factor key
+|kbd:[Esc] or kbd:[Q] |Quit
+|===
+
+[[hud]]
+== The screen and the HUD
+
+image::demo-hud.png[The --demo viewer: radar, scoreboard, HUD and messages,align=center]
+
+The picture shows the `--demo` viewer, which draws fake data with the real painters. In a game you see:
+
+Radar (top left):: The whole map in miniature: walls, your own ship (a heading line), other ships
+when `playersOnRadar` is on, and other objects per the `...OnRadar` server options. On race maps it
+also marks the next checkpoint.
+Scoreboard (left, under the radar):: Players with team, score and name. Your own line is marked.
+HUD (around your ship):: Dashed HUD lines, your fuel gauge and fuel meter, the items you carry with
+their counts, the player you have locked on (name and distance), time left in the round, weapon
+modifiers and an "Autopilot" note when it is on.
+Messages (bottom left):: Game events ("pilot04 crashed into a wall.") and chat, which fade after a
+while.
+Talk line (middle):: Opens with kbd:[M] for typing a chat message.
+
+[[scoring]]
+== Scoring
+
+Scoring follows XPilot's rules (the server's `Scoring` is a port of XPilot's `score.c`):
+
+* Killing a player moves points from the victim to you. Between equal scores this is 10 points; you
+  get more for killing a better player and fewer for killing a weaker one.
+* Each way of killing has a multiplier: `shotKillScoreMult`, `laserKillScoreMult`,
+  `runoverKillScoreMult`, and so on. Crashing into a wall costs points (`crashScoreMult`), as does
+  killing yourself.
+* In team play, scores can be shared within a team (`teamShareScore`); killing a team mate earns
+  nothing.
+
+All multipliers are in <<05-server-options.adoc#opts-scoring,Scoring options>>.
+
+[[items]]
+== Items
+
+NOTE: *Planned* (milestone M2). Items are parsed and drawn, but cannot be picked up or used yet.
+
+Items float around the map (more around item concentrators, the `%` map symbol); fly over one to pick
+it up. These are XPilot's 21 item types, which JXPilot will support:
+
+[cols="1,3",options="header"]
+|===
+|Item |Effect in XPilot
+|Fuel |More fuel.
+|Wide-angle shot |Extra shots fired at an angle.
+|Rear shot |Extra shots fired backwards.
+|Afterburner |More thrust for the same fuel.
+|Cloak |Makes you invisible to players without sensors.
+|Sensor |Lets you see cloaked players.
+|Transporter |Steals an item from a nearby player.
+|Tank |An extra fuel tank, which you can detach as a decoy.
+|Mine |Mines to drop.
+|Missile |Smart missiles, heat seekers and torpedoes.
+|ECM |Electronic countermeasures: confuses nearby missiles, mines and players.
+|Laser |A laser weapon.
+|Emergency thrust |Full thrust for a while without the usual limits.
+|Tractor beam |Pulls (or, as a pressor beam, pushes) other objects.
+|Autopilot |Brings your ship to a stop.
+|Emergency shield |A shield that does not drain fuel, for a while.
+|Deflector |Deflects incoming shots.
+|Hyperjump |Teleports you to a random place.
+|Phasing |Lets you fly through walls for a while.
+|Mirror |Reflects lasers.
+|Armor |Absorbs hits.
+|===
+
+How often each item appears, how many you start with and how many you may carry are server options
+(<<05-server-options.adoc#opts-items,Items and fuel>>).
