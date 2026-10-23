@@ -40,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -81,38 +82,64 @@ class UtilitiesTest {
         }
 
         @Test
-        @DisplayName("colliding sources evict each other with a fresh bucket; table rounds to a power of two")
+        @DisplayName("sources sharing a slot share its bucket (tokens carry over); table rounds to a power of two")
         void collisions() {
-            RateLimiter r = new RateLimiter(2, 1, 1);
-            int a = 0;
-            int b = 1;
-            while (r.slot(b) != r.slot(a)) {
-                b++;
-            }
+            RateLimiter r = new RateLimiter(2, 1, 2);
+            long a = 0;
+            long b = 2;
+            boolean sameSlot = r.slot(a) == r.slot(b);
             boolean aFirst = r.allow(a, 1, 0);
-            boolean aAgain = r.allow(a, 1, 0);
-            boolean bEvicts = r.allow(b, 1, 0);
-            boolean aFresh = r.allow(a, 1, 0);
+            boolean bShares = r.allow(b, 1, 0);
+            boolean bEmpty = r.allow(b, 1, 0);
+            boolean aEmpty = r.allow(a, 1, 0);
+            boolean otherSlot = r.allow(1, 1, 0);
             assertAll(
-                () -> assertTrue(aFirst && !aAgain, "a single-token bucket allows one"),
-                () -> assertTrue(bEvicts, "a colliding source starts full"),
-                () -> assertTrue(aFresh, "the evicted source starts full again"),
+                () -> assertTrue(sameSlot, "keys 0 and 2 share a slot of a 2-slot table"),
+                () -> assertTrue(aFirst && bShares, "the two-token bucket pays once for each"),
+                () -> assertFalse(bEmpty, "a colliding source does not get a fresh bucket"),
+                () -> assertFalse(aEmpty, "and the first source sees the shared bucket drained"),
+                () -> assertTrue(otherSlot, "a key on another slot starts full"),
                 () -> assertEquals(1024, new RateLimiter(1000, 1, 1).capacity(), "1000 slots round up to 1024"),
                 () -> assertEquals(1024, new RateLimiter(1024, 1, 1).capacity(), "a power of two is kept"),
                 () -> assertEquals(2, new RateLimiter(1, 1, 1).capacity(), "the minimum table is 2"));
         }
 
         @Test
-        @DisplayName("slot spreads neighbouring keys")
-        void spread() {
+        @DisplayName("slot is the key's low bits, always within the table")
+        void slots() {
             RateLimiter r = new RateLimiter(1024, 1, 1);
-            java.util.Set<Integer> slots = new java.util.HashSet<>();
-            for (int k = 0; k < 64; k++) {
-                int s = r.slot(0x0A000000 + k);
-                slots.add(s);
-                assertTrue(s >= 0 && s < 1024, "slot within the table");
-            }
-            assertTrue(slots.size() > 56, "64 consecutive addresses use (nearly) distinct slots: " + slots.size());
+            assertAll(
+                () -> assertEquals(5, r.slot(0x7_0000_0405L), "the low 10 bits of the key pick the slot"),
+                () -> assertEquals(1023, r.slot(-1L), "a negative key stays within the table"));
+        }
+    }
+
+    @Nested
+    @DisplayName("SourceKeys")
+    class Keys {
+        @Test
+        @DisplayName("secret-keyed: IPv4 per address, IPv6 per /64, ports shared, families apart")
+        void keys() throws Exception {
+            SourceKeys k = new SourceKeys(42);
+            SourceKeys other = new SourceKeys(43);
+            java.net.InetSocketAddress v4a = Harness.addr("10.0.0.1", 1);
+            java.net.InetSocketAddress u = java.net.InetSocketAddress.createUnresolved("h", 1);
+            assertAll(
+                () -> assertEquals(k.of(v4a), k.of(Harness.addr("10.0.0.1", 2)), "ports of one IPv4 address share a key"),
+                () -> assertNotEquals(k.of(v4a), k.of(Harness.addr("10.0.0.2", 1)), "IPv4 addresses differ"),
+                () -> assertEquals(k.of(Harness.addr("2001:db8:1:2::1", 1)), k.of(Harness.addr("2001:db8:1:2:ffff:ffff:ffff:ffff", 9)),
+                    "every address of an IPv6 /64 shares a key"),
+                () -> assertNotEquals(k.of(Harness.addr("2001:db8:1:2::1", 1)), k.of(Harness.addr("2001:db8:1:3::1", 1)),
+                    "neighbouring /64s (differing only in bit 64) differ"),
+                () -> assertEquals(k.of(Harness.addr("2001:db8:1:2::1", 1)), k.of(Harness.addr("2001:db8:1:2:8000::1", 1)),
+                    "bit 65 already belongs to the host part"),
+                () -> assertNotEquals(k.of(Harness.addr("10.0.0.1", 1)), k.of(Harness.addr("0:0:a00:1::1", 1)),
+                    "an IPv6 address whose /64 value equals an IPv4 address keys differently"),
+                () -> assertNotEquals(k.of(v4a), other.of(v4a), "another secret gives an unrelated key"),
+                () -> assertEquals(k.of(u), k.of(java.net.InetSocketAddress.createUnresolved("h", 1)),
+                    "an unresolved address keys by its hash"),
+                () -> assertNotEquals(k.of(u), other.of(u), "unresolved keys depend on the secret too"),
+                () -> assertEquals(0x5692161D100B05E5L, SourceKeys.mix(1), "mix is SplitMix64's finalizer"));
         }
     }
 

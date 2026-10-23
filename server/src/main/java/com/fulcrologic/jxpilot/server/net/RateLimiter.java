@@ -24,13 +24,13 @@
 package com.fulcrologic.jxpilot.server.net;
 
 /**
- * Per-source token buckets in a fixed open table: allocation free, bounded memory. A source is an
- * int key (the source IP's hash). Sources that collide on a slot evict each other and start with a
- * full bucket, which only ever makes the limit more lenient.
+ * Per-source token buckets in a fixed table: allocation free, bounded memory. A source is a 64-bit
+ * key, already a secret-keyed hash ({@link SourceKeys}), so its low bits pick the slot. Sources that
+ * land on the same slot share its bucket: the tokens carry over, so a collision only ever makes the
+ * limit stricter, never resets it to full.
  */
 public final class RateLimiter {
     private final int mask;
-    private final int[] keys;
     private final boolean[] used;
     private final double[] tokens;
     private final long[] last;
@@ -45,7 +45,6 @@ public final class RateLimiter {
     public RateLimiter(int slots, double perSecond, double burst) {
         int n = Integer.highestOneBit(Math.max(1, slots - 1)) << 1;
         mask = n - 1;
-        keys = new int[n];
         used = new boolean[n];
         tokens = new double[n];
         last = new long[n];
@@ -56,16 +55,16 @@ public final class RateLimiter {
     /**
      * Spend {@code cost} tokens of source {@code key}.
      * <p>
-     * BEHAVIOR: a new (or evicting) source starts with a full bucket.
+     * BEHAVIOR: the first source on a slot starts with a full bucket.
+     * BEHAVIOR: a source colliding with another on its slot shares that bucket (tokens carry over).
      * BEHAVIOR: buckets refill at perSecond, capped at burst.
      * BEHAVIOR: allowed (and charged) iff the bucket holds at least {@code cost}; refused requests
      * cost nothing.
      */
-    public boolean allow(int key, double cost, long nowNanos) {
+    public boolean allow(long key, double cost, long nowNanos) {
         int s = slot(key);
-        if (!used[s] || keys[s] != key) {
+        if (!used[s]) {
             used[s] = true;
-            keys[s] = key;
             tokens[s] = burst;
         } else {
             tokens[s] = Math.min(burst, tokens[s] + (nowNanos - last[s]) * perNano);
@@ -78,10 +77,9 @@ public final class RateLimiter {
         return true;
     }
 
-    /** BEHAVIOR: table slot of a key (hash spread so nearby addresses use different slots). */
-    int slot(int key) {
-        int h = key * 0x9E3779B9;
-        return (h ^ (h >>> 16)) & mask;
+    /** BEHAVIOR: table slot of a key: its low bits (keys are already well mixed). */
+    int slot(long key) {
+        return (int) key & mask;
     }
 
     int capacity() {

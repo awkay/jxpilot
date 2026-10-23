@@ -32,22 +32,34 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
 import com.fulcrologic.jxpilot.common.net.ReliableChannel;
 import com.fulcrologic.jxpilot.common.net.ReliableHandler;
 import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
+import com.fulcrologic.jxpilot.common.net.Wire;
 
-import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.SplittableRandom;
 
 /**
  * Server connection layer (docs/PROTOCOL.md): sessions, the reliable channel, config transfer,
- * input sequencing, snapshots, timeouts, malformed-packet containment and per-source rate limiting.
+ * input sequencing, snapshots, timeouts, malformed-packet containment and rate limiting.
  * Pure with respect to I/O and time: datagrams come in through {@link #onDatagram}, go out through
  * {@link Datagrams}, and the clock is a nanosecond value passed in. Single-threaded.
  * Allocation free in steady state (joins, leaves and logging allocate).
  * <p>
  * A peer is identified by (channel, source address) and every reply goes out through the channel
  * it arrived on, so it leaves from the address the client contacted.
+ * <p>
+ * Anti-reflection: a new session is <em>unverified</em> until a packet arrives carrying the random
+ * session id sent in ACCEPT, proving the client receives at its source address. Until then it gets
+ * only a few ACCEPTs (each smaller than a CONNECT) and no other traffic, and it expires after
+ * {@link ServerNetConfig#acceptResends} backed-off resends. No reply is ever larger than the CONNECT
+ * that caused it.
+ * <p>
+ * Rate limits: packets that belong to a session are limited per session; everything else (CONNECT,
+ * strays, garbage) per source (IPv4 address or IPv6 /64, secret-keyed), so many players behind one
+ * NAT are not throttled by each other while spoofed floods still hit a per-source bucket.
  */
 public final class ServerNet {
     /** Upper bound on snapshot datagrams per viewer per tick. */
@@ -56,12 +68,14 @@ public final class ServerNet {
     static final int PART_COUNT_OFFSET = PacketHeader.SIZE + 9;
     /** Offset of the snapshot flags byte within a SNAPSHOT datagram. */
     static final int FLAGS_OFFSET = PacketHeader.SIZE + 10;
-    /** Minimum CONNECT body: nonce, team, empty str8 name, empty str16 shape. */
-    static final int MIN_CONNECT = 8;
     /** PING body: u32 id, u64 nanos. */
     static final int PING_SIZE = 12;
     /** DISCONNECT is sent this many times (it is unreliable). */
     static final int DISCONNECT_REPEAT = 3;
+    /** REJECT bytes before its text: header, u32 nonce, u8 reason, u8 text length. */
+    static final int REJECT_OVERHEAD = PacketHeader.SIZE + 6;
+    /** Limiter table size for per-source buckets. */
+    static final int SOURCE_SLOTS = 4096;
 
     private final ServerNetConfig cfg;
     private final GameHost host;
@@ -69,6 +83,9 @@ public final class ServerNet {
     private final NetLog log;
     private final ConfigTransfer.Blob blob;
     private final RateLimiter limiter;
+    private final SourceKeys keys;
+    private final SplittableRandom sessions;
+    private final double sessionPerNano;
 
     private final Connection[] active;
     private int activeCount;
@@ -90,44 +107,81 @@ public final class ServerNet {
     private final ByteBuffer[] parts = new ByteBuffer[MAX_SNAPSHOT_PARTS];
 
     private int tick;
-    private int lastSession;
     private long malformed;
     private long rateLimited;
     private long stray;
     private long truncatedSnapshots;
+    private long versionRejects;
 
     /** One peer. Pooled: created up front, reset on reuse. */
     final class Connection implements ReliableHandler {
         final ReliableChannel ch = new ReliableChannel();
+        final StringBuilder name = new StringBuilder();
         int channel;
         SocketAddress addr;
+        long sourceKey;
         int session;
         int nonce;
         int playerId;
+        boolean verified;
+        int acceptSends;
+        long nextAcceptAt;
         long lastHeard;
+        double tokens;
+        long tokensAt;
         ConfigTransfer.Sender sender;
         boolean initialSent;
+        int syncSequence;
         boolean snapshotsOn;
         boolean hasInput;
         int lastInputSeq;
-        int ackTick;
 
+        /** A host that throws on a message must not wedge the channel: the message counts as malformed. */
         @Override
         public void onReliableMessage(int type, ByteBuffer payload) {
-            host.clientMessage(playerId, type, payload);
+            try {
+                host.clientMessage(playerId, type, payload);
+            } catch (RuntimeException e) {
+                malformed++;
+            }
+        }
+
+        /** Spend one token of this session's bucket. */
+        boolean allow(long now) {
+            tokens = Math.min(cfg.sessionRateBurst, tokens + (now - tokensAt) * sessionPerNano);
+            tokensAt = now;
+            if (tokens < 1) {
+                return false;
+            }
+            tokens -= 1;
+            return true;
         }
     }
 
     /**
+     * Production constructor: session ids and the source-key secret come from {@link SecureRandom}.
+     *
      * @param blob the config/map transfer, encoded once per map load and shared by all connections
      */
     public ServerNet(ServerNetConfig cfg, GameHost host, Datagrams out, NetLog log, ConfigTransfer.Blob blob) {
+        this(cfg, host, out, log, blob, new SecureRandom().nextLong(), new SecureRandom().nextLong());
+    }
+
+    /**
+     * @param sessionSeed seeds the session id generator (a fast PRNG, so CONNECT never allocates)
+     * @param keySecret   secret of the per-source keys
+     */
+    ServerNet(ServerNetConfig cfg, GameHost host, Datagrams out, NetLog log, ConfigTransfer.Blob blob,
+              long sessionSeed, long keySecret) {
         this.cfg = cfg;
         this.host = host;
         this.out = out;
         this.log = log;
         this.blob = blob;
-        this.limiter = new RateLimiter(1024, cfg.ratePerSecond, cfg.rateBurst);
+        this.limiter = new RateLimiter(SOURCE_SLOTS, cfg.ratePerSecond, cfg.rateBurst);
+        this.keys = new SourceKeys(keySecret);
+        this.sessions = new SplittableRandom(sessionSeed);
+        this.sessionPerNano = cfg.sessionRatePerSecond / 1e9;
         active = new Connection[cfg.maxConnections];
         free = new Connection[cfg.maxConnections];
         for (int i = 0; i < cfg.maxConnections; i++) {
@@ -144,35 +198,51 @@ public final class ServerNet {
     /**
      * Handle one received datagram.
      * <p>
-     * BEHAVIOR: drops (counting {@link #rateLimited()}) packets beyond the source IP's rate.
-     * BEHAVIOR: drops (counting {@link #malformed()}) packets with a bad header or a body that does not
-     * decode; no exception escapes.
+     * BEHAVIOR: a packet carrying a known peer's session id (other than CONNECT) is charged to that
+     * session's bucket; anything else to its source's bucket. Over the limit it is dropped, counting
+     * {@link #rateLimited()}.
+     * BEHAVIOR: a CONNECT with the right magic but another protocol version gets REJECT VERSION (counted
+     * in {@link #versionRejects()}); any other bad header is dropped as {@link #malformed()}.
+     * BEHAVIOR: bodies that do not decode are dropped as malformed; no exception escapes.
      * BEHAVIOR: CONNECT goes to the join logic; other types need a known peer on this channel and its
      * session id, else they are dropped (counting {@link #stray()}).
+     * BEHAVIOR: the first packet with the session id verifies an unverified session and queues WELCOME.
      * BEHAVIOR: any valid packet from a peer refreshes its timeout and feeds the header ack to its
-     * reliable channel; RELIABLE delivers client messages to the host in order; INPUT applies new
-     * inputs; PING is answered with PONG; DISCONNECT removes the peer.
+     * reliable channel; RELIABLE delivers client messages to the host in order (a message the host
+     * throws on counts as malformed and is skipped); INPUT applies new inputs; PING is answered with
+     * PONG; DISCONNECT removes the peer.
      */
     public void onDatagram(int channel, SocketAddress from, ByteBuffer data, long now) {
-        int key = sourceKey(from);
-        if (!limiter.allow(key, 1, now)) {
+        int start = data.position();
+        boolean valid = header.read(data);
+        Connection c = valid ? peers(channel).get(from) : null;
+        boolean inSession = c != null && header.type() != PacketType.CONNECT && header.session() == c.session;
+        if (inSession ? !c.allow(now) : !limiter.allow(keys.of(from), 1, now)) {
             rateLimited++;
             return;
         }
-        if (!header.read(data)) {
-            malformed++;
+        if (!valid) {
+            if (isOtherVersionConnect(data)) {
+                versionRejects++;
+                int nonce = data.remaining() >= PacketHeader.SIZE + 4 ? data.getInt(start + PacketHeader.SIZE) : 0;
+                sendReject(channel, from, nonce, Msg.Reject.REASON_VERSION, rejectText(Msg.Reject.REASON_VERSION),
+                    data.remaining());
+            } else {
+                malformed++;
+            }
             return;
         }
         try {
-            HashMap<SocketAddress, Connection> peers = peers(channel);
-            Connection c = peers.get(from);
             if (header.type() == PacketType.CONNECT) {
-                onConnect(channel, from, key, c, data, now);
+                onConnect(channel, from, c, data, data.limit() - start, now);
                 return;
             }
-            if (c == null || header.session() != c.session) {
+            if (!inSession) {
                 stray++;
                 return;
+            }
+            if (!c.verified) {
+                verify(c);
             }
             c.lastHeard = now;
             c.ch.onAck(header.reliableAck(), now);
@@ -193,56 +263,81 @@ public final class ServerNet {
         }
     }
 
-    private void onConnect(int channel, SocketAddress from, int key, Connection existing, ByteBuffer data, long now) {
-        if (data.remaining() < MIN_CONNECT) {
+    /** BEHAVIOR: true for a datagram with the JX magic, type CONNECT and a protocol version other than ours. */
+    static boolean isOtherVersionConnect(ByteBuffer d) {
+        int p = d.position();
+        return d.remaining() >= PacketHeader.SIZE
+            && (d.getShort(p) & 0xFFFF) == Protocol.MAGIC
+            && (d.get(p + 2) & 0xFF) != Protocol.VERSION
+            && (d.get(p + 3) & 0xFF) == PacketType.CONNECT;
+    }
+
+    private void onConnect(int channel, SocketAddress from, Connection existing, ByteBuffer data, int size, long now) {
+        if (!connect.tryRead(data)) {
             malformed++;
             return;
         }
-        connect.read(data);
-        if (existing != null) {
-            if (existing.nonce == connect.nonce) {
-                existing.lastHeard = now;
-                sendAccept(existing);
-                return;
-            }
-            drop(existing, Msg.Disconnect.REASON_QUIT, "reconnected", false);
+        if (existing != null && existing.nonce == connect.nonce) {
+            sendAccept(existing);
+            return;
         }
-        if (!limiter.allow(key, cfg.connectCost, now)) {
+        long source = keys.of(from);
+        if (!limiter.allow(source, cfg.connectCost, now)) {
             rateLimited++;
             return;
         }
         if (connect.name.isEmpty()) {
-            sendReject(channel, from, Msg.Reject.REASON_BAD_NAME, "empty player name");
+            sendReject(channel, from, connect.nonce, Msg.Reject.REASON_BAD_NAME, "empty player name", size);
             return;
         }
-        if (freeCount == 0) {
-            sendReject(channel, from, Msg.Reject.REASON_FULL, "server is full");
+        if (freeCount == 0 && existing == null) {
+            sendReject(channel, from, connect.nonce, Msg.Reject.REASON_FULL, "server is full", size);
+            return;
+        }
+        if (cfg.maxPerIp > 0 && sessionsFrom(source, existing) >= cfg.maxPerIp) {
+            sendReject(channel, from, connect.nonce, Msg.Reject.REASON_FULL, "too many players from your address", size);
             return;
         }
         int id = host.join(connect.name, connect.team, connect.shape);
         if (id < 0) {
-            sendReject(channel, from, -id, rejectText(-id));
+            sendReject(channel, from, connect.nonce, -id, rejectText(-id), size);
             return;
+        }
+        if (existing != null) {
+            drop(existing, Msg.Disconnect.REASON_QUIT, "reconnected", false);
         }
         Connection c = free[--freeCount];
         c.ch.reset();
         c.channel = channel;
         c.addr = from;
-        c.session = nextSession();
+        c.sourceKey = source;
+        c.session = newSession();
         c.nonce = connect.nonce;
         c.playerId = id;
+        c.name.setLength(0);
+        c.name.append(connect.name);
+        c.verified = false;
+        c.acceptSends = 1;
+        c.nextAcceptAt = now + cfg.acceptResendNanos;
         c.lastHeard = now;
+        c.tokens = cfg.sessionRateBurst;
+        c.tokensAt = now;
+        c.sender = null;
         c.initialSent = false;
         c.snapshotsOn = false;
         c.hasInput = false;
         c.lastInputSeq = 0;
-        c.ackTick = 0;
-        c.sender = new ConfigTransfer.Sender(blob);
         active[activeCount++] = c;
         peers(channel).put(from, c);
         sendAccept(c);
-        welcome.playerId = id;
-        welcome.team = host.team(id);
+    }
+
+    /** The client proved it receives at its address: start the session proper. */
+    private void verify(Connection c) {
+        c.verified = true;
+        c.sender = new ConfigTransfer.Sender(blob);
+        welcome.playerId = c.playerId;
+        welcome.team = host.team(c.playerId);
         welcome.simHz = cfg.simHz;
         welcome.snapshotHz = cfg.simHz / cfg.snapshotDivisor;
         welcome.flags = cfg.welcomeFlags;
@@ -251,7 +346,18 @@ public final class ServerNet {
         welcome.serverName.setLength(0);
         welcome.serverName.append(cfg.serverName);
         welcome.send(c.ch);
-        log.log("join: player " + id + " '" + connect.name + "' from " + from + " on channel " + channel);
+        log.log("join: player " + c.playerId + " '" + c.name + "' from " + c.addr + " on channel " + c.channel);
+    }
+
+    private int sessionsFrom(long source, Connection except) {
+        int n = 0;
+        for (int i = 0; i < activeCount; i++) {
+            Connection c = active[i];
+            if (c != except && c.sourceKey == source) {
+                n++;
+            }
+        }
+        return n;
     }
 
     private void onInput(Connection c, ByteBuffer data) {
@@ -267,7 +373,6 @@ public final class ServerNet {
                 c.hasInput = true;
             }
         }
-        c.ackTick = input.ackTick();
     }
 
     private void onPing(Connection c, ByteBuffer data) {
@@ -289,12 +394,18 @@ public final class ServerNet {
      * Advance one simulation tick and service every peer.
      * <p>
      * BEHAVIOR: increments the tick and runs {@link GameHost#tick} with it.
-     * BEHAVIOR: drops peers silent for longer than the timeout, sending DISCONNECT (timeout) 3 times.
+     * BEHAVIOR: an unverified session gets ACCEPT again when its resend time comes, with the interval
+     * doubling each time, at most acceptResends times; one doubled interval after the last it is dropped
+     * silently (the host gets {@link GameHost#leave}). It gets nothing else.
+     * BEHAVIOR: drops verified peers, sending DISCONNECT (timeout) 3 times, that were silent for longer
+     * than the timeout, whose oldest unacknowledged reliable message is older than the timeout, or whose
+     * reliable overflow exceeds maxOverflow (they receive but do not acknowledge).
      * BEHAVIOR: streams the config until it is all queued, then queues the host's initial state once;
      * afterwards drains the host's events every tick.
      * BEHAVIOR: sends due reliable messages (at most maxReliablePacketsPerTick datagrams).
-     * BEHAVIOR: on every snapshotDivisor-th tick sends a snapshot to peers whose reliable channel has
-     * drained once after the initial state, with radar on every radarDivisor-th snapshot.
+     * BEHAVIOR: on every snapshotDivisor-th tick sends a snapshot to peers that have acknowledged
+     * everything up to and including their initial state (later events need not be acked), with radar
+     * on every radarDivisor-th snapshot.
      * BEHAVIOR: sends a bare ACK when reliable data arrived and nothing else went out this tick.
      */
     public void tick(long now) {
@@ -304,12 +415,31 @@ public final class ServerNet {
         boolean radar = snapshot && (tick / cfg.snapshotDivisor) % cfg.radarDivisor == 0;
         for (int i = activeCount - 1; i >= 0; i--) {
             Connection c = active[i];
-            if (now - c.lastHeard > cfg.timeoutNanos) {
+            if (!c.verified) {
+                resendAccept(c, now);
+            } else if (now - c.lastHeard > cfg.timeoutNanos) {
                 drop(c, Msg.Disconnect.REASON_TIMEOUT, "timeout", true);
-                continue;
+            } else if (c.ch.unackedAgeNanos(now) > cfg.timeoutNanos) {
+                drop(c, Msg.Disconnect.REASON_TIMEOUT, "reliable data unacknowledged", true);
+            } else if (c.ch.overflowing() > cfg.maxOverflow) {
+                drop(c, Msg.Disconnect.REASON_TIMEOUT, "reliable backlog", true);
+            } else {
+                service(c, snapshot, radar, now);
             }
-            service(c, snapshot, radar, now);
         }
+    }
+
+    private void resendAccept(Connection c, long now) {
+        if (now - c.nextAcceptAt < 0) {
+            return;
+        }
+        if (c.acceptSends > cfg.acceptResends) {
+            drop(c, Msg.Disconnect.REASON_TIMEOUT, "unverified", false);
+            return;
+        }
+        sendAccept(c);
+        c.nextAcceptAt = now + (cfg.acceptResendNanos << c.acceptSends);
+        c.acceptSends++;
     }
 
     private void service(Connection c, boolean snapshot, boolean radar, long now) {
@@ -317,10 +447,11 @@ public final class ServerNet {
             if (c.sender.pump(c.ch, cfg.configReserveSlots)) {
                 host.initialState(c.playerId, c.ch);
                 c.initialSent = true;
+                c.syncSequence = c.ch.nextSequence();
             }
         } else {
             host.drainEvents(c.playerId, c.ch);
-            if (!c.snapshotsOn && c.ch.unacked() == 0 && c.ch.overflowing() == 0) {
+            if (!c.snapshotsOn && c.ch.allAckedBefore(c.syncSequence)) {
                 c.snapshotsOn = true;
             }
         }
@@ -375,7 +506,8 @@ public final class ServerNet {
     /**
      * Disconnect everyone (server shutting down).
      * <p>
-     * BEHAVIOR: each peer gets DISCONNECT (shutdown) 3 times and the host a {@link GameHost#leave}.
+     * BEHAVIOR: each verified peer gets DISCONNECT (shutdown) 3 times, unverified ones nothing; every
+     * player gets a {@link GameHost#leave}.
      */
     public void shutdown() {
         for (int i = activeCount - 1; i >= 0; i--) {
@@ -383,8 +515,12 @@ public final class ServerNet {
         }
     }
 
+    /**
+     * Remove a peer. DISCONNECT goes only to verified peers (never reflect to an unproven address); the
+     * reliable channel is reset at once so a peer dropped for a backlog releases its overflow memory.
+     */
     private void drop(Connection c, int reason, String why, boolean notify) {
-        if (notify) {
+        if (notify && c.verified) {
             disconnect.reason = reason;
             disconnect.text.setLength(0);
             disconnect.text.append(why);
@@ -405,10 +541,13 @@ public final class ServerNet {
                 break;
             }
         }
+        c.ch.reset();
         c.sender = null;
         c.addr = null;
         free[freeCount++] = c;
-        log.log("leave: player " + c.playerId + " (" + why + ")");
+        if (c.verified) {
+            log.log("leave: player " + c.playerId + " (" + why + ")");
+        }
     }
 
     // ------------------------------------------------------------------ helpers
@@ -423,13 +562,21 @@ public final class ServerNet {
         out.send(c.channel, c.addr, outBuf);
     }
 
-    private void sendReject(int channel, SocketAddress to, int reason, String text) {
+    /**
+     * REJECT with session 0, its text cut so the reply is never larger than the request ({@code maxBytes});
+     * a request smaller than a bare REJECT gets no reply at all.
+     */
+    private void sendReject(int channel, SocketAddress to, int nonce, int reason, String text, int maxBytes) {
+        if (maxBytes < REJECT_OVERHEAD) {
+            return;
+        }
         outBuf.clear();
         PacketHeader.write(outBuf, PacketType.REJECT, 0, 0);
-        reject.nonce = connect.nonce;
+        reject.nonce = nonce;
         reject.reason = reason;
         reject.text.setLength(0);
         reject.text.append(text);
+        Wire.cap(reject.text, maxBytes - REJECT_OVERHEAD);
         reject.write(outBuf);
         outBuf.flip();
         out.send(channel, to, outBuf);
@@ -452,21 +599,30 @@ public final class ServerNet {
         };
     }
 
-    /** BEHAVIOR: session ids count up from 1, wrap at 16 bits and skip 0 (0 means "no session"). */
-    int nextSession() {
-        lastSession = (lastSession + 1) & 0xFFFF;
-        if (lastSession == 0) {
-            lastSession = 1;
+    /**
+     * BEHAVIOR: a random 16-bit session id that is not 0 ("no session") and not used by any active peer.
+     */
+    int newSession() {
+        while (true) {
+            int s = sessions.nextInt() & 0xFFFF;
+            if (s != 0 && !sessionInUse(s)) {
+                return s;
+            }
         }
-        return lastSession;
     }
 
-    /** BEHAVIOR: rate-limit key: the source IP's hash (all ports of one host share a bucket). */
-    static int sourceKey(SocketAddress from) {
-        if (from instanceof InetSocketAddress isa && isa.getAddress() != null) {
-            return isa.getAddress().hashCode();
+    private boolean sessionInUse(int s) {
+        for (int i = 0; i < activeCount; i++) {
+            if (active[i].session == s) {
+                return true;
+            }
         }
-        return from.hashCode();
+        return false;
+    }
+
+    /** Per-source key of an address (see {@link SourceKeys}). */
+    long sourceKey(SocketAddress from) {
+        return keys.of(from);
     }
 
     private HashMap<SocketAddress, Connection> peers(int channel) {
@@ -486,13 +642,13 @@ public final class ServerNet {
     /** Ticks run so far (the last tick number). */
     public int currentTick() { return tick; }
 
-    /** Connected peers. */
+    /** Connected peers, verified or not. */
     public int connections() { return activeCount; }
 
-    /** Packets dropped as malformed. */
+    /** Packets dropped as malformed (including client messages the host could not decode). */
     public long malformed() { return malformed; }
 
-    /** Packets dropped by the per-source rate limit. */
+    /** Packets dropped by the per-source or per-session rate limit. */
     public long rateLimited() { return rateLimited; }
 
     /** Non-CONNECT packets from unknown peers or with a wrong session. */
@@ -501,9 +657,18 @@ public final class ServerNet {
     /** Snapshots cut short at {@link #MAX_SNAPSHOT_PARTS}. */
     public long truncatedSnapshots() { return truncatedSnapshots; }
 
+    /** CONNECTs of another protocol version answered with REJECT VERSION. */
+    public long versionRejects() { return versionRejects; }
+
     /** Session id of the peer at {@code from} on {@code channel}, or -1. */
     public int sessionOf(int channel, SocketAddress from) {
         Connection c = peers(channel).get(from);
         return c == null ? -1 : c.session;
+    }
+
+    /** Whether the peer at {@code from} on {@code channel} exists and has verified its session. */
+    public boolean isVerified(int channel, SocketAddress from) {
+        Connection c = peers(channel).get(from);
+        return c != null && c.verified;
     }
 }

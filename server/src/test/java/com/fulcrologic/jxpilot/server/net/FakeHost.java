@@ -48,8 +48,14 @@ final class FakeHost implements GameHost {
     int team = Protocol.NO_TEAM;
     /** Parts the next snapshot of each viewer needs (default 1). */
     int partsNeeded = 1;
-    /** Messages queued by drainEvents for each viewer on the next drain. */
+    /**
+     * Server events, broadcast: each viewer's drainEvents queues every entry it has not queued yet (a
+     * per-viewer cursor), so several peers all receive every event.
+     */
     final List<String> pendingChat = new ArrayList<>();
+    private final int[] drained = new int[1024];
+    /** When set, clientMessage throws this for CHAT messages whose text is "boom". */
+    RuntimeException throwOnBoom;
     /** Snapshot SELF x per viewer is 1000 + id, y is 2000 + id. */
     int ticks;
     int lastTick;
@@ -96,6 +102,9 @@ final class FakeHost implements GameHost {
     public void clientMessage(int playerId, int type, ByteBuffer payload) {
         if (type == com.fulcrologic.jxpilot.common.net.ReliableType.CHAT) {
             text.read(payload);
+            if (throwOnBoom != null && text.text.toString().equals("boom")) {
+                throw throwOnBoom;
+            }
             if (record) {
                 calls.add("msg " + playerId + " CHAT " + text.text);
             }
@@ -161,16 +170,13 @@ final class FakeHost implements GameHost {
 
     @Override
     public void drainEvents(int viewerId, ReliableChannel out) {
-        if (pendingChat.isEmpty()) {
-            return;
-        }
-        for (String s : pendingChat) {
+        for (int i = drained[viewerId]; i < pendingChat.size(); i++) {
             text.kind = Msg.Text.KIND_SERVER;
             text.from = Protocol.NO_ID;
             text.text.setLength(0);
-            text.text.append(s);
+            text.text.append(pendingChat.get(i));
             text.send(out);
         }
-        pendingChat.clear();
+        drained[viewerId] = pendingChat.size();
     }
 }

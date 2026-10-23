@@ -55,6 +55,7 @@ final class TestClient implements ReliableHandler {
     int playerId = -1;
     boolean accepted;
     int rejectReason = -1;
+    int rejectNonce = -1;
     String rejectText;
     int disconnectReason = -1;
     int disconnects;
@@ -189,6 +190,7 @@ final class TestClient implements ReliableHandler {
                 Msg.Reject r = new Msg.Reject();
                 r.read(data);
                 rejectReason = r.reason;
+                rejectNonce = r.nonce;
                 rejectText = r.text.toString();
             }
             case PacketType.DISCONNECT -> {

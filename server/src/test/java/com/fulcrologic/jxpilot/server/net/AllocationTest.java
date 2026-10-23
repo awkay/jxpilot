@@ -156,6 +156,49 @@ class AllocationTest {
     }
 
     @Test
+    @DisplayName("pre-session floods: malformed CONNECTs, other-version CONNECTs and strays allocate nothing")
+    void preSessionFloods() {
+        Harness h = new Harness();
+        InetSocketAddress[] src = new InetSocketAddress[64];
+        for (int i = 0; i < src.length; i++) {
+            src[i] = Harness.addr("10.1.0." + i, 999);
+        }
+        ByteBuffer badConnect = ByteBuffer.allocateDirect(64);   // name length 200, 3 bytes present
+        PacketHeader.write(badConnect, PacketType.CONNECT, 0, 0);
+        badConnect.putInt(1).put((byte) 0).put((byte) 200).put((byte) 'a').put((byte) 'b').put((byte) 'c').flip();
+        ByteBuffer otherVersion = ByteBuffer.allocateDirect(64);
+        PacketHeader.write(otherVersion, PacketType.CONNECT, 0, 0);
+        otherVersion.putInt(7).put((byte) 0).put((byte) 1).put((byte) 'x').putShort((short) 0).flip();
+        otherVersion.put(2, (byte) 9);
+        ByteBuffer stray = ByteBuffer.allocateDirect(64);
+        PacketHeader.write(stray, PacketType.INPUT, 5, 0);
+        stray.putLong(0).flip();
+        ByteBuffer[] kinds = {badConnect, otherVersion, stray};
+        Runnable flood = () -> {
+            for (int i = 0; i < 30_000; i++) {
+                ByteBuffer b = kinds[i % 3];
+                b.rewind();
+                h.now += 3_000_000L;   // stays under the per-source rate, so every packet is parsed
+                h.net.onDatagram(0, src[i & 63], b, h.now);
+            }
+        };
+        h.passthrough = (c, t, d) -> d.position(d.limit());
+        for (int i = 0; i < 5; i++) {
+            flood.run();
+        }
+        long malformedBefore = h.net.malformed();
+        long before = MX.getCurrentThreadAllocatedBytes();
+        flood.run();
+        long allocated = MX.getCurrentThreadAllocatedBytes() - before;
+        long malformed = h.net.malformed() - malformedBefore;
+        assertAll(
+            () -> assertEquals(0, allocated, "30000 malformed, other-version and stray packets allocate nothing"),
+            () -> assertEquals(10_000, malformed, "every bad CONNECT was parsed and refused"),
+            () -> assertEquals(0, h.net.rateLimited(), "nothing was rate limited (all were parsed)"),
+            () -> assertEquals(60_000, h.net.versionRejects(), "other-version CONNECTs were answered (all six rounds)"));
+    }
+
+    @Test
     @DisplayName("the server loop thread over real loopback UDP (one peer)")
     void realLoop() throws Exception {
         InetAddress lo = InetAddress.ofLiteral("127.0.0.1");

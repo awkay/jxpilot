@@ -37,6 +37,8 @@ import java.util.List;
 /** In-memory server: {@link ServerNet} + {@link FakeHost} + a capturing {@link Datagrams} and a fake clock. */
 final class Harness implements Datagrams {
     static final long TICK = 16_666_667L;
+    static final long SESSION_SEED = 0x5EED;
+    static final long KEY_SECRET = 0x5EC12E7L;
 
     /** One datagram the server sent. */
     record Sent(int channel, SocketAddress to, ByteBuffer data) {
@@ -62,7 +64,7 @@ final class Harness implements Datagrams {
         this.cfg = cfg;
         this.configText = configText;
         this.blob = ConfigTransfer.encode(configText);
-        this.net = new ServerNet(cfg, host, this, log::add, blob);
+        this.net = new ServerNet(cfg, host, this, log::add, blob, SESSION_SEED, KEY_SECRET);
     }
 
     Harness() {
@@ -149,6 +151,10 @@ final class Harness implements Datagrams {
         if (c.snapshotTicks.isEmpty()) {
             throw new AssertionError("client never got a snapshot");
         }
+    }
+
+    boolean isConnected(int channel, SocketAddress from) {
+        return net.sessionOf(channel, from) != -1;
     }
 
     static int headerAck(ByteBuffer b) {

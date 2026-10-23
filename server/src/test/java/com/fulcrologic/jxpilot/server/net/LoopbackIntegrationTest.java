@@ -189,6 +189,12 @@ class LoopbackIntegrationTest {
                  UdpClient c2 = new UdpClient(2, new InetSocketAddress(second, port))) {
                 c1.connect("one");
                 c2.connect("two");
+                for (ByteBuffer b : c1.c.frame(System.nanoTime(), 0)) {
+                    c1.send(b);
+                }
+                for (ByteBuffer b : c2.c.frame(System.nanoTime(), 0)) {
+                    c2.send(b);
+                }
                 Thread.sleep(200);
                 c1.pump();
                 c2.pump();

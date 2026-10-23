@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.net;
 
+import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
 import com.fulcrologic.jxpilot.common.net.Msg;
@@ -38,8 +39,22 @@ public final class ServerNetConfig {
     public int radarDivisor = Protocol.DEFAULT_RADAR_DIVISOR;
     /** Connection pool size (each preallocates a reliable channel, about 70 KB). */
     public int maxConnections = 32;
-    /** Drop a peer after this long without a packet. */
+    /** Sessions per source (IPv4 address or IPv6 /64); 0 or less is unlimited. Beyond it: REJECT FULL. */
+    public int maxPerIp = 4;
+    /**
+     * Drop a verified peer after this long without a packet, or when its oldest unacknowledged reliable
+     * message has waited this long.
+     */
     public long timeoutNanos = Protocol.TIMEOUT_MS * 1_000_000L;
+    /** Drop a peer whose reliable overflow queue holds more messages than this (it is not acking). */
+    public int maxOverflow = 256;
+    /** First ACCEPT resend interval for an unverified session; doubles with each resend. */
+    public long acceptResendNanos = Protocol.CONNECT_RESEND_MS * 1_000_000L;
+    /**
+     * ACCEPT resends for an unverified session. It is dropped one doubled interval after the last, so
+     * with 3 resends at 250 ms it lives 250 * (1 + 2 + 4 + 8) = 3.75 s and gets 4 ACCEPTs.
+     */
+    public int acceptResends = 3;
     /** WELCOME flags ({@link Msg.Welcome} FLAG_*). */
     public int welcomeFlags;
     /** Original XPilot frames per second, for WELCOME. */
@@ -49,11 +64,15 @@ public final class ServerNetConfig {
     public double worldWidth = 3500;
     public double worldHeight = 3500;
     public boolean edgeWrap;
-    /** Per source IP: sustained packets per second. */
+    /** Per source (IPv4 address or IPv6 /64), for packets outside a session: sustained packets per second. */
     public double ratePerSecond = 400;
-    /** Per source IP: burst size in packets. */
+    /** Per source, outside a session: burst size in packets. */
     public double rateBurst = 800;
-    /** Extra cost, in packets, of a CONNECT that would create a session. */
+    /** Per session (one connected client): sustained packets per second. */
+    public double sessionRatePerSecond = 400;
+    /** Per session: burst size in packets. */
+    public double sessionRateBurst = 800;
+    /** Extra per-source cost, in packets, of a CONNECT that would create a session. */
     public double connectCost = 100;
     /** Reliable datagrams per peer per tick (bounds map-transfer bandwidth: 8 x 1.2 KB x 60 Hz). */
     public int maxReliablePacketsPerTick = 8;
@@ -61,10 +80,12 @@ public final class ServerNetConfig {
     public int configReserveSlots = 4;
 
     /**
-     * Settings for a loaded map.
+     * Settings for a loaded map and the server's options.
      * <p>
      * BEHAVIOR: WELCOME flags mirror the map's teamPlay, edgeWrap and timing; world size is the map's
      * pixel size; gameFps is framesPerSecond; the server name includes the map name.
+     * BEHAVIOR: snapshotDivisor (clamped to 1..simHz), radarDivisor (at least 1), the per-source and
+     * per-session packet rates and bursts (at least 1) and maxClientsPerIP come from the options.
      */
     public static ServerNetConfig of(Options options, WorldMap map) {
         ServerNetConfig c = new ServerNetConfig();
@@ -76,6 +97,13 @@ public final class ServerNetConfig {
         c.worldWidth = map.pixelWidth();
         c.worldHeight = map.pixelHeight();
         c.edgeWrap = map.edgeWrap();
+        c.snapshotDivisor = Math.clamp(options.getInt(Opt.SNAPSHOT_DIVISOR), 1, c.simHz);
+        c.radarDivisor = Math.max(1, options.getInt(Opt.RADAR_DIVISOR));
+        c.ratePerSecond = Math.max(1, options.getDouble(Opt.IP_PACKET_RATE));
+        c.rateBurst = Math.max(1, options.getDouble(Opt.IP_PACKET_BURST));
+        c.sessionRatePerSecond = Math.max(1, options.getDouble(Opt.SESSION_PACKET_RATE));
+        c.sessionRateBurst = Math.max(1, options.getDouble(Opt.SESSION_PACKET_BURST));
+        c.maxPerIp = options.getInt(Opt.MAX_CLIENTS_PER_IP);
         return c;
     }
 }
