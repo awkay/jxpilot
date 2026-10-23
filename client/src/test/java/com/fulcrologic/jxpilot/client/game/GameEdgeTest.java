@@ -242,17 +242,30 @@ class GameEdgeTest {
         }
 
         @Test
-        @DisplayName("SnapshotFrame.findShip only searches the live ships")
-        void findShip() {
-            SnapshotFrame f = new SnapshotFrame(4, 4);
-            f.shipId[0] = 5;
-            f.shipId[1] = 6;
-            f.shipId[2] = 7;
-            f.ships = 2;
+        @DisplayName("ShipIndex: put/get, overwrite, clear, misses and collisions in a full table")
+        void shipIndex() {
+            ShipIndex ix = new ShipIndex(4);
+            ix.put(5, 0);
+            ix.put(6, 1);
+            ix.put(5, 2);
+            int five = ix.get(5);
+            int six = ix.get(6);
+            int missing = ix.get(7);
+            ix.clear();
+            int afterClear = ix.get(5);
+            ShipIndex full = new ShipIndex(4);
+            for (int i = 0; i < 4; i++) {
+                full.put(1000 + i * full.tableSize(), i);
+            }
             assertAll(
-                () -> assertEquals(0, f.findShip(5), "first"),
-                () -> assertEquals(1, f.findShip(6), "second"),
-                () -> assertEquals(-1, f.findShip(7), "a stale slot is not searched"));
+                () -> assertEquals(2, five, "a repeated id is overwritten"),
+                () -> assertEquals(1, six, "another id"),
+                () -> assertEquals(-1, missing, "absent id"),
+                () -> assertEquals(-1, afterClear, "clear forgets everything"),
+                () -> assertEquals(8, full.tableSize(), "table is a power of two >= 2 x capacity"),
+                () -> assertEquals(3, full.get(1000 + 3 * full.tableSize()), "colliding keys probe onward"),
+                () -> assertEquals(0, full.get(1000), "the first colliding key is still found"),
+                () -> assertEquals(-1, full.get(999), "a miss terminates in a full-capacity table"));
         }
 
         @Test
@@ -289,9 +302,9 @@ class GameEdgeTest {
         void emitter() {
             ThrustSparkEmitter em = new ThrustSparkEmitter();
             em.configure(60, 14, 0.25f, 300, 400, false);
-            em.emit(1, 1, 10, 10, 0, 0, 0, 45, 3, -9, 0, new ParticlePool(100));
+            em.emit(1, 1, 10, 10, 0, 0, 0, 45, 3, -9, 0, false, new ParticlePool(100));
             assertAll(
-                () -> assertEquals(500f, em.hypotenuse(), "3-4-5 diagonal"),
+                () -> assertEquals(500, em.hypotenuse(), "3-4-5 diagonal"),
                 () -> assertEquals(500f, em.lastNormal().hypotenuse, "normal burst uses it"),
                 () -> assertTrue(em.lastAlt().count > 0, "afterburners fill the alt burst"));
         }
