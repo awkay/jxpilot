@@ -65,6 +65,7 @@
             <param>*TickBenchmark*</param>
             <param>*LoopbackIntegrationTest*</param>
             <param>*ServerMainTest*</param>
+            <param>*RobotStatsRegressionTest*</param>
           </excludedTestClasses>
         </configuration>
       </plugin>

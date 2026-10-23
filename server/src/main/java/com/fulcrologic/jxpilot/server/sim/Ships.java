@@ -89,10 +89,21 @@ public final class Ships {
      * BEHAVIOR: the name is cut to {@link Const#MAX_NAME_LEN} chars and made Latin-1 (other chars become '?').
      */
     public Player reserve(CharSequence name) {
+        return reserve(name, false);
+    }
+
+    /**
+     * {@link #reserve(CharSequence)} for a human or a robot (C {@code Robot_create} logs a robot in through the
+     * same steps).
+     * <p>
+     * BEHAVIOR: marks the player as a robot iff {@code robot}, so {@link #spawn} sees it.
+     */
+    public Player reserve(CharSequence name, boolean robot) {
         Player pl = w.addPlayer();
         if (pl == null) {
             return null;
         }
+        pl.robot = robot;
         pl.name.setLength(0);
         int n = Math.min(name.length(), Const.MAX_NAME_LEN);
         for (int i = 0; i < n; i++) {
@@ -108,16 +119,19 @@ public final class Ships {
      * <p>
      * BEHAVIOR: returns false (nothing changes, the reservation stays) when the player is not reserved, is
      * already in the game, or no team/base can be picked.
-     * BEHAVIOR: in team play a request for an invalid, reserved robot, baseless or full team is replaced by
-     * C {@code Pick_team}.
+     * BEHAVIOR: in team play a request for an invalid, reserved robot (unless the player is a robot: C
+     * Robot_create picks its own team), baseless or full team is replaced by C {@code Pick_team}.
      * BEHAVIOR: Init_player runs (start values, the client default power 45, turnspeed 35, turnresistance
      * 0.12 and alternates 35/25/0.12 until {@link #applySettings}); with limitedLives a joiner arriving after
      * a non-team player lost a life waits ('W', GAME_OVER, no lives), judged after the team is chosen.
-     * BEHAVIOR: emits JOIN, BASE_OWNER and SCORE, and the ship starts at home.
+     * BEHAVIOR: emits JOIN (b = {@code Msg.PlayerJoin.FLAG_ROBOT} for robots, else 0), BASE_OWNER and SCORE,
+     * and the ship starts at home.
      * BEHAVIOR: with teamShareScore the first member resets the team score; the share is redistributed to the
      * members already in the game (as C, the joiner itself keeps 0 until the next team score change).
-     * BEHAVIOR: resetOnHuman ends the round for the first N humans; a join during the round delay, or the
-     * first player, (re)starts the round delay with a message.
+     * BEHAVIOR: for a human, resetOnHuman ends the round for the first N humans; a join during the round
+     * delay, or the first player, (re)starts the round delay with a message (C Handle_login). A robot's round
+     * part is C Robot_create's, which the robot manager runs after the robot's ENTER talk
+     * ({@code Rounds.robotEntered}).
      */
     public boolean spawn(Player pl, int team) {
         if (!pl.inUse || pl.spawned) {
@@ -150,11 +164,13 @@ public final class Ships {
         w.enter(pl);
         pl.prevKeys = 0;
         pl.keysCleared = true;
-        w.events.add(Events.JOIN, pl.id, 0, 0, 0f);
+        w.events.add(Events.JOIN, pl.id, pl.robot ? Msg.PlayerJoin.FLAG_ROBOT : 0, 0, 0f);
         w.events.add(Events.BASE_OWNER, pl.homeBase, pl.id, 0, 0f);
         w.events.add(Events.GAME_EVENT, Msg.GameEvent.SPAWN, pl.id, pl.homeBase, 0f);
         pl.scoreDirty = true;
-        sim.rounds.playerEntered(pl);
+        if (!pl.robot) {
+            sim.rounds.playerEntered(pl);
+        }
         return true;
     }
 
@@ -164,7 +180,17 @@ public final class Ships {
      * BEHAVIOR: returns null (and frees the slot) when either step fails.
      */
     public Player join(CharSequence name, int team) {
-        Player pl = reserve(name);
+        return join(name, team, false);
+    }
+
+    /**
+     * {@link #join(CharSequence, int)} for a human or a robot: {@link #reserve(CharSequence, boolean)} then
+     * {@link #spawn} (the robot manager logs robots in this way).
+     * <p>
+     * BEHAVIOR: returns null (and frees the slot) when either step fails.
+     */
+    public Player join(CharSequence name, int team, boolean robot) {
+        Player pl = reserve(name, robot);
         if (pl == null) {
             return null;
         }
@@ -268,7 +294,7 @@ public final class Ships {
      */
     private int chooseTeam(int team, Player joining) {
         Params p = w.params;
-        if (team >= 0 && team < Const.MAX_TEAMS && !(p.reserveRobotTeam && team == p.robotTeam)
+        if (team >= 0 && team < Const.MAX_TEAMS && (joining.robot || !(p.reserveRobotTeam && team == p.robotTeam))
             && w.map.teamBaseCount(team) > 0 && w.teamMembers[team] < w.map.teamBaseCount(team)) {
             return team;
         }

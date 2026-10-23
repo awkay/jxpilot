@@ -46,7 +46,7 @@ public final class Events {
     /** Burst ring size (power of two): several ticks of a large fight. */
     public static final int BURSTS = 4096;
 
-    /** a = player id. */
+    /** a = player id, b = {@code Msg.PlayerJoin} flags ({@code FLAG_ROBOT} for robots). */
     public static final int JOIN = 1;
     /** a = player id. */
     public static final int LEAVE = 2;

@@ -276,4 +276,43 @@ class AllocationTest {
             () -> assertTrue(r.peakObjects >= 8000, "saturated: 8000+ objects after each top-up (" + r.peakObjects + ")"),
             () -> assertTrue(parts > 3L * 32 * 500, "most snapshots fill all 4 parts (" + parts + " parts)"));
     }
+
+    @Test
+    @DisplayName("16 robots flying, fighting, dying, leaving and joining allocate zero bytes per tick")
+    void robotTickIsAllocationFree() {
+        Simulation s = new Simulation(new World(TestWorlds.options(
+            "gravity: -0.14\nmaxRobots: 16\nminRobots: 16\nrobotsTalk: yes\nrobotLeaveLife: 3\n", Arena.rows()), 5));
+        World w = s.world;
+        s.robots.setEnabled(true);
+        long[] in = new long[w.players.length];
+        for (int i = 0; i < 20000; i++) {
+            s.tick(in);
+        }
+        long eventsBefore = w.events.seq();
+        int joinsBefore = joins(s);
+        int peakRobots = 0;
+        long start = MX.getCurrentThreadAllocatedBytes();
+        for (int i = 0; i < 4000; i++) {
+            s.tick(in);
+            peakRobots = Math.max(peakRobots, s.robots.numRobots());
+        }
+        long allocated = MX.getCurrentThreadAllocatedBytes() - start;
+        int robotsPeak = peakRobots;
+        long eventsAfter = w.events.seq();
+        int joined = joins(s) - joinsBefore;
+        assertAll(
+            () -> assertEquals(0, allocated, "4000 ticks with 16 robots allocate no bytes"),
+            () -> assertTrue(joined > 0, "robots left and new ones joined in the measured ticks (" + joined + ")"),
+            () -> assertEquals(16, robotsPeak, "16 robots were playing (a leaver is replaced after 2*FPS frames)"),
+            () -> assertTrue(eventsAfter > eventsBefore + 100, "the robots were busy (" + (eventsAfter - eventsBefore)
+                + " events)"));
+    }
+
+    private static int joins(Simulation s) {
+        int n = 0;
+        for (int i = 0; i < s.robots.roster().size(); i++) {
+            n += s.robots.roster().used(i);
+        }
+        return n;
+    }
 }

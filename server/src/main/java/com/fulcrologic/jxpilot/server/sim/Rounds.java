@@ -623,4 +623,23 @@ public final class Rounds {
                 .append(" seconds until next round.");
         }
     }
+
+    /**
+     * The round part of C {@code Robot_create} (robot.c), after the robot entered the game and said ENTER.
+     * <p>
+     * BEHAVIOR: during a round delay, or for the first player, the delay (re)starts at roundDelay seconds and
+     * is sent one second longer (C {@code round_delay_send}); the round timer starts at maxRoundTime when there
+     * is no delay, else none; the message is "Player entered. Delaying N seconds until next round." ("race" on
+     * timing maps). Otherwise nothing changes. (No resetOnHuman: C checks it only for human logins.)
+     */
+    public void robotEntered() {
+        Params p = w.params;
+        if (w.roundDelay > 0 || w.numPlayers == 1) {
+            w.roundDelay = p.roundDelaySeconds * p.fps;
+            w.roundDelaySend = w.roundDelay + p.fps;
+            w.roundTime = p.maxRoundTime > 0 && p.roundDelaySeconds == 0 ? p.maxRoundTime * p.fps : -1;
+            message().append("Player entered. Delaying ").append(p.roundDelaySeconds)
+                .append(" seconds until next ").append(w.map.timing() ? "race" : "round").append('.');
+        }
+    }
 }
