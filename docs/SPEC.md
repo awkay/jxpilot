@@ -96,7 +96,16 @@ Tailscale `100.x`), a LAN, and a public internet host (IPv4 and/or IPv6).
 ## Feature milestones
 **M1 — playable core:** map loading/render (all wall shapes, fuel, bases, cannons, gravity markers, wormholes, targets, treasures as visible symbols), ship thrust/turn/gravity/wrap, wall collision (crash or bounce per options), shields, fuel use & refuel at fuel stations, firing shots, player/shot collisions, death/explosion debris & thrust sparks, respawn at base, cannons firing, wormholes, gravity sources, scores, chat, robots with simple AI, radar, HUD (fuel, score, messages, scoreboard), team play basics.
 **M2:** items (pickup/drop: extra shots, afterburner, cloak, sensor, transporter, rear shot, missiles, mines, ECM, lasers, emergency thrust/shield, tractor beam, autopilot, deflector, hyperjump, phasing, mirror, armor, tanks), balls/treasures & team scoring, targets, checkpoints/race mode, asteroids.
-**M3:** polish: configurable keys file, sound (optional), server browser.
+**M3:** polish: configurable keys file; sound only if cheap (e.g. a handful of short clips via the JDK's javax.sound or OpenAL from LWJGL, triggered by events the client already receives).
+
+**Goal and scope.** The goal is a playable game: server, client, maps and robots. These are OUT of scope and must not be ported or planned:
+- the map editor (`src/mapedit`);
+- replay/recording (`src/replay`, `xp-replay`);
+- the metaserver and server browser;
+- the `contrib` tools;
+- the X11/NT/OS2 platform layers;
+- the talk-macro and widget/config-menu systems, beyond what playing needs: in-game chat and key bindings.
+When a feature's value to play is unclear, the lead decides; ask rather than build.
 
 ## Default controls (from XPilot)
 A/S turn left/right, Shift thrust, Return fire, Space shield, Tab? (check `default.c` for full list), M talk, Esc quit. Allow config file `~/.jxpilot/keys` later.
