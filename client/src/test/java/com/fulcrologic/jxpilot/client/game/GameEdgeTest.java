@@ -208,6 +208,7 @@ class GameEdgeTest {
             }
             so.tick(99);
             boolean aliveAt100 = so.active(0);
+            double aliveCount = so.count(0);
             so.tick(1);
             boolean aliveAt101 = so.active(0);
             ScoreObjects c = new ScoreObjects();
@@ -222,6 +223,7 @@ class GameEdgeTest {
                 () -> assertEquals(List.of(3, 4), List.of(so.blockX(0), so.blockY(0)), "at its block"),
                 () -> assertEquals("-1.5", so.text(1).toString(), "an empty msg keeps the game-area text"),
                 () -> assertTrue(aliveAt100, "count 100 is still alive"),
+                () -> assertEquals(100.0, aliveCount, 1e-9, "count started at 1 and aged 99 frames"),
                 () -> assertFalse(aliveAt101, "count 101 > SCORE_OBJECT_COUNT dies"),
                 () -> assertEquals("", so.hudText(0).toString(), "and loses its HUD text"),
                 () -> assertFalse(c.active(0), "clear forgets objects"),

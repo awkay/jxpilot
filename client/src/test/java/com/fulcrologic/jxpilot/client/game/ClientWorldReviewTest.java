@@ -163,7 +163,12 @@ class ClientWorldReviewTest {
             c.sample(107, 0);
             double within = c.serverTick(0);
             c.sample(115, 0);
+            TickClock b = new TickClock();
+            b.reset(14);
+            b.sample(100, 0);
+            b.sample(93, 0);
             assertAll(
+                () -> assertEquals(99.3, b.serverTick(0), 1e-9, "exactly 7 ticks behind is smoothed, not an outlier"),
                 () -> assertEquals(7.0, c.resyncTicks(), 1e-12, "0.5 s at 14 Hz"),
                 () -> assertEquals(100.7, within, 1e-9, "7 ticks ahead is smoothed"),
                 () -> assertEquals(115.0, c.serverTick(0), 1e-9, "more than 7 ticks ahead resyncs"));
@@ -327,6 +332,19 @@ class ClientWorldReviewTest {
                 () -> assertEquals(List.of(9, 10), ids, "both ships drawn, B's first"),
                 () -> assertEquals(101f, f.world.shipX(0), EPS, "ship 9 interpolated"),
                 () -> assertEquals(51f, f.world.shipX(1), EPS, "ship 10 moved by v * 1 tick * 0.25 frames"));
+        }
+
+        @Test
+        @DisplayName("the id index is rebuilt for every update: a ship only in B is not matched to a stale A index")
+        void indexRebuilt() {
+            WorldFixture f = new WorldFixture(false);
+            f.world.setInterpolationDelayTicks(0);
+            f.begin(100).ship(10, 0, 50, 100, 0, 0, 0).ship(9, 0, 100, 100, 0, 0, 0).ingestAtTick(100);
+            f.begin(102).ship(9, 0, 102, 100, 0, 0, 0).ingestAtTick(102);
+            f.world.update(at(101));
+            f.begin(104).ship(10, 0, 300, 100, 0, 0, 0).ship(9, 0, 104, 100, 0, 0, 0).ingestAtTick(104);
+            f.world.update(at(103));
+            assertEquals(300f, f.world.shipX(0), EPS, "ship 10 only in B is drawn at B, not interpolated from ship 9");
         }
 
         @Test

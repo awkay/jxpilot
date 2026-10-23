@@ -252,8 +252,9 @@ class ParticlesTest {
             p.spawn(still(30, 1, 100), new Rng(0), 0, 0, 3);
             p.spawn(still(40, 1, 100), new Rng(0), 0, 0, 4);
             p.step(8, 0.25f, 700, 350, true);
+            p.step(9, 0.25f, 700, 350, true);
             assertAll(
-                () -> assertEquals(3, p.count(), "the life-1 particle expired at age 2 frames"),
+                () -> assertEquals(3, p.count(), "the life-1 particle expired at age 2 frames; stale slots stay dead"),
                 () -> assertEquals(List.of(1, 3, 4), List.of(p.color(0), p.color(1), p.color(2)),
                     "the others keep their order"),
                 () -> assertEquals(List.of(10f, 30f, 40f), List.of(p.originX(0), p.originX(1), p.originX(2)),

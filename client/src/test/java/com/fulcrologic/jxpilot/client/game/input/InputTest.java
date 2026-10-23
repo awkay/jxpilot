@@ -217,6 +217,7 @@ class InputTest {
         @DisplayName("autoShield: releasing the shield key lowers the shields for good until the next spawn")
         void autoShieldKey() {
             InputState in = new InputState(KeyBindings.defaults());
+            boolean upAtStart = in.shieldsUp();
             in.press(GLFW_KEY_SPACE);
             long held = in.keys();
             in.release(GLFW_KEY_SPACE);
@@ -245,6 +246,7 @@ class InputTest {
             in.release(GLFW_KEY_SPACE);
             long talkingRelease = in.keys();
             assertAll(
+                () -> assertTrue(upAtStart, "shields are considered up at start (C shields = 1)"),
                 () -> assertEquals(SHIELD, held, "the shield key holds the shield"),
                 () -> assertEquals(0L, released, "releasing it drops the shield"),
                 () -> assertFalse(upAfterRelease, "and the shields are no longer considered up"),

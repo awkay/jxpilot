@@ -120,6 +120,35 @@ class HudBuildTest {
         }
 
         @Test
+        @DisplayName("build feeds the own ship's fuel to the notification: a refill between frames notifies")
+        void buildNotifies() {
+            Hud h = new Hud();
+            h.build(new HudFrame(), game(300, 0, 0, 0), new TalkLine(), 800, 600, M, 0);
+            h.build(new HudFrame(), game(400, 0, 0, 0), new TalkLine(), 800, 600, M, 0);
+            assertEquals(42.0, h.fuelCount(), "300 -> 400 while visible: 3 s at 14 fps");
+        }
+
+        @Test
+        @DisplayName("speed pointer only with a factor and some velocity (either axis)")
+        void pointerConditions() {
+            Hud h = new Hud();
+            HudFrame f = new HudFrame();
+            h.speedPointer(f, 800, 600, 0, 0);
+            h.ptrMoveFact = 1;
+            h.speedPointer(f, 800, 600, 0, 0);
+            int still = f.lineCount();
+            h.speedPointer(f, 800, 600, 0, 5);
+            h.speedPointer(f, 800, 600, 5, 0);
+            Hud off = new Hud();
+            HudFrame g = new HudFrame();
+            off.speedPointer(g, 800, 600, 5, 5);
+            assertAll(
+                () -> assertEquals(0, still, "no velocity: none"),
+                () -> assertEquals(List.of("400,300-400,305", "400,300-395,300"), lines(f), "vy only, vx only"),
+                () -> assertEquals(0, g.lineCount(), "factor 0: none"));
+        }
+
+        @Test
         @DisplayName("fuel notify: a refill seen while the ship was visible notifies, the respawn refill after death does not")
         void fuelNotifyGate() {
             Hud h = new Hud();

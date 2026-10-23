@@ -674,9 +674,70 @@ class ClientConnectionTest {
         }
     }
 
+    @Test
+    @DisplayName("an empty config fails at WELCOME without any chunk; a chunk outside the announced size is a bad config")
+    void configEdges() {
+        c.start(0);
+        accept(0);
+        new Msg.Welcome().send(server);
+        reliable(0);
+        c.update(MS);
+        ConnectionState emptyState = c.state();
+        Scripted tt = new Scripted();
+        ClientConnection cc = new ClientConnection(tt, new Rec(), "srv:1", 99);
+        ReliableChannel srv = new ReliableChannel();
+        cc.start(0);
+        int nonce = cc.connect.nonce;
+        tt.in.add(pkt(PacketType.ACCEPT, SESSION, 0, b -> {
+            Msg.Accept a = new Msg.Accept();
+            a.nonce = nonce;
+            a.playerId = 7;
+            a.write(b);
+        }));
+        cc.update(0);
+        Msg.Welcome w = new Msg.Welcome();
+        w.configLength = 10;
+        w.configCompressedLength = 4;
+        w.send(srv);
+        ByteBuffer chunk = srv.begin(ReliableType.DATA_CHUNK);
+        chunk.putInt(2).put(new byte[8]);
+        srv.end();
+        tt.in.add(pkt(PacketType.RELIABLE, SESSION, 0, b -> srv.write(b, 0)));
+        cc.update(MS);
+        assertAll(
+            () -> assertEquals(ConnectionState.CLOSED, emptyState, "empty config: closed at WELCOME"),
+            () -> assertEquals(ConnectionState.CLOSED, cc.state(), "chunk out of range: closed"),
+            () -> assertEquals("Bad map/config from srv:1: DATA_CHUNK out of range", cc.status().toString(), "reason"));
+    }
+
+    @Test
+    @DisplayName("a RELIABLE body with bad framing counts as malformed")
+    void badReliableFraming() {
+        playing(0);
+        long bad = c.malformed();
+        t.in.add(pkt(PacketType.RELIABLE, SESSION, 0, b -> b.put((byte) 1)));
+        c.update(MS);
+        assertEquals(bad + 1, c.malformed(), "count 1 but no message header");
+    }
+
     @Nested
     @DisplayName("INPUT rate")
     class InputRate {
+        @Test
+        @DisplayName("at 144 fps unchanged keys still average simHz: the send schedule keeps its phase")
+        void phaseKept() {
+            playing(0);
+            long frame = 1_000_000_000L / 144;
+            int sent = 0;
+            for (int f = 0; f < 1440; f++) {
+                if (c.sendInput(3, 0, 100 * MS + f * frame) != 0) {
+                    sent++;
+                }
+            }
+            int fSent = sent;
+            assertTrue(fSent >= 598 && fSent <= 601, "about 600 in 10 s (not 1 per 3 frames = 480): " + fSent);
+        }
+
         @Test
         @DisplayName("a 1000 fps render loop sends at most 120 INPUTs per second; steady keys at simHz")
         void thousandFps() {
@@ -776,13 +837,15 @@ class ClientConnectionTest {
             int allAcked = inputs().get(13).keys.size();
             t.in.add(snapshot(104, 99));
             t.in.add(snapshot(103, 14));
+            t.in.add(snapshot(106, 5));
             c.update(15 * INTERVAL);
             int ignored = c.ackedInputSeq();
             assertAll(
                 () -> assertEquals(8, capped, "12 unacknowledged inputs: capped at 8"),
                 () -> assertEquals(List.of(13L, 12L, 11L, 10L), afterAck.keys, "acked up to 9: entries 10..13"),
                 () -> assertEquals(1, allAcked, "everything older acked: only the new entry"),
-                () -> assertEquals(13, ignored, "a lastInputSeq ahead of anything sent, or from an older tick, is ignored"));
+                () -> assertEquals(13, ignored,
+                    "a lastInputSeq ahead of anything sent, from an older tick, or older than the acked one, is ignored"));
         }
 
         @Test

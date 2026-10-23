@@ -223,6 +223,12 @@ class ClientGameTest {
         g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.CRASH, 7, 0)));
         g.onReliable(ReliableType.SCORE, payload(score(7, 9)));
         g.frame(WorldFixture.at(100), 0);
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.TREASURE_DESTROYED, 7,
+            f.map.treasures().size())));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 8)));
+        g.frame(WorldFixture.at(100), 0);
+        g.onReliable(ReliableType.SCORE, payload(score(7, 9)));
+        g.frame(WorldFixture.at(100), 0);
         g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.TARGET_DESTROYED, 7, 0)));
         g.onReliable(ReliableType.SCORE, payload(score(7, 11)));
         g.frame(WorldFixture.at(100), 0);
@@ -241,8 +247,17 @@ class ClientGameTest {
         g.onReliable(ReliableType.SCORE, payload(score(7, 15)));
         String target = "@" + f.map.targets().get(0).bx() + "," + f.map.targets().get(0).by();
         String treasure = "@" + f.map.treasures().get(0).bx() + "," + f.map.treasures().get(0).by();
-        assertEquals(List.of("[Wall] -1.0", "Target:  2.0 " + target, "Treasure:  1.0 " + treasure,
-                "Target:  1.0", "1.0", "1.0"), hud(g),
+        f.begin(100).self(7, 0, 100, 100, 0, 0, 0);
+        f.buf.flip();
+        g.onSnapshot(f.buf, WorldFixture.at(100));
+        g.frame(WorldFixture.at(100), 0);
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.CRASH, 7, 0)));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 14)));
+        assertEquals(List.of("Treasure:  -1.0", "1.0", "Target:  2.0 " + target, "Treasure:  1.0 " + treasure,
+                "Target:  1.0", "1.0", "1.0", "[Wall] -1.0 @2,2"), hud(g).subList(1, 9),
+            "a treasure index equal to the count: no place; a crash at the visible own ship is placed there");
+        assertEquals(List.of("[Wall] -1.0", "Treasure:  -1.0", "1.0", "Target:  2.0 " + target, "Treasure:  1.0 " + treasure,
+                "Target:  1.0", "1.0", "1.0"), hud(g).subList(0, 8),
             "crash at an unknown own ship: no place; target/treasure at their block (C's double space); "
                 + "a bad index: no place; other players' events and SPAWN are no reason; a reason after the "
                 + "SCORE is forgotten at the frame");
