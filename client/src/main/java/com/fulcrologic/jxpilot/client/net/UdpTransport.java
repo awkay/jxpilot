@@ -89,7 +89,11 @@ public final class UdpTransport implements Transport {
         }
     }
 
-    /** ICMP port-unreachable errors seen (server not running); such reads count as "nothing received". */
+    /**
+     * ICMP port-unreachable errors seen (server not running). They are rethrown: {@link ClientConnection}
+     * treats every IOException as "not sent / nothing received" and pauses sending, so an outage does not
+     * raise (and allocate) an exception every frame.
+     */
     public long portUnreachableCount() {
         return portUnreachable;
     }
@@ -100,7 +104,7 @@ public final class UdpTransport implements Transport {
             return channel.write(packet) > 0;
         } catch (PortUnreachableException e) {
             portUnreachable++;
-            return false;
+            throw e;
         }
     }
 
@@ -111,7 +115,7 @@ public final class UdpTransport implements Transport {
             return Math.max(n, 0);
         } catch (PortUnreachableException e) {
             portUnreachable++;
-            return 0;
+            throw e;
         }
     }
 
