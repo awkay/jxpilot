@@ -30,6 +30,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -66,6 +68,39 @@ class GeneratedDocsTest {
     @DisplayName("the committed option reference matches the Opt registry")
     void optionsUpToDate() throws IOException {
         check("options.adoc", GuideTables.optionsAdoc());
+    }
+
+    @Test
+    @DisplayName("the committed item table matches the item bitmaps")
+    void itemsUpToDate() throws IOException {
+        check("items.adoc", ItemTable.itemsAdoc());
+    }
+
+    @Test
+    @DisplayName("the committed item pictures have exactly the pixels the item bitmaps give")
+    void itemImagesUpToDate() throws IOException {
+        Path dir = GENERATED.resolveSibling("images");
+        for (Map.Entry<String, BufferedImage> e : ItemTable.images().entrySet()) {
+            Path p = dir.resolve(e.getKey());
+            BufferedImage want = e.getValue();
+            if (Boolean.getBoolean("jxpilot.regenerateDocs")) {
+                Files.createDirectories(p.getParent());
+                ImageIO.write(want, "png", p.toFile());
+                continue;
+            }
+            String what = "docs/guide/images/" + e.getKey();
+            assertTrue(Files.exists(p), what + HOW_TO_FIX);
+            BufferedImage got = ImageIO.read(p.toFile());
+            assertEquals(want.getWidth() + "x" + want.getHeight(), got.getWidth() + "x" + got.getHeight(),
+                what + HOW_TO_FIX);
+            for (int y = 0; y < want.getHeight(); y++) {
+                for (int x = 0; x < want.getWidth(); x++) {
+                    if ((want.getRGB(x, y) | 0xFF000000) != (got.getRGB(x, y) | 0xFF000000)) {
+                        assertEquals(want.getRGB(x, y), got.getRGB(x, y), what + " pixel " + x + "," + y + HOW_TO_FIX);
+                    }
+                }
+            }
+        }
     }
 
     @Test
@@ -121,6 +156,61 @@ class GeneratedDocsTest {
 
         private List<Opt> in(Map<GuideTables.Category, List<Opt>> g, String id) {
             return g.entrySet().stream().filter(e -> e.getKey().id().equals(id)).findFirst().orElseThrow().getValue();
+        }
+    }
+
+    @Nested
+    @DisplayName("item pictures and table")
+    class ItemPictures {
+        private final int red = ItemTable.argb(com.fulcrologic.jxpilot.client.render.Palette.RED);
+        private final int blue = ItemTable.argb(com.fulcrologic.jxpilot.client.render.Palette.BLUE);
+        private final int black = ItemTable.argb(com.fulcrologic.jxpilot.client.render.Palette.BLACK);
+
+        /** Colour of the 1x pixel (x, y): the centre of its SCALE x SCALE block. */
+        private int at(BufferedImage img, int x, int y) {
+            return img.getRGB(x * ItemTable.SCALE + 1, y * ItemTable.SCALE + 1) | 0xFF000000;
+        }
+
+        @Test
+        void symbolAndInPlayPictures() {
+            // itemMinePack.xbm row 7 is 0xffff (a full row), row 0 is empty.
+            BufferedImage sym = ItemTable.symbol(com.fulcrologic.jxpilot.common.Item.MINE);
+            BufferedImage play = ItemTable.inPlay(com.fulcrologic.jxpilot.common.Item.MINE);
+            int s = com.fulcrologic.jxpilot.client.paint.PaintConfig.ITEM_TRIANGLE_SIZE;
+            int c = ItemTable.MARGIN + s;
+            assertAll(
+                () -> assertEquals(48, sym.getWidth(), "the symbol is 16 pixels scaled 3 times"),
+                () -> assertEquals(red, at(sym, 0, 7), "a set bitmap pixel is red"),
+                () -> assertEquals(black, at(sym, 0, 0), "a clear bitmap pixel is black"),
+                () -> assertEquals((2 * c + 1) * 3, play.getWidth(), "the in-play canvas is 2*(margin+S)+1 pixels, scaled"),
+                () -> assertEquals(blue, at(play, c, c + s), "the triangle's apex points down at (c, c+S)"),
+                () -> assertEquals(blue, at(play, c - s, c - s), "the top-left corner is drawn"),
+                () -> assertEquals(blue, at(play, c, c - s), "the top edge is drawn"),
+                () -> assertEquals(red, at(play, c - 8, c - s + 2 + 7), "the symbol's top-left is (c-8, c-S+2)"),
+                () -> assertEquals(black, at(play, 0, 0), "the margin is black"));
+        }
+
+        @Test
+        void namesKeysAndHash() {
+            assertAll(
+                () -> assertEquals("emergency-thrust", ItemTable.stem(com.fulcrologic.jxpilot.common.Item.EMERGENCY_THRUST),
+                    "file stems are lower case with dashes"),
+                () -> assertEquals("Emergency thrust",
+                    ItemTable.displayName(com.fulcrologic.jxpilot.common.Item.EMERGENCY_THRUST), "names read as words"),
+                () -> assertEquals("ECM", ItemTable.displayName(com.fulcrologic.jxpilot.common.Item.ECM),
+                    "ECM stays an acronym"),
+                () -> assertEquals("-", ItemTable.keys(com.fulcrologic.jxpilot.common.Item.ARMOR),
+                    "a passive item has no keys"),
+                () -> assertEquals("ECM: `+bracketleft+` (pass:c[[])",
+                    ItemTable.keys(com.fulcrologic.jxpilot.common.Item.ECM), "keys list function and default keys"),
+                () -> assertEquals(ItemTable.pixelHash(ItemTable.images()), ItemTable.pixelHash(ItemTable.images()),
+                    "the pixel hash is deterministic"),
+                () -> assertEquals(42, ItemTable.images().size(), "two pictures per item"),
+                () -> assertEquals(com.fulcrologic.jxpilot.common.Item.COUNT, ItemTable.C_TEXT.size(),
+                    "every item has its C description"),
+                () -> assertTrue(ItemTable.itemsAdoc().contains("|image:items/fuel.png[Fuel in play]\n"
+                    + "|image:items/fuel-symbol.png[Fuel symbol]\n|[[item-fuel]]*Fuel*\n|Extra energy/fuel\n|-\n"
+                    + "|Not yet (M2)\n"), "a row has both pictures, name, C text, keys and status"));
         }
     }
 

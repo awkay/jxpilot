@@ -213,33 +213,16 @@ All multipliers are in <<05-server-options.adoc#opts-scoring,Scoring options>>.
 NOTE: *Planned* (milestone M2). Items are parsed and drawn, but cannot be picked up or used yet.
 
 Items float around the map (more around item concentrators, the `%` map symbol); fly over one to pick
-it up. These are XPilot's 21 item types, which JXPilot will support:
+it up. On the map an item is a blue triangle with the item's symbol inside it, as in the "In play"
+column; the HUD shows the symbols of the items you carry. These are XPilot's 21 items. The pictures
+are drawn from the same bitmaps the client uses (ported from the XPilot client), and the descriptions
+are the XPilot client's own.
 
-[cols="1,3",options="header"]
-|===
-|Item |Effect in XPilot
-|Fuel |More fuel.
-|Wide-angle shot |Extra shots fired at an angle.
-|Rear shot |Extra shots fired backwards.
-|Afterburner |More thrust for the same fuel.
-|Cloak |Makes you invisible to players without sensors.
-|Sensor |Lets you see cloaked players.
-|Transporter |Steals an item from a nearby player.
-|Tank |An extra fuel tank, which you can detach as a decoy.
-|Mine |Mines to drop.
-|Missile |Smart missiles, heat seekers and torpedoes.
-|ECM |Electronic countermeasures: confuses nearby missiles, mines and players.
-|Laser |A laser weapon.
-|Emergency thrust |Full thrust for a while without the usual limits.
-|Tractor beam |Pulls (or, as a pressor beam, pushes) other objects.
-|Autopilot |Brings your ship to a stop.
-|Emergency shield |A shield that does not drain fuel, for a while.
-|Deflector |Deflects incoming shots.
-|Hyperjump |Teleports you to a random place.
-|Phasing |Lets you fly through walls for a while.
-|Mirror |Reflects lasers.
-|Armor |Absorbs hits.
-|===
+ifdef::env-github[]
+On GitHub, see link:generated/items.adoc[generated/items.adoc] for the table with the pictures.
+endif::[]
+
+include::generated/items.adoc[]
 
 How often each item appears, how many you start with and how many you may carry are server options
 (<<05-server-options.adoc#opts-items,Items and fuel>>).

@@ -13,7 +13,7 @@ VERSION ?= dev
 BUILD := build
 
 SOURCES := $(wildcard *.adoc) $(wildcard generated/*.adoc)
-IMAGES := $(wildcard images/*)
+IMAGES := $(wildcard images/*.png) $(wildcard images/*/*.png)
 
 .PHONY: html generate clean
 
@@ -21,7 +21,7 @@ html: $(BUILD)/index.html
 
 $(BUILD)/index.html: $(SOURCES) $(IMAGES)
 	mkdir -p $(BUILD)/images
-	cp $(IMAGES) $(BUILD)/images/
+	cp -R images/. $(BUILD)/images/
 	$(ASCIIDOCTOR) --failure-level=WARN -a revnumber=$(VERSION) -o $(BUILD)/index.html JXPilotGuide.adoc
 
 generate:

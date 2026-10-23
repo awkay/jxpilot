@@ -1,0 +1,167 @@
+// GENERATED from client/src/main/java/com/fulcrologic/jxpilot/client/paint/ItemBitmaps.java and
+// dist/src/test/java/com/fulcrologic/jxpilot/dist/docs/ItemTable.java. Do not edit:
+// run `make -C docs/guide generate` instead. The build fails when this file or the pictures
+// in docs/guide/images/items/ are stale.
+// pixel-sha256: c276bd5f7d245cc2cad682fc2861ad9dad160656003430334d10159f9e2ff1f8
+ifdef::env-github[]
+:imagesdir: ../images
+endif::[]
+
+[cols="2,1,3,7,3,2",options="header"]
+|===
+|In play |Symbol |Item |What it does (from the XPilot client) |Keys |In JXPilot
+
+|image:items/fuel.png[Fuel in play]
+|image:items/fuel-symbol.png[Fuel symbol]
+|[[item-fuel]]*Fuel*
+|Extra energy/fuel
+|-
+|Not yet (M2)
+
+|image:items/wideangle.png[Wideangle in play]
+|image:items/wideangle-symbol.png[Wideangle symbol]
+|[[item-wideangle]]*Wideangle*
+|Extra front cannons
+|-
+|Not yet (M2)
+
+|image:items/rearshot.png[Rearshot in play]
+|image:items/rearshot-symbol.png[Rearshot symbol]
+|[[item-rearshot]]*Rearshot*
+|Extra rear cannon
+|-
+|Not yet (M2)
+
+|image:items/afterburner.png[Afterburner in play]
+|image:items/afterburner-symbol.png[Afterburner symbol]
+|[[item-afterburner]]*Afterburner*
+|Afterburner; makes your engines more powerful
+|-
+|Not yet (M2)
+
+|image:items/cloak.png[Cloak in play]
+|image:items/cloak-symbol.png[Cloak symbol]
+|[[item-cloak]]*Cloak*
+|Cloaking device; makes you almost invisible, both on radar and on screen
+|Cloak: `+Delete+`, `+BackSpace+` (pass:c[Backspace])
+|Not yet (M2)
+
+|image:items/sensor.png[Sensor in play]
+|image:items/sensor-symbol.png[Sensor symbol]
+|[[item-sensor]]*Sensor*
+|Sensor; enables you to see cloaked opponents more easily
+|-
+|Not yet (M2)
+
+|image:items/transporter.png[Transporter in play]
+|image:items/transporter-symbol.png[Transporter symbol]
+|[[item-transporter]]*Transporter*
+|Transporter; enables you to steal equipment from other players
+|Transporter: `+t+`
+|Not yet (M2)
+
+|image:items/tank.png[Tank in play]
+|image:items/tank-symbol.png[Tank symbol]
+|[[item-tank]]*Tank*
+|Tank; makes refueling quicker, increases maximum fuel capacity and can be jettisoned to confuse enemies
+|Tank detach: `+r+` +
+Tank next: `+e+` +
+Tank prev: `+w+`
+|Not yet (M2)
+
+|image:items/mine.png[Mine in play]
+|image:items/mine-symbol.png[Mine symbol]
+|[[item-mine]]*Mine*
+|Mine; can be dropped as a bomb or as a stationary mine
+|Drop mine: `+Tab+` +
+Detach mine: `+bracketright+` (pass:c[\]])
+|Not yet (M2)
+
+|image:items/missile.png[Missile in play]
+|image:items/missile-symbol.png[Missile symbol]
+|[[item-missile]]*Missile*
+|Rocket; can be utilized as smart missile, heatseeking missile, nuclear missile or just a plain unguided missile (torpedo)
+|Fire missile: `+backslash+` (pass:c[Backslash]) +
+Fire heat: `+semicolon+` (pass:c[;]) +
+Fire torpedo: `+quoteright+` (pass:c[' apostrophe])
+|Not yet (M2)
+
+|image:items/ecm.png[ECM in play]
+|image:items/ecm-symbol.png[ECM symbol]
+|[[item-ecm]]*ECM*
+|ECM (Electronic Counter Measures); can be used to disturb electronic equipment, for instance can it be used to confuse smart missiles and reprogram robots to seek certain players
+|ECM: `+bracketleft+` (pass:c[[])
+|Not yet (M2)
+
+|image:items/laser.png[Laser in play]
+|image:items/laser-symbol.png[Laser symbol]
+|[[item-laser]]*Laser*
+|Laser; limited range laser beam, costs a lot of fuel, having more laser items increases the range of the laser, they can be irrepairably damaged by ECMs
+|Fire laser: `+slash+` (pass:c[/])
+|Not yet (M2)
+
+|image:items/emergency-thrust.png[Emergency thrust in play]
+|image:items/emergency-thrust-symbol.png[Emergency thrust symbol]
+|[[item-emergency-thrust]]*Emergency thrust*
+|Emergency Thrust; gives emergency thrust capabilities for a limited period
+|Emergency thrust: `+j+`
+|Not yet (M2)
+
+|image:items/tractor-beam.png[Tractor beam in play]
+|image:items/tractor-beam-symbol.png[Tractor beam symbol]
+|[[item-tractor-beam]]*Tractor beam*
+|Tractor Beam; gives mutual attractive force to currently locked on ship, this means the heavier your ship, the less likely you will move when being tractored or using a tractor
+|Tractor beam: `+comma+` (pass:c[,]) +
+Pressor beam: `+period+` (pass:c[.])
+|Not yet (M2)
+
+|image:items/autopilot.png[Autopilot in play]
+|image:items/autopilot-symbol.png[Autopilot symbol]
+|[[item-autopilot]]*Autopilot*
+|Autopilot; when on, the ship will turn and thrust against the direction of travel
+|Toggle autopilot: `+h+`
+|Not yet (M2)
+
+|image:items/emergency-shield.png[Emergency shield in play]
+|image:items/emergency-shield-symbol.png[Emergency shield symbol]
+|[[item-emergency-shield]]*Emergency shield*
+|EmergencyShield; gives emergency shield capabilities for a limited period
+|Emergency shield: `+g+`
+|Not yet (M2)
+
+|image:items/deflector.png[Deflector in play]
+|image:items/deflector-symbol.png[Deflector symbol]
+|[[item-deflector]]*Deflector*
+|Deflector; pushes hostile objects away from your ship
+|Deflector: `+o+`
+|Not yet (M2)
+
+|image:items/hyperjump.png[Hyperjump in play]
+|image:items/hyperjump-symbol.png[Hyperjump symbol]
+|[[item-hyperjump]]*Hyperjump*
+|Hyperjump; enables you to teleport to a random map location
+|Hyperjump: `+q+`
+|Not yet (M2)
+
+|image:items/phasing.png[Phasing in play]
+|image:items/phasing-symbol.png[Phasing symbol]
+|[[item-phasing]]*Phasing*
+|Phasing Device; lets you fly through anything for a limited period
+|Phasing: `+p+`
+|Not yet (M2)
+
+|image:items/mirror.png[Mirror in play]
+|image:items/mirror-symbol.png[Mirror symbol]
+|[[item-mirror]]*Mirror*
+|Mirror; reflects laser beams
+|-
+|Not yet (M2)
+
+|image:items/armor.png[Armor in play]
+|image:items/armor-symbol.png[Armor symbol]
+|[[item-armor]]*Armor*
+|Armor; absorbs shots in the absence of shields
+|-
+|Not yet (M2)
+
+|===
