@@ -85,6 +85,13 @@ class ClientWorldEdgeTest {
             double delay = w.interpolationDelayTicks();
             Msg.Welcome zero = new Msg.Welcome();
             w.configure(f.map, f.options, zero);
+            float zeroFraction = w.frameFraction();
+            double zeroInterval = w.snapshotIntervalTicks();
+            double zeroDelay = w.interpolationDelayTicks();
+            double zeroClock = w.clock().simHz();
+            Msg.Welcome fpsOnly = new Msg.Welcome();
+            fpsOnly.gameFps = 12.5f;
+            w.configure(f.map, f.options, fpsOnly);
             assertAll(
                 () -> assertEquals(700.0, ww, "width from the map"),
                 () -> assertEquals(350.0, wh, "height from the map"),
@@ -92,9 +99,12 @@ class ClientWorldEdgeTest {
                 () -> assertEquals(0.25f, ff, "gameFps / simHz"),
                 () -> assertEquals(2.0, interval, "simHz / snapshotHz"),
                 () -> assertEquals(2.0 + 0.02 * 60, delay, 1e-12, "one interval plus 20 ms of ticks"),
-                () -> assertEquals(0.25f, w.frameFraction(), "zero gameFps falls back to framesPerSecond, simHz to 60"),
-                () -> assertEquals(1.0, w.snapshotIntervalTicks(), "zero snapshotHz falls back to simHz (snapshot divisor 1)"),
-                () -> assertEquals(60.0, w.clock().simHz(), "the clock runs at simHz"),
+                () -> assertEquals(1f, zeroFraction,
+                    "zero gameFps falls back to framesPerSecond (15), simHz to it: one tick per C frame"),
+                () -> assertEquals(1.0, zeroInterval, "zero snapshotHz falls back to simHz (snapshot divisor 1)"),
+                () -> assertEquals(1.0 + 0.02 * 15, zeroDelay, 1e-12, "delay: one interval plus 20 ms at 15 Hz"),
+                () -> assertEquals(15.0, zeroClock, "the clock runs at simHz"),
+                () -> assertEquals(12.5f / 13, w.frameFraction(), "simHz 0 with gameFps 12.5: Math.round gives 13 Hz"),
                 () -> assertFalse(new WorldFixture(false).world.wraps(), "non-wrapping map"));
         }
 

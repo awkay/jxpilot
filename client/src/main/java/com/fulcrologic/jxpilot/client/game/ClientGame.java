@@ -42,6 +42,8 @@ import java.nio.ByteBuffer;
  * per rendered frame. Pure: no GL, no I/O; allocation free in steady state.
  */
 public final class ClientGame implements ConnectionListener {
+    /** C's default framesPerSecond: the rate assumed when WELCOME gives none. */
+    public static final int DEFAULT_FPS = 14;
 
     private final Players players = new Players();
     private final ClientWorld world;
@@ -63,9 +65,10 @@ public final class ClientGame implements ConnectionListener {
     private ConnectionState state = ConnectionState.IDLE;
     private WorldMap map;
     private Options options;
-    private int simHz = 60;
-    private int snapshotHz = 30;
-    private float gameFps = 14;
+    /** Until WELCOME: the default framesPerSecond, one tick per C frame, snapshot divisor 1. */
+    private int simHz = DEFAULT_FPS;
+    private int snapshotHz = DEFAULT_FPS / Protocol.DEFAULT_SNAPSHOT_DIVISOR;
+    private float gameFps = DEFAULT_FPS;
     private int welcomeFlags;
     private final CharBuf serverName = new CharBuf(64);
     private int playerId = Protocol.NO_ID;
@@ -103,12 +106,16 @@ public final class ClientGame implements ConnectionListener {
         }
     }
 
-    /** BEHAVIOR: records rates, game fps, flags and the server name. */
+    /**
+     * BEHAVIOR: records rates, game fps, flags and the server name. A missing gameFps is
+     * {@link #DEFAULT_FPS}; a missing simHz is the (rounded) game fps, as the server ticks once per C frame;
+     * a missing snapshotHz is simHz / {@link Protocol#DEFAULT_SNAPSHOT_DIVISOR}.
+     */
     @Override
     public void onWelcome(Msg.Welcome w) {
-        simHz = w.simHz > 0 ? w.simHz : 60;
+        gameFps = w.gameFps > 0 ? w.gameFps : DEFAULT_FPS;
+        simHz = w.simHz > 0 ? w.simHz : Math.max(1, Math.round(gameFps));
         snapshotHz = w.snapshotHz > 0 ? w.snapshotHz : simHz / Protocol.DEFAULT_SNAPSHOT_DIVISOR;
-        gameFps = w.gameFps > 0 ? w.gameFps : 14;
         welcomeFlags = w.flags;
         serverName.clear().append(w.serverName);
     }

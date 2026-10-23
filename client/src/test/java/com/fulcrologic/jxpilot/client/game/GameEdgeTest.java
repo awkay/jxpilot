@@ -393,10 +393,19 @@ class GameEdgeTest {
             Msg.Welcome w2 = new Msg.Welcome();
             w2.simHz = 50;
             plain.onWelcome(w2);
+            ClientGame fpsOnly = new ClientGame();
+            Msg.Welcome w3 = new Msg.Welcome();
+            w3.gameFps = 12.5f;
+            fpsOnly.onWelcome(w3);
+            ClientGame fresh = new ClientGame();
             assertAll(
-                () -> assertEquals(60, g.simHz(), "simHz 0 falls back to 60"),
-                () -> assertEquals(60, g.snapshotHz(), "snapshotHz 0 falls back to simHz (snapshot divisor 1)"),
+                () -> assertEquals(14, g.simHz(), "simHz 0 falls back to the game fps (one tick per C frame)"),
+                () -> assertEquals(14, g.snapshotHz(), "snapshotHz 0 falls back to simHz (snapshot divisor 1)"),
                 () -> assertEquals(14f, g.gameFps(), "gameFps 0 falls back to 14"),
+                () -> assertEquals(13, fpsOnly.simHz(), "simHz 0 with gameFps 12.5: Math.round gives 13"),
+                () -> assertEquals(12.5f, fpsOnly.gameFps(), "gameFps kept"),
+                () -> assertEquals(List.of(14, 14, 14f), List.of(fresh.simHz(), fresh.snapshotHz(), fresh.gameFps()),
+                    "before WELCOME: 14 Hz ticks, every tick a snapshot, 14 fps"),
                 () -> assertEquals(" TM   SCORE  LIFE NAME", g.scoreboard().heading().toString(),
                     "team play and limited lives reach the scoreboard"),
                 () -> assertEquals(1, g.snapshotCount(), "snapshot counted"),

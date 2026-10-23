@@ -140,9 +140,10 @@ public final class ClientWorld {
     private double worldW = 65536;
     private double worldH = 65536;
     private boolean wrap;
-    private float frameFraction = 14f / 60f;
+    // until configure: one sim tick per C frame at the default framesPerSecond, snapshot divisor 1
+    private float frameFraction = 1f;
     private double snapshotInterval = Protocol.DEFAULT_SNAPSHOT_DIVISOR;
-    private double delayTicks = Protocol.DEFAULT_SNAPSHOT_DIVISOR + JITTER_MARGIN_SECONDS * 60;
+    private double delayTicks = Protocol.DEFAULT_SNAPSHOT_DIVISOR + JITTER_MARGIN_SECONDS * ClientGame.DEFAULT_FPS;
     private double maxExtrapolateTicks = 2.0 * Protocol.DEFAULT_SNAPSHOT_DIVISOR;
     private int defaultEngineX = ShipShape.defaultShip().engineX;
     private int defaultEngineY = ShipShape.defaultShip().engineY;
@@ -262,6 +263,9 @@ public final class ClientWorld {
      * BEHAVIOR: world size and wrap from the map; frameFraction = gameFps / simHz; snapshot interval =
      * simHz / snapshotHz ticks; delay = interval + {@link #JITTER_MARGIN_SECONDS} * simHz ticks;
      * extrapolation cap = 2 intervals; the clock runs at simHz.
+     * BEHAVIOR: a missing gameFps is the map's framesPerSecond; a missing simHz is the rounded gameFps (the
+     * server ticks once per C frame, so frameFraction is then 1); a missing snapshotHz is
+     * simHz / {@link Protocol#DEFAULT_SNAPSHOT_DIVISOR}.
      * BEHAVIOR: cannons alive, fuel stations full, targets intact, no base owners; clears all state.
      */
     public void configure(WorldMap map, Options opts, Msg.Welcome w) {
@@ -269,9 +273,9 @@ public final class ClientWorld {
         worldH = map.pixelHeight();
         wrap = map.edgeWrap();
         reader.setWorld(worldW, worldH, wrap);
-        int simHz = w.simHz > 0 ? w.simHz : 60;
-        int snapHz = w.snapshotHz > 0 ? w.snapshotHz : simHz / Protocol.DEFAULT_SNAPSHOT_DIVISOR;
         float gameFps = w.gameFps > 0 ? w.gameFps : opts.framesPerSecond();
+        int simHz = w.simHz > 0 ? w.simHz : Math.max(1, Math.round(gameFps));
+        int snapHz = w.snapshotHz > 0 ? w.snapshotHz : simHz / Protocol.DEFAULT_SNAPSHOT_DIVISOR;
         frameFraction = gameFps / simHz;
         snapshotInterval = (double) simHz / snapHz;
         delayTicks = snapshotInterval + JITTER_MARGIN_SECONDS * simHz;
