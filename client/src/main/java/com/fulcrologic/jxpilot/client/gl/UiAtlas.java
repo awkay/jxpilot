@@ -23,8 +23,8 @@
  */
 package com.fulcrologic.jxpilot.client.gl;
 
-import com.fulcrologic.jxpilot.client.render.Font;
 import com.fulcrologic.jxpilot.client.map.RadarImage;
+import com.fulcrologic.jxpilot.client.render.Font;
 import org.lwjgl.system.MemoryUtil;
 
 import java.io.IOException;
@@ -35,8 +35,10 @@ import static org.lwjgl.opengl.GL33C.*;
 
 /**
  * The single RGBA texture all UI drawing samples: a 4x4 white block at the origin (solid shapes
- * use UV (0,0), which with clamping samples only that block),
- * the baked font (left half), and the radar picture (from x = {@link #RADAR_X}).
+ * use UV (0,0), which with clamping samples only that block), the baked font (left half, rebaked
+ * when the pixel ratio changes) and the radar picture (from x = {@link #RADAR_X}).
+ * Sampling is nearest-neighbour: glyph quads are pixel-snapped at their baked size, and the radar is
+ * magnified by whole pixel ratios, so it stays crisp and never bleeds into neighbouring texels.
  */
 public final class UiAtlas {
     public static final int SIZE = 1024;
@@ -46,34 +48,49 @@ public final class UiAtlas {
     public static final int RADAR_X = 512;
 
     private final int texture;
-    private final Font font;
+    private Font font;
+    private float fontPixels;
     private int radarHeight;
 
     public UiAtlas(float fontPixels) throws IOException {
-        ByteBuffer alpha = MemoryUtil.memCalloc(FONT_W * FONT_H);
-        ByteBuffer rgba = MemoryUtil.memCalloc(SIZE * SIZE * 4);
+        texture = glGenTextures();
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        ByteBuffer zero = MemoryUtil.memCalloc(SIZE * SIZE * 4);
         try {
-            font = FontBaker.bake(FontBaker.DEFAULT_FONT, fontPixels, alpha, FONT_W, FONT_H, WHITE_BLOCK, SIZE, SIZE);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, SIZE, SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, zero);
+        } finally {
+            MemoryUtil.memFree(zero);
+        }
+        bakeFont(fontPixels);
+    }
+
+    /** (Re)bake the font at {@code pixels} framebuffer pixels into the left half, with the white block. */
+    public void bakeFont(float pixels) throws IOException {
+        ByteBuffer alpha = MemoryUtil.memCalloc(FONT_W * FONT_H);
+        ByteBuffer rgba = MemoryUtil.memCalloc(FONT_W * SIZE * 4);
+        try {
+            font = FontBaker.bake(FontBaker.DEFAULT_FONT, pixels, alpha, FONT_W, FONT_H, WHITE_BLOCK, SIZE, SIZE);
             for (int y = 0; y < FONT_H; y++) {
                 for (int x = 0; x < FONT_W; x++) {
-                    int o = ((y + WHITE_BLOCK) * SIZE + x) * 4;
+                    int o = ((y + WHITE_BLOCK) * FONT_W + x) * 4;
                     rgba.put(o, (byte) 255).put(o + 1, (byte) 255).put(o + 2, (byte) 255)
                         .put(o + 3, alpha.get(y * FONT_W + x));
                 }
             }
             for (int y = 0; y < WHITE_BLOCK; y++) {
                 for (int x = 0; x < WHITE_BLOCK; x++) {
-                    rgba.putInt((y * SIZE + x) * 4, -1);
+                    rgba.putInt((y * FONT_W + x) * 4, -1);
                 }
             }
-            texture = glGenTextures();
             glBindTexture(GL_TEXTURE_2D, texture);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, SIZE, SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, FONT_W, SIZE, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+            fontPixels = pixels;
         } finally {
             MemoryUtil.memFree(alpha);
             MemoryUtil.memFree(rgba);
@@ -83,6 +100,9 @@ public final class UiAtlas {
     public int texture() { return texture; }
 
     public Font font() { return font; }
+
+    /** Size the current font was baked at, in framebuffer pixels. */
+    public float fontPixels() { return fontPixels; }
 
     /** Upload radar pixels (rows top-first, {@link RadarImage#WIDTH} wide); taller pictures are cut. */
     public void setRadar(int[] pixels, int height) {

@@ -33,13 +33,15 @@ package com.fulcrologic.jxpilot.client.render;
  * <p>
  * On an edge-wrapping world the visible area can span the seams. {@link #update()} computes the
  * world-copy offsets (multiples of the world size) whose copy intersects the view; the map is drawn
- * once per offset. A view no larger than the world needs at most 2 copies per axis (4 in all);
- * when zoomed out further, up to {@link #MAX_COPIES_PER_AXIS} per axis are kept, nearest the view
- * centre. A non-wrapping world always has the single offset (0,0).
+ * once per offset. A view spanning {@code v} world widths needs at most {@code ceil(v) + 1} copies
+ * per axis; the offset arrays grow to fit (allocation happens only when the copy count first rises,
+ * e.g. on zooming out). Only a pathological view of more than {@link #MAX_COPIES_PER_AXIS} copies
+ * per axis (a tiny map zoomed far out) is cut to that many, nearest the view centre. A non-wrapping
+ * world always has the single offset (0,0).
  */
 public final class Camera {
-    /** Upper bound on world copies per axis. */
-    public static final int MAX_COPIES_PER_AXIS = 3;
+    /** Safety bound on world copies per axis. */
+    public static final int MAX_COPIES_PER_AXIS = 64;
 
     private double worldW = 1;
     private double worldH = 1;
@@ -51,8 +53,8 @@ public final class Camera {
     private int viewW = 1;
     private int viewH = 1;
 
-    private final double[] offX = new double[MAX_COPIES_PER_AXIS * MAX_COPIES_PER_AXIS];
-    private final double[] offY = new double[MAX_COPIES_PER_AXIS * MAX_COPIES_PER_AXIS];
+    private double[] offX = new double[9];
+    private double[] offY = new double[9];
     private int offN;
 
     /** Set the world size in pixels and whether it wraps. */
@@ -123,6 +125,11 @@ public final class Camera {
         int x1 = copyLast(cx, hw, worldW, x0);
         int y0 = copyFirst(cy, hh, worldH);
         int y1 = copyLast(cy, hh, worldH, y0);
+        int n = (x1 - x0 + 1) * (y1 - y0 + 1);
+        if (n > offX.length) {
+            offX = new double[n];
+            offY = new double[n];
+        }
         offN = 0;
         for (int ky = y0; ky <= y1; ky++) {
             for (int kx = x0; kx <= x1; kx++) {

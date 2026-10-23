@@ -51,6 +51,8 @@ public final class FrameStats {
     private final int[] histogram = new int[BINS + 1];
     private long runSum;
     private long runCpuSum;
+    private long runGpuSum;
+    private long gpuSamples;
     private long runMax;
 
     /**
@@ -77,6 +79,39 @@ public final class FrameStats {
         runCpuSum += Math.max(0, cpuNanos);
         runMax = Math.max(runMax, d);
         histogram[(int) Math.min(BINS, d / BIN_NANOS)]++;
+    }
+
+    /**
+     * Forget everything recorded so far (e.g. at the end of a warm-up).
+     * <p>
+     * BEHAVIOR: afterwards every statistic is as for a new instance.
+     */
+    public void reset() {
+        java.util.Arrays.fill(histogram, 0); // window slots need no clearing: only slots below filled are read
+        next = 0;
+        filled = 0;
+        sum = 0;
+        total = 0;
+        runSum = 0;
+        runCpuSum = 0;
+        runGpuSum = 0;
+        gpuSamples = 0;
+        runMax = 0;
+    }
+
+    /**
+     * Record the GPU time of a frame (from a timer query, possibly a few frames late).
+     * <p>
+     * BEHAVIOR: negative values count as 0; feeds {@link #runGpuMeanMillis} only.
+     */
+    public void recordGpu(long gpuNanos) {
+        runGpuSum += Math.max(0, gpuNanos);
+        gpuSamples++;
+    }
+
+    /** Mean GPU time per sampled frame, milliseconds (0 with no samples). */
+    public double runGpuMeanMillis() {
+        return gpuSamples == 0 ? 0 : runGpuSum / 1e6 / gpuSamples;
     }
 
     /** Frames in the window. */

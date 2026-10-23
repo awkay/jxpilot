@@ -39,14 +39,43 @@
   <build>
     <plugins>
       <plugin>
-        <!-- mvn -pl client exec:exec, optionally with -Dclient.args="(viewer options)" -->
+        <!-- mvn -pl client exec:exec, optionally with -Dclient.args="(viewer options)".
+             -Xms64m / SoftMaxHeapSize: the render loop allocates nothing, so a small, pre-sized heap
+             keeps ZGC idle and the footprint low. -->
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
         <configuration>
           <executable>java</executable>
           <workingDirectory>${project.basedir}</workingDirectory>
-          <commandlineArgs>${jvm.platform.args} --enable-native-access=ALL-UNNAMED -XX:+UseZGC -classpath %classpath com.fulcrologic.jxpilot.client.ClientMain ${client.args}</commandlineArgs>
+          <commandlineArgs>${jvm.platform.args} --enable-native-access=ALL-UNNAMED -XX:+UseZGC -Xms64m -XX:SoftMaxHeapSize=128m -classpath %classpath com.fulcrologic.jxpilot.client.ClientMain ${client.args}</commandlineArgs>
         </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <excludes>
+            <exclude>**/AllocationTest.java</exclude>
+          </excludes>
+        </configuration>
+        <executions>
+          <!-- The allocation test runs in its own JVM with escape analysis off, so a passing result
+               depends neither on the JIT scalar-replacing objects nor on other tests' JIT state. -->
+          <execution>
+            <id>allocation-tests</id>
+            <phase>test</phase>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <excludes combine.self="override"/>
+              <includes>
+                <include>**/AllocationTest.java</include>
+              </includes>
+              <argLine>-XX:-DoEscapeAnalysis</argLine>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
       <plugin>
         <groupId>org.pitest</groupId>

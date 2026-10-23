@@ -24,11 +24,13 @@
 package com.fulcrologic.jxpilot.client;
 
 import com.fulcrologic.jxpilot.client.render.Font;
+import com.fulcrologic.jxpilot.client.render.VertexBatch;
 import com.fulcrologic.jxpilot.common.config.ConfigParser;
 import com.fulcrologic.jxpilot.common.config.OptionOrigin;
 import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
 
+import java.nio.ByteBuffer;
 import java.nio.file.Path;
 
 /** Shared test fixtures: tiny maps from text rows and a synthetic font. */
@@ -53,6 +55,13 @@ public final class Fixtures {
         Options o = new Options();
         ConfigParser.parse(sb.toString(), "fixture", OptionOrigin.MAP, o);
         return WorldMap.fromOptions(o);
+    }
+
+    /** A fixed batch with room for {@code n} triangle vertices, {@code n} segments and {@code n} points. */
+    public static VertexBatch batch(int n, int commands, VertexBatch.Sink sink) {
+        return VertexBatch.fixed(ByteBuffer.allocateDirect(n * VertexBatch.STRIDE),
+            ByteBuffer.allocateDirect(n * VertexBatch.SEGMENT_STRIDE), ByteBuffer.allocateDirect(n * VertexBatch.POINT_STRIDE),
+            commands, sink);
     }
 
     public static WorldMap map(boolean wrap, String... rows) {

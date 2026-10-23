@@ -165,4 +165,50 @@ class FrameStatsTest {
             () -> assertEquals(100.0, s.p99Millis(), 1e-9, "just under the limit is the last regular bin"),
             () -> assertEquals(123.0, t.p99Millis(), 1e-9, "overflow reports the run max"));
     }
+
+    @Test
+    void resetForgetsEverything() {
+        FrameStats s = new FrameStats();
+        s.record(50_000_000, 7_000_000);
+        for (int i = 0; i < 10; i++) {
+            s.record(1_000_000, 0); // short frames that would set the p99 if the histogram kept them
+        }
+        s.recordGpu(3_000_000);
+        s.reset();
+        s.record(10_000_000, 1_000_000);
+        assertAll(
+            () -> assertEquals(1, s.samples(), "one sample after the reset"),
+            () -> assertEquals(1, s.totalFrames(), "one frame in total"),
+            () -> assertEquals(10.0, s.maxMillis(), 1e-9, "window max forgot the 50 ms frame"),
+            () -> assertEquals(10.0, s.averageMillis(), 1e-9, "window average too"),
+            () -> assertEquals(100.0, s.fps(), 1e-9, "fps from the new frame only"),
+            () -> assertEquals(10.0, s.runMeanMillis(), 1e-9, "run mean too"),
+            () -> assertEquals(1.0, s.runCpuMeanMillis(), 1e-9, "cpu mean too"),
+            () -> assertEquals(10.0, s.runMaxMillis(), 1e-9, "run max too"),
+            () -> assertEquals(10.01, s.p99Millis(), 1e-9, "the histogram too"),
+            () -> assertEquals(0.0, s.runGpuMeanMillis(), "and the gpu samples"));
+    }
+
+    @Test
+    void resetEmptiesTheWindowSlotsSoTheMaxDoesNotSeeOldFrames() {
+        FrameStats s = new FrameStats();
+        s.record(10_000_000, 0);
+        s.record(90_000_000, 0);
+        s.reset();
+        s.record(5_000_000, 0);
+        s.record(5_000_000, 0);
+        assertEquals(5.0, s.maxMillis(), 1e-9, "slot 1 held 90 ms before the reset");
+    }
+
+    @Test
+    void gpuMeanAveragesTheSamplesAndClampsNegatives() {
+        FrameStats s = new FrameStats();
+        s.recordGpu(2_000_000);
+        s.recordGpu(-1_000_000);
+        s.recordGpu(4_000_000);
+        assertAll(
+            () -> assertEquals(2.0, s.runGpuMeanMillis(), 1e-9, "(2 + 0 + 4) / 3"),
+            () -> assertEquals(0.0, new FrameStats().runGpuMeanMillis(), "no samples, 0"),
+            () -> assertEquals(0, s.totalFrames(), "gpu samples are not frames"));
+    }
 }

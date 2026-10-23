@@ -54,8 +54,10 @@ import static org.lwjgl.opengl.GL33C.*;
 public final class MapViewerApp {
     /** Logical font size in pixels. */
     static final float FONT_PX = 13;
-    /** Dynamic batch size: 64k vertices. */
+    /** Dynamic batch capacity per stream: triangle vertices, segments, points. */
     static final int DYNAMIC_VERTICES = 65536;
+    static final int DYNAMIC_SEGMENTS = 32768;
+    static final int DYNAMIC_POINTS = 16384;
     /** Game frames per second used to pace the wormhole/concentrator animation (C default). */
     static final double ANIMATION_FPS = 14;
 
@@ -69,9 +71,12 @@ public final class MapViewerApp {
 
     private Window window;
     private GlRenderer gl;
+    private GpuTimer gpuTimer;
     private UiAtlas atlas;
     private TextWriter text;
-    private ByteBuffer dynMem;
+    private ByteBuffer dynTri;
+    private ByteBuffer dynSeg;
+    private ByteBuffer dynPt;
     private VertexBatch dyn;
     private ViewerOverlay overlay;
     private ViewerOverlay.RadarTexture radarTex;
@@ -81,9 +86,8 @@ public final class MapViewerApp {
     private WorldMap map;
     private String mapLabel = "";
     private MapSymbols symbols;
-    private GlRenderer.Mesh outlineWalls;
-    private GlRenderer.Mesh filledWalls;
-    private GlRenderer.Mesh features;
+    private GlRenderer.Mesh outlineMesh;
+    private GlRenderer.Mesh filledMesh;
     private boolean filled;
     private boolean showRadar = true;
     private boolean nextMapRequested;
@@ -98,10 +102,14 @@ public final class MapViewerApp {
         window = new Window("JXPilot map viewer", opts.width(), opts.height(), true, opts.vsync());
         try {
             atlas = new UiAtlas(FONT_PX * (float) window.pixelRatio());
-            gl = new GlRenderer(DYNAMIC_VERTICES * VertexBatch.STRIDE, atlas.texture());
+            gl = new GlRenderer(atlas.texture());
+            gpuTimer = opts.gpuTimer() ? new GpuTimer() : null;
+            gl.checkCapacity(DYNAMIC_SEGMENTS, DYNAMIC_POINTS);
             text = new TextWriter(atlas.font());
-            dynMem = MemoryUtil.memAlloc(DYNAMIC_VERTICES * VertexBatch.STRIDE);
-            dyn = VertexBatch.fixed(dynMem, 256, gl);
+            dynTri = MemoryUtil.memAlloc(DYNAMIC_VERTICES * VertexBatch.STRIDE);
+            dynSeg = MemoryUtil.memAlloc(DYNAMIC_SEGMENTS * VertexBatch.SEGMENT_STRIDE);
+            dynPt = MemoryUtil.memAlloc(DYNAMIC_POINTS * VertexBatch.POINT_STRIDE);
+            dyn = VertexBatch.fixed(dynTri, dynSeg, dynPt, 256, gl);
             overlay = new ViewerOverlay(palette);
             Path file = Path.of(opts.viewMap()).toAbsolutePath().normalize();
             catalog = MapCatalog.scan(file.getParent());
@@ -116,15 +124,10 @@ public final class MapViewerApp {
 
     private void loadMap(Path file, boolean keepCentre) throws IOException {
         WorldMap m = WorldMap.load(file);
-        gl.delete(outlineWalls);
-        gl.delete(filledWalls);
-        gl.delete(features);
-        VertexBatch ow = StaticMap.outlineWalls(m, palette);
-        VertexBatch fw = StaticMap.filledWalls(m, palette);
-        VertexBatch fe = StaticMap.features(m, palette, true);
-        outlineWalls = gl.upload(ow);
-        filledWalls = gl.upload(fw);
-        features = gl.upload(fe);
+        gl.delete(outlineMesh);
+        gl.delete(filledMesh);
+        outlineMesh = gl.upload(StaticMap.build(m, palette, false, true));
+        filledMesh = gl.upload(StaticMap.build(m, palette, true, true));
         int rh = RadarImage.height(m);
         atlas.setRadar(RadarImage.build(m, palette, true), rh);
         float u0 = (float) UiAtlas.RADAR_X / UiAtlas.SIZE;
@@ -143,8 +146,8 @@ public final class MapViewerApp {
         }
         mapLabel = file.getFileName() + "  " + m.width() + "x" + m.height()
             + (m.edgeWrap() ? "  wrap" : "") + (m.name() != null ? "  \"" + m.name() + "\"" : "");
-        System.out.println("map " + mapLabel + ": wall verts " + outlineWalls.vertexCount()
-            + ", filled verts " + filledWalls.vertexCount() + ", feature verts " + features.vertexCount());
+        System.out.println("map " + mapLabel + ": outline mesh " + outlineMesh.describe()
+            + "; filled mesh " + filledMesh.describe());
     }
 
     private void installInput() {
@@ -189,7 +192,11 @@ public final class MapViewerApp {
             if (frame > 0) {
                 stats.record(dtNanos, prevCpu);
             }
-            if (shot && frame == opts.frames() / 2) {
+            if (shot && frame == opts.measureFrom()) {
+                stats.reset(); // warm-up frames (class loading, JIT) are not reported
+                if (gpuTimer != null) {
+                    gpuTimer.discardPending();
+                }
                 allocMark = mx.getCurrentThreadAllocatedBytes();
             }
             glfwPollEvents();
@@ -200,22 +207,40 @@ public final class MapViewerApp {
             }
             ctl.update(dtNanos / 1e9);
             window.refreshSize();
+            rebakeFontIfNeeded();
+            if (gpuTimer != null) {
+                gpuTimer.begin(stats);
+            }
             renderFrame(now - start);
+            if (gpuTimer != null) {
+                gpuTimer.end();
+            }
             frame++;
             if (shot && frame >= opts.frames()) {
                 long alloc = mx.getCurrentThreadAllocatedBytes() - allocMark;
                 Path out = Path.of(opts.screenshot());
                 Screenshot.save(out, window.framebufferWidth(), window.framebufferHeight());
                 System.out.printf("screenshot %s (%dx%d) after %d frames, %d world copies, %d draw calls/frame%n"
-                        + "  frame: mean %.3f ms (%.0f fps), p99 %.2f ms, max %.2f ms; cpu before swap: mean %.3f ms%n"
+                        + "  frames %d..%d: mean %.3f ms (%.0f fps), p99 %.2f ms, max %.2f ms; cpu before swap: mean %.3f ms;"
+                        + " gpu: mean %.3f ms%n"
                         + "  render thread allocated %d bytes over frames %d..%d%n",
                     out, window.framebufferWidth(), window.framebufferHeight(), frame, cam.offsetCount(),
-                    gl.drawCalls(), stats.runMeanMillis(), 1000 / stats.runMeanMillis(), stats.p99Millis(),
-                    stats.runMaxMillis(), stats.runCpuMeanMillis(), alloc, opts.frames() / 2, frame);
+                    gl.drawCalls(), opts.measureFrom(), frame, stats.runMeanMillis(), 1000 / stats.runMeanMillis(),
+                    stats.p99Millis(), stats.runMaxMillis(), stats.runCpuMeanMillis(), stats.runGpuMeanMillis(),
+                    alloc, opts.measureFrom(), frame);
                 window.close();
             }
             prevCpu = System.nanoTime() - now;
             window.swap();
+        }
+    }
+
+    /** The window moved to a display with another pixel ratio; bake the font for it. */
+    private void rebakeFontIfNeeded() throws IOException {
+        float px = FONT_PX * (float) window.pixelRatio();
+        if (px != atlas.fontPixels()) {
+            atlas.bakeFont(px);
+            text = new TextWriter(atlas.font());
         }
     }
 
@@ -231,12 +256,12 @@ public final class MapViewerApp {
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        GlRenderer.Mesh walls = filled ? filledWalls : outlineWalls;
+        gl.setView(window.framebufferWidth(), window.framebufferHeight(), window.pixelRatio());
+        GlRenderer.Mesh mesh = filled ? filledMesh : outlineMesh;
         for (int k = 0; k < cam.offsetCount(); k++) {
             cam.worldToNdc(k, xf);
             gl.setTransform(xf);
-            gl.draw(features);
-            gl.draw(walls);
+            gl.draw(mesh);
         }
 
         cam.screenToNdc(xf);
@@ -250,17 +275,19 @@ public final class MapViewerApp {
 
     private void dispose() {
         if (gl != null) {
-            gl.delete(outlineWalls);
-            gl.delete(filledWalls);
-            gl.delete(features);
+            gl.delete(outlineMesh);
+            gl.delete(filledMesh);
             gl.dispose();
+        }
+        if (gpuTimer != null) {
+            gpuTimer.dispose();
         }
         if (atlas != null) {
             atlas.dispose();
         }
-        if (dynMem != null) {
-            MemoryUtil.memFree(dynMem);
-        }
+        MemoryUtil.memFree(dynTri);
+        MemoryUtil.memFree(dynSeg);
+        MemoryUtil.memFree(dynPt);
         if (window != null) {
             window.dispose();
         }

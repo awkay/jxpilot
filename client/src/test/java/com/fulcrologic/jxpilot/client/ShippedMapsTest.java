@@ -43,9 +43,8 @@ class ShippedMapsTest {
         Palette p = Palette.xpilotDefault();
         for (Path file : MapCatalog.scan(Fixtures.MAPS).maps()) {
             WorldMap m = WorldMap.load(file);
-            VertexBatch outline = StaticMap.outlineWalls(m, p);
-            VertexBatch filled = StaticMap.filledWalls(m, p);
-            VertexBatch features = StaticMap.features(m, p, true);
+            VertexBatch outline = StaticMap.build(m, p, false, true);
+            VertexBatch filled = StaticMap.build(m, p, true, true);
             int[] radar = RadarImage.build(m, p, true);
             int walls = 0;
             for (byte t : m.blocks()) {
@@ -64,9 +63,9 @@ class ShippedMapsTest {
             int wp = wallPixels;
             assertAll(n,
                 () -> assertTrue(w > 0, n + " has walls"),
-                () -> assertTrue(outline.vertexCount() >= 2 * w, n + ": at least one outline segment per wall block"),
+                () -> assertTrue(outline.segmentCount() >= w, n + ": at least one outline segment per wall block"),
                 () -> assertTrue(filled.vertexCount() >= 3 * w, n + ": at least one triangle per wall block"),
-                () -> assertTrue(features.vertexCount() > 0, n + ": features (dots, bases) exist"),
+                () -> assertTrue(outline.pointCount() > 0, n + ": background dots exist"),
                 () -> assertEquals(RadarImage.WIDTH * RadarImage.height(m), radar.length, n + ": radar size"),
                 () -> assertTrue(wp > 0, n + ": walls show on the radar"));
         }

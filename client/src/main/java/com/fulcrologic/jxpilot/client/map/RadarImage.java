@@ -39,6 +39,11 @@ import com.fulcrologic.jxpilot.common.map.WorldMap;
  * pixel, sampling the nearest block.
  * <p>
  * Pixels are packed like {@link Palette} and stored row-major with row 0 at the TOP.
+ * <p>
+ * Deferred to the game phase: C hides destroyed targets on the radar ({@code Paint_world_radar}
+ * checks {@code Target_alive}). The hook is {@link #colorIndex}: give it the target's liveness from
+ * {@link MapState#targetAlive} and rebuild the picture (once, not per frame) when a target dies or
+ * respawns. The map viewer has no target state, so every target is shown.
  */
 public final class RadarImage {
     private RadarImage() {}

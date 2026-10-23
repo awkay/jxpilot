@@ -78,8 +78,10 @@ class StaticMapTest {
         void dotIsATwoPixelSquareAtTheBlockCentre() {
             VertexBatch b = Segs.batch();
             StaticMap.dot(b, 35, 70, BLUE);
-            assertEquals(List.of("51,86 53,86 53,88", "51,86 53,88 51,88"), Segs.triangles(b),
-                "square [x+16, x+18] x [y+16, y+18]");
+            assertAll(
+                () -> assertEquals(List.of("52,88/2"), Segs.points(b),
+                    "a 2-pixel point covering [x+16, x+18) x [y+17, y+19) as C's Y(y+17)-1 does: centre (x+17, y+18)"),
+                () -> assertEquals(List.of(BLUE), Segs.colors(b), "in the given colour"));
         }
 
         @Test
@@ -90,8 +92,8 @@ class StaticMapTest {
             }
             VertexBatch b = Segs.batch();
             StaticMap.backgroundDots(map(false, rows), true, b, BLUE);
-            assertEquals(List.of("16,16 18,16 18,18", "16,16 18,18 16,18", "16,296 18,296 18,298", "16,296 18,298 16,298"),
-                Segs.triangles(b), "8 wide: dots only in column 0 (none past the right edge at x=8)");
+            assertEquals(List.of("17,18/2", "17,298/2"),
+                Segs.points(b), "8 wide: dots only in column 0 (none past the right edge at x=8)");
         }
 
         @Test
@@ -103,11 +105,8 @@ class StaticMapTest {
             rows[8] = "x........"; // bottom-left block (0,0) is a wall
             VertexBatch b = Segs.batch();
             StaticMap.backgroundDots(map(false, rows), true, b, BLUE);
-            List<String> t = Segs.triangles(b);
-            assertAll(
-                () -> assertEquals(6, t.size(), "three dots: (8,0), (0,8), (8,8)"),
-                () -> assertEquals("296,16 298,16 298,18", t.get(0), "first dot at block (8,0)"),
-                () -> assertEquals("16,296 18,296 18,298", t.get(2), "second at block (0,8)"));
+            assertEquals(List.of("297,18/2", "17,298/2", "297,298/2"), Segs.points(b),
+                "three dots: (8,0), (0,8), (8,8); not on the wall at (0,0)");
         }
     }
 
@@ -173,41 +172,73 @@ class StaticMapTest {
             "up: below; down: above; left: right side; right: left side");
     }
 
+    static VertexBatch features(WorldMap m, boolean showDecor) {
+        VertexBatch b = VertexBatch.growable(16);
+        StaticMap.features(m, P, showDecor, b);
+        return b;
+    }
+
     @Nested
     class Builders {
+        static final int WALL = P.color(Palette.WALL_COLOR);
+
         @Test
-        void outlineWallsAreWallColouredEdgesPlusBorder() {
+        void outlineMeshIsDotsThenFeatureAndWallSegmentsPlusBorder() {
             WorldMap m = map(false, "...", ".x.", "...");
-            VertexBatch b = StaticMap.outlineWalls(m, P);
+            VertexBatch b = StaticMap.build(m, P, false, true);
             List<String> l = Segs.lines(b);
             assertAll(
-                () -> assertEquals(8, l.size(), "four block sides and four border lines"),
-                () -> assertEquals("35,35-35,70", l.get(0), "block sides first"),
-                () -> assertEquals("0,0-0,105", l.get(4), "then the border"),
-                () -> assertEquals(List.of(P.color(Palette.WALL_COLOR)), Segs.colors(b), "all in wallColor"));
+                () -> assertEquals(List.of(VertexBatch.POINTS, VertexBatch.LINES), Segs.modes(b),
+                    "two commands: dots, then every segment"),
+                () -> assertEquals(List.of("17,18/2"), Segs.points(b), "the dot at block (0,0)"),
+                () -> assertEquals(List.of("35,35-35,70", "35,35-70,35", "70,35-70,70", "35,70-70,70",
+                    "0,0-0,105", "105,0-105,105", "0,0-105,0", "0,105-105,105"), l,
+                    "the wall's four sides, then the four border lines"),
+                () -> assertEquals(List.of(BLUE), Segs.colors(b), "blue dot, walls in wallColor (the same palette entry)"),
+                () -> assertEquals(WALL, b.segColor(0), "walls in wallColor"),
+                () -> assertEquals(0, b.vertexCount(), "no triangles"));
         }
 
         @Test
-        void filledWallsAreTrianglesPlusBorder() {
+        void filledMeshIsFillTrianglesThenDotsAndSegmentsWithoutBlockOutlines() {
             WorldMap m = map(true, "...", ".xs", "...");
-            VertexBatch b = StaticMap.filledWalls(m, P);
+            VertexBatch b = StaticMap.build(m, P, true, true);
             assertAll(
+                () -> assertEquals(List.of(VertexBatch.TRIANGLES, VertexBatch.POINTS), Segs.modes(b),
+                    "fills first, then dots; a wrapping map with no features has no segments"),
                 () -> assertEquals(List.of("35,35 70,35 70,70", "35,35 70,70 35,70", "70,35 105,70 70,70"),
                     Segs.triangles(b), "two triangles for x, one for s"),
-                () -> assertEquals(List.of(), Segs.lines(b), "no border on a wrapping map"),
-                () -> assertEquals(List.of(P.color(Palette.WALL_COLOR)), Segs.colors(b), "in wallColor"),
-                () -> assertEquals(4, StaticMap.filledWalls(map(false, "."), P).vertexCount() / 2,
+                () -> assertEquals(List.of(), Segs.lines(b), "no block outlines and no border when wrapping"),
+                () -> assertEquals(WALL, b.color(0), "fill in wallColor"),
+                () -> assertEquals(BLUE, b.pointColor(0), "blue dots"),
+                () -> assertEquals(4, StaticMap.build(map(false, "x"), P, true, true).segmentCount(),
                     "a hard-edged map gets its four border lines"));
+        }
+
+        @Test
+        void filledMeshFillsEveryFuelBlockLikeAWall() {
+            WorldMap m = map(false, "#x.", "..#");
+            VertexBatch b = VertexBatch.growable(16);
+            StaticMap.wallFill(m, b, WALL);
+            List<String> t = Segs.triangles(b);
+            assertAll(
+                () -> assertEquals(List.of("35,35 70,35 70,70", "35,35 70,70 35,70"), t.subList(0, 2),
+                    "the wall block (1,1) first"),
+                () -> assertEquals(List.of("0,35 35,35 35,70", "0,35 35,70 0,70",
+                    "70,0 105,0 105,35", "70,0 105,35 70,35"), t.subList(2, 6),
+                    "then every fuel block in C's x-major order: (0,1) at the hard edge, (2,0) in the open"),
+                () -> assertEquals(6, t.size(), "nothing else"),
+                () -> assertEquals(List.of(WALL), Segs.colors(b), "all in wallColor"));
         }
 
         @Test
         void featuresDrawDotsThenDecorGravityAndBases() {
             WorldMap m = map(false, "b+", "._");
-            VertexBatch b = StaticMap.features(m, P, true);
+            VertexBatch b = features(m, true);
             List<String> lines = Segs.lines(b);
             assertAll(
-                () -> assertEquals(VertexBatch.TRIANGLES, b.commandMode(0), "dots (fills) come first"),
-                () -> assertEquals(1, Segs.triangles(b).size() / 2, "one dot, at block (0,0)"),
+                () -> assertEquals(VertexBatch.POINTS, b.commandMode(0), "dots come first"),
+                () -> assertEquals(List.of("17,18/2"), Segs.points(b), "one dot, at block (0,0)"),
                 () -> assertEquals(List.of(BLUE, P.color(Palette.DECOR_COLOR), RED, WHITE), Segs.colors(b),
                     "dot blue, decor, gravity red, base white in that order"),
                 () -> assertEquals(4 + StaticMap.CIRCLE_SEGMENTS + 2 + 1, lines.size(),
@@ -218,8 +249,7 @@ class StaticMapTest {
         @Test
         void featuresAreAtTheirBlocks() {
             WorldMap m = map(false, "...", "..i", "..x", "._.", "...");
-            VertexBatch b = StaticMap.features(m, P, true);
-            List<String> lines = Segs.lines(b);
+            List<String> lines = Segs.lines(features(m, true));
             assertAll(
                 () -> assertEquals(Dir.DOWN, m.bases().get(0).dir(), "precondition: the loader faces this base down"),
                 () -> assertEquals("87,105-87,140", lines.get(0), "up gravity at block (2,3)"),
@@ -229,11 +259,9 @@ class StaticMapTest {
         @Test
         void hiddenDecorationsAreNotOutlined() {
             WorldMap m = map(false, "b.", "..");
-            VertexBatch shown = StaticMap.features(m, P, true);
-            VertexBatch hidden = StaticMap.features(m, P, false);
             assertAll(
-                () -> assertEquals(4, Segs.lines(shown).size(), "shown: decor outline"),
-                () -> assertEquals(0, Segs.lines(hidden).size(), "hidden: no outline"));
+                () -> assertEquals(4, Segs.lines(features(m, true)).size(), "shown: decor outline"),
+                () -> assertEquals(0, Segs.lines(features(m, false)).size(), "hidden: no outline"));
         }
     }
 }

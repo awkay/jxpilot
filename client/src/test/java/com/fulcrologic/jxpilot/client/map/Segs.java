@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.client.map;
 
+import com.fulcrologic.jxpilot.client.Fixtures;
 import com.fulcrologic.jxpilot.client.render.VertexBatch;
 
 import java.nio.ByteBuffer;
@@ -34,7 +35,7 @@ final class Segs {
     private Segs() {}
 
     static VertexBatch batch() {
-        return VertexBatch.fixed(ByteBuffer.allocateDirect(65536 * VertexBatch.STRIDE), 256, b -> {
+        return Fixtures.batch(65536, 256, b -> {
             throw new AssertionError("test batch overflowed");
         });
     }
@@ -59,11 +60,11 @@ final class Segs {
             if (b.commandMode(c) != VertexBatch.LINES) {
                 continue;
             }
-            for (int i = b.commandFirst(c); i < b.commandFirst(c) + b.commandVertices(c); i += 2) {
-                if (onlyColor != null && b.color(i) != onlyColor) {
+            for (int i = b.commandFirst(c); i < b.commandFirst(c) + b.commandLength(c); i++) {
+                if (onlyColor != null && b.segColor(i) != onlyColor) {
                     continue;
                 }
-                out.add(p(b.x(i), b.y(i)) + "-" + p(b.x(i + 1), b.y(i + 1)));
+                out.add(p(b.segX1(i), b.segY1(i)) + "-" + p(b.segX2(i), b.segY2(i)));
             }
         }
         return out;
@@ -76,20 +77,50 @@ final class Segs {
             if (b.commandMode(c) != VertexBatch.TRIANGLES) {
                 continue;
             }
-            for (int i = b.commandFirst(c); i < b.commandFirst(c) + b.commandVertices(c); i += 3) {
+            for (int i = b.commandFirst(c); i < b.commandFirst(c) + b.commandLength(c); i += 3) {
                 out.add(p(b.x(i), b.y(i)) + " " + p(b.x(i + 1), b.y(i + 1)) + " " + p(b.x(i + 2), b.y(i + 2)));
             }
         }
         return out;
     }
 
-    /** Distinct colours used by vertices, in first-use order. */
+    /** All points of the batch in order, as "x,y/size". */
+    static List<String> points(VertexBatch b) {
+        List<String> out = new ArrayList<>();
+        for (int c = 0; c < b.commandCount(); c++) {
+            if (b.commandMode(c) != VertexBatch.POINTS) {
+                continue;
+            }
+            for (int i = b.commandFirst(c); i < b.commandFirst(c) + b.commandLength(c); i++) {
+                out.add(p(b.pointX(i), b.pointY(i)) + "/" + fmt(b.pointSize(i)));
+            }
+        }
+        return out;
+    }
+
+    /** Distinct colours used by all items in draw order, in first-use order. */
     static List<Integer> colors(VertexBatch b) {
         List<Integer> out = new ArrayList<>();
-        for (int i = 0; i < b.vertexCount(); i++) {
-            if (!out.contains(b.color(i))) {
-                out.add(b.color(i));
+        for (int c = 0; c < b.commandCount(); c++) {
+            for (int i = b.commandFirst(c); i < b.commandFirst(c) + b.commandLength(c); i++) {
+                int col = switch (b.commandMode(c)) {
+                    case VertexBatch.TRIANGLES -> b.color(i);
+                    case VertexBatch.LINES -> b.segColor(i);
+                    default -> b.pointColor(i);
+                };
+                if (!out.contains(col)) {
+                    out.add(col);
+                }
             }
+        }
+        return out;
+    }
+
+    /** Command kinds in order. */
+    static List<Integer> modes(VertexBatch b) {
+        List<Integer> out = new ArrayList<>();
+        for (int c = 0; c < b.commandCount(); c++) {
+            out.add(b.commandMode(c));
         }
         return out;
     }

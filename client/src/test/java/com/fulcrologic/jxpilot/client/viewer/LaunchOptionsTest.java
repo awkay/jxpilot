@@ -48,7 +48,32 @@ class LaunchOptionsTest {
             () -> assertEquals(1.0, o.zoom(), "zoom 1"),
             () -> assertFalse(o.filled(), "outline walls"),
             () -> assertFalse(o.hasCentre(), "no explicit centre"),
-            () -> assertTrue(o.vsync(), "vsync on"));
+            () -> assertTrue(o.vsync(), "vsync on"),
+            () -> assertEquals(-1, o.warmup(), "no explicit warm-up"),
+            () -> assertFalse(o.gpuTimer(), "no GPU timer"),
+            () -> assertEquals(1, o.measureFrom(), "measure from half of the 3 frames (integer division)"));
+    }
+
+    @Test
+    void warmupSetsTheFirstMeasuredFrame() {
+        LaunchOptions o = parse("--frames", "100", "--warmup", "40");
+        LaunchOptions zero = parse("--warmup", "0", "--gpu-timer");
+        assertAll(
+            () -> assertEquals(40, o.warmup(), "warm-up as given"),
+            () -> assertEquals(40, o.measureFrom(), "measured from frame 40"),
+            () -> assertEquals(0, zero.measureFrom(), "0 measures from the first frame"),
+            () -> assertTrue(zero.gpuTimer(), "--gpu-timer turns the GPU timer on"),
+            () -> assertEquals(50, parse("--frames", "100").measureFrom(), "default: half of the frames"));
+    }
+
+    @Test
+    void warmupMustBeNonNegativeAndBelowTheFrames() {
+        assertAll(
+            () -> assertEquals("--warmup must not be negative: -1", error("--warmup", "-1"), "negative"),
+            () -> assertEquals("--warmup must be less than --frames: 3 >= 3", error("--warmup", "3"), "equal to frames"),
+            () -> assertEquals("--warmup must be less than --frames: 9 >= 5", error("--warmup", "9", "--frames", "5"),
+                "checked after all flags, whatever their order"),
+            () -> assertEquals("--frames must be positive: 0", error("--frames", "0"), "frames keep their own rule"));
     }
 
     @Test

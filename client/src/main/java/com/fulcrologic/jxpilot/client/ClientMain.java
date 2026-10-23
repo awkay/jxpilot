@@ -53,7 +53,7 @@ public final class ClientMain {
     }
 
     private static void usage() {
-        System.err.println("usage: ClientMain --view-map FILE [--screenshot FILE.png] [--frames N] [--size WxH]"
+        System.err.println("usage: ClientMain --view-map FILE [--screenshot FILE.png] [--frames N] [--warmup N] [--size WxH]"
             + " [--zoom Z] [--at X,Y] [--filled] [--no-vsync]");
     }
 }

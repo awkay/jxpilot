@@ -37,7 +37,7 @@ class TextWriterTest {
     static final float UV_EPS = 1f / 65535;
 
     static VertexBatch batch() {
-        return VertexBatch.fixed(ByteBuffer.allocateDirect(1024 * VertexBatch.STRIDE), 16, b -> { });
+        return Fixtures.batch(1024, 16, b -> { });
     }
 
     @Nested
