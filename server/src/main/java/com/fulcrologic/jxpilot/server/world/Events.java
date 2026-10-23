@@ -1,138 +1,161 @@
+/*
+ * JXPilot, a Java reimplementation of XPilot, a multiplayer gravity war game.
+ * Copyright (C) 2026 Tony Kay and the JXPilot contributors.
+ *
+ * Derived from XPilot 4.5.5, Copyright (C) 1991-2002 by Bjørn Stabell,
+ * Ken Ronny Schouten, Bert Gijsbers and Dick Balaska. JXPilot is an
+ * independent derivative port: the original XPilot authors were not involved
+ * in it and do not endorse it. Ported to Java and modified starting in 2026;
+ * see the git history for the changes.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ */
 package com.fulcrologic.jxpilot.server.world;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 
 /**
- * Preallocated ring buffers of things the simulation produced for the network layer: chat/game
- * messages, discrete game events, roster changes and spark/debris bursts. The sim only appends; the
- * net layer reads by sequence number, so several clients can consume the same events. Allocation free.
+ * The simulation's output for the network layer: two preallocated rings that the sim appends to and
+ * any number of consumers read by sequence number (each client keeps its own cursor). Allocation free.
+ * <ul>
+ *   <li><b>Reliable events</b> ({@link #seq()}): one record per change that clients must not miss,
+ *       mapped 1:1 onto {@code ReliableType} messages: {@link #JOIN}, {@link #LEAVE}, {@link #TEAM},
+ *       {@link #SCORE}, {@link #TEAM_SCORE}, {@link #MESSAGE}, {@link #BASE_OWNER}, {@link #GAME_EVENT},
+ *       {@link #THRUST}. Fields: {@code a, b, c} ints and {@code value} float as documented per kind;
+ *       {@link #text} for MESSAGE.</li>
+ *   <li><b>Bursts</b> ({@link #burstSeq()}): wire-quantized spark/debris bursts (one per C
+ *       {@code Make_debris}) with the sim tick they were made in, for the SNAPSHOT BURST section.</li>
+ * </ul>
+ * A consumer whose cursor is older than {@link #oldestSeq()} has lost events (it should resync).
  */
 public final class Events {
-    /** Messages kept (a slow consumer loses the oldest). */
-    public static final int MESSAGES = 128;
-    public static final int GAME_EVENTS = 256;
-    public static final int ROSTER = 256;
-    /** Bursts kept: enough for several ticks of a large fight. */
+    /** Reliable event ring size (power of two). */
+    public static final int CAPACITY = 1024;
+    /** Burst ring size (power of two): several ticks of a large fight. */
     public static final int BURSTS = 4096;
 
-    public static final int ROSTER_JOIN = 1;
-    public static final int ROSTER_LEAVE = 2;
-    public static final int ROSTER_TEAM = 3;
-    public static final int ROSTER_BASE = 4;
-    public static final int ROSTER_THRUST = 5;
+    /** a = player id. */
+    public static final int JOIN = 1;
+    /** a = player id. */
+    public static final int LEAVE = 2;
+    /** a = player id, b = team. */
+    public static final int TEAM = 3;
+    /** a = player id, b = lives (-1 unlimited), c = Msg.Score status bits, value = score. */
+    public static final int SCORE = 4;
+    /** a = team, value = team score. */
+    public static final int TEAM_SCORE = 5;
+    /** a = Msg.Text kind, b = sender id or {@link Obj#NO_ID}; text in {@link #text}. */
+    public static final int MESSAGE = 6;
+    /** a = base index, b = player id. */
+    public static final int BASE_OWNER = 7;
+    /** a = Msg.GameEvent kind, b = first id (killer, or NO_ID), c = second id (victim), value. */
+    public static final int GAME_EVENT = 8;
+    /** a = player id, b = afterburners, value = power. */
+    public static final int THRUST = 9;
 
-    // ---- messages
-    public final int[] msgKind = new int[MESSAGES];
-    /** Sender player id or NO_ID. */
-    public final int[] msgFrom = new int[MESSAGES];
-    /** Recipient player id for private/team messages, NO_ID for everyone; for team chat the team. */
-    public final int[] msgTo = new int[MESSAGES];
-    public final StringBuilder[] msgText = new StringBuilder[MESSAGES];
-    private long msgSeq;
+    public final int[] kind = new int[CAPACITY];
+    public final int[] a = new int[CAPACITY];
+    public final int[] b = new int[CAPACITY];
+    public final int[] c = new int[CAPACITY];
+    public final float[] value = new float[CAPACITY];
+    public final StringBuilder[] text = new StringBuilder[CAPACITY];
+    private long seq;
 
-    // ---- game events (Msg.GameEvent kinds)
-    public final int[] evKind = new int[GAME_EVENTS];
-    public final int[] evA = new int[GAME_EVENTS];
-    public final int[] evB = new int[GAME_EVENTS];
-    public final float[] evValue = new float[GAME_EVENTS];
-    private long evSeq;
-
-    // ---- roster changes
-    public final int[] rosterKind = new int[ROSTER];
-    /** Player slot (JOIN/TEAM/THRUST/BASE) or player id (LEAVE). */
-    public final int[] rosterA = new int[ROSTER];
-    public final int[] rosterB = new int[ROSTER];
-    private long rosterSeq;
-
-    // ---- bursts
     public final DebrisBurst[] burst = new DebrisBurst[BURSTS];
+    /** {@code Records.BurstKind}. */
     public final int[] burstKind = new int[BURSTS];
+    /** {@code Records.ObjColor}. */
     public final int[] burstColor = new int[BURSTS];
+    /** Owner player id or {@link Obj#NO_ID}. */
+    public final int[] burstOwner = new int[BURSTS];
     public final int[] burstTick = new int[BURSTS];
     private long burstSeq;
 
     public Events() {
-        for (int i = 0; i < MESSAGES; i++) {
-            msgText[i] = new StringBuilder(Const.MSG_LEN);
+        for (int i = 0; i < CAPACITY; i++) {
+            text[i] = new StringBuilder(Const.MSG_LEN);
         }
         for (int i = 0; i < BURSTS; i++) {
             burst[i] = new DebrisBurst();
         }
     }
 
+    /** Ring index of an event sequence number. */
+    public static int index(long seq) {
+        return (int) (seq & (CAPACITY - 1));
+    }
+
+    /** Sequence number the next event will get (events {@code [oldestSeq, seq)} are readable). */
+    public long seq() {
+        return seq;
+    }
+
+    /** BEHAVIOR: oldest readable event sequence number: 0 until the ring wraps, then {@code seq - CAPACITY}. */
+    public long oldestSeq() {
+        return Math.max(0, seq - CAPACITY);
+    }
+
     /**
-     * Start a message; append the text to the returned builder (already cleared).
+     * Append an event.
      * <p>
-     * BEHAVIOR: each call takes the next ring slot and advances {@link #messageSeq()}.
+     * BEHAVIOR: takes the next ring slot (overwriting the oldest when full), clears its text, returns its index.
      */
-    public StringBuilder message(int kind, int from, int to) {
-        int i = (int) (msgSeq++ & (MESSAGES - 1));
-        msgKind[i] = kind;
-        msgFrom[i] = from;
-        msgTo[i] = to;
-        StringBuilder sb = msgText[i];
-        sb.setLength(0);
-        return sb;
+    public int add(int k, int va, int vb, int vc, float v) {
+        int i = index(seq++);
+        kind[i] = k;
+        a[i] = va;
+        b[i] = vb;
+        c[i] = vc;
+        value[i] = v;
+        text[i].setLength(0);
+        return i;
     }
 
-    /** Sequence number of the next message (messages {@code [seq-MESSAGES, seq)} are readable). */
-    public long messageSeq() {
-        return msgSeq;
+    /** Append a MESSAGE and return its cleared text buffer for the caller to fill. */
+    public StringBuilder message(int msgKind, int from) {
+        return text[add(MESSAGE, msgKind, from, 0, 0f)];
     }
 
-    /** Ring index of a message sequence number. */
-    public static int msgIndex(long seq) {
-        return (int) (seq & (MESSAGES - 1));
+    // ------------------------------------------------------------------ bursts
+
+    /** Ring index of a burst sequence number. */
+    public static int burstIndex(long seq) {
+        return (int) (seq & (BURSTS - 1));
     }
 
-    /** Record a game event. */
-    public void gameEvent(int kind, int a, int b, float value) {
-        int i = (int) (evSeq++ & (GAME_EVENTS - 1));
-        evKind[i] = kind;
-        evA[i] = a;
-        evB[i] = b;
-        evValue[i] = value;
-    }
-
-    public long gameEventSeq() {
-        return evSeq;
-    }
-
-    public static int evIndex(long seq) {
-        return (int) (seq & (GAME_EVENTS - 1));
-    }
-
-    /** Record a roster change. */
-    public void roster(int kind, int a, int b) {
-        int i = (int) (rosterSeq++ & (ROSTER - 1));
-        rosterKind[i] = kind;
-        rosterA[i] = a;
-        rosterB[i] = b;
-    }
-
-    public long rosterSeq() {
-        return rosterSeq;
-    }
-
-    public static int rosterIndex(long seq) {
-        return (int) (seq & (ROSTER - 1));
-    }
-
-    /** Take the next burst slot for {@code tick}; the caller fills the returned parameters. */
-    public DebrisBurst burst(int kind, int color, int tick) {
-        int i = (int) (burstSeq++ & (BURSTS - 1));
-        burstKind[i] = kind;
-        burstColor[i] = color;
-        burstTick[i] = tick;
-        return burst[i];
-    }
-
+    /** Sequence number the next burst will get. */
     public long burstSeq() {
         return burstSeq;
     }
 
-    public static int burstIndex(long seq) {
-        return (int) (seq & (BURSTS - 1));
+    /** BEHAVIOR: oldest readable burst sequence number (0 until the ring wraps). */
+    public long oldestBurstSeq() {
+        return Math.max(0, burstSeq - BURSTS);
+    }
+
+    /**
+     * Take the next burst slot for {@code tick}; the caller fills (and quantizes) the returned parameters.
+     * <p>
+     * BEHAVIOR: overwrites the oldest burst when the ring is full.
+     */
+    public DebrisBurst addBurst(int bKind, int color, int owner, int tick) {
+        int i = burstIndex(burstSeq++);
+        burstKind[i] = bKind;
+        burstColor[i] = color;
+        burstOwner[i] = owner;
+        burstTick[i] = tick;
+        return burst[i];
     }
 }

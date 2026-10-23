@@ -1,10 +1,31 @@
+/*
+ * JXPilot, a Java reimplementation of XPilot, a multiplayer gravity war game.
+ * Copyright (C) 2026 Tony Kay and the JXPilot contributors.
+ *
+ * Derived from XPilot 4.5.5, Copyright (C) 1991-2002 by Bjørn Stabell,
+ * Ken Ronny Schouten, Bert Gijsbers and Dick Balaska. JXPilot is an
+ * independent derivative port: the original XPilot authors were not involved
+ * in it and do not endorse it. Ported to Java and modified starting in 2026;
+ * see the git history for the changes.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ */
 package com.fulcrologic.jxpilot.client.gl;
 
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.opengl.GL;
-import org.lwjgl.system.MemoryStack;
 
-import java.nio.IntBuffer;
 
 import static org.lwjgl.glfw.GLFW.*;
 
@@ -15,6 +36,8 @@ public final class Window {
     private int fbHeight;
     private int winWidth;
     private int winHeight;
+    private final int[] w1 = new int[1];
+    private final int[] h1 = new int[1];
 
     public Window(String title, int width, int height, boolean visible, boolean vsync) {
         GLFWErrorCallback.createPrint(System.err).set();
@@ -42,18 +65,17 @@ public final class Window {
 
     public long handle() { return handle; }
 
-    /** Re-read window and framebuffer sizes (call once per frame; cheap). */
+    /**
+     * Re-read window and framebuffer sizes (call once per frame). Uses preallocated arrays: a
+     * {@code MemoryStack} buffer would allocate an {@code IntBuffer} wrapper per call.
+     */
     public void refreshSize() {
-        try (MemoryStack s = MemoryStack.stackPush()) {
-            IntBuffer w = s.mallocInt(1);
-            IntBuffer h = s.mallocInt(1);
-            glfwGetFramebufferSize(handle, w, h);
-            fbWidth = w.get(0);
-            fbHeight = h.get(0);
-            glfwGetWindowSize(handle, w, h);
-            winWidth = w.get(0);
-            winHeight = h.get(0);
-        }
+        glfwGetFramebufferSize(handle, w1, h1);
+        fbWidth = w1[0];
+        fbHeight = h1[0];
+        glfwGetWindowSize(handle, w1, h1);
+        winWidth = w1[0];
+        winHeight = h1[0];
     }
 
     public int framebufferWidth() { return fbWidth; }

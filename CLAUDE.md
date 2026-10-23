@@ -30,3 +30,8 @@ Java 25 / Maven / LWJGL reimplementation of XPilot 4.5.5 (C source: `/Users/tony
   next phase builds on it.
 - Git: only the lead commits, as a checkpoint after each reviewed phase (on `main`, then `git push`; remote: github.com/awkay/jxpilot, public).
   Implementation agents and reviewers never commit, reset, checkout, or stash.
+- License: GPL-2.0-or-later (derivative of XPilot 4.5.5). Every `.java` file must start with the
+  header in `license-header.txt`; the build fails without it (`mvn license:format` adds it).
+  Never alter files in `maps/` (unmodified XPilot originals). Any new bundled asset needs a
+  GPL-compatible license, its license text committed next to it, and a row in README.md's
+  third-party table.
