@@ -59,6 +59,11 @@ import java.nio.ByteBuffer;
 public final class ClientConnection {
     /** Most INPUT entries per packet ({@link InputHistory#MAX_REDUNDANCY}). */
     public static final int MAX_INPUT_REDUNDANCY = InputHistory.MAX_REDUNDANCY;
+    /**
+     * Shortest gap between two INPUT datagrams (a 120/s ceiling). A time, not a fraction of the tick: at
+     * 14 Hz a key change must still go out at once, or it can miss the server's next frame.
+     */
+    public static final long MIN_INPUT_GAP_NANOS = 1_000_000_000L / 120;
     /** After a transport error INPUT, reliable data and ACKs pause this long (CONNECT keeps its own timer). */
     public static final long IO_BACKOFF_NANOS = Protocol.CONNECT_RESEND_MS * 1_000_000L;
     /** Reject/disconnect text shown in the status line at most (C {@code MAX_CHARS}). */
@@ -346,8 +351,8 @@ public final class ClientConnection {
      * input sequence, or 0 when nothing was sent this frame.
      * BEHAVIOR: sends at once when the key mask differs from the last one sent (and for the first input);
      * otherwise when {@link #inputIntervalNanos()} (1/simHz) has passed since the last periodic send.
-     * BEHAVIOR: never two sends closer than half an interval (a 2 x simHz ceiling): a change inside that
-     * window waits and goes out with whatever mask is current then (coalesced).
+     * BEHAVIOR: never two sends closer than {@link #MIN_INPUT_GAP_NANOS} (a 120/s ceiling at any tick
+     * rate): a change inside that window waits and goes out with whatever mask is current then (coalesced).
      * BEHAVIOR: aimTurn of frames that sent nothing is summed into the next INPUT (clamped to i16).
      * BEHAVIOR: a sequence is recorded only for a datagram actually sent; it carries every history entry
      * newer than the lastInputSeq the server echoed in its newest snapshot, at least 1 and at most
@@ -371,7 +376,7 @@ public final class ClientConnection {
         if (!changed && !timer) {
             return 0;
         }
-        if (inputSent && nowNanos - lastInputSend < inputIntervalNanos / 2) {
+        if (inputSent && nowNanos - lastInputSend < MIN_INPUT_GAP_NANOS) {
             return 0;
         }
         int seq = input.record(keys, pendingAim);

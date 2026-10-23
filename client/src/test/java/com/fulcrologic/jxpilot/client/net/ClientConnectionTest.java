@@ -281,6 +281,18 @@ class ClientConnectionTest {
         }
 
         @Test
+        @DisplayName("CONNECT resend timing is relative to the last send, also when time does not start at 0")
+        void connectResendLaterStart() {
+            c.start(5_000 * MS);
+            c.update(5_249 * MS);
+            int early = t.out.size();
+            c.update(5_250 * MS);
+            assertAll(
+                () -> assertEquals(1, early, "not resent 249 ms after the first"),
+                () -> assertEquals(2, t.out.size(), "resent at 250 ms"));
+        }
+
+        @Test
         @DisplayName("ACCEPT with the right nonce starts the session; bad datagrams are ignored or counted")
         void accepting() {
             c.start(0);
@@ -666,7 +678,7 @@ class ClientConnectionTest {
     @DisplayName("INPUT rate")
     class InputRate {
         @Test
-        @DisplayName("a 1000 fps render loop sends at most 2 x simHz INPUTs per second; steady keys at simHz")
+        @DisplayName("a 1000 fps render loop sends at most 120 INPUTs per second; steady keys at simHz")
         void thousandFps() {
             playing(0);
             int steady = 0;
@@ -685,7 +697,7 @@ class ClientConnectionTest {
             int fToggling = toggling;
             assertAll(
                 () -> assertTrue(fSteady >= 58 && fSteady <= 61, "unchanged keys: about simHz = 60 per second, got " + fSteady),
-                () -> assertTrue(fToggling >= 110 && fToggling <= 120, "keys changing every frame: capped near 2 x simHz, got "
+                () -> assertTrue(fToggling >= 110 && fToggling <= 120, "keys changing every frame: capped near 120/s, got "
                     + fToggling),
                 () -> assertEquals(fSteady + fToggling, c.input().latestSeq(), "a sequence only for each datagram sent"),
                 () -> assertEquals(fSteady + fToggling, inputs().size(), "one INPUT datagram per sequence"));
@@ -709,19 +721,19 @@ class ClientConnectionTest {
         }
 
         @Test
-        @DisplayName("a change inside half an interval is coalesced: sent at the ceiling with the current mask and summed aim")
+        @DisplayName("a change within 1/120 s is coalesced: sent at the ceiling with the current mask and summed aim")
         void coalesce() {
             playing(0);
             long t0 = 100 * MS;
             c.sendInput(1, 5, t0);
             int tooSoon = c.sendInput(2, 7, t0 + 2 * MS);
-            int stillSoon = c.sendInput(3, 11, t0 + INTERVAL / 2 - 1);
-            int atCeiling = c.sendInput(3, 13, t0 + INTERVAL / 2);
+            int stillSoon = c.sendInput(3, 11, t0 + ClientConnection.MIN_INPUT_GAP_NANOS - 1);
+            int atCeiling = c.sendInput(3, 13, t0 + ClientConnection.MIN_INPUT_GAP_NANOS);
             Input last = inputs().get(inputs().size() - 1);
             assertAll(
                 () -> assertEquals(0, tooSoon, "2 ms after a send: held back"),
-                () -> assertEquals(0, stillSoon, "just under half an interval: held back"),
-                () -> assertEquals(2, atCeiling, "half an interval after the last send: sent"),
+                () -> assertEquals(0, stillSoon, "just under 1/120 s: held back"),
+                () -> assertEquals(2, atCeiling, "1/120 s after the last send: sent"),
                 () -> assertEquals(3L, last.keys.get(0), "the coalesced INPUT carries the current mask"),
                 () -> assertEquals(7 + 11 + 13, (int) last.aims.get(0), "aim of the held frames is summed"),
                 () -> assertEquals(5, (int) last.aims.get(1), "the earlier input keeps its own aim"),
@@ -808,18 +820,20 @@ class ClientConnectionTest {
             long iv = c.inputIntervalNanos();
             long t0 = 100 * MS;
             c.sendInput(0, 0, t0);
-            int beforeInterval = c.sendInput(0, 0, t0 + iv - 1);
-            int atInterval = c.sendInput(0, 0, t0 + iv);
-            int afterStall = c.sendInput(0, 0, t0 + 50 * iv + 3);
-            int nextFrame = c.sendInput(0, 0, t0 + 50 * iv + 3 + FRAME);
-            int nextInterval = c.sendInput(0, 0, t0 + 51 * iv + 3);
+            int changeSoon = c.sendInput(5, 0, t0 + ClientConnection.MIN_INPUT_GAP_NANOS);
+            int beforeInterval = c.sendInput(5, 0, t0 + iv - 1);
+            int atInterval = c.sendInput(5, 0, t0 + iv);
+            int afterStall = c.sendInput(5, 0, t0 + 50 * iv + 3);
+            int nextFrame = c.sendInput(5, 0, t0 + 50 * iv + 3 + FRAME);
+            int nextInterval = c.sendInput(5, 0, t0 + 51 * iv + 3);
             assertAll(
                 () -> assertEquals(1_000_000_000L / 30, iv, "1/30 s at simHz 30"),
-                () -> assertEquals(0, beforeInterval, "not before the interval"),
-                () -> assertEquals(2, atInterval, "at the interval"),
-                () -> assertEquals(3, afterStall, "after a stall: sent at once"),
+                () -> assertEquals(2, changeSoon, "a key change 8.3 ms later goes out at once, not after half a tick"),
+                () -> assertEquals(0, beforeInterval, "unchanged keys: not before the interval"),
+                () -> assertEquals(3, atInterval, "at the interval"),
+                () -> assertEquals(4, afterStall, "after a stall: sent at once"),
                 () -> assertEquals(0, nextFrame, "no catch-up burst after a stall"),
-                () -> assertEquals(4, nextInterval, "one interval after the stall send"));
+                () -> assertEquals(5, nextInterval, "one interval after the stall send"));
         }
     }
 
