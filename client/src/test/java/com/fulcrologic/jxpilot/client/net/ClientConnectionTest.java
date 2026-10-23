@@ -259,6 +259,7 @@ class ClientConnectionTest {
             assertAll(
                 () -> assertEquals(ConnectionState.PLAYING, c.state(), "playing"),
                 () -> assertEquals("Fake Arena", rec.map.name(), "map parsed from the config"),
+                () -> assertTrue(rec.calls.contains("welcome S"), "WELCOME reported"),
                 () -> assertTrue(rec.calls.indexOf("welcome S") < rec.calls.indexOf("config Fake Arena"),
                     "welcome before config"),
                 () -> assertEquals(PacketType.RELIABLE, h.type(), "a RELIABLE datagram"),

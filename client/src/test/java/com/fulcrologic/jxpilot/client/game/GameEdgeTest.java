@@ -140,6 +140,23 @@ class GameEdgeTest {
         }
 
         @Test
+        @DisplayName("teams are inserted into score order regardless of team number")
+        void teamInsertion() {
+            Players p = new Players();
+            for (int t = 0; t < 3; t++) {
+                p.join(join(t + 1, t));
+            }
+            Scoreboard sb = new Scoreboard();
+            sb.configure(true, false, false, 0);
+            sb.setTeamScore(0, 1);
+            sb.setTeamScore(1, 5);
+            sb.setTeamScore(2, 3);
+            sb.update(p);
+            assertEquals(List.of("  1     5  Team 1@4", "  2     3  Team 2@5", "  0     1  Team 0@6"),
+                rows(sb).subList(3, 6), "5, 3, 1");
+        }
+
+        @Test
         @DisplayName("team ordering by score first; dead team in limited lives; no players: no best")
         void teams() {
             Players p = new Players();
@@ -174,6 +191,23 @@ class GameEdgeTest {
     @Nested
     @DisplayName("small models")
     class Small {
+        @Test
+        @DisplayName("GameEvents with an odd capacity index the ring after it wrapped")
+        void eventsOdd() {
+            GameEvents ev = new GameEvents(3);
+            Msg.GameEvent e = new Msg.GameEvent();
+            for (int i = 1; i <= 4; i++) {
+                e.a = i;
+                e.b = 10 * i;
+                e.value = i;
+                ev.add(e);
+            }
+            assertAll(
+                () -> assertEquals(2, ev.a(0), "oldest held a"),
+                () -> assertEquals(30, ev.b(1), "middle b"),
+                () -> assertEquals(4f, ev.value(2), "newest value"));
+        }
+
         @Test
         @DisplayName("GameEvents accessors index the ring after it wrapped")
         void eventsWrapped() {
@@ -239,13 +273,13 @@ class GameEdgeTest {
             d.y = 100;
             d.vy = 2;
             p.spawn(d, new Rng(0), 0, 0, 0);
-            p.step(4, 0.25f, 700, 350, false);
+            p.step(8, 0.25f, 700, 350, false);
             List<String> kept = new ArrayList<>();
             for (int i = 0; i < p.count(); i++) {
                 kept.add(p.x(i) + "," + p.y(i));
             }
             assertAll(
-                () -> assertEquals(List.of("0.0,0.0", "699.5,349.5", "100.0,102.0"), kept,
+                () -> assertEquals(List.of("0.0,0.0", "699.5,349.5", "100.0,104.0"), kept,
                     "inside points stay, x=W, y=H and negatives leave; y moves by vy * age"),
                 () -> assertEquals(8, p.capacity(), "capacity"));
         }
@@ -266,15 +300,18 @@ class GameEdgeTest {
         @DisplayName("MessageLog: ' <' alone is talk; empty is not; flat accessors")
         void messages() {
             MessageLog log = new MessageLog();
+            log.add(Msg.Text.KIND_GAME, "bang");
             log.add(Msg.Text.KIND_GAME, "boom");
             log.add(Msg.Text.KIND_CHAT, "hi");
+            boolean fresh = log.flashing(MessageLog.GAME, 0);
             log.tick(140);
             assertAll(
                 () -> assertTrue(MessageLog.isTalk(Msg.Text.KIND_SERVER, " <"), "two-char ' <' is talk"),
                 () -> assertFalse(MessageLog.isTalk(Msg.Text.KIND_SERVER, ""), "empty is not talk"),
                 () -> assertFalse(MessageLog.isTalk(Msg.Text.KIND_SERVER, " "), "a single blank is not talk"),
                 () -> assertEquals(1, log.count(MessageLog.TALK), "talk count"),
-                () -> assertEquals(1, log.count(MessageLog.GAME), "game count"),
+                () -> assertEquals(2, log.count(MessageLog.GAME), "game count"),
+                () -> assertTrue(fresh, "a new message flashes"),
                 () -> assertEquals("hi", log.text(MessageLog.TALK, 0).toString(), "talk text"),
                 () -> assertEquals("boom", log.text(MessageLog.GAME, 0).toString(), "game text"),
                 () -> assertEquals(140.0, log.age(MessageLog.GAME, 0), 1e-9, "age in frames"),
