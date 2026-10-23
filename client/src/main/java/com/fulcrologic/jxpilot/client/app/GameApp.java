@@ -194,10 +194,19 @@ public final class GameApp {
         });
     }
 
+    /** Shortest frame with vsync on: when the window is hidden macOS stops blocking in swap. */
+    static final long MIN_FRAME_NANOS = 1_000_000_000L / 250;
+
     private void loop() throws IOException {
         int n = 0;
+        long prevFrame = 0;
         while (!window.shouldClose()) {
+            long early = prevFrame + MIN_FRAME_NANOS - System.nanoTime();
+            if (opts.vsync() && early > 0) {
+                java.util.concurrent.locks.LockSupport.parkNanos(early);
+            }
             long now = System.nanoTime();
+            prevFrame = now;
             glfwPollEvents();
             if (script != null) {
                 script.beforeFrame(n, frame, now);

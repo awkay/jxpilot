@@ -289,4 +289,23 @@ class ClientFrameTest {
                 () -> assertEquals(List.of("disconnect"), conn.calls, "one DISCONNECT, none when closed"));
         }
     }
+
+    @Test
+    @DisplayName("a game key is no chat, quit or swap; the panel is rebuilt, not appended, each step")
+    void noSpuriousEvents() {
+        AppFixture f = new AppFixture(true).players();
+        ClientFrame cf = frame(f);
+        cf.key(GLFW_KEY_RIGHT_SHIFT, GLFW_PRESS, 0, T0);
+        cf.step(T0, 800, 600, 1, M, 256, 100);
+        int panel = cf.panelHud().textCount();
+        cf.step(T0 + 1000, 800, 600, 1, M, 256, 100);
+        assertAll(
+            () -> assertFalse(conn.calls.stream().anyMatch(c -> c.startsWith("chat")), "no chat sent"),
+            () -> assertFalse(cf.quitRequested(), "no quit"),
+            () -> assertFalse(cf.takeSwapScale(), "no swap"),
+            () -> assertEquals(panel, cf.panelHud().textCount(), "same score list size after another step"),
+            () -> assertSame(f.game, cf.game(), "game accessor"),
+            () -> assertSame(conn, cf.connection(), "connection accessor"),
+            () -> assertSame(input, cf.input(), "input accessor"));
+    }
 }
