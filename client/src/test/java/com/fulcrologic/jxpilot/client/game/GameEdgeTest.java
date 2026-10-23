@@ -220,6 +220,7 @@ class GameEdgeTest {
                         + "unknown reason: points only"),
                 () -> assertEquals("2.2", so.text(0).toString(), "game-area text: the points"),
                 () -> assertTrue(so.hasPosition(0), "with a place"),
+                () -> assertFalse(so.hasPosition(1), "without one when withPos is false"),
                 () -> assertEquals(List.of(3, 4), List.of(so.blockX(0), so.blockY(0)), "at its block"),
                 () -> assertEquals("-1.5", so.text(1).toString(), "an empty msg keeps the game-area text"),
                 () -> assertTrue(aliveAt100, "count 100 is still alive"),

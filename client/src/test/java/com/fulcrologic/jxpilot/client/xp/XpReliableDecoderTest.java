@@ -301,6 +301,11 @@ class XpReliableDecoderTest {
                     "delivered in order: score / 100, %hu blocks (40000 stays positive), empty label kept empty"),
                 () -> assertEquals(0, dec.ignored(), "not ignored"));
             prefixesIncomplete(new CPackets().scoreObject(1, 2, 3, "s"));
+            configure(0, 0x4500);
+            rec.events.clear();
+            decode(new CPackets().scoreObject(1.5, 7, 8, "v"));
+            assertEquals(List.of("scoreobject score=1.5 at=7,8 label=v"), rec.events,
+                "version 0x4500 itself already has the two-decimal format");
         }
 
         @Test
