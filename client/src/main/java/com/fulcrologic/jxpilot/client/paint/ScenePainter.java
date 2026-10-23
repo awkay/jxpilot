@@ -27,28 +27,47 @@ import com.fulcrologic.jxpilot.client.render.Camera;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.client.render.TextWriter;
 import com.fulcrologic.jxpilot.client.render.VertexBatch;
+import com.fulcrologic.jxpilot.common.Const;
 
 /**
- * Draws a frame's {@link SceneData} for every visible world copy in four passes, so the whole scene
- * costs four draw commands: fills (mine blocks, paused squares, locked hulls, item symbols), points
- * (particles, shots, marking-light squares), lines (everything else, in C's order: items, balls,
- * mines, wreckage, asteroids, team shots, missiles, lasers, paused frames, ECM, ships, links,
- * marking-light crosses), then text (ship and mine names, the paused "P").
+ * Draws a frame's {@link SceneData} for every visible world copy in the order of the C client's
+ * deferred flushes ({@code paint.c} {@code Paint_frame}, {@code paintdata.c}): what C draws at once
+ * comes in call order, what it queues ({@code Rectangle_add}, {@code Segment_add}, {@code Arc_add})
+ * comes when C flushes the queue.
+ * <ol>
+ *   <li>{@code Paint_shots}' direct draws: mine blocks and item symbols (fills), then item triangles,
+ *   mine outlines, wreckage, asteroids, missiles and lasers (lines);</li>
+ *   <li>its queues: sparks (with the sparkle) and shots (points), then team-shot arms (lines);</li>
+ *   <li>{@code Paint_ships}' direct draws: paused squares and locked hulls (fills), the text (paused
+ *   "P", ship names, round-delay digits; mine names, which C draws in step 1), then paused frames,
+ *   ships with their shields, and the connectors (lines);</li>
+ *   <li>its queues: marking-light squares (points), then their crosses (lines);</li>
+ *   <li>{@link #drawArcs}: the arc queue ({@code Arc_end}), balls and ECM bursts.</li>
+ * </ol>
+ * {@link #draw} is steps 1-5. A caller interleaving the map's and the HUD's parts in full C order
+ * calls {@link #drawBody} (steps 1-4), its own non-arc HUD, then the map's arcs, {@link #drawArcs}
+ * and the HUD's arcs. Each step loops over all copies, so the scene costs at most 8 draw commands
+ * (adjacent commands of one kind merge).
  * <p>
+ * While {@link SceneData#damaged} is positive the caller draws only {@link #damagedFlash}.
  * Each object is skipped in a copy where its extent (world radius plus a screen-pixel margin for
  * pixel-sized parts) is off-screen. Allocation-free.
  */
 public final class ScenePainter {
     /** World radius covering a ship with shields, lights and its cull slack. */
     static final float SHIP_RADIUS = 40;
-    /** Screen-pixel margin for pixel-sized parts (item triangles, mines, lights, labels). */
+    /** Screen-pixel margin for pixel-sized parts (item triangles, lights, labels). */
     static final float PIXEL_MARGIN = 24;
     /** Margin for text labels, which reach further than the object. */
     static final float LABEL_MARGIN = 160;
+    /** World radius of a mine (its outline spans x-8..x+9 window pixels) and of a shot or spark. */
+    static final float MINE_RADIUS = 10;
+    static final float SHOT_RADIUS = 2;
 
     private final Palette palette;
     private final ShipPainter ships;
     private final ObjectPainter objects;
+    private int sparkRand = Particles.sparkRand(PaintConfig.SPARK_PROB);
 
     public ScenePainter(Palette palette) {
         this.palette = palette;
@@ -56,25 +75,98 @@ public final class ScenePainter {
         this.objects = new ObjectPainter(palette);
     }
 
-    /** Draw the scene (leaves the batch with the identity transform). */
+    /**
+     * C option {@code sparkProb} (default {@link PaintConfig#SPARK_PROB}): the chance a spark or debris
+     * particle is drawn in a frame.
+     */
+    public void setSparkProb(double prob) {
+        sparkRand = Particles.sparkRand(prob);
+    }
+
+    /** Draw the whole scene (steps 1-5; leaves the batch with the identity transform). */
     public void draw(VertexBatch b, TextWriter text, Camera cam, SceneData s) {
-        float px = (float) (1 / cam.zoom());
-        for (int k = 0; k < cam.offsetCount(); k++) {
+        drawBody(b, text, cam, s);
+        drawArcs(b, cam, s);
+    }
+
+    /** Steps 1-4: everything but the arcs (leaves the batch with the identity transform). */
+    public void drawBody(VertexBatch b, TextWriter text, Camera cam, SceneData s) {
+        double zoom = cam.zoom();
+        int n = cam.offsetCount();
+        for (int k = 0; k < n; k++) {
             cam.applyTo(b, k);
-            fills(b, cam, k, s, px);
+            objectFills(b, cam, k, s, zoom);
         }
-        for (int k = 0; k < cam.offsetCount(); k++) {
+        for (int k = 0; k < n; k++) {
             cam.applyTo(b, k);
-            points(b, cam, k, s, px);
+            objectLines(b, cam, k, s, zoom);
         }
-        for (int k = 0; k < cam.offsetCount(); k++) {
+        for (int k = 0; k < n; k++) {
             cam.applyTo(b, k);
-            lines(b, cam, k, s, px);
+            shotPoints(b, cam, k, s, zoom);
+        }
+        for (int k = 0; k < n; k++) {
+            cam.applyTo(b, k);
+            teamShots(b, cam, k, s, zoom);
+        }
+        for (int k = 0; k < n; k++) {
+            cam.applyTo(b, k);
+            shipFills(b, cam, k, s);
         }
         b.identity();
-        for (int k = 0; k < cam.offsetCount(); k++) {
-            texts(b, text, cam, k, s);
+        for (int k = 0; k < n; k++) {
+            texts(b, text, cam, k, s, zoom);
         }
+        for (int k = 0; k < n; k++) {
+            cam.applyTo(b, k);
+            shipLines(b, cam, k, s, zoom);
+        }
+        for (int k = 0; k < n; k++) {
+            cam.applyTo(b, k);
+            lightSquares(b, cam, k, s, zoom);
+        }
+        for (int k = 0; k < n; k++) {
+            cam.applyTo(b, k);
+            lightCrosses(b, cam, k, s, zoom);
+        }
+        b.identity();
+    }
+
+    /** Step 5, C's {@code Arc_end} of the scene: balls, then ECM bursts (leaves the identity transform). */
+    public void drawArcs(VertexBatch b, Camera cam, SceneData s) {
+        for (int k = 0; k < cam.offsetCount(); k++) {
+            cam.applyTo(b, k);
+            for (int i = 0; i < s.ballCount; i++) {
+                if (visible(cam, s.ballX[i], s.ballY[i], Const.BALL_RADIUS, k, 0)) {
+                    objects.ball(b, s.ballX[i], s.ballY[i]);
+                }
+            }
+            for (int i = 0; i < s.ecmCount; i++) {
+                if (visible(cam, s.ecmX[i], s.ecmY[i], s.ecmSize[i] / 2, k, 0)) {
+                    objects.ecm(b, s.ecmX[i], s.ecmY[i], s.ecmSize[i]);
+                }
+            }
+        }
+        b.identity();
+    }
+
+    /**
+     * C {@code Paint_frame} while {@code damaged > 0}: nothing of the scene, HUD or radar is painted;
+     * instead the window is XOR-filled with blue every frame, so it alternates blue and black.
+     * <p>
+     * BEHAVIOR: returns whether the view is damaged ({@code s.damaged > 0}); the caller then draws
+     * nothing else. When damaged and {@code loops} is even, fills the whole viewport (framebuffer
+     * pixels, identity transform) blue; on odd frames it draws nothing (black). Undamaged: draws nothing.
+     */
+    public boolean damagedFlash(VertexBatch b, Camera cam, SceneData s) {
+        if (s.damaged <= 0) {
+            return false;
+        }
+        if ((s.loops & 1) == 0) {
+            b.identity();
+            b.fillRect(0, 0, cam.viewWidth(), cam.viewHeight(), palette.color(Palette.BLUE));
+        }
+        return true;
     }
 
     /** True if a world point with world radius {@code r} plus {@code marginPx} pixels shows in copy k. */
@@ -94,62 +186,35 @@ public final class ScenePainter {
         return (h & 1) != 0;
     }
 
-    private void fills(VertexBatch b, Camera cam, int k, SceneData s, float px) {
+    /** Whether ship i shows the round-delay digit instead of its hull, lights and shields. */
+    private static boolean delayed(SceneData s) {
+        return ShipPainter.showRoundDelay(s.roundDelay, s.fps);
+    }
+
+    // ------------------------------------------------------------------ step 1: Paint_shots, direct
+
+    private void objectFills(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
         for (int i = 0; i < s.mineCount; i++) {
-            if (!s.mineTeam[i] && visible(cam, s.mineX[i], s.mineY[i], 0, k, PIXEL_MARGIN)) {
-                objects.mineFill(b, s.mineX[i], s.mineY[i], px);
-            }
-        }
-        for (int i = 0; i < s.pausedCount; i++) {
-            if (visible(cam, s.pausedX[i], s.pausedY[i], ObjectPainter.HALF_PAUSE + 1, k, 0)) {
-                objects.pausedFill(b, s.pausedX[i], s.pausedY[i]);
-            }
-        }
-        for (int i = 0; i < s.shipCount; i++) {
-            if (s.shipLocked[i] && visible(cam, s.shipX[i], s.shipY[i], SHIP_RADIUS, k, 0)) {
-                ships.lockedFill(b, s.shipShape[i], s.shipX[i], s.shipY[i], s.shipHeading[i], s.shipColor[i]);
+            if (!s.mineTeam[i] && visible(cam, s.mineX[i], s.mineY[i], MINE_RADIUS, k, 2)) {
+                objects.mineFill(b, s.mineX[i], s.mineY[i], zoom);
             }
         }
         for (int i = 0; i < s.itemCount; i++) {
             if (visible(cam, s.itemX[i], s.itemY[i], 0, k, PIXEL_MARGIN)) {
-                objects.itemSymbol(b, s.itemType[i], s.itemX[i], s.itemY[i], px);
+                objects.itemSymbol(b, s.itemType[i], s.itemX[i], s.itemY[i], zoom);
             }
         }
     }
 
-    private void points(VertexBatch b, Camera cam, int k, SceneData s, float px) {
-        for (int i = 0; i < s.particleCount; i++) {
-            if (visible(cam, s.particleX[i], s.particleY[i], 0, k, PaintConfig.SPARK_SIZE)) {
-                Particles.spark(b, palette, s.particleX[i], s.particleY[i], s.particleColor[i], px);
-            }
-        }
-        for (int i = 0; i < s.shotCount; i++) {
-            if (!s.shotTeam[i] && visible(cam, s.shotX[i], s.shotY[i], 0, k, PaintConfig.SHOT_SIZE)) {
-                objects.shot(b, s.shotX[i], s.shotY[i], s.shotColor[i]);
-            }
-        }
-        for (int i = 0; i < s.shipCount; i++) {
-            if (visible(cam, s.shipX[i], s.shipY[i], SHIP_RADIUS, k, PIXEL_MARGIN)) {
-                ships.markingLightSquares(b, s.shipShape[i], s.shipX[i], s.shipY[i], s.shipHeading[i], s.shipId[i],
-                    s.loops, px);
-            }
-        }
-    }
-
-    private void lines(VertexBatch b, Camera cam, int k, SceneData s, float px) {
+    private void objectLines(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
         for (int i = 0; i < s.itemCount; i++) {
             if (visible(cam, s.itemX[i], s.itemY[i], 0, k, PIXEL_MARGIN)) {
-                objects.itemTriangle(b, s.itemX[i], s.itemY[i], px);
-            }
-        }
-        for (int i = 0; i < s.ballCount; i++) {
-            if (visible(cam, s.ballX[i], s.ballY[i], com.fulcrologic.jxpilot.common.Const.BALL_RADIUS, k, 0)) {
-                objects.ball(b, s.ballX[i], s.ballY[i]);
+                objects.itemTriangle(b, s.itemX[i], s.itemY[i], zoom);
             }
         }
         for (int i = 0; i < s.mineCount; i++) {
-            if (visible(cam, s.mineX[i], s.mineY[i], 0, k, PIXEL_MARGIN)) {
-                objects.mineOutline(b, s.mineX[i], s.mineY[i], px);
+            if (visible(cam, s.mineX[i], s.mineY[i], MINE_RADIUS, k, 2)) {
+                objects.mineOutline(b, s.mineX[i], s.mineY[i], zoom);
             }
         }
         for (int i = 0; i < s.wreckCount; i++) {
@@ -164,11 +229,6 @@ public final class ScenePainter {
                     s.asteroidSize[i]);
             }
         }
-        for (int i = 0; i < s.shotCount; i++) {
-            if (s.shotTeam[i] && visible(cam, s.shotX[i], s.shotY[i], 0, k, PaintConfig.SHOT_SIZE)) {
-                objects.teamShot(b, s.shotX[i], s.shotY[i], s.shotColor[i], diagonal(i, s.loops), px);
-            }
-        }
         for (int i = 0; i < s.missileCount; i++) {
             if (visible(cam, s.missileX[i], s.missileY[i], s.missileLen[i], k, PaintConfig.MISSILE_WIDTH)) {
                 objects.missile(b, s.missileX[i], s.missileY[i], s.missileLen[i], s.missileDir[i]);
@@ -179,32 +239,121 @@ public final class ScenePainter {
                 objects.laser(b, s.laserX[i], s.laserY[i], s.laserLen[i], s.laserDir[i], s.laserColor[i]);
             }
         }
+    }
+
+    // ------------------------------------------------------------------ step 2: Paint_shots, queued
+
+    private void shotPoints(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
+        for (int i = 0; i < s.particleCount; i++) {
+            if (Particles.sparkShown(i, s.loops, sparkRand)
+                && visible(cam, s.particleX[i], s.particleY[i], SHOT_RADIUS, k, 2)) {
+                Particles.spark(b, palette, s.particleX[i], s.particleY[i], s.particleColor[i], zoom);
+            }
+        }
+        for (int i = 0; i < s.shotCount; i++) {
+            if (!s.shotTeam[i] && visible(cam, s.shotX[i], s.shotY[i], SHOT_RADIUS, k, 2)) {
+                objects.shot(b, s.shotX[i], s.shotY[i], s.shotColor[i], zoom);
+            }
+        }
+    }
+
+    private void teamShots(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
+        for (int i = 0; i < s.shotCount; i++) {
+            if (s.shotTeam[i] && visible(cam, s.shotX[i], s.shotY[i], SHOT_RADIUS, k, 2)) {
+                objects.teamShot(b, s.shotX[i], s.shotY[i], s.shotColor[i], diagonal(i, s.loops), zoom);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ step 3: Paint_ships, direct
+
+    private void shipFills(VertexBatch b, Camera cam, int k, SceneData s) {
+        for (int i = 0; i < s.pausedCount; i++) {
+            if (visible(cam, s.pausedX[i], s.pausedY[i], ObjectPainter.HALF_PAUSE + 1, k, 0)) {
+                objects.pausedFill(b, s.pausedX[i], s.pausedY[i]);
+            }
+        }
+        if (delayed(s)) {
+            return;
+        }
+        for (int i = 0; i < s.shipCount; i++) {
+            if (ShipPainter.lockedFillShown(s.shipLocked[i], s.shipFlags[i])
+                && visible(cam, s.shipX[i], s.shipY[i], SHIP_RADIUS, k, 0)) {
+                ships.lockedFill(b, s.shipShape[i], s.shipX[i], s.shipY[i], s.shipHeading[i], s.shipColor[i]);
+            }
+        }
+    }
+
+    private void texts(VertexBatch b, TextWriter text, Camera cam, int k, SceneData s, double zoom) {
+        double ratio = cam.pixelRatio();
+        for (int i = 0; i < s.pausedCount; i++) {
+            if (ObjectPainter.pausedBlinkOn(s.pausedCountdown[i], s.loops)
+                && visible(cam, s.pausedX[i], s.pausedY[i], 0, k, PIXEL_MARGIN)) {
+                objects.pausedLetter(b, text, cam.screenX(s.pausedX[i], k), cam.screenY(s.pausedY[i] - 1, k));
+            }
+        }
+        boolean delay = delayed(s);
+        for (int i = 0; i < s.shipCount; i++) {
+            if (s.shipName[i] != null && s.shipId[i] != s.selfId
+                && visible(cam, s.shipX[i], s.shipY[i], 0, k, LABEL_MARGIN)) {
+                ships.name(b, text, cam.screenX(s.shipX[i], k), cam.screenY(s.shipY[i], k), s.shipName[i], ratio, zoom);
+            }
+            if (delay && visible(cam, s.shipX[i], s.shipY[i], 0, k, PIXEL_MARGIN)) {
+                ships.roundDelay(b, text, cam.screenX(s.shipX[i], k), cam.screenY(s.shipY[i], k), s.roundDelay / s.fps);
+            }
+        }
+        for (int i = 0; i < s.mineCount; i++) {
+            if (s.mineName[i] != null && visible(cam, s.mineX[i], s.mineY[i], 0, k, LABEL_MARGIN)) {
+                objects.mineName(b, text, cam.screenX(s.mineX[i], k), cam.screenY(s.mineY[i], k), s.mineName[i], ratio,
+                    zoom);
+            }
+        }
+    }
+
+    private void shipLines(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
         for (int i = 0; i < s.pausedCount; i++) {
             if (ObjectPainter.pausedBlinkOn(s.pausedCountdown[i], s.loops)
                 && visible(cam, s.pausedX[i], s.pausedY[i], ObjectPainter.HALF_PAUSE + 1, k, 0)) {
                 objects.pausedOutline(b, s.pausedX[i], s.pausedY[i]);
             }
         }
-        for (int i = 0; i < s.ecmCount; i++) {
-            if (visible(cam, s.ecmX[i], s.ecmY[i], s.ecmSize[i] / 2, k, 0)) {
-                objects.ecm(b, s.ecmX[i], s.ecmY[i], s.ecmSize[i]);
-            }
-        }
-        for (int i = 0; i < s.shipCount; i++) {
-            if (visible(cam, s.shipX[i], s.shipY[i], SHIP_RADIUS, k, 0)) {
-                ships.ship(b, s.shipShape[i], s.shipX[i], s.shipY[i], s.shipHeading[i], s.shipColor[i], s.shipFlags[i],
-                    s.loops, px);
+        if (!delayed(s)) {
+            for (int i = 0; i < s.shipCount; i++) {
+                if (visible(cam, s.shipX[i], s.shipY[i], SHIP_RADIUS, k, 0)) {
+                    ships.ship(b, s.shipShape[i], s.shipX[i], s.shipY[i], s.shipHeading[i], s.shipColor[i],
+                        s.shipFlags[i], s.loops, zoom);
+                }
             }
         }
         for (int i = 0; i < s.linkCount; i++) {
             if (linkVisible(cam, s, i, k)) {
-                link(b, s, i, px);
+                link(b, s, i, zoom);
             }
+        }
+    }
+
+    // ------------------------------------------------------------------ step 4: Paint_ships, queued
+
+    private void lightSquares(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
+        if (delayed(s)) {
+            return;
+        }
+        for (int i = 0; i < s.shipCount; i++) {
+            if (visible(cam, s.shipX[i], s.shipY[i], SHIP_RADIUS, k, PIXEL_MARGIN)) {
+                ships.markingLightSquares(b, s.shipShape[i], s.shipX[i], s.shipY[i], s.shipHeading[i], s.shipId[i],
+                    s.loops, zoom);
+            }
+        }
+    }
+
+    private void lightCrosses(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
+        if (delayed(s)) {
+            return;
         }
         for (int i = 0; i < s.shipCount; i++) {
             if (visible(cam, s.shipX[i], s.shipY[i], SHIP_RADIUS, k, PIXEL_MARGIN)) {
                 ships.markingLightCrosses(b, s.shipShape[i], s.shipX[i], s.shipY[i], s.shipHeading[i], s.shipId[i],
-                    s.loops, px);
+                    s.loops, zoom);
             }
         }
     }
@@ -217,33 +366,14 @@ public final class ScenePainter {
         return cam.isVisible(x0, y0, x1, y1, k, 0);
     }
 
-    private void link(VertexBatch b, SceneData s, int i, float px) {
+    private void link(VertexBatch b, SceneData s, int i, double zoom) {
         switch (s.linkKind[i]) {
             case SceneData.LINK_BALL -> objects.ballConnector(b, s.linkX1[i], s.linkY1[i], s.linkX2[i], s.linkY2[i]);
+            case SceneData.LINK_CONNECTOR -> objects.connector(b, s.linkX1[i], s.linkY1[i], s.linkX2[i], s.linkY2[i],
+                zoom);
             case SceneData.LINK_TRACTOR -> objects.tractorBeam(b, s.linkX1[i], s.linkY1[i], s.linkX2[i], s.linkY2[i],
-                s.loops, px);
-            default -> objects.dashedLink(b, s.linkX1[i], s.linkY1[i], s.linkX2[i], s.linkY2[i], s.loops, px);
-        }
-    }
-
-    private void texts(VertexBatch b, TextWriter text, Camera cam, int k, SceneData s) {
-        double ratio = cam.pixelRatio();
-        for (int i = 0; i < s.shipCount; i++) {
-            if (s.shipName[i] != null && s.shipId[i] != s.selfId
-                && visible(cam, s.shipX[i], s.shipY[i], 0, k, LABEL_MARGIN)) {
-                ships.name(b, text, cam.screenX(s.shipX[i], k), cam.screenY(s.shipY[i], k), s.shipName[i], ratio);
-            }
-        }
-        for (int i = 0; i < s.mineCount; i++) {
-            if (s.mineName[i] != null && visible(cam, s.mineX[i], s.mineY[i], 0, k, LABEL_MARGIN)) {
-                objects.mineName(b, text, cam.screenX(s.mineX[i], k), cam.screenY(s.mineY[i], k), s.mineName[i], ratio);
-            }
-        }
-        for (int i = 0; i < s.pausedCount; i++) {
-            if (ObjectPainter.pausedBlinkOn(s.pausedCountdown[i], s.loops)
-                && visible(cam, s.pausedX[i], s.pausedY[i], 0, k, PIXEL_MARGIN)) {
-                objects.pausedLetter(b, text, cam.screenX(s.pausedX[i], k), cam.screenY(s.pausedY[i] - 1, k));
-            }
+                zoom);
+            default -> objects.dashedLink(b, s.linkX1[i], s.linkY1[i], s.linkX2[i], s.linkY2[i], s.loops, zoom);
         }
     }
 }

@@ -1,0 +1,139 @@
+ifdef::env-github[]
+= Appendices
+:toc:
+:toclevels: 2
+:experimental:
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+[appendix]
+[[licensing]]
+== Licensing and credits
+
+JXPilot is free software: you can redistribute it and/or modify it under the terms of the *GNU General
+Public License, version 2 or (at your option) any later version*. The full text is in the `LICENSE`
+file of the source, of every release archive, and inside both jars (`META-INF/LICENSE`).
+
+It is a derivative work of XPilot 4.5.5, which is Copyright © 1991-2002 by Bjørn Stabell, Ken Ronny
+Schouten, Bert Gijsbers & Dick Balaska, and is distributed under the same license. The game rules,
+physics, map format and many algorithms were ported from the XPilot C sources and changed in the
+process. Every source file carries a notice saying so, and the git history records the changes.
+
+IMPORTANT: JXPilot is an independent port. The original XPilot authors were not involved in it and do
+not endorse it. Report JXPilot problems at https://github.com/awkay/jxpilot/issues, not to them.
+
+The source code of every release is attached to its GitHub release, and is at
+https://github.com/awkay/jxpilot.
+
+[[third-party]]
+=== Third-party components
+
+[cols="2,3,2",options="header"]
+|===
+|Component |Where |License
+|XPilot 4.5.5 maps |`maps/*.xp`, the maps zip, the application downloads |GPL v2 or later; authors in
+<<06-config-and-maps.adoc#shipped-maps,Shipped maps>>
+|Fira Code font |Client jar (`fonts/`) |SIL Open Font License 1.1 (`fonts/FiraCode-LICENSE.txt`)
+|LWJGL 3 |Client jar |BSD 3-Clause
+|GLFW, stb, libffi, liburing (in LWJGL's native libraries); Khronos OpenGL headers |Client jar |zlib;
+MIT or public domain; MIT; MIT; Khronos (MIT-style). Texts in `META-INF/licenses/lwjgl/` in the client jar.
+|Java runtime (OpenJDK, Eclipse Temurin build) |Application downloads only (`runtime/`) |GPL v2 with
+the Classpath Exception; texts in the runtime's `legal/` directory
+|JUnit 5, PIT |Build and tests only, not distributed |EPL 2.0 / Apache 2.0
+|===
+
+[appendix]
+[[troubleshooting]]
+== Troubleshooting
+
+[cols="2,3",options="header"]
+|===
+|Problem |What to do
+
+|`UnsupportedClassVersionError ... class file version 69.0`
+|Your Java is older than 25. Install Java 25 (<<02-quick-start.adoc#java,Installing Java 25>>) and
+check `java -version`.
+
+|macOS: `GLFW may only be used on the main thread and that thread must be the first thread in the process`
+|The client was started without `-XstartOnFirstThread`. With the release jar this only happens when
+`JXPILOT_NO_RELAUNCH` is set; unset it, or add `-XstartOnFirstThread` to the `java` command.
+
+|macOS: "JXPilot is damaged and can't be opened"
+|The download is quarantined and the app is unsigned. Run `xattr -dr com.apple.quarantine JXPilot.app`
+(<<02-quick-start.adoc#gatekeeper,details>>).
+
+|The window does not open: errors mentioning GLFW, OpenGL or the display
+|The client needs OpenGL 3.3 and a desktop session. Update the graphics driver; on Linux, check that
+`DISPLAY` or `WAYLAND_DISPLAY` is set (it is not over plain SSH).
+
+|Warnings about `sun.misc.Unsafe` at startup
+|Harmless (LWJGL uses it). Add `--sun-misc-unsafe-memory-access=allow` to the `java` command to hide them.
+
+|`java -jar jxpilot-server-...jar` fails with `ClassNotFoundException: ...ServerMain`
+|This release was made before the server's entry point was merged
+(<<02-quick-start.adoc#run-server,Running a server>>).
+
+|Server: `bind selector(s) [...] match no local address`
+|The `--bind` selector matches no address on this machine. Check the interface name or network, or add
+`--bindWait` if the interface appears later (<<04-running-a-server.adoc#bind-wait,bindWait>>).
+
+|Server: `cannot bind ...` or "could not bind any address"
+|Another program (perhaps another server) uses the port on that address. Stop it or choose another
+`--port`.
+
+|Players cannot connect
+|Check that they use an address from the server's `listening on` lines, that the firewall allows the
+UDP port (<<04-running-a-server.adoc#firewalls,Ports and firewalls>>), and that VPN users reach the
+server over the VPN.
+
+|Server: `option warning: Not allowed to change option '...' from MAP`
+|The map sets an option that only the command line or config file may set. Harmless; the map's value is
+ignored.
+
+|`Unknown option: --connect`
+|The game client cannot join servers yet (<<07-client-reference.adoc#network-flags,Network flags>>).
+|===
+
+[appendix]
+[[faq]]
+== FAQ
+
+Can I play JXPilot online now?::
+Not yet. The map viewer works, the server and client networking are written on development branches,
+and the game simulation is being ported. See <<01-introduction.adoc#status,Status>>.
+
+Can I join an original XPilot server, or use the original XPilot client with a JXPilot server?::
+Not today: JXPilot has its own network protocol. Support for joining original XPilot 4.5.5 servers is
+being written (<<07-client-reference.adoc#xpilot-protocol,Playing on original XPilot servers>>).
+
+Does it use the original maps?::
+Yes, unchanged. The 19 maps of the XPilot 4.5.5 distribution ship with it, and other block-based XPilot
+maps should load too.
+
+Can I use my XPilot server config files?::
+Yes. JXPilot reads XPilot's config format and knows all XPilot 4.5.5 server options, with the same
+precedence rules, so existing files load. Many options take effect only as the features are
+implemented.
+
+Can I use my `.xpilotrc` key bindings?::
+Not yet. The default XPilot keys are built in; a keys file is planned.
+
+Is JXPilot related to the XPilot developers?::
+No. It is an independent port; they were not involved and do not endorse it
+(<<01-introduction.adoc#disclaimer,Relationship to XPilot>>).
+
+Why is the client jar about 5 MB?::
+It carries the native libraries for every supported system, so one file runs on Windows, macOS and
+Linux. The application downloads are larger (about 20 MB zipped) because they include a Java runtime.
+
+Does it run on Intel Macs, Linux on ARM, Windows on ARM?::
+The jar includes native libraries for macOS on Intel and Apple Silicon, Linux on x64 and arm64, and
+Windows on x64. The machine also needs an OpenGL 3.3 driver. Windows on ARM is not included yet.
+
+Where do I report bugs?::
+At https://github.com/awkay/jxpilot/issues. Please include your system, `java -version`, the command
+you ran and its output.

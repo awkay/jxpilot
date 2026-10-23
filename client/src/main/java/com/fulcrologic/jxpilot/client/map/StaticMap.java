@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.client.map;
 
+import com.fulcrologic.jxpilot.client.render.WinScale;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.client.render.Shapes;
 import com.fulcrologic.jxpilot.client.render.VertexBatch;
@@ -98,7 +99,9 @@ public final class StaticMap {
 
     /**
      * Fixed map features: background dots (points, drawn first), then decoration outlines (when
-     * {@code showDecor}), gravity markers and base lines.
+     * {@code showDecor}), the straight parts of gravity markers and base lines. The gravity circles and
+     * arcs are C {@code Arc_add}s, flushed after the ships, so {@link MapSymbols#drawArcs} draws them
+     * per frame ({@link #gravityArcs}).
      */
     public static void features(WorldMap m, Palette p, boolean showDecor, VertexBatch b) {
         backgroundDots(m, showDecor, b, p.color(Palette.BLUE));
@@ -107,7 +110,7 @@ public final class StaticMap {
         }
         int red = p.color(Palette.RED);
         for (GravitySource g : m.gravitySources()) {
-            gravity(b, g.type(), g.bx() * S, g.by() * S, red);
+            gravityLines(b, g.type(), g.bx() * S, g.by() * S, red);
         }
         int white = p.color(Palette.WHITE);
         for (Base base : m.bases()) {
@@ -138,10 +141,22 @@ public final class StaticMap {
     /**
      * A {@link #POINT_SIZE}-pixel square at the block centre as C draws it ({@code Gui_paint_decor_dot}:
      * {@code Rectangle_add(X(x+17)-1, Y(y+17)-1, 2, 2)} in y-down screen space), covering world
-     * {@code [x+16, x+18) x [y+17, y+19)}: centred on {@code (x+17, y+18)}, unscaled by zoom.
+     * {@code [x+16, x+18) x [y+17, y+19)}: centred on {@code (x+17, y+18)}. The size is C's unscaled
+     * size: static meshes are drawn with {@code GlRenderer.setPointScale}, which scales it as
+     * {@link #dot(VertexBatch, int, int, int, double)} does.
      */
     public static void dot(VertexBatch b, int x, int y, int rgba) {
         b.point(x + HALF, y + HALF + 1, POINT_SIZE, rgba);
+    }
+
+    /**
+     * {@link #dot} at a zoom: C's {@code Rectangle_add} sizes scale by {@code WINSCALE}, so the side is
+     * {@code WinScale.of(2, zoom)} pixels and the centre moves by {@code WinScale.squareShift} pixels
+     * right and down (in world units: divided by the zoom).
+     */
+    public static void dot(VertexBatch b, int x, int y, int rgba, double zoom) {
+        float shift = (float) (WinScale.squareShift(POINT_SIZE, zoom) / zoom);
+        b.point(x + HALF + shift, y + HALF + 1 - shift, WinScale.of(POINT_SIZE, zoom), rgba);
     }
 
     static void backgroundDots(WorldMap m, boolean showDecor, VertexBatch b, int rgba) {
@@ -156,31 +171,45 @@ public final class StaticMap {
 
     /**
      * Gravity marker of block type {@code type} for the block at world (x, y) (C
-     * {@code Gui_paint_setup_*_grav}).
+     * {@code Gui_paint_setup_*_grav}): {@link #gravityArcs} then {@link #gravityLines}.
      * <p>
      * BEHAVIOR: + circle with a cross; - circle with a bar; clockwise/anticlockwise a 300 degree
      * arc with an arrowhead at the top; up/down/left/right an arrow across the block.
      */
     static void gravity(VertexBatch b, int type, int x, int y, int c) {
+        gravityArcs(b, type, x, y, c);
+        gravityLines(b, type, x, y, c);
+    }
+
+    /**
+     * The circle or arc of a gravity marker (C {@code Arc_add}): + and - a circle of diameter
+     * {@code BLOCK_SZ - 2}; clockwise from 90 and anticlockwise from 150 degrees a 300 degree arc of
+     * diameter {@code BLOCK_SZ - 10}; nothing for the directional kinds.
+     */
+    public static void gravityArcs(VertexBatch b, int type, int x, int y, int c) {
         float cx = x + S / 2f;
         float cy = y + S / 2f;
         switch (type) {
+            case BlockType.POS_GRAV, BlockType.NEG_GRAV -> Shapes.circle(b, cx, cy, (S - 2) / 2f, CIRCLE_SEGMENTS, c);
+            case BlockType.CWISE_GRAV -> Shapes.arc(b, cx, cy, (S - 10) / 2f, 90, 300, ARC_SEGMENTS, c);
+            case BlockType.ACWISE_GRAV -> Shapes.arc(b, cx, cy, (S - 10) / 2f, 150, 300, ARC_SEGMENTS, c);
+            default -> { }
+        }
+    }
+
+    /** The straight lines of a gravity marker (C {@code Segment_add}): crosses, bars, arrowheads and arrows. */
+    static void gravityLines(VertexBatch b, int type, int x, int y, int c) {
+        switch (type) {
             case BlockType.POS_GRAV -> {
-                Shapes.circle(b, cx, cy, (S - 2) / 2f, CIRCLE_SEGMENTS, c);
                 b.line(x + HALF, y + 5, x + HALF, y + S - 5, c);
                 b.line(x + 5, y + HALF, x + S - 5, y + HALF, c);
             }
-            case BlockType.NEG_GRAV -> {
-                Shapes.circle(b, cx, cy, (S - 2) / 2f, CIRCLE_SEGMENTS, c);
-                b.line(x + 5, y + HALF, x + S - 5, y + HALF, c);
-            }
+            case BlockType.NEG_GRAV -> b.line(x + 5, y + HALF, x + S - 5, y + HALF, c);
             case BlockType.CWISE_GRAV -> {
-                Shapes.arc(b, cx, cy, (S - 10) / 2f, 90, 300, ARC_SEGMENTS, c);
                 b.line(x + HALF, y + S - 5, x + HALF - 4, y + S - 1, c);
                 b.line(x + HALF, y + S - 5, x + HALF - 4, y + S - 9, c);
             }
             case BlockType.ACWISE_GRAV -> {
-                Shapes.arc(b, cx, cy, (S - 10) / 2f, 150, 300, ARC_SEGMENTS, c);
                 b.line(x + HALF, y + S - 5, x + HALF + 4, y + S - 1, c);
                 b.line(x + HALF, y + S - 5, x + HALF + 4, y + S - 9, c);
             }

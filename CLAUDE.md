@@ -38,7 +38,7 @@ Java 25 / Maven / LWJGL reimplementation of XPilot 4.5.5 (C source: `/Users/tony
 - License: GPL-2.0-or-later (derivative of XPilot 4.5.5). Every `.java` file must start with the
   header in `license-header.txt`; the build fails without it (`mvn license:format` adds it).
   Never alter files in `maps/` (unmodified XPilot originals). Any new bundled asset needs a
-  GPL-compatible license, its license text committed next to it, and a row in README.md's
+  GPL-compatible license, its license text committed next to it, and a row in README.adoc's
   third-party table.
 - Subagent effort: every implementation agent and reviewer is spawned with `effort: high`.
   Effort is fixed at spawn and can't be changed on resume, so agents running at another level
@@ -47,3 +47,8 @@ Java 25 / Maven / LWJGL reimplementation of XPilot 4.5.5 (C source: `/Users/tony
   robots, networking, client painting/HUD), the lead runs a dedicated C-to-Java fidelity review
   of that area at `effort: xhigh`. It compares the Java line by line against the C functions it
   ports, and its findings go to the implementer like any other review.
+- Docs follow every landing: after any merge or commit to `main` that changes behaviour, options,
+  flags, protocol or status, the lead resumes (or re-spawns) the docs agent to update the user guide
+  (`docs/guide/`): regenerate tables (`make -C docs/guide generate`), update status tables and the
+  NOTEs about unmerged branches, and add or adjust any affected chapter. The docs update lands
+  before the next release tag.

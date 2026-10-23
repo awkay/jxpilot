@@ -54,6 +54,19 @@ class DemoHudTest {
     }
 
     @Test
+    void theHudFrameAndGaugeAreLaidOutAsCScalesThem() {
+        DemoHud h = new DemoHud();
+        h.build(800, 600, 300, 0, TEXT, 1, 0.5);
+        assertAll(
+            () -> assertEquals(300 - 35f, h.lineY0(0), "unscaled hud_pos (800, 600): WINSCALE(600 - 70) = 265"),
+            () -> assertEquals(400 - 45f, h.lineX0(0), "WINSCALE(800 - 90) = 355"),
+            () -> assertEquals(445f, h.lineX1(0), "WINSCALE(890)"),
+            () -> assertEquals(438f - 1, h.rectX(0), "gauge frame from WINSCALE(876) - 1"),
+            () -> assertEquals(4f + 2, h.rectW(0), "WINSCALE(8) + 2 wide"),
+            () -> assertEquals(590f, h.rectX(3), "the meter is not scaled"));
+    }
+
+    @Test
     void messagesTypeOutAndTurnFromRedToOld() {
         DemoHud fresh = new DemoHud();
         fresh.build(800, 600, 300, 0, TEXT, 1);

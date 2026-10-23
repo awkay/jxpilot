@@ -76,8 +76,8 @@ class HudPainterTest {
         @Test
         void nameAndDistanceInBlocks() {
             hp.paintLockText(b, ss, 400, 300, "Bob", false, 0, 700, HUDC);
-            assertEquals(List.of("'Bob'@390,375#" + H, "'020'@472,375#" + H), Drawn.runStrings(b),
-                "name centred above the HUD (baseline 300 - 72 - descent); %03d of 700 / 35 at x 472");
+            assertEquals(List.of("'Bob'@389,375#" + H, "'020'@472,375#" + H), Drawn.runStrings(b),
+                "name at 400 - (21 + 2) / 2 (C name_width is 2 wider), baseline 300 - 72 - descent; %03d of 700 / 35 at x 472");
         }
 
         @Test
@@ -100,8 +100,8 @@ class HudPainterTest {
         void atRatioTwoFontMetricsAreLogical() {
             ss.set(1200, 2);
             hp.paintLockText(b, ss, 400, 300, "Bob", false, 0, 700, HUDC);
-            assertEquals(List.of("'Bob'@790,747#" + H, "'020'@944,747#" + H), Drawn.runStrings(b),
-                "name 10.5 logical wide: x 400 - 5; baseline 228 - 1.5 = 226.5 logical");
+            assertEquals(List.of("'Bob'@788,747#" + H, "'020'@944,747#" + H), Drawn.runStrings(b),
+                "name 10.5 + 2 logical wide: x 400 - 6; baseline 228 - 1.5 = 226.5 logical");
         }
     }
 
@@ -470,6 +470,98 @@ class HudPainterTest {
             assertAll(
                 () -> assertEquals(List.of("'12'@94,395#" + col), Drawn.runStrings(b), "12 wide: x 100 - 6, baseline 200 + 5"),
                 () -> assertEquals(List.of("'12'@194,796#" + col), Drawn.runStrings(c), "ratio 2: x 100 - 3, baseline 200 + 2"));
+        }
+    }
+
+    // ================================================================== window scaling
+
+    /** C's WINSCALE on the HUD: positions are unscaled window coordinates, scaled; font offsets are not. */
+    @Nested
+    class WindowScaling {
+        @Test
+        void lockTextAnchorsScaleButFontOffsetsDoNot() {
+            hp.setScale(0.5);
+            hp.paintLockText(b, ss, 800, 600, "Bob", false, 0, 700, HUDC);
+            assertEquals(List.of("'Bob'@389,339#" + H, "'020'@436,339#" + H), Drawn.runStrings(b),
+                "x WINSCALE(800) - 23 / 2 = 389; baseline WINSCALE(528) - 3 = 261; number at WINSCALE(872) = 436");
+        }
+
+        @Test
+        void theLockShipShowsFromZoomTwoThirdsAndScalesItsPoints() {
+            float[] xs = {15, -9, -9};
+            float[] ys = {0, 8, -8};
+            hp.setScale(2);
+            hp.paintLockShip(b, ss, 200, 150, xs, ys, 3, HUDC);
+            VertexBatch small = Drawn.batch();
+            hp.setScale(0.5);
+            hp.paintLockShip(small, ss, 800, 600, xs, ys, 3, HUDC);
+            assertAll(
+                () -> assertTrue(HudPainter.lockShipShown(1), "zoom 1: shown"),
+                () -> assertTrue(HudPainter.lockShipShown(1 / 1.5), "zoom 1/1.5: 10 * 1.5 <= 15, shown"),
+                () -> assertFalse(HudPainter.lockShipShown(0.6), "zoom 0.6: hidden"),
+                () -> assertEquals(List.of("520,460 520,476 528,452#" + H, "520,460 528,452 512,452#" + H,
+                        "520,460 512,452 520,476#" + H), Drawn.tris(b),
+                    "zoom 2: WINSCALE of (260, 62), (264, 74), (256, 74), fanned from WINSCALE(260, 70)"),
+                () -> assertEquals(List.of(), Drawn.tris(small), "zoom 0.5: too small, not drawn"));
+        }
+
+        @Test
+        void aFriendsLockCircleIsArcAddScaledAndAnEnemyDiscFillArcScaled() {
+            hp.setScale(0.5);
+            VertexBatch friend = Drawn.batch();
+            hp.paintLockDisc(friend, ss, 800, 600, 900, 0, 5000, true, false, HUDC, Palette.RED);
+            VertexBatch enemy = Drawn.batch();
+            hp.paintLockDisc(enemy, ss, 800, 600, 900, 0, 5000, false, false, HUDC, Palette.RED);
+            assertAll(
+                () -> assertEquals(428.5f, friend.segX1(0), EPS,
+                    "box (851, 597) size 5: x WINSCALE 426..428, radius 1, centre pixel 427 + 0.5"),
+                () -> assertEquals(299.5f, friend.segY1(0), EPS, "y WINSCALE 299..301, centre row 300"),
+                () -> assertEquals(427.5f, enemy.x(0), EPS, "disc of WINSCALE(5) = 3 from WINSCALE(851) = 426: centre 427.5"),
+                () -> assertEquals(429f, enemy.x(1), EPS, "radius 1.5"),
+                () -> assertEquals(299.5f, enemy.y(0), EPS, "from WINSCALE(597) = 299: centre 300.5 down"));
+        }
+
+        @Test
+        void theItemColumnStartsAtTheScaledCornerThenWorksInPixels() {
+            int[] c = counts();
+            c[Item.WIDEANGLE.ordinal()] = 3;
+            hp.setScale(0.5);
+            hp.paintItems(b, ss, 800, 600, c, -1, false, HUDC);
+            assertAll(
+                () -> assertEquals(List.of("item 1 348,317-364,333 v16#" + H), Drawn.icons(b),
+                    "16 px symbol at (WINSCALE(727) - 16, WINSCALE(533)) = (348, 267)"),
+                () -> assertEquals(List.of("'3'@338,320#" + H), Drawn.runStrings(b), "count 3 px left, baseline 267 + 8 + 5"));
+        }
+
+        @Test
+        void timeModsAndAutopilotScaleTheirAnchors() {
+            hp.setScale(2);
+            hp.paintTimeLeft(b, ss, 200, 150, 125, HUDC);
+            hp.paintMods(b, ss, 200, 150, "FX", HUDC);
+            hp.paintAutopilot(b, ss, 200, 150, HUDC);
+            assertEquals(List.of("'2:05'@226,449#" + H, "'FX'@240,144#" + H, "'Autopilot'@369,462#" + H), Drawn.runStrings(b),
+                "time ends at WINSCALE(127) = 254, baseline WINSCALE(77) - 3; mods at 254 - 14, baseline WINSCALE(223) + 10; "
+                    + "autopilot at WINSCALE(200) - 31, baseline 154 - 16");
+        }
+
+        @Test
+        void hudRadarCirclesAreArcAddScaled() {
+            int[] rx = {200};
+            int[] ry = {100};
+            int[] size = {2};
+            hp.setScale(0.5);
+            hp.paintHudRadar(b, ss, 1600, 1200, rx, ry, size, 1, 256, 768, 768, 0, 0, false, HUDC);
+            assertAll(
+                () -> assertEquals(302.5f, b.segX1(0), EPS, "box left 597 -> WINSCALE 299..302: radius 1.5, centre 301"),
+                () -> assertEquals(149f, b.segY1(0), EPS, "box top 897 -> 449..452: centre row 450.5"));
+        }
+
+        @Test
+        void scoreObjectsScaleTheBlockCentre() {
+            hp.setScale(2);
+            hp.paintScoreObject(b, ss, "12", 100, 200, 5);
+            assertEquals(List.of("'12'@194,195#" + Integer.toHexString(P.color(5))), Drawn.runStrings(b),
+                "x WINSCALE(100) - 12 / 2, baseline WINSCALE(200) + 5");
         }
     }
 }

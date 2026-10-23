@@ -89,7 +89,7 @@ class AllocationTest {
         ctl.press(ViewerController.RIGHT | ViewerController.ZOOM_IN);
         FrameStats stats = new FrameStats();
         // the dynamic scene: demo objects of every kind, the scene painter and the radar overlay
-        DemoWorld demo = new DemoWorld(map.pixelWidth(), map.pixelHeight(), true, 500, 500, 3, 32, 200, 500); // every path, fewer objects
+        DemoWorld demo = new DemoWorld(14, map.pixelWidth(), map.pixelHeight(), true, 500, 500, 3, 32, 200, 500); // every path, fewer objects
         SceneData scene = new SceneData();
         ScenePainter scenePainter = new ScenePainter(p);
         RadarPainter radarPainter = new RadarPainter(p);
@@ -122,12 +122,29 @@ class AllocationTest {
                 dotSymbols.draw(b, text, dotCam, state);
                 demo.update(0.016);
                 demo.fill(scene);
-                scenePainter.draw(b, text, cam, scene);
+                // every few frames the round delay digits replace the ships, or the damaged flash everything
+                scene.roundDelay = n % 3 == 0 ? 30 + (int) (n % 40) : 0;
+                scene.damaged = n % 7 == 0 ? 2 : 0;
+                scene.loops = n;
+                if (!scenePainter.damagedFlash(b, cam, scene)) {
+                    if ((n & 1) == 0) {
+                        scenePainter.draw(b, text, cam, scene);
+                    } else {
+                        scenePainter.drawBody(b, text, cam, scene);
+                        symbols.drawArcs(b, cam, state);
+                        scenePainter.drawArcs(b, cam, scene);
+                    }
+                }
                 radarPainter.begin(16, 300, 528, 584, 142, map.pixelWidth(), map.pixelHeight(), true);
                 for (int i = 0; i < scene.shipCount; i++) {
                     radarPainter.blip(b, scene.shipX[i], scene.shipY[i], 3, i % 3 == 1);
                 }
+                for (int i = 0; i < scene.asteroidCount; i++) {
+                    radarPainter.blipByte(b, scene.asteroidX[i], scene.asteroidY[i],
+                        RadarPainter.asteroidSizeByte(scene.asteroidSize[i]));
+                }
                 radarPainter.self(b, demo.shipX(0), demo.shipY(0), demo.shipHeading(0), scene.loops);
+                radarPainter.selfBlip(b, demo.shipX(0), demo.shipY(0));
                 radarPainter.checkpoint(b, 3, 4);
                 overlay.draw(b, text, cam, stats, "teamball.xp", radar, true);
                 text.drawInt(b, (int) n, 0, 0, 0);

@@ -35,9 +35,10 @@ import java.util.Arrays;
  *   texture coordinate (0,0), which must sample white (the UI atlas keeps a white block at its
  *   origin); text and the radar use real texture coordinates.</li>
  *   <li><b>segments</b> ({@link #LINES}): one instance per line, {@code x1,y1,x2,y2} (float32), RGBA,
- *   width (float32, logical pixels), {@link #SEGMENT_STRIDE} bytes. The GL layer expands each into a
- *   quad of that width with square caps, so lines keep XPilot's 1-pixel X11 look on HiDPI at any
- *   zoom.</li>
+ *   width (float32, logical pixels; its sign bit set for butt caps), {@link #SEGMENT_STRIDE} bytes. The
+ *   GL layer expands each into a quad of that width, with square caps (X11 {@code CapProjecting}, which
+ *   is how X11's zero-width lines cover their end pixels) or butt caps ({@code CapButt}, C's 4-pixel
+ *   missiles and 3-pixel lasers), so lines keep XPilot's X11 look on HiDPI at any zoom.</li>
  *   <li><b>points</b> ({@link #POINTS}): one instance per axis-aligned square, centre {@code x,y}
  *   (float32), side (float32, logical pixels), RGBA, {@link #POINT_STRIDE} bytes; for map dots, sparks
  *   and debris, which XPilot draws a fixed number of pixels big.</li>
@@ -68,6 +69,10 @@ public final class VertexBatch {
     public static final int TRIANGLES = 4;
     /** Line width in logical pixels until {@link #setLineWidth} (XPilot's X11 lines are 1 pixel). */
     public static final float DEFAULT_LINE_WIDTH = 1;
+    /** Line cap: the segment extends half its width past each end (the default). */
+    public static final int CAP_SQUARE = 0;
+    /** Line cap: the segment ends exactly at its end points (X11 {@code CapButt}). */
+    public static final int CAP_BUTT = 1;
 
     /** Receives a full batch (e.g. uploads and draws it). The batch is cleared afterwards. */
     public interface Sink {
@@ -114,6 +119,7 @@ public final class VertexBatch {
     private float tx;
     private float ty;
     private float lineWidth = DEFAULT_LINE_WIDTH;
+    private int lineCap = CAP_SQUARE;
     private static final short SOLID_U = 0;
     private static final short SOLID_V = 0;
 
@@ -177,7 +183,13 @@ public final class VertexBatch {
     /** Current line width in logical pixels. */
     public float lineWidth() { return lineWidth; }
 
-    /** Drop all items and commands (the transform and line width are kept). */
+    /** Cap ({@link #CAP_SQUARE} or {@link #CAP_BUTT}) of subsequent {@link #line} calls. */
+    public void setLineCap(int cap) { this.lineCap = cap; }
+
+    /** Current line cap. */
+    public int lineCap() { return lineCap; }
+
+    /** Drop all items and commands (the transform, line width and cap are kept). */
     public void clear() {
         tri.count = 0;
         seg.count = 0;
@@ -255,7 +267,10 @@ public final class VertexBatch {
     public int segColor(int i) { return seg.buf.getInt(i * SEGMENT_STRIDE + 16); }
 
     /** Segment width in logical pixels. */
-    public float segWidth(int i) { return seg.buf.getFloat(i * SEGMENT_STRIDE + 20); }
+    public float segWidth(int i) { return Math.abs(seg.buf.getFloat(i * SEGMENT_STRIDE + 20)); }
+
+    /** Segment cap: {@link #CAP_BUTT} when the stored width's sign bit is set, else {@link #CAP_SQUARE}. */
+    public int segCap(int i) { return seg.buf.getInt(i * SEGMENT_STRIDE + 20) < 0 ? CAP_BUTT : CAP_SQUARE; }
 
     /** Point centre x as stored. */
     public float pointX(int i) { return pt.buf.getFloat(i * POINT_STRIDE); }
@@ -271,7 +286,11 @@ public final class VertexBatch {
 
     // ------------------------------------------------------------------ primitives
 
-    /** One line segment of the current {@link #lineWidth}. */
+    /**
+     * One line segment of the current {@link #lineWidth} and {@link #lineCap}.
+     * <p>
+     * BEHAVIOR: the width is stored as is for square caps and negated (sign bit set) for butt caps.
+     */
     public void line(float x1, float y1, float x2, float y2, int rgba) {
         begin(LINES, 1);
         int o = seg.count * SEGMENT_STRIDE;
@@ -281,7 +300,7 @@ public final class VertexBatch {
         b.putFloat(o + 8, x2 * sx + tx);
         b.putFloat(o + 12, y2 * sy + ty);
         b.putInt(o + 16, rgba);
-        b.putFloat(o + 20, lineWidth);
+        b.putInt(o + 20, Float.floatToRawIntBits(lineWidth) | (lineCap == CAP_BUTT ? 0x80000000 : 0));
         seg.count++;
     }
 

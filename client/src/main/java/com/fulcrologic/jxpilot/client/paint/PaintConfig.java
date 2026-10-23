@@ -37,6 +37,8 @@ public final class PaintConfig {
     public static final int TEAM_SHOT_SIZE = 2;
     /** {@code sparkSize}: spark/debris square side. */
     public static final int SPARK_SIZE = 2;
+    /** {@code sparkProb}: the chance a spark or debris particle is drawn in a frame (the sparkle). */
+    public static final double SPARK_PROB = 0.5;
     /** {@code sparkColors} "5,6,7,3": palette index per debris colour level, coolest first. */
     public static final int[] SPARK_COLORS = {5, 6, 7, 3};
     /** {@code dashes} {8, 4}: on/off lengths of ship, shield and connector dashes. */

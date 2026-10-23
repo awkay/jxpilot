@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DemoWorldTest {
     static DemoWorld demo(boolean wrap) {
-        return new DemoWorld(2000, 1000, wrap, 1000, 500, 7, 32, 2000, 5000);
+        return new DemoWorld(14, 2000, 1000, wrap, 1000, 500, 7, 32, 2000, 5000);
     }
 
     @Test
@@ -55,6 +55,39 @@ class DemoWorldTest {
             () -> assertEquals(21, s.loops, "1.5 s at 14 frames per second"),
             () -> assertEquals(21, d.loops(), "loops accessor"),
             () -> assertEquals(1.5, d.time(), "time accessor"));
+    }
+
+    @Test
+    void loopsRunAtTheMapsFramesPerSecondAndTheCountdownsFollowThem() {
+        SceneData s = new SceneData();
+        DemoWorld d = new DemoWorld(30, 2000, 1000, false, 1000, 500, 7, 4, 10, 10);
+        d.setCountdowns(50, 40);
+        d.update(1.5);
+        d.fill(s);
+        SceneData later = new SceneData();
+        d.update(1);
+        d.fill(later);
+        assertAll(
+            () -> assertEquals(45, s.loops, "1.5 s at the map's 30 frames per second"),
+            () -> assertEquals(30, s.fps, "the scene's fps is the map's"),
+            () -> assertEquals(30, d.fps(), "fps accessor"),
+            () -> assertEquals(5, s.roundDelay, "round delay 50 - 45 frames left"),
+            () -> assertEquals(Palette.RED, s.shipColor[0], "ships turn red while a round is pending"),
+            () -> assertEquals(0, s.damaged, "damage 40 frames: over by frame 45"),
+            () -> assertEquals(0, later.roundDelay, "after the delay: 0, never negative"),
+            () -> assertEquals(Palette.WHITE, later.shipColor[0], "and white again"));
+    }
+
+    @Test
+    void damageCountsDownFromTheStart() {
+        SceneData s = new SceneData();
+        DemoWorld d = demo(false);
+        d.setCountdowns(0, 40);
+        d.update(1);
+        d.fill(s);
+        assertAll(
+            () -> assertEquals(26, s.damaged, "40 - 14 frames"),
+            () -> assertEquals(0, s.roundDelay, "no round delay"));
     }
 
     @Test
@@ -149,7 +182,7 @@ class DemoWorldTest {
     @Test
     void aSingleShipDemoHasNoNamedMines() {
         SceneData s = new SceneData();
-        new DemoWorld(2000, 1000, false, 1000, 500, 1, 1, 10, 10).fill(s);
+        new DemoWorld(14, 2000, 1000, false, 1000, 500, 1, 1, 10, 10).fill(s);
         boolean anyName = false;
         for (int i = 0; i < s.mineCount; i++) {
             anyName |= s.mineName[i] != null;

@@ -29,6 +29,7 @@ import com.fulcrologic.jxpilot.client.render.Font;
 import org.lwjgl.system.MemoryUtil;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 
@@ -50,11 +51,19 @@ public final class UiAtlas {
     public static final int RADAR_X = 512;
 
     private final int texture;
+    private final Path fontFile;
     private Font font;
     private float fontPixels;
     private int radarHeight;
 
+    /** An atlas with the bundled font baked at {@code fontPixels} framebuffer pixels. */
     public UiAtlas(float fontPixels) throws IOException {
+        this(null, fontPixels);
+    }
+
+    /** An atlas with the TrueType {@code fontFile} (null: bundled) baked at {@code fontPixels} framebuffer pixels. */
+    public UiAtlas(Path fontFile, float fontPixels) throws IOException {
+        this.fontFile = fontFile;
         texture = glGenTextures();
         glBindTexture(GL_TEXTURE_2D, texture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -96,7 +105,7 @@ public final class UiAtlas {
         ByteBuffer alpha = MemoryUtil.memCalloc(FONT_W * FONT_H);
         ByteBuffer rgba = MemoryUtil.memCalloc(FONT_W * SIZE * 4);
         try {
-            font = FontBaker.bake(FontBaker.DEFAULT_FONT, pixels, alpha, FONT_W, FONT_H, WHITE_BLOCK, SIZE, SIZE);
+            font = FontBaker.bake(fontFile, pixels, alpha, FONT_W, FONT_H, WHITE_BLOCK, SIZE, SIZE);
             for (int y = 0; y < FONT_H; y++) {
                 for (int x = 0; x < FONT_W; x++) {
                     int o = ((y + WHITE_BLOCK) * FONT_W + x) * 4;

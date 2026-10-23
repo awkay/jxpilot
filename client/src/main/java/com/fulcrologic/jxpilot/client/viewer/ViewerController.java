@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.client.viewer;
 
 import com.fulcrologic.jxpilot.client.render.Camera;
+import com.fulcrologic.jxpilot.client.render.WinScale;
 
 /**
  * Free-flying camera for the map viewer. Held keys are a bit set; {@link #update} integrates them
@@ -31,6 +32,10 @@ import com.fulcrologic.jxpilot.client.render.Camera;
  * <p>
  * Panning moves {@link #PAN_SPEED} logical screen pixels per second whatever the zoom; zoom keys
  * scale zoom by {@link #ZOOM_RATE} per second. Zoom stays within [{@link #MIN_ZOOM}, {@link #MAX_ZOOM}].
+ * <p>
+ * Zoom presets are C's {@code scaleFactor} / {@code altScaleFactor} (defaults 1.0 / 2.0) and its
+ * {@code keySwapScaleFactor}: {@link #swapScaleFactor} zooms to {@code 1 / altScaleFactor} and keeps the
+ * current zoom's scale factor as the new alternative.
  */
 public final class ViewerController {
     public static final int LEFT = 1;
@@ -50,6 +55,7 @@ public final class ViewerController {
     private double x;
     private double y;
     private double zoom = 1;
+    private double altScaleFactor = WinScale.ALT_SCALE_FACTOR;
 
     /** Place the camera. */
     public void reset(double x, double y, double zoom) {
@@ -86,6 +92,26 @@ public final class ViewerController {
         if (dz != 0) {
             zoom = clampZoom(zoom * Math.pow(ZOOM_RATE, dz * dt));
         }
+    }
+
+    /** Set C's {@code altScaleFactor} (the zoom preset {@link #swapScaleFactor} switches to). */
+    public void setAltScaleFactor(double factor) {
+        this.altScaleFactor = factor;
+    }
+
+    public double altScaleFactor() { return altScaleFactor; }
+
+    /**
+     * C {@code Key_press_swap_scalefactor}: swap {@code scaleFactor} and {@code altScaleFactor}.
+     * <p>
+     * BEHAVIOR: zoom becomes {@code WinScale.zoomOf(altScaleFactor)} (clamped to the zoom range), and
+     * the alternative becomes the scale factor of the zoom before the swap ({@code 1 / zoom}), so two
+     * swaps return to the starting zoom.
+     */
+    public void swapScaleFactor() {
+        double current = 1 / zoom;
+        zoom = clampZoom(WinScale.zoomOf(altScaleFactor));
+        altScaleFactor = current;
     }
 
     /** Zoom by {@code WHEEL_STEP^steps} (mouse wheel). */

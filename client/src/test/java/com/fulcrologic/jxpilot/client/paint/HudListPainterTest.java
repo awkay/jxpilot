@@ -162,6 +162,15 @@ class HudListPainterTest {
             assertEquals(List.of("1,1179-17,1179", "25,1179-41,1179", "49,1179-61,1179"), Drawn.segs(b),
                 "16 framebuffer px on, 8 off");
         }
+
+        @Test
+        void dashLengthsAreWinscaledByTheZoom() {
+            lp.setScale(0.5);
+            lp.paint(b, ss, new List_().line(0, 10, 30, 10, HudDrawList.DASHED, HUD).line(0, 0, 10, 0, HudDrawList.SOLID, HUD));
+            assertEquals(List.of("0.5,589.5-4.5,589.5", "6.5,589.5-10.5,589.5", "12.5,589.5-16.5,589.5",
+                    "18.5,589.5-22.5,589.5", "24.5,589.5-28.5,589.5", "0.5,599.5-10.5,599.5"), Drawn.segs(b),
+                "zoom 0.5: WINSCALE(8) = 4 on, WINSCALE(4) = 2 off (C Scale_dashes); the list's coordinates unchanged");
+        }
     }
 
     @Nested

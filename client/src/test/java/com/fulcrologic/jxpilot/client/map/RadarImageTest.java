@@ -71,6 +71,79 @@ class RadarImageTest {
     }
 
     @Nested
+    class TargetRepaint {
+        @Test
+        void aWideMapsBlockIsOnePixel() {
+            int[] px = new int[256];
+            RadarImage.block(px, 1, 512, 3, 10, 1, TARGET);
+            assertAll(
+                () -> assertEquals(TARGET, px[5], "x (int)(10 * 255/511 + 0.5) = 5, the only row"),
+                () -> assertEquals(1, java.util.Arrays.stream(px).filter(v -> v == TARGET).count(), "one pixel"));
+        }
+
+        @Test
+        void aWideMapsBlockRoundsBothAxes() {
+            int[] px = new int[256 * 256];
+            RadarImage.block(px, 256, 512, 512, 300, 300, TARGET);
+            int[] exact = new int[256 * 256];
+            RadarImage.block(exact, 256, 256, 3, 0, 0, TARGET);
+            assertAll(
+                () -> assertEquals(TARGET, px(px, 150, 105), "(int)(300 * 255/511 + 0.5) = 150; row 255 - 150 = 105"),
+                () -> assertEquals(1, java.util.Arrays.stream(px).filter(v -> v == TARGET).count(), "one pixel"),
+                () -> assertEquals(TARGET, px(exact, 0, 255), "a map exactly 256 wide is walked by block: pixel (0, 255)"),
+                () -> assertEquals(1, java.util.Arrays.stream(exact).filter(v -> v == TARGET).count(), "a single pixel"));
+        }
+
+        @Test
+        void aNarrowMapsBlockFillsThePixelsThatSampleIt() {
+            int[] px = new int[256 * 256];
+            RadarImage.block(px, 256, 4, 4, 1, 1, TARGET);
+            assertAll(
+                () -> assertEquals(TARGET, px(px, 43, 128), "x from (int)(0.5 / (3/255)) + 1 = 43, row 255 - 127 = 128"),
+                () -> assertEquals(TARGET, px(px, 127, 212), "to x (int)(1.5 * 85) = 127, row 128 + 84"),
+                () -> assertEquals(0, px(px, 42, 128), "not left of it"),
+                () -> assertEquals(0, px(px, 128, 212), "not right of it"),
+                () -> assertEquals(0, px(px, 43, 127), "not above"),
+                () -> assertEquals(0, px(px, 43, 213), "not below"),
+                () -> assertEquals(85L * 85, java.util.Arrays.stream(px).filter(v -> v == TARGET).count(), "85 x 85 pixels"));
+        }
+
+        @Test
+        void edgeBlocksAreClippedToTheRadar() {
+            int[] px = new int[256 * 256];
+            RadarImage.block(px, 256, 2, 2, 0, 1, TARGET);
+            assertAll(
+                () -> assertEquals(TARGET, px(px, 0, 0), "the top-left block covers from the corner"),
+                () -> assertEquals(TARGET, px(px, 127, 127), "to the middle"),
+                () -> assertEquals(128L * 128, java.util.Arrays.stream(px).filter(v -> v == TARGET).count(),
+                    "the part outside the radar is dropped"));
+        }
+
+        @Test
+        void theRightEdgeIsClippedNotWrappedIntoTheNextRow() {
+            int[] px = new int[256 * 256];
+            RadarImage.block(px, 256, 2, 2, 1, 0, TARGET);
+            assertAll(
+                () -> assertEquals(TARGET, px(px, 255, 128), "the bottom-right block reaches the right edge"),
+                () -> assertEquals(0, px(px, 0, 129), "nothing spills to column 0 of the next row"),
+                () -> assertEquals(128L * 128, java.util.Arrays.stream(px).filter(v -> v == TARGET).count(), "128 x 128"));
+        }
+
+        @Test
+        void onlyLiveTargetsAreRepainted() {
+            // 512 x 3: target at the top of column 0, wall below: the walk leaves the wall colour on row 0
+            String targetTop = "!" + repeat('.', 511);
+            String wall = "x" + repeat('.', 511);
+            String empty = repeat('.', 512);
+            int[] dead = RadarImage.build(map(false, targetTop, wall, empty), P, true, i -> false);
+            int[] alive = RadarImage.build(map(false, targetTop, wall, empty), P, true, i -> i == 0);
+            assertAll(
+                () -> assertEquals(WALL, px(dead, 0, 0), "dead target: the walk's colour stays"),
+                () -> assertEquals(TARGET, px(alive, 0, 0), "live target 0: repainted"));
+        }
+    }
+
+    @Nested
     class NarrowMap {
         @Test
         void eachPixelSamplesTheNearestBlockWithRowZeroAtTheTop() {
@@ -128,12 +201,14 @@ class RadarImageTest {
             String wallTopTargetMiddle = "x" + repeat('.', 511);
             String middle = "!" + repeat('.', 511);
             String targetBottom = repeat('.', 512);
-            int[] a = RadarImage.build(map(false, middle, wallTopTargetMiddle, targetBottom), P, true);
-            int[] b = RadarImage.build(map(false, wallTopTargetMiddle, middle, targetBottom), P, true);
+            int[] a = RadarImage.build(map(false, middle, wallTopTargetMiddle, targetBottom), P, true, i -> false);
+            int[] b = RadarImage.build(map(false, wallTopTargetMiddle, middle, targetBottom), P, true, i -> false);
+            int[] live = RadarImage.build(map(false, middle, wallTopTargetMiddle, targetBottom), P, true);
             assertAll(
                 () -> assertEquals(1, RadarImage.height(map(false, middle, wallTopTargetMiddle, targetBottom)), "one row"),
-                () -> assertEquals(WALL, px(a, 0, 0), "wall below target: the last-cell change is not repainted (C quirk)"),
-                () -> assertEquals(TARGET, px(b, 0, 0), "target below wall: likewise keeps the target colour"));
+                () -> assertEquals(WALL, px(a, 0, 0), "wall below target: the walk's last-cell change is not repainted (C quirk)"),
+                () -> assertEquals(TARGET, px(b, 0, 0), "target below wall: likewise keeps the target colour"),
+                () -> assertEquals(TARGET, px(live, 0, 0), "a live target is repainted after the walk, as C does"));
         }
     }
 }
