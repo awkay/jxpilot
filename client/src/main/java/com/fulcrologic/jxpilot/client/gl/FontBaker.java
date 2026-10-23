@@ -55,7 +55,7 @@ public final class FontBaker {
     public static final String DEFAULT_FONT = "/fonts/FiraCode-Regular.ttf";
 
     /**
-     * Bake printable ASCII of the TrueType {@code file} (null: the bundled {@link #DEFAULT_FONT}) at
+     * Bake the Latin-1 glyphs ({@link Font#FIRST}..{@link Font#LAST}) of the TrueType {@code file} (null: the bundled {@link #DEFAULT_FONT}) at
      * {@code pixelHeight} into {@code alpha} ({@code w x h}, row-major), starting at row
      * {@code rowOffset} of an atlas of {@code atlasW x atlasH}.
      */

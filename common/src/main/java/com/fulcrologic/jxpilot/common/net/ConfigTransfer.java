@@ -116,6 +116,9 @@ public final class ConfigTransfer {
         }
     }
 
+    /** Largest config text (and compressed blob) a receiver accepts: far above any map (planetx is ~80 KB). */
+    public static final int MAX_LENGTH = 8 << 20;
+
     /** Client side: collects chunks after WELCOME and decodes the text. */
     public static final class Receiver {
         private final byte[] data;
@@ -123,7 +126,12 @@ public final class ConfigTransfer {
         private final int crc;
         private int received;
 
+        /** BEHAVIOR: throws IllegalStateException when either announced length is outside 0..{@link #MAX_LENGTH}. */
         public Receiver(Msg.Welcome w) {
+            if (w.configCompressedLength < 0 || w.configCompressedLength > MAX_LENGTH
+                || w.configLength < 0 || w.configLength > MAX_LENGTH) {
+                throw new IllegalStateException("config size out of range");
+            }
             this.data = new byte[w.configCompressedLength];
             this.length = w.configLength;
             this.crc = w.configCrc32;

@@ -24,14 +24,15 @@
 package com.fulcrologic.jxpilot.client.render;
 
 /**
- * Baked glyph metrics for printable ASCII ({@link #FIRST}..{@link #LAST}) in an atlas texture.
+ * Baked glyph metrics for Latin-1 ({@link #FIRST}..{@link #LAST}: printable ASCII and 160..255, the
+ * ISO-8859-1 text XPilot servers and the JXPilot wire send, e.g. "Bj\u00f8rn") in an atlas texture.
  * Atlas rectangles are in texels (y down, as baked by STB); offsets are in pixels relative to the
  * pen position on the baseline, with {@code yoff} measured downward (STB convention).
- * Characters outside the range render as {@link #FALLBACK}.
+ * Characters outside the range and the C1 controls 127..159 render as {@link #FALLBACK}.
  */
 public final class Font {
     public static final char FIRST = 32;
-    public static final char LAST = 126;
+    public static final char LAST = 255;
     public static final char FALLBACK = '?';
     static final int COUNT = LAST - FIRST + 1;
 
@@ -72,9 +73,9 @@ public final class Font {
         advance[i] = adv;
     }
 
-    /** Glyph slot for a character (out-of-range characters map to {@link #FALLBACK}). */
+    /** Glyph slot for a character (out-of-range characters and 127..159 map to {@link #FALLBACK}). */
     static int slot(char c) {
-        return (c < FIRST || c > LAST ? FALLBACK : c) - FIRST;
+        return (c < FIRST || c > LAST || c >= 127 && c < 160 ? FALLBACK : c) - FIRST;
     }
 
     /** Horizontal advance of a character in pixels. */

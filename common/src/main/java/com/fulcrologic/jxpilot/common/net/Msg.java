@@ -65,6 +65,8 @@ public final class Msg {
 
     /** Ship shape strings are capped to this many chars on decode (C {@code MSG_LEN}). */
     public static final int MAX_SHAPE_LEN = 256;
+    /** C {@code MSG_LEN}: initial capacity of the text builders, so normal messages never grow them. */
+    public static final int MSG_LEN = 256;
 
     // ================================================================ unreliable control
 
@@ -141,7 +143,7 @@ public final class Msg {
 
         public int nonce;
         public int reason;
-        public final StringBuilder text = new StringBuilder();
+        public final StringBuilder text = new StringBuilder(MSG_LEN);
 
         public void write(ByteBuffer b) {
             b.putInt(nonce);
@@ -164,7 +166,7 @@ public final class Msg {
         public static final int REASON_SHUTDOWN = 3;
 
         public int reason;
-        public final StringBuilder text = new StringBuilder();
+        public final StringBuilder text = new StringBuilder(MSG_LEN);
 
         public void write(ByteBuffer b) {
             b.put((byte) reason);
@@ -485,7 +487,7 @@ public final class Msg {
         public int kind;
         /** Sender player id or {@link Protocol#NO_ID} for the server. */
         public int from = Protocol.NO_ID;
-        public final StringBuilder text = new StringBuilder();
+        public final StringBuilder text = new StringBuilder(MSG_LEN);
 
         public void write(ByteBuffer b) {
             b.put((byte) kind);
