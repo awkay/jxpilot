@@ -33,6 +33,11 @@ package com.fulcrologic.jxpilot.client.game;
  * limited lives); in timing mode it is the first row. In team play (not timing) team rows follow
  * after one empty line, ordered by team score, ties broken by lives (more first with limited lives,
  * fewer otherwise).
+ * <p>
+ * Known deviation (race mode is out of scope for now): in timing mode C sorts by race progress (round,
+ * checkpoint, lap time) and fills the race column; the protocol does not carry race progress yet, so
+ * timing mode keeps the score order, marks the first row best and leaves the race column blank
+ * ({@link #appendRace}, the hook for it).
  */
 public final class Scoreboard {
     /** C {@code MAX_TEAMS}. */
@@ -100,7 +105,7 @@ public final class Scoreboard {
     /** C entry number (line position): players 0..n-1, team rows from n+1 (one blank line). */
     public int rowLine(int row) { return rowLine[row]; }
 
-    /** BEHAVIOR: true for players marked 'D', 'P' or 'W' (drawn dimmed in C). */
+    /** BEHAVIOR: true for players marked 'D', 'P' or 'W' and team rows marked 'D' (drawn dimmed in C). */
     public boolean dimmed(int row) { return rowDim[row]; }
 
     /** Row of the best player (underlined), -1 when none. */
@@ -206,7 +211,7 @@ public final class Scoreboard {
             b.append("  Team ").appendInt(t);
             rowSlot[rows] = -1;
             rowLine[rows] = line++;
-            rowDim[rows] = false;
+            rowDim[rows] = c == 'D';
             rows++;
         }
     }
@@ -247,6 +252,7 @@ public final class Scoreboard {
         b.append("  ").append(name);
     }
 
+    /** The race column: blank in timing mode (race progress is not on the wire yet, see the class comment). */
     private void appendRace(CharBuf b) {
         if (timing) {
             b.append("   ");

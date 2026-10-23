@@ -53,6 +53,7 @@ public final class Players {
     private final float[] score = new float[CAPACITY];
     private final int[] lives = new int[CAPACITY];
     private final int[] status = new int[CAPACITY];
+    private final boolean[] scored = new boolean[CAPACITY];
     private final int[] order = new int[CAPACITY];
     private int count;
     private int selfId = Protocol.NO_ID;
@@ -140,6 +141,7 @@ public final class Players {
         score[s] = 0;
         lives[s] = -1;
         status[s] = 0;
+        scored[s] = false;
         if ((j.flags & Msg.PlayerJoin.FLAG_SELF) != 0) {
             selfId = j.id;
         }
@@ -192,13 +194,17 @@ public final class Players {
         }
     }
 
-    /** BEHAVIOR: SCORE for a known id; returns the score change (0 for unknown ids). */
+    /**
+     * BEHAVIOR: SCORE for a known id; returns the score change, 0 for unknown ids and for the first SCORE
+     * after PLAYER_JOIN (it states the score the player joined with, it is not a change).
+     */
     public float setScore(int id, float sc, int lv, int st) {
         int s = slotOf(id);
         if (s < 0) {
             return 0;
         }
-        float delta = sc - score[s];
+        float delta = scored[s] ? sc - score[s] : 0;
+        scored[s] = true;
         score[s] = sc;
         lives[s] = lv;
         status[s] = st;

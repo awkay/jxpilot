@@ -170,7 +170,8 @@ public final class CharBuf implements CharSequence {
 
     /**
      * Append {@code v} with {@code decimals} fraction digits right-aligned in {@code width} chars, like C
-     * {@code %*.*f} (rounded half away from zero on the decimal value).
+     * {@code %*.*f}: the exact binary value is rounded to nearest, ties to even (glibc printf), so 2.25
+     * prints 2.2 while 2.35 (really 2.35000000000000009) prints 2.4.
      * <p>
      * BEHAVIOR: decimals 0 prints no decimal point; a value rounding to zero prints without a minus sign.
      * BEHAVIOR: decimals is clamped to 0..6.
@@ -181,7 +182,7 @@ public final class CharBuf implements CharSequence {
         for (int i = 0; i < d; i++) {
             scale *= 10;
         }
-        long q = Math.round(Math.abs(v) * scale);
+        long q = roundScaled(Math.abs(v), scale);
         boolean neg = v < 0 && q != 0;
         long ip = q / scale;
         long fp = q % scale;
@@ -200,6 +201,25 @@ public final class CharBuf implements CharSequence {
             appendDigits(fp, d);
         }
         return this;
+    }
+
+    /**
+     * BEHAVIOR: a * scale rounded to nearest, ties to even, decided on the exact product: when the
+     * double product lands on a .5 the fma residual says whether the true value was above, below or on it.
+     */
+    static long roundScaled(double a, long scale) {
+        double p = a * scale;
+        double fl = Math.floor(p);
+        if (p - fl == 0.5) {
+            double err = Math.fma(a, scale, -p);
+            if (err > 0) {
+                return (long) fl + 1;
+            }
+            if (err < 0) {
+                return (long) fl;
+            }
+        }
+        return (long) Math.rint(p);
     }
 
     /** BEHAVIOR: true iff the contents equal {@code s} character for character. */

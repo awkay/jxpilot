@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.client.game.hud;
 
+import com.fulcrologic.jxpilot.client.game.ScoreObjects;
 import com.fulcrologic.jxpilot.client.game.CharBuf;
 import com.fulcrologic.jxpilot.client.game.MessageLog;
 import com.fulcrologic.jxpilot.client.game.Players;
@@ -130,10 +131,10 @@ class HudTest {
             Hud h = new Hud();
             boolean[] v = new boolean[10];
             v[0] = h.fuelGaugeVisible(50);
-            h.advance(2, 50, 14);
+            h.advance(2, 50, 14, true);
             v[1] = h.fuelGaugeVisible(50);
             v[2] = h.fuelGaugeVisible(150);
-            h.advance(2, 50, 14);
+            h.advance(2, 50, 14, true);
             v[3] = h.fuelGaugeVisible(150);
             v[4] = h.fuelGaugeVisible(300);
             v[5] = h.fuelGaugeVisible(600);
@@ -160,13 +161,13 @@ class HudTest {
         @DisplayName("fuel notification: refuelling restarts 3 s, then it counts down")
         void fuelNotification() {
             Hud h = new Hud();
-            h.advance(1, 100, 14);
+            h.advance(1, 100, 14, true);
             double first = h.fuelCount();
-            h.advance(1, 120, 14);
+            h.advance(1, 120, 14, true);
             double up = h.fuelCount();
-            h.advance(10, 120, 14);
+            h.advance(10, 120, 14, true);
             double later = h.fuelCount();
-            h.advance(100, 110, 14);
+            h.advance(100, 110, 14, true);
             assertAll(
                 () -> assertEquals(0.0, first, "the first sample is no increase"),
                 () -> assertEquals(42.0, up, "3 seconds at 14 fps"),
@@ -183,15 +184,58 @@ class HudTest {
             boolean shown = h.fuelText(f, 400, 300, 300, 2, 0, M);
             h.fuelText(f, 400, 300, 300, 2, 3, M);
             boolean hidden = h.fuelText(new HudFrame(), 400, 300, 600, 0, 0, M);
-            h.scoreMessage(f, 400, 300, 2.5f, true, M);
-            h.scoreMessage(f, 400, 300, 1234567.5f, true, new Mono(20));
-            h.scoreMessage(f, 400, 300, 1234567.5f, false, new Mono(20));
+            h.scoreStack(f, 400, 300, objects(2.5f), true, M);
+            h.scoreStack(f, 400, 300, objects(1234567.5f), true, new Mono(20));
+            h.scoreStack(f, 400, 300, objects(1234567.5f), false, new Mono(20));
             assertAll(
                 () -> assertTrue(shown, "fuel below fuelNotify is shown"),
                 () -> assertFalse(hidden, "fuel above fuelNotify without notification is not"),
                 () -> assertEquals(List.of("473,383 0300", "473,396 M ", "473,383 0300", "473,396 T3",
                         "390,383 2.5", "310,396 1234567.5", "310,383 1234567.5"), texts(f),
                     "fuel %04d, M for the main tank, T<n>; a wide score message moves down a line only with fuel shown"));
+        }
+
+        static ScoreObjects objects(float... points) {
+            ScoreObjects so = new ScoreObjects();
+            for (float p : points) {
+                so.add(p, null, false, 0, 0);
+            }
+            return so;
+        }
+
+        @Test
+        @DisplayName("the score stack draws HUD texts oldest first, one line each; only the first is bumped; empty ones skipped")
+        void scoreStack() {
+            ScoreObjects so = new ScoreObjects();
+            so.add(1, "Robby", false, 0, 0);
+            so.add(2, "", false, 0, 0);
+            so.add(-3, "[Wall]", false, 0, 0);
+            HudFrame f = new HudFrame();
+            new Hud().scoreStack(f, 400, 300, so, false, M);
+            ScoreObjects wide = new ScoreObjects();
+            wide.add(1, "a very long name indeed", false, 0, 0);
+            wide.add(2, "x", false, 0, 0);
+            HudFrame w = new HudFrame();
+            new Hud().scoreStack(w, 400, 300, wide, true, M);
+            ScoreObjects twoWide = new ScoreObjects();
+            twoWide.add(1, "a very long name indeed", false, 0, 0);
+            twoWide.add(2, "another long name here", false, 0, 0);
+            HudFrame w2 = new HudFrame();
+            new Hud().scoreStack(w2, 400, 300, twoWide, true, M);
+            for (int i = 0; i < ScoreObjects.MAX_SCORE_OBJECTS; i++) {
+                so.add(i, null, false, 0, 0);
+            }
+            HudFrame ring = new HudFrame();
+            new Hud().scoreStack(ring, 400, 300, so, false, M);
+            assertAll(
+                () -> assertEquals(List.of("369,383 Robby 1.0", "362,396 [Wall] -3.0"), texts(f),
+                    "oldest first; the empty message has no HUD text and takes no line"),
+                () -> assertEquals(List.of("306,396 a very long name indeed 1.0", "383,409 x 2.0"), texts(w),
+                    "a wide first text with fuel shown moves the whole stack down one line"),
+                () -> assertEquals(List.of(396, 409), List.of((int) w2.textY(0), (int) w2.textY(1)),
+                    "only the first text is bumped: a second wide one just follows"),
+                () -> assertEquals("390,383 0.0", texts(ring).get(0), "after the ring wrapped the oldest is the slot after the newest"),
+                () -> assertEquals(10, texts(ring).size(), "ten objects"));
         }
 
         @Test
