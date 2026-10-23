@@ -273,6 +273,35 @@ class BindingTest {
         }
 
         @Test
+        @DisplayName("link-local addresses on two interfaces are both bound; the first interface labels a duplicate")
+        void scopesAndDuplicates() {
+            List<NetIf> twoLinks = List.of(
+                new NetIf("en0", true, false, List.of(ip("fe80::1%1"), ip("10.0.0.5"))),
+                new NetIf("en1", true, false, List.of(ip("fe80::1%2"), ip("10.0.0.5"))),
+                new NetIf("lo1", true, true, List.of(ip("10.9.9.9"))),
+                new NetIf("en2", true, false, List.of(ip("127.0.0.7"))));
+            assertAll(
+                () -> assertEquals(List.of(t("fe80::1%1", "en0"), t("fe80::1%2", "en1")),
+                    BindPlan.choose(sel("fe80::/10"), twoLinks).targets(), "same link-local address, two scopes: two targets"),
+                () -> assertEquals(List.of(t("10.0.0.5", "en0")), BindPlan.choose(sel("10.0.0.0/24"), twoLinks).targets(),
+                    "one address on two interfaces is bound once, labelled with the first interface"),
+                () -> assertEquals(List.of(t("10.9.9.9", "lo1"), t("127.0.0.7", "en2")),
+                    BindPlan.choose(sel("loopback"), twoLinks).targets(),
+                    "loopback takes addresses of a loopback interface and loopback addresses on any interface"));
+        }
+
+        @Test
+        @DisplayName("0.0.0.0 together with :: binds only the dual-stack ::")
+        void bothWildcards() {
+            BindPlan.Choice both = BindPlan.choose(sel("0.0.0.0", "::"), HOST);
+            BindPlan.Choice v4 = BindPlan.choose(sel("0.0.0.0"), HOST);
+            assertAll(
+                () -> assertEquals(List.of(t("::", "*")), both.targets(), "only :: is bound"),
+                () -> assertTrue(both.warnings().get(both.warnings().size() - 1).contains("dual-stack"), "with a warning saying why"),
+                () -> assertEquals(List.of(t("0.0.0.0", "*")), v4.targets(), "0.0.0.0 alone is kept"));
+        }
+
+        @Test
         @DisplayName("wildcards bind themselves, exclusively, with warnings")
         void wildcards() {
             BindPlan.Choice alone = BindPlan.choose(sel("::"), HOST);
@@ -297,21 +326,50 @@ class BindingTest {
     @DisplayName("BindPlan.diff")
     class DiffTests {
         @Test
-        @DisplayName("opens new targets and closes vanished ones")
+        @DisplayName("opens new addresses, closes vanished ones, relabels a renumbered interface in place")
         void diff() {
-            List<BindTarget> before = List.of(t("127.0.0.1", "lo0"), t("10.224.0.16", "utun4"));
+            List<BindTarget> before = List.of(t("127.0.0.1", "lo0"), t("10.224.0.16", "utun4"), t("10.224.0.9", "utun4"));
             List<BindTarget> vpnMoved = List.of(t("127.0.0.1", "lo0"), t("10.224.0.16", "utun5"), t("10.224.0.17", "utun5"));
             BindPlan.Diff d = BindPlan.diff(before, vpnMoved);
+            BindPlan.Diff scoped = BindPlan.diff(List.of(t("fe80::1%1", "lo0")), List.of(t("fe80::1%1", "lo0"), t("fe80::1%2", "en0")));
             assertAll(
-                () -> assertEquals(List.of(t("10.224.0.16", "utun5"), t("10.224.0.17", "utun5")), d.open(),
-                    "targets not bound yet are opened, in desired order"),
-                () -> assertEquals(List.of(t("10.224.0.16", "utun4")), d.close(), "targets no longer wanted are closed"),
+                () -> assertEquals(List.of(t("10.224.0.17", "utun5")), d.open(), "addresses not bound yet are opened"),
+                () -> assertEquals(List.of(t("10.224.0.9", "utun4")), d.close(), "addresses no longer wanted are closed"),
+                () -> assertEquals(List.of(t("10.224.0.16", "utun5")), d.relabel(),
+                    "an address that moved from utun4 to utun5 keeps its channel and is only relabelled"),
+                () -> assertEquals(List.of(t("fe80::1%2", "en0")), scoped.open(), "the same link-local address on another scope is new"),
+                () -> assertEquals(List.of(), scoped.close(), "and the first scope stays"),
                 () -> assertFalse(d.isEmpty(), "a change is not empty"),
+                () -> assertFalse(new BindPlan.Diff(List.of(), List.of(), List.of(t("::1", "lo0"))).isEmpty(),
+                    "a relabel alone is a change"),
                 () -> assertTrue(BindPlan.diff(before, List.copyOf(before)).isEmpty(), "equal sets give an empty diff"),
                 () -> assertTrue(BindPlan.diff(List.of(), List.of(t("::1", "lo0"))).close().isEmpty()
                     && !BindPlan.diff(List.of(), List.of(t("::1", "lo0"))).isEmpty(), "an open alone is a change"),
                 () -> assertFalse(BindPlan.diff(before, List.of()).isEmpty(), "a close alone is a change"));
         }
+    }
+
+    @Test
+    @DisplayName("BindPlan.needsRescan: only literals without bindWait never rescan")
+    void needsRescan() {
+        assertAll(
+            () -> assertFalse(BindPlan.needsRescan(sel("127.0.0.1", "::1"), false), "literals alone never change"),
+            () -> assertTrue(BindPlan.needsRescan(sel("127.0.0.1", "::1"), true), "literals with bindWait wait for their address"),
+            () -> assertTrue(BindPlan.needsRescan(sel("127.0.0.1", "if:utun4"), false), "an interface selector follows changes"),
+            () -> assertTrue(BindPlan.needsRescan(sel("10.0.0.0/8"), false), "a CIDR follows changes"),
+            () -> assertTrue(BindPlan.needsRescan(sel("all"), false), "all follows changes"),
+            () -> assertTrue(BindPlan.needsRescan(List.of(), true), "bindWait alone rescans"));
+    }
+
+    @Test
+    @DisplayName("AddressKey: the address plus its IPv6 scope")
+    void addressKey() {
+        assertAll(
+            () -> assertEquals(0, BindPlan.AddressKey.of(ip("10.0.0.1")).scope(), "IPv4 has scope 0"),
+            () -> assertEquals(2, BindPlan.AddressKey.of(ip("fe80::1%2")).scope(), "a scoped IPv6 address keeps its scope"),
+            () -> assertFalse(BindPlan.AddressKey.of(ip("fe80::1%1")).equals(BindPlan.AddressKey.of(ip("fe80::1%2"))),
+                "one link-local address on two interfaces gives two keys"),
+            () -> assertEquals(BindPlan.AddressKey.of(ip("10.0.0.1")), BindPlan.AddressKey.of(ip("10.0.0.1")), "equal addresses, equal keys"));
     }
 
     @Nested

@@ -34,6 +34,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
 
@@ -63,6 +64,7 @@ public final class Server implements AutoCloseable {
     private final Thread loop;
     private final Thread rescan;
     private volatile boolean running = true;
+    private final CompletableFuture<Void> terminated = new CompletableFuture<>();
     private final java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
 
     private Server(Settings s, UdpTransport transport, ServerNet net, int hz, List<BindSelector> selectors,
@@ -134,10 +136,7 @@ public final class Server implements AutoCloseable {
         ServerNetConfig cfg = ServerNetConfig.of(opts, map);
         ServerNet net = new ServerNet(cfg, host, transport, s.log, blob);
         transport.setReceiver(net::onDatagram);
-        boolean rescans = false;
-        for (BindSelector sel : selectors) {
-            rescans |= !(sel instanceof BindSelector.Literal);
-        }
+        boolean rescans = BindPlan.needsRescan(selectors, bindWait);
         Server server = new Server(s, transport, net, cfg.simHz, selectors, rescans);
         s.log.log("serving map '" + map.name() + "' (" + map.width() + "x" + map.height() + " blocks) at "
             + cfg.simHz + " frames/s");
@@ -165,6 +164,7 @@ public final class Server implements AutoCloseable {
     }
 
     private void runLoop() {
+        Throwable failure = null;
         TickScheduler sched = new TickScheduler(hz, TickScheduler.catchUpTicks(hz), s.clock.getAsLong());
         try {
             while (running) {
@@ -178,23 +178,35 @@ public final class Server implements AutoCloseable {
                     net.tick(s.clock.getAsLong());
                 }
             }
-        } catch (IOException | RuntimeException e) {
+        } catch (Throwable e) {
+            failure = e;
             s.log.log("server loop failed: " + e);
         } finally {
-            net.shutdown();
-            transport.close();
+            try {
+                net.shutdown();
+                transport.close();
+            } catch (RuntimeException e) {
+                s.log.log("shutdown failed: " + e);
+            }
+            if (failure == null) {
+                terminated.complete(null);
+            } else {
+                terminated.completeExceptionally(failure);
+            }
         }
     }
 
+    /**
+     * Every rescan compares the wanted targets with what is actually bound, so a bind that failed (the
+     * address was not ready yet, or the port was busy) is retried on the next rescan.
+     */
     private void runRescan() {
-        List<BindTarget> last = transport.boundTargets();
         while (running) {
             try {
                 Thread.sleep(s.rescanMillis);
                 List<BindTarget> now = BindPlan.choose(selectors, s.interfaces.snapshot()).targets();
-                if (!now.equals(last)) {
+                if (!BindPlan.diff(transport.boundTargets(), now).isEmpty()) {
                     desired.set(now);
-                    last = now;
                 }
             } catch (InterruptedException e) {
                 return;
@@ -202,6 +214,14 @@ public final class Server implements AutoCloseable {
                 s.log.log("interface rescan failed: " + e);
             }
         }
+    }
+
+    /**
+     * Completes when the loop thread has stopped: normally after {@link #close()}, exceptionally with
+     * the cause when the loop died (the server then serves nothing; {@code ServerMain} exits non-zero).
+     */
+    public CompletableFuture<Void> termination() {
+        return terminated;
     }
 
     /** Addresses bound right now. */

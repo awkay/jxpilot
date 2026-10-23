@@ -179,6 +179,16 @@ class UtilitiesTest {
     }
 
     @Test
+    @DisplayName("UdpTransport.selectMillis wakes the selector at least 1 ms early")
+    void selectMillis() {
+        assertAll(
+            () -> assertEquals(70, UdpTransport.selectMillis(71_428_571L), "a 14 fps tick: select 70 ms, park the rest"),
+            () -> assertEquals(1, UdpTransport.selectMillis(2_000_000L), "2 ms: select 1 ms"),
+            () -> assertEquals(0, UdpTransport.selectMillis(1_999_999L), "under 2 ms: no select, park"),
+            () -> assertTrue(UdpTransport.selectMillis(0) < 1, "nothing to wait: no select"));
+    }
+
+    @Test
     @DisplayName("TickScheduler.catchUpTicks: 100 ms of ticks at the frame rate, at least 2")
     void catchUp() {
         assertAll(

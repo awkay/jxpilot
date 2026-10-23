@@ -399,6 +399,122 @@ class LoopbackIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("an interface renumbered with the same address keeps its channel on the same port")
+    void renumberSamePort() throws Exception {
+        int port = freePort(V4);
+        List<String> log = new ArrayList<>();
+        List<String> got = new ArrayList<>();
+        try (UdpTransport t = new UdpTransport(port, log::add, System::nanoTime);
+             DatagramChannel peer = DatagramChannel.open(StandardProtocolFamily.INET)) {
+            t.setReceiver((ch, from, data, now) -> got.add(ch + ":" + data.remaining()));
+            BindTarget utun4 = new BindTarget(V4, "utun4");
+            BindTarget utun5 = new BindTarget(V4, "utun5");
+            t.apply(BindPlan.diff(List.of(), List.of(utun4)));
+            peer.bind(new InetSocketAddress(V4, 0));
+            peer.send(ByteBuffer.allocate(3), new InetSocketAddress(V4, port));
+            pollUntil(t, got, 1);
+            int opened = t.apply(BindPlan.diff(t.boundTargets(), List.of(utun5)));
+            peer.send(ByteBuffer.allocate(4), new InetSocketAddress(V4, port));
+            pollUntil(t, got, 2);
+            assertAll(
+                () -> assertEquals(0, opened, "nothing is reopened"),
+                () -> assertEquals(List.of(utun5), t.boundTargets(), "the target now carries the new interface name"),
+                () -> assertEquals(port, t.localAddress(utun5).getPort(), "on the same port"),
+                () -> assertEquals(List.of("0:3", "0:4"), got, "the same channel keeps receiving"),
+                () -> assertTrue(log.contains("interface renamed: 127.0.0.1:" + port + " (utun4) is now utun5"),
+                    "the rename is logged: " + log),
+                () -> assertTrue(BindPlan.diff(t.boundTargets(), List.of(utun5)).isEmpty(), "and the next rescan sees no change"));
+        }
+    }
+
+    private static void pollUntil(UdpTransport t, List<String> got, int n) throws IOException {
+        long end = System.nanoTime() + 2_000_000_000L;
+        while (got.size() < n && System.nanoTime() < end) {
+            t.poll(5_000_000L);
+        }
+    }
+
+    @Test
+    @DisplayName("a bind that fails is retried by the next rescan")
+    void retryFailedBind() throws Exception {
+        Assumptions.assumeTrue(canBind(V6), "needs ::1; skipping");
+        List<String> log = Collections.synchronizedList(new ArrayList<>());
+        int port = freePort(V4);
+        MutableInterfaces lo = new MutableInterfaces(V4);
+        try (Server server = Server.start(new String[] {"--map", MAP, "--port", Integer.toString(port), "--bind", "if:lo0"},
+            settings(lo, log))) {
+            BindTarget v6 = new BindTarget(V6, "lo0");
+            boolean failedWhileBusy;
+            try (DatagramChannel blocker = DatagramChannel.open(StandardProtocolFamily.INET6)) {
+                blocker.bind(new InetSocketAddress(V6, port));
+                lo.set(V4, V6);
+                waitFor(() -> log.stream().anyMatch(l -> l.startsWith("cannot bind [::1]:" + port)));
+                failedWhileBusy = !server.bound().contains(v6);
+            }
+            waitFor(() -> server.bound().contains(v6));
+            boolean busy = failedWhileBusy;
+            assertAll(
+                () -> assertTrue(busy, "the address is not bound while its port is taken"),
+                () -> assertEquals(List.of(new BindTarget(V4, "lo0"), v6), server.bound(), "a later rescan binds it"));
+        }
+    }
+
+    @Test
+    @DisplayName("literal selectors with bindWait bind an address that appears later")
+    void literalBindWait() throws Exception {
+        Assumptions.assumeTrue(canBind(V6), "needs ::1; skipping");
+        List<String> log = new ArrayList<>();
+        MutableInterfaces lo = new MutableInterfaces(V4);
+        int port = freePort(V4);
+        try (Server s = Server.start(new String[] {"--map", MAP, "--port", Integer.toString(port),
+            "--bind", "127.0.0.1,::1", "--bindWait"}, settings(lo, log))) {
+            List<BindTarget> before = s.bound();
+            lo.set(V4, V6);
+            waitFor(() -> s.bound().size() == 2);
+            assertAll(
+                () -> assertEquals(List.of(new BindTarget(V4, "lo0")), before, "only 127.0.0.1 exists at first"),
+                () -> assertEquals(List.of(new BindTarget(V4, "lo0"), new BindTarget(V6, "lo0")), s.bound(),
+                    "::1 is bound once it appears"));
+        }
+    }
+
+    @Test
+    @DisplayName("a dead server loop completes termination() exceptionally")
+    void loopDeath() throws Exception {
+        List<String> log = Collections.synchronizedList(new ArrayList<>());
+        Server.Settings st = settings(new MutableInterfaces(V4), log);
+        IllegalStateException boom = new IllegalStateException("simulated host failure");
+        st.factory = (o, m) -> new DyingHost(new StubGameHost(m, 4), 5, boom);
+        Server s = Server.start(new String[] {"--map", MAP, "--port", "0", "--bind", "127.0.0.1"}, st);
+        Throwable cause = null;
+        try {
+            s.termination().get(10, TimeUnit.SECONDS);
+        } catch (java.util.concurrent.ExecutionException e) {
+            cause = e.getCause();
+        } finally {
+            s.close();
+        }
+        Throwable c = cause;
+        assertAll(
+            () -> assertEquals(boom, c, "termination fails with the loop's exception"),
+            () -> assertTrue(log.contains("server loop failed: " + boom), "the failure is logged"),
+            () -> assertTrue(s.bound().isEmpty(), "the channels are closed"));
+    }
+
+    @Test
+    @DisplayName("close() completes termination() normally")
+    void normalTermination() throws Exception {
+        Server s = Server.start(new String[] {"--map", MAP, "--port", "0", "--bind", "127.0.0.1"},
+            settings(new MutableInterfaces(V4), new ArrayList<>()));
+        boolean runningBefore = !s.termination().isDone();
+        s.close();
+        assertAll(
+            () -> assertTrue(runningBefore, "termination is pending while the server runs"),
+            () -> assertTrue(s.termination().isDone() && !s.termination().isCompletedExceptionally(),
+                "it completes normally after close"));
+    }
+
     interface Cond {
         boolean ok();
     }

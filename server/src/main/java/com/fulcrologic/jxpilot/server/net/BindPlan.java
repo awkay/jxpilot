@@ -43,6 +43,9 @@ import java.util.Set;
 public final class BindPlan {
     private BindPlan() {}
 
+    private static final InetAddress ANY4 = InetAddress.ofLiteral("0.0.0.0");
+    private static final InetAddress ANY6 = InetAddress.ofLiteral("::");
+
     /** Outcome of {@link #choose}. */
     public record Choice(List<BindTarget> targets, List<BindSelector> unmatched, List<String> warnings) {
         public Choice {
@@ -52,14 +55,35 @@ public final class BindPlan {
         }
     }
 
-    /** Channels to open and to close after a rescan. */
-    public record Diff(List<BindTarget> open, List<BindTarget> close) {
+    /**
+     * Channels to open and to close after a rescan, and bound channels whose address moved to another
+     * interface name (a VPN renumbered {@code utun4} to {@code utun5}): those keep their channel and only
+     * change the label.
+     */
+    public record Diff(List<BindTarget> open, List<BindTarget> close, List<BindTarget> relabel) {
         public Diff {
             open = List.copyOf(open);
             close = List.copyOf(close);
+            relabel = List.copyOf(relabel);
         }
 
-        public boolean isEmpty() { return open.isEmpty() && close.isEmpty(); }
+        public Diff(List<BindTarget> open, List<BindTarget> close) {
+            this(open, close, List.of());
+        }
+
+        public boolean isEmpty() { return open.isEmpty() && close.isEmpty() && relabel.isEmpty(); }
+    }
+
+    /**
+     * Identity of a local address for binding: the address and, for IPv6, its scope id. Two link-local
+     * {@code fe80::1} on different interfaces are different addresses ({@link InetAddress#equals}
+     * ignores the scope).
+     */
+    public record AddressKey(InetAddress address, int scope) {
+        /** BEHAVIOR: the scope is the IPv6 scope id, 0 for IPv4 and unscoped IPv6. */
+        public static AddressKey of(InetAddress a) {
+            return new AddressKey(a, a instanceof Inet6Address v6 ? v6.getScopeId() : 0);
+        }
     }
 
     /** What startup should do, see {@link #decide}. */
@@ -68,7 +92,8 @@ public final class BindPlan {
     /** Orders IPv4 before IPv6, then by address bytes, so logs and channel order are stable. */
     static final Comparator<BindTarget> ORDER = Comparator
         .comparingInt((BindTarget t) -> t.address() instanceof Inet4Address ? 0 : 1)
-        .thenComparing((a, b) -> Arrays.compareUnsigned(a.address().getAddress(), b.address().getAddress()));
+        .thenComparing((a, b) -> Arrays.compareUnsigned(a.address().getAddress(), b.address().getAddress()))
+        .thenComparingInt(t -> AddressKey.of(t.address()).scope());
 
     /**
      * Startup resolution of names: run once, before the first {@link #choose}.
@@ -116,12 +141,16 @@ public final class BindPlan {
      * BEHAVIOR: a wildcard literal yields the wildcard itself (interface {@code *}) with a warning, and
      * when present only wildcard targets are kept (a wildcard and a specific address cannot share a
      * port), with a warning naming the dropped ones.
-     * BEHAVIOR: an address matched twice appears once, with the first interface carrying it; targets are
-     * IPv4 first then by address bytes.
+     * BEHAVIOR: {@code 0.0.0.0} together with {@code ::} binds only {@code ::}, with a warning: the JDK
+     * opens IPv6 sockets dual-stack (IPV6_V6ONLY off, and NIO cannot turn it on), so {@code ::} also
+     * serves IPv4, and on Linux binding both on one port fails.
+     * BEHAVIOR: an address matched twice appears once, with the first interface carrying it; IPv6
+     * addresses with different scopes (link-local on two interfaces) are different addresses; targets
+     * are IPv4 first then by address bytes, then scope.
      * BEHAVIOR: a selector matching nothing is listed in {@code unmatched}.
      */
     public static Choice choose(List<BindSelector> selectors, List<NetIf> snapshot) {
-        Map<InetAddress, BindTarget> found = new LinkedHashMap<>();
+        Map<AddressKey, BindTarget> found = new LinkedHashMap<>();
         List<BindSelector> unmatched = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
         List<BindTarget> wildcards = new ArrayList<>();
@@ -139,7 +168,7 @@ public final class BindPlan {
                 }
                 for (InetAddress a : nif.addresses()) {
                     if (matches(s, nif, a)) {
-                        found.putIfAbsent(a, new BindTarget(a, nif.name()));
+                        found.putIfAbsent(AddressKey.of(a), new BindTarget(a, nif.name()));
                         any = true;
                     }
                 }
@@ -154,6 +183,13 @@ public final class BindPlan {
                 warnings.add("wildcard bind replaces the specific addresses " + addresses(found.values()));
             }
             targets = new ArrayList<>(new LinkedHashSet<>(wildcards));
+            BindTarget any4 = new BindTarget(ANY4, "*");
+            BindTarget any6 = new BindTarget(ANY6, "*");
+            if (targets.contains(any4) && targets.contains(any6)) {
+                targets.remove(any4);
+                warnings.add("binding only '::' for '0.0.0.0' and '::': Java's IPv6 sockets are dual-stack, so '::' "
+                    + "serves IPv4 too");
+            }
         } else {
             targets = new ArrayList<>(found.values());
         }
@@ -179,25 +215,56 @@ public final class BindPlan {
     }
 
     /**
-     * BEHAVIOR: {@code open} = desired targets not currently bound, {@code close} = bound targets no
-     * longer desired, each in the order of its source list; equal sets give an empty diff.
+     * Compare what is bound with what the selectors want now, by address (see {@link AddressKey}).
+     * <p>
+     * BEHAVIOR: {@code open} = desired addresses not currently bound, {@code close} = bound addresses no
+     * longer desired, each in the order of its source list.
+     * BEHAVIOR: {@code relabel} = desired targets whose address is bound under another interface name
+     * (the channel stays open; only its label changes).
+     * BEHAVIOR: equal sets give an empty diff.
      */
     public static Diff diff(List<BindTarget> current, List<BindTarget> desired) {
-        Set<BindTarget> cur = new LinkedHashSet<>(current);
-        Set<BindTarget> want = new LinkedHashSet<>(desired);
+        Map<AddressKey, BindTarget> cur = new LinkedHashMap<>();
+        for (BindTarget t : current) {
+            cur.put(AddressKey.of(t.address()), t);
+        }
+        Set<AddressKey> want = new LinkedHashSet<>();
         List<BindTarget> open = new ArrayList<>();
+        List<BindTarget> relabel = new ArrayList<>();
         for (BindTarget t : desired) {
-            if (!cur.contains(t)) {
+            AddressKey k = AddressKey.of(t.address());
+            want.add(k);
+            BindTarget bound = cur.get(k);
+            if (bound == null) {
                 open.add(t);
+            } else if (!bound.interfaceName().equals(t.interfaceName())) {
+                relabel.add(t);
             }
         }
         List<BindTarget> close = new ArrayList<>();
         for (BindTarget t : current) {
-            if (!want.contains(t)) {
+            if (!want.contains(AddressKey.of(t.address()))) {
                 close.add(t);
             }
         }
-        return new Diff(open, close);
+        return new Diff(open, close, relabel);
+    }
+
+    /**
+     * BEHAVIOR: interfaces must be rescanned when {@code bindWait} is on (a selector may match later)
+     * or any selector is not an IP literal (interfaces, CIDRs, names, {@code all}, {@code loopback} and
+     * hosts follow interface changes). Only literals without bindWait never change.
+     */
+    public static boolean needsRescan(List<BindSelector> selectors, boolean bindWait) {
+        if (bindWait) {
+            return true;
+        }
+        for (BindSelector sel : selectors) {
+            if (!(sel instanceof BindSelector.Literal)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

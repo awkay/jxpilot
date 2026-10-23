@@ -48,9 +48,25 @@ import java.util.function.LongSupplier;
  * peer pinned to a closed channel can never be answered from a different address; its sends are
  * dropped until it times out.
  * <p>
- * Receive and send use one preallocated direct buffer and do not allocate, with one JDK exception:
- * {@code DatagramChannel.receive} caches only the most recent sender's address object, so a channel
- * shared by several peers allocates an {@link InetSocketAddress} whenever the sender changes.
+ * Receive and send use one preallocated direct buffer and allocate nothing of their own. The JDK
+ * does: {@code DatagramChannel.receive} caches only the most recent sender's address, so on a channel
+ * shared by two or more peers nearly every datagram allocates a new sender address (measured on JDK 25:
+ * about 152 B per datagram for IPv4, 240 B for IPv6). This is accepted: under ZGC (generational, the
+ * recommended collector) it is a small, steady young-generation stream with sub-millisecond pauses,
+ * bounded by the packet rate limits. {@code AllocationTest} pins it at no more than 256 B per received
+ * datagram with two peers, and 0 B with one.
+ * <p>
+ * Allocation-free alternatives, if it ever matters:
+ * <ul>
+ *   <li>Plan B: per-peer connected channels. A listener and per-peer channels all bound to the same
+ *   address with {@code SO_REUSEPORT}, each peer channel {@code connect}ed to its peer and read with
+ *   {@code read(ByteBuffer)} (no sender address). Measured at 0 B per datagram on macOS, and replies
+ *   leave from the right source address. Linux load-balances unconnected datagrams across reuseport
+ *   sockets unless the listener is distinguished (needs care or a BPF filter), and Windows has no
+ *   {@code SO_REUSEPORT}, so it needs per-OS handling.</li>
+ *   <li>Plan C: call {@code recvfrom} through the FFM API into a preallocated {@code sockaddr} segment
+ *   and key peers by its raw bytes.</li>
+ * </ul>
  * Must be used from one thread, except {@link #localAddress} and {@link #boundTargets}.
  */
 public final class UdpTransport implements Datagrams, Closeable {
@@ -67,12 +83,14 @@ public final class UdpTransport implements Datagrams, Closeable {
     private static final class Bound {
         final int id;
         final BindTarget target;
+        final BindPlan.AddressKey key;
         final DatagramChannel ch;
         final InetSocketAddress local;
 
         Bound(int id, BindTarget target, DatagramChannel ch, InetSocketAddress local) {
             this.id = id;
             this.target = target;
+            this.key = BindPlan.AddressKey.of(target.address());
             this.ch = ch;
             this.local = local;
         }
@@ -106,20 +124,34 @@ public final class UdpTransport implements Datagrams, Closeable {
     }
 
     /**
-     * Open and close channels. Logs every change with {@code address:port (interface)}. A target that
-     * fails to bind is logged and skipped.
+     * Open, close and relabel channels (matched by address, see {@link BindPlan.AddressKey}). Logs every
+     * change with {@code address:port (interface)}. A target that fails to bind is logged and skipped; the
+     * next rescan, which diffs against {@link #boundTargets()}, retries it. A relabelled address keeps its
+     * channel, so peers on it are unaffected.
      *
      * @return the number of channels opened
      */
     public int apply(BindPlan.Diff diff) {
         for (BindTarget t : diff.close()) {
-            for (int i = 0; i < channels.size(); i++) {
+            int i = indexOf(BindPlan.AddressKey.of(t.address()));
+            if (i >= 0) {
                 Bound b = channels.get(i);
-                if (b != null && b.target.equals(t)) {
-                    closeQuietly(b.ch);
-                    channels.set(i, null);
-                    log.log("unbound " + t.describe(b.local.getPort()));
+                closeQuietly(b.ch);
+                channels.set(i, null);
+                log.log("unbound " + b.target.describe(b.local.getPort()));
+            }
+        }
+        for (BindTarget t : diff.relabel()) {
+            int i = indexOf(BindPlan.AddressKey.of(t.address()));
+            if (i >= 0) {
+                Bound b = channels.get(i);
+                Bound renamed = new Bound(b.id, t, b.ch, b.local);
+                SelectionKey key = b.ch.keyFor(selector);
+                if (key != null) {
+                    key.attach(renamed);
                 }
+                channels.set(i, renamed);
+                log.log("interface renamed: " + b.target.describe(b.local.getPort()) + " is now " + t.interfaceName());
             }
         }
         int opened = 0;
@@ -148,11 +180,13 @@ public final class UdpTransport implements Datagrams, Closeable {
     }
 
     /**
-     * Wait up to {@code timeoutNanos} for datagrams and deliver everything that is ready.
-     * Sub-millisecond waits park the thread then poll, since the selector counts in milliseconds.
+     * Wait up to {@code timeoutNanos} for datagrams and deliver everything that is ready. The selector
+     * counts in milliseconds and oversleeps (on macOS by up to about a millisecond), so it is asked to
+     * wake about a millisecond early ({@link #selectMillis}); the caller's next poll then covers the
+     * remainder by parking the thread, which is precise, and polling.
      */
     public void poll(long timeoutNanos) throws IOException {
-        long ms = timeoutNanos / 1_000_000L;
+        long ms = selectMillis(timeoutNanos);
         if (ms >= 1) {
             selector.select(onReady, ms);
         } else {
@@ -161,6 +195,24 @@ public final class UdpTransport implements Datagrams, Closeable {
             }
             selector.selectNow(onReady);
         }
+    }
+
+    /**
+     * BEHAVIOR: whole milliseconds to block in the selector so that it wakes at least 1 ms before
+     * {@code timeoutNanos}: {@code (timeoutNanos - 1 ms) / 1 ms}; below 2 ms this is 0 (park instead).
+     */
+    static long selectMillis(long timeoutNanos) {
+        return (timeoutNanos - 1_000_000L) / 1_000_000L;
+    }
+
+    private int indexOf(BindPlan.AddressKey key) {
+        for (int i = 0; i < channels.size(); i++) {
+            Bound b = channels.get(i);
+            if (b != null && b.key.equals(key)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private void drain(SelectionKey key) {
