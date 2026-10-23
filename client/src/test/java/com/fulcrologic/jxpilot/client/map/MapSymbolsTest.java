@@ -140,11 +140,12 @@ class MapSymbolsTest {
     @Test
     void treasureIsAnOpenBoxUnderAHalfCircle() {
         List<String> l = lines(b -> MapSymbols.treasure(b, 0, 0, RED));
+        List<String> arc = lines(b -> MapSymbols.treasureArc(b, 0, 0, RED));
         assertAll(
-            () -> assertEquals(List.of("0,0-0,17", "35,0-35,17", "0,0-35,0"), l.subList(0, 3), "left, right and floor"),
-            () -> assertEquals(3 + MapSymbols.CIRCLE_SEGMENTS / 2, l.size(), "plus the half circle chords"),
-            () -> assertTrue(l.get(3).startsWith("35,17.5-"), "arc starts at the right"),
-            () -> assertTrue(l.get(l.size() - 1).endsWith("-0,17.5"), "and ends at the left"));
+            () -> assertEquals(List.of("0,0-0,17", "35,0-35,17", "0,0-35,0"), l, "the box: left, right and floor"),
+            () -> assertEquals(MapSymbols.CIRCLE_SEGMENTS / 2, arc.size(), "the arc (drawn with the arcs): half circle chords"),
+            () -> assertTrue(arc.get(0).startsWith("35,17.5-"), "arc starts at the right"),
+            () -> assertTrue(arc.get(arc.size() - 1).endsWith("-0,17.5"), "and ends at the left"));
     }
 
     @Test
@@ -182,6 +183,8 @@ class MapSymbolsTest {
             () -> assertEquals(17f, tri0.segY1(0), EPS, "first corner at the centre height"),
             () -> assertEquals((float) (20 + 7 * Math.cos(42 * a)), tri0.segX2(0), EPS, "second corner RES/3 = 42 further"),
             () -> assertEquals((float) (17 - 7 * Math.sin(42 * a)), tri0.segY2(0), EPS, "turning clockwise on screen (y = -sin)"),
+            () -> assertEquals((float) (20 + 7 * Math.cos(85 * a)), tri0.segX2(1), EPS, "third corner at 2*RES/3 = 85, not 2*42"),
+            () -> assertEquals((float) (17 - 7 * Math.sin(85 * a)), tri0.segY2(1), EPS, "third corner y"),
             () -> assertEquals(12, sq0.segmentCount(), "three squares"),
             () -> assertEquals(28f, sq0.segX1(0), EPS, "first square corner at +8"),
             () -> assertEquals(20f, sq0.segX1(1), EPS, "second corner a quarter turn on: above/below the centre"),
@@ -242,8 +245,43 @@ class MapSymbolsTest {
             WorldMap m = row(false);
             VertexBatch b = Segs.batch();
             new MapSymbols(m, P).draw(b, TEXT, cam(m, 140, 35, 400, 200), new State());
-            int expected = (3 + 8 + 3 + MapSymbols.CIRCLE_SEGMENTS / 2 + 2 * 3 * MapSymbols.CIRCLE_SEGMENTS + 9 + 12);
-            assertEquals(expected, b.commandLength(1), "cannon, target, treasure, two wormholes, both concentrators");
+            VertexBatch arcs = Segs.batch();
+            new MapSymbols(m, P).drawArcs(arcs, cam(m, 140, 35, 400, 200), new State());
+            assertAll(
+                () -> assertEquals(3 + 8 + 3 + 9 + 12, b.commandLength(1), "cannon, target, treasure box, both concentrators"),
+                () -> assertEquals(2 * 3 * MapSymbols.CIRCLE_SEGMENTS + MapSymbols.CIRCLE_SEGMENTS / 2, arcs.segmentCount(),
+                    "the arcs: two wormholes' circles, the treasure's half circle"),
+                () -> assertEquals(List.of(VertexBatch.LINES), List.of(arcs.commandMode(0)), "one lines command"),
+                () -> assertEquals(1f, arcs.scaleX(), "identity transform afterwards"));
+        }
+
+        VertexBatch zoomedArcs(WorldMap m) {
+            Camera c = cam(m, 52, 35, 400, 200);
+            c.setZoom(2);
+            c.update();
+            VertexBatch b = Segs.batch();
+            new MapSymbols(m, P).drawArcs(b, c, new State());
+            return b;
+        }
+
+        @Test
+        void arcsAreGravityThenWormholesThenTreasuresAndCulled() {
+            WorldMap m = mapWith(false, "", ".+*@@", "1....");
+            VertexBatch b = Segs.batch();
+            new MapSymbols(m, P).drawArcs(b, cam(m, 52, 35, 400, 200), new State());
+            Camera far = cam(m, 5000, 5000, 100, 100);
+            VertexBatch none = Segs.batch();
+            new MapSymbols(m, P).drawArcs(none, far, new State());
+            List<String> l = worldLines(b, cam(m, 52, 35, 400, 200));
+            int per = MapSymbols.CIRCLE_SEGMENTS;
+            assertAll(
+                () -> assertEquals(per + 2 * 3 * per + per / 2, b.segmentCount(), "gravity circle, two wormholes, treasure arc"),
+                () -> assertEquals("69,52.5", l.get(0).split("-")[0], "the + gravity circle in block (1,1): radius 16.5 from 3 o'clock"),
+                () -> assertEquals("138,53.5", l.get(per).split("-")[0], "then the wormhole in block (3,1)"),
+                () -> assertEquals("105,52.5", l.get(7 * per).split("-")[0], "then the treasure half circle in block (2,1)"),
+                () -> assertEquals(1f, zoomedArcs(m).scaleX(), "identity transform afterwards, also when zoomed"),
+                () -> assertEquals(RED, b.segColor(0), "red"),
+                () -> assertEquals(0, none.segmentCount(), "nothing when the blocks are off-screen"));
         }
 
         /** Objects from block x = 2 on, so block-to-pixel scaling is observable. */
@@ -260,14 +298,16 @@ class MapSymbolsTest {
             VertexBatch b = Segs.batch();
             new MapSymbols(m, P).draw(b, TEXT, c, new State());
             List<String> l = worldLines(b, c);
-            int wormStart = 3 + 8 + 3 + MapSymbols.CIRCLE_SEGMENTS / 2;
-            int concStart = wormStart + 2 * 3 * MapSymbols.CIRCLE_SEGMENTS;
+            VertexBatch arcs = Segs.batch();
+            new MapSymbols(m, P).drawArcs(arcs, c, new State());
+            List<String> a = worldLines(arcs, c);
+            int concStart = 3 + 8 + 3;
             assertAll(
                 () -> assertEquals("72,37 104,37 104,69", worldTriangles(b, c).get(0), "fuel bar in block (2,1)"),
                 () -> assertEquals("105,35-140,35", l.get(0), "cannon base in block (3,1)"),
                 () -> assertEquals("140,35-175,35", l.get(3), "target outline in block (4,1)"),
                 () -> assertEquals("175,35-175,52", l.get(11), "treasure wall in block (5,1)"),
-                () -> assertTrue(l.get(wormStart).startsWith("243,53.5-"), "wormhole outer circle in block (6,1)"),
+                () -> assertTrue(a.get(0).startsWith("243,53.5-"), "wormhole outer circle (an arc) in block (6,1)"),
                 () -> assertTrue(l.get(concStart).startsWith("272,52-"), "item concentrator in block (7,1)"),
                 () -> assertTrue(l.get(concStart + 9).startsWith("308,52-"), "asteroid concentrator in block (8,1)"),
                 () -> assertEquals(222f, b.x(b.commandFirst(2)), "F centred on screen x 224 (pen 221 + 1)"),
@@ -282,9 +322,9 @@ class MapSymbolsTest {
             State st = new State();
             st.loops = 10; // & 7 = 2
             VertexBatch b = Segs.batch();
-            new MapSymbols(m, P).draw(b, TEXT, c, st);
+            new MapSymbols(m, P).drawArcs(b, c, st);
             List<String> l = worldLines(b, c);
-            int middle = 3 + 8 + 3 + MapSymbols.CIRCLE_SEGMENTS / 2 + MapSymbols.CIRCLE_SEGMENTS;
+            int middle = MapSymbols.CIRCLE_SEGMENTS;
             assertTrue(l.get(middle).startsWith("233,48.5-"), "step 2: middle circle centre (221.5, 48.5), r 11.5");
         }
 
@@ -471,6 +511,12 @@ class MapSymbolsTest {
             assertEquals(0, b.pointCount(), "the dot of a dead cannon far off-screen is not drawn");
         }
 
+        VertexBatch teamArcs(WorldMap team, State st) {
+            VertexBatch a = Segs.batch();
+            new MapSymbols(team, P).drawArcs(a, cam(team, 140, 35, 400, 200), st);
+            return a;
+        }
+
         @Test
         void teamDigitsOnlyInTeamPlay() {
             WorldMap solo = row(false);
@@ -485,10 +531,10 @@ class MapSymbolsTest {
             assertAll(
                 () -> assertEquals(6, s.commandLength(s.commandCount() - 1), "no team: only the F"),
                 () -> assertEquals(4 * 6, t.commandLength(last), "team: F, base, target and treasure digits"),
-                () -> assertEquals(8 + 3 + MapSymbols.CIRCLE_SEGMENTS / 2, Segs.lines(t, BLUE).size(),
-                    "own target and treasure are blue"),
-                () -> assertEquals(2 * 3 * MapSymbols.CIRCLE_SEGMENTS + 9 + 12, Segs.lines(t, RED).size(),
-                    "only wormholes and concentrators stay red"),
+                () -> assertEquals(8 + 3, Segs.lines(t, BLUE).size(), "own target and treasure box are blue"),
+                () -> assertEquals(9 + 12, Segs.lines(t, RED).size(), "only the concentrators stay red"),
+                () -> assertEquals(MapSymbols.CIRCLE_SEGMENTS / 2, Segs.lines(teamArcs(team, st), BLUE).size(),
+                    "the own treasure's arc is blue too"),
                 () -> assertEquals(BLUE, t.color(t.commandFirst(last) + 18), "the own treasure digit (4th text glyph) is blue"));
         }
 

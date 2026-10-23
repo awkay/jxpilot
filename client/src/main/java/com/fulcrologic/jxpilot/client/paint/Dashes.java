@@ -30,6 +30,12 @@ import com.fulcrologic.jxpilot.client.render.VertexBatch;
  * pixels, started {@code offset} pixels into the pattern ({@code dash_offset}) and carried on across
  * the joints of a polyline, as {@code XDrawLines} does.
  * <p>
+ * XPilot's dashed lines are zero-width ("thin") lines, which the X server dashes per pixel drawn:
+ * the X11 protocol allows thin-line dash lengths to be measured along the line's major axis
+ * (x for lines within 45 degrees of horizontal, else y), and the sample server's Bresenham dasher
+ * ({@code miZeroDashLine}) does exactly that, one dash unit per pixel step. So a diagonal edge
+ * advances the pattern by {@code max(|dx|, |dy|)} pixels, not by its Euclidean length.
+ * <p>
  * Coordinates may be in any space (world coordinates through the batch transform, or framebuffer
  * pixels); {@code unit} is the length of one pattern pixel in that space (e.g. {@code 1 / zoom} for
  * world coordinates, the pixel ratio for framebuffer coordinates). Allocation-free.
@@ -42,7 +48,8 @@ public final class Dashes {
      * {@code closed}).
      * <p>
      * BEHAVIOR: the pattern position starts at {@code offset mod (on + off)} and advances by each
-     * edge's length in pattern pixels; drawn pieces are the parts of each edge inside an "on" stretch.
+     * edge's major-axis length ({@code max(|dx|, |dy|)}) in pattern pixels; drawn pieces are the parts of
+     * each edge inside an "on" stretch.
      * BEHAVIOR: zero-length edges draw nothing and do not advance the pattern; fewer than 2 points draw nothing.
      *
      * @return the pattern position after the last edge (to continue the pattern on a following line)
@@ -87,7 +94,7 @@ public final class Dashes {
                               float on, float period, float phase, float unit, int rgba) {
         double dx = x2 - x1;
         double dy = y2 - y1;
-        double len = Math.sqrt(dx * dx + dy * dy) / unit;
+        double len = Math.max(Math.abs(dx), Math.abs(dy)) / unit;
         if (!(len > 0)) {
             return phase;
         }

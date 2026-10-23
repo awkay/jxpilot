@@ -25,13 +25,16 @@ package com.fulcrologic.jxpilot.client.viewer;
 
 import com.fulcrologic.jxpilot.client.paint.HudDrawList;
 import com.fulcrologic.jxpilot.client.render.TextWriter;
+import com.fulcrologic.jxpilot.client.render.WinScale;
 
 /**
  * A stand-in HUD draw list for the {@code --demo} viewer: the parts the game client's HUD model
  * lays out (dashed HUD lines, fuel gauge, fuel meter, typewritten and fading messages, talk box,
  * scoreboard), at C's window positions ({@code painthud.c}, {@code talk.c}, {@code paint.c}) with fake
- * values. Colour indices follow the game client's {@code HudColor} order. Fixed capacity and
- * constant strings: {@link #build} allocates nothing.
+ * values. The HUD frame lines and the fuel gauge are laid out as C scales them ({@code WINSCALE} of
+ * the unscaled positions at the zoom, {@link WinScale}); the rest is unscaled, as in C. Colour
+ * indices follow the game client's {@code HudColor} order. Fixed capacity and constant strings:
+ * {@link #build} allocates nothing.
  */
 public final class DemoHud implements HudDrawList {
     /** Colour indices (game {@code HudColor} order). */
@@ -46,6 +49,8 @@ public final class DemoHud implements HudDrawList {
     static final int HUD_SIZE = 90;
     static final int HUD_OFFSET = 20;
     static final int GAUGE = 2 * (HUD_SIZE - HUD_OFFSET - 6);
+    /** C {@code FUEL_GAUGE_OFFSET}. */
+    static final int GAUGE_OFFSET = 6;
     static final double CHARS_PER_FRAME = 50 / 14.0;
     /** Frames a message stays red (C {@code MSG_DURATION - MSG_FLASH}). */
     static final int FLASH_FRAMES = 1024 - 892;
@@ -86,22 +91,32 @@ public final class DemoHud implements HudDrawList {
      * (framebuffer pixels, {@code ratio} per logical pixel).
      */
     public void build(int viewW, int viewH, int scoreTop, long loops, TextWriter text, double ratio) {
+        build(viewW, viewH, scoreTop, loops, text, ratio, 1);
+    }
+
+    /** {@link #build} for a view at {@code zoom} (C's {@code 1 / scaleFactor}). */
+    public void build(int viewW, int viewH, int scoreTop, long loops, TextWriter text, double ratio, double zoom) {
         lines = 0;
         rects = 0;
         texts = 0;
         int asc = (int) (text.font().ascent() / ratio);
         int desc = (int) (text.font().descent() / ratio);
-        int hx = viewW / 2;
-        int hy = viewH / 2;
+        // C's hud_pos: the centre of the unscaled view (ext_view_width / 2)
+        int hx = (int) (viewW / zoom) / 2;
+        int hy = (int) (viewH / zoom) / 2;
         // HUD frame (horizontal lines, dashed)
-        line(hx - HUD_SIZE, hy - HUD_SIZE + HUD_OFFSET, hx + HUD_SIZE, hy - HUD_SIZE + HUD_OFFSET, DASHED, HUD);
-        line(hx - HUD_SIZE, hy + HUD_SIZE - HUD_OFFSET, hx + HUD_SIZE, hy + HUD_SIZE - HUD_OFFSET, DASHED, HUD);
-        // fuel gauge: 60..100% fuel, cycling
+        line(w(hx - HUD_SIZE, zoom), w(hy - HUD_SIZE + HUD_OFFSET, zoom), w(hx + HUD_SIZE, zoom),
+            w(hy - HUD_SIZE + HUD_OFFSET, zoom), DASHED, HUD);
+        line(w(hx - HUD_SIZE, zoom), w(hy + HUD_SIZE - HUD_OFFSET, zoom), w(hx + HUD_SIZE, zoom),
+            w(hy + HUD_SIZE - HUD_OFFSET, zoom), DASHED, HUD);
+        // fuel gauge: 60..100% fuel, cycling (C Paint_fuel_gauge)
         double fuel = 0.6 + 0.4 * Math.abs(Math.sin(loops / 40.0));
         int size = (int) (GAUGE * fuel);
-        rect(hx + HUD_SIZE - HUD_OFFSET + 6 - 1, hy - HUD_SIZE + HUD_OFFSET + 6 - 1, HUD_OFFSET - 12 + 2, GAUGE + 2, false, HUD);
-        rect(hx + HUD_SIZE - HUD_OFFSET + 6 + 1, hy - HUD_SIZE + HUD_OFFSET + 6 + GAUGE - size + 1, HUD_OFFSET - 12,
-            size, true, HUD);
+        int gx = hx + HUD_SIZE - HUD_OFFSET + GAUGE_OFFSET;
+        int gy = hy - HUD_SIZE + HUD_OFFSET + GAUGE_OFFSET;
+        rect(w(gx, zoom) - 1, w(gy, zoom) - 1, w(HUD_OFFSET - 2 * GAUGE_OFFSET, zoom) + 2, w(GAUGE, zoom) + 2, false, HUD);
+        rect(w(gx, zoom) + 1, w(gy + GAUGE - size, zoom) + 1, w(HUD_OFFSET - 2 * GAUGE_OFFSET, zoom), w(size, zoom),
+            true, HUD);
         meter(viewW, 20, fuel, text, ratio, asc);
         messages(viewH, loops, asc, desc);
         talk(viewW, viewH, asc, desc);
@@ -163,6 +178,10 @@ public final class DemoHud implements HudDrawList {
                 line(x0 + 6, y, x0 + 250, y, SOLID, WHITE);
             }
         }
+    }
+
+    private static int w(int n, double zoom) {
+        return WinScale.of(n, zoom);
     }
 
     private void line(float x0, float y0, float x1, float y1, int style, int color) {

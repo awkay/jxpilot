@@ -146,6 +146,9 @@ class HudAllocationTest {
                 score.setLength(0);
                 score.append(k % 100 - 50);
                 b.clear();
+                double zoom = (k & 128) != 0 ? 0.5 : 1.25; // C window scaling on and off the identity
+                hud.setScale(zoom);
+                list.setScale(zoom);
                 list.paint(b, ss, fl);
                 hud.paintItems(b, ss, hx, hy, counts, k % 21, (k & 32) != 0, PaintConfig.HUD_COLOR);
                 hud.paintLockText(b, ss, hx, hy, "Target", (k & 256) != 0, k % 4, k % 1200, PaintConfig.HUD_COLOR);

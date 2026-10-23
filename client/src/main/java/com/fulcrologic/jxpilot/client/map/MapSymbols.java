@@ -49,7 +49,9 @@ import java.util.List;
  * Shapes follow {@code src/client/guimap.c}.
  * <p>
  * {@link #draw} emits four passes over all visible world copies: points (dots under dead cannons),
- * fills, lines, then text, so the whole thing costs at most four draw commands. Objects whose block (plus a text margin) is off-screen
+ * fills, lines, then text, so the whole thing costs at most four draw commands. {@link #drawArcs}
+ * draws what C queues with {@code Arc_add} (gravity circles and arcs, wormholes, the treasure half
+ * circle), which C flushes after the ships. Objects whose block (plus a text margin) is off-screen
  * are skipped. Shapes are written in world coordinates through {@link Camera#applyTo}; text is
  * placed in screen pixels at unscaled font size, as the C client does.
  * Allocation-free.
@@ -87,11 +89,11 @@ public final class MapSymbols {
         this.palette = palette;
     }
 
-    /** Draw all symbols for the camera's visible world copies. */
+    /** Draw all symbols but the arcs for the camera's visible world copies. */
     public void draw(VertexBatch b, TextWriter text, Camera cam, MapState st) {
         for (int k = 0; k < cam.offsetCount(); k++) {
             cam.applyTo(b, k);
-            deadCannonDots(b, cam, k, st);
+            deadCannonDots(b, cam, k, st, cam.zoom());
         }
         for (int k = 0; k < cam.offsetCount(); k++) {
             cam.applyTo(b, k);
@@ -107,6 +109,41 @@ public final class MapSymbols {
         }
     }
 
+    /**
+     * The arcs ({@code Arc_end}, after the ships): gravity circles and arcs, then wormholes and the
+     * treasures' half circles, over all visible copies (lines; leaves the identity transform).
+     */
+    public void drawArcs(VertexBatch b, Camera cam, MapState st) {
+        int red = palette.color(Palette.RED);
+        int blue = palette.color(Palette.BLUE);
+        List<com.fulcrologic.jxpilot.common.map.GravitySource> gravs = map.gravitySources();
+        List<Wormhole> worms = map.wormholes();
+        List<Treasure> treasures = map.treasures();
+        int wormCount = (int) (st.loops() & 7);
+        for (int k = 0; k < cam.offsetCount(); k++) {
+            cam.applyTo(b, k);
+            for (int i = 0; i < gravs.size(); i++) {
+                com.fulcrologic.jxpilot.common.map.GravitySource g = gravs.get(i);
+                if (visible(cam, g.bx(), g.by(), k)) {
+                    StaticMap.gravityArcs(b, g.type(), g.bx() * S, g.by() * S, red);
+                }
+            }
+            for (int i = 0; i < worms.size(); i++) {
+                Wormhole w = worms.get(i);
+                if (w.type() != Wormhole.Type.OUT && visible(cam, w.bx(), w.by(), k)) {
+                    wormhole(b, w.bx() * S, w.by() * S, wormCount, red);
+                }
+            }
+            for (int i = 0; i < treasures.size(); i++) {
+                Treasure t = treasures.get(i);
+                if (visible(cam, t.bx(), t.by(), k)) {
+                    treasureArc(b, t.bx() * S, t.by() * S, own(t.team(), st) ? blue : red);
+                }
+            }
+        }
+        b.identity();
+    }
+
     static boolean visible(Camera cam, int bx, int by, int k) {
         return cam.isVisible(bx * (double) S, by * (double) S, (bx + 1) * (double) S, (by + 1) * (double) S,
             k, CULL_MARGIN);
@@ -118,14 +155,14 @@ public final class MapSymbols {
      * A dead cannon on a background-dot position shows the dot instead (C {@code Paint_world}: the
      * cannon case falls through to {@code Gui_paint_decor_dot} when the cannon is dead and has a dot).
      */
-    private void deadCannonDots(VertexBatch b, Camera cam, int k, MapState st) {
+    private void deadCannonDots(VertexBatch b, Camera cam, int k, MapState st, double zoom) {
         List<Cannon> cannons = map.cannons();
         int blue = palette.color(Palette.BLUE);
         for (int i = 0; i < cannons.size(); i++) {
             Cannon c = cannons.get(i);
             if (!st.cannonAlive(i) && StaticMap.dotPosition(c.bx(), c.by(), map.edgeWrap())
                 && visible(cam, c.bx(), c.by(), k)) {
-                StaticMap.dot(b, c.bx() * S, c.by() * S, blue);
+                StaticMap.dot(b, c.bx() * S, c.by() * S, blue, zoom);
             }
         }
     }
@@ -177,14 +214,6 @@ public final class MapSymbols {
             Treasure t = treasures.get(i);
             if (visible(cam, t.bx(), t.by(), k)) {
                 treasure(b, t.bx() * S, t.by() * S, own(t.team(), st) ? blue : red);
-            }
-        }
-        List<Wormhole> worms = map.wormholes();
-        int wormCount = (int) (st.loops() & 7);
-        for (int i = 0; i < worms.size(); i++) {
-            Wormhole w = worms.get(i);
-            if (w.type() != Wormhole.Type.OUT && visible(cam, w.bx(), w.by(), k)) {
-                wormhole(b, w.bx() * S, w.by() * S, wormCount, red);
             }
         }
         List<Concentrator> items = map.itemConcentrators();
@@ -325,11 +354,18 @@ public final class MapSymbols {
         }
     }
 
-    /** Treasure (C {@code Gui_paint_setup_treasure}): open-topped box of half height under a half circle. */
+    /**
+     * Treasure (C {@code Gui_paint_setup_treasure}): open-topped box of half height ({@code Segment_add}s)
+     * under a half circle ({@link #treasureArc}, an {@code Arc_add} drawn by {@link #drawArcs}).
+     */
     static void treasure(VertexBatch b, int x, int y, int c) {
         b.line(x, y, x, y + HALF, c);
         b.line(x + S, y, x + S, y + HALF, c);
         b.line(x, y, x + S, y, c);
+    }
+
+    /** The treasure's half circle over its box: from 0 to 180 degrees, diameter {@code BLOCK_SZ}. */
+    static void treasureArc(VertexBatch b, int x, int y, int c) {
         Shapes.arc(b, x + S / 2f, y + S / 2f, S / 2f, 0, 180, CIRCLE_SEGMENTS / 2, c);
     }
 
@@ -356,14 +392,13 @@ public final class MapSymbols {
     void concentrator(VertexBatch b, int x, int y, long loops, int[][] shapes, int corners, int c) {
         float bcx = x + HALF;
         float bcy = y + HALF;
-        int step = Const.RES / corners;
         for (int[] s : shapes) {
             int rdir = (int) (5 * loops + s[2]); // Trig reduces headings modulo RES
             float cx = bcx + (float) (s[1] * Trig.cosRes(rdir));
             float cy = bcy - (float) (s[1] * Trig.sinRes(rdir));
             int tdir = (int) (3 * loops);
             for (int m = 0; m < corners; m++) {
-                int d = tdir + m * step;
+                int d = tdir + m * Const.RES / corners; // C: RES/3, 2*RES/3 (85, not 2*42)
                 px[m] = cx + (float) (s[0] * Trig.cosRes(d));
                 py[m] = cy - (float) (s[0] * Trig.sinRes(d));
             }

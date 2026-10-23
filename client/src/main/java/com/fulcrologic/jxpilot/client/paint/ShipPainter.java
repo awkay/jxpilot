@@ -26,15 +26,18 @@ package com.fulcrologic.jxpilot.client.paint;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.client.render.TextWriter;
 import com.fulcrologic.jxpilot.client.render.VertexBatch;
+import com.fulcrologic.jxpilot.client.render.WinScale;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
 
 /**
  * Ships as the C client draws them ({@code guiobjects.c} {@code Gui_paint_ship} and helpers).
  * <p>
- * Shapes are written in world coordinates (y up) through the batch transform; sizes that C gives in
- * screen pixels (dash lengths, marking lights) are converted with {@code px}, the world length of one
- * logical pixel (1 / zoom). The hull is the ship's outline points rotated by the heading (radians,
- * counter-clockwise from +x) about the ship's position.
+ * Shapes are written in world coordinates (y up) through the batch transform. {@code zoom} is the
+ * camera zoom; the pixel sizes C scales by {@code WINSCALE} (dash lengths and offset, marking-light
+ * squares and arms, the name offset) are {@link WinScale#of} logical pixels, i.e.
+ * {@code WinScale.of(n, zoom) / zoom} world units, and C's pixel offsets from a position are world
+ * offsets (window pixels are world pixels at scale 1). The hull is the ship's outline points rotated
+ * by the heading (radians, counter-clockwise from +x) about the ship's position.
  * <p>
  * Colour indices: {@link #shipColor}. Flag bits match {@code common.net.Records.ShipFlags}.
  * Allocation-free (scratch arrays per instance; not thread-safe).
@@ -53,8 +56,10 @@ public final class ShipPainter {
 
     /** Chords per shield circle. */
     static final int CIRCLE_SEGMENTS = 32;
-    /** Name label: C draws the baseline 16 pixels + ascent below the ship centre. */
+    /** Name label: C draws the baseline at {@code WINSCALE(Y(y) + 16) + ascent}. */
     static final int NAME_OFFSET = 16;
+    /** C {@code FIND_NAME_WIDTH}: a name is 2 pixels wider than its text. */
+    static final int NAME_PAD = 2;
     /** Marking light: a 6x6 square from (-2,-2) and a 16-pixel cross (C screen pixels). */
     static final int LIGHT_SQUARE = 6;
     static final int LIGHT_ARM = 8;
@@ -100,20 +105,29 @@ public final class ShipPainter {
         return n;
     }
 
-    /** Ship dash offset at frame {@code loops} (C {@code Gui_paint_ships_begin}). */
+    /** Ship dash offset at frame {@code loops}, unscaled ({@code DASHES_LENGTH - loops % DASHES_LENGTH}). */
     public static int dashOffset(long loops) {
         return PaintConfig.DASHES_LENGTH - (int) (loops % PaintConfig.DASHES_LENGTH);
+    }
+
+    /**
+     * Ship dash offset at frame {@code loops} and zoom (C {@code Gui_paint_ships_begin}:
+     * {@code WINSCALE(DASHES_LENGTH - loops % DASHES_LENGTH)}).
+     */
+    public static int dashOffset(long loops, double zoom) {
+        return WinScale.of(dashOffset(loops), zoom);
     }
 
     /**
      * The ship's lines (C {@code Gui_paint_ship} from the colour choice on): solid hull unless cloaked
      * or phasing, dashed hull if either, then shields and deflector.
      * <p>
-     * BEHAVIOR: solid hull iff neither {@link #CLOAKED} nor {@link #PHASING}; dashed hull iff either.
+     * BEHAVIOR: solid hull iff neither {@link #CLOAKED} nor {@link #PHASING}; dashed hull iff either,
+     * with scaled {8, 4} dashes at the scaled ship dash offset.
      * BEHAVIOR: shield/deflector circles follow {@link #shields}.
      */
     public void ship(VertexBatch b, ShipShape s, float x, float y, double heading, int colorIndex, int flags,
-                     long loops, float px) {
+                     long loops, double zoom) {
         int n = outline(s, x, y, heading);
         int rgba = palette.color(colorIndex);
         boolean hidden = (flags & (CLOAKED | PHASING)) != 0;
@@ -123,14 +137,16 @@ public final class ShipPainter {
                 b.line(xs[i], ys[i], xs[j], ys[j], rgba);
             }
         } else {
-            Dashes.polyline(b, xs, ys, n, true, PaintConfig.DASH_ON, PaintConfig.DASH_OFF, dashOffset(loops), px, rgba);
+            Dashes.polyline(b, xs, ys, n, true, WinScale.of(PaintConfig.DASH_ON, zoom),
+                WinScale.of(PaintConfig.DASH_OFF, zoom), dashOffset(loops, zoom), (float) (1 / zoom), rgba);
         }
-        shields(b, s, x, y, colorIndex, flags, loops, px);
+        shields(b, s, x, y, colorIndex, flags, loops, zoom);
     }
 
     /**
      * C {@code Gui_paint_shields_deflectors}: dashed circles of diameter {@code shieldRadius}
-     * (shield) and {@code shieldRadius + 4} (outer: deflector or emergency shield).
+     * (shield) and {@code shieldRadius + 4} (outer: deflector or emergency shield), world sizes, with
+     * the ship's scaled dashes.
      * <p>
      * BEHAVIOR: shield alone: inner circle in the ship colour. Deflector alone: outer circle red when
      * {@code loops & 2}, else blue.
@@ -138,7 +154,7 @@ public final class ShipPainter {
      * and the outer the ship colour; without one both are in the ship colour. Emergency shield without
      * shield draws nothing extra.
      */
-    void shields(VertexBatch b, ShipShape s, float x, float y, int shipColor, int flags, long loops, float px) {
+    void shields(VertexBatch b, ShipShape s, float x, float y, int shipColor, int flags, long loops, double zoom) {
         boolean shield = (flags & SHIELD) != 0;
         boolean deflector = (flags & DEFLECTOR) != 0;
         boolean eshield = (flags & EMERGENCY_SHIELD) != 0;
@@ -153,20 +169,24 @@ public final class ShipPainter {
                 ecolor = shipColor;
             }
         }
-        int offset = dashOffset(loops);
+        int offset = dashOffset(loops, zoom);
+        int on = WinScale.of(PaintConfig.DASH_ON, zoom);
+        int off = WinScale.of(PaintConfig.DASH_OFF, zoom);
+        float px = (float) (1 / zoom);
         if (ecolor != -1) {
-            Dashes.circle(b, x, y, (s.shieldRadius + 4) / 2f, CIRCLE_SEGMENTS, xs, ys,
-                PaintConfig.DASH_ON, PaintConfig.DASH_OFF, offset, px, palette.color(ecolor));
+            Dashes.circle(b, x, y, (s.shieldRadius + 4) / 2f, CIRCLE_SEGMENTS, xs, ys, on, off, offset, px,
+                palette.color(ecolor));
         }
         if (scolor != -1) {
-            Dashes.circle(b, x, y, s.shieldRadius / 2f, CIRCLE_SEGMENTS, xs, ys,
-                PaintConfig.DASH_ON, PaintConfig.DASH_OFF, offset, px, palette.color(scolor));
+            Dashes.circle(b, x, y, s.shieldRadius / 2f, CIRCLE_SEGMENTS, xs, ys, on, off, offset, px,
+                palette.color(scolor));
         }
     }
 
     /**
      * The filled hull C draws over a locked ship (non-useErase {@code fillPolygon}), as a triangle fan
-     * from the ship's position (ship outlines are star-shaped about it).
+     * from the ship's position (ship outlines are star-shaped about it). C fills only the solid hull
+     * ({@code Gui_paint_ship_uncloaked}), so callers skip cloaked or phasing ships ({@link #lockedFillShown}).
      * <p>
      * BEHAVIOR: one triangle per outline edge: (centre, p[i], p[i+1]), wrapping to p[0].
      */
@@ -179,44 +199,53 @@ public final class ShipPainter {
         }
     }
 
+    /** C: a locked ship's hull is filled iff it is locked and neither cloaked nor phasing. */
+    public static boolean lockedFillShown(boolean locked, int flags) {
+        return locked && (flags & (CLOAKED | PHASING)) == 0;
+    }
+
     /**
      * C {@code Gui_paint_marking_lights}: on frames where {@code (loops + id) & 15} is 0 the left
      * lights flash red, where it is 2 the right lights flash in colour 4; each light is a 6x6 square
-     * from (-2,-2) screen pixels and a cross of 8-pixel arms.
+     * from (-2,-2) screen pixels and a cross of 8-pixel arms, both scaled.
      * <p>
      * BEHAVIOR: other frames draw nothing; squares first (one points command), then the crosses.
      */
     public void markingLights(VertexBatch b, ShipShape s, float x, float y, double heading, int id, long loops,
-                              float px) {
-        markingLightSquares(b, s, x, y, heading, id, loops, px);
-        markingLightCrosses(b, s, x, y, heading, id, loops, px);
+                              double zoom) {
+        markingLightSquares(b, s, x, y, heading, id, loops, zoom);
+        markingLightCrosses(b, s, x, y, heading, id, loops, zoom);
     }
 
-    /** The light squares of {@link #markingLights} only (points). */
+    /**
+     * The light squares of {@link #markingLights} only (points): C {@code Rectangle_add(X - 2, Y - 2,
+     * 6, 6)}, so at zoom 1 the square's centre is half a pixel right of and below the light.
+     */
     public void markingLightSquares(VertexBatch b, ShipShape s, float x, float y, double heading, int id,
-                                    long loops, float px) {
+                                    long loops, double zoom) {
         int phase = lightPhase(id, loops);
         if (phase < 0) {
             return;
         }
         int n = lights(s, x, y, heading, phase);
         int rgba = palette.color(phase == 0 ? Palette.RED : RIGHT_LIGHT_COLOR);
-        // the 6x6 square from screen (X-2, Y-2): centre 1 pixel right of and 1 pixel below the light
+        int side = WinScale.of(LIGHT_SQUARE, zoom);
         for (int i = 0; i < n; i++) {
-            b.point(xs[i] + px, ys[i] - px, LIGHT_SQUARE, rgba);
+            b.point(ObjectPainter.squareCentreX(xs[i], -2, LIGHT_SQUARE, zoom),
+                ObjectPainter.squareCentreY(ys[i], -2, LIGHT_SQUARE, zoom), side, rgba);
         }
     }
 
-    /** The light crosses of {@link #markingLights} only (segments). */
+    /** The light crosses of {@link #markingLights} only (segments, arms of {@code WINSCALE(8)} pixels). */
     public void markingLightCrosses(VertexBatch b, ShipShape s, float x, float y, double heading, int id,
-                                    long loops, float px) {
+                                    long loops, double zoom) {
         int phase = lightPhase(id, loops);
         if (phase < 0) {
             return;
         }
         int n = lights(s, x, y, heading, phase);
         int rgba = palette.color(phase == 0 ? Palette.RED : RIGHT_LIGHT_COLOR);
-        float arm = LIGHT_ARM * px;
+        float arm = (float) (WinScale.of(LIGHT_ARM, zoom) / zoom);
         for (int i = 0; i < n; i++) {
             b.line(xs[i] - arm, ys[i], xs[i] + arm, ys[i], rgba);
             b.line(xs[i], ys[i] - arm, xs[i], ys[i] + arm, rgba);
@@ -243,13 +272,15 @@ public final class ShipPainter {
     }
 
     /**
-     * C {@code Gui_paint_ship_name}: the name in white centred under the ship, baseline
-     * {@value #NAME_OFFSET} logical pixels plus the ascent below the ship's screen position
-     * ({@code sx}, {@code sy}: framebuffer pixels; identity transform).
+     * C {@code Gui_paint_ship_name}: the name in white at {@code WINSCALE(X(x)) - name_width / 2}, where
+     * {@code name_width} is the text width plus {@value #NAME_PAD} ({@code FIND_NAME_WIDTH}, so names sit
+     * a pixel left of centre), baseline {@code WINSCALE(}{@value #NAME_OFFSET}{@code )} logical pixels
+     * plus the ascent below the ship's screen position ({@code sx}, {@code sy}: framebuffer pixels;
+     * {@code ratio} framebuffer pixels per logical pixel; identity transform).
      */
-    public void name(VertexBatch b, TextWriter t, float sx, float sy, CharSequence name, double ratio) {
-        float x = sx - (int) t.width(name) / 2;
-        float base = sy - (float) (NAME_OFFSET * ratio) - t.font().ascent();
+    public void name(VertexBatch b, TextWriter t, float sx, float sy, CharSequence name, double ratio, double zoom) {
+        float x = sx - (int) (t.width(name) + NAME_PAD * ratio) / 2;
+        float base = sy - (float) (WinScale.of(NAME_OFFSET, zoom) * ratio) - t.font().ascent();
         t.draw(b, name, x, base, palette.color(Palette.WHITE));
     }
 
@@ -264,7 +295,10 @@ public final class ShipPainter {
         t.drawInt(b, seconds, x, base, palette.color(Palette.WHITE));
     }
 
-    /** C: the round-delay number replaces the ship while {@code roundDelay % fps < fps / 2}. */
+    /**
+     * C {@code Gui_paint_ship}: the round-delay number replaces the ship (hull, lights, shields; the
+     * name is still drawn) while {@code roundDelay > 0 && roundDelay % fps < fps / 2}.
+     */
     public static boolean showRoundDelay(int roundDelayFrames, int fps) {
         return roundDelayFrames > 0 && roundDelayFrames % fps < fps / 2;
     }

@@ -33,18 +33,52 @@ import com.fulcrologic.jxpilot.common.math.ShipShape;
  * <p>
  * Colours are palette indices. Headings: ships in radians (counter-clockwise from +x); missiles and
  * lasers in RES units, as on the wire.
+ * <p>
+ * Frame scalars ({@link #loops}, {@link #fps}, {@link #selfId}, {@link #damaged}, {@link #roundDelay})
+ * are set by the filler every frame; {@link #clear} keeps them. Their defaults (0, 14, -1, 0, 0) draw
+ * the scene as before they existed, so a filler that does not know a field yet stays correct.
  */
 public final class SceneData {
     /** Link kinds. */
     public static final int LINK_REFUEL = 0;
     public static final int LINK_TRANSPORTER = 1;
     public static final int LINK_TRACTOR = 2;
+    /** Solid line from a carried ball to its carrier (C {@code Gui_paint_ball_connecter}). */
     public static final int LINK_BALL = 3;
+    /**
+     * Dashed {8, 4} line from offset 0 (no crawl) between a ball and the ship picking it up: the
+     * server's {@code Send_connector(..., tractor = 0)} ({@code frame.c} 1079-1086) drawn by C
+     * {@code Gui_paint_connector}.
+     */
+    public static final int LINK_CONNECTOR = 4;
 
-    /** Frame counter (C {@code loops}) driving blinks, dashes and marking lights. */
+    /**
+     * Frame counter (C {@code loops}) driving blinks, dashes, marking lights and the sparkle: the
+     * server's frame number, which advances once per server tick at the map's {@code framesPerSecond}
+     * (one tick = one C frame; SPEC "Time model"). Interpolated rendering between ticks keeps the
+     * newer tick's value.
+     */
     public long loops;
+    /**
+     * The server's frames per second (C {@code FPS}, the map's {@code framesPerSecond}); {@link #loops}
+     * advances at this rate and {@link #roundDelay} counts these frames. Default 14 (C default).
+     */
+    public int fps = 14;
     /** Id of the viewer's own ship, or -1. */
     public int selfId = -1;
+    /**
+     * Frames of ECM damage left on the viewer's own ship (C {@code damaged}, from the self state):
+     * while positive the whole view (scene, HUD and radar) is replaced by the blue flash
+     * ({@link ScenePainter#damagedFlash}). 0 when undamaged.
+     */
+    public int damaged;
+    /**
+     * Frames until the round starts (C {@code roundDelay}, from the server's round-delay packet;
+     * 0 when no round is pending). While positive the filler colours non-friendly ships red
+     * ({@link ShipPainter#shipColor}) and the painter shows {@code roundDelay / fps} in place of every
+     * ship during the first half of each second ({@link ShipPainter#showRoundDelay}).
+     */
+    public int roundDelay;
 
     // ships
     public final int maxShips;
@@ -238,7 +272,7 @@ public final class SceneData {
         linkKind = new int[others];
     }
 
-    /** Empty every kind (keeps {@link #loops} and {@link #selfId}). */
+    /** Empty every kind (keeps the frame scalars {@link #loops}, {@link #fps}, {@link #selfId}, {@link #damaged}, {@link #roundDelay}). */
     public void clear() {
         shipCount = 0;
         shotCount = 0;
@@ -415,7 +449,10 @@ public final class SceneData {
         return true;
     }
 
-    /** Add a link ({@link #LINK_REFUEL} etc.); false when full. */
+    /**
+     * Add a link ({@link #LINK_REFUEL}, {@link #LINK_TRANSPORTER}, {@link #LINK_TRACTOR},
+     * {@link #LINK_BALL} or {@link #LINK_CONNECTOR}); false when full. Unknown kinds draw as refuel lines.
+     */
     public boolean addLink(float x1, float y1, float x2, float y2, int kind) {
         if (linkCount == maxLinks) {
             return false;

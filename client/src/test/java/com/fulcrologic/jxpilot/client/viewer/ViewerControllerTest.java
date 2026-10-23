@@ -125,4 +125,25 @@ class ViewerControllerTest {
             () -> assertEquals(20.0, c.y(), "y"),
             () -> assertEquals(3.0, c.zoom(), "zoom unchanged"));
     }
+
+    @Test
+    void swapScaleFactorTogglesBetweenTheZoomAndTheAlternative() {
+        ViewerController c = new ViewerController();
+        c.reset(0, 0, 1);
+        c.swapScaleFactor();
+        double first = c.zoom();
+        double alt = c.altScaleFactor();
+        c.swapScaleFactor();
+        double back = c.zoom();
+        ViewerController custom = new ViewerController();
+        custom.reset(0, 0, 0.8);
+        custom.setAltScaleFactor(0.25);
+        custom.swapScaleFactor();
+        assertAll(
+            () -> assertEquals(0.5, first, 1e-12, "C default altScaleFactor 2.0: zoom 1/2"),
+            () -> assertEquals(1.0, alt, 1e-12, "the previous zoom's scale factor 1.0 becomes the alternative"),
+            () -> assertEquals(1.0, back, 1e-12, "a second swap returns"),
+            () -> assertEquals(4.0, custom.zoom(), 1e-12, "altScaleFactor 0.25: zoom 4"),
+            () -> assertEquals(1.25, custom.altScaleFactor(), 1e-12, "zoom 0.8 kept as scale factor 1.25"));
+    }
 }

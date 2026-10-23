@@ -31,6 +31,15 @@ import com.fulcrologic.jxpilot.common.Const;
  * The moving parts of the radar ({@code paintradar.c}): the own ship's heading line, object blips and
  * the next race checkpoint, drawn over the static radar picture.
  * <p>
+ * C order ({@code Paint_radar}): {@link #checkpoint}, the blinking heading line ({@link #self}), then
+ * the blips ({@code Paint_objects_radar}), which include the own ship's steady white 3x3 blip
+ * ({@link #selfBlip}, added by {@code Handle_ship}); the blip and the line are both white.
+ * <p>
+ * Blips are the server's radar records ({@code frame.c} {@code Frame_radar}), each with C's size
+ * byte: players 3, balls 2, missiles and mines 0 (shown as 1 pixel), nuclear objects blinking 3, and
+ * asteroids {@code size + 1} with the 0x80 bit ({@link #asteroidSizeByte}), so on a display with more
+ * than 4 colours asteroids show in colour 4 like teammates.
+ * <p>
  * Work is in C's radar pixel space: 256 x {@code radarHeight}, origin top-left, y down. Each frame,
  * {@link #begin} gives the radar's framebuffer rectangle (where the radar texture is drawn) and the
  * world size. Lines map pixel centres, filled squares pixel edges. X11 clipped all of this to the
@@ -76,14 +85,29 @@ public final class RadarPainter {
         wrap = edgeWrap;
     }
 
-    /** Radar pixel x of world x (C {@code Receive_radar}: {@code (int)(x * 256 / width + 0.5)}). */
+    /** Radar pixel x of world x, rounded (C {@code Handle_ship}, {@code Paint_self_radar}: {@code (int)(x * 256 / width + 0.5)}). */
     int radarX(double wx) {
         return (int) (wx * WIDTH / worldW + 0.5);
     }
 
-    /** Radar pixel row (from the bottom) of world y, before C's flip. */
+    /** Radar pixel row (from the bottom) of world y, rounded, before C's flip. */
     int radarY(double wy) {
         return (int) (wy * height / worldH + 0.5);
+    }
+
+    /** Radar pixel x of a server radar record (C fast radar: {@code (256 * (int) x) / World.width}, truncated). */
+    int blipX(double wx) {
+        return (int) (Math.floor(wx) * WIDTH / worldW);
+    }
+
+    /** Radar pixel row (from the bottom) of a server radar record, truncated. */
+    int blipY(double wy) {
+        return (int) (Math.floor(wy) * height / worldH);
+    }
+
+    /** C {@code Frame_radar}'s size byte for an asteroid of size {@code size}: {@code (size + 1) | 0x80}. */
+    public static int asteroidSizeByte(int size) {
+        return (size + 1) | 0x80;
     }
 
     /**
@@ -126,18 +150,36 @@ public final class RadarPainter {
     }
 
     /**
-     * A blip (C {@code Paint_objects_radar}): a filled {@code size}-pixel square (at least 1) around
-     * the object's radar pixel, in colour 4 for friends and white otherwise. Players are size 3,
-     * balls 2, other objects 0 (C {@code Frame_radar}).
+     * A blip of a server radar record (C {@code Paint_objects_radar}): a filled {@code size}-pixel
+     * square (at least 1) around the object's radar pixel, in colour 4 for friends (C's 0x80 bit) and
+     * white otherwise. The radar pixel truncates like the server's fast radar ({@link #blipX}).
      * <p>
      * BEHAVIOR: the square's corner is {@code (rx - s/2, height - ry - 1 - s/2)}, moved one radar size
      * forward when not positive; on a wrapping world a square crossing an edge is repeated at the
      * opposite one.
      */
     public void blip(VertexBatch b, double wx, double wy, int size, boolean friendly) {
+        square(b, blipX(wx), blipY(wy), size, friendly);
+    }
+
+    /** {@link #blip} from C's size byte: bit 0x80 friend, the rest the size. */
+    public void blipByte(VertexBatch b, double wx, double wy, int sizeByte) {
+        blip(b, wx, wy, sizeByte & 0x7F, (sizeByte & 0x80) != 0);
+    }
+
+    /**
+     * The own ship's blip (C {@code Handle_ship} adds {@code Handle_radar(radarx, radary, 3)} for the
+     * viewer's ship): a steady white 3x3 square at the rounded radar pixel ({@link #radarX}), drawn
+     * like {@link #blip}.
+     */
+    public void selfBlip(VertexBatch b, double wx, double wy) {
+        square(b, radarX(wx), radarY(wy), 3, false);
+    }
+
+    private void square(VertexBatch b, int rx, int ry, int size, boolean friendly) {
         int s = size <= 0 ? 1 : size;
-        int x = radarX(wx) - s / 2;
-        int y = height - radarY(wy) - 1 - s / 2;
+        int x = rx - s / 2;
+        int y = height - ry - 1 - s / 2;
         if (x <= 0) {
             x += WIDTH;
         }

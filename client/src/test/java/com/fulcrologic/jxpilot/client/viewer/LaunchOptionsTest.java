@@ -52,6 +52,11 @@ class LaunchOptionsTest {
             () -> assertEquals(-1, o.warmup(), "no explicit warm-up"),
             () -> assertFalse(o.gpuTimer(), "no GPU timer"),
             () -> assertFalse(o.demo(), "no demo"),
+            () -> assertEquals(2.0, o.altScaleFactor(), "C altScaleFactor 2.0"),
+            () -> assertNull(o.fontFile(), "the bundled font"),
+            () -> assertEquals(13.0, o.fontSize(), "13 logical pixels"),
+            () -> assertEquals(0, o.demoRoundDelay(), "no demo round delay"),
+            () -> assertEquals(0, o.demoDamaged(), "no demo damage"),
             () -> assertEquals(1, o.measureFrom(), "measure from half of the 3 frames (integer division)"));
     }
 
@@ -81,7 +86,8 @@ class LaunchOptionsTest {
     @Test
     void parsesEveryOption() {
         LaunchOptions o = parse("--view-map", "m.xp", "--screenshot", "s.png", "--frames", "7", "--size", "640x480",
-            "--zoom", "0.5", "--filled", "--at", "10.5,-3", "--no-vsync");
+            "--zoom", "0.5", "--filled", "--at", "10.5,-3", "--no-vsync", "--alt-scale-factor", "1.5", "--font", "f.ttf",
+            "--font-size", "18", "--demo-round-delay", "70", "--demo-damaged", "0");
         assertAll(
             () -> assertEquals("m.xp", o.viewMap(), "map file"),
             () -> assertEquals("s.png", o.screenshot(), "screenshot file"),
@@ -93,7 +99,12 @@ class LaunchOptionsTest {
             () -> assertTrue(o.hasCentre(), "centre given"),
             () -> assertEquals(10.5, o.centreX(), "centre x"),
             () -> assertEquals(-3.0, o.centreY(), "centre y"),
-            () -> assertFalse(o.vsync(), "vsync off"));
+            () -> assertFalse(o.vsync(), "vsync off"),
+            () -> assertEquals(1.5, o.altScaleFactor(), "alternative scale factor"),
+            () -> assertEquals("f.ttf", o.fontFile(), "font file"),
+            () -> assertEquals(18.0, o.fontSize(), "font size"),
+            () -> assertEquals(70, o.demoRoundDelay(), "demo round delay frames"),
+            () -> assertEquals(0, o.demoDamaged(), "demo damage frames may be 0"));
     }
 
     @Test
@@ -111,6 +122,12 @@ class LaunchOptionsTest {
             () -> assertEquals("--at expects a number: a", error("--at", "a,1"), "non-numeric centre"),
             () -> assertEquals("--view-map needs a value", error("--view-map"), "map flag without file"),
             () -> assertEquals("--size expects an integer: ", error("--size", "x5"), "separator first: empty width"),
-            () -> assertEquals("--at expects a number: ", error("--at", ",5"), "separator first: empty x"));
+            () -> assertEquals("--at expects a number: ", error("--at", ",5"), "separator first: empty x"),
+            () -> assertEquals("--alt-scale-factor must be positive: 0.0", error("--alt-scale-factor", "0"), "zero scale factor"),
+            () -> assertEquals("--font-size must be positive: -2.0", error("--font-size", "-2"), "negative font size"),
+            () -> assertEquals("--demo-damaged must not be negative: -1", error("--demo-damaged", "-1"), "negative damage"),
+            () -> assertEquals("--demo-round-delay must not be negative: -3", error("--demo-round-delay", "-3"),
+                "negative round delay"),
+            () -> assertEquals("--font needs a value", error("--font"), "font without file"));
     }
 }
