@@ -59,10 +59,12 @@ public final class ItemTable {
     static final int MARGIN = 2;
 
     /**
-     * Items whose game rules JXPilot implements. Empty until milestone M2; add an item here when the server
-     * lets players pick it up and use it, and regenerate the guide.
+     * Items whose game rules the JXPilot (Java) server implements. Empty until milestone M2; add an item here
+     * when the Java server lets players pick it up and use it, and regenerate the guide. (On an original C
+     * XPilot server every item already works: the C server runs the rules and the client draws the items and
+     * sends the keys.)
      */
-    static final Set<Item> IMPLEMENTED = EnumSet.noneOf(Item.class);
+    static final Set<Item> JAVA_SERVER_IMPLEMENTED = EnumSet.noneOf(Item.class);
 
     /** The C client's description of each item ({@code itemBitmapData} in {@code src/client/xinit.c}). */
     static final Map<Item, String> C_TEXT = new EnumMap<>(Map.ofEntries(
@@ -259,7 +261,7 @@ public final class ItemTable {
             .append("// pixel-sha256: ").append(pixelHash(images)).append("\n")
             .append("ifdef::env-github[]\n:imagesdir: ../images\nendif::[]\n\n")
             .append("[cols=\"2,1,3,7,3,2\",options=\"header\"]\n|===\n")
-            .append("|In play |Symbol |Item |What it does (from the XPilot client) |Keys |In JXPilot\n\n");
+            .append("|In play |Symbol |Item |What it does (from the XPilot client) |Keys |Works on\n\n");
         for (Item i : Item.values()) {
             String name = displayName(i);
             sb.append("|image:items/").append(stem(i)).append(".png[").append(name).append(" in play]\n")
@@ -267,10 +269,15 @@ public final class ItemTable {
                 .append("|[[item-").append(stem(i)).append("]]*").append(name).append("*\n")
                 .append('|').append(GuideTables.cell(C_TEXT.get(i))).append('\n')
                 .append('|').append(keys(i)).append('\n')
-                .append('|').append(IMPLEMENTED.contains(i) ? "Yes" : "Not yet (M2)").append("\n\n");
+                .append('|').append(status(i)).append("\n\n");
         }
         sb.append("|===\n");
         return sb.toString();
+    }
+
+    /** BEHAVIOR: C server always yes; Java server yes once implemented, else milestone M2; one per line. */
+    static String status(Item i) {
+        return "C server: yes +\nJava server: " + (JAVA_SERVER_IMPLEMENTED.contains(i) ? "yes" : "M2");
     }
 
     /** BEHAVIOR: "Function (`keysym`)" for each key, separated by line breaks; "-" for items used passively. */

@@ -210,7 +210,10 @@ All multipliers are in <<05-server-options.adoc#opts-scoring,Scoring options>>.
 [[items]]
 == Items
 
-NOTE: *Planned* (milestone M2). Items are parsed and drawn, but cannot be picked up or used yet.
+NOTE: Items are server rules. When the JXPilot client plays on an original C XPilot server, every
+item works: the C server handles pickup and use, and the client draws the items and sends their keys.
+The JXPilot (Java) server does not have items yet; they come with milestone M2. The "Works on" column
+shows both.
 
 Items float around the map (more around item concentrators, the `%` map symbol); fly over one to pick
 it up. On the map an item is a blue triangle with the item's symbol inside it, as in the "In play"
