@@ -246,6 +246,131 @@ class AllocationTest {
     }
 
     @Test
+    @Timeout(value = 120, unit = TimeUnit.SECONDS)
+    @DisplayName("the real loop with the real game: one peer and 8 robots on doggy.xp allocate nothing on the loop thread")
+    void realLoopSimHost() throws Exception {
+        InetAddress lo = InetAddress.ofLiteral("127.0.0.1");
+        int port = LoopbackIntegrationTest.freePort(lo);
+        Server.Settings s = LoopbackIntegrationTest.settings(new LoopbackIntegrationTest.MutableInterfaces(lo), new ArrayList<>());
+        java.util.concurrent.atomic.AtomicReference<com.fulcrologic.jxpilot.server.host.SimGameHost> hostRef =
+            new java.util.concurrent.atomic.AtomicReference<>();
+        com.fulcrologic.jxpilot.server.host.SimGameHostFactory real =
+            new com.fulcrologic.jxpilot.server.host.SimGameHostFactory(() -> 77);
+        s.factory = (o, m) -> {
+            com.fulcrologic.jxpilot.server.host.SimGameHost h =
+                (com.fulcrologic.jxpilot.server.host.SimGameHost) real.create(o, m);
+            hostRef.set(h);
+            return h;
+        };
+        long measuredTicks;
+        long allocated;
+        int snapshots;
+        String[] args = {"--map", Path.of("..", "maps", "doggy.xp").toString(), "--port", Integer.toString(port),
+            "--bind", "127.0.0.1", "-maxRobots", "8", "-minRobots", "8"};
+        warmUp(args);
+        try (Server server = Server.start(args, s);
+             LoopbackIntegrationTest.UdpClient u = new LoopbackIntegrationTest.UdpClient(31, new InetSocketAddress(lo, port))) {
+            u.connect("alloc");
+            Thread loopThread = null;
+            for (Thread t : Thread.getAllStackTraces().keySet()) {
+                if (t.getName().equals("jxpilot-server-loop")) {
+                    loopThread = t;
+                }
+            }
+            long id = loopThread.threadId();
+            // robots join one per 2*FPS frames once the human is in: 8 robots after ~17 s
+            long warmEnd = System.nanoTime() + 22_000_000_000L;
+            long end = warmEnd + 10_000_000_000L;
+            long before = 0;
+            int snapshotsBefore = 0;
+            int tickBefore = 0;
+            boolean measuring = false;
+            long keys = ControlKey.THRUST.mask() | ControlKey.FIRE_SHOT.mask();
+            long frame = 0;
+            while (System.nanoTime() < end) {
+                if (!measuring && System.nanoTime() > warmEnd) {
+                    measuring = true;
+                    before = MX.getThreadAllocatedBytes(id);
+                    snapshotsBefore = u.c.snapshotTicks.size();
+                    tickBefore = server.net().currentTick();
+                }
+                TestClient c = u.c;
+                if (c.hasMap() && !c.readySent) {
+                    c.ready();
+                }
+                frame++;
+                for (ByteBuffer b : c.frame(System.nanoTime(), (frame / 40) % 2 == 0 ? keys : ControlKey.TURN_LEFT.mask())) {
+                    u.send(b);
+                }
+                Thread.sleep(16);
+                u.pump();
+            }
+            allocated = MX.getThreadAllocatedBytes(id) - before;
+            snapshots = u.c.snapshotTicks.size() - snapshotsBefore;
+            measuredTicks = server.net().currentTick() - tickBefore;
+        }
+        com.fulcrologic.jxpilot.server.world.World w = hostRef.get().simulation().world;
+        int robots = hostRef.get().simulation().robots.numRobots();
+        long allocatedBytes = allocated;
+        int snaps = snapshots;
+        long ticks = measuredTicks;
+        System.out.printf("[AllocationTest] real game: %d B over %d ticks, %d snapshots, %d robots, %d events%n",
+            allocatedBytes, ticks, snaps, robots, w.events.seq());
+        assertAll(
+            () -> assertEquals(0, allocatedBytes, "8 s of the real game (1 peer, 8 robots) allocate nothing on the loop thread"),
+            () -> assertTrue(ticks > 100, "the game ticked during the measurement (" + ticks + ")"),
+            () -> assertTrue(snaps > 80, "snapshots flowed during the measurement (" + snaps + ")"),
+            () -> assertEquals(8, robots, "8 robots were playing"));
+    }
+
+    /**
+     * Before the real-time run: the same game in-process for 12000 ticks (1 human, 8 robots, every viewer path),
+     * so the JIT has compiled the per-tick code (about 5000 calls each; at 14 ticks/s the real loop alone would
+     * need minutes) and the rare first-time paths (class loading, constant resolution) are behind us. Only the
+     * real-time window afterwards is measured.
+     */
+    static void warmUp(String[] args) throws Exception {
+        com.fulcrologic.jxpilot.common.config.Options o = new com.fulcrologic.jxpilot.common.config.Options();
+        o.parseCommandLine(args);
+        com.fulcrologic.jxpilot.common.config.ConfigParser.parseFile(Path.of(o.getString(
+            com.fulcrologic.jxpilot.common.config.Opt.MAP_FILE_NAME)), com.fulcrologic.jxpilot.common.config.OptionOrigin.MAP, o);
+        o.finishParsing();
+        com.fulcrologic.jxpilot.server.host.SimGameHost h = (com.fulcrologic.jxpilot.server.host.SimGameHost)
+            new com.fulcrologic.jxpilot.server.host.SimGameHostFactory(() -> 5).create(o,
+                com.fulcrologic.jxpilot.common.map.WorldMap.fromOptions(o));
+        int id = h.join("warm", Protocol.NO_TEAM, "");
+        h.initialState(id, new com.fulcrologic.jxpilot.common.net.ReliableChannel());
+        com.fulcrologic.jxpilot.common.net.ReliableChannel out = new com.fulcrologic.jxpilot.common.net.ReliableChannel();
+        ByteBuffer ready = ByteBuffer.allocate(0);
+        h.clientMessage(id, com.fulcrologic.jxpilot.common.net.ReliableType.READY, ready);
+        com.fulcrologic.jxpilot.common.net.SnapshotWriter wr = new com.fulcrologic.jxpilot.common.net.SnapshotWriter();
+        com.fulcrologic.jxpilot.common.map.WorldMap m = com.fulcrologic.jxpilot.common.map.WorldMap.fromOptions(o);
+        wr.setWorld(m.pixelWidth(), m.pixelHeight(), m.edgeWrap());
+        ByteBuffer pkt = ByteBuffer.allocateDirect(Protocol.MAX_PACKET);
+        long keys = ControlKey.THRUST.mask() | ControlKey.FIRE_SHOT.mask();
+        for (int t = 1; t <= 12_000; t++) {
+            h.input(id, t, (t / 40) % 2 == 0 ? keys : ControlKey.TURN_LEFT.mask(), 0);
+            h.tick(t);
+            for (int part = 0; part < 4; part++) {
+                pkt.clear();
+                com.fulcrologic.jxpilot.common.net.PacketHeader.write(pkt, PacketType.SNAPSHOT, 1, 0);
+                wr.begin(pkt, t, t, part, 0, 0, h.viewX(id), h.viewY(id));
+                if (!h.fillSnapshot(id, part, t % 3 == 0, wr)) {
+                    break;
+                }
+            }
+            h.drainEvents(id, out);
+            for (int k = 0; k < 8; k++) {
+                pkt.clear();
+                if (out.write(pkt, t * 71_000_000L) == 0) {
+                    break;
+                }
+            }
+            out.onAck(out.nextSequence(), t * 71_000_000L);
+        }
+    }
+
+    @Test
     @DisplayName("the real loop with two peers on one channel: at most 256 B per received datagram (JDK sender address)")
     void realLoopTwoPeers() throws Exception {
         InetAddress lo = InetAddress.ofLiteral("127.0.0.1");

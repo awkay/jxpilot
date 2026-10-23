@@ -24,8 +24,10 @@
 package com.fulcrologic.jxpilot.client.app;
 
 import com.fulcrologic.jxpilot.client.net.Endpoint;
+import com.fulcrologic.jxpilot.common.net.LocalServer;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.util.ServiceLoader;
 
@@ -34,9 +36,9 @@ import java.util.ServiceLoader;
  * and the client connects to {@link #endpoint()} over UDP like to any other server (SPEC "Architecture":
  * same code path, no special casing).
  * <p>
- * The server module provides the implementation through {@link Provider} and
- * {@code META-INF/services/com.fulcrologic.jxpilot.client.app.EmbeddedServer$Provider}; the client finds it
- * with {@link #start(Path)} and has no compile-time dependency on server internals.
+ * The server module provides the implementation through common's {@link LocalServer.Provider}, registered in
+ * {@code META-INF/services/com.fulcrologic.jxpilot.common.net.LocalServer$Provider}; the client finds it with
+ * {@link #start(Path)} and has no compile-time dependency on server code.
  */
 public interface EmbeddedServer extends AutoCloseable {
     /** Where the client connects (a loopback address and the bound port). */
@@ -46,26 +48,43 @@ public interface EmbeddedServer extends AutoCloseable {
     @Override
     void close();
 
-    /** Factory registered by the server module. */
-    interface Provider {
-        /** Load {@code mapFile}, bind loopback on a free port and start serving. */
-        EmbeddedServer start(Path mapFile) throws IOException;
-    }
-
-    /** Start an embedded server through the first {@link ServiceLoader} provider (see {@link #provider}). */
+    /**
+     * Start an embedded server for {@code mapFile} through the first {@link ServiceLoader} provider
+     * (see {@link #provider}).
+     *
+     * @throws IOException              when the map cannot be read or nothing can be bound
+     * @throws IllegalArgumentException for a bad map or option
+     */
     static EmbeddedServer start(Path mapFile) throws IOException {
-        return provider(ServiceLoader.load(Provider.class)).start(mapFile);
+        LocalServer s = provider(ServiceLoader.load(LocalServer.Provider.class)).start(mapFile);
+        Endpoint ep = endpointOf(s.address());
+        return new EmbeddedServer() {
+            @Override
+            public Endpoint endpoint() {
+                return ep;
+            }
+
+            @Override
+            public void close() {
+                s.close();
+            }
+        };
     }
 
     /**
      * BEHAVIOR: the first discovered provider; none throws UnsupportedOperationException explaining that
-     * {@code --local} is not available yet and to use {@code --connect}.
+     * this build has no embedded server and to use {@code --connect}.
      */
-    static Provider provider(Iterable<Provider> discovered) {
-        for (Provider p : discovered) {
+    static LocalServer.Provider provider(Iterable<LocalServer.Provider> discovered) {
+        for (LocalServer.Provider p : discovered) {
             return p;
         }
-        throw new UnsupportedOperationException("--local is not available yet: this build has no embedded server"
-            + " (the server's networking and simulation adapter are not merged). Start a server and use --connect.");
+        throw new UnsupportedOperationException("--local is not available: this build has no embedded server"
+            + " (the server module is not on the class path). Start a server and use --connect.");
+    }
+
+    /** BEHAVIOR: the endpoint of a bound socket: its address literal and port. */
+    static Endpoint endpointOf(InetSocketAddress a) {
+        return new Endpoint(a.getAddress().getHostAddress(), a.getPort());
     }
 }

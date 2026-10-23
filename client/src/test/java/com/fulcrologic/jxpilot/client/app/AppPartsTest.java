@@ -197,24 +197,28 @@ class AppPartsTest {
     @DisplayName("EmbeddedServer and launcher")
     class Embedded {
         @Test
-        @DisplayName("the first provider is used; none is a clear 'not available yet' error")
+        @DisplayName("the first provider is used; none is a clear 'not available' error; endpoints keep address and port")
         void provider() {
-            EmbeddedServer.Provider p = file -> null;
+            com.fulcrologic.jxpilot.common.net.LocalServer.Provider p = (file, opts) -> null;
             String msg = assertThrows(UnsupportedOperationException.class,
                 () -> EmbeddedServer.provider(List.of())).getMessage();
+            com.fulcrologic.jxpilot.client.net.Endpoint ep =
+                EmbeddedServer.endpointOf(new java.net.InetSocketAddress(java.net.InetAddress.ofLiteral("127.0.0.1"), 4321));
             assertAll(
-                () -> assertSame(p, EmbeddedServer.provider(List.of(p, file -> null)), "first provider"),
-                () -> assertTrue(msg.startsWith("--local is not available yet"), "says --local is unavailable"),
-                () -> assertTrue(msg.contains("--connect"), "says what to use instead"));
+                () -> assertSame(p, EmbeddedServer.provider(List.of(p, (file, opts) -> null)), "first provider"),
+                () -> assertTrue(msg.startsWith("--local is not available"), "says --local is unavailable"),
+                () -> assertTrue(msg.contains("--connect"), "says what to use instead"),
+                () -> assertEquals("127.0.0.1", ep.host(), "endpoint host is the address literal"),
+                () -> assertEquals(4321, ep.port(), "endpoint port is the bound port"));
         }
 
         @Test
-        @DisplayName("launcher: HELP exits 2; LOCAL without an embedded server exits 3 without opening a window")
+        @DisplayName("launcher: HELP exits 2; LOCAL with a map that does not load exits 3 without opening a window")
         void launcher() throws Exception {
             assertAll(
                 () -> assertEquals(2, AppLauncher.run(AppOptions.parse(new String[0], "u")), "help: usage, exit 2"),
                 () -> assertEquals(3, AppLauncher.run(AppOptions.parse(new String[] {"--local", "--map",
-                    Path.of("x.xp").toString()}, "u")), "no embedded server: exit 3"));
+                    Path.of("no-such-map.xp").toString()}, "u")), "the local server cannot start: exit 3"));
         }
     }
 }

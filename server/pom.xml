@@ -57,14 +57,17 @@
             <param>com.fulcrologic.jxpilot.server.net.Server$*</param>
             <param>com.fulcrologic.jxpilot.server.net.JdkInterfaceSource</param>
             <param>com.fulcrologic.jxpilot.server.net.JdkResolver</param>
-            <!-- placeholder simulation, replaced by the adapter to the real one -->
+            <!-- placeholder simulation, kept for the network tests -->
             <param>com.fulcrologic.jxpilot.server.net.StubGameHost</param>
+            <!-- effectful edge (starts a real server), covered by LocalServerProviderTest and the client E2E tests -->
+            <param>com.fulcrologic.jxpilot.server.host.LocalServerProvider*</param>
           </excludedClasses>
           <excludedTestClasses>
             <param>*AllocationTest*</param>
             <param>*TickBenchmark*</param>
             <param>*LoopbackIntegrationTest*</param>
             <param>*ServerMainTest*</param>
+            <param>*LocalServerProviderTest*</param>
             <param>*RobotStatsRegressionTest*</param>
           </excludedTestClasses>
         </configuration>

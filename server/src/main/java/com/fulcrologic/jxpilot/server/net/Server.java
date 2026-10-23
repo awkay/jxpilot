@@ -225,6 +225,14 @@ public final class Server implements AutoCloseable {
         return terminated;
     }
 
+    /**
+     * The connection layer, for diagnostics and tests. It belongs to the loop thread: read its counters
+     * ({@link ServerNet#malformed()} etc.) only after {@link #close()} has returned.
+     */
+    public ServerNet net() {
+        return net;
+    }
+
     /** Addresses bound right now. */
     public List<BindTarget> bound() {
         return transport.boundTargets();

@@ -29,6 +29,7 @@ import com.fulcrologic.jxpilot.client.net.Endpoint;
 import com.fulcrologic.jxpilot.client.xp.ConnectTarget;
 import com.fulcrologic.jxpilot.client.xp.GameConnection;
 
+import java.io.IOException;
 import java.nio.file.Path;
 
 /** Runs a parsed {@link AppOptions}: the viewer, a game on a server, or a game on an embedded server. */
@@ -55,6 +56,9 @@ public final class AppLauncher {
                     server = EmbeddedServer.start(Path.of(o.localMap()));
                 } catch (UnsupportedOperationException e) {
                     System.err.println(e.getMessage());
+                    return 3;
+                } catch (IOException | IllegalArgumentException e) {
+                    System.err.println("cannot start the local server: " + e.getMessage());
                     return 3;
                 }
                 try (server) {
