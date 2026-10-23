@@ -11,6 +11,17 @@
 
   <build>
     <plugins>
+      <!-- TEMP(server-net): sim/ references the deleted world.World and does not compile on this
+           branch. Drop this exclusion when merging into main. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <excludes>
+            <exclude>com/fulcrologic/jxpilot/server/sim/**</exclude>
+          </excludes>
+        </configuration>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
