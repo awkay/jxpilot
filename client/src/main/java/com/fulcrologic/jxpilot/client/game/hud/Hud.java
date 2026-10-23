@@ -30,6 +30,7 @@ import com.fulcrologic.jxpilot.client.game.MessageLog;
 import com.fulcrologic.jxpilot.client.game.ScoreObjects;
 import com.fulcrologic.jxpilot.client.game.Scoreboard;
 import com.fulcrologic.jxpilot.client.net.ConnectionState;
+import com.fulcrologic.jxpilot.client.render.WinScale;
 import com.fulcrologic.jxpilot.common.net.Records;
 
 /**
@@ -42,7 +43,7 @@ import com.fulcrologic.jxpilot.common.net.Records;
  * Zoom ({@link #zoom}, C's {@code 1 / scaleFactor}) works as in C: the ship HUD and the meters are laid out
  * in the extended view ({@code ext_view_width = (int)(viewW / zoom + 0.5)}), the coordinates and sizes C
  * wraps in {@code WINSCALE} (directly or through {@code Rectangle_add}/{@code Segment_add}) are scaled with
- * {@link #winScale}, and font offsets (ascent, descent, text widths) are added unscaled afterwards.
+ * {@link WinScale#of}, and font offsets (ascent, descent, text widths) are added unscaled afterwards.
  * Messages, the talk window and the status line are in plain window pixels, as in C.
  */
 public final class Hud {
@@ -199,25 +200,8 @@ public final class Hud {
         }
     }
 
-    /**
-     * C {@code WINSCALE(n)} at zoom z, as {@code client.render.WinScale.of} (main): the C pixel sizes and HUD
-     * anchors are rounded, a non-zero value never below 1 pixel.
-     * <p>
-     * BEHAVIOR: 0 stays 0; positive n becomes floor(n * z + 0.5), at least 1 and at most 32767; negative n
-     * is the negation of its magnitude's value; z = 1 is the identity.
-     */
-    public static int winScale(int n, double z) {
-        if (n == 0) {
-            return 0;
-        }
-        int a = n < 0 ? -n : n;
-        double v = Math.floor(a * z + 0.5);
-        int r = v < 1 ? 1 : (v > 32767 ? 32767 : (int) v);
-        return n < 0 ? -r : r;
-    }
-
     private int ws(int n) {
-        return winScale(n, zoom);
+        return WinScale.of(n, zoom);
     }
 
     /** BEHAVIOR: C {@code ext_view_width}: a window size in view units, (int)(size / zoom + 0.5). */

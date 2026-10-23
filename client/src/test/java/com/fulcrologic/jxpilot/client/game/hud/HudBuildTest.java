@@ -258,17 +258,11 @@ class HudBuildTest {
         }
 
         @Test
-        @DisplayName("winScale rounds like C's scale array (min 1, sign kept, capped); extent is ext_view_width")
-        void winScale() {
+        @DisplayName("extent is C's ext_view_width (int)(size / zoom + 0.5); WINSCALE is render.WinScale (tested there)")
+        void extent() {
             Hud h = new Hud();
             h.zoom = 2;
             assertAll(
-                () -> assertEquals(0, Hud.winScale(0, 2), "0 stays 0"),
-                () -> assertEquals(7, Hud.winScale(7, 1), "zoom 1 is the identity"),
-                () -> assertEquals(1, Hud.winScale(1, 0.2), "never below 1"),
-                () -> assertEquals(5, Hud.winScale(3, 1.5), "floor(4.5 + 0.5)"),
-                () -> assertEquals(-5, Hud.winScale(-3, 1.5), "negative: sign kept"),
-                () -> assertEquals(32767, Hud.winScale(100_000, 1), "capped at a short"),
                 () -> assertEquals(401, h.extent(801), "(int)(801 / 2 + 0.5)"),
                 () -> assertEquals(800, new Hud().extent(800), "zoom 1"));
         }

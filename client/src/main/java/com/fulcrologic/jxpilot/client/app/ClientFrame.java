@@ -130,6 +130,7 @@ public final class ClientFrame {
             talk.limitWidth(m, Hud.talkWindowWidth(viewW));
             talkWidthFor = viewW;
         }
+        hud.zoom = zoom;
         hud.build(viewHud, game, talk, viewW, viewH, m, dt * game.gameFps());
         extras.fill(game, hud, viewW, viewH, zoom, centreX, centreY, scene.loops);
         panelHud.clear();

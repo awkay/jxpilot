@@ -81,7 +81,7 @@ public final class HudExtras {
      * <p>
      * BEHAVIOR: inactive (nothing else filled except the score objects) without an own ship or with the
      * HUD off; hx/hy are {@link Hud#hudX}/{@link Hud#hudY} of the unscaled view
-     * ({@code (int)(view / zoom)}).
+     * ({@link Hud#extent}, C {@code ext_view_width}; the Hud's zoom is set to {@code zoom}).
      * BEHAVIOR: lock: a known locked player (not NO_ID); its name, lives, team friendliness
      * ({@link HudPainter#isFriend} without alliances), its shape's points at heading 0; distance and RES
      * direction from the own ship when its ship is in the interpolated list (wrap-aware), else 0.
@@ -95,8 +95,9 @@ public final class HudExtras {
                      long loops) {
         ClientWorld w = g.world();
         Players p = g.players();
-        int uw = (int) (viewW / zoom);
-        int uh = (int) (viewH / zoom);
+        hud.zoom = zoom;
+        int uw = hud.extent(viewW);
+        int uh = hud.extent(viewH);
         scoreObjects(g, uw, uh, centreX, centreY);
         active = w.hasSelf() && hud.showHud;
         lock = false;
