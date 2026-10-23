@@ -168,7 +168,8 @@ public final class XpTranslator {
      * BEHAVIOR: tick = C frame number, one part; the view centre is the own ship (else the last one).
      * BEHAVIOR: sections: SELF (with PKT_SELF), SHIP (ships, paused ships), SHOT (fast shots by colour),
      * BURST (debris), CANNON/FUEL/TARGET (updates, C numbers mapped to WorldMap indices), RADAR,
-     * SELF_ITEMS (with PKT_SELF) and the M2 object sections.
+     * SELF_ITEMS (with PKT_SELF), the M2 object sections and TIMERS (with PKT_SELF: damaged, round delay
+     * (none = 0) and the time left of a PKT_TIME_LEFT in this frame, else -1).
      * BEHAVIOR: does nothing before {@link #configure}.
      */
     public void frame(XpFrame f, long nowNanos) {
@@ -200,6 +201,10 @@ public final class XpTranslator {
             w.endSection();
         }
         writeObjects(f);
+        if (f.hasSelf && w.beginSection(Section.TIMERS)) {
+            Records.Timers.put(w, Math.max(0, f.damaged), Math.max(0, f.roundDelay), f.timeLeft);
+            w.endSection();
+        }
         rememberShips(f);
         snap.flip();
         snapshots++;

@@ -41,7 +41,7 @@ import com.fulcrologic.jxpilot.common.net.Records;
  * The HUD parts {@code HudPainter} draws directly (the rest is client-net's {@code Hud} draw list), as
  * plain values in C's unscaled window coordinates: the lock ({@code Paint_lock}), the item list, the
  * autopilot light and the on-map score objects ({@code Paint_score_objects}). Pure; allocation free.
- * Not filled because the model lacks the data: time left, modifiers, the HUD radar (C default off).
+ * Not filled because the model lacks the data: modifiers and the HUD radar (C default off).
  */
 public final class HudExtras {
     /** True when the own ship's HUD is shown (it exists and the HUD is on). */
@@ -70,6 +70,8 @@ public final class HudExtras {
     /** Per {@link Item} ordinal: the count shown, or -1 (C {@code showItems}: counts above 0). */
     public final int[] itemCounts = new int[Item.COUNT];
     public boolean autopilot;
+    /** Seconds of game time left, -1 when the server never said ({@link ClientWorld#timeLeft()}). */
+    public int timeLeft = -1;
 
     private final int[] scoreSlot = new int[ScoreObjects.MAX_SCORE_OBJECTS];
     private final int[] scoreX = new int[ScoreObjects.MAX_SCORE_OBJECTS];
@@ -86,7 +88,7 @@ public final class HudExtras {
      * ({@link HudPainter#isFriend} without alliances), its shape's points at heading 0; distance and RES
      * direction from the own ship when its ship is in the interpolated list (wrap-aware), else 0.
      * BEHAVIOR: warningPhase is {@code loops} even; items: counts above 0, else -1; autopilot from the
-     * own ship's AUTOPILOT flag.
+     * own ship's AUTOPILOT flag; time left from the world.
      * BEHAVIOR: score objects: see {@link #scoreObjects}.
      *
      * @param centreX world x at the view centre (the camera)
@@ -108,6 +110,7 @@ public final class HudExtras {
         hx = hud.hudX(uw, w.selfVx());
         hy = hud.hudY(uh, w.selfVy());
         autopilot = (w.selfFlags() & Records.ShipFlags.AUTOPILOT) != 0;
+        timeLeft = w.timeLeft();
         for (int i = 0; i < Item.COUNT; i++) {
             int n = w.selfItem(i);
             itemCounts[i] = n > 0 ? n : -1;

@@ -34,6 +34,8 @@ import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
 import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.common.net.Wire;
+import com.fulcrologic.jxpilot.common.net.Section;
+import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -372,6 +374,157 @@ class SceneFillerTest {
             assertAll(
                 () -> assertTrue(f.game.world().renderTick() < 0, "render tick before 0"),
                 () -> assertEquals(0L, SceneFiller.loops(f.game.world()), "clamped to 0"));
+        }
+    }
+
+    @Nested
+    @DisplayName("fill: M2 objects, beams, timers")
+    class ObjectsAndBeams {
+        @Test
+        @DisplayName("every object kind is mapped to its scene list with C's units")
+        void objects() {
+            AppFixture f = new AppFixture(true).players().twice(x -> {
+                SnapshotWriter w = x.w;
+                w.beginSection(Section.ITEM);
+                Records.ItemObj.put(w, 100, 50, 7);
+                w.endSection();
+                w.beginSection(Section.MINE);
+                Records.Mine.put(w, 110, 50, Records.Mine.FLAG_FRIENDLY, 3);
+                Records.Mine.put(w, 112, 50, 0, 3);
+                w.endSection();
+                w.beginSection(Section.MISSILE);
+                Records.Missile.put(w, 9, 120, 50, Math.PI / 2, Records.Missile.KIND_HEAT, 15);
+                w.endSection();
+                w.beginSection(Section.BALL);
+                Records.Ball.put(w, 4, 130, 50, 2, 9);
+                w.endSection();
+                w.beginSection(Section.LASER);
+                Records.Laser.put(w, 140, 50, Math.PI, 40, Records.ObjColor.RED);
+                w.endSection();
+                w.beginSection(Section.ASTEROID);
+                Records.Asteroid.put(w, 150, 50, 3, Math.PI / 2);
+                w.endSection();
+                w.beginSection(Section.WRECKAGE);
+                Records.Wreckage.put(w, 160, 50, 2, 8, Math.PI);
+                w.endSection();
+                w.beginSection(Section.ECM);
+                Records.Ecm.put(w, 170, 50, 60);
+                w.endSection();
+                w.beginSection(Section.CONNECTOR);
+                Records.Connector.put(w, 180, 50, 190, 60, Records.Connector.KIND_BALL);
+                Records.Connector.put(w, 180, 70, 190, 80, Records.Connector.KIND_PRESSOR);
+                w.endSection();
+                w.beginSection(Section.TRANSPORTER);
+                Records.Transporter.put(w, 200, 50, 210, 60);
+                w.endSection();
+            });
+            fill(f);
+            assertAll(
+                () -> assertEquals(1, scene.itemCount, "one item"),
+                () -> assertEquals(100f, scene.itemX[0], "item x"),
+                () -> assertEquals(7, scene.itemType[0], "item type"),
+                () -> assertEquals(2, scene.mineCount, "two mines"),
+                () -> assertTrue(scene.mineTeam[0], "FRIENDLY: team mine"),
+                () -> assertFalse(scene.mineTeam[1], "not friendly"),
+                () -> assertNull(scene.mineName[0], "no mine names"),
+                () -> assertEquals(15f, scene.missileLen[0], "missile length"),
+                () -> assertEquals(32, scene.missileDir[0], "pi/2 = RES 32"),
+                () -> assertEquals(130f, scene.ballX[0], "ball x"),
+                () -> assertEquals(40f, scene.laserLen[0], "laser length"),
+                () -> assertEquals(64, scene.laserDir[0], "pi = RES 64"),
+                () -> assertEquals(Palette.RED, scene.laserColor[0], "red laser"),
+                () -> assertEquals(0, scene.asteroidType[0], "asteroid type 0"),
+                () -> assertEquals(32, scene.asteroidRot[0], "asteroid rotation RES"),
+                () -> assertEquals(3, scene.asteroidSize[0], "asteroid size"),
+                () -> assertFalse(scene.wreckDeadly[0], "wreck not deadly"),
+                () -> assertEquals(2, scene.wreckType[0], "wreck shape"),
+                () -> assertEquals(64, scene.wreckRot[0], "wreck rotation RES"),
+                () -> assertEquals(8, scene.wreckSize[0], "wreck size"),
+                () -> assertEquals(120f, scene.ecmSize[0], "ECM diameter = 2 * radius"),
+                () -> assertEquals(3, scene.linkCount, "three links"),
+                () -> assertEquals(SceneData.LINK_CONNECTOR, scene.linkKind[0], "ball connector: dashed pick-up line"),
+                () -> assertEquals(190f, scene.linkX2[0], "connector end"),
+                () -> assertEquals(SceneData.LINK_TRACTOR, scene.linkKind[1], "pressor: beam"),
+                () -> assertEquals(SceneData.LINK_TRANSPORTER, scene.linkKind[2], "transporter"));
+        }
+
+        @Test
+        @DisplayName("refuel beam from the nearest station in range to the ship; repair beam from the ship to the target")
+        void beams() {
+            double fx = 13.5 * 35; // '#' in column 13
+            double fy = 8.5 * 35;
+            double tx = 17.5 * 35; // '!' in column 17
+            AppFixture f = new AppFixture(true).players().twice(x -> x
+                .self(Records.ShipFlags.REFUELING, (float) (fx + 50), (float) fy, 0, 0xFFFF)
+                .ship(MATE, Records.ShipFlags.REFUELING, fx + 200, fy, 0)
+                .ship(FOE, Records.ShipFlags.REPAIRING, tx, fy - 60, 0));
+            fill(f);
+            assertAll(
+                () -> assertEquals(2, scene.linkCount, "self's refuel beam and the foe's repair beam; mate out of range"),
+                () -> assertEquals(SceneData.LINK_REFUEL, scene.linkKind[0], "refuel kind"),
+                () -> assertEquals((float) fx, scene.linkX1[0], "from the station x"),
+                () -> assertEquals((float) fy, scene.linkY1[0], "from the station y"),
+                () -> assertEquals((float) (fx + 50), scene.linkX2[0], "to the ship"),
+                () -> assertEquals((float) tx, scene.linkX2[1], "repair beam ends at the target"),
+                () -> assertEquals((float) (fy - 60), scene.linkY1[1], "repair beam starts at the ship"));
+        }
+
+        @Test
+        @DisplayName("damaged and round delay come from the world; a pending round makes non-friendly ships red")
+        void timers() {
+            AppFixture f = new AppFixture(true).players().twice(x -> {
+                x.self(0, 100, 100, 0, 0xFFFF).ship(MATE, 0, 200, 100, 0).ship(FOE, 0, 300, 100, 0);
+                x.w.beginSection(Section.TIMERS);
+                Records.Timers.put(x.w, 12, 30, -1);
+                x.w.endSection();
+            });
+            fill(f);
+            assertAll(
+                () -> assertEquals(12, scene.damaged, "damaged"),
+                () -> assertEquals(30, scene.roundDelay, "round delay"),
+                () -> assertEquals(Palette.RED, scene.shipColor[0], "own ship red while the round is pending"),
+                () -> assertEquals(Palette.BLUE, scene.shipColor[1], "team mate stays blue"),
+                () -> assertEquals(Palette.RED, scene.shipColor[2], "foe red"));
+        }
+
+        @Test
+        @DisplayName("pointColor: temperature levels through sparkColors (clamped), else object colours; res rounds")
+        void colourAndRes() {
+            int base = ClientWorld.POINT_LEVEL_BASE;
+            assertAll(
+                () -> assertEquals(5, SceneFiller.pointColor(base), "level 0: sparkColors[0] = 5"),
+                () -> assertEquals(3, SceneFiller.pointColor(base + 3), "level 3: sparkColors[3] = 3"),
+                () -> assertEquals(3, SceneFiller.pointColor(base + 9), "level 9 clamped to 3"),
+                () -> assertEquals(Palette.RED, SceneFiller.pointColor(Records.ObjColor.RED), "red"),
+                () -> assertEquals(Palette.BLUE, SceneFiller.pointColor(Records.ObjColor.BLUE), "blue"),
+                () -> assertEquals(Palette.WHITE, SceneFiller.pointColor(Records.ObjColor.NEUTRAL), "other: white"),
+                () -> assertEquals(0, SceneFiller.res(0), "0"),
+                () -> assertEquals(96, SceneFiller.res(-Math.PI / 2), "-pi/2 wraps to 96"),
+                () -> assertEquals(0, SceneFiller.res(2 * Math.PI - 0.01), "just under a turn rounds to 128 = 0"),
+                () -> assertEquals(1, SceneFiller.res(0.04), "0.81 rounds to 1"));
+        }
+
+        @Test
+        @DisplayName("tracked point particles join the particles after the pool's")
+        void points() {
+            AppFixture f = new AppFixture(true).players();
+            for (int t = T0_TICK; t <= T0_TICK + 1; t++) {
+                f.begin(t);
+                com.fulcrologic.jxpilot.common.math.DebrisBurst d = new com.fulcrologic.jxpilot.common.math.DebrisBurst();
+                d.x = 300;
+                d.y = 100;
+                d.count = 1;
+                f.w.beginSection(Section.BURST);
+                Records.Burst.put(f.w, d, Records.BurstKind.SPARK, ClientWorld.POINT_LEVEL_BASE + 1, 0);
+                f.w.endSection();
+                f.send(t);
+            }
+            f.update();
+            fill(f);
+            assertAll(
+                () -> assertEquals(1, scene.particleCount, "the point"),
+                () -> assertEquals(300f, scene.particleX[0], "x"),
+                () -> assertEquals(6, scene.particleColor[0], "level 1: sparkColors[1] = 6"));
         }
     }
 }

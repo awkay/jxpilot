@@ -87,6 +87,8 @@ final class SnapshotFrame {
     long assocParts;
     long assocOwnParts;
     boolean assocValid;
+    /** M2 objects of this frame. */
+    final ObjectLists objs;
 
     SnapshotFrame(int shipCap, int shotCap) {
         this.shipCap = shipCap;
@@ -113,7 +115,11 @@ final class SnapshotFrame {
         pointEstVx = new float[pointCap];
         pointEstVy = new float[pointCap];
         pointNext = new int[pointCap];
+        objs = new ObjectLists(OBJECT_CAP);
     }
+
+    /** Objects per M2 kind and frame. */
+    static final int OBJECT_CAP = 256;
 
     void begin(int t, long now, int sparkFromTick) {
         valid = true;
@@ -126,5 +132,6 @@ final class SnapshotFrame {
         shots = 0;
         points = 0;
         assocValid = false;
+        objs.clear();
     }
 }

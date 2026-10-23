@@ -203,7 +203,7 @@ class XpNetAllocationTest {
             () -> assertTrue(conn.snapshotsReceived() > (WARMUP + MEASURED) / RATIO - 10,
                 "C frames flowed: " + conn.snapshotsReceived()),
             () -> assertEquals(0, conn.malformed(), "nothing malformed"),
-            () -> assertTrue(game.world().particles().count() > 0, "debris particles alive"),
+            () -> assertTrue(game.world().pointCount() > 0, "debris tracked as point particles"),
             () -> assertTrue(game.messages().talkCount() > 0, "chat arrived"),
             () -> assertTrue(conn.keyboard().change() > 100, "keys changed"),
             () -> assertTrue(nz <= MAX_NONZERO_FRAMES, "at most a few JIT frames allocate: " + nz),

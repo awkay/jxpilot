@@ -111,6 +111,23 @@ public final class ClientWorld {
     private final Records.TreasureState treasureRec = new Records.TreasureState();
     private final Records.Radar radarRec = new Records.Radar();
     private final Records.SelfItems itemsRec = new Records.SelfItems();
+    private final Records.ItemObj itemRec = new Records.ItemObj();
+    private final Records.Mine mineRec = new Records.Mine();
+    private final Records.Missile missileRec = new Records.Missile();
+    private final Records.Ball ballRec = new Records.Ball();
+    private final Records.Laser laserRec = new Records.Laser();
+    private final Records.Asteroid asteroidRec = new Records.Asteroid();
+    private final Records.Wreckage wreckRec = new Records.Wreckage();
+    private final Records.Ecm ecmRec = new Records.Ecm();
+    private final Records.Connector connRec = new Records.Connector();
+    private final Records.Transporter transRec = new Records.Transporter();
+    private final ObjectLists outObjs = new ObjectLists(SnapshotFrame.OBJECT_CAP);
+    private final Records.Timers timersRec = new Records.Timers();
+    private int damaged;
+    private int roundDelay;
+    private boolean haveTimeLeft;
+    private int timeLeftValue;
+    private int timeLeftTick;
     private final DebrisBurst burst = new DebrisBurst();
     private final Rng rng = new Rng(0);
     private final ThrustSparkEmitter sparks = new ThrustSparkEmitter();
@@ -287,10 +304,14 @@ public final class ClientWorld {
         Arrays.fill(treasureFlags, (byte) 0);
         Arrays.fill(baseOwner, Protocol.NO_ID);
         Arrays.fill(selfItems, 0);
+        damaged = 0;
+        roundDelay = 0;
+        haveTimeLeft = false;
         clock.reset(clock.simHz());
         outShips = 0;
         outShots = 0;
         outPoints = 0;
+        outObjs.clear();
         outSelf = false;
     }
 
@@ -310,7 +331,7 @@ public final class ClientWorld {
      * is free ({@link #LATE_TICK}), else ignored ({@link #STALE}).
      * BEHAVIOR: thrust sparks are generated only for ticks after the previous newest tick (each tick
      * once), at most {@link #MAX_SPARK_TICKS} per ship; late ticks generate none.
-     * BEHAVIOR: map object state, radar and own items are applied only from the newest tick.
+     * BEHAVIOR: map object state, radar, own items and HUD timers are applied only from the newest tick.
      * BEHAVIOR: malformed data stops decoding at the error and returns {@link #MALFORMED}; so does a part
      * number of {@link #MAX_PARTS} or more (nothing is merged, so repeats cannot double a frame).
      */
@@ -514,7 +535,85 @@ public final class ClientWorld {
                     }
                 }
             }
-            default -> { } // M2 sections not modelled yet
+            case Section.ITEM -> {
+                for (int i = 0; i < n; i++) {
+                    itemRec.wrap(reader, i);
+                    f.objs.add(ObjectLists.ITEM, itemRec.x(), itemRec.y(), itemRec.itemType(), 0, 0, 0);
+                }
+            }
+            case Section.MINE -> {
+                for (int i = 0; i < n; i++) {
+                    mineRec.wrap(reader, i);
+                    f.objs.add(ObjectLists.MINE, mineRec.x(), mineRec.y(), mineRec.flags(), mineRec.ownerId(), 0, 0);
+                }
+            }
+            case Section.MISSILE -> {
+                for (int i = 0; i < n; i++) {
+                    missileRec.wrap(reader, i);
+                    f.objs.add(ObjectLists.MISSILE, missileRec.x(), missileRec.y(), missileRec.heading(),
+                        missileRec.kind(), missileRec.length(), missileRec.id());
+                }
+            }
+            case Section.BALL -> {
+                for (int i = 0; i < n; i++) {
+                    ballRec.wrap(reader, i);
+                    f.objs.add(ObjectLists.BALL, ballRec.x(), ballRec.y(), ballRec.team(), ballRec.connectedPlayer(),
+                        ballRec.id(), 0);
+                }
+            }
+            case Section.LASER -> {
+                for (int i = 0; i < n; i++) {
+                    laserRec.wrap(reader, i);
+                    f.objs.add(ObjectLists.LASER, laserRec.x(), laserRec.y(), laserRec.heading(), laserRec.length(),
+                        laserRec.color(), 0);
+                }
+            }
+            case Section.ASTEROID -> {
+                for (int i = 0; i < n; i++) {
+                    asteroidRec.wrap(reader, i);
+                    f.objs.add(ObjectLists.ASTEROID, asteroidRec.x(), asteroidRec.y(), asteroidRec.size(),
+                        asteroidRec.rotation(), 0, 0);
+                }
+            }
+            case Section.WRECKAGE -> {
+                for (int i = 0; i < n; i++) {
+                    wreckRec.wrap(reader, i);
+                    f.objs.add(ObjectLists.WRECK, wreckRec.x(), wreckRec.y(), wreckRec.shape(), wreckRec.size(),
+                        wreckRec.rotation(), 0);
+                }
+            }
+            case Section.ECM -> {
+                for (int i = 0; i < n; i++) {
+                    ecmRec.wrap(reader, i);
+                    f.objs.add(ObjectLists.ECM, ecmRec.x(), ecmRec.y(), ecmRec.radius(), 0, 0, 0);
+                }
+            }
+            case Section.CONNECTOR -> {
+                for (int i = 0; i < n; i++) {
+                    connRec.wrap(reader, i);
+                    f.objs.add(ObjectLists.CONNECTOR, connRec.x0(), connRec.y0(), connRec.x1(), connRec.y1(),
+                        connRec.kind(), 0);
+                }
+            }
+            case Section.TRANSPORTER -> {
+                for (int i = 0; i < n; i++) {
+                    transRec.wrap(reader, i);
+                    f.objs.add(ObjectLists.TRANSPORTER, transRec.x0(), transRec.y0(), transRec.x1(), transRec.y1(), 0, 0);
+                }
+            }
+            case Section.TIMERS -> {
+                if (newest && n > 0) {
+                    timersRec.wrap(reader, 0);
+                    damaged = timersRec.damaged();
+                    roundDelay = timersRec.roundDelay();
+                    if (timersRec.timeLeft() >= 0) {
+                        haveTimeLeft = true;
+                        timeLeftValue = timersRec.timeLeft();
+                        timeLeftTick = f.tick;
+                    }
+                }
+            }
+            default -> { } // TEMP_WORMHOLE and newer sections are not modelled
         }
     }
 
@@ -603,6 +702,8 @@ public final class ClientWorld {
      * no-B case, so they do not flicker; ships that moved more than {@link #TELEPORT_PX} are snapped to B;
      * flags come from the nearer frame. With no B, ships are extrapolated from A by their velocity, at most
      * 2 snapshot intervals; with no A, B is drawn as is. The own ship is not in the ship list.
+     * BEHAVIOR: M2 objects (items, mines, missiles, balls, lasers, asteroids, wreckage, ECM, connectors,
+     * transporters) come from A (else B), balls and missiles interpolated ({@link #drawObjects}).
      * BEHAVIOR: shots and point particles are linked from A to their continuations in B
      * ({@link #associate}) and interpolated; unlinked ones move by their velocity (wire, else estimated)
      * from A; with only B they are drawn at B (see {@link #drawShots}).
@@ -617,6 +718,7 @@ public final class ClientWorld {
         outShips = 0;
         outShots = 0;
         outPoints = 0;
+        outObjs.clear();
         outSelf = false;
         if (!haveNewest) {
             return;
@@ -648,6 +750,7 @@ public final class ClientWorld {
         }
         drawShots(a, b);
         drawPoints(a, b);
+        drawObjects(a, b);
         interpolateSelf();
         particles.step(renderTick, renderTick, frameFraction, worldW, worldH, wrap);
     }
@@ -895,6 +998,20 @@ public final class ClientWorld {
         }
     }
 
+    /**
+     * BEHAVIOR: the M2 objects of the frame at or before the render tick (else the later one); balls and
+     * missiles move toward their continuation in the later frame ({@link ObjectLists#interpolateMoving}).
+     */
+    private void drawObjects(SnapshotFrame a, SnapshotFrame b) {
+        SnapshotFrame src = a != null ? a : b;
+        outObjs.copyFrom(src.objs);
+        if (a != null && b != null) {
+            double t = (renderTick - a.tick) / (double) (b.tick - a.tick);
+            outObjs.interpolateMoving(b.objs, t, TRACK_PX_PER_FRAME * (b.tick - a.tick) * frameFraction, worldW,
+                worldH, wrap);
+        }
+    }
+
     private void putShot(float x, float y, byte variant) {
         int k = outShots++;
         outShotX[k] = x;
@@ -1114,6 +1231,29 @@ public final class ClientWorld {
     public int shotColor(int i) { return Records.ShotKind.colorOf(outShotVariant[i]); }
 
     public ParticlePool particles() { return particles; }
+
+    /** Frames of ECM damage left on the own ship (newest TIMERS; C {@code damaged}). */
+    public int damaged() { return damaged; }
+
+    /** Frames until the round starts, 0 when none (newest TIMERS). */
+    public int roundDelay() { return roundDelay; }
+
+    /**
+     * Seconds of game time left (C {@code Paint_HUD} time left), counted down from the last report by the
+     * render ticks since; -1 when never reported.
+     * <p>
+     * BEHAVIOR: {@code max(0, reported - floor((renderTick - reportTick) / simHz))}.
+     */
+    public int timeLeft() {
+        if (!haveTimeLeft) {
+            return -1;
+        }
+        double secs = (renderTick - timeLeftTick) / clock.simHz();
+        return (int) Math.max(0, timeLeftValue - Math.floor(Math.max(0, secs)));
+    }
+
+    /** The M2 objects drawn this frame ({@link ObjectLists}; valid until the next update). */
+    public ObjectLists objects() { return outObjs; }
 
     /** Position-only point particles (C debris on the XPilot path), tracked and interpolated. */
     public int pointCount() { return outPoints; }

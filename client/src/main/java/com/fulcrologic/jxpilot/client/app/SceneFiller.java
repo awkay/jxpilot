@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.client.app;
 
 import com.fulcrologic.jxpilot.client.game.ClientGame;
 import com.fulcrologic.jxpilot.client.game.ClientWorld;
+import com.fulcrologic.jxpilot.client.game.ObjectLists;
 import com.fulcrologic.jxpilot.client.game.ParticlePool;
 import com.fulcrologic.jxpilot.client.game.Players;
 import com.fulcrologic.jxpilot.client.paint.PaintConfig;
@@ -34,7 +35,9 @@ import com.fulcrologic.jxpilot.client.paint.SceneData;
 import com.fulcrologic.jxpilot.client.paint.ShipPainter;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.common.config.Opt;
+import com.fulcrologic.jxpilot.common.map.WorldMap;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
+import com.fulcrologic.jxpilot.common.math.XMath;
 import com.fulcrologic.jxpilot.common.net.Protocol;
 import com.fulcrologic.jxpilot.common.net.Records;
 
@@ -45,9 +48,9 @@ import com.fulcrologic.jxpilot.common.net.Records;
  * <p>
  * Drawn: the own ship and other ships (shape from {@link Players}, ship-painter flags, team-relative
  * colour, lock, name), paused players as paused markers, shots (C fastshot/teamshot colouring),
- * sparks and debris (temperature colour) and tracked point particles (C debris), radar blips and the own radar ship. Not drawn because
- * {@link ClientWorld} does not model them yet: items, mines, missiles, lasers, balls, wreckage,
- * asteroids, ECM, links, ECM damage and round delay (left empty / 0).
+ * sparks and debris (temperature colour) and tracked point particles (C debris), the M2 objects
+ * ({@link #objects}), refuel/repair beams ({@link #refuelLinks}), ECM damage and round delay (red ships),
+ * radar blips and the own radar ship.
  */
 public final class SceneFiller {
     /** {@link Records.ShipFlags} bits the ship painter uses (same values as {@link ShipPainter}'s). */
@@ -66,7 +69,7 @@ public final class SceneFiller {
      * Fill {@code out} and {@code radar} for the frame the world was last updated to.
      * <p>
      * BEHAVIOR: clears both; sets the frame scalars: loops ({@link #loops}), fps (rounded game fps),
-     * selfId (the own ship's id, else the player id, -1 when none), damaged 0 and roundDelay 0.
+     * selfId (the own ship's id, else the player id, -1 when none), damaged and roundDelay from the world.
      * BEHAVIOR: adds the own ship first (unless absent or dead), then every interpolated ship that is not
      * dead; paused ones become paused markers (countdown 0) instead (see {@link #addShip}).
      * BEHAVIOR: adds every shot ({@link #shotColor}, {@link #teamShot}), every visible particle
@@ -83,9 +86,11 @@ public final class SceneFiller {
         out.fps = Math.max(1, Math.round(g.gameFps()));
         int selfId = w.hasSelf() ? w.selfId() : p.selfId();
         out.selfId = selfId == Protocol.NO_ID ? -1 : selfId;
-        out.damaged = 0;
-        out.roundDelay = 0;
+        out.damaged = w.damaged();
+        out.roundDelay = w.roundDelay();
         boolean teamPlay = g.teamPlay();
+        roundDelay = w.roundDelay() > 0;
+        map = g.map();
         int lock = w.hasSelf() ? w.selfLockId() : Protocol.NO_ID;
         boolean selfAlive = w.hasSelf() && (w.selfFlags() & Records.ShipFlags.DEAD) == 0;
         if (selfAlive) {
@@ -103,6 +108,7 @@ public final class SceneFiller {
             int c = w.shotColor(i);
             out.addShot(w.shotX(i), w.shotY(i), shotColor(c, selfImmunity), teamShot(c, selfImmunity));
         }
+        objects(out, w);
         particles(out, w);
         for (int i = 0; i < w.pointCount(); i++) {
             out.addParticle(w.pointX(i), w.pointY(i), pointColor(w.pointColor(i)));
@@ -126,8 +132,9 @@ public final class SceneFiller {
      * <p>
      * BEHAVIOR: a PAUSED ship becomes a paused marker at its position (countdown 0: steadily shown).
      * BEHAVIOR: otherwise a ship with the player's shape (the default ship for unknown players), the
-     * {@link #SHIP_PAINT_FLAGS} of its flags, colour {@link ShipPainter#shipColor}(friendly, self, no round
-     * delay) with friendly from {@link #friendly}, the lock flag, and the player's name (null when unknown).
+     * {@link #SHIP_PAINT_FLAGS} of its flags, colour {@link ShipPainter#shipColor}(friendly, self, round delay
+     * pending) with friendly from {@link #friendly}, the lock flag, and the player's name (null when
+     * unknown); then its refuel/repair beams ({@link #refuelLinks}).
      */
     void addShip(SceneData out, Players p, int id, int flags, float x, float y, float heading, boolean self,
                  boolean teamPlay, boolean locked) {
@@ -138,8 +145,126 @@ public final class SceneFiller {
         int slot = p.slotOf(id);
         ShipShape shape = slot >= 0 ? p.shape(slot) : ShipShape.defaultShip();
         CharSequence name = slot >= 0 ? p.name(slot) : null;
-        int color = ShipPainter.shipColor(friendly(flags, p, slot, teamPlay), self, false);
+        int color = ShipPainter.shipColor(friendly(flags, p, slot, teamPlay), self, roundDelay);
         out.addShip(x, y, heading, shape, id, flags & SHIP_PAINT_FLAGS, color, locked, name);
+        refuelLinks(out, x, y, flags);
+    }
+
+    private boolean roundDelay;
+    private WorldMap map;
+
+    /**
+     * C {@code Send_refuel} lines: from the fuel station to a REFUELING ship, from a REPAIRING ship to the
+     * target, drawn as LINK_REFUEL (crawling dashes).
+     * <p>
+     * BEHAVIOR: the station (target) is the nearest one within {@link #REFUEL_RANGE} px (C drops the beam
+     * beyond 90), wrap-aware; none in range draws nothing; without a map nothing.
+     */
+    void refuelLinks(SceneData out, float x, float y, int flags) {
+        if (map == null) {
+            return;
+        }
+        if ((flags & Records.ShipFlags.REFUELING) != 0) {
+            int best = -1;
+            double bestD = REFUEL_RANGE * REFUEL_RANGE;
+            for (int i = 0; i < map.fuels().size(); i++) {
+                double d = dist2(map.fuels().get(i).x(), map.fuels().get(i).y(), x, y);
+                if (d <= bestD) {
+                    bestD = d;
+                    best = i;
+                }
+            }
+            if (best >= 0) {
+                out.addLink(near(map.fuels().get(best).x(), x, map.pixelWidth()),
+                    near(map.fuels().get(best).y(), y, map.pixelHeight()), x, y, SceneData.LINK_REFUEL);
+            }
+        }
+        if ((flags & Records.ShipFlags.REPAIRING) != 0) {
+            int best = -1;
+            double bestD = REFUEL_RANGE * REFUEL_RANGE;
+            for (int i = 0; i < map.targets().size(); i++) {
+                double d = dist2(map.targets().get(i).x(), map.targets().get(i).y(), x, y);
+                if (d <= bestD) {
+                    bestD = d;
+                    best = i;
+                }
+            }
+            if (best >= 0) {
+                out.addLink(x, y, near(map.targets().get(best).x(), x, map.pixelWidth()),
+                    near(map.targets().get(best).y(), y, map.pixelHeight()), SceneData.LINK_REFUEL);
+            }
+        }
+    }
+
+    /** C's refuel/repair beam range in pixels ({@code update.c}). */
+    public static final double REFUEL_RANGE = 90;
+
+    private double dist2(double ax, double ay, float x, float y) {
+        double dx = XMath.wrapDelta(ax - x, map.pixelWidth(), map.edgeWrap());
+        double dy = XMath.wrapDelta(ay - y, map.pixelHeight(), map.edgeWrap());
+        return dx * dx + dy * dy;
+    }
+
+    /** The copy of world coordinate {@code v} nearest to {@code ref} (so a beam never spans the world). */
+    private float near(double v, float ref, double size) {
+        return (float) (ref + XMath.wrapDelta(v - ref, size, map.edgeWrap()));
+    }
+
+    /**
+     * The M2 objects of {@link ClientWorld#objects()} into the scene.
+     * <p>
+     * BEHAVIOR: items with their type; mines (team mine iff FRIENDLY, no name); missiles with their length
+     * and RES direction; balls; lasers with RES direction and the object colour ({@link #pointColor});
+     * asteroids (type 0, RES rotation, size); wreckage (not deadly, its shape, RES rotation, size); ECM
+     * flashes of diameter 2 * radius; connectors (ball: LINK_CONNECTOR, the dashed pick-up line C sends;
+     * tractor/pressor: LINK_TRACTOR) and transporter beams (LINK_TRANSPORTER).
+     */
+    void objects(SceneData out, ClientWorld w) {
+        ObjectLists o = w.objects();
+        for (int i = 0; i < o.count(ObjectLists.ITEM); i++) {
+            out.addItem(o.get(ObjectLists.ITEM, i, 0), o.get(ObjectLists.ITEM, i, 1), (int) o.get(ObjectLists.ITEM, i, 2));
+        }
+        for (int i = 0; i < o.count(ObjectLists.MINE); i++) {
+            out.addMine(o.get(ObjectLists.MINE, i, 0), o.get(ObjectLists.MINE, i, 1),
+                ((int) o.get(ObjectLists.MINE, i, 2) & Records.Mine.FLAG_FRIENDLY) != 0, null);
+        }
+        for (int i = 0; i < o.count(ObjectLists.MISSILE); i++) {
+            out.addMissile(o.get(ObjectLists.MISSILE, i, 0), o.get(ObjectLists.MISSILE, i, 1),
+                o.get(ObjectLists.MISSILE, i, 4), res(o.get(ObjectLists.MISSILE, i, 2)));
+        }
+        for (int i = 0; i < o.count(ObjectLists.BALL); i++) {
+            out.addBall(o.get(ObjectLists.BALL, i, 0), o.get(ObjectLists.BALL, i, 1));
+        }
+        for (int i = 0; i < o.count(ObjectLists.LASER); i++) {
+            out.addLaser(o.get(ObjectLists.LASER, i, 0), o.get(ObjectLists.LASER, i, 1), o.get(ObjectLists.LASER, i, 3),
+                res(o.get(ObjectLists.LASER, i, 2)), pointColor((int) o.get(ObjectLists.LASER, i, 4)));
+        }
+        for (int i = 0; i < o.count(ObjectLists.ASTEROID); i++) {
+            out.addAsteroid(o.get(ObjectLists.ASTEROID, i, 0), o.get(ObjectLists.ASTEROID, i, 1), 0,
+                res(o.get(ObjectLists.ASTEROID, i, 3)), (int) o.get(ObjectLists.ASTEROID, i, 2));
+        }
+        for (int i = 0; i < o.count(ObjectLists.WRECK); i++) {
+            out.addWreck(o.get(ObjectLists.WRECK, i, 0), o.get(ObjectLists.WRECK, i, 1), false,
+                (int) o.get(ObjectLists.WRECK, i, 2), res(o.get(ObjectLists.WRECK, i, 4)), (int) o.get(ObjectLists.WRECK, i, 3));
+        }
+        for (int i = 0; i < o.count(ObjectLists.ECM); i++) {
+            out.addEcm(o.get(ObjectLists.ECM, i, 0), o.get(ObjectLists.ECM, i, 1), 2 * o.get(ObjectLists.ECM, i, 2));
+        }
+        for (int i = 0; i < o.count(ObjectLists.CONNECTOR); i++) {
+            int kind = (int) o.get(ObjectLists.CONNECTOR, i, 4);
+            out.addLink(o.get(ObjectLists.CONNECTOR, i, 0), o.get(ObjectLists.CONNECTOR, i, 1),
+                o.get(ObjectLists.CONNECTOR, i, 2), o.get(ObjectLists.CONNECTOR, i, 3),
+                kind == Records.Connector.KIND_BALL ? SceneData.LINK_CONNECTOR : SceneData.LINK_TRACTOR);
+        }
+        for (int i = 0; i < o.count(ObjectLists.TRANSPORTER); i++) {
+            out.addLink(o.get(ObjectLists.TRANSPORTER, i, 0), o.get(ObjectLists.TRANSPORTER, i, 1),
+                o.get(ObjectLists.TRANSPORTER, i, 2), o.get(ObjectLists.TRANSPORTER, i, 3), SceneData.LINK_TRANSPORTER);
+        }
+    }
+
+    /** BEHAVIOR: radians to RES (128 per turn), rounded, in 0..127. */
+    static int res(double radians) {
+        return (int) Math.round(radians * 128 / (2 * Math.PI)) & 127;
     }
 
     /**

@@ -799,4 +799,28 @@ public final class Records {
 
         public int type() { return u8(4); }
     }
+
+    /**
+     * HUD timers of the receiving player. {@code 0 u16 damaged (frames of ECM damage left, C damaged),
+     * 2 u16 roundDelay (frames until the round starts, 0 none), 4 i32 timeLeft (seconds of game time left,
+     * -1 none)}.
+     */
+    public static final class Timers extends Fly {
+        public static final int SIZE = 8;
+
+        public static void put(SnapshotWriter w, int damaged, int roundDelay, int timeLeft) {
+            w.buffer().putShort((short) damaged).putShort((short) roundDelay).putInt(timeLeft);
+        }
+
+        public Timers wrap(SnapshotReader r, int i) {
+            bind(r, i);
+            return this;
+        }
+
+        public int damaged() { return u16(0); }
+
+        public int roundDelay() { return u16(2); }
+
+        public int timeLeft() { return b.getInt(o + 4); }
+    }
 }
