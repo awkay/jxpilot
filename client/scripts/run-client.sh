@@ -7,7 +7,7 @@
 #   client/scripts/run-client.sh --view-map maps/default.xp --demo
 # MAIN=com.fulcrologic.jxpilot.client.app.DevRun selects the scripted-screenshot dev harness instead.
 set -eu
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." > /dev/null && pwd)"
 M2="${M2_REPO:-$HOME/.m2/repository}"
 V=3.3.6
 case "$(uname -s)-$(uname -m)" in
