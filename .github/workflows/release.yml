@@ -1,0 +1,253 @@
+name: release
+
+# Builds the downloadable JXPilot artifacts and publishes them as a GitHub Release.
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# A tag push (v*) builds and publishes. "Run workflow" (workflow_dispatch) builds the same assets as
+# workflow artifacts; it publishes a release only when it is run on a v* tag.
+# See docs/guide/08-building.adoc ("Making a release").
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: '25'
+  ASCIIDOCTOR_VERSION: '2.0.23'
+
+jobs:
+  build:
+    name: Build, test and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      app_version: ${{ steps.version.outputs.app_version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      # v1.2.3 -> 1.2.3. Off a tag: the pom version with -SNAPSHOT replaced by -dev.<short sha>.
+      # app_version is the numeric part jpackage accepts (1.2.3-rc1 -> 1.2.3).
+      - name: Compute version
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" = tag ] && [ "${REF_NAME#v}" != "$REF_NAME" ]; then
+            version="${REF_NAME#v}"
+          else
+            base=$(mvn -B -q -ntp help:evaluate -Dexpression=project.version -DforceStdout)
+            version="${base%-SNAPSHOT}-dev.${GITHUB_SHA::7}"
+          fi
+          case "$version" in
+            *[!A-Za-z0-9._-]*|'') echo "bad version '$version'"; exit 1 ;;
+          esac
+          app_version=$(printf '%s' "$version" | grep -oE '^[0-9]+(\.[0-9]+){0,2}' || true)
+          prerelease=false
+          case "$version" in *-*) prerelease=true ;; esac
+          {
+            echo "version=$version"
+            echo "app_version=$app_version"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+          echo "Version: $version (app version '$app_version', prerelease $prerelease)"
+
+      - name: Set the Maven project version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: >
+          mvn -B -ntp org.codehaus.mojo:versions-maven-plugin:2.23.0:set
+          -DnewVersion="$VERSION" -DprocessAllModules=true -DgenerateBackupPoms=false
+
+      # validate: license-header check; test: every module's tests, including the check that
+      # docs/guide/generated/ matches the code; package (-Prelease): the two runnable jars.
+      - name: Build, test and package the jars
+        run: mvn -B -ntp -Prelease verify
+
+      - name: Smoke test the server jar
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          jar=dist/target/release/jxpilot-server-$VERSION.jar
+          main=$(unzip -p "$jar" META-INF/MANIFEST.MF | tr -d '\r' | sed -n 's/^Main-Class: //p')
+          cls="${main//.//}.class"
+          if unzip -l "$jar" "$cls" > /dev/null; then
+            # Starts, binds loopback and serves; stopped after a few seconds.
+            timeout 8s java -jar "$jar" --map maps/default.xp --port 15345 --bind loopback > server.log 2>&1 || true
+            cat server.log
+            grep -q '^listening on ' server.log
+          else
+            echo "::warning::$main is not in the server jar yet (it arrives with the server-net branch); skipping"
+          fi
+
+      - name: Assemble release files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p out
+          cp "dist/target/release/jxpilot-client-$VERSION.jar" "dist/target/release/jxpilot-server-$VERSION.jar" out/
+          staging="jxpilot-maps-$VERSION"
+          mkdir -p "$staging"
+          cp -R maps "$staging/maps"
+          cp LICENSE "$staging/"
+          zip -qr "out/jxpilot-maps-$VERSION.zip" "$staging"
+          ls -l out
+
+      - name: Install Asciidoctor
+        run: sudo gem install --no-document asciidoctor -v "$ASCIIDOCTOR_VERSION"
+
+      - name: Build the user guide
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          make -C docs/guide html VERSION="$VERSION"
+          staging="jxpilot-guide-$VERSION"
+          cp -R docs/guide/build "$staging"
+          zip -qr "out/jxpilot-guide-$VERSION.zip" "$staging"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-files
+          path: out/*
+          if-no-files-found: error
+
+  app-image:
+    name: App image (${{ matrix.platform }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, platform: macos-arm64 }
+          - { os: macos-15-intel, platform: macos-x64 }
+          - { os: ubuntu-latest, platform: linux-x64 }
+          - { os: ubuntu-24.04-arm, platform: linux-arm64 }
+          - { os: windows-latest, platform: windows-x64 }
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      APP_VERSION: ${{ needs.build.outputs.app_version }}
+    steps:
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: files
+
+      # jpackage bundles a trimmed Java runtime with the client jar and the maps. The app's main
+      # class is ClientMain itself: the launcher's relaunch is not needed because the JVM options
+      # below already carry -XstartOnFirstThread on macOS. With no arguments the app opens the map
+      # viewer on the bundled default map ($APPDIR is expanded by the jpackage launcher).
+      - name: Build the app image
+        run: |
+          mkdir -p input
+          cp "files/jxpilot-client-$VERSION.jar" input/jxpilot-client.jar
+          unzip -q "files/jxpilot-maps-$VERSION.zip"
+          cp -R "jxpilot-maps-$VERSION/maps" input/maps
+          modules=$(jdeps --multi-release "$JAVA_VERSION" --print-module-deps --ignore-missing-deps input/jxpilot-client.jar)
+          echo "Runtime modules: $modules"
+          # shellcheck disable=SC2016 # $APPDIR is expanded by the jpackage launcher, not the shell
+          default_map='$APPDIR/maps/default.xp'
+          args=(--type app-image --name JXPilot --dest image --input input
+                --main-jar jxpilot-client.jar --main-class com.fulcrologic.jxpilot.client.ClientMain
+                --add-modules "$modules"
+                --java-options -XX:+UseZGC
+                --java-options --enable-native-access=ALL-UNNAMED
+                --java-options --sun-misc-unsafe-memory-access=allow
+                --arguments --view-map --arguments "$default_map"
+                --vendor "JXPilot contributors" --copyright "GPL-2.0-or-later; see LICENSE")
+          case "$RUNNER_OS" in
+            macOS)
+              args+=(--java-options -XstartOnFirstThread)
+              # macOS bundle versions must start with a number above 0.
+              case "$APP_VERSION" in ''|0|0.*) ;; *) args+=(--app-version "$APP_VERSION") ;; esac ;;
+            Windows)
+              args+=(--win-console)
+              [ -n "$APP_VERSION" ] && args+=(--app-version "$APP_VERSION") ;;
+            *)
+              [ -n "$APP_VERSION" ] && args+=(--app-version "$APP_VERSION") ;;
+          esac
+          jpackage "${args[@]}"
+          cp "jxpilot-maps-$VERSION/LICENSE" image/
+
+      - name: Archive the app image
+        run: |
+          name="JXPilot-$VERSION-${{ matrix.platform }}"
+          mkdir -p out
+          case "$RUNNER_OS" in
+            macOS)   (cd image && ditto -c -k --keepParent JXPilot.app "../out/$name.zip" && zip -q "../out/$name.zip" LICENSE) ;;
+            Linux)   mv image "$name" && tar -czf "out/$name.tar.gz" "$name" ;;
+            Windows) mv image "$name" && 7z a -tzip -bso0 "out/$name.zip" "$name" ;;
+          esac
+          ls -l out
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-image-${{ matrix.platform }}
+          path: out/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish the GitHub Release
+    needs: [build, app-image]
+    # App images are a convenience: publish the jars even if one platform's image failed.
+    if: ${{ !cancelled() && needs.build.result == 'success' && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: out
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cd out
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Release notes
+        env:
+          IMAGES_RESULT: ${{ needs.app-image.result }}
+        run: |
+          sed "s/@VERSION@/$VERSION/g" .github/release-notes.md > notes.md
+          if [ "$IMAGES_RESULT" != success ]; then
+            printf '\n> Note: some platform app images failed to build for this release; the jars work everywhere.\n' >> notes.md
+          fi
+
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          name: JXPilot ${{ env.VERSION }}
+          body_path: notes.md
+          generate_release_notes: true
+          prerelease: ${{ needs.build.outputs.prerelease == 'true' }}
+          fail_on_unmatched_files: true
+          files: out/*

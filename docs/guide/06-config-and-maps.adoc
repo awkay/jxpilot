@@ -1,0 +1,241 @@
+[[config-and-maps]]
+= Config and map files
+ifdef::env-github[]
+:toc:
+:toclevels: 2
+:experimental:
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+Server configuration files and map files have the same format: XPilot 4.5.5's, described in its
+`doc/README.MAPS`. JXPilot reads original XPilot files unchanged. This chapter describes the format,
+how values from several sources are combined, the map symbols, and the maps that come with JXPilot.
+
+[[file-format]]
+== File format
+
+A file is a list of `name: value` lines:
+
+[source,text]
+----
+# A comment runs from # to the end of the line.
+mapName:     My Arena                # the value is trimmed
+mapAuthor:   Jane Doe
+gravity:     -0.3
+edge wrap:   yes                     # spaces inside names are ignored: this is edgeWrap
+MaxRobots:   2                       # names are not case-sensitive
+----
+
+The rules:
+
+* Each line is `name: value`. A name starts with a letter; spaces inside it are ignored and case does
+  not matter. Option short names work too (`port:` for `contactPort:`).
+* `#` starts a comment, anywhere outside a multiline value. Blank lines are ignored. A value cannot
+  contain `#` except in a multiline value.
+* Values are trimmed. A line with an empty value is an error, reported as a warning; the rest of the
+  file is still read. (XPilot would read the next line as the value; JXPilot does not.)
+* Lines with errors (no colon, a name that doesn't start with a letter) are reported as
+  `FILE line N: ...` warnings and skipped.
+* Files are read as Latin-1 (ISO 8859-1), like XPilot's. Windows (CRLF) line ends are fine.
+* Very old XPilot 1.x maps (files starting with a digit) are refused with a warning.
+* Unknown names are kept but ignored, so files written for other XPilot versions still load.
+
+[[multiline]]
+=== Multiline values: `\multiline:`
+
+A value that spans lines, such as the map itself, starts with `\multiline:` followed by a delimiter
+word. The following lines, kept exactly as they are, form the value, up to a line that is exactly the
+delimiter (or the end of the file):
+
+[source,text]
+----
+mapData: \multiline: EndOfMap
+xxxxxxxxxx
+x        x
+x  _  #  x
+x        x
+xxxxxxxxxx
+EndOfMap
+----
+
+[[override]]
+=== Overriding the map: `\override:`
+
+Normally a map's own settings beat the server's config file. A config-file value that starts with
+`\override:` beats the map:
+
+[source,text]
+----
+gravity:   \override: 0      # no gravity, whatever the map says
+maxRobots: 4                 # the map may change this
+----
+
+`\override:` can be combined with `\multiline:` (`\override: \multiline: END`).
+
+[[define-expand]]
+=== Macros: `define:` and `expand:`
+
+`define: NAME VALUE` stores a group of settings under a name; `expand: NAME` applies them. The value
+is usually multiline:
+
+[source,text]
+----
+define: lowgrav \multiline: END
+gravity: -0.05
+shotSpeed: 30
+END
+
+expand: lowgrav
+----
+
+* `expand:` in a file applies the macro at that point, with the precedence of the file the macro was
+  defined in.
+* On the command line, `-expand lowgrav,teams` lists macros to apply after all files have been read.
+  The macros may be defined in the config file or the map.
+* Expanding a macro that was never defined gives a warning and does nothing.
+
+[[precedence]]
+== Precedence: which value wins
+
+An option can be set on the command line, in the map file, in the server config file, or not at all
+(the built-in default). From strongest to weakest:
+
+[cols="1,2,5",options="header"]
+|===
+|Rank |Source |Rule
+|1 |Command line |Always wins. Nothing else can change a command-line value.
+|2 |Map file |Beats the config file and the defaults, unless the config-file value has `\override:`.
+|3 |Config file |Beats the defaults. With `\override:`, also beats the map.
+|4 |Built-in default |Used when nothing else sets the option
+(<<05-server-options.adoc#server-options,defaults>>).
+|===
+
+Within one source, a later line replaces an earlier one, unless the earlier one had `\override:`.
+Options can only be set from the places their "Set from" column allows: for example `contactPort` and
+`bind` cannot come from a map, and a map that tries is ignored with a warning.
+
+(XPilot also has a password file, which beats the map and config files. JXPilot's precedence rules
+include it, but the server does not read a password file yet.)
+
+[[map-files]]
+== Map files
+
+A map file is a config file with the map in it. These options describe the map:
+
+[cols="1,4",options="header"]
+|===
+|Option |Meaning
+|`mapWidth`, `mapHeight` |Size in blocks (default 100 x 100). One block is 35 x 35 pixels.
+|`mapData` |The map, one text line per row of blocks, usually as a `\multiline:` value. The first row
+is the top of the world.
+|`mapName`, `mapAuthor` |Shown to players.
+|`edgeWrap` |When on, flying off one edge brings you back on the opposite one. When off, the edges are
+walls.
+|`teamPlay` (short `teams`) |Team play: digit bases belong to teams.
+|`timing` (short `race`) |Race mode: the letters `A`-`Z` are checkpoints.
+|===
+
+Any other option can be set in a map too, if its "Set from" column includes `map`.
+
+[[map-symbols]]
+=== Map symbols
+
+Each character of `mapData` is one block:
+
+[cols="1,4",options="header"]
+|===
+|Symbol |Block
+
+|`x` |Wall, completely filled
+|`s` |Wall, upper left half filled
+|`a` |Wall, upper right half filled
+|`w` |Wall, lower left half filled
+|`q` |Wall, lower right half filled
+
+|`b` |Decoration, completely filled (drawn, but not solid)
+|`h` |Decoration, upper left half
+|`g` |Decoration, upper right half
+|`y` |Decoration, lower left half
+|`t` |Decoration, lower right half
+
+|`#` |Fuel station
+|`r` |Cannon pointing up
+|`d` |Cannon pointing left
+|`f` |Cannon pointing right
+|`c` |Cannon pointing down
+
+|`_` |Home base without a team (team 0 in team play)
+|`0` ... `9` |Home base of team 0 to 9 (in team play; without team play, a base like `_`)
+|`$` |Base direction marker: players starting on an adjacent base face it. Not drawn.
+
+|`*` |Treasure, with a ball (belongs to the team with the closest base)
+|`^` |Empty treasure: a treasure without a ball
+|`!` |Target (belongs to the team with the closest base)
+
+|`+` |Gravity source, repelling (positive)
+|`-` |Gravity source, attracting (negative)
+|`>` |Gravity, clockwise
+|`<` |Gravity, anticlockwise
+|`i` |Gravity current, upwards
+|`m` |Gravity current, downwards
+|`j` |Gravity current, leftwards
+|`k` |Gravity current, rightwards
+
+|`@` |Wormhole, both ways (in and out)
+|`(` |Wormhole entrance (in only)
+|`)` |Wormhole exit (out only)
+
+|`%` |Item concentrator: items appear near it (`itemConcentratorRadius`, `itemConcentratorProb`)
+|`&` |Asteroid concentrator: asteroids appear near it (`asteroidConcentratorRadius`,
+`asteroidConcentratorProb`)
+|`z` |Friction block: ships inside feel `blockFriction` instead of `friction`
+
+|`A` ... `Z` |Race checkpoints in race mode (`timing`), `A` first; empty space otherwise
+|space or `.` |Empty space
+|anything else |Empty space, with an "Unknown map characters" warning
+|===
+
+The letters were chosen for their place on the keyboard: the wall corners `q w a s` surround the
+block, as do the cannon directions `r d f c`.
+
+[[shipped-maps]]
+== Shipped maps
+
+The release's `jxpilot-maps-VERSION.zip` (and the `maps/` directory of the source) has the 19 maps of
+the XPilot 4.5.5 distribution, unmodified. Each map's author is named in its `mapAuthor` field; the
+authors were not involved in JXPilot.
+
+[cols="2,4,1,4",options="header"]
+|===
+|File |Map name |Size |Author
+|`blood-music2.xp` |Blood's Music II |100 x 100 |Blood, TIMID, DR.DEATH
+|`CAMD.xp` |The Computer Aided Map Designer's first real test... |150 x 150 |Tom Grydeland
+|`cloudscape.xp` |CloudScape |179 x 176 |Boerge 'Lynx' Berg-Olsen
+|`default.xp` |The Newbie Globe |170 x 170 |Bjørn Stabell (newbie mods by Bucko)
+|`doggy.xp` |DoggyStyle |49 x 50 |Kjell Irgens
+|`fireball.xp` |Fireball |200 x 200 |Olaf Brandt
+|`fuzz.xp` |Fuzz EW |178 x 198 |Ronny H. Arild (+BG)
+|`fuzz2.xp` |Fuzz II: The Search for a Better Name |141 x 161 |Ronny "Snowball" Arild
+|`globe.xp` |The Globe |170 x 170 |Bjørn Stabell
+|`grandprix.xp` |Grand Prix II |200 x 200 |Steven Singer (+BG&MB)
+|`newdarkhell.xp` |New Dark Hell |200 x 200 |PeaceMaker
+|`newdarkhell2.xp` |New Dark Hell II |200 x 200 |PeaceMaker
+|`pad.xp` |Padded Room |100 x 100 |Dave Lemke
+|`pit.xp` |The Pit! |156 x 200 |Ronny H. Arild
+|`planetx.xp` |Planet X |310 x 267 |Børge Berg-Olsen
+|`teamball.xp` |TEAMBALL 2.4 - 2 teams, 6 balls, 3 shots |57 x 83 |DR.DEATH mods by Toast
+|`tourmination.xp` |Tourmination |80 x 80 |Bert Gijsbers
+|`tournament.xp` |Tournament |80 x 80 |Ken Ronny Schouten
+|`war.xp` |Team Warfare |120 x 80 |Andy Skinner
+|===
+
+Other XPilot 4.5.5 block-based maps should load too. To try one, open it in the map viewer:
+`java -jar jxpilot-client-VERSION.jar --view-map mymap.xp`. The server reports problems in a map's
+option lines as `option warning:` lines when it loads it.
+
+TIP: The map files are Latin-1 text. If you edit one, save it as Latin-1 (or plain ASCII), not UTF-8,
+or accented letters in names will look wrong.

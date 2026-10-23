@@ -1,0 +1,73 @@
+= JXPilot User Guide
+:author: The JXPilot contributors
+:revnumber: dev
+:lang: en
+:encoding: UTF-8
+:doctype: book
+:source-highlighter: highlight.js
+:toc: left
+:toclevels: 3
+:sectlinks:
+:sectanchors:
+:sectnums:
+:imagesdir: images
+:experimental:
+:icons: font
+
+ifdef::env-github[]
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+// Chapters are separate files so each one also renders on its own on GitHub, which does not
+// process include directives. Cross-chapter references use <<file.adoc#anchor,text>>: GitHub
+// follows them as links, and Asciidoctor turns them into links inside this book.
+
+ifdef::env-github[]
+This is the source of the JXPilot user guide. GitHub does not assemble included files, so read the
+chapters one by one, or build the single-page HTML book with `make -C docs/guide` (see
+<<08-building.adoc#guide,Building this guide>>). Releases also attach the HTML guide as a zip.
+
+. link:01-introduction.adoc[Introduction]: what JXPilot is, its relationship to XPilot, and its status
+. link:02-quick-start.adoc[Quick start]: download, run the client and a server
+. link:03-playing.adoc[Playing]: controls, HUD, radar, scoring
+. link:04-running-a-server.adoc[Running a server]: command line, network binding, firewalls, services
+. link:05-server-options.adoc[Server configuration reference]: every option
+. link:06-config-and-maps.adoc[Config and map files]: file format, precedence, map symbols, shipped maps
+. link:07-client-reference.adoc[Client reference]: every client flag
+. link:08-building.adoc[Building from source and contributing]
+. link:09-appendices.adoc[Appendices]: licensing and credits, troubleshooting, FAQ
+endif::[]
+
+ifndef::env-github[]
+[preface]
+== About this guide
+
+This guide is for people who want to play JXPilot or run a JXPilot server; the last chapter is for
+people who want to build or change it. JXPilot is a work in progress, and the guide says plainly which
+features exist today and which are planned. Paragraphs marked *Unmerged branch* describe code that is
+written but not yet merged into the main line; they change when it is merged.
+
+This copy describes version *{revnumber}*.
+
+include::01-introduction.adoc[leveloffset=+1]
+
+include::02-quick-start.adoc[leveloffset=+1]
+
+include::03-playing.adoc[leveloffset=+1]
+
+include::04-running-a-server.adoc[leveloffset=+1]
+
+include::05-server-options.adoc[leveloffset=+1]
+
+include::06-config-and-maps.adoc[leveloffset=+1]
+
+include::07-client-reference.adoc[leveloffset=+1]
+
+include::08-building.adoc[leveloffset=+1]
+
+include::09-appendices.adoc[]
+endif::[]
