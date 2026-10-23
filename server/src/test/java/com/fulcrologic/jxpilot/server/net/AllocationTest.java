@@ -240,8 +240,8 @@ class AllocationTest {
             long allocated = MX.getThreadAllocatedBytes(id) - before;
             int snapshots = u.c.snapshotTicks.size() - snapshotsBefore;
             assertAll(
-                () -> assertEquals(0, allocated, "4 s of 60 Hz receive/dispatch/tick/send on the loop thread allocate nothing"),
-                () -> assertTrue(snapshots > 90, "snapshots flowed during the measurement (" + snapshots + ")"));
+                () -> assertEquals(0, allocated, "4 s of 14 fps receive/dispatch/tick/send on the loop thread allocate nothing"),
+                () -> assertTrue(snapshots > 40, "snapshots flowed during the measurement (" + snapshots + ")"));
         }
     }
 }

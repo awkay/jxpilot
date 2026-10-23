@@ -30,10 +30,20 @@ package com.fulcrologic.jxpilot.server.net;
  * {@code maxCatchUp} ticks and re-bases the schedule instead of fast-forwarding through the backlog.
  */
 public final class TickScheduler {
+    /** A stall is caught up by running at most this much simulated time back to back. */
+    public static final long MAX_CATCH_UP_NANOS = 100_000_000L;
     private final long periodNanos;
     private final int maxCatchUp;
     private long next;
     private long skipped;
+
+    /**
+     * BEHAVIOR: ticks run back to back after a stall: {@link #MAX_CATCH_UP_NANOS} worth of ticks at
+     * {@code hz}, rounded, but at least 2 (so one late tick is always made up).
+     */
+    public static int catchUpTicks(int hz) {
+        return Math.max(2, (int) Math.round(hz * (MAX_CATCH_UP_NANOS / 1e9)));
+    }
 
     public TickScheduler(int hz, int maxCatchUp, long startNanos) {
         this.periodNanos = 1_000_000_000L / hz;

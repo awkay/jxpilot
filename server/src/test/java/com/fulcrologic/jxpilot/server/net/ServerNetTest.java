@@ -89,6 +89,15 @@ class ServerNetTest {
         return n;
     }
 
+    /** Gap {@code i} of the send times is at least {@code ms} and less than one tick more. */
+    static boolean gapOk(List<Long> atMs, int i, long ms) {
+        if (atMs.size() <= i) {
+            return false;
+        }
+        long gap = atMs.get(i) - atMs.get(i - 1);
+        return gap >= ms && gap <= ms + Harness.TICK / MS + 1; // ms values are floored
+    }
+
     static ByteBuffer withBody(ByteBuffer headerOnly, byte[] body) {
         ByteBuffer b = ByteBuffer.allocate(headerOnly.remaining() + body.length);
         b.put(headerOnly).put(body).flip();
@@ -136,8 +145,8 @@ class ServerNetTest {
                 () -> assertTrue(c.welcomed, "WELCOME arrives on the reliable channel after verification"),
                 () -> assertEquals(8, c.welcome.playerId, "WELCOME player id"),
                 () -> assertEquals(3, c.welcome.team, "WELCOME team from the host"),
-                () -> assertEquals(60, c.welcome.simHz, "WELCOME simHz"),
-                () -> assertEquals(30, c.welcome.snapshotHz, "WELCOME snapshotHz = simHz / divisor"),
+                () -> assertEquals(14, c.welcome.simHz, "WELCOME simHz: the tick (frame) rate"),
+                () -> assertEquals(14, c.welcome.snapshotHz, "WELCOME snapshotHz = simHz / divisor (1 by default)"),
                 () -> assertEquals(Msg.Welcome.FLAG_EDGE_WRAP, c.welcome.flags, "WELCOME flags from the config"),
                 () -> assertEquals(50f, c.welcome.gameFps, "WELCOME gameFps"),
                 () -> assertEquals(h.blob.compressed.length, c.welcome.configCompressedLength, "WELCOME announces the blob size"),
@@ -161,6 +170,7 @@ class ServerNetTest {
             List<Integer> types = new ArrayList<>();
             int outBytes = 0;
             boolean aliveAt3700 = false;
+            long goneAt = -1;
             for (int i = 0; i < 300; i++) {
                 for (Harness.Sent s : h.take(A)) {
                     types.add(s.type());
@@ -171,17 +181,25 @@ class ServerNetTest {
                     aliveAt3700 = h.net.connections() == 1;
                 }
                 h.tick();
+                if (goneAt < 0 && h.net.connections() == 0) {
+                    goneAt = (h.now - t0) / MS;
+                }
             }
+            long gone = goneAt;
             int total = outBytes;
             boolean alive = aliveAt3700;
             assertAll(
                 () -> assertEquals(List.of(PacketType.ACCEPT, PacketType.ACCEPT, PacketType.ACCEPT, PacketType.ACCEPT), types,
                     "only ACCEPT, four times (1 + 3 resends), and never DISCONNECT"),
-                () -> assertEquals(List.of(0L, 250L, 750L, 1750L), acceptAtMs, "resent after 250, 500 and 1000 ms (backoff)"),
+                () -> assertEquals(0L, acceptAtMs.get(0), "the first ACCEPT answers the CONNECT at once"),
+                () -> assertTrue(gapOk(acceptAtMs, 1, 250), "the first resend comes 250 ms later (to the next tick): " + acceptAtMs),
+                () -> assertTrue(gapOk(acceptAtMs, 2, 500), "the second 500 ms after that: " + acceptAtMs),
+                () -> assertTrue(gapOk(acceptAtMs, 3, 1000), "the third 1000 ms after that: " + acceptAtMs),
                 () -> assertEquals(4 * ACCEPT_BYTES, total, "the whole reply is four 14-byte ACCEPTs"),
                 () -> assertTrue(ACCEPT_BYTES <= inBytes, "each ACCEPT is no larger than the CONNECT"),
                 () -> assertTrue(alive, "the unverified session lives until 3.75 s"),
-                () -> assertEquals(0, h.net.connections(), "then it expires"),
+                () -> assertTrue(gone >= 3750 && gone < 3750 + 4 * Harness.TICK / MS,
+                    "then it expires, 2 s after the last ACCEPT (" + gone + " ms)"),
                 () -> assertEquals(List.of("join spoof team=255 shape=", "leave 0"), joinsAndLeaves(h.host.calls),
                     "the host is told about the join and the leave"),
                 () -> assertEquals(List.of(), h.log, "unverified sessions are not logged (a spoofed flood cannot spam the log)"));
@@ -198,7 +216,7 @@ class ServerNetTest {
             int dupReplies = 0;
             long goneAt = -1;
             for (int i = 0; i < 300 && goneAt < 0; i++) {
-                if (i % 15 == 0) {
+                if (i % 4 == 0) {
                     h.in(0, A, c.connect("Ann", 255, ""));
                     dupReplies += h.take(A).size();
                 }
@@ -211,8 +229,8 @@ class ServerNetTest {
             int replies = dupReplies;
             long gone = goneAt;
             assertAll(
-                () -> assertTrue(replies >= 14, "every duplicate CONNECT is answered with one ACCEPT (" + replies + ")"),
-                () -> assertTrue(gone >= 3750 && gone < 3750 + 17, "it still expires at 3.75 s (" + gone + " ms)"),
+                () -> assertTrue(replies >= 12, "every duplicate CONNECT is answered with one ACCEPT (" + replies + ")"),
+                () -> assertTrue(gone >= 3750 && gone < 3750 + 4 * Harness.TICK / MS, "it still expires at 3.75 s (" + gone + " ms)"),
                 () -> assertEquals(List.of("join Ann team=255 shape=", "leave 0"), joinsAndLeaves(h.host.calls),
                     "one join; duplicates never join again"));
         }
@@ -644,14 +662,16 @@ class ServerNetTest {
         @DisplayName("a large config streams in order, then the initial state, then events")
         void stream() {
             String text = randomText(60_000, 3);
-            Harness h = new Harness(new ServerNetConfig(), text);
+            ServerNetConfig cfg = new ServerNetConfig();
+            cfg.reliablePacketsPerSecond = 3 * cfg.simHz;
+            Harness h = new Harness(cfg, text);
             TestClient c = new TestClient(1);
             h.in(0, A, c.connect("a", 255, ""));
             h.deliver(c, A);
             h.host.pendingChat.add("early");
             int maxReliablePerTick = 0;
             int ticks = 0;
-            while (!c.hasMap() && ticks < 300) {
+            while (!c.hasMap() && ticks < 600) {
                 for (ByteBuffer b : c.frame(h.now, 0)) {
                     h.in(0, A, b);
                 }
@@ -675,8 +695,7 @@ class ServerNetTest {
                 () -> assertEquals(List.of("WELCOME 0", "MAP", "JOIN 0 self", "MESSAGE early"), c.reliableLog,
                     "WELCOME, the map, the initial state, then events, in that order"),
                 () -> assertEquals(1, h.host.callsStartingWith("initialState").size(), "the initial state is queued once"),
-                () -> assertTrue(maxRel <= h.cfg.maxReliablePacketsPerTick && maxRel > 1,
-                    "reliable datagrams per tick are capped (max seen " + maxRel + ")"));
+                () -> assertEquals(3, maxRel, "reliable datagrams per tick are capped at reliablePacketsPerSecond / simHz"));
         }
     }
 
@@ -792,11 +811,11 @@ class ServerNetTest {
             boolean snapBefore = snapshotBeforeSync;
             assertAll(
                 () -> assertFalse(snapBefore, "no snapshots before the map and initial state are acknowledged"),
-                () -> assertEquals(6, c.snapshotTicks.size(), "12 ticks give 6 snapshots"),
-                () -> assertTrue(c.snapshotTicks.stream().allMatch(t -> t % 2 == 0), "snapshots go out on even ticks"),
+                () -> assertEquals(12, c.snapshotTicks.size(), "12 ticks give 12 snapshots (one per frame)"),
+                () -> assertEquals(c.snapshotTicks.get(0) + 11, (int) c.snapshotTicks.get(11), "on consecutive ticks"),
                 () -> assertEquals(h.host.lastTick, h.net.currentTick(), "the host ticks with the server's tick numbers"),
-                () -> assertEquals(2, c.radarSnapshots, "radar in every 3rd snapshot"),
-                () -> assertEquals(2, snaps.stream().filter(s -> s.endsWith("radar=true")).count(),
+                () -> assertEquals(4, c.radarSnapshots, "radar in every 3rd snapshot"),
+                () -> assertEquals(4, snaps.stream().filter(s -> s.endsWith("radar=true")).count(),
                     "the host is asked for radar on those snapshots only"),
                 () -> assertEquals(73, c.lastRadarCellX, "radar is quantized against the configured world size (1000/3500*256)"),
                 () -> assertEquals(1000f, c.lastSelfX, "the host's records arrive"),
@@ -819,7 +838,7 @@ class ServerNetTest {
             assertAll(
                 () -> assertEquals(6, snaps.size(), "18 ticks at divisor 3 give 6 snapshots"),
                 () -> assertEquals(2, snaps.stream().filter(s -> s.endsWith("radar=true")).count(), "2 of them carry radar"),
-                () -> assertEquals(20, c.welcome.snapshotHz, "WELCOME says 20 Hz"));
+                () -> assertEquals(4, c.welcome.snapshotHz, "WELCOME says 14 / 3 = 4 Hz"));
         }
 
         @Test
@@ -831,12 +850,10 @@ class ServerNetTest {
             h.host.partsNeeded = 3;
             c.snapshotParts.clear();
             h.step(c, 0, A, 0);
-            h.step(c, 0, A, 0);
             List<String> three = new ArrayList<>(c.snapshotParts);
             int t3 = h.net.currentTick();
             h.host.partsNeeded = 10;
             c.snapshotParts.clear();
-            h.step(c, 0, A, 0);
             h.step(c, 0, A, 0);
             int t4 = h.net.currentTick();
             assertAll(
@@ -870,20 +887,33 @@ class ServerNetTest {
             int mapTick = mapAt;
             assertAll(
                 () -> assertTrue(mapTick >= 0, "the map arrives"),
-                () -> assertEquals(31, c.snapshotTicks.size(), "snapshots start promptly and keep flowing (1 + 30 in 60 ticks)"),
+                () -> assertEquals(61, c.snapshotTicks.size(), "snapshots start promptly and keep flowing (1 + 60 in 60 ticks)"),
                 () -> assertTrue(c.reliableLog.contains("MESSAGE more58"), "while every event is still delivered"));
         }
 
         @Test
-        @DisplayName("an event every tick does not starve snapshots at 100 ms round trip")
+        @DisplayName("an event every tick does not starve snapshots over a 100 ms and a 143 ms round trip")
         void noStarvationRtt() {
-            Harness h = new Harness();
+            ServerNetConfig at60 = new ServerNetConfig();
+            at60.simHz = 60;
+            int[] fast = mapAndFirstSnapshot(at60, 3);              // 3 ticks of 16.7 ms each way: 100 ms
+            int[] slow = mapAndFirstSnapshot(new ServerNetConfig(), 1); // 1 tick of 71.4 ms each way: 143 ms
+            assertAll(
+                () -> assertTrue(fast[0] > 0 && slow[0] > 0, "the map arrives on both links"),
+                () -> assertTrue(fast[1] > fast[0] && fast[1] - fast[0] <= 4 * 6,
+                    "at 60 fps snapshots start within 4 round trips of the map (map " + fast[0] + ", snapshot " + fast[1] + ")"),
+                () -> assertTrue(slow[1] > slow[0] && slow[1] - slow[0] <= 4 * 2,
+                    "at 14 fps likewise (map " + slow[0] + ", snapshot " + slow[1] + ")"));
+        }
+
+        /** Join over a link delaying each datagram {@code delay} ticks each way, one host event per tick. */
+        private int[] mapAndFirstSnapshot(ServerNetConfig cfg, int delay) {
+            Harness h = new Harness(cfg, randomText(20_000, 5));
             TestClient c = new TestClient(1);
             List<long[]> upDue = new ArrayList<>();
             List<ByteBuffer> up = new ArrayList<>();
             List<long[]> downDue = new ArrayList<>();
             List<ByteBuffer> down = new ArrayList<>();
-            int delay = 3; // ticks each way: 3 x 16.7 ms x 2 = 100 ms
             int firstSnapshotAt = -1;
             int mapAt = -1;
             for (int t = 0; t < 1200 && firstSnapshotAt < 0; t++) {
@@ -925,12 +955,7 @@ class ServerNetTest {
                     firstSnapshotAt = t;
                 }
             }
-            int map = mapAt;
-            int first = firstSnapshotAt;
-            assertAll(
-                () -> assertTrue(map > 0, "the map arrives"),
-                () -> assertTrue(first > map && first - map <= 30,
-                    "snapshots start within about two round trips after the map (map " + map + ", first snapshot " + first + ")"));
+            return new int[] {mapAt, firstSnapshotAt};
         }
 
         @Test
@@ -965,7 +990,9 @@ class ServerNetTest {
         @Test
         @DisplayName("client reliable messages reach the host in order; PING gets PONG; idle ticks ACK")
         void messages() {
-            Harness h = new Harness();
+            ServerNetConfig cfg = new ServerNetConfig();
+            cfg.snapshotDivisor = 2;
+            Harness h = new Harness(cfg, "x: 1\n");
             TestClient c = new TestClient(1);
             h.join(c, 0, A, "a");
             h.host.calls.clear();

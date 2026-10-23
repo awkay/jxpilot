@@ -31,8 +31,11 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
 
 /** Tunables of {@link ServerNet}. Plain mutable holder; set fields before constructing ServerNet. */
 public final class ServerNetConfig {
-    /** Simulation ticks per second. */
-    public int simHz = 60;
+    /**
+     * Simulation ticks per second: the map's framesPerSecond (one tick per C frame, XPilot default 14).
+     * Everything else here is in time units, so it holds at any tick rate.
+     */
+    public int simHz = 14;
     /** A snapshot every this many ticks. */
     public int snapshotDivisor = Protocol.DEFAULT_SNAPSHOT_DIVISOR;
     /** RADAR in every this many snapshots. */
@@ -74,16 +77,25 @@ public final class ServerNetConfig {
     public double sessionRateBurst = 800;
     /** Extra per-source cost, in packets, of a CONNECT that would create a session. */
     public double connectCost = 100;
-    /** Reliable datagrams per peer per tick (bounds map-transfer bandwidth: 8 x 1.2 KB x 60 Hz). */
-    public int maxReliablePacketsPerTick = 8;
+    /**
+     * Reliable datagrams per peer per second (bounds map-transfer bandwidth: 480 x 1.2 KB = 576 KB/s);
+     * spread over the ticks by {@link #reliablePacketsPerTick()}.
+     */
+    public int reliablePacketsPerSecond = 480;
     /** Reliable window slots kept free for game messages while the map streams. */
     public int configReserveSlots = 4;
+
+    /** BEHAVIOR: reliable datagrams per peer per tick: reliablePacketsPerSecond / simHz rounded up, at least 1. */
+    public int reliablePacketsPerTick() {
+        return Math.max(1, (reliablePacketsPerSecond + simHz - 1) / simHz);
+    }
 
     /**
      * Settings for a loaded map and the server's options.
      * <p>
      * BEHAVIOR: WELCOME flags mirror the map's teamPlay, edgeWrap and timing; world size is the map's
-     * pixel size; gameFps is framesPerSecond; the server name includes the map name.
+     * pixel size; the tick rate simHz and gameFps are framesPerSecond (simHz clamped to 1..255, it is a
+     * u8 in WELCOME); the server name includes the map name.
      * BEHAVIOR: snapshotDivisor (clamped to 1..simHz), radarDivisor (at least 1), the per-source and
      * per-session packet rates and bursts (at least 1) and maxClientsPerIP come from the options.
      */
@@ -93,6 +105,7 @@ public final class ServerNetConfig {
             | (map.edgeWrap() ? Msg.Welcome.FLAG_EDGE_WRAP : 0)
             | (map.timing() ? Msg.Welcome.FLAG_TIMING : 0);
         c.gameFps = options.framesPerSecond();
+        c.simHz = Math.clamp(options.framesPerSecond(), 1, 255);
         c.serverName = "JXPilot: " + map.name();
         c.worldWidth = map.pixelWidth();
         c.worldHeight = map.pixelHeight();

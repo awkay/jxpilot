@@ -60,8 +60,11 @@ public final class Protocol {
     public static final int RELIABLE_WINDOW = 32;
     /** Default radar rate: the RADAR section is sent in every 3rd snapshot (10 Hz at 30 Hz snapshots). */
     public static final int DEFAULT_RADAR_DIVISOR = 3;
-    /** Default snapshot rate divisor: one snapshot every 2nd 60 Hz sim tick (30 Hz). */
-    public static final int DEFAULT_SNAPSHOT_DIVISOR = 2;
+    /**
+     * Default snapshot rate divisor: a snapshot every simulation tick. The server ticks at the map's
+     * framesPerSecond (one tick per C frame, default 14), so this is the frame rate.
+     */
+    public static final int DEFAULT_SNAPSHOT_DIVISOR = 1;
     /** Max bytes of one reliable message including its type byte. */
     public static final int MAX_RELIABLE_MESSAGE = 1100;
     /** Bytes of map/config data per DATA_CHUNK message. */

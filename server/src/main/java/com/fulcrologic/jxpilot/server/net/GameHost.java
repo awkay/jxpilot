@@ -85,8 +85,9 @@ public interface GameHost {
     void input(int playerId, int seq, long keys, int aimTurn);
 
     /**
-     * Advance the simulation one fixed step (1/simHz s). {@code tick} counts from 1 and is the
-     * number written into snapshots, so tick-seeded effects (thrust sparks) match on clients.
+     * Advance the simulation one C frame (the server ticks at the map's framesPerSecond, so dt = 1).
+     * {@code tick} counts from 1 and is the number written into snapshots, so tick-seeded effects
+     * (thrust sparks) match on clients.
      */
     void tick(int tick);
 

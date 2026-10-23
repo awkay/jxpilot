@@ -86,6 +86,7 @@ public final class ServerNet {
     private final SourceKeys keys;
     private final SplittableRandom sessions;
     private final double sessionPerNano;
+    private final int reliablePerTick;
 
     private final Connection[] active;
     private int activeCount;
@@ -182,6 +183,7 @@ public final class ServerNet {
         this.keys = new SourceKeys(keySecret);
         this.sessions = new SplittableRandom(sessionSeed);
         this.sessionPerNano = cfg.sessionRatePerSecond / 1e9;
+        this.reliablePerTick = cfg.reliablePacketsPerTick();
         active = new Connection[cfg.maxConnections];
         free = new Connection[cfg.maxConnections];
         for (int i = 0; i < cfg.maxConnections; i++) {
@@ -402,7 +404,7 @@ public final class ServerNet {
      * reliable overflow exceeds maxOverflow (they receive but do not acknowledge).
      * BEHAVIOR: streams the config until it is all queued, then queues the host's initial state once;
      * afterwards drains the host's events every tick.
-     * BEHAVIOR: sends due reliable messages (at most maxReliablePacketsPerTick datagrams).
+     * BEHAVIOR: sends due reliable messages (at most {@link ServerNetConfig#reliablePacketsPerTick()} datagrams).
      * BEHAVIOR: on every snapshotDivisor-th tick sends a snapshot to peers that have acknowledged
      * everything up to and including their initial state (later events need not be acked), with radar
      * on every radarDivisor-th snapshot.
@@ -456,7 +458,7 @@ public final class ServerNet {
             }
         }
         boolean sent = false;
-        for (int k = 0; k < cfg.maxReliablePacketsPerTick && c.ch.wantsSend(now); k++) {
+        for (int k = 0; k < reliablePerTick && c.ch.wantsSend(now); k++) {
             outBuf.clear();
             PacketHeader.write(outBuf, PacketType.RELIABLE, c.session, c.ch.ack());
             if (c.ch.write(outBuf, now) == 0) {

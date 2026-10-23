@@ -149,7 +149,7 @@ class UtilitiesTest {
         @Test
         @DisplayName("counts due ticks, waits, and re-bases after a stall")
         void schedule() {
-            TickScheduler t = new TickScheduler(60, 5, 1000);
+            TickScheduler t = new TickScheduler(14, 5, 1000);
             long p = t.periodNanos();
             int early = t.due(1000 + p - 1);
             long wait = t.nanosUntilNext(1000 + p - 1);
@@ -159,11 +159,11 @@ class UtilitiesTest {
             int stall = t.due(1000 + 100 * p);
             long skipped = t.skipped();
             long waitAfterStall = t.nanosUntilNext(1000 + 100 * p);
-            TickScheduler five = new TickScheduler(60, 5, 0);
+            TickScheduler five = new TickScheduler(14, 5, 0);
             int exactlyFive = five.due(5 * p + 3);
             long phaseKept = five.nanosUntilNext(5 * p + 3);
             assertAll(
-                () -> assertEquals(16_666_666L, p, "60 Hz period in ns"),
+                () -> assertEquals(71_428_571L, p, "14 Hz (XPilot's default frame rate) period in ns"),
                 () -> assertEquals(0, early, "no tick before the first deadline"),
                 () -> assertEquals(1, wait, "waits until the deadline"),
                 () -> assertEquals(1, one, "a tick is due exactly at its deadline"),
@@ -176,6 +176,16 @@ class UtilitiesTest {
                 () -> assertEquals(p - 3, phaseKept, "and keep the schedule's phase (no re-base)"),
                 () -> assertEquals(0, t.nanosUntilNext(1000 + 200 * p), "a passed deadline needs no wait"));
         }
+    }
+
+    @Test
+    @DisplayName("TickScheduler.catchUpTicks: 100 ms of ticks at the frame rate, at least 2")
+    void catchUp() {
+        assertAll(
+            () -> assertEquals(2, TickScheduler.catchUpTicks(14), "14 fps: 1.4 ticks rounds to 1, raised to the minimum 2"),
+            () -> assertEquals(3, TickScheduler.catchUpTicks(25), "25 fps: 2.5 rounds to 3"),
+            () -> assertEquals(5, TickScheduler.catchUpTicks(50), "50 fps: 5"),
+            () -> assertEquals(2, TickScheduler.catchUpTicks(1), "1 fps: the minimum 2"));
     }
 
     @Nested
@@ -224,7 +234,15 @@ class UtilitiesTest {
         Options race = new Options();
         ConfigParser.parse("mapWidth: 4\nmapHeight: 2\ntiming: yes\n"
             + "mapData: \\multiline: E\nxxxx\nxA_x\nE\n", "t", OptionOrigin.MAP, race);
+        for (String[] kv : new String[][] {{"snapshotDivisor", "99"}, {"radarDivisor", "0"}, {"ipPacketRate", "50"},
+            {"ipPacketBurst", "0"}, {"sessionPacketRate", "70"}, {"sessionPacketBurst", "90"}, {"maxClientsPerIP", "0"}}) {
+            race.setValue(kv[0], kv[1], false, OptionOrigin.COMMAND);
+        }
+        Options fast = new Options();
+        ConfigParser.parse("mapWidth: 3\nmapHeight: 2\nframesPerSecond: 300\nmapData: \\multiline: E\nxxx\nx_x\nE\n",
+            "t", OptionOrigin.MAP, fast);
         ServerNetConfig p = ServerNetConfig.of(plain, WorldMap.fromOptions(plain));
+        ServerNetConfig fastCfg = ServerNetConfig.of(fast, WorldMap.fromOptions(fast));
         ServerNetConfig f = ServerNetConfig.of(team, WorldMap.fromOptions(team));
         ServerNetConfig r = ServerNetConfig.of(race, WorldMap.fromOptions(race));
         assertAll(
@@ -238,6 +256,24 @@ class UtilitiesTest {
             () -> assertEquals(105.0, p.worldWidth, "world width in pixels"),
             () -> assertEquals(70.0, p.worldHeight, "world height in pixels"),
             () -> assertFalse(p.edgeWrap, "no wrap"),
-            () -> assertTrue(f.edgeWrap, "wrap"));
+            () -> assertTrue(f.edgeWrap, "wrap"),
+            () -> assertEquals(14, p.simHz, "the tick rate is the map's framesPerSecond (default 14)"),
+            () -> assertEquals(50, f.simHz, "framesPerSecond 50 ticks at 50 Hz"),
+            () -> assertEquals(255, fastCfg.simHz, "the tick rate is capped at 255 (u8 in WELCOME)"),
+            () -> assertEquals(1, p.snapshotDivisor, "a snapshot every tick by default"),
+            () -> assertEquals(3, p.radarDivisor, "radar every 3rd snapshot by default"),
+            () -> assertEquals(4, p.maxPerIp, "4 sessions per source by default"),
+            () -> assertEquals(400.0, p.ratePerSecond, "per-source rate default"),
+            () -> assertEquals(800.0, p.sessionRateBurst, "per-session burst default"),
+            () -> assertEquals(14, r.snapshotDivisor, "snapshotDivisor is clamped to the tick rate"),
+            () -> assertEquals(1, r.radarDivisor, "radarDivisor is at least 1"),
+            () -> assertEquals(50.0, r.ratePerSecond, "ipPacketRate"),
+            () -> assertEquals(1.0, r.rateBurst, "ipPacketBurst is at least 1"),
+            () -> assertEquals(70.0, r.sessionRatePerSecond, "sessionPacketRate"),
+            () -> assertEquals(90.0, r.sessionRateBurst, "sessionPacketBurst"),
+            () -> assertEquals(0, r.maxPerIp, "maxClientsPerIP 0 (unlimited) passes through"),
+            () -> assertEquals(35, p.reliablePacketsPerTick(), "480 reliable datagrams/s at 14 fps is 35 per tick (rounded up)"),
+            () -> assertEquals(10, f.reliablePacketsPerTick(), "and 10 per tick at 50 fps"),
+            () -> assertEquals(2, fastCfg.reliablePacketsPerTick(), "and 2 at 255 fps"));
     }
 }

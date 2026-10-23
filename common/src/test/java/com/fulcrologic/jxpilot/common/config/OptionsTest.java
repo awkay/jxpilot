@@ -118,7 +118,7 @@ class OptionsTest {
             Options cfg = new Options();
             cfg.setValue("sessionPacketRate", "123.5", false, OptionOrigin.DEFAULTS);
             assertAll(
-                () -> assertEquals(2, o.getInt(Opt.SNAPSHOT_DIVISOR), "snapshotDivisor defaults to 2 (30 Hz)"),
+                () -> assertEquals(1, o.getInt(Opt.SNAPSHOT_DIVISOR), "snapshotDivisor defaults to 1 (every frame)"),
                 () -> assertEquals(3, o.getInt(Opt.RADAR_DIVISOR), "radarDivisor defaults to 3"),
                 () -> assertEquals(400.0, o.getDouble(Opt.IP_PACKET_RATE), EPS, "ipPacketRate defaults to 400/s"),
                 () -> assertEquals(800.0, o.getDouble(Opt.IP_PACKET_BURST), EPS, "ipPacketBurst defaults to 800"),

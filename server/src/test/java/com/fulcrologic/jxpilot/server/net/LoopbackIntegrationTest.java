@@ -217,7 +217,7 @@ class LoopbackIntegrationTest {
     }
 
     @Test
-    @DisplayName("join, map transfer, 300 ticks of snapshots, input and chat over real UDP")
+    @DisplayName("join, map transfer, 80 frames of snapshots at the map's 14 fps, input and chat over real UDP")
     void fullSession() throws Exception {
         List<String> log = new ArrayList<>();
         int port = freePort(V4);
@@ -240,7 +240,7 @@ class LoopbackIntegrationTest {
                 }
                 int ticksSeen = c.snapshotTicks.isEmpty() ? 0
                     : c.snapshotTicks.get(c.snapshotTicks.size() - 1) - c.snapshotTicks.get(0);
-                if (ticksSeen >= 150 && Float.isNaN(yBeforeThrust)) {
+                if (ticksSeen >= 40 && Float.isNaN(yBeforeThrust)) {
                     yBeforeThrust = c.lastSelfY;
                 }
                 for (ByteBuffer b : c.frame(System.nanoTime(), Float.isNaN(yBeforeThrust) ? 0 : thrust)) {
@@ -248,7 +248,7 @@ class LoopbackIntegrationTest {
                 }
                 Thread.sleep(16);
                 u.pump();
-                if (ticksSeen >= 300 && c.reliableLog.contains("MESSAGE hello loopback")) {
+                if (ticksSeen >= 80 && c.reliableLog.contains("MESSAGE hello loopback")) {
                     break;
                 }
             }
@@ -271,9 +271,9 @@ class LoopbackIntegrationTest {
                 () -> assertEquals(serverMap.height(), clientMap.height(), "the client builds the same map (height)"),
                 () -> assertEquals(serverMap.bases().size(), clientMap.bases().size(), "the client builds the same map (bases)"),
                 () -> assertTrue(c.reliableLog.contains("JOIN " + c.playerId + " self"), "the initial state names the client"),
-                () -> assertTrue(ticks.get(ticks.size() - 1) - ticks.get(0) >= 300, "snapshots span at least 300 ticks"),
-                () -> assertTrue(ticks.size() >= 140, "about one snapshot per 2 ticks arrives (" + ticks.size() + ")"),
-                () -> assertTrue(ticks.stream().allMatch(t -> t % 2 == 0), "snapshots are on even ticks"),
+                () -> assertTrue(ticks.get(ticks.size() - 1) - ticks.get(0) >= 80, "snapshots span at least 80 ticks"),
+                () -> assertTrue(ticks.size() >= 75, "about one snapshot per tick arrives (" + ticks.size() + ")"),
+                () -> assertEquals(14, c.welcome.simHz, "the server ticks at doggy.xp's (default) 14 fps"),
                 () -> assertTrue(inOrder, "loopback delivers them in order"),
                 () -> assertTrue(c.radarSnapshots >= ticks.size() / 3 - 2, "radar in every 3rd snapshot"),
                 () -> assertTrue(c.lastSelfY > y0, "held THRUST moves the stub ship (input reaches the host)"),

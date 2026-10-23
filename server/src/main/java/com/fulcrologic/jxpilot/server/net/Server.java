@@ -38,14 +38,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
 
 /**
- * A running server: options, map, bound channels, the 60 Hz loop thread and the interface rescan
+ * A running server: options, map, bound channels, the loop thread (ticking at the map's
+ * framesPerSecond, one tick per C frame) and the interface rescan
  * thread. Thin orchestration over tested parts: {@link BindPlan}, {@link ServerNet},
  * {@link TickScheduler}, {@link UdpTransport}.
  */
 public final class Server implements AutoCloseable {
-    /** Ticks run back to back at most, after a stall, before the schedule is re-based. */
-    static final int MAX_CATCH_UP = 5;
-
     /** Effectful collaborators and tunables; defaults are the real ones. */
     public static final class Settings {
         public InterfaceSource interfaces = new JdkInterfaceSource();
@@ -59,6 +57,7 @@ public final class Server implements AutoCloseable {
     private final Settings s;
     private final UdpTransport transport;
     private final ServerNet net;
+    private final int hz;
     private final List<BindSelector> selectors;
     private final AtomicReference<List<BindTarget>> desired = new AtomicReference<>();
     private final Thread loop;
@@ -66,8 +65,10 @@ public final class Server implements AutoCloseable {
     private volatile boolean running = true;
     private final java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
 
-    private Server(Settings s, UdpTransport transport, ServerNet net, List<BindSelector> selectors, boolean rescans) {
+    private Server(Settings s, UdpTransport transport, ServerNet net, int hz, List<BindSelector> selectors,
+                   boolean rescans) {
         this.s = s;
+        this.hz = hz;
         this.transport = transport;
         this.net = net;
         this.selectors = selectors;
@@ -130,14 +131,16 @@ public final class Server implements AutoCloseable {
             throw new IllegalArgumentException("could not bind any address");
         }
         GameHost host = s.factory.create(opts, map);
-        ServerNet net = new ServerNet(ServerNetConfig.of(opts, map), host, transport, s.log, blob);
+        ServerNetConfig cfg = ServerNetConfig.of(opts, map);
+        ServerNet net = new ServerNet(cfg, host, transport, s.log, blob);
         transport.setReceiver(net::onDatagram);
         boolean rescans = false;
         for (BindSelector sel : selectors) {
             rescans |= !(sel instanceof BindSelector.Literal);
         }
-        Server server = new Server(s, transport, net, selectors, rescans);
-        s.log.log("serving map '" + map.name() + "' (" + map.width() + "x" + map.height() + " blocks)");
+        Server server = new Server(s, transport, net, cfg.simHz, selectors, rescans);
+        s.log.log("serving map '" + map.name() + "' (" + map.width() + "x" + map.height() + " blocks) at "
+            + cfg.simHz + " frames/s");
         server.loop.start();
         if (server.rescan != null) {
             server.rescan.setDaemon(true);
@@ -162,7 +165,7 @@ public final class Server implements AutoCloseable {
     }
 
     private void runLoop() {
-        TickScheduler sched = new TickScheduler(60, MAX_CATCH_UP, s.clock.getAsLong());
+        TickScheduler sched = new TickScheduler(hz, TickScheduler.catchUpTicks(hz), s.clock.getAsLong());
         try {
             while (running) {
                 List<BindTarget> d = desired.getAndSet(null);

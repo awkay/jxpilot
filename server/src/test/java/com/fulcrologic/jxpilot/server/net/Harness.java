@@ -36,7 +36,8 @@ import java.util.List;
 
 /** In-memory server: {@link ServerNet} + {@link FakeHost} + a capturing {@link Datagrams} and a fake clock. */
 final class Harness implements Datagrams {
-    static final long TICK = 16_666_667L;
+    /** One tick at the default frame rate (14 fps); {@link #tickNanos} is this harness's own. */
+    static final long TICK = 1_000_000_000L / 14;
     static final long SESSION_SEED = 0x5EED;
     static final long KEY_SECRET = 0x5EC12E7L;
 
@@ -57,12 +58,15 @@ final class Harness implements Datagrams {
     final ServerNetConfig cfg;
     final ConfigTransfer.Blob blob;
     final String configText;
+    /** Clock advance per {@link #tick()}: one frame at {@code cfg.simHz}. */
+    final long tickNanos;
     ServerNet net;
     long now = 5_000_000_000L;
 
     Harness(ServerNetConfig cfg, String configText) {
         this.cfg = cfg;
         this.configText = configText;
+        this.tickNanos = 1_000_000_000L / cfg.simHz;
         this.blob = ConfigTransfer.encode(configText);
         this.net = new ServerNet(cfg, host, this, log::add, blob, SESSION_SEED, KEY_SECRET);
     }
@@ -95,7 +99,7 @@ final class Harness implements Datagrams {
     }
 
     void tick() {
-        now += TICK;
+        now += tickNanos;
         net.tick(now);
     }
 
