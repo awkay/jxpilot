@@ -69,9 +69,13 @@ and tested on a development branch, but not yet merged or in a release.
 |Ported from the C client's painters. Visible in `--demo`; in a real game once networking is merged.
 
 |Server simulation
-|Main, in progress
-|Movement, walls, ships, shots, cannons, collisions, debris and scoring are being ported from the C
-server. Not yet connected to the network server.
+|Main
+|Runs one step per XPilot frame at the map's `framesPerSecond`, and matches the C server bit for bit
+on recorded reference traces. Ported: movement, gravity, walls and crashes, ships, shields, fuel,
+shots, cannons, collisions, debris, scoring with score popups, rounds and game over, limited lives,
+and pausing (<<03-playing.adoc#rounds,Rounds, lives and game over>>,
+<<03-playing.adoc#pausing,Pausing>>). Not yet ported: items and the race, treasure and ball rules (M2).
+Not yet connected to the network server.
 
 |Network server (`ServerMain`), binding, rate limits
 |Unmerged branch (`server-net`)

@@ -47,11 +47,27 @@ JXPilot uses XPilot's default keys (from the C client's `default.c`). The most i
 |kbd:[/] |Fire the laser
 |kbd:[Page Down] / kbd:[Page Up] / kbd:[Up] |Lock on the next / previous / closest player
 |kbd:[H] or kbd:[Home] |Change home base (and toggle the autopilot, kbd:[H])
-|kbd:[Pause] |Pause
-|kbd:[End] |Self-destruct
+|kbd:[Pause] |Pause, only on your home base (<<pausing>>)
+|kbd:[End] |Self-destruct after a 150-frame countdown; press again to cancel
 |kbd:[M] |Talk (type a message, kbd:[Enter] sends it)
-|kbd:[Esc] |Swap settings
+|kbd:[Esc] |Swap between your two engine settings (<<engine-settings>>)
+|Keypad kbd:[*] / kbd:[/] |More / less engine power
+|Keypad kbd:[+] / kbd:[-] |Faster / slower turning
 |===
+
+[[laptop-keys]]
+TIP: *Mac laptops and other compact keyboards* have no Page Up, Page Down, End or keypad keys of their
+own. On a Mac laptop, kbd:[fn+↑] and kbd:[fn+↓] are Page Up and Page Down (lock on the previous / next
+player), and kbd:[fn+→] is End (self-destruct). The single kbd:[Control] key works as the left Control
+key: refuel, and the ball connector.
+
+[[engine-settings]]
+=== Engine settings
+
+Your ship's engine power, turn speed and turn resistance are settings you choose. JXPilot starts you
+with the XPilot client's defaults: power 45, turn speed 35 and turn resistance 0.12. kbd:[Esc] swaps to
+the alternative settings, power 35, turn speed 25, turn resistance 0.12, and back. The keypad keys
+above change the current settings.
 
 [[all-keys]]
 === All game keys
@@ -121,7 +137,12 @@ HUD (around your ship):: Dashed HUD lines, your fuel gauge and fuel meter, the i
 their counts, the player you have locked on (name and distance), time left in the round, weapon
 modifiers and an "Autopilot" note when it is on.
 Messages (bottom left):: Game events ("pilot04 crashed into a wall.") and chat, which fade after a
-while.
+while. Crash messages say what you hit: a wall, a target, a treasure, a cannon, the edge of the world
+or another ship.
+Score popups (on the map):: When your score changes, the points appear on the map where you made or
+lost them, with a label such as the victim's name, `[Wall]`, `[Shove]` or `[Deadliest]`.
+Shots:: Shots that cannot hurt you (your team mates' shots when team immunity is on, shots of a
+paused player, your own shots with `selfImmunity`) are drawn in a different colour.
 Talk line (middle):: Opens with kbd:[M] for typing a chat message.
 
 [[scoring]]
@@ -135,7 +156,54 @@ Scoring follows XPilot's rules (the server's `Scoring` is a port of XPilot's `sc
   `runoverKillScoreMult`, and so on. Crashing into a wall costs points (`crashScoreMult`), as does
   killing yourself.
 * In team play, scores can be shared within a team (`teamShareScore`); killing a team mate earns
-  nothing.
+  nothing. When a player leaves, their share is taken back and shared among the rest of the team.
+* When a player leaves the game, their shots in flight disappear, unless the server sets `keepShots`.
+* A paused player slowly loses points (0.01 per frame).
+
+[[rounds]]
+== Rounds, lives and game over
+
+Without limits, the game never ends: you die, restart at your base and play on. The server options
+below turn it into rounds. They are ported from XPilot and run in the server simulation today.
+
+Limited lives:: With `limitedLives` on, each player has `worldLives` lives per round. Each death costs
+one; after the last you are out of the round (marked `D` in the scoreboard) until it ends.
+End of a round:: Without teams, the round ends when only one of several players is still alive (the
+winner), when nobody is (a draw), or when the round time `maxRoundTime` (seconds) runs out (a draw).
+In team play, a team is out when all its members are; the last team alive wins "by staying alive", and
+when the time runs out the team that saved more treasures, then the team with the higher total score,
+wins.
+Bonuses:: At the end of a round the player with the best kills/(deaths+1) ratio gets a bonus as the
+"Deadliest Player" (several tied players share it), and the winner, or the winning team's members, get
+a winner's bonus.
+Next round:: Everyone gets their lives back. With `reset` on (the default), every ship restarts at its base and all
+shots and objects are cleared. The next round starts after `roundDelay` seconds ("Delaying N seconds
+until start of next round."). With `roundsToPlay` set, the server announces "Round N out of M" and
+after the last round declares "Game over..." with the best and worst players (and teams).
+Joining during a round:: With limited lives, if a player (outside team play) has already lost a life
+in this round, a newcomer waits for the next round, marked `W` in the scoreboard. With `resetOnHuman`
+set to N, while at most N human players are in the game a newcomer ends the current round so that they
+can play at once.
+
+All of these options are in <<05-server-options.adoc#opts-race,Races, rounds and game length>> and
+<<05-server-options.adoc#opts-ships,Ships and players>>.
+
+NOTE: Race mode (checkpoints and laps) and treasure rules do not end rounds yet; they come with
+milestone M2. On race maps the game currently runs without rounds.
+
+[[pausing]]
+== Pausing
+
+* kbd:[Pause] pauses you only when you are on your own home base and nearly stopped (slower than
+  3 plus the local gravity). Anywhere else the key does nothing.
+* A paused ship is taken out of play and marked `P` in the scoreboard. You lose 0.01 points per frame
+  while paused.
+* You can unpause only after a 10-second countdown. Press kbd:[Pause] again; you restart at your home
+  base. With limited lives, outside team play, if you had already lost a life this round you wait for
+  the next round instead (`W`).
+* If you press no keys for 60 seconds while another human is playing, you are paused automatically.
+* A player paused for longer than `maxPauseTime` seconds (default 3600; 0 disables it) is removed from
+  the server.
 
 All multipliers are in <<05-server-options.adoc#opts-scoring,Scoring options>>.
 
