@@ -27,7 +27,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Every server option known to XPilot 4.5.5, generated from the option table in
+ * Every server option known to XPilot 4.5.5 (plus the JXPilot-only {@code bind} and
+ * {@code bindWait}), generated from the option table in
  * {@code src/server/cmdline.c}: canonical name, alternative (command-line) name, default
  * value string, value type, allowed origins and help text.
  * <p>
@@ -123,6 +124,10 @@ public enum Opt {
         "The name of the map author."),
     CONTACT_PORT("contactPort", "port", "15345", OptionType.INT, F.CMD|F.DEF|F.VIS,
         "The server contact port number."),
+    BIND("bind", "bind", "all", OptionType.LIST, F.ANY,
+        "JXPilot: local addresses to serve on, comma separated: IP literals, host names, interface names, CIDRs, 'loopback' or 'all'. Not visible to clients."),
+    BIND_WAIT("bindWait", "bindWait", "false", OptionType.BOOL, F.ANY,
+        "JXPilot: wait for a matching interface instead of failing when a bind selector matches nothing."),
     SERVER_HOST("serverHost", "serverHost", null, OptionType.STRING, F.CMD|F.DEF|F.VIS,
         "The server's fully qualified domain name (for multihomed hosts)."),
     MAP_DATA("mapData", "mapData", null, OptionType.STRING, F.ANY|F.VIS,

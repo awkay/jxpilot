@@ -73,7 +73,27 @@ class OptionsTest {
                 () -> assertEquals("unknown", o.getString(Opt.MAP_NAME), "mapName 'unknown'"),
                 () -> assertFalse(o.isSet(Opt.GRAVITY), "defaults are not 'set'"),
                 () -> assertEquals(OptionOrigin.INIT, o.originOf(Opt.GRAVITY), "defaults have INIT origin"),
-                () -> assertEquals(293, Opt.values().length, "all 293 cmdline.c options exist"));
+                () -> assertEquals(295, Opt.values().length, "all 293 cmdline.c options plus bind and bindWait exist"));
+        }
+
+        @Test
+        @DisplayName("JXPilot network binding options")
+        void bindOptions() {
+            Options o = new Options();
+            Options set = new Options();
+            set.setValue("bind", "utun4,10.0.0.0/8", false, OptionOrigin.MAP);
+            set.setValue("bindWait", "yes", false, OptionOrigin.DEFAULTS);
+            Options cli = new Options();
+            List<String> rest = cli.parseCommandLine(new String[] {"--bind", "loopback", "--bindWait"});
+            assertAll(
+                () -> assertEquals(List.of("all"), o.getList(Opt.BIND), "bind defaults to all"),
+                () -> assertFalse(o.getBool(Opt.BIND_WAIT), "bindWait defaults to off"),
+                () -> assertEquals(List.of("utun4", "10.0.0.0/8"), set.getList(Opt.BIND), "bind is a comma list settable from the map"),
+                () -> assertTrue(set.getBool(Opt.BIND_WAIT), "bindWait is settable from the server config file"),
+                () -> assertEquals(List.of(), rest, "both are command-line options"),
+                () -> assertEquals(List.of("loopback"), cli.getList(Opt.BIND), "--bind sets bind"),
+                () -> assertTrue(cli.getBool(Opt.BIND_WAIT), "--bindWait switches bindWait on"),
+                () -> assertFalse(set.toConfigText().contains("bind"), "neither is shipped to clients (not visible)"));
         }
 
         @Test
