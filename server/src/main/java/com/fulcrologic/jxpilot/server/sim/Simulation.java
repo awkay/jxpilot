@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.net.Msg;
+import com.fulcrologic.jxpilot.server.robot.RobotManager;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.Obj;
@@ -71,6 +72,8 @@ public final class Simulation {
     public final Cannons cannons;
     public final Keys keys;
     public final Rounds rounds;
+    /** Robot players (C {@code Robot_update}); off until {@link RobotManager#setEnabled enabled}. */
+    public final RobotManager robots;
 
     public Simulation(World world) {
         this.world = world;
@@ -85,6 +88,7 @@ public final class Simulation {
         this.keys = new Keys(world, this);
         this.rounds = new Rounds(world, this);
         com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder.initRecordClasses();
+        this.robots = new RobotManager(world, this);
     }
 
     /**
@@ -111,6 +115,7 @@ public final class Simulation {
             Player pl = w.playerAt(k);
             keys.apply(pl, input[pl.slot]);
         }
+        robots.update();
         autofire();
         regenerateFuel();
         moveObjects();

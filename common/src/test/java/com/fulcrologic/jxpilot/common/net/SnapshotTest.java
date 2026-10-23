@@ -214,6 +214,9 @@ class SnapshotTest {
             w.beginSection(Section.TEMP_WORMHOLE);
             Records.TempWormhole.put(w, 899, 3, 2);
             w.endSection();
+            w.beginSection(Section.TIMERS);
+            Records.Timers.put(w, 70, 41, -1);
+            w.endSection();
             SnapshotReader r = readerFor(b);
             r.setWorld(31500, 31500, false);
 
@@ -431,6 +434,13 @@ class SnapshotTest {
                             () -> assertEquals(899, s.bx(), "keeps bx"),
                             () -> assertEquals(3, s.by(), "keeps by"),
                             () -> assertEquals(2, s.type(), "keeps type"));
+                    }
+                    case Section.TIMERS -> {
+                        Records.Timers s = new Records.Timers().wrap(r, 0);
+                        assertAll("timers",
+                            () -> assertEquals(70, s.damaged(), "keeps damaged frames"),
+                            () -> assertEquals(41, s.roundDelay(), "keeps round delay frames"),
+                            () -> assertEquals(-1, s.timeLeft(), "keeps a negative (none) time left"));
                     }
                     default -> throw new AssertionError("unexpected section " + r.type());
                 }

@@ -44,7 +44,7 @@ public final class Player {
     public boolean inUse;
     /** False between {@code Ships.reserve} and {@code Ships.spawn}: the slot is taken but not in the game. */
     public boolean spawned;
-    /** A robot (C {@code IS_ROBOT_PTR}); robots are not simulated in S1, so this is always false there. */
+    /** A computer-controlled player (C {@code IS_ROBOT_PTR}); set at join, shown as 'R' on scoreboards. */
     public boolean robot;
     public final StringBuilder name = new StringBuilder(Const.MAX_CHARS);
     public int team = Const.TEAM_NOT_SET;

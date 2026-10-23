@@ -61,8 +61,8 @@ public final class Protocol {
     /** Default radar rate: the RADAR section is sent in every 3rd snapshot. */
     public static final int DEFAULT_RADAR_DIVISOR = 3;
     /**
-     * Default snapshot rate divisor: one snapshot every sim tick. The server simulates at the map's
-     * {@code framesPerSecond} (one tick = one C frame, default 14 Hz), so every tick is worth sending.
+     * Default snapshot rate divisor: a snapshot every simulation tick. The server ticks at the map's
+     * framesPerSecond (one tick per C frame, default 14), so this is the frame rate.
      */
     public static final int DEFAULT_SNAPSHOT_DIVISOR = 1;
     /** Max bytes of one reliable message including its type byte. */

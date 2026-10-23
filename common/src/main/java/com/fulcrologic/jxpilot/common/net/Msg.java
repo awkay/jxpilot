@@ -65,6 +65,8 @@ public final class Msg {
 
     /** Ship shape strings are capped to this many chars on decode (C {@code MSG_LEN}). */
     public static final int MAX_SHAPE_LEN = 256;
+    /** C {@code MSG_LEN}: initial capacity of the text builders, so normal messages never grow them. */
+    public static final int MSG_LEN = 256;
 
     // ================================================================ unreliable control
 
@@ -91,6 +93,28 @@ public final class Msg {
             Wire.getString8(b, name);
             Wire.getString16(b, shape);
             Wire.cap(shape, MAX_SHAPE_LEN);
+        }
+
+        /**
+         * Read without throwing, for untrusted input (a malformed CONNECT flood must not allocate an
+         * exception per packet).
+         * <p>
+         * BEHAVIOR: checks every length against the bytes remaining before reading; a body too short
+         * for its nonce, team or either string returns false with the buffer position unchanged.
+         * BEHAVIOR: a complete body is read as by {@link #read} and returns true.
+         */
+        public boolean tryRead(ByteBuffer b) {
+            int p = b.position();
+            int lim = b.limit();
+            if (lim - p < 6) {
+                return false;
+            }
+            int s = p + 6 + (b.get(p + 5) & 0xFF);
+            if (lim - s < 2 || lim - s - 2 < (b.getShort(s) & 0xFFFF)) {
+                return false;
+            }
+            read(b);
+            return true;
         }
     }
 
@@ -119,7 +143,7 @@ public final class Msg {
 
         public int nonce;
         public int reason;
-        public final StringBuilder text = new StringBuilder();
+        public final StringBuilder text = new StringBuilder(MSG_LEN);
 
         public void write(ByteBuffer b) {
             b.putInt(nonce);
@@ -142,7 +166,7 @@ public final class Msg {
         public static final int REASON_SHUTDOWN = 3;
 
         public int reason;
-        public final StringBuilder text = new StringBuilder();
+        public final StringBuilder text = new StringBuilder(MSG_LEN);
 
         public void write(ByteBuffer b) {
             b.put((byte) reason);
@@ -463,7 +487,7 @@ public final class Msg {
         public int kind;
         /** Sender player id or {@link Protocol#NO_ID} for the server. */
         public int from = Protocol.NO_ID;
-        public final StringBuilder text = new StringBuilder();
+        public final StringBuilder text = new StringBuilder(MSG_LEN);
 
         public void write(ByteBuffer b) {
             b.put((byte) kind);

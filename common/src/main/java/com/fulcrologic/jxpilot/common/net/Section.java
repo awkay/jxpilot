@@ -81,8 +81,10 @@ public final class Section {
     /** {@link Records.TempWormhole}: hyperjump wormholes. */
     public static final int TEMP_WORMHOLE = 21;
 
+    /** {@link Records.Timers}: the receiving player's HUD timers (1 record). */
+    public static final int TIMERS = 22;
     /** Highest assigned section type. */
-    public static final int MAX_TYPE = 21;
+    public static final int MAX_TYPE = 22;
 
     /** Bytes of the section header. */
     public static final int HEADER_SIZE = 5;
@@ -111,6 +113,7 @@ public final class Section {
         SIZES[SELF_ITEMS] = Records.SelfItems.SIZE;
         SIZES[TREASURE] = Records.TreasureState.SIZE;
         SIZES[TEMP_WORMHOLE] = Records.TempWormhole.SIZE;
+        SIZES[TIMERS] = Records.Timers.SIZE;
     }
 
     /** Record size this implementation writes for a type, 0 if unknown. */

@@ -121,14 +121,14 @@ class TextWriterTest {
         void outOfRangeCharactersUseTheFallbackGlyph() {
             TextWriter t = new TextWriter(Fixtures.font());
             VertexBatch b = batch();
-            t.draw(b, 'é', 0, 0, C);
+            t.draw(b, '\u0100', 0, 0, C);
             float u = ('?' - 32) * 8f / 1000;
             VertexBatch low = batch();
             t.draw(low, '\n', 0, 0, C);
             assertAll(
-                () -> assertEquals(u, b.u(0), UV_EPS, "a char above the range draws '?'"),
+                () -> assertEquals(u, b.u(0), UV_EPS, "a char above Latin-1 draws '?'"),
                 () -> assertEquals(u, low.u(0), UV_EPS, "a char below the range draws '?'"),
-                () -> assertEquals(7f, t.width('é'), "and advances like '?'"));
+                () -> assertEquals(7f, t.width('\u0100'), "and advances like '?'"));
         }
     }
 

@@ -121,6 +121,36 @@ class ShipsJoinTest {
         }
 
         @Test
+        @DisplayName("a robot reserves and spawns like a human: JOIN carries FLAG_ROBOT, and C Robot_create's round part"
+            + " is left to the robot manager (no round-delay message, no resetOnHuman); reserve(name) makes a human")
+        void aRobotJoinCarriesTheRobotFlagAndSkipsTheHumanRoundPart() {
+            Simulation s = sim(C_FRAMES + "resetOnHuman: 1\nteamPlay: no\nlimitedLives: yes\n", THREE);
+            World w = s.world;
+            Player r = s.ships.join("robo", 0, true);
+            List<String> robotEvents = events(w, 0);
+            int delayAfterRobot = w.roundDelay;
+            boolean wasRobot = r.robot;
+            int robotBase = r.homeBase;
+            long mark = w.events.seq();
+            s.ships.leave(r);
+            Player h = s.ships.reserve("ann");
+            boolean spawned = s.ships.spawn(h, 0);
+            List<String> humanEvents = events(w, mark);
+            assertAll(
+                () -> assertTrue(wasRobot, "reserve(name, true) marks a robot"),
+                () -> assertEquals(List.of("JOIN 1 " + Msg.PlayerJoin.FLAG_ROBOT + " 0", "BASE_OWNER " + robotBase + " 1 0",
+                    "GAME_EVENT " + Msg.GameEvent.SPAWN + " 1 " + robotBase), robotEvents,
+                    "the robot's JOIN has b = FLAG_ROBOT and no round-delay message follows"),
+                () -> assertEquals(0, delayAfterRobot, "the robot's spawn starts no round delay"),
+                () -> assertTrue(spawned, "the human spawns in the recycled slot"),
+                () -> assertTrue(h == r, "the slot is recycled (same Player object)"),
+                () -> assertFalse(h.robot, "reserve(name) clears the slot's robot flag"),
+                () -> assertTrue(humanEvents.contains("JOIN 1 0 0"), "a human's JOIN has b = 0"),
+                () -> assertTrue(humanEvents.contains("MESSAGE " + Msg.Text.KIND_GAME
+                    + " -1 Player entered. Delaying 0 seconds until next round."), "a human's spawn runs Handle_login's round part"));
+        }
+
+        @Test
         void aFullWorldRefusesThePlayer() {
             Simulation s = sim(C_FRAMES, ROOM);
             s.ships.join("ann", 0);

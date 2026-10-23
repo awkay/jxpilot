@@ -181,6 +181,46 @@ class MessagesTest {
         }
 
         @Test
+        @DisplayName("Connect.tryRead refuses every truncation without throwing and reads a complete body")
+        void connectTryRead() {
+            Msg.Connect c = new Msg.Connect();
+            c.nonce = 77;
+            c.team = 2;
+            c.name.append("ab");
+            c.shape.append("xyz");
+            ByteBuffer full = ByteBuffer.allocate(64);
+            c.write(full);
+            full.flip();
+            int size = full.remaining();
+            List<Integer> accepted = new ArrayList<>();
+            List<Integer> moved = new ArrayList<>();
+            for (int n = 0; n <= size; n++) {
+                ByteBuffer b = ByteBuffer.allocate(80);
+                b.position(3);
+                b.put(full.duplicate().limit(n));
+                b.flip().position(3);
+                if (new Msg.Connect().tryRead(b)) {
+                    accepted.add(n);
+                } else if (b.position() != 3) {
+                    moved.add(n);
+                }
+            }
+            ByteBuffer withTrailer = ByteBuffer.allocate(64).put(full.duplicate()).put((byte) 9).flip();
+            Msg.Connect r = new Msg.Connect();
+            boolean ok = r.tryRead(withTrailer);
+            assertAll(
+                () -> assertEquals(13, size, "the test body is 13 bytes"),
+                () -> assertEquals(List.of(13), accepted, "only the complete body is accepted (every shorter prefix refused)"),
+                () -> assertEquals(List.of(), moved, "a refused body leaves the position unchanged"),
+                () -> assertTrue(ok, "a body followed by extra bytes is read"),
+                () -> assertEquals(77, r.nonce, "tryRead fills the nonce"),
+                () -> assertEquals(2, r.team, "and the team"),
+                () -> assertEquals("ab", r.name.toString(), "and the name"),
+                () -> assertEquals("xyz", r.shape.toString(), "and the shape"),
+                () -> assertEquals(1, withTrailer.remaining(), "and stops at the end of the body"));
+        }
+
+        @Test
         @DisplayName("unsigned accessors")
         void unsigned() {
             ByteBuffer b = ByteBuffer.wrap(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF});
@@ -843,5 +883,40 @@ class MessagesTest {
                 () -> assertThrows(IllegalStateException.class, () -> new ConfigTransfer.Receiver(w3).onChunk(over),
                     "rejects a chunk outside the announced size"));
         }
+
+        @Test
+        @DisplayName("a receiver accepts announced sizes 0..MAX_LENGTH and rejects others with IllegalStateException")
+        void receiverSizeGuard() {
+            assertAll(
+                () -> assertTrue(new ConfigTransfer.Receiver(welcome(0, 0)).complete(), "zero sizes are accepted"),
+                () -> assertFalse(new ConfigTransfer.Receiver(welcome(ConfigTransfer.MAX_LENGTH,
+                    ConfigTransfer.MAX_LENGTH)).complete(), "MAX_LENGTH is accepted"),
+                () -> assertThrows(IllegalStateException.class, () -> new ConfigTransfer.Receiver(welcome(10, -1)),
+                    "a negative compressed length"),
+                () -> assertThrows(IllegalStateException.class, () -> new ConfigTransfer.Receiver(welcome(-1, 10)),
+                    "a negative text length"),
+                () -> assertThrows(IllegalStateException.class,
+                    () -> new ConfigTransfer.Receiver(welcome(10, ConfigTransfer.MAX_LENGTH + 1)),
+                    "a compressed length above MAX_LENGTH"),
+                () -> assertThrows(IllegalStateException.class,
+                    () -> new ConfigTransfer.Receiver(welcome(ConfigTransfer.MAX_LENGTH + 1, 10)),
+                    "a text length above MAX_LENGTH"));
+        }
+
+        private static Msg.Welcome welcome(int length, int compressed) {
+            Msg.Welcome w = new Msg.Welcome();
+            w.configLength = length;
+            w.configCompressedLength = compressed;
+            return w;
+        }
+    }
+
+    @Test
+    @DisplayName("text builders start with MSG_LEN capacity so ordinary messages never grow them")
+    void textBuildersPresized() {
+        assertAll(
+            () -> assertTrue(new Msg.Text().text.capacity() >= Msg.MSG_LEN, "MESSAGE/CHAT text"),
+            () -> assertTrue(new Msg.Reject().text.capacity() >= Msg.MSG_LEN, "REJECT text"),
+            () -> assertTrue(new Msg.Disconnect().text.capacity() >= Msg.MSG_LEN, "DISCONNECT text"));
     }
 }

@@ -73,7 +73,68 @@ class OptionsTest {
                 () -> assertEquals("unknown", o.getString(Opt.MAP_NAME), "mapName 'unknown'"),
                 () -> assertFalse(o.isSet(Opt.GRAVITY), "defaults are not 'set'"),
                 () -> assertEquals(OptionOrigin.INIT, o.originOf(Opt.GRAVITY), "defaults have INIT origin"),
-                () -> assertEquals(293, Opt.values().length, "all 293 cmdline.c options exist"));
+                () -> assertEquals(301, Opt.values().length, "all 293 cmdline.c options plus 8 JXPilot network options exist"));
+        }
+
+        @Test
+        @DisplayName("JXPilot network binding options")
+        void bindOptions() {
+            Options o = new Options();
+            Options set = new Options();
+            boolean mapBind = set.setValue("bind", "utun4,10.0.0.0/8", false, OptionOrigin.MAP);
+            boolean mapWait = set.setValue("bindWait", "yes", false, OptionOrigin.MAP);
+            set.setValue("bind", "utun4,10.0.0.0/8", false, OptionOrigin.DEFAULTS);
+            set.setValue("bindWait", "yes", false, OptionOrigin.DEFAULTS);
+            Options cli = new Options();
+            List<String> rest = cli.parseCommandLine(new String[] {"--bind", "loopback", "--bindWait"});
+            assertAll(
+                () -> assertEquals(List.of("all"), o.getList(Opt.BIND), "bind defaults to all"),
+                () -> assertFalse(o.getBool(Opt.BIND_WAIT), "bindWait defaults to off"),
+                () -> assertFalse(mapBind, "a map cannot set bind"),
+                () -> assertFalse(mapWait, "a map cannot set bindWait"),
+                () -> assertEquals(2, set.warnings().size(), "both refusals are warned about"),
+                () -> assertEquals(List.of("utun4", "10.0.0.0/8"), set.getList(Opt.BIND),
+                    "bind is a comma list settable from the server config file"),
+                () -> assertTrue(set.getBool(Opt.BIND_WAIT), "bindWait is settable from the server config file"),
+                () -> assertEquals(List.of(), rest, "both are command-line options"),
+                () -> assertEquals(List.of("loopback"), cli.getList(Opt.BIND), "--bind sets bind"),
+                () -> assertTrue(cli.getBool(Opt.BIND_WAIT), "--bindWait switches bindWait on"),
+                () -> assertFalse(set.toConfigText().contains("bind"), "neither is shipped to clients (not visible)"));
+        }
+
+        @Test
+        @DisplayName("JXPilot server network tunables: defaults, command line and config file only")
+        void networkTunables() {
+            Options o = new Options();
+            Options map = new Options();
+            List<Boolean> fromMap = new ArrayList<>();
+            for (String n : List.of("snapshotDivisor", "radarDivisor", "ipPacketRate", "ipPacketBurst",
+                "sessionPacketRate", "sessionPacketBurst", "maxClientsPerIP")) {
+                fromMap.add(map.setValue(n, "7", false, OptionOrigin.MAP));
+            }
+            Options cli = new Options();
+            cli.parseCommandLine(new String[] {"--snapshotDivisor", "3", "-radarDivisor", "5", "--ipPacketRate", "50",
+                "--ipPacketBurst", "60", "--sessionPacketRate", "70", "--sessionPacketBurst", "80", "--maxPerIP", "9"});
+            Options cfg = new Options();
+            cfg.setValue("sessionPacketRate", "123.5", false, OptionOrigin.DEFAULTS);
+            assertAll(
+                () -> assertEquals(1, o.getInt(Opt.SNAPSHOT_DIVISOR), "snapshotDivisor defaults to 1 (every frame)"),
+                () -> assertEquals(3, o.getInt(Opt.RADAR_DIVISOR), "radarDivisor defaults to 3"),
+                () -> assertEquals(400.0, o.getDouble(Opt.IP_PACKET_RATE), EPS, "ipPacketRate defaults to 400/s"),
+                () -> assertEquals(800.0, o.getDouble(Opt.IP_PACKET_BURST), EPS, "ipPacketBurst defaults to 800"),
+                () -> assertEquals(400.0, o.getDouble(Opt.SESSION_PACKET_RATE), EPS, "sessionPacketRate defaults to 400/s"),
+                () -> assertEquals(800.0, o.getDouble(Opt.SESSION_PACKET_BURST), EPS, "sessionPacketBurst defaults to 800"),
+                () -> assertEquals(4, o.getInt(Opt.MAX_CLIENTS_PER_IP), "maxClientsPerIP defaults to 4 in JXPilot"),
+                () -> assertEquals(List.of(false, false, false, false, false, false, false), fromMap,
+                    "none of them can be set from a map"),
+                () -> assertEquals(3, cli.getInt(Opt.SNAPSHOT_DIVISOR), "--snapshotDivisor"),
+                () -> assertEquals(5, cli.getInt(Opt.RADAR_DIVISOR), "-radarDivisor"),
+                () -> assertEquals(50.0, cli.getDouble(Opt.IP_PACKET_RATE), EPS, "--ipPacketRate"),
+                () -> assertEquals(60.0, cli.getDouble(Opt.IP_PACKET_BURST), EPS, "--ipPacketBurst"),
+                () -> assertEquals(70.0, cli.getDouble(Opt.SESSION_PACKET_RATE), EPS, "--sessionPacketRate"),
+                () -> assertEquals(80.0, cli.getDouble(Opt.SESSION_PACKET_BURST), EPS, "--sessionPacketBurst"),
+                () -> assertEquals(9, cli.getInt(Opt.MAX_CLIENTS_PER_IP), "--maxPerIP"),
+                () -> assertEquals(123.5, cfg.getDouble(Opt.SESSION_PACKET_RATE), EPS, "the server config file sets them"));
         }
 
         @Test

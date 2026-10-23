@@ -56,10 +56,12 @@
         <configuration>
           <excludes>
             <exclude>**/AllocationTest.java</exclude>
+            <exclude>**/*NetAllocationTest.java</exclude>
+            <exclude>**/AppAllocationTest.java</exclude>
           </excludes>
         </configuration>
         <executions>
-          <!-- The allocation test runs in its own JVM with escape analysis off, so a passing result
+          <!-- Allocation tests run in their own JVMs with escape analysis off, so a passing result
                depends neither on the JIT scalar-replacing objects nor on other tests' JIT state. -->
           <execution>
             <id>allocation-tests</id>
@@ -75,6 +77,34 @@
               <argLine>-XX:-DoEscapeAnalysis</argLine>
             </configuration>
           </execution>
+          <execution>
+            <id>app-allocation-tests</id>
+            <phase>test</phase>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <excludes combine.self="override"/>
+              <includes>
+                <include>**/AppAllocationTest.java</include>
+              </includes>
+              <argLine>-XX:-DoEscapeAnalysis</argLine>
+            </configuration>
+          </execution>
+          <execution>
+            <id>net-allocation-tests</id>
+            <phase>test</phase>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <excludes combine.self="override"/>
+              <includes>
+                <include>**/*NetAllocationTest.java</include>
+              </includes>
+              <argLine>-XX:-DoEscapeAnalysis</argLine>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
       <plugin>
@@ -86,18 +116,30 @@
             <param>com.fulcrologic.jxpilot.client.map.*</param>
             <param>com.fulcrologic.jxpilot.client.viewer.*</param>
             <param>com.fulcrologic.jxpilot.client.paint.*</param>
+            <param>com.fulcrologic.jxpilot.client.net.*</param>
+            <param>com.fulcrologic.jxpilot.client.game.*</param>
+            <param>com.fulcrologic.jxpilot.client.xp.*</param>
+            <param>com.fulcrologic.jxpilot.client.app.*</param>
           </targetClasses>
-          <!-- DemoWorld and DemoHud are fake animation data for the demo viewer mode: its tests pin counts, determinism,
-               wrapping, looks and motion, not the arbitrary choreography that mutants would change. -->
+          <!-- DemoWorld and DemoHud are fake animation data for the demo viewer mode; UdpTransport and
+               ClientSim are I/O edges covered by loopback tests; GameApp and AppLauncher are GL/GLFW glue. -->
           <excludedClasses>
             <param>com.fulcrologic.jxpilot.client.viewer.DemoWorld</param>
             <param>com.fulcrologic.jxpilot.client.viewer.DemoHud</param>
+            <param>com.fulcrologic.jxpilot.client.net.UdpTransport</param>
+            <param>com.fulcrologic.jxpilot.client.net.ClientSim</param>
+            <param>com.fulcrologic.jxpilot.client.xp.XpClientSim*</param>
+            <param>com.fulcrologic.jxpilot.client.app.GameApp*</param>
+            <param>com.fulcrologic.jxpilot.client.app.AppLauncher</param>
           </excludedClasses>
           <targetTests>
             <param>com.fulcrologic.jxpilot.client.*</param>
           </targetTests>
           <excludedTestClasses>
             <param>com.fulcrologic.jxpilot.client.AllocationTest</param>
+            <param>*NetAllocationTest*</param>
+            <param>*AppAllocationTest*</param>
+            <param>*UdpLoopbackTest*</param>
           </excludedTestClasses>
         </configuration>
       </plugin>
