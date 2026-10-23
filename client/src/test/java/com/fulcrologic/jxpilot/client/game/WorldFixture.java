@@ -60,7 +60,8 @@ final class WorldFixture {
             + "\nframesPerSecond: 15\nshotLife: 60\nmapData: \\multiline: E\n"
             + "                    \n"
             + "  _    d     #   !  \n"
-            + "                    \n".repeat(8)
+            + "         *          \n"
+            + "                    \n".repeat(7)
             + "E\n";
         ConfigParser.parse(cfg, "fixture", OptionOrigin.MAP, options);
         map = WorldMap.fromOptions(options);
@@ -82,8 +83,26 @@ final class WorldFixture {
     }
 
     WorldFixture begin(int tick, int part, int parts) {
+        return beginView(tick, part, parts, 350, 175);
+    }
+
+    WorldFixture beginView(int tick, int part, int parts, double viewX, double viewY) {
         buf.clear();
-        w.begin(buf, tick, 0, part, parts, 0, 350, 175);
+        w.begin(buf, tick, 0, part, parts, 0, viewX, viewY);
+        return this;
+    }
+
+    WorldFixture target(int index, int flags, double left) {
+        w.beginSection(Section.TARGET);
+        Records.TargetState.put(w, index, flags, left);
+        w.endSection();
+        return this;
+    }
+
+    WorldFixture treasure(int index, int flags) {
+        w.beginSection(Section.TREASURE);
+        Records.TreasureState.put(w, index, flags);
+        w.endSection();
         return this;
     }
 

@@ -498,4 +498,115 @@ class ClientConnectionTest {
             () -> assertEquals("Disconnected from srv:1", c.status().toString(), "status"),
             () -> assertEquals(ConnectionState.CLOSED, c.state(), "closed"));
     }
+
+    @Nested
+    @DisplayName("details")
+    class Details {
+        @Test
+        @DisplayName("DISCONNECT carries reason quit and text; restarting forgets the session")
+        void disconnectBodyAndRestart() {
+            playing(0);
+            c.disconnect(MS);
+            ByteBuffer p = t.last();
+            new PacketHeader().read(p);
+            Msg.Disconnect d = new Msg.Disconnect();
+            d.read(p);
+            c.disconnect(MS);
+            c.start(2 * MS);
+            assertAll(
+                () -> assertEquals(Msg.Disconnect.REASON_QUIT, d.reason, "reason quit"),
+                () -> assertEquals("quit", d.text.toString(), "text quit"),
+                () -> assertEquals(0, c.session(), "restart clears the session"),
+                () -> assertEquals(Protocol.NO_ID, c.playerId(), "and the player id"),
+                () -> assertEquals(0, c.latestTick(), "and the snapshot tick"),
+                () -> assertEquals(ConnectionState.CONNECTING, c.state(), "connecting again"),
+                () -> assertEquals(1, c.attempts(), "attempts restart"),
+                () -> assertNotNull(c.input(), "input history"));
+        }
+
+        @Test
+        @DisplayName("sendInput returns the sequence; header acks release our reliable messages")
+        void sequenceAndAck() {
+            playing(0);
+            int s1 = c.sendInput(0, 0, MS);
+            int s2 = c.sendInput(0, 0, MS);
+            c.flush(MS);
+            int unackedBefore = c.channel().unacked();
+            t.in.add(pkt(PacketType.ACK, SESSION, 1, b -> { }));
+            c.update(200 * MS);
+            assertAll(
+                () -> assertEquals(1, s1, "first sequence"),
+                () -> assertEquals(2, s2, "second"),
+                () -> assertEquals(1, unackedBefore, "READY in flight"),
+                () -> assertEquals(0, c.channel().unacked(), "acked by the header"));
+        }
+
+        @Test
+        @DisplayName("at most 8 RELIABLE datagrams per flush")
+        void flushLimit() {
+            playing(0);
+            for (int i = 0; i < 12; i++) {
+                ByteBuffer b = c.channel().begin(ReliableType.CHAT);
+                b.put(new byte[1000]);
+                c.channel().end();
+            }
+            int before = t.out.size();
+            c.flush(MS);
+            assertEquals(ClientConnection.MAX_RELIABLE_PER_FLUSH, t.out.size() - before, "8 datagrams");
+        }
+
+        @Test
+        @DisplayName("an empty DISCONNECT text gives a short status; a REJECT and ACCEPT count as received")
+        void misc() {
+            playing(0);
+            long received = c.packetsReceived();
+            t.in.add(pkt(PacketType.DISCONNECT, SESSION, 0, b -> new Msg.Disconnect().write(b)));
+            c.update(MS);
+            assertAll(
+                () -> assertEquals("Server srv:1 closed the connection", c.status().toString(), "no colon"),
+                () -> assertTrue(received >= 2, "ACCEPT and RELIABLE counted"),
+                () -> assertEquals(received + 1, c.packetsReceived(), "DISCONNECT counted"));
+        }
+
+        @Test
+        @DisplayName("a newer snapshot tick replaces the latest; equal or older does not")
+        void ticks() {
+            playing(0);
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(-5)));
+            c.update(MS);
+            int first = c.latestTick();
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(-5)));
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(-4)));
+            c.update(MS);
+            assertAll(
+                () -> assertEquals(-5, first, "the first tick is taken even if negative"),
+                () -> assertEquals(-4, c.latestTick(), "newer replaces"));
+        }
+
+        @Test
+        @DisplayName("the connect status counts attempts without accumulating text")
+        void connectStatus() {
+            c.start(0);
+            c.update(250 * MS);
+            c.update(500 * MS);
+            assertEquals("Connecting to srv:1 (attempt 3)...", c.status().toString(), "third attempt");
+        }
+
+        @Test
+        @DisplayName("a WELCOME for an empty config completes at once and CHUNKs after PLAYING are ignored")
+        void emptyAndLateChunks() {
+            c.start(0);
+            accept(0);
+            Msg.Welcome w = new Msg.Welcome();
+            w.send(server);
+            ByteBuffer chunk = server.begin(ReliableType.DATA_CHUNK);
+            chunk.putInt(0);
+            server.end();
+            reliable(0);
+            c.update(MS);
+            assertAll(
+                () -> assertEquals(ConnectionState.CLOSED, c.state(), "an empty config is a bad config"),
+                () -> assertTrue(c.status().toString().startsWith("Bad map/config from srv:1"), "reason"));
+        }
+    }
 }

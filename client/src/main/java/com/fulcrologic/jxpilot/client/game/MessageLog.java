@@ -101,6 +101,30 @@ public final class MessageLog {
     /** Game message i, 0 = newest. */
     public Entry game(int i) { return game[i]; }
 
+    // ---- flat read accessors for painters (list 0 = talk, top of the view; 1 = game, bottom)
+
+    /** List index of talk messages (drawn from the top). */
+    public static final int TALK = 0;
+    /** List index of game messages (drawn from the bottom). */
+    public static final int GAME = 1;
+
+    /** Messages in a list ({@link #TALK} or {@link #GAME}). */
+    public int count(int list) { return list == TALK ? talkCount : gameCount; }
+
+    /** Text of message i (0 = newest) of a list. */
+    public CharBuf text(int list, int i) { return entry(list, i).text; }
+
+    /** BEHAVIOR: original frames since message i was added (MSG_DURATION - life). */
+    public double age(int list, int i) { return MSG_DURATION - entry(list, i).life; }
+
+    /** BEHAVIOR: true while message i is new (C draws it red). */
+    public boolean flashing(int list, int i) { return entry(list, i).flashing(); }
+
+    /** Characters of message i typed out so far at {@code fps} original frames per second. */
+    public int visibleChars(int list, int i, double fps) { return visibleChars(entry(list, i), fps); }
+
+    private Entry entry(int list, int i) { return list == TALK ? talk[i] : game[i]; }
+
     /** BEHAVIOR: forgets all messages. */
     public void clear() {
         talkCount = 0;

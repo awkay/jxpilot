@@ -201,7 +201,6 @@ public final class Scoreboard {
             CharBuf b = labels[rows];
             b.clear();
             b.append(c).append(' ');
-            appendRace(b);
             b.append((char) ('0' + t)).append(' ');
             appendScoreAndLife(b, teamScore[t], teamLife[t]);
             b.append("  Team ").appendInt(t);

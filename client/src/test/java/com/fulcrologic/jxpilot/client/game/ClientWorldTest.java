@@ -343,6 +343,7 @@ class ClientWorldTest {
             }
             f.begin(102).ship(9, ShipFlags.THRUSTING, 204, 100, 0, 8, 0).ingestAtTick(102);
             int second = pool.count() - first;
+            int beforeLate = pool.count();
             f.begin(101).ship(9, ShipFlags.THRUSTING, 202, 100, 0, 8, 0).ingestAtTick(101);
             int afterLate = pool.count();
             f.begin(120).ship(9, ShipFlags.THRUSTING, 300, 100, 0, 8, 0).ingestAtTick(120);
@@ -357,7 +358,7 @@ class ClientWorldTest {
                 () -> assertEquals(99.0, lo, "earliest spark born at tick 99"),
                 () -> assertEquals(100.0, hi, "latest spark born at tick 100"),
                 () -> assertEquals(sparksFor(101, 102, 102, 204, 100, 8), second, "the next snapshot adds ticks 101-102"),
-                () -> assertEquals(afterLate, pool.count() - gap - dead, "a late tick adds no sparks"),
+                () -> assertEquals(beforeLate, afterLate, "a late tick adds no sparks"),
                 () -> assertEquals(sparksFor(113, 120, 120, 300, 100, 8), gap, "after a gap only the last 8 ticks"),
                 () -> assertEquals(0, dead, "dead ships emit nothing"),
                 () -> assertTrue(first > 0, "sparks were produced"));
