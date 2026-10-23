@@ -38,7 +38,7 @@ Java 25 / Maven / LWJGL reimplementation of XPilot 4.5.5 (C source: `/Users/tony
 - License: GPL-2.0-or-later (derivative of XPilot 4.5.5). Every `.java` file must start with the
   header in `license-header.txt`; the build fails without it (`mvn license:format` adds it).
   Never alter files in `maps/` (unmodified XPilot originals). Any new bundled asset needs a
-  GPL-compatible license, its license text committed next to it, and a row in README.md's
+  GPL-compatible license, its license text committed next to it, and a row in README.adoc's
   third-party table.
 - Subagent effort: every implementation agent and reviewer is spawned with `effort: high`.
   Effort is fixed at spawn and can't be changed on resume, so agents running at another level
