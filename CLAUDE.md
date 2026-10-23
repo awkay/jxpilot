@@ -43,3 +43,7 @@ Java 25 / Maven / LWJGL reimplementation of XPilot 4.5.5 (C source: `/Users/tony
 - Subagent effort: every implementation agent and reviewer is spawned with `effort: high`.
   Effort is fixed at spawn and can't be changed on resume, so agents running at another level
   get replaced at their next task boundary, with a handoff brief.
+- Fidelity review: once an area is implemented (e.g. movement/walls, ship rules, combat, items,
+  robots, networking, client painting/HUD), the lead runs a dedicated C-to-Java fidelity review
+  of that area at `effort: xhigh`. It compares the Java line by line against the C functions it
+  ports, and its findings go to the implementer like any other review.
