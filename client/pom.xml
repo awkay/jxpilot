@@ -103,6 +103,7 @@
             <param>com.fulcrologic.jxpilot.client.paint.*</param>
             <param>com.fulcrologic.jxpilot.client.net.*</param>
             <param>com.fulcrologic.jxpilot.client.game.*</param>
+            <param>com.fulcrologic.jxpilot.client.xp.*</param>
           </targetClasses>
           <!-- DemoWorld and DemoHud are fake animation data for the demo viewer mode; UdpTransport and
                ClientSim are I/O edges covered by loopback tests. -->
@@ -111,6 +112,7 @@
             <param>com.fulcrologic.jxpilot.client.viewer.DemoHud</param>
             <param>com.fulcrologic.jxpilot.client.net.UdpTransport</param>
             <param>com.fulcrologic.jxpilot.client.net.ClientSim</param>
+            <param>com.fulcrologic.jxpilot.client.xp.XpClientSim*</param>
           </excludedClasses>
           <targetTests>
             <param>com.fulcrologic.jxpilot.client.*</param>

@@ -254,6 +254,15 @@ public final class FakeServer {
         t.send(channel);
     }
 
+    /** Queue a GAME_EVENT. */
+    public void gameEvent(int kind, int a, int b) {
+        Msg.GameEvent e = new Msg.GameEvent();
+        e.kind = kind;
+        e.a = a;
+        e.b = b;
+        e.send(channel);
+    }
+
     /** Queue a SCORE. */
     public void score(int id, float score) {
         Msg.Score s = new Msg.Score();

@@ -35,7 +35,7 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
 | 6 | SNAPSHOT | S→C | world snapshot (below). |
 | 7 | DISCONNECT | both | `Msg.Disconnect`: u8 reason, str8 text. Send 3 times; also timeout after 10 s of silence. |
 | 8 | ACK | both | empty. |
-| 9/10 | PING/PONG | both | `Msg.Ping`: u32 id, u64 nanos; PONG echoes. |
+| 9/10 | PING/PONG | both | `Msg.Ping`: u32 id, u64 nanos; PONG echoes exactly these 12 bytes (anything after them is ignored). |
 
 ## Connection flow
 
@@ -52,6 +52,8 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
    or `"  padded  "` otherwise), and CR before LF is doubled because the reader folds CRLF.
    **Encode once per map load** (≈9 ms for planetx) and share the immutable `Blob`; each client gets its
    own `ConfigTransfer.Sender`. Never encode per client or on the simulation thread.
+   A receiver rejects announced lengths outside 0..`ConfigTransfer.MAX_LENGTH` (8 MB); the client treats
+   that like a CRC failure (bad config: DISCONNECT and close).
 4. Client sends reliable `READY`; the server spawns the player. Snapshots may start earlier;
    the client ignores them until it has the map.
 
@@ -87,12 +89,12 @@ Server → client:
 | 3 | PLAYER_JOIN | u16 id, u8 team, u8 flags (1 robot, 2 tank, 4 self, 8 paused), f32 power, u8 afterburners, str8 name, str16 shape (empty = default) |
 | 4 | PLAYER_LEAVE | u16 id |
 | 5 | PLAYER_TEAM | u16 id, u8 team |
-| 6 | SCORE | u16 id, f32 score, i16 lives (-1 = unlimited), u8 status (1 dead, 2 paused, 4 waiting, 8 out of lives) |
+| 6 | SCORE | u16 id, f32 score, i16 lives (-1 = unlimited), u8 status (1 dead, 2 paused, 4 waiting, 8 out of lives). The first SCORE after PLAYER_JOIN is the starting value; a change of the own score is shown as a C score object, a change to exactly 0 is a reset and shows nothing |
 | 7 | TEAM_SCORE | u8 team, f32 score |
 | 8 | MESSAGE | u8 kind (chat, team chat, private, server, game), u16 from (NO_ID = server), str16 text |
-| 9 | BASE_OWNER | u16 baseIndex (`WorldMap.bases()`), u16 playerId |
-| 10 | GAME_EVENT | u8 kind (kill, crash, spawn, round end, target/treasure destroyed, checkpoint), u16 a, u16 b, f32 value |
-| 11 | PLAYER_THRUST | u16 id, f32 power, u8 afterburners — sent when they change (thrust sparks are generated client-side) |
+| 9 | BASE_OWNER | u16 baseIndex (`WorldMap.bases()`), u16 playerId. A player owns one base: the client releases any other base of that player (C `Handle_base`); playerId NO_ID releases the base |
+| 10 | GAME_EVENT | u8 kind (kill, crash, spawn, round end, target/treasure destroyed, checkpoint), u16 a, u16 b, f32 value. **Send it before the SCORE messages it causes, in the same tick:** the client takes the score object's text (victim/killer name, "[Wall]", "Target: ", "Treasure: ") and place from it |
+| 11 | PLAYER_THRUST | u16 id, f32 power, u8 afterburners — sent when they change (thrust sparks are generated client-side). `afterburners` is the effective value (C forces MAX_AFTERBURNER for emergency thrust, ship.c:75-77); the server seeds with `(double)(float) power`, the f32 the client receives |
 
 Client → server:
 
@@ -107,7 +109,14 @@ Client → server:
 ## INPUT — `InputHistory` (client) / `InputReader` (server)
 
 `u32 latestSeq, u32 ackTick, u8 count (≤ 8)`, then `count ×` (`u64 keys, i16 aimTurn`) newest first
-(entry i has sequence `latestSeq - i`). Sent every client frame with the last 4 inputs.
+(entry i has sequence `latestSeq - i`).
+
+Send rate (`ClientConnection.sendInput`, called every render frame): an INPUT goes out at once when the key
+mask changes, otherwise every 1/simHz (about the tick rate), and never two closer than 1/120 s (a change
+inside that gap waits and goes out with the then-current mask; `aimTurn` of held frames is summed). A
+sequence number is used only per datagram sent. Each INPUT carries every entry newer than the snapshot
+header's `lastInputSeq` (the newest the server applied), at least 1 and at most 8. After a transport error
+(VPN drop, ICMP port unreachable) INPUT, reliable data and ACKs pause for 250 ms.
 `keys` is a `ControlKey` mask: bit = `keys_t` value − 1 (KEY_LOCK_NEXT … KEY_DEFLECTOR = 64 keys).
 The server applies entries newer than the last applied sequence, oldest first, and derives press/release
 edges by comparing consecutive masks. `aimTurn` is a pointer-control turn in u16 angle units (0 = none).
@@ -119,7 +128,9 @@ Default rate: every 2nd 60 Hz sim tick = 30 Hz (`Protocol.DEFAULT_SNAPSHOT_DIVIS
 tells the client).
 
 Header (15 bytes): `u32 tick, u32 lastInputSeq, u8 part, u8 partCount, u8 flags (1 = last part),
-u16 viewX, u16 viewY` — the receiver's view centre in half pixels. If a tick does not fit one datagram
+u16 viewX, u16 viewY` — the receiver's view centre in half pixels. `tick` T is the tick simulated: the
+number passed to `GameHost.tick(T)`. Parts are numbered 0..63; the client treats a higher part as
+malformed. If a tick does not fit one datagram
 it is split into self-contained parts, highest priority first (self, nearby ships, shots, ...).
 
 View-relative positions: the writer encodes `wrapDelta(x - viewX)`; offsets must be within ±16383 px —
@@ -174,13 +185,22 @@ explosion"); sparks from other ships push you (`Delta_mv` — exhaust "blowing")
 and are pushed by sparks (`ballSparkCollisions`); asteroids are hit by debris. So the **server keeps
 simulating every particle**; on the wire:
 
-- **Thrust sparks are not sent.** Each sim tick a ship is thrusting, server and client both call
+- **Thrust sparks are not sent.** Each sim tick a ship is thrusting (`ShipFlags.THRUSTING` is set only when
+  sparks are really emitted, not when cloaked or phased), server and client both call
   `ThrustSparks.compute(seed = ThrustSparks.seed(tick, shipId), engine position, RES heading from the
   wire-quantized heading (`dirFromU16`), velocity, power, afterburners, shotLife, fps, frameFraction =
   gameFps/simHz, hypotenuse, ...)` — a port of C `Thrust()` — and expand the two resulting bursts with
   `DebrisBurst.generate`. Power and afterburners come from PLAYER_JOIN and PLAYER_THRUST. The server's
   particles are authoritative; the client's are cosmetic. (Turn sparks, only with `turnThrust`, are
-  left to the client the same way.)
+  left to the client the same way.) A client receiving snapshot T after T' generates ticks t in (T', T],
+  at most the last 8 (`ClientWorld.MAX_SPARK_TICKS`), each seeded `seed(t, id)`; with one snapshot per tick
+  that is exactly one tick per snapshot.
+- **Spark inputs are the wire values.** The server seeds from the wire-quantized state: position
+  `Wire.posToU16(x) * 0.5`, velocity `Wire.i16ToVel(Wire.velToI16(v))`, its integer RES heading `dir`, and
+  `hypotenuse = (int) Math.hypot(W, H)` (an int, as C's `World.hypotenuse`). SHIP records carry exactly
+  these. SELF is full precision (f32), so the client quantizes it the same way before emitting; the heading
+  comes back as `dir = round(heading * RES / 2pi) mod RES` (`ThrustSparkEmitter.resDir`), which is exact
+  for SELF's `dir * 2pi/RES` and SHIP's `dir * 512` and agrees with `dirFromU16`.
 - **Explosion debris and wall sparks are BURST records**, one per C `Make_debris` call. The server must
   generate its own particles from `Records.Burst.quantize`d parameters so both sides match, with
   `DebrisBurst.hypotenuse` = world diagonal (C's per-particle life clamp). The sink receives each
