@@ -1040,27 +1040,38 @@ public final class DefaultRobot {
 
     // ================================================================ items
 
-    static boolean isOffensive(Item i) {
-        return i == Item.WIDEANGLE || i == Item.REARSHOT || i == Item.MINE || i == Item.MISSILE || i == Item.LASER;
-    }
+    /** C {@code IsOffensiveItem} (collision.c). */
+    static final int OFFENSIVE_ITEMS = Item.WIDEANGLE.bit() | Item.REARSHOT.bit() | Item.MINE.bit() | Item.MISSILE.bit()
+        | Item.LASER.bit();
+    /** C {@code IsDefensiveItem}. */
+    static final int DEFENSIVE_ITEMS = Item.CLOAK.bit() | Item.ECM.bit() | Item.TRANSPORTER.bit()
+        | Item.TRACTOR_BEAM.bit() | Item.EMERGENCY_SHIELD.bit() | Item.MIRROR.bit() | Item.DEFLECTOR.bit()
+        | Item.HYPERJUMP.bit() | Item.PHASING.bit() | Item.TANK.bit() | Item.ARMOR.bit();
+    private static final Item[] ITEMS = Item.values();
 
-    static boolean isDefensive(Item i) {
-        return i == Item.CLOAK || i == Item.ECM || i == Item.TRANSPORTER || i == Item.TRACTOR_BEAM
-            || i == Item.EMERGENCY_SHIELD || i == Item.MIRROR || i == Item.DEFLECTOR || i == Item.HYPERJUMP
-            || i == Item.PHASING || i == Item.TANK || i == Item.ARMOR;
-    }
-
+    /** C {@code CountOffensiveItems}: the offensive item counts summed. */
     int countOffensive(Player pl) {
-        return items.count(pl, Item.WIDEANGLE) + items.count(pl, Item.REARSHOT) + items.count(pl, Item.MINE)
-            + items.count(pl, Item.MISSILE) + items.count(pl, Item.LASER);
+        int n = 0;
+        for (Item i : ITEMS) {
+            if ((OFFENSIVE_ITEMS & i.bit()) != 0) {
+                n += items.count(pl, i);
+            }
+        }
+        return n;
     }
 
+    /**
+     * C {@code CountDefensiveItems}: the defensive item counts (tanks counted by the tank list, not the
+     * TANK item) plus one for an active emergency shield or phasing.
+     */
     int countDefensive(Player pl) {
-        return items.count(pl, Item.CLOAK) + items.count(pl, Item.ECM) + items.count(pl, Item.ARMOR)
-            + items.count(pl, Item.TRANSPORTER) + items.count(pl, Item.TRACTOR_BEAM)
-            + items.count(pl, Item.EMERGENCY_SHIELD) + items.numTanks(pl) + items.count(pl, Item.DEFLECTOR)
-            + items.count(pl, Item.HYPERJUMP) + items.count(pl, Item.PHASING) + items.count(pl, Item.MIRROR)
-            + items.activeDefensives(pl);
+        int n = items.numTanks(pl) + items.activeDefensives(pl);
+        for (Item i : ITEMS) {
+            if ((DEFENSIVE_ITEMS & i.bit()) != 0 && i != Item.TANK) {
+                n += items.count(pl, i);
+            }
+        }
+        return n;
     }
 
     /**
@@ -1082,8 +1093,8 @@ public final class DefaultRobot {
         if (items.count(pl, item) >= items.limit(item)) {
             return ROBOT_IGNORE_ITEM;
         }
-        if ((isDefensive(item) && countDefensive(pl) >= maxDefensiveItems)
-            || (isOffensive(item) && countOffensive(pl) >= maxOffensiveItems)) {
+        if (((DEFENSIVE_ITEMS & item.bit()) != 0 && countDefensive(pl) >= maxDefensiveItems)
+            || ((OFFENSIVE_ITEMS & item.bit()) != 0 && countOffensive(pl) >= maxOffensiveItems)) {
             return ROBOT_IGNORE_ITEM;
         }
         boolean timing = w.map.timing();

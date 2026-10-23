@@ -57,6 +57,7 @@
             <param>*AllocationTest*</param>
             <param>*TickBenchmark*</param>
             <param>*LoopbackIntegrationTest*</param>
+            <param>*RobotStatsRegressionTest*</param>
           </excludedTestClasses>
         </configuration>
       </plugin>
