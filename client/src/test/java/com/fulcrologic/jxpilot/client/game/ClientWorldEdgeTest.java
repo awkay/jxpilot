@@ -223,7 +223,8 @@ class ClientWorldEdgeTest {
             ClientWorld m = g.world;
             assertAll(
                 () -> assertEquals(20f, shotAt103, "at tick 103 the shots are tick 103's"),
-                () -> assertEquals(30f, shotPast, EPS, "past the newest, shots come from the newest frame"),
+                () -> assertEquals(30f + 10f / 0.75f * 0.125f, shotPast, EPS,
+                    "past the newest, a shot moves on from the newest frame with the velocity estimated from the one before"),
                 () -> assertEquals(140f, shipPast, EPS, "ships extrapolated from the newest frame (velocity 0)"),
                 () -> assertEquals(100f, before, EPS, "before all frames the earliest is drawn"),
                 () -> assertEquals(120f, m.shipX(0), EPS, "t = 0.5 between 100 and 106: x halfway from 100 to 140"),

@@ -116,7 +116,9 @@ class XpTranslatorEdgeTest {
     void threeDebrisColoursAreTemperatures() {
         List<String> s = frame(c(1).self(1000, 1000, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 1, 768, 768, 3,
             XpProto.STATUS_PLAYING, 0).debris(XpProto.BLUE * 9, 0, 0).end(1));
-        assertTrue(SnapDump.only(s, "BURST").get(0).contains("color=" + Records.ObjColor.RED), "3 colours: red");
+        assertTrue(SnapDump.only(s, "BURST").get(0).contains("color="
+                + (com.fulcrologic.jxpilot.client.game.ClientWorld.POINT_LEVEL_BASE + XpProto.BLUE)),
+            "3 colours: the colour index is a temperature level, sent as POINT_LEVEL_BASE + level");
     }
 
     @Test

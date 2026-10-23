@@ -27,6 +27,7 @@ import com.fulcrologic.jxpilot.client.game.ClientGame;
 import com.fulcrologic.jxpilot.client.game.ClientWorld;
 import com.fulcrologic.jxpilot.client.game.ParticlePool;
 import com.fulcrologic.jxpilot.client.game.Players;
+import com.fulcrologic.jxpilot.client.paint.PaintConfig;
 import com.fulcrologic.jxpilot.client.paint.Particles;
 import com.fulcrologic.jxpilot.client.paint.RadarPainter;
 import com.fulcrologic.jxpilot.client.paint.SceneData;
@@ -44,7 +45,7 @@ import com.fulcrologic.jxpilot.common.net.Records;
  * <p>
  * Drawn: the own ship and other ships (shape from {@link Players}, ship-painter flags, team-relative
  * colour, lock, name), paused players as paused markers, shots (C fastshot/teamshot colouring),
- * sparks and debris (temperature colour), radar blips and the own radar ship. Not drawn because
+ * sparks and debris (temperature colour) and tracked point particles (C debris), radar blips and the own radar ship. Not drawn because
  * {@link ClientWorld} does not model them yet: items, mines, missiles, lasers, balls, wreckage,
  * asteroids, ECM, links, ECM damage and round delay (left empty / 0).
  */
@@ -103,6 +104,9 @@ public final class SceneFiller {
             out.addShot(w.shotX(i), w.shotY(i), shotColor(c, selfImmunity), teamShot(c, selfImmunity));
         }
         particles(out, w);
+        for (int i = 0; i < w.pointCount(); i++) {
+            out.addParticle(w.pointX(i), w.pointY(i), pointColor(w.pointColor(i)));
+        }
         for (int i = 0; i < w.radarCount(); i++) {
             int size = radarSize(w.radarFlags(i), loops);
             if (size != HIDDEN) {
@@ -204,6 +208,25 @@ public final class SceneFiller {
     static int particleColor(float life, double birth, double tick, float frameFraction, int objColor) {
         int left = (int) (life - (tick - birth) * frameFraction);
         return Particles.colorIndex(left, objColor == Records.ObjColor.BLUE);
+    }
+
+    /**
+     * Palette colour of a position-only point particle.
+     * <p>
+     * BEHAVIOR: codes from {@link ClientWorld#POINT_LEVEL_BASE} are C temperature levels mapped through
+     * {@code sparkColors} (level clamped to the colours); otherwise the object colour: RED red, BLUE blue,
+     * anything else white.
+     */
+    static int pointColor(int code) {
+        if (code >= ClientWorld.POINT_LEVEL_BASE) {
+            int n = PaintConfig.SPARK_COLORS.length;
+            return Particles.colorIndex(Math.min(code - ClientWorld.POINT_LEVEL_BASE, n - 1), PaintConfig.SPARK_COLORS);
+        }
+        return switch (code) {
+            case Records.ObjColor.RED -> Palette.RED;
+            case Records.ObjColor.BLUE -> Palette.BLUE;
+            default -> Palette.WHITE;
+        };
     }
 
     /**

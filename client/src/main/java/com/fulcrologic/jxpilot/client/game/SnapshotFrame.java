@@ -68,6 +68,25 @@ final class SnapshotFrame {
     final byte[] shotVx;
     final byte[] shotVy;
     final byte[] shotVariant;
+    /** Velocity (px per original frame) estimated from the shot's predecessor (shots sent without one). */
+    final float[] shotEstVx;
+    final float[] shotEstVy;
+    /** Index of the same shot in the next frame of the last association, or -1. */
+    final int[] shotNext;
+    /** Point particles sent as positions only (C debris on the XPilot path), drawn tracked like shots. */
+    final int pointCap;
+    int points;
+    final float[] pointX;
+    final float[] pointY;
+    final int[] pointColor;
+    final float[] pointEstVx;
+    final float[] pointEstVy;
+    final int[] pointNext;
+    /** The frame and parts this frame was last associated with (see {@code ClientWorld#associate}). */
+    int assocTick;
+    long assocParts;
+    long assocOwnParts;
+    boolean assocValid;
 
     SnapshotFrame(int shipCap, int shotCap) {
         this.shipCap = shipCap;
@@ -84,6 +103,16 @@ final class SnapshotFrame {
         shotVx = new byte[shotCap];
         shotVy = new byte[shotCap];
         shotVariant = new byte[shotCap];
+        shotEstVx = new float[shotCap];
+        shotEstVy = new float[shotCap];
+        shotNext = new int[shotCap];
+        pointCap = shotCap;
+        pointX = new float[pointCap];
+        pointY = new float[pointCap];
+        pointColor = new int[pointCap];
+        pointEstVx = new float[pointCap];
+        pointEstVy = new float[pointCap];
+        pointNext = new int[pointCap];
     }
 
     void begin(int t, long now, int sparkFromTick) {
@@ -95,5 +124,7 @@ final class SnapshotFrame {
         hasSelf = false;
         ships = 0;
         shots = 0;
+        points = 0;
+        assocValid = false;
     }
 }

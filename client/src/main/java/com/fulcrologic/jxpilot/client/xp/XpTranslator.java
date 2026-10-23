@@ -419,7 +419,8 @@ public final class XpTranslator {
     /**
      * BEHAVIOR: each debris/spark particle is a BURST of one particle with no speed and one frame of
      * life at its C position (C redraws all particles every frame). Colour: the object colour when the
-     * client asked for fewer than 3 debris colours, else red (C temperature shades).
+     * client asked for fewer than 3 debris colours, else the temperature level as
+     * {@code ClientWorld.POINT_LEVEL_BASE + level} (C's debris colour index).
      */
     private void writeDebris(XpFrame f) {
         if (f.debris == 0 || !w.beginSection(Section.BURST)) {
@@ -448,7 +449,8 @@ public final class XpTranslator {
             }
             burst.x = (float) x;
             burst.y = (float) y;
-            int color = f.debrisColors >= 3 ? Records.ObjColor.RED : objColor(c);
+            int color = f.debrisColors >= 3 ? com.fulcrologic.jxpilot.client.game.ClientWorld.POINT_LEVEL_BASE + c
+                : objColor(c);
             Records.Burst.put(w, burst, Records.BurstKind.SPARK, color, 0);
         }
         w.endSection();

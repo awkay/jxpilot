@@ -28,6 +28,7 @@ import com.fulcrologic.jxpilot.client.net.ConnectionListener;
 import com.fulcrologic.jxpilot.client.net.Endpoint;
 import com.fulcrologic.jxpilot.client.net.Transport;
 import com.fulcrologic.jxpilot.client.net.UdpTransport;
+import com.fulcrologic.jxpilot.client.paint.PaintConfig;
 import com.fulcrologic.jxpilot.client.xp.ConnectTarget;
 import com.fulcrologic.jxpilot.client.xp.GameConnection;
 import com.fulcrologic.jxpilot.client.xp.NativeGameConnection;
@@ -62,7 +63,9 @@ public final class GameConnector {
     /**
      * The XPilot login.
      * <p>
-     * BEHAVIOR: nick, team and shape as given; the real name is {@code userName} reduced to ASCII letters,
+     * BEHAVIOR: nick, team and shape as given; debris colours = the client's spark colours (temperature
+     * levels, as the C client asks) and spark probability 1 (every particle every frame, so particles can be
+     * tracked across frames; the painter does C's sparkle); the real name is {@code userName} reduced to ASCII letters,
      * digits, '-', '_' and '.' ("jxpilot" when nothing is left).
      */
     static XpConnection.Login xpLogin(String name, int team, String shape, String userName) {
@@ -70,6 +73,8 @@ public final class GameConnector {
         login.nick = name;
         login.team = team;
         login.shape = shape;
+        login.debrisColors = PaintConfig.SPARK_COLORS.length;
+        login.sparkProb = 1.0;
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < userName.length(); i++) {
             char c = userName.charAt(i);

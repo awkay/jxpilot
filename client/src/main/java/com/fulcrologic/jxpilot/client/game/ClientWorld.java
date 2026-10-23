@@ -71,6 +71,15 @@ public final class ClientWorld {
     public static final double TELEPORT_PX = 10 * 35.0;
     /** Render delay beyond one snapshot interval, for network jitter (a time, so any tick rate works). */
     public static final double JITTER_MARGIN_SECONDS = 0.02;
+    /**
+     * Farthest a shot or point particle is followed between frames, per original frame: shots fly at
+     * {@code shotSpeed} (default 21) plus the firing ship's speed.
+     */
+    public static final double TRACK_PX_PER_FRAME = 64;
+    /** Point colour codes from this value on are C debris temperature levels (code - base). */
+    public static final int POINT_LEVEL_BASE = 16;
+    /** Earlier x later object pairs above which association is skipped (bounded work per snapshot). */
+    public static final long MAX_ASSOCIATION_WORK = 1L << 20;
     /** Snapshot parts are numbered 0..63 (64 x 1200 bytes is far beyond any tick); higher parts are malformed. */
     public static final int MAX_PARTS = 64;
 
@@ -178,6 +187,13 @@ public final class ClientWorld {
     private final float[] outShotX;
     private final float[] outShotY;
     private final int[] outShotVariant;
+    private int outPoints;
+    private final float[] outPointX;
+    private final float[] outPointY;
+    private final int[] outPointColor;
+    // association scratch (one entry per shot of the later frame / earlier frame)
+    private final int[] claimA;
+    private final float[] claimD;
 
     /**
      * @param shipCap     ships per snapshot
@@ -207,6 +223,11 @@ public final class ClientWorld {
         outShotX = new float[shotCap];
         outShotY = new float[shotCap];
         outShotVariant = new int[shotCap];
+        outPointX = new float[shotCap];
+        outPointY = new float[shotCap];
+        outPointColor = new int[shotCap];
+        claimA = new int[shotCap];
+        claimD = new float[shotCap];
         shipIndex = new ShipIndex(shipCap);
         usedA = new boolean[shipCap];
     }
@@ -269,6 +290,7 @@ public final class ClientWorld {
         clock.reset(clock.simHz());
         outShips = 0;
         outShots = 0;
+        outPoints = 0;
         outSelf = false;
     }
 
@@ -409,12 +431,27 @@ public final class ClientWorld {
                     f.shotVx[k] = (byte) shotRec.vx();
                     f.shotVy[k] = (byte) shotRec.vy();
                     f.shotVariant[k] = variant;
+                    f.shotEstVx[k] = 0;
+                    f.shotEstVy[k] = 0;
+                    f.shotNext[k] = -1;
                 }
             }
             case Section.BURST -> {
                 for (int i = 0; i < n; i++) {
                     burstRec.wrap(reader, i);
                     burstRec.read(burst);
+                    if (isPoint(burst)) {
+                        if (f.points < f.pointCap) {
+                            int k = f.points++;
+                            f.pointX[k] = burst.x;
+                            f.pointY[k] = burst.y;
+                            f.pointColor[k] = burstRec.color();
+                            f.pointEstVx[k] = 0;
+                            f.pointEstVy[k] = 0;
+                            f.pointNext[k] = -1;
+                        }
+                        continue;
+                    }
                     burst.hypotenuse = sparks.hypotenuse();
                     particles.spawn(burst, rng, f.tick - burstRec.age(), burstRec.kind(), burstRec.color());
                 }
@@ -566,7 +603,9 @@ public final class ClientWorld {
      * no-B case, so they do not flicker; ships that moved more than {@link #TELEPORT_PX} are snapped to B;
      * flags come from the nearer frame. With no B, ships are extrapolated from A by their velocity, at most
      * 2 snapshot intervals; with no A, B is drawn as is. The own ship is not in the ship list.
-     * BEHAVIOR: shots are extrapolated from A (or B when there is no A) by their velocity.
+     * BEHAVIOR: shots and point particles are linked from A to their continuations in B
+     * ({@link #associate}) and interpolated; unlinked ones move by their velocity (wire, else estimated)
+     * from A; with only B they are drawn at B (see {@link #drawShots}).
      * BEHAVIOR: the own ship is drawn at the render tick like the others: interpolated between the SELF
      * records around it (heading the short way round; fuel, flags and other state from the nearer record);
      * snapped to the nearer record when either is dead or it moved more than {@link #TELEPORT_PX}; with no
@@ -577,6 +616,7 @@ public final class ClientWorld {
     public void update(long nowNanos) {
         outShips = 0;
         outShots = 0;
+        outPoints = 0;
         outSelf = false;
         if (!haveNewest) {
             return;
@@ -603,7 +643,11 @@ public final class ClientWorld {
             }
         }
         interpolateShips(a, b);
-        extrapolateShots(a != null ? a : b);
+        if (a != null && b != null) {
+            associate(a, b);
+        }
+        drawShots(a, b);
+        drawPoints(a, b);
         interpolateSelf();
         particles.step(renderTick, renderTick, frameFraction, worldW, worldH, wrap);
     }
@@ -688,14 +732,201 @@ public final class ClientWorld {
         outShipVy[k] = src.shipVy[i];
     }
 
-    private void extrapolateShots(SnapshotFrame base) {
-        double dt = clampExtrapolation(renderTick - base.tick) * frameFraction;
-        for (int i = 0; i < base.shots && i < shotCap; i++) {
-            outShotX[i] = wrapX(base.shotX[i] + base.shotVx[i] * dt);
-            outShotY[i] = wrapY(base.shotY[i] + base.shotVy[i] * dt);
-            outShotVariant[i] = base.shotVariant[i] & 0xFF;
+    /**
+     * BEHAVIOR: a point burst (one particle, no speed, no life) is a position-only particle the server
+     * resends every frame (C debris on the XPilot path); it is tracked across frames like a shot instead
+     * of living one frame in the particle pool.
+     */
+    static boolean isPoint(DebrisBurst d) {
+        return d.count == 1 && d.maxSpeed == 0 && d.maxLife == 0;
+    }
+
+    /**
+     * Link the shots and point particles of {@code a} to their continuations in the later frame {@code b}
+     * (once per pair of frames and parts), and estimate the velocity of {@code b}'s from the links, for
+     * objects the wire sends without velocity (C fast shots and debris).
+     */
+    private void associate(SnapshotFrame a, SnapshotFrame b) {
+        if (a.assocValid && a.assocTick == b.tick && a.assocParts == b.parts && a.assocOwnParts == a.parts) {
+            return;
         }
-        outShots = Math.min(base.shots, shotCap);
+        a.assocValid = true;
+        a.assocTick = b.tick;
+        a.assocParts = b.parts;
+        a.assocOwnParts = a.parts;
+        double frames = (b.tick - a.tick) * (double) frameFraction;
+        int sn = Math.min(a.shots, shotCap);
+        int sm = Math.min(b.shots, shotCap);
+        link(a.shotX, a.shotY, a.shotEstVx, a.shotEstVy, a.shotVx, a.shotVy, a.shotVariant, null, sn,
+            b.shotX, b.shotY, b.shotVariant, null, sm, a.shotNext, frames);
+        estimate(a.shotX, a.shotY, b.shotX, b.shotY, b.shotEstVx, b.shotEstVy, sm, frames);
+        link(a.pointX, a.pointY, a.pointEstVx, a.pointEstVy, null, null, null, a.pointColor, a.points,
+            b.pointX, b.pointY, null, b.pointColor, b.points, a.pointNext, frames);
+        estimate(a.pointX, a.pointY, b.pointX, b.pointY, b.pointEstVx, b.pointEstVy, b.points, frames);
+    }
+
+    /**
+     * Nearest-neighbour association of n earlier objects to m later ones of the same kind (variant or
+     * colour), wrap-aware, within {@link #TRACK_PX_PER_FRAME} per original frame of the predicted position
+     * (earlier position + velocity: the wire's when it has one, else the estimate).
+     * <p>
+     * BEHAVIOR: first every earlier object proposes its nearest later one and each later object keeps its
+     * closest proposer (so two shots that pass each other do not swap); then earlier objects left over take
+     * the nearest later one nobody claimed. {@code next[i]} is the later index or -1. With more than
+     * {@link #MAX_ASSOCIATION_WORK} pairs nothing is linked (objects then step at the server rate).
+     * Leaves the later index's claimer in {@link #claimA}.
+     */
+    private void link(float[] ax, float[] ay, float[] aEvx, float[] aEvy, byte[] aWvx, byte[] aWvy, byte[] aVar,
+                      int[] aCol, int n, float[] bx, float[] by, byte[] bVar, int[] bCol, int m, int[] next,
+                      double frames) {
+        for (int j = 0; j < m; j++) {
+            claimA[j] = -1;
+        }
+        for (int i = 0; i < n; i++) {
+            next[i] = -1;
+        }
+        if ((long) n * m > MAX_ASSOCIATION_WORK || frames <= 0) {
+            return;
+        }
+        double r = TRACK_PX_PER_FRAME * frames;
+        double r2 = r * r;
+        for (int i = 0; i < n; i++) {
+            int j = nearest(i, ax, ay, aEvx, aEvy, aWvx, aWvy, aVar, aCol, bx, by, bVar, bCol, m, frames, r2, false);
+            if (j >= 0 && (claimA[j] < 0 || lastD < claimD[j])) {
+                claimA[j] = i;
+                claimD[j] = (float) lastD;
+            }
+        }
+        for (int j = 0; j < m; j++) {
+            if (claimA[j] >= 0) {
+                next[claimA[j]] = j;
+            }
+        }
+        for (int i = 0; i < n; i++) {
+            if (next[i] < 0) {
+                int j = nearest(i, ax, ay, aEvx, aEvy, aWvx, aWvy, aVar, aCol, bx, by, bVar, bCol, m, frames, r2, true);
+                if (j >= 0) {
+                    next[i] = j;
+                    claimA[j] = i;
+                }
+            }
+        }
+    }
+
+    private double lastD;
+
+    private int nearest(int i, float[] ax, float[] ay, float[] aEvx, float[] aEvy, byte[] aWvx, byte[] aWvy,
+                        byte[] aVar, int[] aCol, float[] bx, float[] by, byte[] bVar, int[] bCol, int m,
+                        double frames, double r2, boolean unclaimedOnly) {
+        double vx = aEvx[i];
+        double vy = aEvy[i];
+        if (aWvx != null && (aWvx[i] != 0 || aWvy[i] != 0)) {
+            vx = aWvx[i];
+            vy = aWvy[i];
+        }
+        double px = ax[i] + vx * frames;
+        double py = ay[i] + vy * frames;
+        int best = -1;
+        double bestD = r2;
+        for (int j = 0; j < m; j++) {
+            if (aVar != null ? aVar[i] != bVar[j] : aCol[i] != bCol[j]) {
+                continue;
+            }
+            if (unclaimedOnly && claimA[j] >= 0) {
+                continue;
+            }
+            double dx = XMath.wrapDelta(bx[j] - px, worldW, wrap);
+            double dy = XMath.wrapDelta(by[j] - py, worldH, wrap);
+            double d = dx * dx + dy * dy;
+            if (d <= bestD) {
+                bestD = d;
+                best = j;
+            }
+        }
+        lastD = bestD;
+        return best;
+    }
+
+    /** BEHAVIOR: a linked later object's velocity is its wrap-aware displacement over the frames; others 0. */
+    private void estimate(float[] ax, float[] ay, float[] bx, float[] by, float[] evx, float[] evy, int m,
+                          double frames) {
+        for (int j = 0; j < m; j++) {
+            int i = claimA[j];
+            if (i >= 0 && frames > 0) {
+                evx[j] = (float) (XMath.wrapDelta(bx[j] - ax[i], worldW, wrap) / frames);
+                evy[j] = (float) (XMath.wrapDelta(by[j] - ay[i], worldH, wrap) / frames);
+            } else {
+                evx[j] = 0;
+                evy[j] = 0;
+            }
+        }
+    }
+
+    /**
+     * BEHAVIOR: between two frames a linked shot is interpolated to its continuation (wrap-aware); an
+     * unlinked one moves by its velocity (the wire's, else the estimate) from the earlier frame; with only
+     * an earlier frame every shot is extrapolated that way (at most 2 snapshot intervals); with only a later
+     * frame shots are drawn where it has them.
+     */
+    private void drawShots(SnapshotFrame a, SnapshotFrame b) {
+        outShots = 0;
+        if (a == null) {
+            for (int i = 0; i < b.shots && i < shotCap; i++) {
+                putShot(b.shotX[i], b.shotY[i], b.shotVariant[i]);
+            }
+            return;
+        }
+        double t = b == null ? 0 : (renderTick - a.tick) / (double) (b.tick - a.tick);
+        double dt = clampExtrapolation(renderTick - a.tick) * frameFraction;
+        for (int i = 0; i < a.shots && i < shotCap; i++) {
+            int j = b == null ? -1 : a.shotNext[i];
+            if (j >= 0) {
+                putShot(wrapX(a.shotX[i] + XMath.wrapDelta(b.shotX[j] - a.shotX[i], worldW, wrap) * t),
+                    wrapY(a.shotY[i] + XMath.wrapDelta(b.shotY[j] - a.shotY[i], worldH, wrap) * t), a.shotVariant[i]);
+                continue;
+            }
+            double vx = a.shotEstVx[i];
+            double vy = a.shotEstVy[i];
+            if (a.shotVx[i] != 0 || a.shotVy[i] != 0) {
+                vx = a.shotVx[i];
+                vy = a.shotVy[i];
+            }
+            putShot(wrapX(a.shotX[i] + vx * dt), wrapY(a.shotY[i] + vy * dt), a.shotVariant[i]);
+        }
+    }
+
+    private void putShot(float x, float y, byte variant) {
+        int k = outShots++;
+        outShotX[k] = x;
+        outShotY[k] = y;
+        outShotVariant[k] = variant & 0xFF;
+    }
+
+    /** As {@link #drawShots}, for position-only point particles (no wire velocity). */
+    private void drawPoints(SnapshotFrame a, SnapshotFrame b) {
+        outPoints = 0;
+        SnapshotFrame src = a != null ? a : b;
+        if (src == null) {
+            return;
+        }
+        double t = a == null || b == null ? 0 : (renderTick - a.tick) / (double) (b.tick - a.tick);
+        double dt = a == null ? 0 : clampExtrapolation(renderTick - a.tick) * frameFraction;
+        for (int i = 0; i < src.points && outPoints < outPointX.length; i++) {
+            int j = a != null && b != null ? a.pointNext[i] : -1;
+            float x;
+            float y;
+            if (j >= 0) {
+                x = wrapX(a.pointX[i] + XMath.wrapDelta(b.pointX[j] - a.pointX[i], worldW, wrap) * t);
+                y = wrapY(a.pointY[i] + XMath.wrapDelta(b.pointY[j] - a.pointY[i], worldH, wrap) * t);
+            } else {
+                x = wrapX(src.pointX[i] + src.pointEstVx[i] * dt);
+                y = wrapY(src.pointY[i] + src.pointEstVy[i] * dt);
+            }
+            int k = outPoints++;
+            outPointX[k] = x;
+            outPointY[k] = y;
+            outPointColor[k] = src.pointColor[i];
+        }
     }
 
     /**
@@ -883,6 +1114,16 @@ public final class ClientWorld {
     public int shotColor(int i) { return Records.ShotKind.colorOf(outShotVariant[i]); }
 
     public ParticlePool particles() { return particles; }
+
+    /** Position-only point particles (C debris on the XPilot path), tracked and interpolated. */
+    public int pointCount() { return outPoints; }
+
+    public float pointX(int i) { return outPointX[i]; }
+
+    public float pointY(int i) { return outPointY[i]; }
+
+    /** The burst colour the point came with ({@link Records.ObjColor}, or a temperature level code). */
+    public int pointColor(int i) { return outPointColor[i]; }
 
     public int radarCount() { return radarCount; }
 

@@ -278,11 +278,12 @@ class XpTranslatorTest {
         }
 
         @Test
-        void temperatureColoursAreRed() {
+        void temperatureColoursAreLevels() {
             List<String> s = frame(c(1).self(1000, 1000, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 1, 768, 768, 5,
                 XpProto.STATUS_PLAYING, 0).debris(type(4, 0, 0), 0, 0).end(1));
-            assertTrue(SnapDump.only(s, "BURST").get(0).startsWith("BURST kind=0 color=" + Records.ObjColor.RED),
-                "debris colours >= 3 are temperatures: red");
+            assertTrue(SnapDump.only(s, "BURST").get(0).startsWith("BURST kind=0 color="
+                    + (com.fulcrologic.jxpilot.client.game.ClientWorld.POINT_LEVEL_BASE + 4) + " "),
+                "debris colours >= 3 are temperature levels: POINT_LEVEL_BASE + level 4");
         }
 
         @Test
@@ -468,7 +469,7 @@ class XpTranslatorTest {
                 () -> assertEquals(4, cw.shipId(0), "robot id"),
                 () -> assertTrue(cw.shipX(0) > 1100 + 24 * 4 && cw.shipX(0) < 1100 + 24 * 6,
                     "robot interpolated between frames: " + cw.shipX(0)),
-                () -> assertTrue(cw.particles().count() >= 1, "debris particles alive"));
+                () -> assertTrue(cw.pointCount() >= 1, "debris tracked as point particles"));
         }
     }
 }
