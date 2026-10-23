@@ -55,5 +55,5 @@ Junkala paths are relative to the pack root. The picks were chosen by file name 
   - the download date;
   - the pack's sha256;
   - any modifications, e.g. the thrust-loop processing.
-- Add rows for both sources to README.md's third-party table.
+- Add rows for both sources to README.adoc's third-party table.
 - Playback: LWJGL OpenAL (in the LWJGL BOM) or javax.sound. Preload all clips at startup. A fixed voice pool means zero allocation per event.
