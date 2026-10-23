@@ -68,6 +68,7 @@ public final class XpTranslator {
     private final Msg.PlayerLeave leave = new Msg.PlayerLeave();
     private final Msg.Score score = new Msg.Score();
     private final Msg.TeamScore teamScore = new Msg.TeamScore();
+    private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
     private final Msg.Text text = new Msg.Text();
     private final Msg.BaseOwner baseOwner = new Msg.BaseOwner();
 
@@ -762,6 +763,21 @@ public final class XpTranslator {
             nameChar[s] = (char) mychar;
         }
         deliver(score, ReliableType.SCORE);
+    }
+
+    /**
+     * C {@code Handle_score_object}: the server's score popup for the own player.
+     * <p>
+     * BEHAVIOR: delivered as SCORE_OBJECT with the points, block (C block coordinates, the same as ours)
+     * and label.
+     */
+    public void scoreObject(double points, int bx, int by, CharSequence label) {
+        scoreObject.score = (float) points;
+        scoreObject.bx = bx;
+        scoreObject.by = by;
+        scoreObject.text.setLength(0);
+        scoreObject.text.append(label);
+        deliver(scoreObject, ReliableType.SCORE_OBJECT);
     }
 
     /** C {@code Handle_team_score}. */

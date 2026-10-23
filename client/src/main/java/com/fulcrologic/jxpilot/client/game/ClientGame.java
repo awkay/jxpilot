@@ -58,6 +58,7 @@ public final class ClientGame implements ConnectionListener {
     private final Msg.Text text = new Msg.Text();
     private final Msg.BaseOwner baseOwner = new Msg.BaseOwner();
     private final Msg.GameEvent gameEvent = new Msg.GameEvent();
+    private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
 
     private ConnectionState state = ConnectionState.IDLE;
     private WorldMap map;
@@ -72,12 +73,6 @@ public final class ClientGame implements ConnectionListener {
     private long snapshotCount;
 
     private final ScoreObjects scoreObjects = new ScoreObjects();
-    /** Reason and place of the own score change expected in this batch (from a GAME_EVENT). */
-    private final CharBuf pendingMsg = new CharBuf(ScoreObjects.TEXT_LEN);
-    private boolean pendingKnown;
-    private boolean pendingPos;
-    private int pendingBx;
-    private int pendingBy;
 
     /** With default {@link ClientWorld} capacities. */
     public ClientGame() {
@@ -103,7 +98,6 @@ public final class ClientGame implements ConnectionListener {
         players.setSelfId(id);
         events.clear();
         scoreObjects.clear();
-        pendingKnown = false;
         if (world.configured()) {
             world.reset();
         }
@@ -133,12 +127,11 @@ public final class ClientGame implements ConnectionListener {
      * Apply one reliable server message.
      * <p>
      * BEHAVIOR: PLAYER_JOIN/LEAVE/TEAM/THRUST and SCORE update {@link Players}; TEAM_SCORE the
-     * scoreboard; MESSAGE the message log; BASE_OWNER the world; GAME_EVENT the event ring. Unknown types
-     * are ignored.
-     * BEHAVIOR: an own score change becomes a {@link ScoreObjects} entry (C {@code Handle_score_object})
-     * with the reason of a GAME_EVENT involving the own player received earlier in the same batch (see
-     * {@link #scoreReason}); a change to exactly 0 is a score reset (C {@code /reset}) and makes none, nor
-     * does the first SCORE after joining.
+     * scoreboard; MESSAGE the message log; BASE_OWNER the world; GAME_EVENT the event ring (sub-types in
+     * {@code value} kept as sent). Unknown types are ignored.
+     * BEHAVIOR: SCORE_OBJECT (C {@code Handle_score_object}; the server sends it only to the player whose
+     * score changed) becomes a {@link ScoreObjects} entry with its points, label and block; an empty label
+     * makes no HUD text. SCORE itself never makes one.
      */
     @Override
     public void onReliable(int type, ByteBuffer p) {
@@ -162,10 +155,11 @@ public final class ClientGame implements ConnectionListener {
             }
             case ReliableType.SCORE -> {
                 score.read(p);
-                float d = players.setScore(score.id, score.score, score.lives, score.status);
-                if (score.id == players.selfId() && d != 0 && score.score != 0) {
-                    scoreObjects.add(d, pendingKnown ? pendingMsg : null, pendingKnown && pendingPos, pendingBx, pendingBy);
-                }
+                players.setScore(score.id, score.score, score.lives, score.status);
+            }
+            case ReliableType.SCORE_OBJECT -> {
+                scoreObject.read(p);
+                scoreObjects.add(scoreObject.score, scoreObject.text, true, scoreObject.bx, scoreObject.by);
             }
             case ReliableType.TEAM_SCORE -> {
                 teamScore.read(p);
@@ -182,94 +176,9 @@ public final class ClientGame implements ConnectionListener {
             case ReliableType.GAME_EVENT -> {
                 gameEvent.read(p);
                 events.add(gameEvent);
-                scoreReason(gameEvent);
             }
             default -> { } // newer message types are ignored (PROTOCOL.md "Extending")
         }
-    }
-
-    /**
-     * The C score-object message of a game event involving the own player (server {@code SCORE} calls):
-     * the protocol's SCORE has no text or position, so they come from the event.
-     * <p>
-     * BEHAVIOR: KILL: the killer gets the victim's name, the victim the killer's name, a self-kill the own
-     * name; a kill by nobody (NO_ID) leaves the reason unknown; the place is the victim's block when its
-     * ship is known. CRASH: "[Wall]" at the own ship. TARGET_DESTROYED / TREASURE_DESTROYED: "Target: " /
-     * "Treasure: " at the object's block. Events not involving the own player change nothing.
-     */
-    void scoreReason(Msg.GameEvent e) {
-        int self = players.selfId();
-        switch (e.kind) {
-            case Msg.GameEvent.KILL -> {
-                int other;
-                if (e.b == self) {
-                    other = e.a;
-                } else if (e.a == self) {
-                    other = e.b;
-                } else {
-                    return;
-                }
-                int slot = players.slotOf(other);
-                if (other == Protocol.NO_ID || slot < 0) {
-                    pendingKnown = false;
-                    return;
-                }
-                reason(players.name(slot));
-                shipPlace(e.b);
-            }
-            case Msg.GameEvent.CRASH -> {
-                if (e.a != self) {
-                    return;
-                }
-                reason("[Wall]");
-                shipPlace(self);
-            }
-            case Msg.GameEvent.TARGET_DESTROYED, Msg.GameEvent.TREASURE_DESTROYED -> {
-                if (e.a != self) {
-                    return;
-                }
-                boolean target = e.kind == Msg.GameEvent.TARGET_DESTROYED;
-                reason(target ? "Target: " : "Treasure: ");
-                pendingPos = false;
-                if (map != null) {
-                    int n = target ? map.targets().size() : map.treasures().size();
-                    if (e.b >= 0 && e.b < n) {
-                        pendingPos = true;
-                        pendingBx = target ? map.targets().get(e.b).bx() : map.treasures().get(e.b).bx();
-                        pendingBy = target ? map.targets().get(e.b).by() : map.treasures().get(e.b).by();
-                    }
-                }
-            }
-            default -> { }
-        }
-    }
-
-    private void reason(CharSequence msg) {
-        pendingMsg.clear().append(msg);
-        pendingKnown = true;
-    }
-
-    /** The block of a ship's drawn position (own ship or one in the interpolated list), if known. */
-    private void shipPlace(int id) {
-        pendingPos = false;
-        if (id == players.selfId()) {
-            if (world.hasSelf()) {
-                place(world.selfX(), world.selfY());
-            }
-            return;
-        }
-        for (int i = 0; i < world.shipCount(); i++) {
-            if (world.shipId(i) == id) {
-                place(world.shipX(i), world.shipY(i));
-                return;
-            }
-        }
-    }
-
-    private void place(float x, float y) {
-        pendingPos = true;
-        pendingBx = (int) (x / com.fulcrologic.jxpilot.common.Const.BLOCK_SZ);
-        pendingBy = (int) (y / com.fulcrologic.jxpilot.common.Const.BLOCK_SZ);
     }
 
     @Override
@@ -300,15 +209,13 @@ public final class ClientGame implements ConnectionListener {
      * Per rendered frame.
      * <p>
      * BEHAVIOR: updates the world for {@code nowNanos}, ages messages and score objects by
-     * {@code dtSeconds * gameFps} original frames, forgets the batch's pending score reason, and re-sorts
-     * the scoreboard if players changed.
+     * {@code dtSeconds * gameFps} original frames, and re-sorts the scoreboard if players changed.
      */
     public void frame(long nowNanos, double dtSeconds) {
         double frames = dtSeconds * gameFps;
         world.update(nowNanos);
         messages.tick(frames);
         scoreObjects.tick(frames);
-        pendingKnown = false;
         scoreboard.update(players);
     }
 

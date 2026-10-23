@@ -175,6 +175,7 @@ class ClientNetAllocationTest {
                 }
                 if (f % (2 * period) == period / 2) {
                     server.gameEvent(Msg.GameEvent.KILL, FakeServer.PLAYER_ID, FakeServer.OTHER_ID);
+                    server.scoreObject(1, 3, 4, "Robby");
                     server.score(FakeServer.PLAYER_ID, (f / (2 * period)) % 7 + 1);
                 }
             }

@@ -435,8 +435,7 @@ class GameEdgeTest {
             g.onStateChange(ConnectionState.PLAYING, "Playing");
             int logged = g.messages().gameCount();
             g.onReliable(ReliableType.PLAYER_JOIN, ClientGameTest.payload(ClientGameTest.join(7, 0, "me")));
-            g.onReliable(ReliableType.SCORE, ClientGameTest.payload(ClientGameTest.score(7, 0.5f)));
-            g.onReliable(ReliableType.SCORE, ClientGameTest.payload(ClientGameTest.score(7, 1)));
+            g.onReliable(ReliableType.SCORE_OBJECT, ClientGameTest.payload(ClientGameTest.scoreObject(0.5f, 0, 0, "x")));
             g.frame(WorldFixture.at(100), 99.0 / 15);
             boolean aliveAt99 = g.scoreObjects().active(0);
             g.frame(WorldFixture.at(100), 1.0 / 15);
