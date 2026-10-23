@@ -296,20 +296,21 @@ public final class SimGameHost implements GameHost {
     /**
      * C {@code Kick_paused_players}: every paused human (of {@code team}, or any) is kicked, last first.
      * <p>
-     * BEHAVIOR: each gets the message and a kick; returns how many.
+     * BEHAVIOR: each is kicked (it leaves the game), then the message follows (C Destroy_connection before
+     * Set_message); returns how many.
      */
     int kickPausedPlayers(int team) {
         int n = 0;
         for (int k = w.numPlayers - 1; k >= 0; k--) {
             Player p = w.playerAt(k);
             if (bound[p.id] == p && (p.status & Obj.PAUSE) != 0 && (team == Const.TEAM_NOT_SET || p.team == team)) {
+                kickNow(p, team == Const.TEAM_NOT_SET ? KICK_FULL_GAME : KICK_FULL_TEAM);
                 StringBuilder msg = w.events.message(Msg.Text.KIND_SERVER, Obj.NO_ID).append("The paused \"").append(p.name);
                 if (team == Const.TEAM_NOT_SET) {
                     msg.append("\" was kicked because the game is full.");
                 } else {
                     msg.append("\" was kicked because team ").append(team).append(" is full.");
                 }
-                kickNow(p, team == Const.TEAM_NOT_SET ? KICK_FULL_GAME : KICK_FULL_TEAM);
                 n++;
             }
         }
@@ -347,7 +348,8 @@ public final class SimGameHost implements GameHost {
 
     /**
      * BEHAVIOR: the player leaves the game ({@code Ships.leave}: reserved ones just free their slot) and its
-     * connection state is forgotten; ids no connection holds (already kicked) are ignored.
+     * connection state is forgotten (a kick still pending for it is dropped, so it cannot hit a later join
+     * that reuses the id); ids no connection holds (already kicked) are ignored.
      */
     @Override
     public void leave(int playerId) {
@@ -358,7 +360,20 @@ public final class SimGameHost implements GameHost {
         bound[playerId] = null;
         queued[playerId] = 0;
         keysBySlot[p.slot] = 0;
+        cancelKick(playerId);
         sim.ships.leave(p);
+    }
+
+    private void cancelKick(int id) {
+        for (int i = 0; i < kicks; i++) {
+            if (kickIds[i] == id) {
+                kicks--;
+                kickIds[i] = kickIds[kicks];
+                kickReasons[i] = kickReasons[kicks];
+                kickReasons[kicks] = null;
+                return;
+            }
+        }
     }
 
     // ================================================================ client messages
