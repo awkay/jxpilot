@@ -93,6 +93,7 @@ class ClientWorldTest {
             int r = f.ingest(at(100));
             assertAll(
                 () -> assertEquals(ClientWorld.MALFORMED, r, "reported malformed"),
+                () -> assertEquals(1, f.world.malformedSnapshots(), "and counted"),
                 () -> assertEquals(Records.CannonState.FLAG_DEAD, f.world.cannonFlags(0), "the cannon section applied"));
         }
     }

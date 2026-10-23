@@ -36,8 +36,14 @@ import com.fulcrologic.jxpilot.common.net.Records;
  * HUD layout, a port of {@code Paint_HUD}, {@code Paint_meter} and {@code Paint_messages}
  * ({@code src/client/painthud.c}), the talk window geometry ({@code src/client/talk.c}) and the score
  * list lines ({@code Paint_score_start}/{@code Paint_score_entry}, {@code src/client/paint.c}).
- * Produces a {@link HudFrame} draw list in unscaled window pixels (y down). Timers count original
+ * Produces a {@link HudFrame} draw list in window pixels (y down). Timers count original
  * XPilot frames ({@code gameFps}). Pure apart from its own counters; allocation free.
+ * <p>
+ * Zoom ({@link #zoom}, C's {@code 1 / scaleFactor}) works as in C: the ship HUD and the meters are laid out
+ * in the extended view ({@code ext_view_width = (int)(viewW / zoom + 0.5)}), the coordinates and sizes C
+ * wraps in {@code WINSCALE} (directly or through {@code Rectangle_add}/{@code Segment_add}) are scaled with
+ * {@link #winScale}, and font offsets (ascent, descent, text widths) are added unscaled afterwards.
+ * Messages, the talk window and the status line are in plain window pixels, as in C.
  */
 public final class Hud {
     /** C {@code HUD_SIZE}: half size of the HUD lines. */
@@ -92,6 +98,8 @@ public final class Hud {
     public int fuelCritical = 100;
     /** Game messages shown (C SHOW_MESSAGES). */
     public boolean showMessages = true;
+    /** Zoom, C {@code 1 / scaleFactor} (1 = unscaled). */
+    public double zoom = 1.0;
 
     // ---- state
     private double loops;
@@ -167,20 +175,22 @@ public final class Hud {
                          boolean visible) {
         float vx = w.selfVx();
         float vy = w.selfVy();
+        int ew = extent(viewW);
+        int eh = extent(viewH);
         if (visible) {
-            speedPointer(out, viewW, viewH, vx, vy);
+            speedPointer(out, ew, eh, vx, vy);
         }
         float fuel = w.selfFuel();
         float fuelMax = w.selfFuelMax();
         if (fuelMeter) {
             scratch.clear().append("Fuel");
-            meter(out, viewW, -10, 20, scratch, (int) fuel, (int) fuelMax, m);
+            meter(out, ew, -10, 20, scratch, (int) fuel, (int) fuelMax, m);
         }
         if (!showHud) {
             return;
         }
-        int hx = hudX(viewW, vx);
-        int hy = hudY(viewH, vy);
+        int hx = hudX(ew, vx);
+        int hy = hudY(eh, vy);
         hudLines(out, hx, hy);
         boolean didFuel = fuelText(out, hx, hy, fuel, w.selfNumTanks(), w.selfCurrentTank(), m);
         scoreStack(out, hx, hy, g.scoreObjects(), didFuel, m);
@@ -189,7 +199,33 @@ public final class Hud {
         }
     }
 
-    /** BEHAVIOR: C hud_pos_x = (int)(viewW/2 - hudMoveFact * vx). */
+    /**
+     * C {@code WINSCALE(n)} at zoom z, as {@code client.render.WinScale.of} (main): the C pixel sizes and HUD
+     * anchors are rounded, a non-zero value never below 1 pixel.
+     * <p>
+     * BEHAVIOR: 0 stays 0; positive n becomes floor(n * z + 0.5), at least 1 and at most 32767; negative n
+     * is the negation of its magnitude's value; z = 1 is the identity.
+     */
+    public static int winScale(int n, double z) {
+        if (n == 0) {
+            return 0;
+        }
+        int a = n < 0 ? -n : n;
+        double v = Math.floor(a * z + 0.5);
+        int r = v < 1 ? 1 : (v > 32767 ? 32767 : (int) v);
+        return n < 0 ? -r : r;
+    }
+
+    private int ws(int n) {
+        return winScale(n, zoom);
+    }
+
+    /** BEHAVIOR: C {@code ext_view_width}: a window size in view units, (int)(size / zoom + 0.5). */
+    public int extent(int windowSize) {
+        return (int) (windowSize / zoom + 0.5);
+    }
+
+    /** BEHAVIOR: C hud_pos_x = (int)(viewW/2 - hudMoveFact * vx) in view units. */
     public int hudX(int viewW, float vx) {
         return (int) (viewW / 2 - hudMoveFact * vx);
     }
@@ -199,11 +235,14 @@ public final class Hud {
         return (int) (viewH / 2 + hudMoveFact * vy);
     }
 
-    /** BEHAVIOR: a HUD-coloured segment from the view centre against the velocity, iff ptrMoveFact != 0 and moving. */
+    /**
+     * BEHAVIOR: a HUD-coloured segment from the view centre against the velocity, iff ptrMoveFact != 0 and
+     * moving; view units, every end scaled (C Segment_add).
+     */
     void speedPointer(HudFrame out, int viewW, int viewH, float vx, float vy) {
         if (ptrMoveFact != 0.0 && (vx != 0 || vy != 0)) {
-            out.line(viewW / 2, viewH / 2, (int) (viewW / 2 - ptrMoveFact * vx), (int) (viewH / 2 + ptrMoveFact * vy),
-                HudFrame.SOLID, HudColor.HUD);
+            out.line(ws(viewW / 2), ws(viewH / 2), ws((int) (viewW / 2 - ptrMoveFact * vx)),
+                ws((int) (viewH / 2 + ptrMoveFact * vy)), HudFrame.SOLID, HudColor.HUD);
         }
     }
 
@@ -214,12 +253,12 @@ public final class Hud {
     void hudLines(HudFrame out, int hx, int hy) {
         int in = HUD_SIZE - HUD_OFFSET;
         if (horizontalLines) {
-            out.line(hx - HUD_SIZE, hy - in, hx + HUD_SIZE, hy - in, HudFrame.DASHED, HudColor.HUD);
-            out.line(hx - HUD_SIZE, hy + in, hx + HUD_SIZE, hy + in, HudFrame.DASHED, HudColor.HUD);
+            out.line(ws(hx - HUD_SIZE), ws(hy - in), ws(hx + HUD_SIZE), ws(hy - in), HudFrame.DASHED, HudColor.HUD);
+            out.line(ws(hx - HUD_SIZE), ws(hy + in), ws(hx + HUD_SIZE), ws(hy + in), HudFrame.DASHED, HudColor.HUD);
         }
         if (verticalLines) {
-            out.line(hx - in, hy - HUD_SIZE, hx - in, hy + HUD_SIZE, HudFrame.DASHED, HudColor.HUD);
-            out.line(hx + in, hy - HUD_SIZE, hx + in, hy + HUD_SIZE, HudFrame.DASHED, HudColor.HUD);
+            out.line(ws(hx - in), ws(hy - HUD_SIZE), ws(hx - in), ws(hy + HUD_SIZE), HudFrame.DASHED, HudColor.HUD);
+            out.line(ws(hx + in), ws(hy - HUD_SIZE), ws(hx + in), ws(hy + HUD_SIZE), HudFrame.DASHED, HudColor.HUD);
         }
     }
 
@@ -233,8 +272,8 @@ public final class Hud {
         if (!(fuelCount > 0 || fuel < fuelNotify)) {
             return false;
         }
-        int x = hx + HUD_SIZE - HUD_OFFSET + BORDER;
-        int y = hy + HUD_SIZE - HUD_OFFSET + BORDER;
+        int x = ws(hx + HUD_SIZE - HUD_OFFSET + BORDER);
+        int y = ws(hy + HUD_SIZE - HUD_OFFSET + BORDER);
         CharBuf t = out.text(x, y + m.ascent(), HudColor.HUD);
         if (t != null) {
             t.appendInt((int) fuel, 4, '0');
@@ -280,9 +319,9 @@ public final class Hud {
         int gx = hx + HUD_SIZE - HUD_OFFSET + FUEL_GAUGE_OFFSET;
         int gy = hy - HUD_SIZE + HUD_OFFSET + FUEL_GAUGE_OFFSET;
         int gw = HUD_OFFSET - 2 * FUEL_GAUGE_OFFSET;
-        out.rect(gx - 1, gy - 1, gw + 3, HUD_FUEL_GAUGE_SIZE + 3, false, HudColor.HUD);
+        out.rect(ws(gx) - 1, ws(gy) - 1, ws(gw) + 3, ws(HUD_FUEL_GAUGE_SIZE) + 3, false, HudColor.HUD);
         int size = fuelMax > 0 ? (int) (HUD_FUEL_GAUGE_SIZE * fuel / fuelMax) : 0;
-        out.rect(gx + 1, gy + HUD_FUEL_GAUGE_SIZE - size + 1, gw, size, true, HudColor.HUD);
+        out.rect(ws(gx) + 1, ws(gy + HUD_FUEL_GAUGE_SIZE - size) + 1, ws(gw), ws(size), true, HudColor.HUD);
     }
 
     /**
@@ -302,10 +341,10 @@ public final class Hud {
                 continue;
             }
             int width = m.width(msg, msg.length());
-            if (j == 0 && width > 2 * HUD_SIZE - HUD_OFFSET * 2 && (didFuel || verticalLines)) {
+            if (j == 0 && width > ws(2 * HUD_SIZE - HUD_OFFSET * 2) && (didFuel || verticalLines)) {
                 j++;
             }
-            CharBuf t = out.text(hx - width / 2, hy + HUD_SIZE - HUD_OFFSET + BORDER + m.ascent()
+            CharBuf t = out.text(ws(hx) - width / 2, ws(hy + HUD_SIZE - HUD_OFFSET + BORDER) + m.ascent()
                 + j * (m.ascent() + m.descent()), HudColor.HUD);
             if (t != null) {
                 t.append(msg);
@@ -318,7 +357,8 @@ public final class Hud {
      * C {@code Paint_meter}.
      * <p>
      * BEHAVIOR: xoff &gt;= 0 places the meter at xoff with the title to its right; negative xoff places
-     * it at viewW - (METER_WIDTH - xoff) with the title to its left.
+     * it at viewW - (METER_WIDTH - xoff) with the title to its left. viewW, xoff and y are view units;
+     * geometry is scaled (C WINSCALE / Rectangle_add / Segment_add), the title offsets are not.
      * BEHAVIOR: a red bar (x+2, y+2, (METER_WIDTH-3)*val/max, METER_HEIGHT-3), a white outline, five
      * white scale ticks, and the title at baseline y + (ascent + METER_HEIGHT)/2. max 0 counts as 1.
      */
@@ -328,23 +368,27 @@ public final class Hud {
         int tw = m.width(title, title.length());
         if (xoff >= 0) {
             x = xoff;
-            xstr = x + METER_WIDTH + METER_BORDER;
+            xstr = ws(x + METER_WIDTH) + METER_BORDER;
         } else {
             x = viewW - (METER_WIDTH - xoff);
-            xstr = x - (METER_BORDER + tw);
+            xstr = ws(x) - (METER_BORDER + tw);
         }
-        out.rect(x + 2, y + 2, ((METER_WIDTH - 3) * val) / (max != 0 ? max : 1), METER_HEIGHT - 3, true, HudColor.RED);
-        out.rect(x, y, METER_WIDTH, METER_HEIGHT, false, HudColor.WHITE);
-        out.line(x, y - 4, x, y + METER_HEIGHT + 4, HudFrame.SOLID, HudColor.WHITE);
-        out.line(x + METER_WIDTH, y - 4, x + METER_WIDTH, y + METER_HEIGHT + 4, HudFrame.SOLID, HudColor.WHITE);
-        out.line(x + METER_WIDTH / 2, y - 3, x + METER_WIDTH / 2, y + METER_HEIGHT + 3, HudFrame.SOLID, HudColor.WHITE);
-        out.line(x + METER_WIDTH / 4, y - 1, x + METER_WIDTH / 4, y + METER_HEIGHT + 1, HudFrame.SOLID, HudColor.WHITE);
-        out.line(x + 3 * METER_WIDTH / 4, y - 1, x + 3 * METER_WIDTH / 4, y + METER_HEIGHT + 1, HudFrame.SOLID,
-            HudColor.WHITE);
-        CharBuf t = out.text(xstr, y + (m.ascent() + METER_HEIGHT) / 2, HudColor.WHITE);
+        out.rect(ws(x + 2), ws(y + 2), ws(((METER_WIDTH - 3) * val) / (max != 0 ? max : 1)), ws(METER_HEIGHT - 3), true,
+            HudColor.RED);
+        out.rect(ws(x), ws(y), ws(METER_WIDTH), ws(METER_HEIGHT), false, HudColor.WHITE);
+        tick(out, x, y - 4, y + METER_HEIGHT + 4);
+        tick(out, x + METER_WIDTH, y - 4, y + METER_HEIGHT + 4);
+        tick(out, x + METER_WIDTH / 2, y - 3, y + METER_HEIGHT + 3);
+        tick(out, x + METER_WIDTH / 4, y - 1, y + METER_HEIGHT + 1);
+        tick(out, x + 3 * METER_WIDTH / 4, y - 1, y + METER_HEIGHT + 1);
+        CharBuf t = out.text(xstr, ws(y) + (m.ascent() + METER_HEIGHT) / 2, HudColor.WHITE);
         if (t != null) {
             t.append(title);
         }
+    }
+
+    private void tick(HudFrame out, int x, int y0, int y1) {
+        out.line(ws(x), ws(y0), ws(x), ws(y1), HudFrame.SOLID, HudColor.WHITE);
     }
 
     /**

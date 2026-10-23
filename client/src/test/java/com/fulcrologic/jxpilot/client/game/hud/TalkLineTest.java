@@ -57,6 +57,7 @@ class TalkLineTest {
         t.type('l');
         t.home();
         t.left();
+        int leftAtZero = t.cursor();
         t.backspace();
         String atStart = t.text().toString();
         t.end();
@@ -71,6 +72,7 @@ class TalkLineTest {
         assertAll(
             () -> assertFalse(closed, "typing into a closed line is ignored"),
             () -> assertEquals("hello", atStart, "inserted l before o; backspace at the start does nothing"),
+            () -> assertEquals(0, leftAtZero, "left at 0 stays at 0"),
             () -> assertEquals("hell", afterDel, "DEL erases the char before the cursor, like Backspace in C"),
             () -> assertEquals("helÈ", t.text().toString(), "Latin-1 200 typed"),
             () -> assertFalse(control, "control chars rejected"),
@@ -85,7 +87,10 @@ class TalkLineTest {
     void full() {
         TalkLine t = new TalkLine();
         t.open();
-        type(t, "a".repeat(85));
+        type(t, "a".repeat(78));
+        boolean typedFull = t.typed();
+        boolean refused = t.type('a');
+        type(t, "a".repeat(6));
         TalkLine w = new TalkLine();
         w.limitWidth(HudTest.M, 100);
         w.open();
@@ -97,6 +102,8 @@ class TalkLineTest {
         type(edge, "a".repeat(20));
         assertAll(
             () -> assertEquals(78, t.text().length(), "capped at 78"),
+            () -> assertFalse(refused, "the 79th is refused"),
+            () -> assertTrue(typedFull, "the line counts as typed"),
             () -> assertEquals(TalkLine.MAX_LEN, t.text().length(), "MAX_LEN"),
             () -> assertEquals(13, at100, "7 px chars: 12 chars are 84 px < 100-11; the 13th is refused at 91 px"),
             () -> assertEquals(10, edge.text().length(), "a line exactly as wide as the limit takes no more"),
@@ -123,7 +130,7 @@ class TalkLineTest {
         int b = m.cursor();
         m.control('A');
         int a = m.cursor();
-        m.control('F');
+        boolean handled = m.control('F');
         boolean other = m.control('Z');
         assertAll(
             () -> assertEquals("hello big  ", w.text().toString(), "W: trailing blanks and the last word, wherever the cursor is"),
@@ -137,6 +144,7 @@ class TalkLineTest {
             () -> assertEquals(4, b, "B one back"),
             () -> assertEquals(0, a, "A to the start"),
             () -> assertEquals(1, m.cursor(), "F one forward"),
+            () -> assertTrue(handled, "F is handled"),
             () -> assertFalse(other, "Z is not a talk control key"));
     }
 
@@ -171,6 +179,8 @@ class TalkLineTest {
         t.open();
         type(t, "one");
         t.submit(out);
+        boolean openAfterSubmit = t.isOpen();
+        boolean typedAfterSubmit = t.typed();
         t.open();
         t.historyUp();
         boolean recalled = t.submit(out);
@@ -188,6 +198,8 @@ class TalkLineTest {
         k.open();
         assertAll(
             () -> assertFalse(empty, "an empty line is not sent"),
+            () -> assertFalse(openAfterSubmit, "Return closes the line"),
+            () -> assertFalse(typedAfterSubmit, "and the line is no longer typed"),
             () -> assertEquals("junk", untouched, "nothing copied for an empty line"),
             () -> assertTrue(recalled, "a recalled line is sent"),
             () -> assertEquals("one", resent, "as it was"),
