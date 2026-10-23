@@ -93,6 +93,29 @@ public final class MoveState {
     public int target = -1;
     public int treasure = -1;
 
+    /**
+     * Start a new move from (x, y) clicks with velocity (vx, vy) and {@code todo} clicks.
+     * <p>
+     * BEHAVIOR: clears crash, bounce, done and the hit cannon/wormhole/target/treasure indices.
+     */
+    public void start(int x, int y, double vx, double vy, int tx, int ty, int heading) {
+        posX = x;
+        posY = y;
+        velX = vx;
+        velY = vy;
+        todoX = tx;
+        todoY = ty;
+        dir = heading;
+        crash = NOT_A_CRASH;
+        bounce = NOT_A_BOUNCE;
+        doneX = 0;
+        doneY = 0;
+        cannon = -1;
+        wormhole = -1;
+        target = -1;
+        treasure = -1;
+    }
+
     /** Copy the move info (not the state) from another state. */
     public void copyInfo(MoveState o) {
         edgeWrap = o.edgeWrap;

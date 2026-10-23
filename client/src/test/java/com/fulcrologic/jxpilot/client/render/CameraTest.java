@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.client.render;
 
+import com.fulcrologic.jxpilot.client.Fixtures;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -80,17 +81,17 @@ class CameraTest {
         @Test
         void applyToMakesTheBatchWriteScreenPixels() {
             Camera c = camera(1000, 1000, true, 800, 600, 1, 2, 990, 500);
-            VertexBatch b = VertexBatch.fixed(ByteBuffer.allocateDirect(64 * VertexBatch.STRIDE), 4, x -> { });
+            VertexBatch b = Fixtures.batch(64, 4, x -> { });
             for (int k = 0; k < c.offsetCount(); k++) {
                 c.applyTo(b, k);
                 b.line(5, 500, 0, 0, 0);
             }
             assertAll(
                 () -> assertEquals(2, c.offsetCount(), "two copies near the right seam"),
-                () -> assertEquals(c.screenX(5, 0), b.x(0), EPS, "copy 0 matches screenX"),
-                () -> assertEquals(c.screenX(5, 1), b.x(2), EPS, "copy 1 matches screenX"),
-                () -> assertEquals(430f, b.x(2), EPS, "x=5 in the next copy is 15 world px right of centre"),
-                () -> assertEquals(c.screenY(500, 1), b.y(2), EPS, "y matches screenY"));
+                () -> assertEquals(c.screenX(5, 0), b.segX1(0), EPS, "copy 0 matches screenX"),
+                () -> assertEquals(c.screenX(5, 1), b.segX1(1), EPS, "copy 1 matches screenX"),
+                () -> assertEquals(430f, b.segX1(1), EPS, "x=5 in the next copy is 15 world px right of centre"),
+                () -> assertEquals(c.screenY(500, 1), b.segY1(1), EPS, "y matches screenY"));
         }
 
         @Test
@@ -192,14 +193,40 @@ class CameraTest {
         }
 
         @Test
-        void zoomedFarOutKeepsAtMostThreeCopiesPerAxisCentredOnTheView() {
-            // view spans 10000 world px over a 1000 px world: 11 copies, keep the middle 3
+        void zoomedFarOutDrawsEveryCopyTheViewSpans() {
+            // view spans 10000 world px over a 1000 px world centred at 500: copies -5..5
             Camera c = camera(1000, 1000, true, 1000, 100, 1, 0.1, 500, 500);
             assertAll(
-                () -> assertEquals(3, c.offsetCount(), "three x copies, one y copy"),
-                () -> assertEquals(-1000.0, c.offsetX(0), "left neighbour"),
-                () -> assertEquals(0.0, c.offsetX(1), "the world"),
-                () -> assertEquals(1000.0, c.offsetX(2), "right neighbour"));
+                () -> assertEquals(11, c.offsetCount(), "eleven x copies, one y copy"),
+                () -> assertEquals(-5000.0, c.offsetX(0), "from five worlds left"),
+                () -> assertEquals(0.0, c.offsetX(5), "through the world"),
+                () -> assertEquals(5000.0, c.offsetX(10), "to five worlds right"));
+        }
+
+        @Test
+        void copyArraysGrowWhenZoomingOutAndAreReusedAfterwards() {
+            Camera c = camera(1000, 1000, true, 1000, 1000, 1, 0.25, 500, 500); // 4000 px: copies -2..2
+            int far = c.offsetCount();
+            c.setZoom(1);
+            c.update();
+            int near = c.offsetCount();
+            c.setZoom(0.25);
+            c.update();
+            assertAll(
+                () -> assertEquals(25, far, "5 x 5 copies at zoom 0.25"),
+                () -> assertEquals(1, near, "one copy when the view fits"),
+                () -> assertEquals(25, c.offsetCount(), "25 again after zooming back out"),
+                () -> assertEquals(2000.0, c.offsetY(24), "last copy is two worlds up"));
+        }
+
+        @Test
+        void pathologicalViewsAreCutToTheSafetyBoundCentredOnTheView() {
+            // a 10 px world under a 10000 px view: 1001 copies, keep the middle 64
+            Camera c = camera(10, 10, true, 10000, 1, 1, 1, 5, 5);
+            assertAll(
+                () -> assertEquals(Camera.MAX_COPIES_PER_AXIS, c.offsetCount(), "x copies capped, one y copy"),
+                () -> assertEquals(64, Camera.MAX_COPIES_PER_AXIS, "the bound is 64"),
+                () -> assertEquals(-320.0, c.offsetX(0), "first kept copy: -500 + (1001 - 64) / 2 = -32"));
         }
 
         @Test
@@ -209,8 +236,10 @@ class CameraTest {
                 () -> assertEquals(0, Camera.copyLast(50, 100, 1000, -1), "right edge at 150 is in copy 0"),
                 () -> assertEquals(0, Camera.copyFirst(100, 100, 1000), "left edge exactly at 0 is copy 0"),
                 () -> assertEquals(1, Camera.copyLast(950, 100, 1000, 0), "right edge at 1050 is copy 1"),
-                () -> assertEquals(-1, Camera.copyFirst(500, 2000, 1000), "five copies trimmed from -2 to start at -1"),
-                () -> assertEquals(1, Camera.copyLast(500, 2000, 1000, -1), "and end at +1"));
+                () -> assertEquals(-2, Camera.copyFirst(500, 2000, 1000), "five copies from -2"),
+                () -> assertEquals(2, Camera.copyLast(500, 2000, 1000, -2), "to +2"),
+                () -> assertEquals(-27, Camera.copyFirst(5, 1000, 1), "copies -995..1004 (2000) start (2000 - 64) / 2 = 968 later"),
+                () -> assertEquals(36, Camera.copyLast(5, 1000, 1, -27), "and stop after 64 copies"));
         }
     }
 
@@ -265,6 +294,18 @@ class CameraTest {
             assertAll(
                 () -> assertTrue(c.isVisible(400, 500, 450, 510, 0, 0), "right edge on the left view edge"),
                 () -> assertTrue(c.isVisible(500, 550, 510, 600, 0, 0), "bottom edge on the top view edge"));
+        }
+
+        @Test
+        void visibilityUsesTheYCopyOffset() {
+            // centre y 25 in a 1000 px wrapping world, 200 px view: y copies -1 (k=0) and 0 (k=1)
+            Camera c = camera(1000, 1000, true, 200, 200, 1, 1, 500, 25);
+            assertAll(
+                () -> assertEquals(-1000.0, c.offsetY(0), "copy -1 below"),
+                () -> assertTrue(c.isVisible(500, 950, 510, 960, 0, 0), "y 950 shows in the copy below the seam"),
+                () -> assertFalse(c.isVisible(500, 950, 510, 960, 1, 0), "but not in the world itself"),
+                () -> assertFalse(c.isVisible(500, 900, 510, 920, 0, 0), "y up to 920 stops 5 px below the view"),
+                () -> assertTrue(c.isVisible(500, 900, 510, 920, 0, 5), "a 5 px margin brings it in"));
         }
 
         @Test

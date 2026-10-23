@@ -21,25 +21,26 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
  */
-package com.fulcrologic.jxpilot.server.sim;
+package com.fulcrologic.jxpilot.client.paint;
 
-import com.fulcrologic.jxpilot.server.world.Player;
+import org.junit.jupiter.api.Test;
 
-/** Effects of wall movement that belong to the game rules (crashes, targets, bounce sparks). */
-public interface MoveListener {
-    /** A pool object crashed (C {@code Object_crash}); {@code ms.crash} says into what. */
-    void objectCrashed(int h, MoveState ms);
+import static org.junit.jupiter.api.Assertions.*;
 
-    /** A player crashed or entered a wormhole (C {@code Player_crash}); {@code pt} is the hull point. */
-    void playerCrashed(Player p, MoveState ms, int pt, boolean turning);
-
-    /**
-     * A player survived a wall bounce that cost fuel (Move_player): make the spark burst and, when the
-     * bounce was off a target, damage it.
-     *
-     * @param wallDir RES direction of the wall normal
-     * @param cost    C {@code cost} (unscaled fuel units before the drain multiplier)
-     * @param target  target index or -1
-     */
-    void playerBounced(Player p, int wallDir, long cost, int target);
+class ScreenSpaceTest {
+    @Test
+    void mapsCPixelsToFramebufferCentresAndEdges() {
+        ScreenSpace s = new ScreenSpace();
+        s.set(600, 2);
+        assertAll(
+            () -> assertEquals(21f, s.x(10), "column 10's centre: (10 + 0.5) * 2"),
+            () -> assertEquals(579f, s.y(10), "row 10's centre from the top: 600 - 10.5 * 2"),
+            () -> assertEquals(20f, s.edgeX(10), "column 10's left edge"),
+            () -> assertEquals(580f, s.edgeY(10), "row 10's top edge"),
+            () -> assertEquals(580f, s.baseline(10), "text drawn at row 10 sits on its top edge"),
+            () -> assertEquals(7f, s.len(3.5), "lengths scale by the ratio"),
+            () -> assertEquals(2.0, s.ratio(), "ratio"),
+            () -> assertEquals(300, s.logicalHeight(), "600 framebuffer rows are 300 logical"),
+            () -> assertEquals(400, s.logicalWidth(801), "logical width truncates"));
+    }
 }

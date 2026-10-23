@@ -39,15 +39,43 @@
   <build>
     <plugins>
       <plugin>
+        <!-- mvn -pl client exec:exec, optionally with -Dclient.args="(viewer options)".
+             -Xms64m / SoftMaxHeapSize: the render loop allocates nothing, so a small, pre-sized heap
+             keeps ZGC idle and the footprint low. -->
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <configuration>
+          <executable>java</executable>
+          <workingDirectory>${project.basedir}</workingDirectory>
+          <commandlineArgs>${jvm.platform.args} --enable-native-access=ALL-UNNAMED -XX:+UseZGC -Xms64m -XX:SoftMaxHeapSize=128m -classpath %classpath com.fulcrologic.jxpilot.client.ClientMain ${client.args}</commandlineArgs>
+        </configuration>
+      </plugin>
+      <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <excludes>
+            <exclude>**/AllocationTest.java</exclude>
             <exclude>**/*NetAllocationTest.java</exclude>
           </excludes>
         </configuration>
         <executions>
-          <!-- client-net allocation test runs separately with escape analysis off (as in common). -->
+          <!-- Allocation tests run in their own JVMs with escape analysis off, so a passing result
+               depends neither on the JIT scalar-replacing objects nor on other tests' JIT state. -->
+          <execution>
+            <id>allocation-tests</id>
+            <phase>test</phase>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <excludes combine.self="override"/>
+              <includes>
+                <include>**/AllocationTest.java</include>
+              </includes>
+              <argLine>-XX:-DoEscapeAnalysis</argLine>
+            </configuration>
+          </execution>
           <execution>
             <id>net-allocation-tests</id>
             <phase>test</phase>
@@ -65,16 +93,6 @@
         </executions>
       </plugin>
       <plugin>
-        <!-- mvn -pl client exec:exec, optionally with -Dclient.args="(viewer options)" -->
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>exec-maven-plugin</artifactId>
-        <configuration>
-          <executable>java</executable>
-          <workingDirectory>${project.basedir}</workingDirectory>
-          <commandlineArgs>${jvm.platform.args} --enable-native-access=ALL-UNNAMED -XX:+UseZGC -classpath %classpath com.fulcrologic.jxpilot.client.ClientMain ${client.args}</commandlineArgs>
-        </configuration>
-      </plugin>
-      <plugin>
         <groupId>org.pitest</groupId>
         <artifactId>pitest-maven</artifactId>
         <configuration>
@@ -82,10 +100,15 @@
             <param>com.fulcrologic.jxpilot.client.render.*</param>
             <param>com.fulcrologic.jxpilot.client.map.*</param>
             <param>com.fulcrologic.jxpilot.client.viewer.*</param>
+            <param>com.fulcrologic.jxpilot.client.paint.*</param>
             <param>com.fulcrologic.jxpilot.client.net.*</param>
             <param>com.fulcrologic.jxpilot.client.game.*</param>
           </targetClasses>
+          <!-- DemoWorld and DemoHud are fake animation data for the demo viewer mode; UdpTransport and
+               ClientSim are I/O edges covered by loopback tests. -->
           <excludedClasses>
+            <param>com.fulcrologic.jxpilot.client.viewer.DemoWorld</param>
+            <param>com.fulcrologic.jxpilot.client.viewer.DemoHud</param>
             <param>com.fulcrologic.jxpilot.client.net.UdpTransport</param>
             <param>com.fulcrologic.jxpilot.client.net.ClientSim</param>
           </excludedClasses>

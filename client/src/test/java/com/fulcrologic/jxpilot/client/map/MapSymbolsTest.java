@@ -92,21 +92,22 @@ class MapSymbolsTest {
         @Test
         void letterIsBlackOnlyWhenTheBarReachesTheCentre() {
             assertAll(
-                () -> assertTrue(MapSymbols.fuelCoversCentre(260), "16 px bar reaches y 18 >= 17.5"),
-                () -> assertFalse(MapSymbols.fuelCoversCentre(250), "15 px bar stops at y 17"));
+                () -> assertTrue(MapSymbols.fuelCoversCentre(250), "15 px bar spans [y+2, y+18): reaches 18 >= 17.5"),
+                () -> assertFalse(MapSymbols.fuelCoversCentre(240), "14 px bar stops at y 17"));
         }
 
         @Test
-        void barIsARectangleInsideTheBorderAndAbsentWhenEmpty() {
+        void barMatchesCsFilledRectangleAndIsALineWhenEmpty() {
             VertexBatch b = Segs.batch();
             MapSymbols.fuelBar(b, 35, 0, 250, RED);
             VertexBatch empty = Segs.batch();
             MapSymbols.fuelBar(empty, 35, 0, 0, RED);
             assertAll(
-                () -> assertEquals(List.of("37,2 68,2 68,17", "37,2 68,17 37,17"), Segs.triangles(b),
-                    "x [x+2, x+33], y [y+2, y+2+15]"),
+                () -> assertEquals(List.of("37,2 69,2 69,18", "37,2 69,18 37,18"), Segs.triangles(b),
+                    "C fills BLOCK_SZ-4+1 = 32 by h+1 = 16 pixels from (x+2, y+2): [x+2, x+34) x [y+2, y+18)"),
                 () -> assertEquals(List.of(RED), Segs.colors(b), "red"),
-                () -> assertEquals(0, empty.vertexCount(), "nothing for an empty station"));
+                () -> assertEquals(List.of("37,2 69,2 69,3", "37,2 69,3 37,3"), Segs.triangles(empty),
+                    "an empty station still shows a one-pixel line"));
         }
     }
 
@@ -152,17 +153,17 @@ class MapSymbolsTest {
         MapSymbols.wormhole(b0, 0, 0, 0, RED);
         VertexBatch b2 = Segs.batch();
         MapSymbols.wormhole(b2, 0, 0, 2, RED);
-        int per = 2 * MapSymbols.CIRCLE_SEGMENTS;
+        int per = MapSymbols.CIRCLE_SEGMENTS;
         assertAll(
-            () -> assertEquals(3 * per, b0.vertexCount(), "three circles"),
-            () -> assertEquals(33f, b0.x(0), EPS, "outer circle: centre 16.5 + r 16.5"),
-            () -> assertEquals(18.5f, b0.y(0), EPS, "outer circle centre y = 35 - 16.5"),
-            () -> assertEquals(33f, b0.x(per), EPS, "step 0 middle circle: centre 21.5 + r 11.5"),
-            () -> assertEquals(13.5f, b0.y(per), EPS, "step 0 middle circle centre y = 35 - 10 - 11.5"),
-            () -> assertEquals(33f, b0.x(2 * per), EPS, "inner circle: centre 26.5 + r 6.5"),
-            () -> assertEquals(8.5f, b0.y(2 * per), EPS, "inner circle centre y = 35 - 20 - 6.5"),
-            () -> assertEquals(23f, b2.x(per), EPS, "step 2 (offset 0,10): middle centre 11.5 + 11.5"),
-            () -> assertEquals(13.5f, b2.y(per), EPS, "same y as step 0"));
+            () -> assertEquals(3 * per, b0.segmentCount(), "three circles"),
+            () -> assertEquals(33f, b0.segX1(0), EPS, "outer circle: centre 16.5 + r 16.5"),
+            () -> assertEquals(18.5f, b0.segY1(0), EPS, "outer circle centre y = 35 - 16.5"),
+            () -> assertEquals(33f, b0.segX1(per), EPS, "step 0 middle circle: centre 21.5 + r 11.5"),
+            () -> assertEquals(13.5f, b0.segY1(per), EPS, "step 0 middle circle centre y = 35 - 10 - 11.5"),
+            () -> assertEquals(33f, b0.segX1(2 * per), EPS, "inner circle: centre 26.5 + r 6.5"),
+            () -> assertEquals(8.5f, b0.segY1(2 * per), EPS, "inner circle centre y = 35 - 20 - 6.5"),
+            () -> assertEquals(23f, b2.segX1(per), EPS, "step 2 (offset 0,10): middle centre 11.5 + 11.5"),
+            () -> assertEquals(13.5f, b2.segY1(per), EPS, "same y as step 0"));
     }
 
     @Test
@@ -176,21 +177,21 @@ class MapSymbolsTest {
         s.concentrator(tri1, 0, 0, 1, MapSymbols.CONC_TRIS, 3, RED);
         double a = 2 * Math.PI / Const.RES;
         assertAll(
-            () -> assertEquals(18, tri0.vertexCount(), "three triangles"),
-            () -> assertEquals(27f, tri0.x(0), EPS, "loops 0: first triangle centre (17+3, 17), corner at +7"),
-            () -> assertEquals(17f, tri0.y(0), EPS, "first corner at the centre height"),
-            () -> assertEquals((float) (20 + 7 * Math.cos(42 * a)), tri0.x(1), EPS, "second corner RES/3 = 42 further"),
-            () -> assertEquals((float) (17 - 7 * Math.sin(42 * a)), tri0.y(1), EPS, "turning clockwise on screen (y = -sin)"),
-            () -> assertEquals(24, sq0.vertexCount(), "three squares"),
-            () -> assertEquals(28f, sq0.x(0), EPS, "first square corner at +8"),
-            () -> assertEquals(20f, sq0.x(2), EPS, "second corner a quarter turn on: above/below the centre"),
-            () -> assertEquals(9f, sq0.y(2), EPS, "C's screen-up quarter turn is world-down: 17 - 8"),
-            () -> assertEquals((float) (17 + 5 * Math.cos(3 * a) + 11), tri0.x(6), EPS,
+            () -> assertEquals(9, tri0.segmentCount(), "three triangles"),
+            () -> assertEquals(27f, tri0.segX1(0), EPS, "loops 0: first triangle centre (17+3, 17), corner at +7"),
+            () -> assertEquals(17f, tri0.segY1(0), EPS, "first corner at the centre height"),
+            () -> assertEquals((float) (20 + 7 * Math.cos(42 * a)), tri0.segX2(0), EPS, "second corner RES/3 = 42 further"),
+            () -> assertEquals((float) (17 - 7 * Math.sin(42 * a)), tri0.segY2(0), EPS, "turning clockwise on screen (y = -sin)"),
+            () -> assertEquals(12, sq0.segmentCount(), "three squares"),
+            () -> assertEquals(28f, sq0.segX1(0), EPS, "first square corner at +8"),
+            () -> assertEquals(20f, sq0.segX1(1), EPS, "second corner a quarter turn on: above/below the centre"),
+            () -> assertEquals(9f, sq0.segY1(1), EPS, "C's screen-up quarter turn is world-down: 17 - 8"),
+            () -> assertEquals((float) (17 + 5 * Math.cos(3 * a) + 11), tri0.segX1(3), EPS,
                 "second triangle orbits at its direction offset 3, radius 5, size 11"),
-            () -> assertEquals((float) (17 - 5 * Math.sin(3 * a)), tri0.y(6), EPS, "orbit direction +3, not -3"),
-            () -> assertEquals((float) (17 + 3 * Math.cos(5 * a) + 7 * Math.cos(3 * a)), tri1.x(0), EPS,
+            () -> assertEquals((float) (17 - 5 * Math.sin(3 * a)), tri0.segY1(3), EPS, "orbit direction +3, not -3"),
+            () -> assertEquals((float) (17 + 3 * Math.cos(5 * a) + 7 * Math.cos(3 * a)), tri1.segX1(0), EPS,
                 "loops 1: orbit by 5, spin by 3"),
-            () -> assertEquals((float) (17 - 3 * Math.sin(5 * a) - 7 * Math.sin(3 * a)), tri1.y(0), EPS,
+            () -> assertEquals((float) (17 - 3 * Math.sin(5 * a) - 7 * Math.sin(3 * a)), tri1.segY1(0), EPS,
                 "loops 1 y uses -sin"));
     }
 
@@ -228,10 +229,10 @@ class MapSymbolsTest {
             assertAll(
                 () -> assertEquals(3, b.commandCount(), "three commands"),
                 () -> assertEquals(VertexBatch.TRIANGLES, b.commandMode(0), "fills first"),
-                () -> assertEquals(6, b.commandVertices(0), "just the fuel bar"),
+                () -> assertEquals(6, b.commandLength(0), "just the fuel bar"),
                 () -> assertEquals(VertexBatch.LINES, b.commandMode(1), "then lines"),
                 () -> assertEquals(VertexBatch.TRIANGLES, b.commandMode(2), "then text quads"),
-                () -> assertEquals(6, b.commandVertices(2), "just the 'F'"),
+                () -> assertEquals(6, b.commandLength(2), "just the 'F'"),
                 () -> assertEquals(BLACK, b.color(b.commandFirst(2)), "F is black on a full station"),
                 () -> assertEquals(1f, b.scaleX(), "text leaves the batch in identity transform"));
         }
@@ -241,8 +242,8 @@ class MapSymbolsTest {
             WorldMap m = row(false);
             VertexBatch b = Segs.batch();
             new MapSymbols(m, P).draw(b, TEXT, cam(m, 140, 35, 400, 200), new State());
-            int expected = 2 * (3 + 8 + 3 + MapSymbols.CIRCLE_SEGMENTS / 2 + 2 * 3 * MapSymbols.CIRCLE_SEGMENTS + 9 + 12);
-            assertEquals(expected, b.commandVertices(1), "cannon, target, treasure, two wormholes, both concentrators");
+            int expected = (3 + 8 + 3 + MapSymbols.CIRCLE_SEGMENTS / 2 + 2 * 3 * MapSymbols.CIRCLE_SEGMENTS + 9 + 12);
+            assertEquals(expected, b.commandLength(1), "cannon, target, treasure, two wormholes, both concentrators");
         }
 
         /** Objects from block x = 2 on, so block-to-pixel scaling is observable. */
@@ -262,7 +263,7 @@ class MapSymbolsTest {
             int wormStart = 3 + 8 + 3 + MapSymbols.CIRCLE_SEGMENTS / 2;
             int concStart = wormStart + 2 * 3 * MapSymbols.CIRCLE_SEGMENTS;
             assertAll(
-                () -> assertEquals("72,37 103,37 103,68", worldTriangles(b, c).get(0), "fuel bar in block (2,1)"),
+                () -> assertEquals("72,37 104,37 104,69", worldTriangles(b, c).get(0), "fuel bar in block (2,1)"),
                 () -> assertEquals("105,35-140,35", l.get(0), "cannon base in block (3,1)"),
                 () -> assertEquals("140,35-175,35", l.get(3), "target outline in block (4,1)"),
                 () -> assertEquals("175,35-175,52", l.get(11), "treasure wall in block (5,1)"),
@@ -298,7 +299,7 @@ class MapSymbolsTest {
             int t = b.commandFirst(b.commandCount() - 1);
             float u2 = ('2' - 32) * 8f / 1000;
             assertAll(
-                () -> assertEquals(24, b.commandVertices(b.commandCount() - 1), "F, base, target, treasure"),
+                () -> assertEquals(24, b.commandLength(b.commandCount() - 1), "F, base, target, treasure"),
                 () -> assertEquals(82f, b.x(t + 6), "base digit under base (0,0): screen 34 - 3 + 1"),
                 () -> assertEquals(24f, b.y(t + 8), "base digit baseline 30 - 4 - 10, top + 8"),
                 () -> assertEquals(u2, b.u(t + 6), 1f / 65535, "base digit is the team number 2"),
@@ -316,7 +317,7 @@ class MapSymbolsTest {
             WorldMap m = spread("0.........");
             VertexBatch b = Segs.batch();
             new MapSymbols(m, P).draw(b, TEXT, cam(m, 175, 35, 800, 200), new State());
-            assertEquals(24, b.commandVertices(b.commandCount() - 1), "team 0 base, target and treasure digits are drawn");
+            assertEquals(24, b.commandLength(b.commandCount() - 1), "team 0 base, target and treasure digits are drawn");
         }
 
         @Test
@@ -325,7 +326,27 @@ class MapSymbolsTest {
             WorldMap m = mapWith(false, "", repeat('.', 11) + "r" + repeat('.', 8), "1" + repeat('.', 19));
             VertexBatch b = Segs.batch();
             new MapSymbols(m, P).draw(b, TEXT, cam(m, 500, 35, 100, 100), new State());
-            assertEquals(6, b.vertexCount(), "drawn");
+            assertEquals(3, b.segmentCount(), "drawn");
+        }
+
+        @Test
+        void objectsReachingIntoTheBottomMarginAreDrawn() {
+            // view y [450, 550] at zoom 1, margin 48: the cannon at block y 11 spans [385, 420], its top 30 px
+            // below the view (inside the margin); the cannon at block y 10 tops out at 385, 65 px below (outside)
+            String[] rows = new String[20];
+            for (int i = 0; i < 20; i++) {
+                rows[i] = ".";
+            }
+            rows[20 - 1 - 11] = "r";
+            rows[20 - 1 - 10] = "r";
+            rows[19] = "1";
+            WorldMap m = mapWith(false, "", rows);
+            VertexBatch b = Segs.batch();
+            new MapSymbols(m, P).draw(b, TEXT, cam(m, 17, 500, 100, 100), new State());
+            assertAll(
+                () -> assertEquals(3, b.segmentCount(), "only the cannon reaching into the bottom margin"),
+                () -> assertEquals(MapSymbols.CULL_MARGIN, 48f, "the margin is 48 screen pixels"),
+                () -> assertEquals(-65f, b.segY1(0), "it is the block-11 cannon: base at world y 385, screen 385 - 500 + 50"));
         }
 
         @Test
@@ -339,7 +360,7 @@ class MapSymbolsTest {
             WorldMap m = mapWith(false, "", rows);
             VertexBatch b = Segs.batch();
             new MapSymbols(m, P).draw(b, TEXT, cam(m, 17, 17, 100, 100), new State());
-            assertEquals(0, b.vertexCount(), "cannon at block y 21 is far above a view around y = 17");
+            assertEquals(0, b.segmentCount(), "cannon at block y 21 is far above a view around y = 17");
         }
 
         @Test
@@ -347,7 +368,7 @@ class MapSymbolsTest {
             WorldMap m = mapWith(false, "", "....................r", "1....................");
             VertexBatch b = Segs.batch();
             new MapSymbols(m, P).draw(b, TEXT, cam(m, 17, 35, 100, 100), new State());
-            assertEquals(0, b.vertexCount(), "cannon at block 20 is far outside a view around x = 17");
+            assertEquals(0, b.segmentCount(), "cannon at block 20 is far outside a view around x = 17");
         }
 
         @Test
@@ -362,8 +383,9 @@ class MapSymbolsTest {
             VertexBatch a = Segs.batch();
             new MapSymbols(m, P).draw(a, TEXT, cam(m, 52.5, 35, 400, 200), alive);
             assertAll(
-                () -> assertEquals(0, b.vertexCount(), "dead cannon, dead target and an out-wormhole draw nothing"),
-                () -> assertEquals(2 * (3 + 8), a.vertexCount(), "alive: cannon and target, still no out-wormhole"));
+                () -> assertEquals(0, b.segmentCount(), "dead cannon, dead target and an out-wormhole draw no lines"),
+                () -> assertEquals(0, b.pointCount(), "nor a dot: the cannon at (0,1) is not on a dot position"),
+                () -> assertEquals(3 + 8, a.segmentCount(), "alive: cannon and target, still no out-wormhole"));
         }
 
         @Test
@@ -375,21 +397,78 @@ class MapSymbolsTest {
             VertexBatch near = Segs.batch();
             new MapSymbols(m, P).draw(near, TEXT, cam(m, 100, 35, 100, 100), new State());
             assertAll(
-                () -> assertEquals(0, b.vertexCount(), "nothing drawn far away"),
-                () -> assertEquals(6, near.vertexCount(), "drawn when within the cull margin"));
+                () -> assertEquals(0, b.segmentCount(), "nothing drawn far away"),
+                () -> assertEquals(3, near.segmentCount(), "drawn when within the cull margin"));
         }
 
         @Test
         void wrappedCopiesDrawSymbolsOncePerVisibleCopy() {
-            WorldMap m = mapWith(true, "", "r...", "1...");
+            WorldMap m = mapWith(true, "", "r#..", "1...");
             Camera c = cam(m, 0, 35, 140, 60); // spans the x seam only: copies -1 and 0
             VertexBatch b = Segs.batch();
             new MapSymbols(m, P).draw(b, TEXT, c, new State());
             assertAll(
                 () -> assertEquals(2, c.offsetCount(), "two copies"),
-                () -> assertEquals(12, b.vertexCount(), "the cannon in both copies"),
-                () -> assertEquals(c.screenX(0, 0), b.x(0), EPS, "first in copy -1"),
-                () -> assertEquals(c.screenX(0, 1), b.x(6), EPS, "then in copy 0"));
+                () -> assertEquals(6, b.segmentCount(), "the cannon in both copies"),
+                () -> assertEquals(c.screenX(0, 0), b.segX1(0), EPS, "first in copy -1"),
+                () -> assertEquals(c.screenX(0, 1), b.segX1(3), EPS, "then in copy 0"),
+                () -> assertEquals(12, b.vertexCount() - b.commandLength(b.commandCount() - 1),
+                    "the fuel bar in both copies (before the text)"),
+                () -> assertEquals(c.screenX(37, 0), b.x(0), EPS, "fuel bar first in copy -1"),
+                () -> assertEquals(c.screenX(37, 1), b.x(6), EPS, "then in copy 0: every pass uses each copy's transform"));
+        }
+
+        @Test
+        void aDeadCannonOnADotPositionShowsTheDot() {
+            // cannons at blocks (0,0) and (8,8) (dot positions) and (1,0) (not one); base at (4,4)
+            WorldMap m = mapWith(false, "", "........r", ".........", ".........", ".........", "....1....",
+                ".........", ".........", ".........", "rr.......");
+            State dead = new State();
+            dead.cannons = false;
+            VertexBatch b = Segs.batch();
+            new MapSymbols(m, P).draw(b, TEXT, cam(m, 157, 157, 400, 400), dead);
+            VertexBatch a = Segs.batch();
+            new MapSymbols(m, P).draw(a, TEXT, cam(m, 157, 157, 400, 400), new State());
+            Camera c = cam(m, 157, 157, 400, 400);
+            assertAll(
+                () -> assertEquals(2, b.pointCount(), "two dots: only the cannons on dot positions"),
+                () -> assertEquals(c.screenX(17, 0), b.pointX(0), EPS, "at the block centre x"),
+                () -> assertEquals(c.screenY(18, 0), b.pointY(0), EPS, "a pixel above the block centre y, as C draws dots"),
+                () -> assertEquals(c.screenX(8 * 35 + 17, 0), b.pointX(1), EPS, "the (8,8) dot at its block centre x"),
+                () -> assertEquals(c.screenY(8 * 35 + 18, 0), b.pointY(1), EPS, "and y"),
+                () -> assertEquals(StaticMap.POINT_SIZE, b.pointSize(0), "background point size"),
+                () -> assertEquals(BLUE, b.pointColor(0), "blue like every dot"),
+                () -> assertEquals(VertexBatch.POINTS, b.commandMode(0), "dots are the first pass"),
+                () -> assertEquals(0, a.pointCount(), "live cannons show no dot"),
+                () -> assertEquals(9, a.segmentCount(), "but all three triangles"));
+        }
+
+        @Test
+        void columnZeroIsADotPositionOnlyOnAWrappingMap() {
+            // a dead cannon at block (0,5): every block of column 0 is a dot position with edge wrap only
+            String[] rows = {"1", ".", ".", ".", ".", "r", ".", ".", ".", ".", "."}; // 11 rows: row 5 is block y 5
+            State dead = new State();
+            dead.cannons = false;
+            WorldMap wrap = mapWith(true, "", rows);
+            WorldMap hard = mapWith(false, "", rows);
+            VertexBatch w = Segs.batch();
+            new MapSymbols(wrap, P).draw(w, TEXT, cam(wrap, 17, 192, 100, 100), dead);
+            VertexBatch h = Segs.batch();
+            new MapSymbols(hard, P).draw(h, TEXT, cam(hard, 17, 192, 100, 100), dead);
+            assertAll(
+                () -> assertEquals(5, wrap.cannons().get(0).by(), "precondition: the cannon is at block y 5"),
+                () -> assertTrue(w.pointCount() >= 1, "wrapping map: the dead cannon shows its dot"),
+                () -> assertEquals(0, h.pointCount(), "hard-edged map: (0,5) is no dot position, no dot"));
+        }
+
+        @Test
+        void offscreenDeadCannonDotsAreCulled() {
+            WorldMap m = mapWith(false, "", "1.......................", "r.......................");
+            State dead = new State();
+            dead.cannons = false;
+            VertexBatch b = Segs.batch();
+            new MapSymbols(m, P).draw(b, TEXT, cam(m, 700, 35, 100, 100), dead);
+            assertEquals(0, b.pointCount(), "the dot of a dead cannon far off-screen is not drawn");
         }
 
         @Test
@@ -404,8 +483,8 @@ class MapSymbolsTest {
             new MapSymbols(team, P).draw(t, TEXT, cam(team, 140, 35, 400, 200), st);
             int last = t.commandCount() - 1;
             assertAll(
-                () -> assertEquals(6, s.commandVertices(s.commandCount() - 1), "no team: only the F"),
-                () -> assertEquals(4 * 6, t.commandVertices(last), "team: F, base, target and treasure digits"),
+                () -> assertEquals(6, s.commandLength(s.commandCount() - 1), "no team: only the F"),
+                () -> assertEquals(4 * 6, t.commandLength(last), "team: F, base, target and treasure digits"),
                 () -> assertEquals(8 + 3 + MapSymbols.CIRCLE_SEGMENTS / 2, Segs.lines(t, BLUE).size(),
                     "own target and treasure are blue"),
                 () -> assertEquals(2 * 3 * MapSymbols.CIRCLE_SEGMENTS + 9 + 12, Segs.lines(t, RED).size(),

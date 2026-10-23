@@ -1,0 +1,101 @@
+xpilot-ref patch 0002: optional per-tick physics trace in the server.
+
+This patch modifies XPilot 4.5.5 (GPL-2.0-or-later, Copyright (C) 1991-2010
+by Bjoern Stabell, Ken Ronny Schouten, Bert Gijsbers, Dick Balaska et al.).
+It is a derivative work distributed under the same license.
+
+Why: to compare a reimplementation's physics numerically against the
+original server.  Adds Trace_players() to src/server/server.c, called right
+after Update_objects() in Main_loop().  It is inert unless the environment
+variable XPILOT_TRACE is set; then it prints one "XPTRACE ..." line per
+player per update tick to stderr (filter to one player with
+XPILOT_TRACE_NAME=<name>).  Also: if XPILOT_SEED=<n> is set, the server's
+Mersenne Twister RNG is seeded with n instead of time*pid, making robot
+names, start positions etc. repeatable.  Game logic is unchanged.
+
+--- a/src/server/server.c	2026-10-23 15:00:17
++++ b/src/server/server.c	2026-10-23 15:09:27
+@@ -134,7 +134,12 @@
+     init_error(argv[0]);
+     Check_server_versions();
+ 
+-    seedMT((unsigned)time((time_t *)0) * Get_process_id());
++    /* xpilot-ref: XPILOT_SEED=<n> fixes the RNG seed for repeatable runs. */
++    if (getenv("XPILOT_SEED") != NULL) {
++	seedMT((unsigned)strtoul(getenv("XPILOT_SEED"), NULL, 0));
++    } else {
++	seedMT((unsigned)time((time_t *)0) * Get_process_id());
++    }
+ 
+     if (Parser(argc, argv) == FALSE) {
+ 	exit(1);
+@@ -232,6 +237,61 @@
+     return 1;
+ }
+ 
++/*
++ * xpilot-ref trace hook (not part of upstream XPilot 4.5.5).
++ * When the environment variable XPILOT_TRACE is set, print the physics
++ * state of every player (or only the player named by XPILOT_TRACE_NAME)
++ * to stderr after each Update_objects() call.  Output lines start with
++ * "XPTRACE" and are whitespace separated; a header line starts with
++ * "XPTRACE_HDR".  The player name is the last field and may contain
++ * spaces.  Has no effect unless XPILOT_TRACE is set.
++ */
++static void Trace_players(void)
++{
++    static int		trace_init = 0;
++    static int		trace_on = 0;
++    static const char	*trace_name = NULL;
++    int			i;
++
++    if (!trace_init) {
++	trace_init = 1;
++	trace_on = (getenv("XPILOT_TRACE") != NULL);
++	trace_name = getenv("XPILOT_TRACE_NAME");
++	if (trace_name != NULL && trace_name[0] == '\0') {
++	    trace_name = NULL;
++	}
++	if (trace_on) {
++	    fprintf(stderr, "XPTRACE_HDR loop frame id robot"
++		    " x y cx cy vx vy ax ay dir float_dir turnvel turnacc"
++		    " power mass fuel thrusting status name\n");
++	}
++    }
++    if (!trace_on) {
++	return;
++    }
++    for (i = 0; i < NumPlayers; i++) {
++	player *pl = Players[i];
++	if (trace_name != NULL && strcmp(trace_name, pl->name) != 0) {
++	    continue;
++	}
++	fprintf(stderr, "XPTRACE %ld %ld %d %d"
++		" %d %d %d %d %.9g %.9g %.9g %.9g %d %.9g %.9g %.9g"
++		" %.9g %.9g %ld %d %#lx %s\n",
++		main_loops, frame_loops, (int)pl->id,
++		IS_HUMAN_PTR(pl) ? 0 : 1,
++		pl->pos.x, pl->pos.y, pl->pos.cx, pl->pos.cy,
++		(double)pl->vel.x, (double)pl->vel.y,
++		(double)pl->acc.x, (double)pl->acc.y,
++		(int)pl->dir, (double)pl->float_dir,
++		(double)pl->turnvel, (double)pl->turnacc,
++		(double)pl->power, (double)pl->mass,
++		pl->fuel.sum,
++		BIT(pl->status, THRUSTING) ? 1 : 0,
++		(unsigned long)pl->status, pl->name);
++    }
++    fflush(stderr);
++}
++
+ void Main_loop(void)
+ {
+     main_loops++;
+@@ -269,6 +329,7 @@
+ 	}
+ 
+ 	Update_objects();
++	Trace_players();
+ 
+ 	if ((main_loops % UPDATES_PR_FRAME) == 0) {
+ 	    Frame_update();

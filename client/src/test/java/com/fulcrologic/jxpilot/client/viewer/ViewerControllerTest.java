@@ -114,4 +114,15 @@ class ViewerControllerTest {
             () -> assertEquals(990.0, c.x(), EPS, "x wrapped by the camera"),
             () -> assertEquals(50.0, c.y(), EPS, "y wrapped by the camera"));
     }
+
+    @Test
+    void setPositionMovesButKeepsTheZoom() {
+        ViewerController c = new ViewerController();
+        c.reset(1, 2, 3);
+        c.setPosition(10, 20);
+        assertAll(
+            () -> assertEquals(10.0, c.x(), "x"),
+            () -> assertEquals(20.0, c.y(), "y"),
+            () -> assertEquals(3.0, c.zoom(), "zoom unchanged"));
+    }
 }

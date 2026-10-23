@@ -1,0 +1,245 @@
+/*
+ * JXPilot, a Java reimplementation of XPilot, a multiplayer gravity war game.
+ * Copyright (C) 2026 Tony Kay and the JXPilot contributors.
+ *
+ * Derived from XPilot 4.5.5, Copyright (C) 1991-2002 by Bjørn Stabell,
+ * Ken Ronny Schouten, Bert Gijsbers and Dick Balaska. JXPilot is an
+ * independent derivative port: the original XPilot authors were not involved
+ * in it and do not endorse it. Ported to Java and modified starting in 2026;
+ * see the git history for the changes.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ */
+package com.fulcrologic.jxpilot.server.sim;
+
+import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.map.Base;
+import com.fulcrologic.jxpilot.common.map.BlockType;
+import com.fulcrologic.jxpilot.common.net.ControlKey;
+import com.fulcrologic.jxpilot.common.net.Msg;
+import com.fulcrologic.jxpilot.server.world.Events;
+import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.server.world.Player;
+import com.fulcrologic.jxpilot.server.world.World;
+
+/**
+ * Control input: C {@code Handle_keyboard} ({@code src/server/event.c}) for the S1 keys. The client sends
+ * the full key state every tick; press and release edges are found by comparing with the last handled
+ * mask, in key order, exactly like C's {@code last_keyv}/{@code prev_keyv}.
+ */
+public final class Keys {
+    private static final long DEAD_KEYS = ControlKey.PAUSE.mask() | ControlKey.LOCK_NEXT.mask()
+        | ControlKey.LOCK_PREV.mask() | ControlKey.LOCK_CLOSE.mask() | ControlKey.LOCK_NEXT_CLOSE.mask()
+        | ControlKey.TOGGLE_NUCLEAR.mask() | ControlKey.TOGGLE_CLUSTER.mask() | ControlKey.TOGGLE_IMPLOSION.mask()
+        | ControlKey.TOGGLE_VELOCITY.mask() | ControlKey.TOGGLE_MINI.mask() | ControlKey.TOGGLE_SPREAD.mask()
+        | ControlKey.TOGGLE_POWER.mask() | ControlKey.TOGGLE_LASER.mask() | ControlKey.TOGGLE_COMPASS.mask()
+        | ControlKey.CLEAR_MODIFIERS.mask() | ControlKey.LOAD_MODIFIERS_1.mask() | ControlKey.LOAD_MODIFIERS_2.mask()
+        | ControlKey.LOAD_MODIFIERS_3.mask() | ControlKey.LOAD_MODIFIERS_4.mask() | ControlKey.LOAD_LOCK_1.mask()
+        | ControlKey.LOAD_LOCK_2.mask() | ControlKey.LOAD_LOCK_3.mask() | ControlKey.LOAD_LOCK_4.mask()
+        | ControlKey.REPROGRAM.mask() | ControlKey.SWAP_SETTINGS.mask() | ControlKey.INCREASE_POWER.mask()
+        | ControlKey.DECREASE_POWER.mask() | ControlKey.INCREASE_TURNSPEED.mask()
+        | ControlKey.DECREASE_TURNSPEED.mask() | ControlKey.TANK_NEXT.mask() | ControlKey.TANK_PREV.mask()
+        | ControlKey.TURN_LEFT.mask() | ControlKey.TURN_RIGHT.mask();
+
+    private final World w;
+    private final Simulation sim;
+    /** The mask being applied (C {@code last_keyv}). */
+    private long current;
+
+    public Keys(World w, Simulation sim) {
+        this.w = w;
+        this.sim = sim;
+    }
+
+    /**
+     * Handle the key changes between the last handled mask and {@code keys}, then remember {@code keys}.
+     * <p>
+     * BEHAVIOR: only changed keys act, in ascending key order; a dead ship only handles the keys C allows
+     * while dead (turning, power settings, locks...), and the others are consumed without effect.
+     */
+    public void apply(Player pl, long keys) {
+        current = keys;
+        long changed = keys ^ pl.prevKeys;
+        boolean alive = (pl.status & (Obj.PLAYING | Obj.GAME_OVER | Obj.PAUSE | Obj.HOVERPAUSE)) == Obj.PLAYING;
+        while (changed != 0) {
+            int bit = Long.numberOfTrailingZeros(changed);
+            long m = 1L << bit;
+            changed &= ~m;
+            if (!alive && (DEAD_KEYS & m) == 0) {
+                continue;
+            }
+            ControlKey k = ControlKey.ofBit(bit);
+            if ((keys & m) != 0) {
+                double power = pl.power;
+                pressed(pl, k);
+                if (pl.power != power) {
+                    w.events.add(Events.THRUST, pl.id, pl.afterburners(), 0, (float) pl.power);
+                }
+            } else {
+                released(pl, k);
+            }
+        }
+        pl.prevKeys = keys;
+    }
+
+    /**
+     * Key press actions.
+     * <p>
+     * BEHAVIOR: SHIELD raises shields (if allowed); FIRE_SHOT, when neither shielded nor already firing,
+     * fires and starts autofire; TURN keys set turnAcc = (left - right) * turnspeed; THRUST starts thrusting;
+     * REFUEL picks the nearest station; SELF_DESTRUCT toggles a 150-frame countdown; SWAP_SETTINGS swaps
+     * power/turn settings when not turning; power +-10% and turnspeed +-5% (when not turning) within limits;
+     * CHANGE_HOME takes over the base the ship is on.
+     */
+    void pressed(Player pl, ControlKey k) {
+        switch (k) {
+            case SHIELD -> {
+                if ((pl.have & Has.SHIELD) != 0) {
+                    pl.used |= Has.SHIELD;
+                    pl.used &= ~Has.LASER;
+                }
+            }
+            case FIRE_SHOT -> {
+                if ((pl.used & (Has.SHIELD | Has.SHOT)) == 0 && (pl.have & Has.SHOT) != 0) {
+                    pl.used |= Has.SHOT;
+                    sim.shots.fireNormalShots(pl);
+                }
+            }
+            case TURN_LEFT, TURN_RIGHT -> turnKeys(pl);
+            case THRUST -> pl.status |= Obj.THRUSTING;
+            case REFUEL -> sim.ships.startRefuel(pl);
+            case SELF_DESTRUCT -> {
+                pl.status ^= Obj.SELF_DESTRUCT;
+                if ((pl.status & Obj.SELF_DESTRUCT) != 0) {
+                    pl.count = 150;
+                }
+            }
+            case SWAP_SETTINGS -> {
+                if (pl.turnAcc == 0.0) {
+                    double t = pl.power;
+                    pl.power = pl.powerS;
+                    pl.powerS = t;
+                    t = pl.turnSpeed;
+                    pl.turnSpeed = pl.turnSpeedS;
+                    pl.turnSpeedS = t;
+                    t = pl.turnResistance;
+                    pl.turnResistance = pl.turnResistanceS;
+                    pl.turnResistanceS = t;
+                }
+            }
+            case INCREASE_POWER -> pl.power = Math.min(pl.power * 1.10, Const.MAX_PLAYER_POWER);
+            case DECREASE_POWER -> pl.power = Math.max(pl.power * 0.90, Const.MIN_PLAYER_POWER);
+            case INCREASE_TURNSPEED -> {
+                if (pl.turnAcc == 0.0) {
+                    pl.turnSpeed *= 1.05;
+                }
+                pl.turnSpeed = Math.min(pl.turnSpeed, Const.MAX_PLAYER_TURNSPEED);
+            }
+            case DECREASE_TURNSPEED -> {
+                if (pl.turnAcc == 0.0) {
+                    pl.turnSpeed *= 0.95;
+                }
+                pl.turnSpeed = Math.max(pl.turnSpeed, Const.MIN_PLAYER_TURNSPEED);
+            }
+            case CHANGE_HOME -> changeHome(pl);
+            default -> { }
+        }
+    }
+
+    /**
+     * Key release actions.
+     * <p>
+     * BEHAVIOR: TURN keys recompute turnAcc; REFUEL stops refuelling; SHIELD lowers shields and restarts the
+     * fire-repeat timer (no instant shot after dropping shields); FIRE_SHOT stops autofire; THRUST stops.
+     */
+    void released(Player pl, ControlKey k) {
+        switch (k) {
+            case TURN_LEFT, TURN_RIGHT -> turnKeys(pl);
+            case REFUEL -> pl.used &= ~Has.REFUEL;
+            case SHIELD -> {
+                if ((pl.used & Has.SHIELD) != 0) {
+                    pl.used &= ~(Has.SHIELD | Has.LASER);
+                    pl.shotTime = w.frames;
+                }
+            }
+            case FIRE_SHOT -> pl.used &= ~Has.SHOT;
+            case THRUST -> pl.status &= ~Obj.THRUSTING;
+            default -> { }
+        }
+    }
+
+    private void turnKeys(Player pl) {
+        pl.turnAcc = 0;
+        if ((current & ControlKey.TURN_LEFT.mask()) != 0) {
+            pl.turnAcc += pl.turnSpeed;
+        }
+        if ((current & ControlKey.TURN_RIGHT.mask()) != 0) {
+            pl.turnAcc -= pl.turnSpeed;
+        }
+    }
+
+    /**
+     * C KEY_CHANGE_HOME (event.c) on the base block the ship is in.
+     * <p>
+     * BEHAVIOR: off a base block nothing happens; a base of another team (or the current home) is not taken.
+     * BEHAVIOR: otherwise the base becomes home (BASE_OWNER) and the message is "NAME has changed home base.".
+     * BEHAVIOR: a player whose home it was gets a new base (C Pick_startpos: BASE_OWNER; a dead one restarts
+     * its 3*FPS recovery count, a paused/game-over one is put on the new base) and the message becomes
+     * "NAME has taken over OTHER's home base.".
+     */
+    void changeHome(Player pl) {
+        if (w.map.blockAt(pl.bx, pl.by) != BlockType.BASE) {
+            return;
+        }
+        boolean changed = false;
+        java.util.List<Base> bases = w.map.bases();
+        for (int i = 0; i < bases.size(); i++) {
+            Base b = bases.get(i);
+            if (b.bx() == pl.bx && b.by() == pl.by) {
+                if (b.index() == pl.homeBase || (b.team() != Const.TEAM_NOT_SET && b.team() != pl.team)) {
+                    return;
+                }
+                pl.homeBase = b.index();
+                changed = true;
+                w.events.add(Events.BASE_OWNER, pl.homeBase, pl.id, 0, 0f);
+                break;
+            }
+        }
+        if (!changed) {
+            return;
+        }
+        Player displaced = null;
+        for (int k = 0; k < w.numPlayers; k++) {
+            Player o = w.playerAt(k);
+            if (o != pl && o.homeBase == pl.homeBase) {
+                displaced = o;
+                if (sim.ships.pickStartPos(o)) {
+                    w.events.add(Events.BASE_OWNER, o.homeBase, o.id, 0, 0f);
+                    if ((o.status & Obj.PLAYING) == 0) {
+                        o.count = 3 * w.params.fps;
+                    } else if ((o.status & (Obj.PAUSE | Obj.GAME_OVER)) != 0) {
+                        sim.ships.goHome(o);
+                    }
+                }
+            }
+        }
+        StringBuilder m = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name);
+        if (displaced == null) {
+            m.append(" has changed home base.");
+        } else {
+            m.append(" has taken over ").append(displaced.name).append("'s home base.");
+        }
+    }
+}

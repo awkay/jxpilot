@@ -53,6 +53,8 @@ public final class WallDist {
      * BEHAVIOR: each step to one of the 8 neighbours adds 2; leaving a diagonal wall block through its
      * open corner adds 3 (the far corner of the triangle is open space).
      * BEHAVIOR: with wrap distances propagate across the world edges.
+     * BEHAVIOR: a map whose every block is seeded (all walls or border, e.g. one row high) terminates with
+     * the seeded values (C loops forever).
      */
     public static byte[] compute(WorldMap m) {
         int w = m.width();
@@ -92,6 +94,11 @@ public final class WallDist {
             }
         }
         int n = w * h;
+        if (qback == n) {
+            // Every block is a wall or a border block: nothing can get closer. C would spin forever here
+            // (qback == n is never reached again by the wrapping qfront).
+            qback = 0;
+        }
         while (qfront != qback) {
             int x = qx[qfront];
             int y = qy[qfront];

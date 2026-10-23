@@ -128,15 +128,15 @@ public final class Player {
     /**
      * C {@code Player_position_set_clicks}.
      * <p>
-     * BEHAVIOR: pixels are the clicks shifted down (floor); blocks are pixels / BLOCK_SZ (floor).
+     * BEHAVIOR: pixels are the clicks shifted down (floor); blocks are pixels / BLOCK_SZ truncated toward zero (C pos.bx).
      */
     public void setClicks(int x, int y) {
         cx = x;
         cy = y;
         px = x >> Click.SHIFT;
         py = y >> Click.SHIFT;
-        bx = Math.floorDiv(px, Const.BLOCK_SZ);
-        by = Math.floorDiv(py, Const.BLOCK_SZ);
+        bx = px / Const.BLOCK_SZ;
+        by = py / Const.BLOCK_SZ;
     }
 
     /** C {@code Player_position_init_pixels}: set the position and make it the previous position too. */

@@ -79,6 +79,19 @@ public final class ViewerOverlay {
         text.draw(b, HELP, m, m + text.font().descent(), hud);
     }
 
+    /**
+     * The radar quad's framebuffer rectangle {@code (left, bottom, right, top)} into {@code out}: top-left,
+     * {@link #MARGIN} logical pixels in, the texture's size scaled by the pixel ratio.
+     */
+    public static void radarRect(Camera cam, RadarTexture t, float[] out) {
+        float r = (float) cam.pixelRatio();
+        float m = MARGIN * r;
+        out[0] = m;
+        out[3] = cam.viewHeight() - m;
+        out[2] = m + t.width() * r;
+        out[1] = out[3] - t.height() * r;
+    }
+
     void radar(VertexBatch b, Camera cam, RadarTexture t, float r, float m, int frame, int marker) {
         float x0 = m;
         float y1 = cam.viewHeight() - m;

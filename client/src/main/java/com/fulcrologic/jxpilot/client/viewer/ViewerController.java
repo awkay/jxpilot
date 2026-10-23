@@ -93,6 +93,12 @@ public final class ViewerController {
         zoom = clampZoom(zoom * Math.pow(WHEEL_STEP, steps));
     }
 
+    /** Move the camera to (x, y), keeping the zoom (e.g. to follow a ship). */
+    public void setPosition(double x, double y) {
+        this.x = x;
+        this.y = y;
+    }
+
     /** Copy position and zoom into the camera (the camera wraps the centre itself). */
     public void applyTo(Camera cam) {
         cam.setCentre(x, y);

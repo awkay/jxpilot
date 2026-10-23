@@ -33,8 +33,8 @@ import java.util.Arrays;
  * blocks first, exactly as C {@code Cell_get_objects}. Preallocated, allocation free per tick.
  */
 public final class Grid {
-    /** C {@code MAX_CELL_DIST}. */
-    static final int MAX_CELL_DIST = 8;
+    /** C {@code MAX_CELL_DIST} (cell.c). */
+    static final int MAX_CELL_DIST = 28;
 
     private final int w;
     private final int h;
@@ -98,26 +98,28 @@ public final class Grid {
     }
 
     /**
-     * Bucket every live object by its pixel position.
+     * Bucket every live object by its block, as C {@code Cell_add_object} after a frame of moves.
      * <p>
-     * BEHAVIOR: objects outside the world are put in the nearest edge block.
-     * BEHAVIOR: within a block, objects are listed in pool order ({@code Objects.active} order).
+     * BEHAVIOR: the block is {@code pixel / BLOCK_SZ} truncated toward zero (C {@code pos.bx}); an object whose
+     * block is outside the world is in no cell and is never returned by {@link #query}.
+     * BEHAVIOR: within a block, objects are listed in reverse pool order ({@code Objects.active} from last to
+     * first): C prepends each object to its cell list as it is moved in pool order, and objects created later
+     * in the frame (higher indices) are prepended after that.
      */
     public void rebuild(Objects o) {
         Arrays.fill(head, -1);
         int n = o.count();
-        for (int k = n - 1; k >= 0; k--) {
+        for (int k = 0; k < n; k++) {
             int hnd = o.active[k];
-            int bx = clamp(Math.floorDiv(o.px[hnd], Const.BLOCK_SZ), w);
-            int by = clamp(Math.floorDiv(o.py[hnd], Const.BLOCK_SZ), h);
+            int bx = o.px[hnd] / Const.BLOCK_SZ;
+            int by = o.py[hnd] / Const.BLOCK_SZ;
+            if (bx < 0 || bx >= w || by < 0 || by >= h) {
+                continue;
+            }
             int c = by * w + bx;
             next[hnd] = head[c];
             head[c] = hnd;
         }
-    }
-
-    private static int clamp(int v, int n) {
-        return v < 0 ? 0 : (v >= n ? n - 1 : v);
     }
 
     /**

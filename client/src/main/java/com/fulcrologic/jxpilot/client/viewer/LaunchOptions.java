@@ -29,6 +29,9 @@ package com.fulcrologic.jxpilot.client.viewer;
  *   --view-map FILE        free-flying map viewer on FILE (Tab cycles maps in FILE's directory)
  *   --screenshot FILE.png  render, save a PNG of the framebuffer and exit
  *   --frames N             frames to render before the screenshot (default 3)
+ *   --warmup N             frames excluded from the reported statistics and allocation (default frames / 2)
+ *   --gpu-timer            measure GPU time per frame with timer queries (costs CPU time on some drivers)
+ *   --demo                 animate fake ships, shots, particles and every other object over the map
  *   --size WxH             window size in logical pixels (default 1280x800)
  *   --zoom Z               initial zoom (default 1)
  *   --filled               filled walls instead of XPilot's default outlines
@@ -41,13 +44,23 @@ package com.fulcrologic.jxpilot.client.viewer;
  */
 public record LaunchOptions(String viewMap, String screenshot, int frames, int width, int height,
                             double zoom, boolean filled, boolean hasCentre, double centreX, double centreY,
-                            boolean vsync) {
+                            boolean vsync, int warmup, boolean gpuTimer, boolean demo) {
+
+    /**
+     * First measured frame: {@code --warmup} if given, else half the frames.
+     * <p>
+     * BEHAVIOR: frames before it are excluded from the reported timing and allocation.
+     */
+    public int measureFrom() {
+        return warmup >= 0 ? warmup : frames / 2;
+    }
 
     /**
      * Parse arguments.
      * <p>
      * BEHAVIOR: unknown flags, missing values and malformed numbers throw IllegalArgumentException
      * with a message naming the flag; frames, sizes and zoom must be positive.
+     * BEHAVIOR: {@code --warmup} must be at least 0 and below {@code --frames}; -1 (absent) means default.
      */
     public static LaunchOptions parse(String[] args) {
         String viewMap = null;
@@ -61,6 +74,9 @@ public record LaunchOptions(String viewMap, String screenshot, int frames, int w
         double cx = 0;
         double cy = 0;
         boolean vsync = true;
+        int warmup = -1;
+        boolean gpuTimer = false;
+        boolean demo = false;
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
             switch (a) {
@@ -84,6 +100,9 @@ public record LaunchOptions(String viewMap, String screenshot, int frames, int w
                 }
                 case "--filled" -> filled = true;
                 case "--no-vsync" -> vsync = false;
+                case "--gpu-timer" -> gpuTimer = true;
+                case "--demo" -> demo = true;
+                case "--warmup" -> warmup = positiveInt(value(args, ++i, a), a, 0);
                 case "--at" -> {
                     String v = value(args, ++i, a);
                     int c = v.indexOf(',');
@@ -97,7 +116,10 @@ public record LaunchOptions(String viewMap, String screenshot, int frames, int w
                 default -> throw new IllegalArgumentException("Unknown option: " + a);
             }
         }
-        return new LaunchOptions(viewMap, screenshot, frames, width, height, zoom, filled, hasCentre, cx, cy, vsync);
+        if (warmup >= frames) {
+            throw new IllegalArgumentException("--warmup must be less than --frames: " + warmup + " >= " + frames);
+        }
+        return new LaunchOptions(viewMap, screenshot, frames, width, height, zoom, filled, hasCentre, cx, cy, vsync, warmup, gpuTimer, demo);
     }
 
     private static String value(String[] args, int i, String flag) {
@@ -108,14 +130,18 @@ public record LaunchOptions(String viewMap, String screenshot, int frames, int w
     }
 
     private static int positiveInt(String v, String flag) {
+        return positiveInt(v, flag, 1);
+    }
+
+    private static int positiveInt(String v, String flag, int min) {
         int n;
         try {
             n = Integer.parseInt(v.trim());
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(flag + " expects an integer: " + v);
         }
-        if (n <= 0) {
-            throw new IllegalArgumentException(flag + " must be positive: " + n);
+        if (n < min) {
+            throw new IllegalArgumentException(flag + (min > 0 ? " must be positive: " : " must not be negative: ") + n);
         }
         return n;
     }

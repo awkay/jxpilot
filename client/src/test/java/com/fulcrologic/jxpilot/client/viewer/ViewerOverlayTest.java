@@ -53,7 +53,7 @@ class ViewerOverlayTest {
     }
 
     static VertexBatch draw(boolean radar) {
-        VertexBatch b = VertexBatch.fixed(ByteBuffer.allocateDirect(8192 * VertexBatch.STRIDE), 32, x -> { });
+        VertexBatch b = Fixtures.batch(8192, 32, x -> { });
         b.setTransform(5, 5, 5, 5);
         new ViewerOverlay(P).draw(b, TEXT, cam(), new FrameStats(), "map", RADAR, radar);
         return b;
@@ -73,18 +73,23 @@ class ViewerOverlayTest {
             () -> assertEquals(0f, b.v(2), UV_EPS, "top samples the first row (v0)"),
             () -> assertEquals(P.color(Palette.WHITE), b.color(0), "untinted"),
             () -> assertEquals(VertexBatch.LINES, b.commandMode(1), "then the frame"),
-            () -> assertEquals(P.color(Palette.HUD_COLOR), b.color(6), "frame in hudColor"));
+            () -> assertEquals(P.color(Palette.HUD_COLOR), b.segColor(0), "frame in hudColor"),
+            () -> assertEquals(4, b.segmentCount(), "the frame is four segments"),
+            () -> assertEquals(16f, b.segX1(0), "frame bottom-left x"),
+            () -> assertEquals(328f, b.segY1(0), "frame bottom-left y"),
+            () -> assertEquals(528f, b.segX2(1), "frame right edge"),
+            () -> assertEquals(584f, b.segY2(1), "frame top"));
     }
 
     @Test
     void markerShowsTheCameraCentreOnTheRadar() {
         VertexBatch b = draw(true);
         assertAll(
-            () -> assertEquals(140f, b.x(14), "x = 16 + 0.25 * 512 - 4"),
-            () -> assertEquals(516f, b.y(14), "y = 328 + 0.75 * 256 - 4"),
-            () -> assertEquals(148f, b.x(16), "marker is 2 logical px each side"),
-            () -> assertEquals(524f, b.y(16), "marker top"),
-            () -> assertEquals(P.color(Palette.WHITE), b.color(14), "white marker"));
+            () -> assertEquals(140f, b.x(6), "x = 16 + 0.25 * 512 - 4"),
+            () -> assertEquals(516f, b.y(6), "y = 328 + 0.75 * 256 - 4"),
+            () -> assertEquals(148f, b.x(8), "marker is 2 logical px each side"),
+            () -> assertEquals(524f, b.y(8), "marker top"),
+            () -> assertEquals(P.color(Palette.WHITE), b.color(6), "white marker"));
     }
 
     @Test
@@ -92,16 +97,16 @@ class ViewerOverlayTest {
         VertexBatch b = draw(true);
         // "FPS 0.0 0.00 ms  max 0.00 ms" = 28 chars of advance 7 = 196 px; right edge 784
         assertAll(
-            () -> assertEquals(589f, b.x(20), "first glyph at 784 - 196 + xoff 1"),
-            () -> assertEquals(582f, b.y(22), "baseline 600 - 16 - ascent 10, glyph top 8 above"),
-            () -> assertEquals(P.color(Palette.HUD_COLOR), b.color(20), "hud colour"));
+            () -> assertEquals(589f, b.x(12), "first glyph at 784 - 196 + xoff 1"),
+            () -> assertEquals(582f, b.y(14), "baseline 600 - 16 - ascent 10, glyph top 8 above"),
+            () -> assertEquals(P.color(Palette.HUD_COLOR), b.color(12), "hud colour"));
     }
 
     @Test
     void mapNameCameraLineAndHelpArePlacedBelowAndAtTheBottom() {
         VertexBatch b = draw(true);
-        // 20 radar vertices, then 21 visible stats glyphs (spaces draw nothing) = 146
-        int name = 20 + 21 * 6;
+        // radar quad and marker (12 triangle vertices), then 21 visible stats glyphs (spaces draw nothing)
+        int name = 12 + 21 * 6;
         int camera = name + 3 * 6;
         // "zoom 1.00  at 250, 750": 22 chars, the '1' is 5 wide: 152 px; 17 visible glyphs
         int help = camera + 17 * 6;
@@ -129,5 +134,16 @@ class ViewerOverlayTest {
             () -> assertEquals(0.0, ViewerOverlay.wrap01(-0.5), "below 0"),
             () -> assertEquals(1.0, ViewerOverlay.wrap01(1.5), "above 1"),
             () -> assertEquals(0.25, ViewerOverlay.wrap01(0.25), "inside"));
+    }
+
+    @Test
+    void radarRectIsWhereTheRadarQuadIsDrawn() {
+        float[] r = new float[4];
+        ViewerOverlay.radarRect(cam(), RADAR, r);
+        assertAll(
+            () -> assertEquals(16f, r[0], "left = margin 8 * ratio 2"),
+            () -> assertEquals(328f, r[1], "bottom = 600 - 16 - 128 * 2"),
+            () -> assertEquals(528f, r[2], "right = 16 + 256 * 2"),
+            () -> assertEquals(584f, r[3], "top = 600 - 16"));
     }
 }

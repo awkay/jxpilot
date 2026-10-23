@@ -35,17 +35,16 @@ public final class Shapes {
      * (negative sweeps clockwise).
      * <p>
      * BEHAVIOR: chord i joins the points at {@code start + extent*i/segments} and {@code start + extent*(i+1)/segments}.
+     * BEHAVIOR: angles come from {@link Trig} tables, i.e. rounded to 1/{@link Trig#DEG_STEPS} degree.
      */
     public static void arc(VertexBatch b, float cx, float cy, float r, float startDeg, float extentDeg,
                            int segments, int rgba) {
-        double a0 = Math.toRadians(startDeg);
-        double step = Math.toRadians(extentDeg) / segments;
-        float px = cx + (float) (r * Math.cos(a0));
-        float py = cy + (float) (r * Math.sin(a0));
+        float px = cx + (float) (r * Trig.cosDeg(startDeg));
+        float py = cy + (float) (r * Trig.sinDeg(startDeg));
         for (int i = 1; i <= segments; i++) {
-            double a = a0 + step * i;
-            float qx = cx + (float) (r * Math.cos(a));
-            float qy = cy + (float) (r * Math.sin(a));
+            double a = startDeg + (double) extentDeg * i / segments;
+            float qx = cx + (float) (r * Trig.cosDeg(a));
+            float qy = cy + (float) (r * Trig.sinDeg(a));
             b.line(px, py, qx, qy, rgba);
             px = qx;
             py = qy;

@@ -1,0 +1,104 @@
+xpilot-ref patch 0001: rename static getline() in the X11 client text interface.
+
+This patch modifies XPilot 4.5.5 (GPL-2.0-or-later, Copyright (C) 1991-2010
+by Bjoern Stabell, Ken Ronny Schouten, Bert Gijsbers, Dick Balaska et al.).
+It is a derivative work distributed under the same license.
+
+Why: glibc's <stdio.h> declares POSIX.1-2008 getline(char **, size_t *, FILE *).
+src/client/textinterface.c defines its own unrelated
+"static char *getline(char *, int, FILE *)", which is a hard "conflicting
+types" error on any modern glibc.  The function is renamed to xp_getline;
+no behavior change.
+
+--- a/src/client/textinterface.c	2026-10-23 14:58:59
++++ b/src/client/textinterface.c	2026-10-23 14:58:59
+@@ -75,7 +75,7 @@
+ /*
+  * just like fgets() but strips newlines like gets().
+  */
+-static char* getline(char* buf, int len, FILE* stream)
++static char* xp_getline(char* buf, int len, FILE* stream)
+ {
+     char		*nl;
+ 
+@@ -305,7 +305,7 @@
+ 	else if (!auto_connect) {
+ 	    printf("*** Server on %s. Enter command> ", conpar->server_name);
+ 
+-	    getline(linebuf, MAX_LINE-1, stdin);
++	    xp_getline(linebuf, MAX_LINE-1, stdin);
+ 	    if (feof(stdin)) {
+ 		puts("");
+ 		c = 'Q';
+@@ -385,7 +385,7 @@
+ 	    case 'K':
+ 		printf("Enter name of victim: ");
+ 		fflush(stdout);
+-		if (!getline(linebuf, MAX_LINE-1, stdin)) {
++		if (!xp_getline(linebuf, MAX_LINE-1, stdin)) {
+ 		    printf("Nothing changed.\n");
+ 		    continue;
+ 		}
+@@ -396,7 +396,7 @@
+ 	    case 'R':
+ 		printf("Enter maximum number of robots: ");
+ 		fflush(stdout);
+-		if (!getline(linebuf, MAX_LINE-1, stdin)) {
++		if (!xp_getline(linebuf, MAX_LINE-1, stdin)) {
+ 		    printf("Nothing changed.\n");
+ 		    continue;
+ 		}
+@@ -410,7 +410,7 @@
+ 	    case 'M':				/* Send a message to server. */
+ 		printf("Enter message: ");
+ 		fflush(stdout);
+-		if (!getline(linebuf, MAX_LINE-1, stdin) || !linebuf[0]) {
++		if (!xp_getline(linebuf, MAX_LINE-1, stdin) || !linebuf[0]) {
+ 		    printf("No message sent.\n");
+ 		    continue;
+ 		}
+@@ -425,7 +425,7 @@
+ 	    case 'D':				/* Shutdown */
+ 		if (!auto_shutdown) {
+ 		    printf("Enter delay in seconds or return for cancel: ");
+-		    getline(linebuf, MAX_LINE-1, stdin);
++		    xp_getline(linebuf, MAX_LINE-1, stdin);
+ 		    /*
+ 		     * No argument = cancel shutdown = arg_int=0
+ 		     */
+@@ -436,7 +436,7 @@
+ 			    delay = 1;
+ 
+ 		    printf("Enter reason: ");
+-		    getline(linebuf, MAX_LINE-1, stdin);
++		    xp_getline(linebuf, MAX_LINE-1, stdin);
+ 		} else {
+ 		    strlcpy(linebuf, shutdown_reason, sizeof(linebuf));
+ 		    delay = 60;
+@@ -448,7 +448,7 @@
+ 	    case 'O':				/* Tune an option. */
+ 		printf("Enter option: ");
+ 		fflush(stdout);
+-		if (!getline(linebuf, MAX_LINE-1, stdin)
++		if (!xp_getline(linebuf, MAX_LINE-1, stdin)
+ 		    || (len=strlen(linebuf)) == 0) {
+ 		    printf("Nothing changed.\n");
+ 		    continue;
+@@ -456,7 +456,7 @@
+ 		printf("Enter new value for %s: ", linebuf);
+ 		fflush(stdout);
+ 		strcat(linebuf, ":"); len++;
+-		if (!getline(&linebuf[len], MAX_LINE-1-len, stdin)
++		if (!xp_getline(&linebuf[len], MAX_LINE-1-len, stdin)
+ 		    || linebuf[len] == '\0') {
+ 		    printf("Nothing changed.\n");
+ 		    continue;
+@@ -516,7 +516,7 @@
+ 	    case 'T':				/* Set team. */
+ 		printf("Enter team: ");
+ 		fflush(stdout);
+-		if (!getline(linebuf, MAX_LINE-1, stdin)
++		if (!xp_getline(linebuf, MAX_LINE-1, stdin)
+ 		    || (len = strlen(linebuf)) == 0) {
+ 		    printf("Nothing changed.\n");
+ 		}
