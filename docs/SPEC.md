@@ -52,6 +52,41 @@ client:  GLFW window, Renderer (batch, fonts, map VBO), HUD/radar/messages, inpu
 ```
 `--local` starts an embedded server thread in-process and connects over loopback (same code path, no special casing).
 
+## Server network binding (required, configurable)
+Target deployments: a VPN (e.g. a `utunN` WireGuard/corporate tunnel, `10.x` addresses, or
+Tailscale `100.x`), a LAN, and a public internet host (IPv4 and/or IPv6).
+- Options (settable via CLI, server config file, or map, through `Options` like any other
+  option): `port` (XPilot `contactPort`, default 15345) and `bind` (repeatable / comma-list).
+- `bind` selectors:
+  - an IP literal (`10.224.0.16`, `::1`, `0.0.0.0`, `::`);
+  - a hostname (resolved at startup);
+  - an interface name (`utun4`, `en0`, `tailscale0`);
+  - a CIDR (`10.224.0.0/22`, `100.64.0.0/10`), meaning every local address inside it. This
+    survives VPN interfaces renumbering (`utun4` becoming `utun5`);
+  - `loopback`;
+  - `all` (the default).
+- **Reply from the address the client contacted.** On multi-homed hosts a wildcard UDP socket
+  may send replies with a different source IP (LAN instead of VPN), and clients drop them.
+  Java NIO has no IP_PKTINFO. So `all`, interface and CIDR selectors resolve to concrete
+  addresses and open **one DatagramChannel per local address**. A peer is pinned to the channel
+  it first arrived on, and all replies go out through that channel. A literal `0.0.0.0`/`::`
+  bind is allowed only as an explicit opt-in, with a startup warning.
+- Selector-based binds rescan interfaces every few seconds. They bind newly appeared matching
+  addresses (VPN comes up) and close vanished ones (VPN drops). Peers on a vanished address
+  time out normally.
+- Startup logs each bound `address:port` with its interface name, so the operator can tell
+  players what to connect to. A selector that matches nothing is a startup error, unless
+  `bindWait` is set, in which case the server waits for a matching interface (e.g. the VPN
+  comes up later).
+- Pure parts (selector parsing, CIDR matching, choosing addresses from an interface list,
+  diffing on rescan) take an injected interface snapshot and are unit tested. Only the
+  `NetworkInterface` enumeration and channel opening are at the edge. There is one loopback
+  integration test with two bound addresses (`127.0.0.1` and `127.0.0.2`, or `::1`) that
+  proves replies leave from the contacted address.
+- Payload stays ≤ 1200 bytes, so it fits inside VPN/IPv6 path MTUs without fragmentation.
+- Client: `--connect host[:port]` (IPv6 as `[addr]:port`), and optionally `--bind` for the
+  local source address. `--local` runs the embedded server bound to `loopback` only.
+
 ## Protocol (our own, UDP)
 - Client→server: CONNECT(name, team pref), INPUT(seq, tick ack, 32/64-bit key bitmask, ...), CHAT(text), DISCONNECT, ACK. Inputs are sent every client frame and include the last few inputs for loss tolerance.
 - Server→client: WELCOME(player id, options digest, map — sent reliably in chunks; client parses the same .xp text with the common parser), SNAPSHOT per server tick or every 2nd (configurable): tick number, your ship state (full precision), then view-culled objects (ships, shots, debris/sparks, items, mines, missiles, balls, cannons state, fuel levels, base/target damage), score board deltas, messages. Quantize positions to ints/shorts where it's lossless enough.
