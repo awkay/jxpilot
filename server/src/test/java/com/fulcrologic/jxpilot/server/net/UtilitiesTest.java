@@ -132,7 +132,9 @@ class UtilitiesTest {
             int stall = t.due(1000 + 100 * p);
             long skipped = t.skipped();
             long waitAfterStall = t.nanosUntilNext(1000 + 100 * p);
-            int exactlyFive = new TickScheduler(60, 5, 0).due(5 * p);
+            TickScheduler five = new TickScheduler(60, 5, 0);
+            int exactlyFive = five.due(5 * p + 3);
+            long phaseKept = five.nanosUntilNext(5 * p + 3);
             assertAll(
                 () -> assertEquals(16_666_666L, p, "60 Hz period in ns"),
                 () -> assertEquals(0, early, "no tick before the first deadline"),
@@ -144,6 +146,7 @@ class UtilitiesTest {
                 () -> assertEquals(97 - 5, skipped, "the rest are counted as skipped"),
                 () -> assertEquals(p, waitAfterStall, "after a stall the next tick is one period away"),
                 () -> assertEquals(5, exactlyFive, "exactly maxCatchUp due ticks all run"),
+                () -> assertEquals(p - 3, phaseKept, "and keep the schedule's phase (no re-base)"),
                 () -> assertEquals(0, t.nanosUntilNext(1000 + 200 * p), "a passed deadline needs no wait"));
         }
     }

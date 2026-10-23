@@ -74,31 +74,34 @@ class ServerNetTest {
             h.host.nextId = 7;
             h.host.team = 3;
             TestClient c = new TestClient(0xABCD);
+            TestClient second = new TestClient(0xBCDE);
+            h.in(0, B, second.connect("Bo", 2, ""));
             h.in(0, A, c.connect("Ann", 2, "(SH: 1,0)"));
+            h.take(B);
             List<Integer> immediate = h.types(h.sent);
             h.deliver(c, A);
             h.tick();
             h.deliver(c, A);
             assertAll(
-                () -> assertEquals(List.of("join Ann team=2 shape=(SH: 1,0)"), h.host.callsStartingWith("join"),
+                () -> assertEquals(List.of("join Bo team=2 shape=", "join Ann team=2 shape=(SH: 1,0)"), h.host.callsStartingWith("join"),
                     "the host gets the name, team and shape"),
                 () -> assertEquals(List.of(PacketType.ACCEPT), immediate, "ACCEPT is sent at once"),
                 () -> assertTrue(c.accepted, "the client is accepted (nonce echoed)"),
-                () -> assertEquals(7, c.playerId, "ACCEPT carries the host's player id"),
+                () -> assertEquals(8, c.playerId, "ACCEPT carries the host's player id"),
                 () -> assertNotEquals(0, c.session, "the session id is non-zero"),
                 () -> assertEquals(c.session, h.net.sessionOf(0, A), "the server records that session"),
                 () -> assertTrue(c.welcomed, "WELCOME arrives on the reliable channel at the next tick"),
-                () -> assertEquals(7, c.welcome.playerId, "WELCOME player id"),
+                () -> assertEquals(8, c.welcome.playerId, "WELCOME player id"),
                 () -> assertEquals(3, c.welcome.team, "WELCOME team from the host"),
                 () -> assertEquals(60, c.welcome.simHz, "WELCOME simHz"),
                 () -> assertEquals(30, c.welcome.snapshotHz, "WELCOME snapshotHz = simHz / divisor"),
                 () -> assertEquals(Msg.Welcome.FLAG_EDGE_WRAP, c.welcome.flags, "WELCOME flags from the config"),
                 () -> assertEquals(50f, c.welcome.gameFps, "WELCOME gameFps"),
                 () -> assertEquals(h.blob.compressed.length, c.welcome.configCompressedLength, "WELCOME announces the blob size"),
-                () -> assertEquals("Srv", c.welcome.serverName.toString(), "WELCOME server name"),
+                () -> assertEquals("Srv", c.welcome.serverName.toString(), "WELCOME server name (not appended to the previous one)"),
                 () -> assertEquals("mapName: test\n", c.configText, "the config text arrives intact"),
-                () -> assertEquals(1, h.net.connections(), "one connection"),
-                () -> assertTrue(h.log.get(0).startsWith("join: player 7 'Ann'"), "the join is logged"));
+                () -> assertEquals(2, h.net.connections(), "two connections"),
+                () -> assertTrue(h.log.get(1).startsWith("join: player 8 'Ann'"), "the join is logged"));
         }
 
         @Test
@@ -197,15 +200,18 @@ class ServerNetTest {
             TestClient on0 = new TestClient(1);
             TestClient on3 = new TestClient(2);
             h.in(0, A, on0.connect("a", 255, ""));
-            h.in(3, A, on3.connect("b", 255, ""));
+            h.in(4, A, on3.connect("b", 255, ""));
+            TestClient on9 = new TestClient(3);
+            h.in(20, A, on9.connect("c", 255, ""));
             List<Harness.Sent> replies = h.take(A);
             h.tick();
             List<Harness.Sent> later = h.take(A);
             assertAll(
-                () -> assertEquals(2, h.net.connections(), "the same address on two channels is two peers"),
-                () -> assertEquals(List.of(0, 3), List.of(replies.get(0).channel(), replies.get(1).channel()),
+                () -> assertEquals(3, h.net.connections(), "the same address on three channels is three peers"),
+                () -> assertEquals(List.of(0, 4, 20), List.of(replies.get(0).channel(), replies.get(1).channel(),
+                        replies.get(2).channel()),
                     "each ACCEPT leaves through the contacted channel"),
-                () -> assertNotEquals(h.net.sessionOf(0, A), h.net.sessionOf(3, A), "with distinct sessions"),
+                () -> assertNotEquals(h.net.sessionOf(0, A), h.net.sessionOf(4, A), "with distinct sessions"),
                 () -> assertTrue(later.stream().allMatch(s -> s.session() == h.net.sessionOf(s.channel(), A)),
                     "later traffic stays on each peer's own channel"),
                 () -> assertEquals(-1, h.net.sessionOf(1, A), "no peer on other channels"));
@@ -445,8 +451,28 @@ class ServerNetTest {
                 () -> assertEquals(2, c.radarSnapshots, "radar in every 3rd snapshot"),
                 () -> assertEquals(2, snaps.stream().filter(s -> s.endsWith("radar=true")).count(),
                     "the host is asked for radar on those snapshots only"),
+                () -> assertEquals(73, c.lastRadarCellX, "radar is quantized against the configured world size (1000/3500*256)"),
                 () -> assertEquals(1000f, c.lastSelfX, "the host's records arrive"),
                 () -> assertEquals(2000f, c.lastSelfY, "the host's records arrive (y)"));
+        }
+
+        @Test
+        @DisplayName("radar every radarDivisor-th snapshot also with another snapshot divisor")
+        void divisor3() {
+            ServerNetConfig cfg = new ServerNetConfig();
+            cfg.snapshotDivisor = 3;
+            Harness h = new Harness(cfg, "x: 1\n");
+            TestClient c = new TestClient(1);
+            h.join(c, 0, A, "a");
+            h.host.calls.clear();
+            for (int i = 0; i < 18; i++) {
+                h.step(c, 0, A, 0);
+            }
+            List<String> snaps = h.host.callsStartingWith("snapshot");
+            assertAll(
+                () -> assertEquals(6, snaps.size(), "18 ticks at divisor 3 give 6 snapshots"),
+                () -> assertEquals(2, snaps.stream().filter(s -> s.endsWith("radar=true")).count(), "2 of them carry radar"),
+                () -> assertEquals(20, c.welcome.snapshotHz, "WELCOME says 20 Hz"));
         }
 
         @Test
@@ -578,6 +604,8 @@ class ServerNetTest {
             long stray = h.net.stray();
             h.net.shutdown();
             List<Harness.Sent> toB = h.take(B);
+            TestClient bView = new TestClient(2);
+            bView.onPacket(toB.get(5).data().duplicate(), h.now);
             assertAll(
                 () -> assertEquals(List.of(), afterQuit, "nothing is sent back to a quitting client"),
                 () -> assertEquals(1, stray, "its later packets are stray"),
@@ -586,7 +614,8 @@ class ServerNetTest {
                     "each through its own channel"),
                 () -> assertEquals(List.of("leave 0", "leave 1", "leave 2"), h.host.callsStartingWith("leave"),
                     "every player leaves exactly once"),
-                () -> assertEquals(0, h.net.connections(), "no connections remain"));
+                () -> assertEquals(0, h.net.connections(), "no connections remain"),
+                () -> assertEquals("shutdown", bView.disconnectText, "the reason text is not appended across peers"));
         }
 
         @Test

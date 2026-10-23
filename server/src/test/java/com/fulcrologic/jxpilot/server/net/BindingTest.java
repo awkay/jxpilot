@@ -106,7 +106,10 @@ class BindingTest {
                 () -> assertThrows(IllegalArgumentException.class, () -> Cidr.parse("::ffff:10.0.0.0/95"),
                     "a mapped prefix below 96 is rejected"),
                 () -> assertEquals(128, Cidr.parse("::1/128").prefix(), "IPv6 accepts 128"),
-                () -> assertEquals(32, Cidr.parse("1.2.3.4/32").prefix(), "IPv4 accepts 32"));
+                () -> assertEquals(32, Cidr.parse("1.2.3.4/32").prefix(), "IPv4 accepts 32"),
+                () -> assertEquals(Cidr.parse("0.0.0.0/0"), Cidr.parse("::ffff:0.0.0.0/96"), "a mapped /96 is IPv4 /0"),
+                () -> assertTrue(assertThrows(IllegalArgumentException.class, () -> Cidr.parse("/8")).getMessage()
+                    .contains("does not start with an IP address"), "a missing address is reported as such"));
         }
     }
 
@@ -154,7 +157,9 @@ class BindingTest {
                 () -> assertThrows(IllegalArgumentException.class, () -> BindSelector.parse("1:2:3:z::"), "a bad IPv6 literal is rejected"),
                 () -> assertThrows(IllegalArgumentException.class, () -> BindSelector.parse("if:"), "if: needs a name"),
                 () -> assertThrows(IllegalArgumentException.class, () -> BindSelector.parse("host: "), "host: needs a name"),
-                () -> assertThrows(IllegalArgumentException.class, () -> BindSelector.parse("10.0.0.0/99"), "a bad CIDR is rejected"));
+                () -> assertThrows(IllegalArgumentException.class, () -> BindSelector.parse("10.0.0.0/99"), "a bad CIDR is rejected"),
+                () -> assertThrows(IllegalArgumentException.class, () -> BindSelector.parse("/8"),
+                    "a leading slash still means CIDR (and is rejected)"));
         }
 
         @Test

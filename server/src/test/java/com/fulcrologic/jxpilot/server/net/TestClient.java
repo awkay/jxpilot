@@ -58,6 +58,8 @@ final class TestClient implements ReliableHandler {
     String rejectText;
     int disconnectReason = -1;
     int disconnects;
+    String disconnectText;
+    int lastRadarCellX = -1;
     final Msg.Welcome welcome = new Msg.Welcome();
     boolean welcomed;
     ConfigTransfer.Receiver receiver;
@@ -193,6 +195,7 @@ final class TestClient implements ReliableHandler {
                 Msg.Disconnect d = new Msg.Disconnect();
                 d.read(data);
                 disconnectReason = d.reason;
+                disconnectText = d.text.toString();
                 disconnects++;
             }
             case PacketType.PONG -> {
@@ -235,6 +238,7 @@ final class TestClient implements ReliableHandler {
                 lastSelfY = self.y();
             } else if (snap.type() == Section.RADAR && snap.part() == 0) {
                 radarSnapshots++;
+                lastRadarCellX = new Records.Radar().wrap(snap, 0).cellX();
             }
         }
     }
