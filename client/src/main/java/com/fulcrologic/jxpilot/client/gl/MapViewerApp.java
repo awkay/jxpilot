@@ -152,15 +152,22 @@ public final class MapViewerApp {
     }
 
     private void loop(boolean shot) throws IOException {
+        com.sun.management.ThreadMXBean mx =
+            (com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory.getThreadMXBean();
         long last = System.nanoTime();
         long start = last;
+        long prevCpu = 0;
+        long allocMark = 0;
         int frame = 0;
         while (!window.shouldClose()) {
             long now = System.nanoTime();
             long dtNanos = now - last;
             last = now;
             if (frame > 0) {
-                stats.record(dtNanos);
+                stats.record(dtNanos, prevCpu);
+            }
+            if (shot && frame == opts.frames() / 2) {
+                allocMark = mx.getCurrentThreadAllocatedBytes();
             }
             glfwPollEvents();
             if (nextMapRequested) {
@@ -173,13 +180,18 @@ public final class MapViewerApp {
             renderFrame(now - start);
             frame++;
             if (shot && frame >= opts.frames()) {
+                long alloc = mx.getCurrentThreadAllocatedBytes() - allocMark;
                 Path out = Path.of(opts.screenshot());
                 Screenshot.save(out, window.framebufferWidth(), window.framebufferHeight());
-                System.out.printf("screenshot %s (%dx%d) after %d frames: %.1f fps avg, %.2f ms avg, %.2f ms max, %d draw calls%n",
-                    out, window.framebufferWidth(), window.framebufferHeight(), frame, stats.fps(),
-                    stats.averageMillis(), stats.maxMillis(), gl.drawCalls());
+                System.out.printf("screenshot %s (%dx%d) after %d frames, %d world copies, %d draw calls/frame%n"
+                        + "  frame: mean %.3f ms (%.0f fps), p99 %.2f ms, max %.2f ms; cpu before swap: mean %.3f ms%n"
+                        + "  render thread allocated %d bytes over frames %d..%d%n",
+                    out, window.framebufferWidth(), window.framebufferHeight(), frame, cam.offsetCount(),
+                    gl.drawCalls(), stats.runMeanMillis(), 1000 / stats.runMeanMillis(), stats.p99Millis(),
+                    stats.runMaxMillis(), stats.runCpuMeanMillis(), alloc, opts.frames() / 2, frame);
                 window.close();
             }
+            prevCpu = System.nanoTime() - now;
             window.swap();
         }
     }

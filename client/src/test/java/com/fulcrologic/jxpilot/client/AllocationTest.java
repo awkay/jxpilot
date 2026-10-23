@@ -49,7 +49,7 @@ class AllocationTest {
             @Override
             public void run() {
                 n++;
-                stats.record(16_000_000 + n);
+                stats.record(16_000_000 + n, 0);
                 ctl.update(0.0001);
                 ctl.applyTo(cam);
                 cam.update();
