@@ -43,7 +43,6 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -226,7 +225,6 @@ class RobotManagerTest {
             assertAll(
                 () -> assertSame(ShipGeom.defaultShip(), p.ship, "default ship"),
                 () -> assertEquals(1, RobotFixture.messages(s.world, from).size(), "only the enter message"));
-            Simulation r = sim("roundDelay: 3\ntiming: yes\n", "__");
             String[] rows = RobotFixture.open(20, 20, "__");
             char[] c = rows[3].toCharArray();
             c[5] = 'A';
@@ -234,10 +232,8 @@ class RobotManagerTest {
             Simulation race = RobotFixture.sim("roundDelay: 3\ntiming: yes\n", rows);
             long f2 = race.world.events.seq();
             race.robots.create();
-            assertAll(
-                () -> assertNotNull(r, "sim"),
-                () -> assertEquals("Player entered. Delaying 3 seconds until next race.",
-                    RobotFixture.messages(race.world, f2).get(1), "race wording and the delay"));
+            assertEquals("Player entered. Delaying 3 seconds until next race.",
+                RobotFixture.messages(race.world, f2).get(1), "race wording and the delay");
         }
 
         @Test
