@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.fulcrologic.jxpilot</groupId>
+    <artifactId>jxpilot-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>jxpilot-client</artifactId>
+
+  <profiles>
+    <profile><id>mac-arm</id><activation><os><family>mac</family><arch>aarch64</arch></os></activation>
+      <properties><lwjgl.natives>natives-macos-arm64</lwjgl.natives><jvm.platform.args>-XstartOnFirstThread</jvm.platform.args></properties></profile>
+    <profile><id>mac-x64</id><activation><os><family>mac</family><arch>x86_64</arch></os></activation>
+      <properties><lwjgl.natives>natives-macos</lwjgl.natives><jvm.platform.args>-XstartOnFirstThread</jvm.platform.args></properties></profile>
+    <profile><id>linux</id><activation><os><family>unix</family><name>Linux</name></os></activation>
+      <properties><lwjgl.natives>natives-linux</lwjgl.natives><jvm.platform.args>-Dnone</jvm.platform.args></properties></profile>
+    <profile><id>windows</id><activation><os><family>windows</family></os></activation>
+      <properties><lwjgl.natives>natives-windows</lwjgl.natives><jvm.platform.args>-Dnone</jvm.platform.args></properties></profile>
+  </profiles>
+
+  <properties>
+    <client.args>--view-map ${project.basedir}/../maps/default.xp</client.args>
+  </properties>
+
+  <dependencies>
+    <dependency><groupId>com.fulcrologic.jxpilot</groupId><artifactId>jxpilot-common</artifactId></dependency>
+    <dependency><groupId>com.fulcrologic.jxpilot</groupId><artifactId>jxpilot-server</artifactId></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl</artifactId></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-glfw</artifactId></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-opengl</artifactId></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-stb</artifactId></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl</artifactId><classifier>${lwjgl.natives}</classifier></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-glfw</artifactId><classifier>${lwjgl.natives}</classifier></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-opengl</artifactId><classifier>${lwjgl.natives}</classifier></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-stb</artifactId><classifier>${lwjgl.natives}</classifier></dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <!-- mvn -pl client exec:exec, optionally with -Dclient.args="(viewer options)" -->
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <configuration>
+          <executable>java</executable>
+          <workingDirectory>${project.basedir}</workingDirectory>
+          <commandlineArgs>${jvm.platform.args} --enable-native-access=ALL-UNNAMED -XX:+UseZGC -classpath %classpath com.fulcrologic.jxpilot.client.ClientMain ${client.args}</commandlineArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.pitest</groupId>
+        <artifactId>pitest-maven</artifactId>
+        <configuration>
+          <targetClasses>
+            <param>com.fulcrologic.jxpilot.client.render.*</param>
+            <param>com.fulcrologic.jxpilot.client.map.*</param>
+            <param>com.fulcrologic.jxpilot.client.viewer.*</param>
+          </targetClasses>
+          <targetTests>
+            <param>com.fulcrologic.jxpilot.client.*</param>
+          </targetTests>
+          <excludedTestClasses>
+            <param>com.fulcrologic.jxpilot.client.AllocationTest</param>
+          </excludedTestClasses>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,89 @@
+package com.fulcrologic.jxpilot.server.sim;
+
+import com.fulcrologic.jxpilot.server.world.Player;
+
+/**
+ * State of one point being moved through the map (C {@code move_state_t} plus its {@code move_info_t},
+ * {@code src/server/walls.h}). Positions and movement are in clicks; velocity in pixels per frame (only
+ * its sign and ratios matter for wall tracing).
+ */
+public final class MoveState {
+    // ---- crash codes (move_crash_t)
+    public static final int NOT_A_CRASH = 0;
+    public static final int CRASH_UNIVERSE = 0x01;
+    public static final int CRASH_WALL = 0x02;
+    public static final int CRASH_TARGET = 0x04;
+    public static final int CRASH_TREASURE = 0x08;
+    public static final int CRASH_CANNON = 0x10;
+    public static final int CRASH_UNKNOWN = 0x20;
+    public static final int CRASH_WORMHOLE = 0x40;
+    public static final int CRASH_WALL_SPEED = 0x80;
+    public static final int CRASH_WALL_NO_FUEL = 0x100;
+    public static final int CRASH_WALL_ANGLE = 0x200;
+
+    // ---- bounce codes (move_bounce_t)
+    public static final int NOT_A_BOUNCE = 0;
+    public static final int BOUNCE_HOR_LO = 0x01;
+    public static final int BOUNCE_HOR_HI = 0x02;
+    public static final int BOUNCE_VER_LO = 0x04;
+    public static final int BOUNCE_VER_HI = 0x08;
+    public static final int BOUNCE_LEFT_DOWN = 0x10;
+    public static final int BOUNCE_LEFT_UP = 0x20;
+    public static final int BOUNCE_RIGHT_DOWN = 0x40;
+    public static final int BOUNCE_RIGHT_UP = 0x80;
+    public static final int BOUNCE_EDGE = 0x100;
+
+    // ---- move_info_t
+    public boolean edgeWrap;
+    public boolean edgeBounce;
+    public boolean wallBounce;
+    public boolean cannonCrashes;
+    public boolean targetCrashes;
+    public boolean treasureCrashes;
+    public boolean wormholeWarps;
+    public boolean phased;
+    /** The player being moved, or null for a pool object. */
+    public Player pl;
+    /** The pool object being moved (-1 for players). */
+    public int obj = -1;
+    /** Owner team of the object (players: their team). */
+    public int team;
+    /** Object status bits (FROMCANNON matters for cannons). */
+    public int status;
+    /** Object type bits. */
+    public int type;
+
+    // ---- move_state_t
+    public int crash;
+    public int bounce;
+    public int posX;
+    public int posY;
+    public double velX;
+    public double velY;
+    public int todoX;
+    public int todoY;
+    public int doneX;
+    public int doneY;
+    public int dir;
+    public int cannon = -1;
+    public int wormhole = -1;
+    public int target = -1;
+    public int treasure = -1;
+
+    /** Copy the move info (not the state) from another state. */
+    public void copyInfo(MoveState o) {
+        edgeWrap = o.edgeWrap;
+        edgeBounce = o.edgeBounce;
+        wallBounce = o.wallBounce;
+        cannonCrashes = o.cannonCrashes;
+        targetCrashes = o.targetCrashes;
+        treasureCrashes = o.treasureCrashes;
+        wormholeWarps = o.wormholeWarps;
+        phased = o.phased;
+        pl = o.pl;
+        obj = o.obj;
+        team = o.team;
+        status = o.status;
+        type = o.type;
+    }
+}

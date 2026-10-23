@@ -1,0 +1,16 @@
+# Small fixture map for exact-content tests.
+mapName:   Fixture   # trailing comment
+mapAuthor: Test Suite
+mapWidth:  10
+mapHeight: 6
+teamPlay:  yes
+teamCannons: yes
+edgeWrap:  no
+mapData: \multiline: EndOfMapdata
+xxxxxxxxxx
+x1 *  !$2x
+xs      ax
+x# r@ @ #x
+xw      qx
+xxxxxxxxxx
+EndOfMapdata

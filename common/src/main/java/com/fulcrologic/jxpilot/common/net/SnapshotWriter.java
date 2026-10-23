@@ -1,0 +1,189 @@
+package com.fulcrologic.jxpilot.common.net;
+
+import com.fulcrologic.jxpilot.common.math.XMath;
+
+import java.nio.ByteBuffer;
+
+/**
+ * Builds a SNAPSHOT body into a datagram buffer (after the {@link PacketHeader}). Reusable and
+ * allocation free.
+ * <pre>
+ *   header: u32 tick, u32 lastInputSeq, u8 part, u8 partCount, u8 flags, u16 viewX, u16 viewY   (15 bytes)
+ *   then sections: u8 type, u8 recordSize, u8 variant, u16 count, count * record
+ * </pre>
+ * {@code viewX/viewY} (u16 half pixels) is the receiver's view centre; view-culled records store
+ * positions as i16 half-pixel offsets from it (wrap-aware), see {@link #relX(double)}.
+ * Usage:
+ * <pre>
+ *   w.setWorld(worldW, worldH, wrap);                       // once per map
+ *   w.begin(buf, tick, lastInputSeq, 0, 1, FLAG_LAST_PART, camX, camY);
+ *   if (w.beginSection(Section.SHOT, ShotKind.SHOT &lt;&lt; 4 | ObjColor.ENEMY)) {
+ *       for (...) { if (!w.hasRoom()) break; Records.Shot.put(w, x, y, vx, vy); }
+ *       w.endSection();
+ *   }
+ * </pre>
+ * When a tick does not fit in one datagram the server sends several parts (same tick, part
+ * 0..partCount-1), highest priority first. Each part is self-contained.
+ */
+public final class SnapshotWriter {
+    /** Snapshot header size. */
+    public static final int HEADER_SIZE = 15;
+    /** Header flag: this part is the last one the server will send for this tick. */
+    public static final int FLAG_LAST_PART = 1;
+
+    private ByteBuffer out;
+    private int sectionPos = -1;
+    private int recSize;
+    private int partCountPos;
+    private double viewX;
+    private double viewY;
+    private double worldW = 65536;
+    private double worldH = 65536;
+    private boolean wrap;
+
+    /** World size in pixels and wrap mode, used for wrap-aware relative positions. */
+    public void setWorld(double width, double height, boolean edgeWrap) {
+        worldW = width;
+        worldH = height;
+        wrap = edgeWrap;
+    }
+
+    /** World width in pixels (for radar quantization). */
+    public double worldWidth() {
+        return worldW;
+    }
+
+    /** World height in pixels. */
+    public double worldHeight() {
+        return worldH;
+    }
+
+    /**
+     * Whether a point can be encoded relative to the current view centre.
+     * <p>
+     * BEHAVIOR: true iff both wrap-aware offsets are within +-{@link Wire#MAX_REL} pixels; the server
+     * must cull objects for which this is false (encoding them throws).
+     */
+    public boolean inView(double x, double y) {
+        double dx = XMath.wrapDelta(x - viewX, worldW, wrap);
+        double dy = XMath.wrapDelta(y - viewY, worldH, wrap);
+        return dx <= Wire.MAX_REL && dx >= -Wire.MAX_REL && dy <= Wire.MAX_REL && dy >= -Wire.MAX_REL;
+    }
+
+    /** The buffer being written (records append to it). */
+    public ByteBuffer buffer() {
+        return out;
+    }
+
+    /**
+     * Write the snapshot header at the buffer's position.
+     * <p>
+     * BEHAVIOR: the view centre is stored quantized to half pixels and relative positions are
+     * measured from that quantized value, so decoding adds back exactly.
+     */
+    public void begin(ByteBuffer buf, int tick, int lastInputSeq, int part, int partCount, int flags,
+                      double viewCenterX, double viewCenterY) {
+        out = buf;
+        sectionPos = -1;
+        buf.putInt(tick);
+        buf.putInt(lastInputSeq);
+        buf.put((byte) part);
+        partCountPos = buf.position();
+        buf.put((byte) partCount);
+        buf.put((byte) flags);
+        int vx = Wire.posToU16(viewCenterX);
+        int vy = Wire.posToU16(viewCenterY);
+        buf.putShort((short) vx);
+        buf.putShort((short) vy);
+        viewX = vx * 0.5;
+        viewY = vy * 0.5;
+    }
+
+    /** Patch the part count after the fact (e.g. when the split is decided while writing). */
+    public void setPartCount(int partCount) {
+        out.put(partCountPos, (byte) partCount);
+    }
+
+    /** Patch the flags byte. */
+    public void setFlags(int flags) {
+        out.put(partCountPos + 1, (byte) flags);
+    }
+
+    /**
+     * i16 half-pixel offset of world x from the view centre.
+     * <p>
+     * BEHAVIOR: takes the short way around in wrapping worlds.
+     * BEHAVIOR: throws IllegalArgumentException beyond +-{@link Wire#MAX_REL} (see {@link #inView}).
+     */
+    public int relX(double x) {
+        return Wire.relToI16(XMath.wrapDelta(x - viewX, worldW, wrap));
+    }
+
+    /** i16 half-pixel offset of world y from the view centre (see {@link #relX}). */
+    public int relY(double y) {
+        return Wire.relToI16(XMath.wrapDelta(y - viewY, worldH, wrap));
+    }
+
+    /** Open a section with variant 0 (see {@link #beginSection(int, int)}). */
+    public boolean beginSection(int type) {
+        return beginSection(type, 0);
+    }
+
+    /**
+     * Open a section of {@code type}; {@code variant} is a per-section byte (e.g. shot kind/colour).
+     * <p>
+     * BEHAVIOR: returns false and writes nothing if not even the header plus one record fits.
+     * BEHAVIOR: throws for unknown types and when a section is already open.
+     */
+    public boolean beginSection(int type, int variant) {
+        if (sectionPos >= 0) {
+            throw new IllegalStateException("section already open");
+        }
+        int size = Section.recordSize(type);
+        if (size <= 0) {
+            throw new IllegalArgumentException("unknown section type " + type);
+        }
+        if (out.remaining() < Section.HEADER_SIZE + size) {
+            return false;
+        }
+        recSize = size;
+        sectionPos = out.position();
+        out.put((byte) type);
+        out.put((byte) size);
+        out.put((byte) variant);
+        out.putShort((short) 0);
+        return true;
+    }
+
+    /**
+     * BEHAVIOR: true if one more record of the open section fits and the count stays below 65535.
+     */
+    public boolean hasRoom() {
+        return out.remaining() >= recSize
+            && (out.position() - sectionPos - Section.HEADER_SIZE) / recSize < 0xFFFF;
+    }
+
+    /**
+     * Close the open section, patching its count.
+     * <p>
+     * BEHAVIOR: an empty section is removed from the buffer; returns the record count.
+     * BEHAVIOR: throws if no section is open or a partial record was written.
+     */
+    public int endSection() {
+        if (sectionPos < 0) {
+            throw new IllegalStateException("no open section");
+        }
+        int bytes = out.position() - sectionPos - Section.HEADER_SIZE;
+        if (bytes % recSize != 0) {
+            throw new IllegalStateException("partial record in section");
+        }
+        int count = bytes / recSize;
+        if (count == 0) {
+            out.position(sectionPos);
+        } else {
+            out.putShort(sectionPos + 3, (short) count);
+        }
+        sectionPos = -1;
+        return count;
+    }
+}
