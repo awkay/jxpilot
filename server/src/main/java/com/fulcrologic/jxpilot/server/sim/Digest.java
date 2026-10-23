@@ -28,9 +28,9 @@ import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 
 /**
- * A 64-bit FNV-1a hash of the simulation state, for determinism checks: tick and frame clock, every
- * player's kinematics, fuel, score and status, every live object, cannon and fuel station state,
- * team scores and the event/burst counts.
+ * A 64-bit FNV-1a hash of the simulation state, for determinism checks: tick, frame clock, RNG state and
+ * round state, every player's kinematics, turning, fuel, settings, score, status, items and timers, every
+ * live object, cannon, fuel station, target and wormhole state, team scores and the event/burst counts.
  */
 public final class Digest {
     private static final long OFFSET = 0xcbf29ce484222325L;
@@ -61,39 +61,42 @@ public final class Digest {
         Digest d = new Digest();
         d.add(w.tick);
         d.add(w.frames);
+        d.add(w.rng.state());
+        d.add(w.roundDelay);
+        d.add(w.roundTime);
+        d.add(w.roundsPlayed);
         for (int k = 0; k < w.numPlayers; k++) {
-            Player p = w.playerAt(k);
-            d.add(p.id);
-            d.add(p.cx);
-            d.add(p.cy);
-            d.add(p.vx);
-            d.add(p.vy);
-            d.add(p.dir);
-            d.add(p.floatDir);
-            d.add(p.fuel);
-            d.add(p.score);
-            d.add(p.status);
-            d.add(p.used);
-            d.add(p.count);
-            d.add(p.kills);
-            d.add(p.deaths);
+            d.player(w.playerAt(k));
         }
         Objects o = w.objects;
         d.add(o.count());
         for (int k = 0; k < o.count(); k++) {
             int hd = o.active[k];
             d.add(o.type[hd]);
+            d.add(o.owner[hd]);
+            d.add(o.team[hd]);
+            d.add(o.status[hd]);
             d.add(o.cx[hd]);
             d.add(o.cy[hd]);
             d.add(o.vx[hd]);
             d.add(o.vy[hd]);
+            d.add(o.mass[hd]);
             d.add(o.life[hd]);
+            d.add(o.fuseLife[hd]);
+            d.add(o.mods[hd]);
         }
-        for (double v : w.cannonDeadTime) {
+        for (int v : w.cannonDeadTime) {
             d.add(v);
         }
         for (double v : w.fuelLevel) {
             d.add(v);
+        }
+        for (int v : w.targetDeadTime) {
+            d.add(v);
+        }
+        for (int i = 0; i < w.wormLastDest.length; i++) {
+            d.add(w.wormLastDest[i]);
+            d.add(w.wormCountdown[i]);
         }
         for (double v : w.teamScore) {
             d.add(v);
@@ -101,5 +104,42 @@ public final class Digest {
         d.add(w.events.seq());
         d.add(w.events.burstSeq());
         return d.h;
+    }
+
+    private void player(Player p) {
+        add(p.id);
+        add(p.team);
+        add(p.cx);
+        add(p.cy);
+        add(p.vx);
+        add(p.vy);
+        add(p.accX);
+        add(p.accY);
+        add(p.dir);
+        add(p.floatDir);
+        add(p.turnVel);
+        add(p.oldTurnVel);
+        add(p.turnAcc);
+        add(p.power);
+        add(p.turnSpeed);
+        add(p.turnResistance);
+        add(p.mass);
+        add(p.fuel);
+        add(p.score);
+        add(p.status);
+        add(p.used);
+        add(p.have);
+        add(p.count);
+        add(p.shieldTime);
+        add(p.kills);
+        add(p.deaths);
+        add(p.life);
+        add(p.shots);
+        add(p.shotTime);
+        add(p.homeBase);
+        add(p.prevKeys);
+        for (int v : p.items) {
+            add(v);
+        }
     }
 }

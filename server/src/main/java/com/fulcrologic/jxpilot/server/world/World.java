@@ -71,24 +71,40 @@ public final class World {
     public final Events events = new Events();
 
     // ---- dynamic map state
-    /** Original frames a cannon stays dead; 0 = alive. */
-    public final double[] cannonDeadTime;
+    /** Frames a cannon stays dead; 0 = alive. */
+    public final int[] cannonDeadTime;
     /** Fuel left in each station (C fixed point). */
     public final double[] fuelLevel;
-    /** Original frames a target stays dead; 0 = alive (targets are solid only in S1). */
-    public final double[] targetDeadTime;
+    /** Frames a target stays dead; 0 = alive (targets are solid only in S1). */
+    public final int[] targetDeadTime;
     public final int[] wormLastDest;
-    public final double[] wormCountdown;
+    public final int[] wormCountdown;
 
     // ---- teams (C World.teams)
     public final double[] teamScore = new double[Const.MAX_TEAMS];
     public final int[] teamMembers = new int[Const.MAX_TEAMS];
     public final boolean[] teamScoreDirty = new boolean[Const.MAX_TEAMS];
 
-    /** Sim tick counter. */
+    /**
+     * Number of the sim tick being run, or last run (one tick = one C frame). Bursts are tagged with it,
+     * thrust sparks seeded from it, and snapshots built after the tick carry it. The network layer may
+     * set it (see {@code Simulation.tick(int, long[])}); otherwise each tick increments it.
+     */
     public int tick;
-    /** Original-frame clock (C {@code frame_loops}): advances by {@code dt} per tick. */
-    public double frames;
+    /** C {@code frame_loops}: starts at 1 and advances by one after every tick (shot timing, shoves). */
+    public long frames = 1;
+
+    // ---- rounds (C update.c/player.c globals)
+    /** C {@code round_delay}: frames until the next round starts; while &gt; 0 nobody flies or collides. */
+    public int roundDelay;
+    /** C {@code round_delay_send}. */
+    public int roundDelaySend;
+    /** C {@code roundtime}: frames left in this round, -1 without a limit. */
+    public int roundTime = -1;
+    /** C {@code roundsPlayed}. */
+    public int roundsPlayed;
+    /** C {@code gameDuration} after {@code Game_Over} sets it to -1 (the game no longer ends rounds). */
+    public float gameDuration;
 
     /** Build the map from {@code options} (map data + settings) and the initial state. */
     public World(Options options, int seed) {
@@ -114,13 +130,15 @@ public final class World {
         objects = new Objects(params.maxObjects);
         grid = new Grid(width, height, wrap, params.maxObjects);
 
-        cannonDeadTime = new double[map.cannons().size()];
+        cannonDeadTime = new int[map.cannons().size()];
         fuelLevel = new double[map.fuels().size()];
         Arrays.fill(fuelLevel, Const.START_STATION_FUEL * 256);
-        targetDeadTime = new double[map.targets().size()];
+        targetDeadTime = new int[map.targets().size()];
         wormLastDest = new int[map.wormholes().size()];
-        wormCountdown = new double[map.wormholes().size()];
+        wormCountdown = new int[map.wormholes().size()];
         initWormholes();
+        gameDuration = params.gameDuration;
+        roundTime = params.maxRoundTime > 0 ? params.maxRoundTime * params.fps : -1;
     }
 
     /**
@@ -172,10 +190,10 @@ public final class World {
     }
 
     /**
-     * Reserve a free slot and id and append it to {@link #order}.
+     * Reserve a free slot and id (C {@code peek_ID}); the player is not in the game until {@link #enter}.
      * <p>
-     * BEHAVIOR: returns null when every slot (one per base) is taken.
-     * BEHAVIOR: the id is the lowest unused id &gt;= 1; the pseudo team is a fresh number (C pseudo_team_no++).
+     * BEHAVIOR: returns null when every slot (one per base) is taken, reserved ones included.
+     * BEHAVIOR: the id is the lowest unused id &gt;= 1.
      */
     public Player addPlayer() {
         for (Player p : players) {
@@ -186,9 +204,8 @@ public final class World {
                 }
                 slotOfId[id] = p.slot;
                 p.inUse = true;
+                p.spawned = false;
                 p.id = id;
-                p.pseudoTeam = pseudoTeamNext++;
-                order[numPlayers++] = p.slot;
                 return p;
             }
         }
@@ -196,22 +213,39 @@ public final class World {
     }
 
     /**
-     * Remove a player from the game.
+     * Put a reserved player into the game: append it to {@link #order} (C {@code Players[NumPlayers++]}).
      * <p>
-     * BEHAVIOR: the remaining players keep their relative order; the id becomes free; unknown players are ignored.
+     * BEHAVIOR: the pseudo team is a fresh number (C pseudo_team_no++); entering twice is ignored.
+     */
+    public void enter(Player p) {
+        if (!p.inUse || p.spawned) {
+            return;
+        }
+        p.spawned = true;
+        p.pseudoTeam = pseudoTeamNext++;
+        order[numPlayers++] = p.slot;
+    }
+
+    /**
+     * Remove a player (reserved or in the game) and free its id.
+     * <p>
+     * BEHAVIOR: as C {@code Delete_player}, the last player in {@link #order} takes the removed player's
+     * place (the order of the others is otherwise unchanged); unknown players are ignored.
      */
     public void removePlayer(Player p) {
         if (!p.inUse) {
             return;
         }
-        int k = 0;
-        while (order[k] != p.slot) {
-            k++;
+        if (p.spawned) {
+            int k = 0;
+            while (order[k] != p.slot) {
+                k++;
+            }
+            order[k] = order[--numPlayers];
         }
-        System.arraycopy(order, k + 1, order, k, numPlayers - k - 1);
-        numPlayers--;
         slotOfId[p.id] = -1;
         p.inUse = false;
+        p.spawned = false;
     }
 
     /** Wall distance (half blocks) at an in-range block. */
@@ -237,11 +271,15 @@ public final class World {
         return dy < -half ? dy + pixelHeight : (dy > half ? dy - pixelHeight : dy);
     }
 
-    /** C {@code Wrap_length}. BEHAVIOR: the length of the wrapped difference. */
-    public double wrapLength(double dx, double dy) {
-        double x = wrapDx(dx);
-        double y = wrapDy(dy);
-        return Math.sqrt(x * x + y * y);
+    /**
+     * C {@code Wrap_length}: float arguments, wrapped, {@code hypot} in double, returned as a float.
+     * <p>
+     * BEHAVIOR: the length of the wrapped difference.
+     */
+    public float wrapLength(double dx, double dy) {
+        float x = (float) wrapDx((float) dx);
+        float y = (float) wrapDy((float) dy);
+        return (float) StrictMath.hypot(x, y);
     }
 
     /** C {@code WRAP_XCLICK}. BEHAVIOR: with edgeWrap a position outside [0, width) moves by one width; else unchanged. */
@@ -276,14 +314,18 @@ public final class World {
         return y < 0 ? y + pixelHeight : (y >= pixelHeight ? y - pixelHeight : y);
     }
 
-    /** Gravity x at a block (C {@code World.gravity[bx][by]}). BEHAVIOR: out-of-map blocks are clamped to the edge. */
-    public double gravityX(int bx, int by) {
-        return map.gravityX(clamp(bx, width), clamp(by, height));
+    /**
+     * Gravity x at a block (C {@code World.gravity[bx][by]}, a float).
+     * <p>
+     * BEHAVIOR: out-of-map blocks are clamped to the edge.
+     */
+    public float gravityX(int bx, int by) {
+        return (float) map.gravityX(clamp(bx, width), clamp(by, height));
     }
 
-    /** Gravity y at a block, clamped into the map. */
-    public double gravityY(int bx, int by) {
-        return map.gravityY(clamp(bx, width), clamp(by, height));
+    /** Gravity y at a block (a float), clamped into the map. */
+    public float gravityY(int bx, int by) {
+        return (float) map.gravityY(clamp(bx, width), clamp(by, height));
     }
 
     private static int clamp(int b, int n) {

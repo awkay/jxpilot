@@ -43,10 +43,10 @@ public final class Shots {
     static final long ED_SHOT = (long) (-0.2 * 256);
     /** C {@code -ED_SHOT} uncast (51.2): the fuel a player needs to fire ({@code fuel.sum < -ED_SHOT}). */
     static final double SHOT_FUEL_NEEDED = 0.2 * 256;
-    /** C {@code CANNON_SHOT_MASS}. */
-    static final double CANNON_SHOT_MASS = 0.4;
+    /** C {@code CANNON_SHOT_MASS} (assigned to a float). */
+    static final float CANNON_SHOT_MASS = 0.4f;
     /** C {@code DEBRIS_MASS}. */
-    static final double DEBRIS_MASS = 4.5;
+    static final float DEBRIS_MASS = 4.5f;
 
     private final World w;
     private final Simulation sim;
@@ -74,14 +74,14 @@ public final class Shots {
      * C {@code Fire_main_shot}.
      * <p>
      * BEHAVIOR: nothing when the player has shotMax shots in the air or has shields/phasing up; otherwise a
-     * shot from the main gun position.
+     * shot from the main gun position (C float: pixel position + rotated gun offset).
      */
     public void fireMainShot(Player pl, int dir) {
         if (pl.shots >= pl.shotMax || (pl.used & (Has.SHIELD | Has.PHASING_DEVICE)) != 0) {
             return;
         }
-        double x = pl.px + pl.ship.gunX[pl.dir];
-        double y = pl.py + pl.ship.gunY[pl.dir];
+        float x = pl.px + pl.ship.gunX[pl.dir];
+        float y = pl.py + pl.ship.gunY[pl.dir];
         fire(pl, pl.team, false, x, y, Obj.SHOT, dir, 0);
     }
 
@@ -94,21 +94,23 @@ public final class Shots {
      * BEHAVIOR: shots have mass shotMass, life shotLife and speed shotSpeed; cannon shots mass 0.4,
      * life 8 + random%24 and FROMCANNON. Without shotsGravity they ignore gravity.
      * BEHAVIOR: fuse life = life - (int)(2*SHIP_SZ/shotSpeed + 1): the owner is immune while life &gt; fuse life.
-     * BEHAVIOR: velocity = shooter velocity + shotSpeed * (cos, sin)(dir); the shooter recoils by
-     * (shot.v - ship.v) * shot.mass / ship.mass.
+     * BEHAVIOR: velocity = (float)(shooter velocity + (float)(tcos(dir) * shotSpeed)); the shooter recoils by
+     * (shot.v - ship.v) * shot.mass / ship.mass (C Recoil, float).
      *
      * @param pl   shooter, or null for cannons
+     * @param x    start x in pixels (a C float)
+     * @param y    start y in pixels
      * @param mods {@link Obj#MOD_CLUSTER} for cannon flak (ignored for OBJ_SHOT)
      * @return the shot handle or -1
      */
-    public int fire(Player pl, int team, boolean cannon, double x, double y, int type, int dir, int mods) {
+    public int fire(Player pl, int team, boolean cannon, float x, float y, int type, int dir, int mods) {
         Objects o = w.objects;
         Params p = w.params;
         if (o.count() >= o.capacity) {
             return -1;
         }
-        double life = p.shotLife;
-        double mass = p.shotMass;
+        int life = p.shotLife;
+        float mass = p.shotMass;
         int status = Obj.GRAVITY;
         if (cannon) {
             mass = CANNON_SHOT_MASS;
@@ -128,22 +130,23 @@ public final class Shots {
         if (!p.shotsGravity) {
             status &= ~Obj.GRAVITY;
         }
-        x = w.wrapXPixel(x);
-        y = w.wrapYPixel(y);
+        int fuse = (int) ((2.0 * (float) Const.SHIP_SZ) / p.shotSpeed + 1.0);
+        x = (float) w.wrapXPixel(x);
+        y = (float) w.wrapYPixel(y);
         if (x < 0 || x >= w.pixelWidth || y < 0 || y >= w.pixelHeight) {
             return -1;
         }
         int h = o.alloc();
         o.life[h] = life;
-        o.fuseLife[h] = life - (int) ((2.0 * Const.SHIP_SZ) / p.shotSpeed + 1.0);
+        o.fuseLife[h] = life - fuse;
         o.mass[h] = mass;
         o.type[h] = type;
         o.owner[h] = pl != null ? pl.id : Obj.NO_ID;
         o.team[h] = team;
         o.color[h] = Records.ObjColor.WHITE;
         o.initPixels(h, x, y);
-        o.vx[h] = (pl != null ? pl.vx : 0.0) + Trig.tcos(dir) * p.shotSpeed;
-        o.vy[h] = (pl != null ? pl.vy : 0.0) + Trig.tsin(dir) * p.shotSpeed;
+        o.vx[h] = (float) ((pl != null ? pl.vx : 0.0) + Trig.tcos(dir) * p.shotSpeed);
+        o.vy[h] = (float) ((pl != null ? pl.vy : 0.0) + Trig.tsin(dir) * p.shotSpeed);
         o.status[h] = status;
         o.missileDir[h] = dir;
         o.mods[h] = mods;
@@ -183,7 +186,10 @@ public final class Shots {
 
     /**
      * The cluster/debris explosion of Delete_shot (shot.c:1217-1320) with mini = power = velocity = 0, so C's
-     * speed_modv (1 / (1 &lt;&lt; velocity), or 1 for debris) is always 1.
+     * speed_modv (1 / (1 &lt;&lt; velocity), or 1 for debris) is always 1 (C float factors).
+     * <p>
+     * BEHAVIOR: cluster (flak) fragments are OBJ_SHOT cluster shots, which reach clients as SHOT records, so
+     * they are not also recorded as a burst; debris is recorded as a DEBRIS burst.
      */
     private void explode(int h) {
         Objects o = w.objects;
@@ -196,17 +202,20 @@ public final class Shots {
         }
         int type;
         int color;
-        double mass;
-        double numModv;
-        double lifeModv;
+        float mass;
+        float numModv;
+        float lifeModv;
         int intensity;
+        int burstKind;
         if ((o.mods[h] & Obj.MOD_CLUSTER) != 0) {
             type = Obj.SHOT;
             color = Records.ObjColor.WHITE;
-            mass = w.params.shotMass * 3;
+            mass = w.params.shotMass;
+            mass *= 3;
             numModv = 4;
-            lifeModv = 0.20f;
+            lifeModv = 1 * 0.20f;
             intensity = (int) (o.mass[h] * 0.9 / w.params.shotMass);
+            burstKind = -1;
         } else {
             type = Obj.DEBRIS;
             color = Records.ObjColor.RED;
@@ -214,9 +223,10 @@ public final class Shots {
             numModv = 1;
             lifeModv = 1;
             intensity = 32;
+            burstKind = Records.BurstKind.DEBRIS;
         }
         sim.debris.make(o.prevX[h], o.prevY[h], o.vx[h], o.vy[h], o.owner[h], o.team[h], type, mass, status, color,
-            Records.BurstKind.DEBRIS, 6, (int) (0.20f * intensity * numModv), (int) (0.30f * intensity * numModv),
+            burstKind, 6, (int) (0.20f * intensity * numModv), (int) (0.30f * intensity * numModv),
             0, Const.RES - 1, 20, intensity >> 2, (int) (8 * lifeModv),
             (int) ((intensity >> 1) * lifeModv));
     }

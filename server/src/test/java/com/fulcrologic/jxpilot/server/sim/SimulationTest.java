@@ -77,15 +77,23 @@ class SimulationTest {
     @DisplayName("tick: clocks and input")
     class Clocks {
         @Test
-        @DisplayName("advances the tick by one and the frame clock by dt = fps/60; applies each slot's keys")
+        @DisplayName("numbers the tick, advances the frame clock by one frame; applies each slot's keys")
         void clocks() {
             Simulation s = sim("");
             Player p = TestWorlds.join(s, "a", 0);
+            long f0 = s.world.frames;
             s.tick(keys(s, ControlKey.THRUST.mask()));
+            int thrusting = p.status & Obj.THRUSTING;
+            int t1 = s.world.tick;
+            long f1 = s.world.frames;
+            s.tick(41, keys(s, 0));
             assertAll(
-                () -> assertEquals(1, s.world.tick, "tick advances by one"),
-                () -> assertEquals(14.0 / 60, s.world.frames, 1e-12, "the frame clock advances by 14/60 at the default 14 fps"),
-                () -> assertTrue((p.status & Obj.THRUSTING) != 0, "the slot's THRUST key took effect"),
+                () -> assertEquals(1L, f0, "C frame_loops starts at 1"),
+                () -> assertEquals(1, t1, "tick(input) runs tick world.tick + 1 and leaves world.tick at it"),
+                () -> assertEquals(2L, f1, "the frame clock advances by one frame per tick"),
+                () -> assertEquals(41, s.world.tick, "tick(T, input) runs tick T (the network layer numbers ticks)"),
+                () -> assertEquals(3L, s.world.frames, "the frame clock still advances by one"),
+                () -> assertTrue(thrusting != 0, "the slot's THRUST key took effect"),
                 () -> assertTrue(p.vx != 0 || p.vy != 0, "thrust accelerated the ship in the same tick"));
         }
     }
@@ -134,7 +142,7 @@ class SimulationTest {
     @DisplayName("regenerateFuel")
     class Regen {
         @Test
-        @DisplayName("stations gain (int)(players*0.06*256) per frame times dt, capped at 500 units; none without players")
+        @DisplayName("stations gain (int)(players*0.06*256) per frame, capped at 500 units; none without players")
         void regen() {
             Simulation s = sim("");
             World w = s.world;
@@ -149,8 +157,7 @@ class SimulationTest {
             s.regenerateFuel();
             assertAll(
                 () -> assertEquals(start, noPlayers, "no regeneration without players"),
-                () -> assertEquals(start + (int) (2 * 0.06 * 256) * (14.0 / 60), two, 1e-9,
-                    "two players: +(int)(30.72) = 30 per frame, times 14/60"),
+                () -> assertEquals(start + (int) (2 * 0.06 * 256), two, "two players: +(int)(30.72) = 30 per frame"),
                 () -> assertEquals(500 * 256, w.fuelLevel[0], "capped at MAX_STATION_FUEL"));
         }
     }
@@ -169,43 +176,70 @@ class SimulationTest {
         }
 
         @Test
-        @DisplayName("at dt = 0.5: vel += (acc + gravity) * dt, life -= dt")
-        void scaled() {
+        @DisplayName("at 30 fps: vel += acc + gravity in float, life -= 1")
+        void wholeFrame() {
             Simulation s = TestWorlds.sim("framesPerSecond: 30\ngravity: -0.5\ngravityAngle: 45", ROWS);
             World w = s.world;
             int g = object(w, Obj.GRAVITY, 10);
-            w.objects.accX[g] = 0.25;
-            w.objects.accY[g] = 0.125;
+            w.objects.accX[g] = 0.25f;
+            w.objects.accY[g] = 0.125f;
             int n = object(w, 0, 10);
-            w.objects.accX[n] = 0.25;
-            w.objects.accY[n] = 0.125;
-            double gx = w.map.gravityX(8, 3);
-            double gy = w.map.gravityY(8, 3);
+            w.objects.accX[n] = 0.25f;
+            w.objects.accY[n] = 0.125f;
+            float gx = (float) w.map.gravityX(8, 3);
+            float gy = (float) w.map.gravityY(8, 3);
             s.tick(new long[w.players.length]);
             assertAll(
                 () -> assertTrue(gx != 0 && gy != 0, "fixture: 45 degree gravity has both components"),
-                () -> assertEquals((0.25 + gx) * 0.5, w.objects.vx[g], 1e-12, "gravity object vx = (accX + gx) * dt"),
-                () -> assertEquals((0.125 + gy) * 0.5, w.objects.vy[g], 1e-12, "gravity object vy = (accY + gy) * dt"),
-                () -> assertEquals(0.125, w.objects.vx[n], 1e-12, "other object vx = accX * dt"),
-                () -> assertEquals(0.0625, w.objects.vy[n], 1e-12, "other object vy = accY * dt"),
-                () -> assertEquals(9.5, w.objects.life[n], 1e-12, "life decreases by dt = 0.5"));
+                () -> assertEquals(0f + (0.25f + gx), w.objects.vx[g], "gravity object vx += accX + gx (C floats)"),
+                () -> assertEquals(0f + (0.125f + gy), w.objects.vy[g], "gravity object vy += accY + gy"),
+                () -> assertEquals(0.25f, w.objects.vx[n], "other object vx += accX"),
+                () -> assertEquals(0.125f, w.objects.vy[n], "other object vy += accY"),
+                () -> assertEquals(9.0, w.objects.life[n], "life decreases by one frame"));
         }
 
         @Test
-        @DisplayName("gravity and acceleration act on GRAVITY objects, acceleration only on the others; life runs down by dt")
+        @DisplayName("gravity is read at the object's own block (local gravity varies by block)")
+        void gravityAtBlock() {
+            Simulation s = TestWorlds.sim("framesPerSecond: 60\ngravity: 0",
+                "xxxxxxxxxxxxxxxxxxxx",
+                "x                  x",
+                "x  _      _        x",
+                "x   +              x",
+                "x                  x",
+                "xxxxxxxxxxxxxxxxxxxx");
+            World w = s.world;
+            Objects o = w.objects;
+            int g = o.alloc();
+            o.type[g] = Obj.DEBRIS;
+            o.status[g] = Obj.GRAVITY;
+            o.life[g] = 10;
+            o.initPixels(g, 3 * 35 + 17, 1 * 35 + 17);
+            float gx = w.gravityX(3, 1);
+            float gy = w.gravityY(3, 1);
+            s.tick(new long[w.players.length]);
+            assertAll(
+                () -> assertTrue(gy != w.gravityY(19, 5) && gx != w.gravityX(19, 5) && gy != w.gravityY(0, 0),
+                    "fixture: gravity differs between blocks"),
+                () -> assertEquals(gx, o.vx[g], "vx += gravity x of block (3, 1), diagonal to the + at (4, 2)"),
+                () -> assertEquals(gy, o.vy[g], "vy += gravity y of block (3, 1), diagonal to the + at (4, 2)"));
+        }
+
+        @Test
+        @DisplayName("gravity and acceleration act on GRAVITY objects, acceleration only on the others; life runs down")
         void gravityAndLife() {
             Simulation s = TestWorlds.sim("framesPerSecond: 60\ngravity: -0.5\ngravityAngle: 90", ROWS);
             World w = s.world;
             int g = object(w, Obj.GRAVITY, 10);
             int n = object(w, 0, 10);
-            w.objects.accX[n] = 0.25;
+            w.objects.accX[n] = 0.25f;
             int dying = object(w, 0, 1);
             s.tick(new long[w.players.length]);
             assertAll(
-                () -> assertEquals(-0.5, w.objects.vy[g], 1e-12, "a GRAVITY object gains gravity * dt"),
+                () -> assertEquals(-0.5, w.objects.vy[g], 1e-12, "a GRAVITY object gains gravity"),
                 () -> assertEquals(0.0, w.objects.vy[n], "a non-GRAVITY object ignores gravity"),
                 () -> assertEquals(0.25, w.objects.vx[n], 1e-12, "acceleration applies to every object"),
-                () -> assertEquals(9.0, w.objects.life[g], 1e-12, "life decreases by dt = 1 frame"),
+                () -> assertEquals(9.0, w.objects.life[g], 1e-12, "life decreases by 1 frame"),
                 () -> assertFalse(w.objects.isLive(dying), "an object whose life reaches 0 is deleted"),
                 () -> assertEquals(2, w.objects.count(), "the other two live on"));
         }
@@ -215,15 +249,15 @@ class SimulationTest {
     @DisplayName("countDownWormholes")
     class Worms {
         @Test
-        @DisplayName("wormhole countdowns decrease by dt and stop at zero")
+        @DisplayName("wormhole countdowns decrease by one frame and stop at zero")
         void countdown() {
             Simulation s = TestWorlds.sim("framesPerSecond: 30", "xxxxxx", "x@ _@x", "xxxxxx");
             s.world.wormCountdown[0] = 2;
-            s.world.wormCountdown[1] = 0.25;
+            s.world.wormCountdown[1] = 0;
             s.countDownWormholes();
             assertAll(
-                () -> assertEquals(1.5, s.world.wormCountdown[0], 1e-12, "decreases by dt = 0.5"),
-                () -> assertEquals(0.0, s.world.wormCountdown[1], "stops at zero"));
+                () -> assertEquals(1, s.world.wormCountdown[0], "decreases by one frame"),
+                () -> assertEquals(0, s.world.wormCountdown[1], "stays at zero"));
         }
     }
 
@@ -241,7 +275,7 @@ class SimulationTest {
             long from = w.events.seq();
             long bursts = w.events.burstSeq();
             a.status |= Obj.KILLED;
-            s.scoring.score(b, 5);
+            s.scoring.score(b, 5, 0, 0, "");
             s.tick(keys(s, 0));
             List<Integer> k = kinds(w.events, from);
             long scoreEvents = k.stream().filter(x -> x == Events.SCORE).count();
@@ -272,13 +306,14 @@ class SimulationTest {
             Player p = TestWorlds.join(s, "a", 1);
             s.tick(new long[s.world.players.length]);
             long from = s.world.events.seq();
-            s.scoring.score(p, 3);
-            s.scoring.score(p, 4);
+            s.scoring.score(p, 3, 0, 0, "");
+            s.scoring.score(p, 4, 0, 0, "");
             s.emitScores();
             List<Integer> k = kinds(s.world.events, from);
             int i = Events.index(s.world.events.seq() - 1);
             assertAll(
-                () -> assertEquals(List.of(Events.SCORE, Events.TEAM_SCORE), k, "one SCORE then one TEAM_SCORE"),
+                () -> assertEquals(List.of(Events.SCORE_OBJECT, Events.SCORE_OBJECT, Events.SCORE, Events.TEAM_SCORE), k,
+                    "a score object per change, then one SCORE then one TEAM_SCORE"),
                 () -> assertEquals(1, s.world.events.a[i], "for team 1"),
                 () -> assertEquals(7f, s.world.events.value[i], "with the team total"));
         }
@@ -326,6 +361,107 @@ class SimulationTest {
                 () -> assertEquals(100 + (int) (0.06 * 256), regen, 1e-9, "the tick regenerated the station"),
                 () -> assertEquals(4.0, worm, 1e-9, "the tick counted the wormhole down"),
                 () -> assertEquals(deaths + 1, p.deaths, "the cannon below the base shot the unshielded ship within 400 ticks"));
+        }
+    }
+
+    @Nested
+    @DisplayName("C iteration orders (I3)")
+    class Orders {
+        @Test
+        @DisplayName("expireObjects runs last to first: debris an expiring cannon shot makes this tick keeps its full life")
+        void expireOrder() {
+            Simulation s = sim("framesPerSecond: 60");
+            World w = s.world;
+            Objects o = w.objects;
+            int h = o.alloc();
+            o.type[h] = Obj.CANNON_SHOT;
+            o.mass[h] = 0.4f;
+            o.life[h] = 1;
+            o.initPixels(h, 200, 100);
+            int other = o.alloc();
+            o.type[other] = Obj.SPARK;
+            o.life[other] = 5;
+            o.initPixels(other, 300, 100);
+            s.expireObjects();
+            boolean fresh = true;
+            int debris = 0;
+            for (int k = 0; k < o.count(); k++) {
+                int d = o.active[k];
+                if (o.type[d] == Obj.DEBRIS) {
+                    debris++;
+                    fresh &= o.life[d] == o.fuseLife[d];
+                }
+            }
+            boolean allFresh = fresh;
+            int n = debris;
+            assertAll(
+                () -> assertTrue(n > 0, "(the cannon shot exploded)"),
+                () -> assertTrue(allFresh, "the new debris was not aged in the same pass (C counts down from the end)"),
+                () -> assertEquals(4.0, o.life[other], "the older spark aged once"));
+        }
+
+        @Test
+        @DisplayName("the kill loop runs last player first (explosion bursts in reverse join order)")
+        void killOrder() {
+            Simulation s = sim("framesPerSecond: 60");
+            World w = s.world;
+            Player a = TestWorlds.join(s, "a", 0);
+            Player b = TestWorlds.join(s, "b", 0);
+            long b0 = w.events.burstSeq();
+            a.status |= Obj.KILLED;
+            b.status |= Obj.KILLED;
+            s.killPlayers();
+            assertEquals(List.of(b.id, a.id), List.of(w.events.burstOwner[Events.burstIndex(b0)],
+                w.events.burstOwner[Events.burstIndex(b0 + 1)]), "b (last in order) explodes first");
+        }
+
+        @Test
+        @DisplayName("ships update in join order: the first refueller empties a station before the second")
+        void updateOrder() {
+            Simulation s = sim("framesPerSecond: 60");
+            World w = s.world;
+            Player a = TestWorlds.join(s, "a", 0);
+            Player b = TestWorlds.join(s, "b", 0);
+            for (Player p : List.of(a, b)) {
+                p.used &= ~Has.SHIELD;
+                p.initPixels(w.map.fuels().get(0).x() + (p == a ? -30 : 30), w.map.fuels().get(0).y() + 30);
+                p.used |= Has.REFUEL;
+                p.fs = 0;
+            }
+            w.fuelLevel[0] = 1280;
+            double fa = a.fuel;
+            double fb = b.fuel;
+            s.tick(keys(s, 0));
+            assertAll(
+                () -> assertEquals(1280.0, a.fuel - fa, "a (first) gets a full REFUEL_RATE"),
+                () -> assertEquals(30.0, b.fuel - fb, "b gets what is left: two players' regeneration (2*15)"));
+        }
+
+        @Test
+        @DisplayName("objects move in pool order: the first of two shots into a cannon destroys it and gets the points")
+        void moveOrder() {
+            Simulation s = TestWorlds.sim("framesPerSecond: 60\ngravity: 0", "xxxxxxxxxx", "x        x",
+                "x _  r _ x", "x        x", "xxxxxxxxxx");
+            World w = s.world;
+            Player a = TestWorlds.join(s, "a", 0);
+            Player b = TestWorlds.join(s, "b", 0);
+            Objects o = w.objects;
+            int[] shots = new int[2];
+            for (int i = 0; i < 2; i++) {
+                int h = o.alloc();
+                o.type[h] = Obj.SHOT;
+                o.owner[h] = i == 0 ? b.id : a.id;
+                o.life[h] = 10;
+                o.mass[h] = 0.1f;
+                o.initPixels(h, 5 * 35 - 4, 2 * 35 + 2);
+                o.vx[h] = 30;
+                shots[i] = h;
+            }
+            s.moveObjects();
+            assertAll(
+                () -> assertTrue(w.cannonDeadTime[0] > 0, "the cannon died"),
+                () -> assertEquals(1.0, b.score, 1e-6, "b's shot (first in the pool) gets cannonPoints"),
+                () -> assertEquals(0.0, a.score, "a's shot came second"));
         }
     }
 }

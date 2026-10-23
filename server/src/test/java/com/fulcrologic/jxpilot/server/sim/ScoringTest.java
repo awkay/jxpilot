@@ -67,7 +67,7 @@ class ScoringTest {
             Simulation s = sim(C_FRAMES, ShipFx.ROOM);
             Player p = s.ships.join("a", 0);
             p.scoreDirty = false;
-            s.scoring.score(p, 12.5);
+            s.scoring.score(p, 12.5, 0, 0, "");
             assertAll(
                 () -> assertEquals(12.5, p.score, "points are added"),
                 () -> assertTrue(p.scoreDirty, "the player is marked for a SCORE event"),
@@ -80,7 +80,7 @@ class ScoringTest {
             World w = s.world;
             Player p = s.ships.join("a", 1);
             Player mate = s.ships.join("b", 1);
-            s.scoring.score(p, 7);
+            s.scoring.score(p, 7, 0, 0, "");
             assertAll(
                 () -> assertEquals(7.0, p.score, "without teamShareScore the player scores"),
                 () -> assertEquals(0.0, mate.score, "the mate does not"),
@@ -96,7 +96,7 @@ class ScoringTest {
             Player mate = s.ships.join("b", 1);
             Player other = s.ships.join("c", 2);
             mate.scoreDirty = false;
-            s.scoring.score(p, 8);
+            s.scoring.score(p, 8, 0, 0, "");
             assertAll(
                 () -> assertEquals(8.0, w.teamScore[1], "the team scores 8"),
                 () -> assertEquals(4.0, p.score, "the scorer gets team score / members"),
@@ -157,11 +157,33 @@ class ScoringTest {
             Player p = s.ships.join("a", 1);
             s.tick(new long[3]);
             long seq = s.world.events.seq();
-            s.scoring.score(p, 3);
-            s.scoring.score(p, 2);
+            s.scoring.score(p, 3, 0, 0, "");
+            s.scoring.score(p, 2, 0, 0, "");
             s.tick(new long[3]);
-            assertEquals(java.util.List.of("SCORE 1 -1 0 5.0", "TEAM_SCORE 1 0 0 5.0"),
-                ShipFx.events(s.world, seq), "one SCORE and one TEAM_SCORE with the totals");
+            assertEquals(java.util.List.of("SCORE_OBJECT 1 0 0 3.0 ", "SCORE_OBJECT 1 0 0 2.0 ", "SCORE 1 -1 0 5.0",
+                    "TEAM_SCORE 1 0 0 5.0"),
+                ShipFx.events(s.world, seq), "a score object per change, then one SCORE and one TEAM_SCORE with the totals");
+        }
+    }
+
+    @Nested
+    @DisplayName("score objects (C Send_score_object)")
+    class ScoreObjects {
+        @Test
+        void everyScoreChangeEmitsAScoreObjectForThatPlayerOnlyIfHuman() {
+            Simulation s = teams("");
+            Player a = s.ships.join("a", 1);
+            Player b = s.ships.join("b", 2);
+            b.robot = true;
+            long seq = s.world.events.seq();
+            s.scoring.score(a, -12.5, 7, 9, "[Wall]");
+            s.scoring.score(b, 4, 1, 1, "x");
+            s.scoring.scorePlayers(a, 6, "bob", b, -6, "ann");
+            assertEquals(java.util.List.of("SCORE_OBJECT " + a.id + " 7 9 -12.5 [Wall]",
+                    "SCORE_OBJECT " + a.id + " " + b.bx + " " + b.by + " 6.0 bob"),
+                ShipFx.events(s.world, seq),
+                "the player's id, block position, points and label; scorePlayers uses the loser's block for both;"
+                    + " robots get none");
         }
     }
 
@@ -173,10 +195,10 @@ class ScoringTest {
             Simulation s = teams("");
             Player a = s.ships.join("a", 1);
             Player b = s.ships.join("b", 1);
-            s.scoring.scorePlayers(a, 10, b, -10);
+            s.scoring.scorePlayers(a, 10, "w", b, -10, "l");
             double aMate = a.score;
             double bMate = b.score;
-            s.scoring.scorePlayers(a, -3, b, 4);
+            s.scoring.scorePlayers(a, -3, "w", b, 4, "l");
             assertAll(
                 () -> assertEquals(-10.0, aMate, "the killer's positive score becomes negative"),
                 () -> assertEquals(-10.0, bMate, "the victim's negative score stays negative"),
@@ -189,11 +211,11 @@ class ScoringTest {
             Simulation s = teams("");
             Player a = s.ships.join("a", 1);
             Player c = s.ships.join("c", 2);
-            s.scoring.scorePlayers(a, 10, c, -10);
+            s.scoring.scorePlayers(a, 10, "w", c, -10, "l");
             Simulation free = sim(C_FRAMES, ShipsJoinTest.THREE);
             Player x = free.ships.join("x", 0);
             Player y = free.ships.join("y", 0);
-            free.scoring.scorePlayers(x, 6, y, -6);
+            free.scoring.scorePlayers(x, 6, "w", y, -6, "l");
             assertAll(
                 () -> assertEquals(10.0, a.score, "the winner gains"),
                 () -> assertEquals(-10.0, c.score, "the loser loses"),

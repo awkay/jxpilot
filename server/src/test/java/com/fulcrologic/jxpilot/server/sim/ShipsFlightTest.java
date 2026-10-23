@@ -50,11 +50,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ShipsFlightTest {
     static final long THRUST = keys(ControlKey.THRUST);
     static final long LEFT = keys(ControlKey.TURN_LEFT);
-    static final double DT14 = 14.0 / 60;
 
     /** C FUEL_MASS on top of the 20-unit ship (no items). */
-    static double mass(double fuel) {
-        return 20 + fuel * 0.005 / 256;
+    /** C Player_set_mass for an item-less ship: (float)(20f + fuel*0.005/256 + 0f). */
+    static float mass(double fuel) {
+        return (float) (20f + fuel * 0.005 / 256 + 0f);
     }
 
     @Nested
@@ -68,36 +68,36 @@ class ShipsFlightTest {
             tick(s, p, THRUST);
             // update.c: acc = power * tsin(dir) / mass (mass before this frame's Player_set_mass);
             // fuel -= (long)(45 * 0.0008 * 256) = 9
-            double acc1 = 45 * Trig.tsin(32) / mass(256000);
+            float acc1 = 45f * Trig.tsin(32) / mass(256000);
             double vy1 = p.vy;
             double fuel1 = p.fuel;
             double mass1 = p.mass;
             int y1 = p.cy;
             tick(s, p, THRUST);
-            double acc2 = 45 * Trig.tsin(32) / mass(255991);
+            float acc2 = 45f * Trig.tsin(32) / mass(255991);
             assertAll(
-                () -> assertEquals(1.8, acc1, "45 / 25 = 1.8 px/frame^2"),
+                () -> assertEquals(1.8, acc1, 1e-6, "45 / 25 = 1.8 px/frame^2 (as a C float)"),
                 () -> assertEquals(acc1, vy1, "one frame of thrust adds acc to vy"),
                 () -> assertEquals(256000 - 9.0, fuel1, "fuel drops by (long)(power*0.0008*256) = 9"),
                 () -> assertEquals(mass(255991), mass1, "mass follows the fuel (Player_set_mass)"),
-                () -> assertEquals(12320 + (int) (1.8 * 64), y1, "the ship moved vy pixels up (in clicks)"),
+                () -> assertEquals(12320 + (int) (acc1 * 64), y1, "the ship moved vy pixels up (in clicks)"),
                 () -> assertEquals(acc2, p.accY, "the next frame uses the lighter mass"),
                 () -> assertEquals(acc1 + acc2, p.vy, "velocity accumulates"),
-                () -> assertEquals(45 * Trig.tcos(32) / mass(255991), p.accX, "x acceleration uses tcos(dir)"),
+                () -> assertEquals(45f * Trig.tcos(32) / mass(255991), p.accX, "x acceleration uses tcos(dir)"),
                 () -> assertEquals(256000 - 18.0, p.fuel, "9 more fuel units are used"),
                 () -> assertEquals(Obj.THRUSTING, p.status & Obj.THRUSTING, "the ship is thrusting"));
         }
 
         @Test
-        void at14FpsEachTickIsDtOfAFrame() {
+        void at14FpsEachTickIsAWholeFrame() {
             Simulation s = sim(FPS14, ROOM);
             Player p = s.ships.join("a", 0);
             unshield(p);
             tick(s, p, THRUST);
             assertAll(
-                () -> assertEquals(DT14, s.world.params.dt, "dt = 14/60"),
-                () -> assertEquals(1.8 * DT14, p.vy, 1e-15, "velocity gains acc * dt (rounding only)"),
-                () -> assertEquals(256000 - 9 * DT14, p.fuel, 1e-9, "fuel use is 9 * dt (rounding only)"));
+                () -> assertEquals(14, s.world.params.fps, "the sim ticks at framesPerSecond"),
+                () -> assertEquals(p.accY, p.vy, "velocity gains one frame of acceleration"),
+                () -> assertEquals(256000 - 9.0, p.fuel, "fuel use is one frame's 9"));
         }
 
         @Test
@@ -110,7 +110,7 @@ class ShipsFlightTest {
             assertAll(
                 () -> assertEquals(0.0, p.accX, "no x acceleration"),
                 () -> assertEquals(0.0, p.accY, "no y acceleration"),
-                () -> assertEquals(1.8, p.vy, "velocity is kept (no friction)"),
+                () -> assertEquals(45f * Trig.tsin(32) / mass(256000), p.vy, "velocity is kept (no friction)"),
                 () -> assertEquals(256000 - 9.0, p.fuel, "no fuel is used without thrust"));
         }
 
@@ -125,7 +125,8 @@ class ShipsFlightTest {
             // AFTER_BURN_FUEL: 0.036*(16+4*2)/16 = 0.054 -> (long)(0.054*256) = 13
             assertAll(
                 () -> assertEquals(20 + 5 + 4 * 1.0, m0, "4 afterburners weigh minItemMass each"),
-                () -> assertEquals(45 * (1.0 + 4 * ((4.2 - 1.0) / 16)) / m0, p.accY, "power is 45*1.8"),
+                () -> assertEquals((float) (45f * (1.0 + 4 * ((4.2 - 1.0) / 16))) * Trig.tsin(32) / (float) m0, p.accY,
+                    "power is (float)(45*1.8), times tsin, over the float mass"),
                 () -> assertEquals(81.0, 45 * (1.0 + 4 * ((4.2 - 1.0) / 16)), 1e-12, "which is 81"),
                 () -> assertEquals(256000 - 13.0, p.fuel, "fuel use is 13 per frame"));
         }
@@ -140,7 +141,7 @@ class ShipsFlightTest {
             tick(s, p, THRUST);
             // a = MAX_AFTERBURNER = 15: power 45*(1+15*0.2) = 180, fuel (long)(0.036*46/16*256) = 26
             assertAll(
-                () -> assertEquals(180 / 25.0, p.accY, 1e-12, "power is 4x"),
+                () -> assertEquals(180f * Trig.tsin(32) / 25f, p.accY, "power is 4x"),
                 () -> assertEquals(256000 - 26.0, p.fuel, "fuel use is 26 per frame"));
         }
         @Test
@@ -149,11 +150,11 @@ class ShipsFlightTest {
             Player p = s.ships.join("a", 0);
             p.dir = 16;
             p.status |= Obj.THRUSTING;
-            s.ships.thrustAcceleration(p, 1);
+            s.ships.thrustAcceleration(p);
             assertAll(
-                () -> assertEquals(45 * Trig.tcos(16) / 25, p.accX, 1e-15, "x: power * cos(45 deg) / mass"),
-                () -> assertEquals(45 * Trig.tsin(16) / 25, p.accY, 1e-15, "y: power * sin(45 deg) / mass"),
-                () -> assertEquals(Math.sqrt(0.5), Trig.tsin(16), 1e-15, "heading 16 is 45 degrees"));
+                () -> assertEquals(45f * Trig.tcos(16) / 25f, p.accX, "x: power * cos(45 deg) / mass (floats)"),
+                () -> assertEquals(45f * Trig.tsin(16) / 25f, p.accY, "y: power * sin(45 deg) / mass"),
+                () -> assertEquals((float) Math.sqrt(0.5), Trig.tsin(16), "heading 16 is 45 degrees (a float)"));
         }
     }
 
@@ -169,27 +170,30 @@ class ShipsFlightTest {
             double d1 = p.floatDir;
             int dir1 = p.dir;
             tick(s, p, LEFT);
-            // update.c: turnvel = (turnvel + turnacc) * turnresistance; float_dir += turnvel
+            // update.c: turnvel = (turnvel + turnacc) * turnresistance; float_dir += turnvel (C floats)
+            float ev1 = (0f + 35f) * 0.12f;
+            float ed1 = 32f + ev1;
+            float ev2 = (ev1 + 35f) * 0.12f;
             assertAll(
-                () -> assertEquals(30.0, p.turnAcc, "left adds turnspeed"),
-                () -> assertEquals(3.6, v1, 1e-12, "(0 + 30) * 0.12 (rounding only)"),
-                () -> assertEquals(35.6, d1, 1e-12, "32 + 3.6"),
+                () -> assertEquals(35.0f, p.turnAcc, "left adds turnspeed (client default 35)"),
+                () -> assertEquals(ev1, v1, "(0 + 35) * 0.12f"),
+                () -> assertEquals(ed1, d1, "32 + 4.2"),
                 () -> assertEquals(36, dir1, "dir is float_dir rounded"),
-                () -> assertEquals((3.6 + 30) * 0.12, p.turnVel, 1e-12, "(3.6 + 30) * 0.12"),
-                () -> assertEquals(35.6 + (3.6 + 30) * 0.12, p.floatDir, 1e-12, "heading accumulates"));
+                () -> assertEquals(ev2, p.turnVel, "(4.2 + 35) * 0.12f"),
+                () -> assertEquals(ed1 + ev2, p.floatDir, "heading accumulates"));
         }
 
         @Test
         void at14FpsTheRecurrenceIsIntegratedExactlyOverWholeFrames() {
             Simulation s = sim(FPS14, ROOM);
             Player p = s.ships.join("a", 0);
-            ticks(s, p, 30, LEFT); // 30 ticks * 14/60 = 7 C frames
-            double v = 0;
+            ticks(s, p, 7, LEFT);
+            float v = 0;
             for (int i = 0; i < 7; i++) {
-                v = (v + 30) * 0.12;
+                v = (v + 35f) * 0.12f;
             }
-            double expected = v;
-            assertEquals(expected, p.turnVel, 1e-9, "after 7 frames' worth of ticks turnvel equals 7 C frames");
+            float expected = v;
+            assertEquals(expected, p.turnVel, "at 14 fps 7 ticks are 7 C frames of the float recurrence");
         }
 
         @Test
@@ -203,8 +207,8 @@ class ShipsFlightTest {
             assertAll(
                 () -> assertEquals(0.0, both, "left and right cancel"),
                 () -> assertEquals(32.0, dirBoth, "no turn"),
-                () -> assertEquals(-30.0, p.turnAcc, "right alone subtracts turnspeed"),
-                () -> assertEquals(32 - 3.6, p.floatDir, 1e-12, "and turns clockwise"));
+                () -> assertEquals(-35.0f, p.turnAcc, "right alone subtracts turnspeed"),
+                () -> assertEquals(32f + (-35f * 0.12f), p.floatDir, "and turns clockwise"));
         }
 
         @Test
@@ -214,21 +218,11 @@ class ShipsFlightTest {
             p.turnResistance = 0;
             p.turnAcc = 3;
             p.turnVel = 1;
-            double tf = s.ships.turn(p, s.world.params, 1);
+            double tf = s.ships.turn(p, s.world.params);
             assertAll(
                 () -> assertEquals(36.0, p.floatDir, "pointer mode: float_dir += turnvel + turnacc"),
                 () -> assertEquals(0.0, p.turnVel, "turnvel is reset (linear turning)"),
                 () -> assertEquals(0.0, tf, "no turn fuel without turnThrust"));
-        }
-
-        @Test
-        void zeroResistanceAt14FpsScalesTheTurnByDt() {
-            Simulation s = sim(FPS14, ROOM);
-            Player p = s.ships.join("a", 0);
-            p.turnResistance = 0;
-            p.turnAcc = 3;
-            s.ships.turn(p, s.world.params, DT14);
-            assertEquals(32 + 3 * DT14, p.floatDir, 1e-12, "float_dir += (turnvel + turnacc) * dt");
         }
 
         @Test
@@ -238,10 +232,10 @@ class ShipsFlightTest {
             p.turnResistance = 1;
             p.turnAcc = 2;
             p.turnVel = 1;
-            s.ships.turn(p, s.world.params, DT14);
+            s.ships.turn(p, s.world.params);
             assertAll(
-                () -> assertEquals(1 + 2 * DT14, p.turnVel, 1e-12, "r = 1: turnvel += turnacc * dt"),
-                () -> assertEquals(32 + (1 + 2 * DT14) * DT14, p.floatDir, 1e-12, "heading moves by turnvel * dt"));
+                () -> assertEquals(3.0f, p.turnVel, "r = 1: turnvel += turnacc, kept"),
+                () -> assertEquals(35.0f, p.floatDir, "heading moves by turnvel"));
         }
 
         @Test
@@ -251,19 +245,19 @@ class ShipsFlightTest {
             p.turnResistance = 0;
             p.floatDir = 127;
             p.turnAcc = 3;
-            s.ships.turn(p, s.world.params, 1);
+            s.ships.turn(p, s.world.params);
             double up = p.floatDir;
             p.floatDir = 1;
             p.turnAcc = -3;
-            s.ships.turn(p, s.world.params, 1);
+            s.ships.turn(p, s.world.params);
             double down = p.floatDir;
             p.floatDir = 0;
             p.turnAcc = -128;
-            s.ships.turn(p, s.world.params, 1);
+            s.ships.turn(p, s.world.params);
             double exact = p.floatDir;
             p.floatDir = 127;
             p.turnAcc = 1;
-            s.ships.turn(p, s.world.params, 1);
+            s.ships.turn(p, s.world.params);
             double res = p.floatDir;
             assertAll(
                 () -> assertEquals(2.0, up, "127 + 3 wraps to 2"),
@@ -282,25 +276,27 @@ class ShipsFlightTest {
             double fuel1 = p.fuel;
             int sparks = s.world.objects.count() - objs0;
             tick(s, p, LEFT);
-            // update.c TURN_FUEL: (long)(0.005*256*|0 - 3.6|) = 4; TURN_SPARKS(4) = 5 + (4 >> 2) = 6
-            // second frame: |3.6 - 4.032| * 1.28 = 0.55 -> 0, no sparks
+            // update.c: tf = (long)(0 - 35*0.12f) = -4; TURN_FUEL(tf) = (long)(1.28 * 4) = 5; TURN_SPARKS(5) = 6
+            // second frame: (long)(4.2 - 4.704) = 0 costs nothing, no sparks
             assertAll(
-                () -> assertEquals(256000 - 4.0, fuel1, "the first frame costs 4"),
-                () -> assertEquals(6, sparks, "and makes 6 turn sparks"),
-                () -> assertEquals(256000 - 4.0, p.fuel, "a change below 1/1.28 costs nothing"),
-                () -> assertEquals(p.turnVel, p.oldTurnVel, 1e-15, "the old turn velocity is remembered"));
+                () -> assertEquals(256000 - 5.0, fuel1, "the first frame costs (long)(1.28 * (long)|dv|) = 5"),
+                () -> assertEquals(6, sparks, "and makes 5 + (5 >> 2) = 6 turn sparks"),
+                () -> assertEquals(256000 - 5.0, p.fuel, "a change below one whole unit costs nothing"),
+                () -> assertEquals(p.turnVel, p.oldTurnVel, "the old turn velocity is remembered"));
         }
 
         @Test
-        void turnThrustAt14FpsChargesThePerTickChangeWithoutDt() {
+        void turnFuelTruncatesTheVelocityChangeBeforeScalingLikeC() {
             Simulation s = sim(FPS14 + "turnThrust: yes\n", ROOM);
             Player p = s.ships.join("a", 0);
-            unshield(p);
-            tick(s, p, LEFT);
-            double v = p.turnVel;
+            p.turnAcc = 0;
+            p.turnResistance = 1;
+            p.oldTurnVel = 0;
+            p.turnVel = 3.9f;
+            long tf = s.ships.turn(p, s.world.params);
             assertAll(
-                () -> assertEquals(30 * 0.12 * (1 - Math.pow(0.12, DT14)) / 0.88, v, 1e-12, "the partial-frame velocity"),
-                () -> assertEquals(256000 - (long) (1.28 * v), p.fuel, "costs (long)(1.28 * dv)"));
+                () -> assertEquals(3L, tf, "(long)(1.28 * (long)3.9) = (long)3.84 = 3, not (long)(1.28*3.9) = 4"),
+                () -> assertEquals(256000 - 3.0, p.fuel, "and that is what is charged"));
         }
 
         @Test
@@ -308,24 +304,24 @@ class ShipsFlightTest {
             Simulation s = sim(C_FRAMES + "turnThrust: yes\n", ROOM);
             Player p = s.ships.join("a", 0);
             p.turnAcc = 30;
-            p.oldTurnVel = 0.5;
-            p.turnVel = 0.5;
-            p.fuel = 4;
-            double tf = s.ships.turn(p, s.world.params, 1);
+            p.oldTurnVel = 0.5f;
+            p.turnVel = 0.5f;
+            p.fuel = 3;
+            double tf = s.ships.turn(p, s.world.params);
             double acc4 = p.turnAcc;
             double vel4 = p.turnVel;
             double dir4 = p.floatDir;
             p.turnAcc = 30;
-            p.turnVel = 0.5;
-            p.fuel = 5;
-            double tf5 = s.ships.turn(p, s.world.params, 1);
-            // update.c: turnvel = (0.5 + 30) * 0.12 = 3.66; TURN_FUEL = (long)(1.28 * |0.5 - 3.66|) = 4
+            p.turnVel = 0.5f;
+            p.fuel = 4;
+            double tf5 = s.ships.turn(p, s.world.params);
+            // update.c: turnvel = (0.5 + 30) * 0.12f = 3.66; TURN_FUEL = (long)(1.28 * |(long)(0.5 - 3.66)|) = 3
             assertAll(
-                () -> assertEquals(0.0, tf, "fuel 4 <= cost 4: nothing is charged"),
+                () -> assertEquals(0.0, tf, "fuel 3 <= cost 3: nothing is charged"),
                 () -> assertEquals(0.0, acc4, "turnacc is cleared"),
                 () -> assertEquals(0.5, vel4, "turnvel is restored"),
                 () -> assertEquals(32.5, dir4, "the heading moves only by the restored velocity"),
-                () -> assertEquals(4.0, tf5, "with 5 fuel the turn is charged 4"),
+                () -> assertEquals(3.0, tf5, "with 4 fuel the turn is charged 3"),
                 () -> assertEquals(1.0, p.fuel, "leaving the rest"));
         }
     }
@@ -353,23 +349,23 @@ class ShipsFlightTest {
         }
 
         @Test
-        void at14FpsSidewaysGravityIsScaledByDt() {
+        void at14FpsSidewaysGravityIsAWholeFrame() {
             Simulation s = sim("gravity: -0.5\ngravityAngle: 0\n", ROOM);
             Player p = s.ships.join("a", 0);
-            double gx = s.world.gravityX(5, 5);
+            float gx = s.world.gravityX(5, 5);
             tick(s, p, 0);
-            assertEquals(gx * DT14, p.vx, 1e-15, "vel.x += g.x * dt");
+            assertEquals(gx, p.vx, "vel.x += g.x (one tick is one frame at 14 fps)");
         }
 
         @Test
-        void at14FpsGravityIsScaledByDt() {
+        void at14FpsGravityIsAWholeFrame() {
             Simulation s = sim("gravity: -0.5\n", ROOM);
             Player p = s.ships.join("a", 0);
-            double gy = s.world.gravityY(5, 5);
+            float gy = s.world.gravityY(5, 5);
             tick(s, p, 0);
             assertAll(
-                () -> assertEquals(-0.5, gy, 1e-12, "default angle 90: gravity points down"),
-                () -> assertEquals(gy * DT14, p.vy, 1e-15, "vel += g * dt"));
+                () -> assertEquals(-0.5f, gy, "default angle 90: gravity points down"),
+                () -> assertEquals(gy, p.vy, "vel += g"));
         }
 
         @Test
@@ -416,11 +412,11 @@ class ShipsFlightTest {
         }
 
         @Test
-        void at14FpsTheShieldDrainIsScaledByDt() {
+        void at14FpsTheShieldDrainIsAWholeFrame() {
             Simulation s = sim(FPS14, ROOM);
             Player p = s.ships.join("a", 0);
             tick(s, p, 0);
-            assertEquals(256000 - 51 * DT14, p.fuel, 1e-9, "fuel -= 51 * dt");
+            assertEquals(256000 - 51.0, p.fuel, "fuel -= 51 per tick");
         }
 
         @Test
@@ -455,16 +451,16 @@ class ShipsFlightTest {
         }
 
         @Test
-        void aTimedStartShieldAt14FpsLasts120Ticks() {
+        void aTimedStartShieldAt14FpsLasts28Ticks() {
             Simulation s = sim(FPS14 + "allowShields: no\n", ROOM);
             Player p = s.ships.join("a", 0);
-            ticks(s, p, 119, 0);
-            int used119 = p.used & Has.SHIELD;
+            ticks(s, p, 27, 0);
+            int used27 = p.used & Has.SHIELD;
             tick(s, p, 0);
             assertAll(
                 () -> assertEquals(28.0, 2 * s.world.params.fps, 1e-12, "2*FPS = 28 frames"),
-                () -> assertEquals(Has.SHIELD, used119, "still up after 119 ticks"),
-                () -> assertEquals(0, p.used & Has.SHIELD, "down after 120 ticks = 2 s"));
+                () -> assertEquals(Has.SHIELD, used27, "still up after 27 ticks"),
+                () -> assertEquals(0, p.used & Has.SHIELD, "down after 28 ticks = 2 s"));
         }
 
         @Test
@@ -527,12 +523,12 @@ class ShipsFlightTest {
             Simulation s = sim(FPS14, ROOM);
             Player p = s.ships.join("a", 0);
             p.damaged = 5;
-            p.stunned = 0.1;
+            p.stunned = 1;
             p.used |= Has.SHOT;
             p.have |= Has.SHOT;
             tick(s, p, THRUST);
             assertAll(
-                () -> assertEquals(5 - DT14, p.damaged, 1e-12, "damage counts down by dt"),
+                () -> assertEquals(4, p.damaged, "damage counts down by one frame"),
                 () -> assertEquals(0.0, p.stunned, "stun counts down and stops at 0"),
                 () -> assertEquals(0, p.used & (Has.SHIELD | Has.SHOT), "stunned: shields and shots off"),
                 () -> assertEquals(0, p.status & Obj.THRUSTING, "stunned: no thrust"),
@@ -548,7 +544,7 @@ class ShipsFlightTest {
             int x = p.cx;
             tick(s, p, 0);
             assertAll(
-                () -> assertEquals(-0.01 * DT14, p.score, 1e-15, "score -= 0.01 per frame (times dt)"),
+                () -> assertEquals(-0.01, p.score, 1e-15, "score -= 0.01 per frame"),
                 () -> assertEquals(x, p.cx, "the ship does not move"),
                 () -> assertEquals(256000.0, p.fuel, "and uses no fuel"));
         }
@@ -560,7 +556,7 @@ class ShipsFlightTest {
             p.status |= Obj.GAME_OVER;
             p.vx = 5;
             int x = p.cx;
-            tick(s, p, 0);
+            s.ships.update(p);
             assertAll(
                 () -> assertEquals(0.0, p.score, "no pause penalty"),
                 () -> assertEquals(x, p.cx, "no movement"),
@@ -633,15 +629,15 @@ class ShipsFlightTest {
         }
 
         @Test
-        void at14FpsTurnSparksAreScaledByDt() {
+        void at14FpsATickMakesAWholeFramesTurnSparks() {
             Simulation s = sim(FPS14 + "turnThrust: yes\n", ROOM);
             Player p = s.ships.join("a", 0);
             unshield(p);
             int objs = s.world.objects.count();
             tick(s, p, LEFT);
             int n = s.world.objects.count() - objs;
-            // tf = 2: TURN_SPARKS = 5 + (2 >> 2) = 5 per frame; per tick (int)(5 * 14/60 + rfrac) is 1 or 2
-            assertTrue(n == 1 || n == 2, "5 * dt sparks rounded randomly: " + n);
+            // tf = (long)(1.28 * 4) = 5: TURN_SPARKS = 5 + (5 >> 2) = 6, no per-tick scaling
+            assertEquals(6, n, "TURN_SPARKS(tf) sparks, exactly as one C frame");
         }
 
         @Test
@@ -669,8 +665,10 @@ class ShipsFlightTest {
             p.fuel = 512;
             s.ships.setMass(p);
             // player.c Player_set_mass: ARMOR_MASS = ShipMass/14; fuel and tanks weigh nothing as items
-            assertEquals(20 + 512 * 0.005 / 256 + 3 * (20.0 / 14) + 2 * 2.0, p.mass, 1e-12,
-                "20 + 0.01 + 3*20/14 + 2*2 (rounding only)");
+            float items = 0f + 2 * 2f;
+            items += 3 * (20f / 14);
+            assertEquals((float) (20f + 512 * 0.005 / 256 + items), p.mass,
+                "20 + 0.01 + (float)(2*2 + 3*20/14) in item order, as C floats");
         }
 
         @Test

@@ -115,8 +115,8 @@ class KeysTest {
             assertAll(
                 () -> assertEquals(0, p.status & Obj.THRUSTING, "THRUST is ignored while dead"),
                 () -> assertEquals(0, p.used & Has.REFUEL, "REFUEL is ignored while dead"),
-                () -> assertEquals(45 * 1.10, p.power, "power keys work while dead"),
-                () -> assertEquals(30.0, p.turnAcc, "turn keys keep turnacc in sync while dead"),
+                () -> assertEquals((float) (45f * 1.10), p.power, "power keys work while dead"),
+                () -> assertEquals(35.0f, p.turnAcc, "turn keys keep turnacc in sync while dead (client default 35)"),
                 () -> assertEquals(mask, p.prevKeys, "ignored keys are still consumed"),
                 () -> assertEquals(35.0, q.power, "SWAP_SETTINGS works while dead"));
         }
@@ -230,9 +230,9 @@ class KeysTest {
             double right = p.turnAcc;
             s.keys.apply(p, 0);
             assertAll(
-                () -> assertEquals(30.0, left, "left: +turnspeed"),
+                () -> assertEquals(35.0, left, "left: +turnspeed"),
                 () -> assertEquals(0.0, both, "both: cancel"),
-                () -> assertEquals(-30.0, right, "releasing left with right held: -turnspeed"),
+                () -> assertEquals(-35.0, right, "releasing left with right held: -turnspeed"),
                 () -> assertEquals(0.0, p.turnAcc, "all released: 0"));
         }
 
@@ -268,7 +268,7 @@ class KeysTest {
         void swapSettingsSwapsOnlyWhenNotTurning() {
             Simulation s = room();
             Player p = s.ships.join("a", 0);
-            p.turnResistance = 0.5;
+            p.turnResistance = 0.5f;
             s.keys.pressed(p, SWAP_SETTINGS);
             double pw = p.power;
             double ts = p.turnSpeed;
@@ -281,9 +281,9 @@ class KeysTest {
             assertAll(
                 () -> assertEquals(35.0, pw, "power swaps"),
                 () -> assertEquals(25.0, ts, "turnspeed swaps"),
-                () -> assertEquals(0.12, tr, "turnresistance swaps"),
+                () -> assertEquals(0.12f, tr, "turnresistance swaps"),
                 () -> assertEquals(45.0, pwS, "the old power is the alternate"),
-                () -> assertEquals(30.0, tsS, "the old turnspeed is the alternate"),
+                () -> assertEquals(35.0, tsS, "the old turnspeed is the alternate"),
                 () -> assertEquals(0.5, trS, "the old turnresistance is the alternate"),
                 () -> assertEquals(35.0, p.power, "turning: no swap"));
         }
@@ -300,12 +300,12 @@ class KeysTest {
             p.power = 45;
             s.keys.pressed(p, DECREASE_POWER);
             double down = p.power;
-            p.power = 5.2;
+            p.power = 5.2f;
             s.keys.pressed(p, DECREASE_POWER);
             assertAll(
-                () -> assertEquals(45 * 1.10, up, "power *= 1.10"),
+                () -> assertEquals((float) (45f * 1.10), up, "power *= 1.10 (computed in double, stored as a C float)"),
                 () -> assertEquals(55.0, capped, "at most MAX_PLAYER_POWER"),
-                () -> assertEquals(45 * 0.90, down, "power *= 0.90"),
+                () -> assertEquals((float) (45f * 0.90), down, "power *= 0.90"),
                 () -> assertEquals(5.0, p.power, "at least MIN_PLAYER_POWER"));
         }
 
@@ -321,7 +321,7 @@ class KeysTest {
             p.turnSpeed = 30;
             s.keys.pressed(p, DECREASE_TURNSPEED);
             double down = p.turnSpeed;
-            p.turnSpeed = 4.1;
+            p.turnSpeed = 4.1f;
             s.keys.pressed(p, DECREASE_TURNSPEED);
             double floor = p.turnSpeed;
             p.turnAcc = 1;
@@ -331,9 +331,9 @@ class KeysTest {
             p.turnSpeed = 2;
             s.keys.pressed(p, DECREASE_TURNSPEED);
             assertAll(
-                () -> assertEquals(30 * 1.05, up, "turnspeed *= 1.05"),
+                () -> assertEquals((float) (35f * 1.05), up, "turnspeed *= 1.05 (from the default 35)"),
                 () -> assertEquals(64.0, capped, "at most MAX_PLAYER_TURNSPEED"),
-                () -> assertEquals(30 * 0.95, down, "turnspeed *= 0.95"),
+                () -> assertEquals((float) (30f * 0.95), down, "turnspeed *= 0.95"),
                 () -> assertEquals(4.0, floor, "at least MIN_PLAYER_TURNSPEED"),
                 () -> assertEquals(64.0, turningUp, "turning: no scaling, but still limited"),
                 () -> assertEquals(4.0, p.turnSpeed, "turning: no scaling, but still raised to the minimum"));
@@ -377,7 +377,8 @@ class KeysTest {
             s.keys.pressed(a, CHANGE_HOME);
             assertAll(
                 () -> assertEquals(1, a.homeBase, "the base under the ship is home"),
-                () -> assertEquals(List.of("BASE_OWNER 1 1 0", "MESSAGE " + Msg.Text.KIND_GAME + " -1 ann has changed home base."),
+                () -> assertEquals(List.of("BASE_OWNER 0 -1 0", "BASE_OWNER 1 1 0",
+                    "MESSAGE " + Msg.Text.KIND_GAME + " -1 ann has changed home base."),
                     events(w, seq), "announced"),
                 () -> assertEquals(2, b.homeBase, "others are not affected"));
         }
@@ -396,7 +397,7 @@ class KeysTest {
             assertAll(
                 () -> assertEquals(1, a.homeBase, "ann takes base 1"),
                 () -> assertEquals(0, b.homeBase, "bob gets the free base 0"),
-                () -> assertEquals(List.of("BASE_OWNER 1 1 0", "BASE_OWNER 0 2 0",
+                () -> assertEquals(List.of("BASE_OWNER 0 -1 0", "BASE_OWNER 1 1 0", "BASE_OWNER 0 2 0",
                         "MESSAGE " + Msg.Text.KIND_GAME + " -1 ann has taken over bob's home base."),
                     events(w, seq), "both owners and the C takeover message"),
                 () -> assertEquals(-1.0, b.count, "a living displaced player keeps flying"));

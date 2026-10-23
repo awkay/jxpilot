@@ -76,7 +76,7 @@ public final class Grid {
         int k = 0;
         for (int y = -down; y <= up; y++) {
             for (int x = -left; x <= right; x++) {
-                float d = (float) Math.hypot(x, y);
+                float d = (float) StrictMath.hypot(x, y);
                 int max = Math.max(Math.abs(x), Math.abs(y));
                 // sort key: distance, then Chebyshev distance (C Compare_cell_dist), then scan order
                 keys[k] = ((long) Float.floatToIntBits(d) << 32) | ((long) max << 16) | k;

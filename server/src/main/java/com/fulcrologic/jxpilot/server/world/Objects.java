@@ -30,8 +30,8 @@ package com.fulcrologic.jxpilot.server.world;
  * swap-remove like C {@code Object_free_ind}.
  * <p>
  * Positions are authoritative in clicks ({@link #cx}/{@link #cy}); {@link #px}/{@link #py} are the
- * pixel positions C keeps alongside ({@code pos.x = CLICK_TO_PIXEL(cx)}), and {@link #remX}/{@link #remY}
- * carry the sub-click remainder of the per-tick move.
+ * pixel positions C keeps alongside ({@code pos.x = CLICK_TO_PIXEL(cx)}). Velocity, acceleration and mass
+ * are floats like C's {@code DFLOAT}; life counts whole frames (C {@code long}).
  */
 public final class Objects {
     public final int capacity;
@@ -47,13 +47,11 @@ public final class Objects {
     public final int[] py;
     public final int[] prevX;
     public final int[] prevY;
-    public final double[] remX;
-    public final double[] remY;
-    public final double[] vx;
-    public final double[] vy;
-    public final double[] accX;
-    public final double[] accY;
-    public final double[] mass;
+    public final float[] vx;
+    public final float[] vy;
+    public final float[] accX;
+    public final float[] accY;
+    public final float[] mass;
     /** Original frames left to live. */
     public final double[] life;
     /** Life value below which the owner is no longer immune (C {@code fuselife}). */
@@ -84,13 +82,11 @@ public final class Objects {
         py = new int[capacity];
         prevX = new int[capacity];
         prevY = new int[capacity];
-        remX = new double[capacity];
-        remY = new double[capacity];
-        vx = new double[capacity];
-        vy = new double[capacity];
-        accX = new double[capacity];
-        accY = new double[capacity];
-        mass = new double[capacity];
+        vx = new float[capacity];
+        vy = new float[capacity];
+        accX = new float[capacity];
+        accY = new float[capacity];
+        mass = new float[capacity];
         life = new double[capacity];
         fuseLife = new double[capacity];
         plRange = new int[capacity];
@@ -142,8 +138,6 @@ public final class Objects {
         py[h] = 0;
         prevX[h] = 0;
         prevY[h] = 0;
-        remX[h] = 0;
-        remY[h] = 0;
         vx[h] = 0;
         vy[h] = 0;
         accX[h] = 0;
@@ -194,9 +188,13 @@ public final class Objects {
         py[h] = y >> Click.SHIFT;
     }
 
-    /** C {@code Object_position_init_pixels}: set the position and make it the previous position too. */
+    /**
+     * C {@code Object_position_init_pixels}: set the position and make it the previous position too.
+     * <p>
+     * BEHAVIOR: the pixel arguments are C {@code DFLOAT}s: rounded to float, then truncated to clicks.
+     */
     public void initPixels(int h, double x, double y) {
-        setClicks(h, Click.fromPixels(x), Click.fromPixels(y));
+        setClicks(h, Click.fromPixels((float) x), Click.fromPixels((float) y));
         prevX[h] = px[h];
         prevY[h] = py[h];
     }

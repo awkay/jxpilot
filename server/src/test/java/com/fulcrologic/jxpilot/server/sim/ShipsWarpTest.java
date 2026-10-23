@@ -71,8 +71,8 @@ class ShipsWarpTest {
         Player p = s.ships.join("a", 0);
         p.status |= Obj.WARPING;
         p.wormHoleHit = 0;
-        p.vx = vx;
-        p.vy = vy;
+        p.vx = (float) vx;
+        p.vy = (float) vy;
         s.world.wormCountdown[0] = 0;
         s.world.rng.seed(seed);
         return p;
@@ -237,8 +237,8 @@ class ShipsWarpTest {
             Player p = s.ships.join("a", 0);
             p.status |= Obj.WARPING;
             p.wormHoleHit = hit;
-            p.vx = vx;
-            p.vy = vy;
+            p.vx = (float) vx;
+            p.vy = (float) vy;
             s.world.wormCountdown[hit] = 0;
             s.world.rng.seed(seed);
             s.ships.warp(p);

@@ -155,7 +155,16 @@ class WorldTest {
             Player b = w.addPlayer();
             Player c = w.addPlayer();
             Player full = w.addPlayer();
+            int reserved = w.numPlayers;
+            boolean spawnedBefore = a.spawned;
+            w.enter(a);
+            w.enter(b);
+            w.enter(c);
+            w.enter(c);
             assertAll(
+                () -> assertEquals(0, reserved, "reserved players are not in the game yet"),
+                () -> assertFalse(spawnedBefore, "nor marked spawned"),
+                () -> assertEquals(3, w.numPlayers, "enter puts them in the game, once each"),
                 () -> assertEquals(1, a.id, "ids start at 1"),
                 () -> assertEquals(2, b.id, "then 2"),
                 () -> assertEquals(3, c.id, "then 3"),
@@ -168,18 +177,22 @@ class WorldTest {
         }
 
         @Test
-        void removingKeepsTheOthersInOrderAndFreesTheId() {
+        void removingSwapsTheLastIntoTheGapLikeCAndFreesTheId() {
             World w = world("", WIDE);
             Player a = w.addPlayer();
             Player b = w.addPlayer();
             Player c = w.addPlayer();
+            w.enter(a);
+            w.enter(b);
+            w.enter(c);
             w.removePlayer(a);
             w.removePlayer(a);
             Player d = w.addPlayer();
+            w.enter(d);
             assertAll(
                 () -> assertEquals(3, w.numPlayers, "three players again"),
-                () -> assertSame(b, w.playerAt(0), "b moved to the front"),
-                () -> assertSame(c, w.playerAt(1), "c follows"),
+                () -> assertSame(c, w.playerAt(0), "C Delete_player: the last player (c) takes a's place"),
+                () -> assertSame(b, w.playerAt(1), "b keeps its place"),
                 () -> assertSame(d, w.playerAt(2), "the new player is last"),
                 () -> assertSame(a, d, "the freed slot is reused"),
                 () -> assertEquals(1, d.id, "and the freed id"),
@@ -191,8 +204,16 @@ class WorldTest {
             World w = world("", WIDE);
             Player a = w.addPlayer();
             Player b = w.addPlayer();
+            w.enter(a);
+            w.enter(b);
             w.removePlayer(b);
+            Player r = w.addPlayer();
+            int idBefore = r.id;
+            w.removePlayer(r);
             assertAll(
+                () -> assertEquals(2, idBefore, "a reserved player holds an id"),
+                () -> assertNull(w.byId(2), "removing a reserved player frees its id"),
+                () -> assertFalse(r.inUse, "and its slot"),
                 () -> assertEquals(1, w.numPlayers, "one left"),
                 () -> assertSame(a, w.playerAt(0), "a stays first"),
                 () -> assertNull(w.byId(2), "b's id is free"),

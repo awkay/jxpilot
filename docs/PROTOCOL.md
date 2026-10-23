@@ -82,7 +82,7 @@ Server → client:
 
 | id | name | body |
 |---|---|---|
-| 1 | WELCOME | u16 playerId, u8 team, u8 simHz, u8 snapshotHz, u8 flags (1 teamPlay, 2 edgeWrap, 4 timing), f32 gameFps, u32 configLength, u32 configCompressedLength, u32 configCrc32, str8 serverName |
+| 1 | WELCOME | u16 playerId, u8 team, u8 simHz, u8 snapshotHz, u8 flags (1 teamPlay, 2 edgeWrap, 4 timing), f32 gameFps, u32 configLength, u32 configCompressedLength, u32 configCrc32, str8 serverName. *(Server S1 fix round: the server simulates at the map's framesPerSecond, so simHz = gameFps; one tick is one C frame.)* |
 | 2 | DATA_CHUNK | u32 offset, raw bytes (≤ 1024) to the end of the message |
 | 3 | PLAYER_JOIN | u16 id, u8 team, u8 flags (1 robot, 2 tank, 4 self, 8 paused), f32 power, u8 afterburners, str8 name, str16 shape (empty = default) |
 | 4 | PLAYER_LEAVE | u16 id |
@@ -91,8 +91,9 @@ Server → client:
 | 7 | TEAM_SCORE | u8 team, f32 score |
 | 8 | MESSAGE | u8 kind (chat, team chat, private, server, game), u16 from (NO_ID = server), str16 text |
 | 9 | BASE_OWNER | u16 baseIndex (`WorldMap.bases()`), u16 playerId |
-| 10 | GAME_EVENT | u8 kind (kill, crash, spawn, round end, target/treasure destroyed, checkpoint), u16 a, u16 b, f32 value |
+| 10 | GAME_EVENT | u8 kind (kill, crash, spawn, round end, target/treasure destroyed, checkpoint), u16 a, u16 b, f32 value. *(S1 fix round: CRASH a = the player who crashed, b = the other ship in a two-ship crash or NO_ID, value = crash sub-type `Msg.GameEvent.CRASH_*`: 1 wall, 2 target, 3 treasure, 4 cannon, 5 universe, 6 ships, 7 unknown. A shove into a wall is a KILL by the last pusher with the sub-type in value. A KILL or CRASH is always sent before the SCORE_OBJECT / SCORE it causes.)* |
 | 11 | PLAYER_THRUST | u16 id, f32 power, u8 afterburners — sent when they change (thrust sparks are generated client-side) |
+| 12 | SCORE_OBJECT | *(S1 fix round)* f32 score (points gained, negative when lost), u16 bx, u16 by (block where they were made), str8 label (C `Send_score_object`: a player name, "[Wall]", "[Shove]", "Cannon", "[Deadliest]"...). Sent only to the player whose score changed; drives the HUD score popups. |
 
 Client → server:
 
@@ -115,12 +116,16 @@ edges by comparing consecutive masks. `aimTurn` is a pointer-control turn in u16
 
 ## SNAPSHOT — `SnapshotWriter` / `SnapshotReader` / `Records`
 
-Default rate: every 2nd 60 Hz sim tick = 30 Hz (`Protocol.DEFAULT_SNAPSHOT_DIVISOR`; WELCOME.snapshotHz
-tells the client).
+Default rate: every sim tick, i.e. the map's framesPerSecond (`Protocol.DEFAULT_SNAPSHOT_DIVISOR` = 1;
+WELCOME.snapshotHz tells the client). *(Changed in the server S1 fix round; it was every 2nd 60 Hz tick.)*
 
 Header (15 bytes): `u32 tick, u32 lastInputSeq, u8 part, u8 partCount, u8 flags (1 = last part),
-u16 viewX, u16 viewY` — the receiver's view centre in half pixels. If a tick does not fit one datagram
-it is split into self-contained parts, highest priority first (self, nearby ships, shots, ...).
+u16 viewX, u16 viewY` — the receiver's view centre in half pixels. *(S1 fix round: `tick` is the number of
+the sim tick, one C frame, whose result the snapshot shows; the server's network layer numbers ticks and
+passes the number to the simulation, so bursts' `age` and thrust-spark seeds use the same numbers.)* If a
+tick does not fit one datagram it is split into self-contained parts. *(S1 fix round: sections are written
+SELF, SHIP, CANNON, FUEL, RADAR, BURST, then SHOT, which fills the remaining room nearest first; a record
+that does not fit drops only itself, smaller records of later sections are still sent.)*
 
 View-relative positions: the writer encodes `wrapDelta(x - viewX)`; offsets must be within ±16383 px —
 the server culls with `SnapshotWriter.inView(x, y)` and encoding anything farther throws (never
@@ -142,7 +147,7 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 |---|---|---|---|
 | 1 | SELF | 38 | u16 id, u16 flags, f32 x, y, vx, vy, heading, fuel, fuelMax, u16 lockId, u8 numTanks, u8 currentTank, u16 respawnFrames (absolute, full precision) |
 | 2 | SHIP | 14 | u16 id, u16 flags (`ShipFlags`), rel x, rel y, ang heading, vel16 vx, vel16 vy |
-| 3 | SHOT | 6 | rel x, rel y, i8 vx, i8 vy (whole px/frame). **variant = kind << 4 \| colour** |
+| 3 | SHOT | 6 | rel x, rel y, i8 vx, i8 vy (whole px/frame). **variant = harmless << 7 \| kind << 4 \| colour** *(S1 fix round: bit 7 `ShotKind.FLAG_HARMLESS` = this shot cannot hurt the receiver, C frame.c's friendly colour: team immune owner, paused owner, an unowned shot of the receiver's team in team play, or the receiver's own shot with selfImmunity; kinds are 3 bits)* |
 | 4 | BURST | 27 | rel x, rel y, vel16 vx, vy, u32 seed, u8 kind, u8 colour, u16 count, u8 minDir, u8 dirSpan (RES), u16 minSpeed, maxSpeed (1/16), u16 minLife, maxLife (frames), u8 age (sim ticks since spawn) |
 | 5 | CANNON | 3 | u16 index, u8 flags (dead, phasing, shield) |
 | 6 | FUEL | 4 | u16 index, frac level (of 500) |
@@ -175,15 +180,17 @@ and are pushed by sparks (`ballSparkCollisions`); asteroids are hit by debris. S
 simulating every particle**; on the wire:
 
 - **Thrust sparks are not sent.** Each sim tick a ship is thrusting, server and client both call
-  `ThrustSparks.compute(seed = ThrustSparks.seed(tick, shipId), engine position, RES heading from the
-  wire-quantized heading (`dirFromU16`), velocity, power, afterburners, shotLife, fps, frameFraction =
-  gameFps/simHz, hypotenuse, ...)` — a port of C `Thrust()` — and expand the two resulting bursts with
-  `DebrisBurst.generate`. Power and afterburners come from PLAYER_JOIN and PLAYER_THRUST. The server's
-  particles are authoritative; the client's are cosmetic. (Turn sparks, only with `turnThrust`, are
-  left to the client the same way.)
+  `ThrustSparks.computeWire(tick, shipId, x, y, engine offset at the RES heading, heading (`dirFromU16`
+  of the wire heading), vx, vy, power (the f32), afterburners, shotLife, fps, hypotenuse, ...)` — a port
+  of C `Thrust()` that quantizes position and velocity exactly like the wire first (`wirePos`,
+  `wireVel`) — and expand the two resulting bursts with `DebrisBurst.generate`. *(S1 fix round: one tick
+  is one C frame, so the old frameFraction argument is gone; clients quantize SELF the same way.)* Power
+  and afterburners come from PLAYER_JOIN and PLAYER_THRUST. The server's particles are authoritative; the
+  client's are cosmetic. (Turn sparks, only with `turnThrust`, are left to the client the same way.)
 - **Explosion debris and wall sparks are BURST records**, one per C `Make_debris` call. The server must
   generate its own particles from `Records.Burst.quantize`d parameters so both sides match, with
-  `DebrisBurst.hypotenuse` = world diagonal (C's per-particle life clamp). The sink receives each
+  `DebrisBurst.hypotenuse` = world diagonal (C's per-particle life clamp). *(S1 fix round: cluster/flak
+  fragments are SHOT records of kind CLUSTER and are not also sent as a burst.)* The sink receives each
   particle's speed so the server can apply C's cluster mass `mass / (speed/shotSpeed)²`.
 - Particles consumed by collisions on the server may linger briefly on clients (cosmetic). Bursts from
   ticks between snapshots ride in the next snapshot with their `age`; a lost snapshot loses its bursts.
@@ -199,7 +206,7 @@ simulating every particle**; on the wire:
 | Radar-heavy: 32 players + 300 objects on radar (332 blips), 8 ships in view | **1184** | 1 |
 | Radar-heavy with all 31 other ships in view | **1506** | 2 |
 
-At 30 Hz the fight is ≈ 330 kbit/s per client. The original per-particle layout needed ~4.7 KB per snapshot.
+At 30 Hz the fight is ≈ 330 kbit/s per client (at the default 14 Hz tick rate ≈ 155 kbit/s). The original per-particle layout needed ~4.7 KB per snapshot.
 
 ## Extending
 

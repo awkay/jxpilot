@@ -51,19 +51,19 @@ class PlayerTest {
         }
 
         @Test
-        void initPixelsMakesItThePreviousPositionAndClearsRemainders() {
+        void initPixelsMakesItThePreviousPosition() {
             Player p = new Player(0);
             p.setClicks(0, 0);
-            p.remX = 0.3;
-            p.remY = -0.3;
             p.initPixels(100.75, 50.5);
+            Player q = new Player(1);
+            q.initPixels(4252.50001, 1.0000001);
             assertAll(
                 () -> assertEquals(6448, p.cx, "100.75 px = 6448 clicks"),
                 () -> assertEquals(3232, p.cy, "50.5 px = 3232 clicks"),
                 () -> assertEquals(100, p.prevX, "previous x = new pixel x"),
                 () -> assertEquals(50, p.prevY, "previous y = new pixel y"),
-                () -> assertEquals(0.0, p.remX, "x remainder cleared"),
-                () -> assertEquals(0.0, p.remY, "y remainder cleared"));
+                () -> assertEquals(272160, q.cx, "the pixel argument is a C float: 4252.50001 rounds to 4252.5f first"),
+                () -> assertEquals(64, q.cy, "1.0000001 rounds to the float 1.0 (a double would give 64 too)"));
         }
 
         @Test

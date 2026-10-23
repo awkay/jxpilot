@@ -72,6 +72,12 @@ class CollisionsTest {
 
     // ================================================================ in_range_acd
 
+    /** The texts of the SCORE_OBJECT events from {@code seq} (C Send_score_object labels). */
+    static List<String> scoreTexts(World w, long seq) {
+        return ShipFx.events(w, seq).stream().filter(e -> e.startsWith("SCORE_OBJECT"))
+            .map(e -> e.split(" ", 6)[5]).toList();
+    }
+
     @Nested
     @DisplayName("inRange (in_range_acd)")
     class InRange {
@@ -207,6 +213,46 @@ class CollisionsTest {
             assertTrue(same > 10000, "most random cases are comparable");
         }
 
+        @Test
+        @DisplayName("farApart (perf F4) never rejects a pair inRange accepts, and rejects distant pairs")
+        void farApartIsConservative() {
+            Rng r = new Rng(7);
+            int rejected = 0;
+            int wrong = 0;
+            for (int i = 0; i < 20000; i++) {
+                int[] a = new int[8];
+                for (int k = 0; k < 8; k++) {
+                    a[k] = Integer.remainderUnsigned(r.nextInt(), 700);
+                }
+                for (int k = 2; k < 8; k += 4) {
+                    a[k] = Math.floorMod(a[k - 2] + Integer.remainderUnsigned(r.nextInt(), 161) - 80, 700);
+                    a[k + 1] = Math.floorMod(a[k - 1] + Integer.remainderUnsigned(r.nextInt(), 161) - 80, 700);
+                }
+                int rad = 1 + Integer.remainderUnsigned(r.nextInt(), 60);
+                boolean far = wrap.farApart(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], rad);
+                if (far) {
+                    rejected++;
+                    if (wrap.inRange(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], rad)) {
+                        wrong++;
+                    }
+                }
+            }
+            int rej = rejected;
+            int bad = wrong;
+            assertAll(
+                () -> assertEquals(0, bad, "no rejected pair is in range"),
+                () -> assertTrue(rej > 10000, "most random pairs are rejected cheaply (" + rej + ")"),
+                () -> assertTrue(wrap.farApart(0, 0, 0, 0, 100, 0, 100, 0, 99), "x gap 100 > 99"),
+                () -> assertFalse(wrap.farApart(0, 0, 0, 0, 100, 0, 100, 0, 100), "x gap 100 = r is left to inRange"),
+                () -> assertFalse(wrap.farApart(0, 0, 10, 0, 100, 0, 100, 0, 89), "x: the moves' lengths widen the reach"),
+                () -> assertTrue(wrap.farApart(0, 0, 0, 0, 0, 100, 0, 100, 99), "y gap 100 > 99"),
+                () -> assertFalse(wrap.farApart(0, 0, 0, 0, 0, 90, 0, 100, 99), "y: the moves' lengths widen the reach"),
+                () -> assertFalse(wrap.farApart(0, 0, 0, 0, 110, 0, 100, 0, 95), "x: q's move widens the reach too"),
+                () -> assertFalse(wrap.farApart(0, 0, 0, 10, 0, 100, 0, 100, 89), "y: p's move widens the reach too"),
+                () -> assertFalse(wrap.farApart(0, 0, 0, 0, 0, 100, 0, 100, 100), "y gap 100 = r is left to inRange"),
+                () -> assertFalse(wrap.farApart(0, 0, 0, 0, 690, 0, 690, 0, 20), "across the seam the gap is 10"));
+        }
+
         /** Literal port of C in_range_acd (WRAP_PLAY); null when the fix would apply (end points > half apart). */
         Boolean cInRange(int p1x, int p1y, int p2x, int p2y, int q1x, int q1y, int q2x, int q2y, int r, int ww,
                          int wh) {
@@ -299,8 +345,8 @@ class CollisionsTest {
                 () -> assertTrue(killed(a), "the first ship dies"),
                 () -> assertTrue(killed(b), "the second ship dies"),
                 () -> assertEquals(List.of("A and B crashed."), messages(w, seq), "announces the crash"),
-                () -> assertEquals(List.of("2:" + b.id + ":" + a.id), gameEvents(w, seq),
-                    "emits CRASH(other, first)"),
+                () -> assertEquals(List.of("2:" + a.id + ":" + b.id), gameEvents(w, seq),
+                    "emits CRASH(first, other): b = a player who crashed, c = the other"),
                 // sc = Rate(B, A) * crashScoreMult; sc2 = Rate(A, B) * crashScoreMult (collision.c PlayerCollision)
                 () -> assertEquals(100 - rate(0, 100) * 0.75, a.score, EPS, "A loses Rate(B, A) * crashScoreMult"),
                 () -> assertEquals(-rate(100, 0) * 0.75, b.score, EPS, "B loses Rate(A, B) * crashScoreMult"),
@@ -361,7 +407,7 @@ class CollisionsTest {
         }
 
         @Test
-        @DisplayName("bounces only, at 14 fps: fuel cost and repulsion scale with dt; fully shielded pays nothing")
+        @DisplayName("bounces only, at 14 fps: one frame's fuel cost and repulsion; fully shielded pays nothing")
         void bounceOnlyScaled() {
             Simulation s = sim(FPS14 + "allowPlayerCrashes: no\n", 20, 20, "__");
             World w = s.world;
@@ -370,20 +416,19 @@ class CollisionsTest {
             b.used |= Has.BOTH_SHIELDS;
             long seq = w.events.seq();
             check(s);
-            double dt = 14.0 / 60;
             assertAll(
                 () -> assertFalse(killed(a), "no crash without allowPlayerCrashes"),
                 () -> assertFalse(killed(b), "no crash for the other ship either"),
                 () -> assertEquals(List.of(), messages(w, seq), "no message"),
-                () -> assertEquals(FUEL0 - 25600 * dt, a.fuel, EPS, "fuel cost is ED_PL_CRASH * dt"),
+                () -> assertEquals(FUEL0 - 25600, a.fuel, EPS, "fuel cost is ED_PL_CRASH per frame (= tick)"),
                 () -> assertEquals(FUEL0, b.fuel, EPS, "a fully shielded ship pays no fuel"),
-                () -> assertEquals(-10 * dt, a.vx, EPS, "repulsion is 10 * dt"),
-                () -> assertEquals(10 * dt, b.vx, EPS, "the other ship gets the opposite push"),
+                () -> assertEquals(-10.0f, a.vx, "repulsion is 10"),
+                () -> assertEquals(10.0f, b.vx, "the other ship gets the opposite push"),
                 () -> assertEquals(b.id, a.shovePusher[0], "the bounce is recorded as a shove"));
         }
 
         @Test
-        @DisplayName("bounces only, at 14 fps: the second ship pays ED_PL_CRASH * dt too")
+        @DisplayName("bounces only, at 14 fps: the second ship pays ED_PL_CRASH too")
         void bounceSecondPays() {
             Simulation s = sim(FPS14 + "allowPlayerCrashes: no\n", 20, 20, "__");
             Player a = ready(s, "A", 0, 200, 200);
@@ -392,7 +437,7 @@ class CollisionsTest {
             check(s);
             assertAll(
                 () -> assertEquals(FUEL0, a.fuel, EPS, "the fully shielded first ship pays nothing"),
-                () -> assertEquals(FUEL0 - 25600 * 14.0 / 60, b.fuel, EPS, "the second ship pays ED_PL_CRASH * dt"));
+                () -> assertEquals(FUEL0 - 25600, b.fuel, EPS, "the second ship pays ED_PL_CRASH"));
         }
 
         @Test
@@ -431,13 +476,13 @@ class CollisionsTest {
             b.mass = 2 * a.mass;
             check(s);
             // Obj_repel: theta = findDir(10, 10) = 16, dm = mA/mB = 0.5, force 10
-            double c = Trig.tcos(16);
-            double sn = Trig.tsin(16);
+            float c = Trig.tcos(16);
+            float sn = Trig.tsin(16);
             assertAll(
-                () -> assertEquals(-c * 10 / 0.5, a.vx, EPS, "the lighter ship gets -cos * force / dm"),
-                () -> assertEquals(-sn * 10 / 0.5, a.vy, EPS, "and -sin * force / dm"),
-                () -> assertEquals(c * 10 * 0.5, b.vx, EPS, "the heavier ship gets cos * force * dm"),
-                () -> assertEquals(sn * 10 * 0.5, b.vy, EPS, "and sin * force * dm"));
+                () -> assertEquals(-(c * 10f / 0.5f), a.vx, "the lighter ship gets -cos * force / dm (C floats)"),
+                () -> assertEquals(-(sn * 10f / 0.5f), a.vy, "and -sin * force / dm"),
+                () -> assertEquals(c * 10f * 0.5f, b.vx, "the heavier ship gets cos * force * dm"),
+                () -> assertEquals(sn * 10f * 0.5f, b.vy, "and sin * force * dm"));
         }
 
         @Test
@@ -446,7 +491,7 @@ class CollisionsTest {
             Simulation s = sim(FRAME, 20, 20, "__");
             Player a = ready(s, "A", 0, 200, 200);
             Player b = ready(s, "B", 0, 232, 200);
-            s.collisions.repel(a, b, 32, 1.0);
+            s.collisions.repel(a, b, 32);
             assertAll(
                 () -> assertEquals(0.0, a.vx, EPS, "no push at exactly the repel distance"),
                 () -> assertEquals(Obj.NO_ID, a.shovePusher[0], "no shove recorded"));
@@ -579,7 +624,7 @@ class CollisionsTest {
                 () -> assertFalse(killed(f), "y = 0 is inside"),
                 () -> assertEquals(List.of("A left the known universe.", "B left the known universe.",
                     "D left the known universe."), messages(w, seq), "announces each"),
-                () -> assertEquals(List.of("2:-1:" + a.id, "2:-1:" + b.id, "2:-1:" + d.id), gameEvents(w, seq),
+                () -> assertEquals(List.of("2:" + a.id + ":-1", "2:" + b.id + ":-1", "2:" + d.id + ":-1"), gameEvents(w, seq),
                     "emits CRASH for each"),
                 () -> assertEquals(-rate(2000, 0), a.score, EPS, "loses Rate(WALL_SCORE, score)"));
         }
@@ -661,6 +706,7 @@ class CollisionsTest {
                 () -> assertTrue(killed(v), "the owner dies once life <= fuse life"),
                 () -> assertEquals(List.of("V was killed by a shot from V.  How strange!"), messages(w, seq),
                     "a self kill is strange"),
+                () -> assertEquals(List.of("V"), scoreTexts(w, seq), "the score label is the own name"),
                 () -> assertEquals(List.of("1:" + v.id + ":" + v.id), gameEvents(w, seq), "emits KILL(V, V)"),
                 () -> assertEquals(0, v.kills, "no kill for shooting yourself"),
                 () -> assertEquals(100 - sc, v.score, EPS, "loses Rate(0, score) * selfKillScoreMult * shot mult"));
@@ -708,6 +754,7 @@ class CollisionsTest {
             assertAll(
                 () -> assertTrue(killed(v), "an unowned shot kills"),
                 () -> assertEquals(List.of("V was killed by a shot."), messages(w, seq), "no killer named"),
+                () -> assertEquals(List.of(""), scoreTexts(w, seq), "an empty score label"),
                 () -> assertEquals(List.of("1:-1:" + v.id), gameEvents(w, seq), "emits KILL(NO_ID, V)"),
                 () -> assertEquals(100 - sc, v.score, EPS, "loses Rate(0, score) * unowned mult * shot mult"),
                 () -> assertEquals(50.0, k.score, EPS, "nobody else scores"));
@@ -790,7 +837,7 @@ class CollisionsTest {
         void shieldedKinetic() {
             setup("", "__");
             v.used |= Has.SHIELD;
-            double m = v.mass;
+            float m = v.mass;
             int h = shot(k.id, 10);
             check(s);
             // drain = (long)(ED_SHOT_HIT * rel^2 * mass / (shotSpeed^2 * shotMass)) = (long)(-6400 * 100/441)
@@ -800,8 +847,9 @@ class CollisionsTest {
                 () -> assertTrue((v.used & Has.SHIELD) != 0, "shields stay up with fuel left"),
                 () -> assertEquals(0.0, w.objects.life[h], EPS, "the shot is used up"),
                 // Delta_mv: (0 * m + 10 * 0.1) / (m + 0.1)
-                () -> assertEquals(1.0 / (m + 0.1), v.vx, EPS, "the ship takes the shot's momentum"),
-                () -> assertEquals(1.0 / (m + 0.1), w.objects.vx[h], EPS, "the shot ends with the common velocity"),
+                () -> assertEquals((0f * m + 10f * 0.1f) / (m + 0.1f), v.vx, "the ship takes the shot's momentum"),
+                () -> assertEquals((0f * m + 10f * 0.1f) / (m + 0.1f), w.objects.vx[h],
+                    "the shot ends with the common velocity"),
                 () -> assertEquals(0, k.kills, "no kill"));
         }
 
@@ -968,15 +1016,15 @@ class CollisionsTest {
         @DisplayName("debris drains |(long)(2 m |v|)| fuel and shares momentum")
         void drain() {
             setup("");
-            double m = v.mass;
+            float m = v.mass;
             int h = debris(k.id);
             check(s);
             assertAll(
                 () -> assertEquals(FUEL0 - 450, v.fuel, EPS, "drains (long)(2 * 4.5 * 50) = 450"),
                 () -> assertFalse(killed(v), "the ship survives with fuel left"),
                 () -> assertEquals(0.0, w.objects.life[h], EPS, "the debris is used up"),
-                () -> assertEquals(30 * 4.5 / (m + 4.5), v.vx, EPS, "inelastic x velocity"),
-                () -> assertEquals(40 * 4.5 / (m + 4.5), v.vy, EPS, "inelastic y velocity"),
+                () -> assertEquals((0f * m + 30f * 4.5f) / (m + 4.5f), v.vx, "inelastic x velocity (C floats)"),
+                () -> assertEquals((0f * m + 40f * 4.5f) / (m + 4.5f), v.vy, "inelastic y velocity"),
                 () -> assertEquals(v.vy, w.objects.vy[h], EPS, "the debris shares the velocity"));
         }
 
@@ -997,7 +1045,7 @@ class CollisionsTest {
             int h = debris(k.id);
             long seq = w.events.seq();
             check(s);
-            double sc = rate(50, 100) * 0.4;
+            double sc = rate(50, 100) * 0.4f;
             assertAll(
                 () -> assertTrue(killed(v), "an empty tank means death"),
                 () -> assertEquals(List.of("V succumbed to an explosion from K."), messages(w, seq), "names the owner"),
@@ -1019,18 +1067,21 @@ class CollisionsTest {
             check(s);
             List<String> own = messages(w, seq);
             List<String> ownEv = gameEvents(w, seq);
+            List<String> ownLabels = scoreTexts(w, seq);
             double ownScore = v.score;
             setup("");
             v.fuel = 100;
             debris(Obj.NO_ID);
             long seq2 = w.events.seq();
             check(s);
-            double sc = rate(0, 100) * 0.4 * 0.5;
+            double sc = rate(0, 100) * 0.4f * 0.5f;
             assertAll(
                 () -> assertEquals(List.of("V succumbed to an explosion from V.  How strange!"), own, "own debris is strange"),
                 () -> assertEquals(List.of("1:-1:" + v.id), ownEv, "own debris: KILL(NO_ID, V)"),
                 () -> assertEquals(100 - sc, ownScore, EPS, "own debris costs Rate(0) * explosion * selfKill"),
                 () -> assertEquals(List.of("V succumbed to an explosion."), messages(w, seq2), "unowned names nobody"),
+                () -> assertEquals(List.of("V"), ownLabels, "own debris: labelled with the own name"),
+                () -> assertEquals(List.of("[Explosion]"), scoreTexts(w, seq2), "unowned: [Explosion]"),
                 () -> assertEquals(100 - sc, v.score, EPS, "unowned debris costs the same"),
                 () -> assertEquals(0, k.kills, "nobody gets a kill"));
         }
@@ -1059,7 +1110,7 @@ class CollisionsTest {
         @DisplayName("sparks push: others' sparks and own sparks without owner immunity")
         void sparks() {
             setup("");
-            double m = v.mass;
+            float m = v.mass;
             int other = obj(w, Obj.SPARK, k.id, 200, 200, 10, 0, 0.7, 10);
             w.objects.status[other] = Obj.OWNERIMMUNE;
             check(s);
@@ -1075,11 +1126,11 @@ class CollisionsTest {
             int own = obj(w, Obj.SPARK, v.id, 200, 200, 10, 0, 0.7, 10);
             check(s);
             assertAll(
-                () -> assertEquals(10 * 0.7 / (m + 0.7), vxOther, EPS, "another ship's spark pushes (Delta_mv)"),
+                () -> assertEquals((0f * m + 10f * 0.7f) / (m + 0.7f), vxOther, "another ship's spark pushes (Delta_mv)"),
                 () -> assertEquals(0.0, lifeOther, EPS, "and is used up"),
                 () -> assertEquals(0.0, vxOwnImm, EPS, "own owner-immune sparks do not push"),
                 () -> assertEquals(10.0, lifeOwnImm, EPS, "and are not used up"),
-                () -> assertEquals(10 * 0.7 / (m + 0.7), v.vx, EPS, "own sparks without immunity push"),
+                () -> assertEquals((0f * m + 10f * 0.7f) / (m + 0.7f), v.vx, "own sparks without immunity push"),
                 () -> assertEquals(FUEL0, v.fuel, EPS, "sparks cost no fuel"),
                 () -> assertFalse(killed(v), "sparks do not kill"));
         }
@@ -1125,11 +1176,11 @@ class CollisionsTest {
             int h = obj(w, Obj.SPARK, k.id, 200, 200, 10, 5, -0.7, 10);
             v.vx = 2;
             v.vy = 3;
-            double m = v.mass;
+            float m = v.mass;
             s.collisions.deltaMv(v, h);
             assertAll(
-                () -> assertEquals((2 * m + 10 * -0.7) / (m + 0.7), v.vx, EPS, "vx = (v m + v_o m_o) / (m + |m_o|)"),
-                () -> assertEquals((3 * m + 5 * -0.7) / (m + 0.7), v.vy, EPS, "vy = (v m + v_o m_o) / (m + |m_o|)"));
+                () -> assertEquals((2f * m + 10f * -0.7f) / (m + 0.7f), v.vx, "vx = (v m + v_o m_o) / (m + |m_o|)"),
+                () -> assertEquals((3f * m + 5f * -0.7f) / (m + 0.7f), v.vy, "vy = (v m + v_o m_o) / (m + |m_o|)"));
         }
     }
 }

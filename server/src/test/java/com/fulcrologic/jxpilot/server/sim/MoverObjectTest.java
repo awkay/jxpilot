@@ -39,8 +39,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link Mover#moveObject}: C {@code Move_object} (walls.c:1905-2023) plus the sub-click remainder carry.
- * Worlds run at 60 fps (dt = 1, one tick = one C frame) unless stated.
+ * {@link Mover#moveObject}: C {@code Move_object} (walls.c:1905-2023).
+ * Worlds run at 60 fps unless stated (one tick is one C frame at any fps).
  */
 class MoverObjectTest {
     static final String FPS60 = "framesPerSecond: 60";
@@ -56,8 +56,8 @@ class MoverObjectTest {
         int h = o.alloc();
         o.type[h] = type;
         o.setClicks(h, cx, cy);
-        o.vx[h] = vx;
-        o.vy[h] = vy;
+        o.vx[h] = (float) vx;
+        o.vy[h] = (float) vy;
         o.life[h] = 100;
         return h;
     }
@@ -66,8 +66,8 @@ class MoverObjectTest {
     @DisplayName("free flight")
     class FreeFlight {
         @Test
-        @DisplayName("moves vel*dt*64 clicks a tick, carrying the sub-click remainder to the next tick")
-        void remainderCarry() {
+        @DisplayName("moves FLOAT_TO_CLICK(vel) clicks a tick, truncated toward zero like C")
+        void truncates() {
             Simulation s = open(FPS60);
             World w = s.world;
             int x0 = 4 * BC + 1000;
@@ -77,25 +77,20 @@ class MoverObjectTest {
             s.mover.moveObject(h);
             int x1 = w.objects.cx[h];
             int y1 = w.objects.cy[h];
-            double r1 = w.objects.remX[h];
-            double ry1 = w.objects.remY[h];
             int px1 = w.objects.px[h];
             s.mover.moveObject(h);
             assertAll(
                 () -> assertEquals(x0 + 64, x1, "tick 1: (int)64.5 = 64 clicks"),
                 () -> assertEquals(y0 - 32, y1, "tick 1: (int)-32.5 = -32 clicks"),
-                () -> assertEquals(0.5, r1, "the 0.5 click left over is kept"),
-                () -> assertEquals(-0.5, ry1, "the -0.5 click left over is kept"),
-                () -> assertEquals(x0 + 129, w.objects.cx[h], "tick 2: (int)(64.5 + 0.5) = 65 clicks"),
-                () -> assertEquals(y0 - 65, w.objects.cy[h], "tick 2: (int)(-32.5 - 0.5) = -33 clicks"),
-                () -> assertEquals(0.0, w.objects.remX[h], "nothing left over after tick 2"),
+                () -> assertEquals(x0 + 128, w.objects.cx[h], "tick 2: 64 again, the half click is lost as in C"),
+                () -> assertEquals(y0 - 64, w.objects.cy[h], "tick 2: -32 again"),
                 () -> assertEquals(px1, w.objects.prevX[h], "the previous position is the position before the move"),
-                () -> assertEquals((x0 + 129) >> 6, w.objects.px[h], "pixels follow clicks"));
+                () -> assertEquals((x0 + 128) >> 6, w.objects.px[h], "pixels follow clicks"));
         }
 
         @Test
-        @DisplayName("at 14 fps a tick moves vel * 14/60 frames")
-        void scaled() {
+        @DisplayName("at 14 fps a tick moves one whole frame")
+        void wholeFrame() {
             Simulation s = open("");
             World w = s.world;
             int x0 = 4 * BC + 1000;
@@ -103,11 +98,9 @@ class MoverObjectTest {
             for (int i = 0; i < 3; i++) {
                 s.mover.moveObject(h);
             }
-            // 3 * 14/60 * 64 = 44.8 clicks a tick: 44 (.8), 45 (.6), 45 (.4)
             assertAll(
-                () -> assertEquals(14.0 / 60, w.params.dt, 1e-15, "(fixture: dt = 14/60)"),
-                () -> assertEquals(x0 + 134, w.objects.cx[h], "three ticks move 44 + 45 + 45 = 134 clicks"),
-                () -> assertEquals(0.4, w.objects.remX[h], 1e-9, "0.4 click is carried (FP tolerance)"));
+                () -> assertEquals(14, w.params.fps, "(fixture: 14 fps)"),
+                () -> assertEquals(x0 + 3 * 192, w.objects.cx[h], "three ticks move 3 * 3 px"));
         }
 
         @Test
@@ -140,13 +133,11 @@ class MoverObjectTest {
             World w = s.world;
             w.params.objBounceMask = 0;
             int h = spawn(w, Obj.SHOT, 2 * BC - 100, BC + 1000, 5, 0);
-            w.objects.remX[h] = 0.75;
             s.mover.moveObject(h);
             assertAll(
                 () -> assertEquals(0.0, w.objects.life[h], "Object_crash sets life to 0"),
                 () -> assertEquals(2 * BC, w.objects.cx[h], "it stops on the wall face"),
-                () -> assertEquals(5.0, w.objects.vx[h], "velocity is unchanged"),
-                () -> assertEquals(0.0, w.objects.remX[h], "a crash resets the remainder"),
+                () -> assertEquals(5.0f, w.objects.vx[h], "velocity is unchanged"),
                 () -> assertEquals((2 * BC) >> 6, w.objects.prevX[h], "a crash makes the new position the previous one"));
         }
 
@@ -157,12 +148,11 @@ class MoverObjectTest {
             World w = s.world;
             Params p = w.params;
             p.objBounceMask = Obj.SPARK;
-            p.objectWallBounceLifeFactor = 0.333;
-            p.objectWallBrakeFactor = 0.5;
+            p.objectWallBounceLifeFactor = 0.333f;
+            p.objectWallBrakeFactor = 0.5f;
             p.maxObjectWallBounceSpeed = 10;
             int h = spawn(w, Obj.SPARK, 2 * BC - 100, BC + 1000, 5, 0);
             w.objects.status[h] = Obj.OWNERIMMUNE | Obj.GRAVITY;
-            w.objects.remX[h] = 0.75;
             s.mover.moveObject(h);
             // 320 clicks: 100 to the face, bounce, the remaining 220 reflected and halved: -110
             assertAll(
@@ -171,7 +161,6 @@ class MoverObjectTest {
                 () -> assertEquals(-2.5, w.objects.vx[h], "velocity reflected and multiplied by the brake factor"),
                 () -> assertEquals(Obj.GRAVITY, w.objects.status[h], "OWNERIMMUNE is cleared, other bits kept"),
                 () -> assertEquals(64, w.objects.missileDir[h], "heading 0 reflects to RES/2"),
-                () -> assertEquals(0.0, w.objects.remX[h], "a bounce resets the remainder"),
                 () -> assertEquals((2 * BC - 110) >> 6, w.objects.prevX[h], "and remembers the new position"));
         }
 
@@ -200,7 +189,7 @@ class MoverObjectTest {
             Simulation s = wall();
             World w = s.world;
             w.params.objBounceMask = Obj.SPARK;
-            w.params.maxObjectWallBounceSpeed = 4.99;
+            w.params.maxObjectWallBounceSpeed = 4.99f;
             int fast = spawn(w, Obj.SPARK, 2 * BC - 100, BC + 1000, 5, 0);
             s.mover.moveObject(fast);
             Simulation s2 = wall();
@@ -215,7 +204,7 @@ class MoverObjectTest {
             World w3 = s3.world;
             w3.params.objBounceMask = Obj.SPARK;
             w3.params.maxObjectWallBounceSpeed = 10;
-            w3.params.objectWallBounceLifeFactor = 0.001;
+            w3.params.objectWallBounceLifeFactor = 0.001f;
             int shortLived = spawn(w3, Obj.SPARK, 2 * BC - 100, BC + 1000, 5, 0);
             s3.mover.moveObject(shortLived);
             assertAll(
@@ -234,8 +223,8 @@ class MoverObjectTest {
             Simulation s = TestWorlds.sim(FPS60, "x    ", "     ", "     ");
             World w = s.world;
             w.params.objBounceMask = Obj.SPARK;
-            w.params.objectWallBounceLifeFactor = 0.5;
-            w.params.objectWallBrakeFactor = 0.5;
+            w.params.objectWallBounceLifeFactor = 0.5f;
+            w.params.objectWallBrakeFactor = 0.5f;
             int h = spawn(w, Obj.SPARK, 100, 1000, -5, 0);
             s.mover.moveObject(h);
             assertAll(
@@ -277,18 +266,16 @@ class MoverObjectTest {
         }
 
         @Test
-        @DisplayName("near a wall the move is traced but the remainder is still carried when nothing is hit")
-        void tracedRemainder() {
+        @DisplayName("near a wall the traced move also truncates the velocity to clicks")
+        void tracedTruncates() {
             Simulation s = wall();
             World w = s.world;
             int h = spawn(w, Obj.SHOT, BC + 100, BC + 100, 0, 1.0078125);
             s.mover.moveObject(h);
-            double r = w.objects.remX[h] + w.objects.remY[h];
             s.mover.moveObject(h);
             assertAll(
                 () -> assertEquals(2, w.wallDist(1, 1), "(fixture: traced)"),
-                () -> assertEquals(0.5, r, "tick 1 keeps 0.5 click"),
-                () -> assertEquals(BC + 100 + 129, w.objects.cy[h], "64 + 65 clicks in two ticks"));
+                () -> assertEquals(BC + 100 + 128, w.objects.cy[h], "64 + 64 clicks in two ticks"));
         }
 
         @Test
@@ -318,7 +305,7 @@ class MoverObjectTest {
         }
 
         @Test
-        @DisplayName("the free-flight check uses |vel*dt| against ((walldist-2)*35)>>1: a fast object is traced into the wall")
+        @DisplayName("the free-flight check uses |vel| against ((walldist-2)*35)>>1: a fast object is traced into the wall")
         void fastNearWall() {
             String r = "    x    ";
             Simulation s = TestWorlds.sim(FPS60, r, r, r, r, r, r, r, r, r);
@@ -389,14 +376,14 @@ class MoverObjectTest {
             Simulation s = wall();
             World w = s.world;
             w.params.objBounceMask = Obj.SPARK;
-            w.params.maxObjectWallBounceSpeed = 4.99;
+            w.params.maxObjectWallBounceSpeed = 4.99f;
             int dead = spawn(w, Obj.SPARK, 2 * BC - 128, BC + 1000, 4, 3);
             s.mover.moveObject(dead);
             Simulation s2 = wall();
             World w2 = s2.world;
             w2.params.objBounceMask = Obj.SPARK;
             w2.params.maxObjectWallBounceSpeed = 6;
-            w2.params.objectWallBrakeFactor = 0.5;
+            w2.params.objectWallBrakeFactor = 0.5f;
             w2.params.objectWallBounceLifeFactor = 1;
             int h = spawn(w2, Obj.SPARK, 2 * BC - 128, BC + 1000, 4, 3);
             s2.mover.moveObject(h);

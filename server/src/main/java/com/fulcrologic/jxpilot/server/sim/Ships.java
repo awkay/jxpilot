@@ -33,6 +33,7 @@ import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.Trig;
@@ -41,23 +42,31 @@ import com.fulcrologic.jxpilot.server.world.World;
 /**
  * Ship rules: the per-player part of C {@code Update_objects} ({@code src/server/update.c}), and from
  * {@code src/server/player.c} {@code Init_player}, {@code Pick_startpos}, {@code Go_home},
- * {@code Player_set_mass}, {@code Kill_player}/{@code Player_death_reset}.
+ * {@code Player_set_mass}, {@code Kill_player}/{@code Player_death_reset}, {@code Delete_player}, plus
+ * {@code Handle_login} (netserver.c) and {@code Pause_player} (event.c).
  * <p>
- * Time scaling (SPEC): per-frame rates (fuel use, shield drain, refuelling, acceleration, timers) are
- * multiplied by {@code dt}; turning integrates C's {@code turnvel = (turnvel + turnacc) * resistance}
- * recurrence exactly over {@code dt} frames.
+ * One sim tick is one C frame: every rule is C's per-frame rule, with C's float ({@code DFLOAT}) arithmetic.
  */
 public final class Ships {
     /** C {@code ED_SHIELD} after the {@code (long)} cast in update.c: fuel per frame with shields up. */
     static final long ED_SHIELD = (long) (-0.20 * 256);
     /** C {@code REFUEL_RATE} (fixed point). */
-    static final double REFUEL_RATE = 5 * 256;
+    static final int REFUEL_RATE = 5 * 256;
     /** C {@code MAX_PLAYER_FUEL} = TANK_CAP(0) (fixed point). */
     static final double MAX_PLAYER_FUEL = 2600 * 256;
     /** C {@code WORMCOUNT}. */
     static final int WORMCOUNT = 64;
     /** C {@code TURN_FUEL} factor: 0.005 * FUEL_SCALE_FACT. */
     static final double TURN_FUEL = 0.005 * 256;
+    /** C {@code DIR_UP}. */
+    static final int DIR_UP = Const.RES / 4;
+    /** Client default settings (C client default.c), used until the client sends SETTINGS. */
+    static final float DEFAULT_POWER = 45.0f;
+    static final float DEFAULT_TURN_SPEED = 35.0f;
+    static final float DEFAULT_TURN_RESISTANCE = 0.12f;
+    static final float DEFAULT_ALT_POWER = 35.0f;
+    static final float DEFAULT_ALT_TURN_SPEED = 25.0f;
+    static final float DEFAULT_ALT_TURN_RESISTANCE = 0.12f;
 
     private final World w;
     private final Simulation sim;
@@ -70,81 +79,181 @@ public final class Ships {
         this.baseOrder = w.map.baseOrder();
     }
 
-    // ================================================================ join / home
+    // ================================================================ join / leave / home
 
     /**
-     * Add a player (C {@code Init_player} + {@code Pick_startpos} + {@code Go_home}).
+     * Reserve a slot and id for a connecting player (the contact part of C's login). The player is not in
+     * the game (not drawn, not simulated, owns no base) until {@link #spawn}.
      * <p>
-     * BEHAVIOR: returns null when the world is full or no base is free for the team.
-     * BEHAVIOR: the player starts PLAYING at the home base with initialFuel, power 45, turnspeed 30,
-     * turnresistance 0.12 (alternate 35/25/0.12), shields per DEF_USED, and emits JOIN, BASE_OWNER and SCORE.
-     * BEHAVIOR: in team play a request for an invalid, reserved robot, baseless or full team is replaced by
-     * C {@code Pick_team}; when no team can be picked the join fails (null).
-     * BEHAVIOR: with teamShareScore the first member resets the team score, and every join shares the team
-     * score out among the members (netserver.c Handle_login: TEAM_SCORE(team, 0)).
+     * BEHAVIOR: returns null when every slot (one per base) is taken, reserved ones included.
+     * BEHAVIOR: the name is cut to {@link Const#MAX_NAME_LEN} chars and made Latin-1 (other chars become '?').
      */
-    public Player join(CharSequence name, int team) {
+    public Player reserve(CharSequence name) {
         Player pl = w.addPlayer();
         if (pl == null) {
             return null;
         }
-        initPlayer(pl, name);
-        if (w.params.teamPlay) {
-            pl.team = chooseTeam(team, pl);
-            if (pl.team == Const.TEAM_NOT_SET) {
-                w.removePlayer(pl);
-                return null;
+        pl.name.setLength(0);
+        int n = Math.min(name.length(), Const.MAX_NAME_LEN);
+        for (int i = 0; i < n; i++) {
+            char c = name.charAt(i);
+            pl.name.append(c > 0xFF ? '?' : c);
+        }
+        return pl;
+    }
+
+    /**
+     * Put a reserved player into the game (C {@code Handle_login} from {@code Init_player} on, when the
+     * client is READY).
+     * <p>
+     * BEHAVIOR: returns false (nothing changes, the reservation stays) when the player is not reserved, is
+     * already in the game, or no team/base can be picked.
+     * BEHAVIOR: in team play a request for an invalid, reserved robot, baseless or full team is replaced by
+     * C {@code Pick_team}.
+     * BEHAVIOR: Init_player runs (start values, the client default power 45, turnspeed 35, turnresistance
+     * 0.12 and alternates 35/25/0.12 until {@link #applySettings}); with limitedLives a joiner arriving after
+     * a non-team player lost a life waits ('W', GAME_OVER, no lives), judged after the team is chosen.
+     * BEHAVIOR: emits JOIN, BASE_OWNER and SCORE, and the ship starts at home.
+     * BEHAVIOR: with teamShareScore the first member resets the team score; the share is redistributed to the
+     * members already in the game (as C, the joiner itself keeps 0 until the next team score change).
+     * BEHAVIOR: resetOnHuman ends the round for the first N humans; a join during the round delay, or the
+     * first player, (re)starts the round delay with a message.
+     */
+    public boolean spawn(Player pl, int team) {
+        if (!pl.inUse || pl.spawned) {
+            return false;
+        }
+        Params p = w.params;
+        int t = Const.TEAM_NOT_SET;
+        if (p.teamPlay) {
+            t = chooseTeam(team, pl);
+            if (t == Const.TEAM_NOT_SET) {
+                return false;
             }
         }
+        initPlayer(pl);
+        pl.team = t;
         if (!pickStartPos(pl)) {
-            w.removePlayer(pl);
-            return null;
+            return false;
         }
+        tooLate(pl);
+        goHome(pl);
         if (pl.team != Const.TEAM_NOT_SET) {
             w.teamMembers[pl.team]++;
-            if (w.params.teamShareScore) {
+            if (p.teamShareScore) {
                 if (w.teamMembers[pl.team] == 1) {
                     w.teamScore[pl.team] = 0;
                 }
                 sim.scoring.teamScore(pl.team, 0);
             }
         }
+        w.enter(pl);
+        pl.prevKeys = 0;
+        pl.keysCleared = true;
         w.events.add(Events.JOIN, pl.id, 0, 0, 0f);
         w.events.add(Events.BASE_OWNER, pl.homeBase, pl.id, 0, 0f);
-        goHome(pl);
+        w.events.add(Events.GAME_EVENT, Msg.GameEvent.SPAWN, pl.id, pl.homeBase, 0f);
         pl.scoreDirty = true;
+        sim.rounds.playerEntered(pl);
+        return true;
+    }
+
+    /**
+     * Reserve and spawn in one step (tests, robots, the headless runner).
+     * <p>
+     * BEHAVIOR: returns null (and frees the slot) when either step fails.
+     */
+    public Player join(CharSequence name, int team) {
+        Player pl = reserve(name);
+        if (pl == null) {
+            return null;
+        }
+        if (!spawn(pl, team)) {
+            w.removePlayer(pl);
+            return null;
+        }
         return pl;
     }
 
     /**
-     * Remove a player.
+     * Remove a player (C {@code Delete_player}).
      * <p>
-     * BEHAVIOR: their objects lose their owner (they keep flying), team membership drops and LEAVE is emitted.
+     * BEHAVIOR: a reserved player that never spawned just frees its slot (no events).
+     * BEHAVIOR: the player's debris and sparks lose their owner and keep flying; its other objects lose their
+     * owner and, without keepShots, die (life 0) and cannon shots lose their mass so they do not explode;
+     * without keepShots EVERY cannon shot in the world dies the same way (a C quirk, kept).
+     * BEHAVIOR: team membership drops; with teamShareScore the leaver's score is taken back from the team
+     * (C TEAM_SCORE(team, -score)) and the rest is shared among the remaining members.
+     * BEHAVIOR: shove records naming the player are cleared; the home base is released
+     * (BASE_OWNER(base, NO_ID)) and LEAVE is emitted.
      */
     public void leave(Player pl) {
         if (!pl.inUse) {
             return;
         }
-        int id = pl.id;
-        if (pl.team != Const.TEAM_NOT_SET) {
-            w.teamMembers[pl.team]--;
+        if (!pl.spawned) {
+            w.removePlayer(pl);
+            return;
         }
-        for (int k = 0; k < w.objects.count(); k++) {
-            int h = w.objects.active[k];
-            if (w.objects.owner[h] == id) {
-                w.objects.owner[h] = Obj.NO_ID;
+        int id = pl.id;
+        Objects o = w.objects;
+        boolean keep = w.params.keepShots;
+        for (int k = o.count() - 1; k >= 0; k--) {
+            int h = o.active[k];
+            int type = o.type[h];
+            if (o.owner[h] == id) {
+                if ((type & (Obj.DEBRIS | Obj.SPARK)) == 0 && !keep) {
+                    o.life[h] = 0;
+                    if ((type & (Obj.CANNON_SHOT | Obj.MINE | Obj.SMART_SHOT | Obj.HEAT_SHOT | Obj.TORPEDO)) != 0) {
+                        o.mass[h] = 0;
+                    }
+                }
+                o.owner[h] = Obj.NO_ID;
+            } else if (type == Obj.CANNON_SHOT && !keep) {
+                o.life[h] = 0;
+                o.mass[h] = 0;
+            }
+        }
+        int team = pl.team;
+        w.removePlayer(pl);
+        if (team != Const.TEAM_NOT_SET) {
+            w.teamMembers[team]--;
+            if (w.params.teamShareScore) {
+                sim.scoring.teamScore(team, -pl.score);
             }
         }
         for (int k = 0; k < w.numPlayers; k++) {
-            Player o = w.playerAt(k);
+            Player other = w.playerAt(k);
             for (int i = 0; i < Player.MAX_SHOVES; i++) {
-                if (o.shovePusher[i] == id) {
-                    o.shovePusher[i] = Obj.NO_ID;
+                if (other.shovePusher[i] == id) {
+                    other.shovePusher[i] = Obj.NO_ID;
                 }
             }
         }
-        w.removePlayer(pl);
+        if (pl.homeBase >= 0) {
+            w.events.add(Events.BASE_OWNER, pl.homeBase, Obj.NO_ID, 0, 0f);
+        }
         w.events.add(Events.LEAVE, id, 0, 0, 0f);
+    }
+
+    /**
+     * Engine settings from the client (C {@code Receive_power}: assigned directly; the per-tick limits apply
+     * in {@link #update}).
+     * <p>
+     * BEHAVIOR: sets power, turnspeed, turnresistance and their alternates; emits THRUST when power changed.
+     */
+    public void applySettings(Player pl, float power, float turnSpeed, float turnResistance, float altPower,
+                              float altTurnSpeed, float altTurnResistance) {
+        float old = pl.power;
+        pl.power = power;
+        pl.turnSpeed = turnSpeed;
+        pl.turnResistance = turnResistance;
+        pl.powerS = altPower;
+        pl.turnSpeedS = altTurnSpeed;
+        pl.turnResistanceS = altTurnResistance;
+        if (pl.power != old) {
+            w.events.add(Events.THRUST, pl.id, pl.afterburners(), 0, pl.power);
+        }
     }
 
     /** Scratch for {@link #pickTeam}. */
@@ -255,29 +364,29 @@ public final class Ships {
         return false;
     }
 
-    /** C {@code Init_player} (the parts that exist in S1). */
-    void initPlayer(Player pl, CharSequence name) {
+    /** C {@code Init_player} (the parts that exist in S1), before the team is set. */
+    void initPlayer(Player pl) {
         Params p = w.params;
-        pl.name.setLength(0);
-        pl.name.append(name);
         pl.team = Const.TEAM_NOT_SET;
         pl.homeBase = -1;
+        pl.ship = com.fulcrologic.jxpilot.server.world.ShipGeom.defaultShip();
         pl.vx = pl.vy = 0;
         pl.accX = pl.accY = 0;
-        pl.dir = Const.RES / 4;
+        pl.dir = DIR_UP;
         pl.floatDir = pl.dir;
         pl.turnVel = pl.oldTurnVel = pl.turnAcc = 0;
         pl.mass = pl.emptyMass = p.shipMass;
+        pl.velocity = 0;
         for (int i = 0; i < Item.COUNT; i++) {
             pl.items[i] = (i == Item.FUEL.ordinal() || i == Item.TANK.ordinal()) ? 0 : p.initialItems[i];
         }
         initFuel(pl, p.initialFuel * 256);
-        pl.power = 45.0;
-        pl.turnSpeed = 30.0;
-        pl.turnResistance = 0.12;
-        pl.powerS = 35.0;
-        pl.turnSpeedS = 25.0;
-        pl.turnResistanceS = 0.12;
+        pl.power = DEFAULT_POWER;
+        pl.turnSpeed = DEFAULT_TURN_SPEED;
+        pl.turnResistance = DEFAULT_TURN_RESISTANCE;
+        pl.powerS = DEFAULT_ALT_POWER;
+        pl.turnSpeedS = DEFAULT_ALT_TURN_SPEED;
+        pl.turnResistanceS = DEFAULT_ALT_TURN_RESISTANCE;
         pl.count = -1;
         pl.shieldTime = 0;
         pl.lastWallTouch = 0;
@@ -291,37 +400,54 @@ public final class Ships {
         pl.status = Obj.PLAYING | Obj.GRAVITY;
         pl.have = p.defHave;
         pl.used = p.defUsed;
+        pl.mychar = ' ';
         pl.life = p.worldLives;
         pl.kills = 0;
         pl.deaths = 0;
         pl.shoveNext = 0;
         for (int i = 0; i < Player.MAX_SHOVES; i++) {
             pl.shovePusher[i] = Obj.NO_ID;
+            pl.shoveTime[i] = 0;
         }
         pl.wormHoleHit = -1;
         pl.wormHoleDest = -1;
         pl.prevKeys = 0;
-        pl.remX = pl.remY = 0;
-        if (p.limitedLives) {
-            for (int k = 0; k < w.numPlayers; k++) {
-                Player o = w.playerAt(k);
-                if (o != pl && o.life < p.worldLives && !w.sameTeam(pl, o)) {
-                    pl.life = 0;
-                    pl.status |= Obj.GAME_OVER;
-                    break;
-                }
-            }
-        }
+        pl.lastReceivedKeys = 0;
+        pl.keysCleared = false;
+        pl.frameLastBusy = w.frames;
+        pl.scoreDirty = false;
         setMass(pl);
     }
 
     /**
-     * C {@code Player_init_fuel} with a single tank: max = TANK_CAP(0), fuel = min(fuel, max), no extra tanks
-     * (item count 0; initialTanks is not supported).
+     * Init_player's limited-lives check, run once the team is known: if a non-team player has already lost a
+     * life it is too late to join this round.
+     * <p>
+     * BEHAVIOR: such a joiner waits: mychar 'W', life 0, GAME_OVER.
      */
-    static void initFuel(Player pl, double fuel) {
+    void tooLate(Player pl) {
+        if (!w.params.limitedLives) {
+            return;
+        }
+        for (int k = 0; k < w.numPlayers; k++) {
+            Player o = w.playerAt(k);
+            if (o != pl && o.life < w.params.worldLives && !w.sameTeam(pl, o)) {
+                pl.mychar = 'W';
+                pl.life = 0;
+                pl.status |= Obj.GAME_OVER;
+                return;
+            }
+        }
+    }
+
+    /**
+     * C {@code Player_init_fuel} with a single tank: max = TANK_CAP(0), fuel = min(fuel, max), no extra tanks
+     * (item count 0; initialTanks is not supported), empty mass = shipMass.
+     */
+    void initFuel(Player pl, double fuel) {
         pl.fuelMax = MAX_PLAYER_FUEL;
         pl.fuel = Math.min(fuel, pl.fuelMax);
+        pl.emptyMass = w.params.shipMass;
         pl.items[Item.TANK.ordinal()] = 0;
     }
 
@@ -373,9 +499,12 @@ public final class Ships {
     /**
      * C {@code Go_home}: put the ship on its base, at rest, facing the base direction.
      * <p>
-     * BEHAVIOR: clears acceleration, turning, key state (held keys re-trigger next tick), USED_KILL
-     * abilities and thrust; with playerStartsShielded raises shields (for 2*FPS frames when shields are
-     * not otherwise allowed); emits a SPAWN game event.
+     * BEHAVIOR: clears velocity, acceleration, turning and the key state: keys still held are ignored until the
+     * client's key state changes (C clears {@code last_keyv}/{@code prev_keyv}).
+     * BEHAVIOR: C {@code Player_used_kill}: USED_KILL abilities off, and without default shields HAS_SHIELD is
+     * lost; with playerStartsShielded shields go up (for 2*FPS frames when shields are not otherwise allowed).
+     * BEHAVIOR: thrust stops; a ship already in the game emits a SPAWN game event (a joining ship's SPAWN
+     * follows its JOIN).
      */
     public void goHome(Player pl) {
         Base b = w.map.bases().get(pl.homeBase);
@@ -387,7 +516,11 @@ public final class Ships {
         pl.accX = pl.accY = 0;
         pl.turnAcc = pl.turnVel = 0;
         pl.prevKeys = 0;
+        pl.keysCleared = true;
         pl.used &= ~Has.USED_KILL;
+        if ((w.params.defHave & Has.SHIELD) == 0) {
+            pl.have &= ~Has.SHIELD;
+        }
         if (w.params.playerStartsShielded) {
             pl.used |= Has.SHIELD;
             if (!w.params.playerShielding) {
@@ -396,36 +529,84 @@ public final class Ships {
             }
         }
         pl.status &= ~Obj.THRUSTING;
-        w.events.add(Events.GAME_EVENT, Msg.GameEvent.SPAWN, pl.id, pl.homeBase, 0f);
+        if (pl.spawned) {
+            w.events.add(Events.GAME_EVENT, Msg.GameEvent.SPAWN, pl.id, pl.homeBase, 0f);
+        }
+    }
+
+    /**
+     * C {@code Pause_player}.
+     * <p>
+     * BEHAVIOR: on (when not paused): count = 10*FPS, SELF_DESTRUCT and PLAYING off, PAUSE on, mychar 'P'.
+     * BEHAVIOR: off (when paused and the count has run out): PAUSE off; with limitedLives, if a non-team player
+     * has lost a life it is too late: life 0, 'W', GAME_OVER; otherwise ' ', Go_home, PLAYING, and full lives
+     * with limitedLives. Otherwise nothing happens.
+     */
+    public void pause(Player pl, boolean on) {
+        Params p = w.params;
+        if (on && (pl.status & Obj.PAUSE) == 0) {
+            pl.count = 10 * p.fps;
+            pl.status &= ~(Obj.SELF_DESTRUCT | Obj.PLAYING);
+            pl.status |= Obj.PAUSE;
+            pl.mychar = 'P';
+            pl.scoreDirty = true;
+        } else if (!on && (pl.status & Obj.PAUSE) != 0 && pl.count <= 0) {
+            pl.status &= ~Obj.PAUSE;
+            pl.scoreDirty = true;
+            boolean late = false;
+            if (p.limitedLives) {
+                for (int k = 0; k < w.numPlayers; k++) {
+                    Player o = w.playerAt(k);
+                    if (o != pl && o.life < p.worldLives && !w.sameTeam(pl, o)) {
+                        late = true;
+                        break;
+                    }
+                }
+            }
+            if (late) {
+                pl.life = 0;
+                pl.mychar = 'W';
+                pl.status |= Obj.GAME_OVER;
+            } else {
+                pl.mychar = ' ';
+                goHome(pl);
+                pl.status |= Obj.PLAYING;
+                if (p.limitedLives) {
+                    pl.life = p.worldLives;
+                }
+            }
+        }
     }
 
     // ================================================================ per tick
 
     /**
-     * The per-player body of the C player loop for one sim tick.
+     * The per-player body of the C player loop for one frame.
      * <p>
      * BEHAVIOR: power/turnspeed/turnresistance are limited to their C ranges.
-     * BEHAVIOR: a counting-down dead ship is carried home (Transport_to_home) and moved, nothing else.
-     * BEHAVIOR: when the count reaches 0 a dead ship respawns at home (PLAYING + Go_home); a
-     * self-destructing ship dies (score -Rate(0, score) * selfDestructScoreMult).
-     * BEHAVIOR: paused, game-over or dead ships stop here.
-     * BEHAVIOR: then shields time out, the ship turns, shields drain fuel, refuelling transfers fuel, fuel
-     * exhaustion drops shields and thrust, thrust sets the acceleration and uses fuel, mass is updated,
+     * BEHAVIOR: a counting-down ship that is not playing (dead, or paused) is carried toward home
+     * (Transport_to_home) and moved (paused ships do not move), nothing else.
+     * BEHAVIOR: when the count reaches 0 a not-playing ship gets PLAYING and goes home (a paused one stays
+     * paused) and its SCORE status is resent; a self-destructing ship dies (score -Rate(0, score) *
+     * selfDestructScoreMult).
+     * BEHAVIOR: paused ships lose 0.01 points per frame (scored every 64th frame); paused, game-over or dead
+     * ships stop here; during the round delay every ship stops here.
+     * BEHAVIOR: then stuns and shields time out, the ship turns, shields drain fuel, refuelling transfers fuel,
+     * fuel exhaustion drops shields and thrust, thrust sets the acceleration and uses fuel, mass is updated,
      * a warping ship goes through its wormhole, gravity and acceleration change the velocity, the ship
      * moves and thrust/turn sparks are made.
      */
     public void update(Player pl) {
         Params p = w.params;
-        double dt = p.dt;
         pl.power = clamp(pl.power, Const.MIN_PLAYER_POWER, Const.MAX_PLAYER_POWER);
         pl.turnSpeed = clamp(pl.turnSpeed, Const.MIN_PLAYER_TURNSPEED, Const.MAX_PLAYER_TURNSPEED);
         pl.turnResistance = clamp(pl.turnResistance, Const.MIN_PLAYER_TURNRESISTANCE,
             Const.MAX_PLAYER_TURNRESISTANCE);
         if (pl.damaged > 0) {
-            pl.damaged = Math.max(0, pl.damaged - dt);
+            pl.damaged--;
         }
         if (pl.count > 0) {
-            pl.count = Math.max(0, pl.count - dt);
+            pl.count--;
             if ((pl.status & Obj.PLAYING) == 0) {
                 transportToHome(pl);
                 sim.mover.movePlayer(pl);
@@ -436,6 +617,7 @@ public final class Ships {
             pl.count = -1;
             if ((pl.status & Obj.PLAYING) == 0) {
                 pl.status |= Obj.PLAYING;
+                pl.scoreDirty = true;
                 goHome(pl);
             }
             if ((pl.status & Obj.SELF_DESTRUCT) != 0) {
@@ -444,23 +626,29 @@ public final class Ships {
         }
         if ((pl.status & (Obj.PLAYING | Obj.GAME_OVER | Obj.PAUSE)) != Obj.PLAYING) {
             if ((pl.status & Obj.PAUSE) != 0) {
-                pl.score -= 0.01 * dt;
+                pl.score -= 0.01;
+                if ((w.frames & 63) == 0) {
+                    pl.scoreDirty = true;
+                }
             }
             return;
         }
+        if (w.roundDelay > 0) {
+            return;
+        }
         if (pl.stunned > 0) {
-            pl.stunned = Math.max(0, pl.stunned - dt);
+            pl.stunned--;
             pl.used &= ~(Has.SHIELD | Has.LASER | Has.SHOT);
             pl.status &= ~Obj.THRUSTING;
         }
-        updateShieldTime(pl, dt);
-        double tf = turn(pl, p, dt);
+        updateShieldTime(pl);
+        long tf = turn(pl, p);
         sim.mover.turnPlayer(pl);
 
         if ((pl.used & Has.SHIELD) != 0) {
-            pl.addFuel(ED_SHIELD * dt);
+            pl.addFuel(ED_SHIELD);
         }
-        refuel(pl, dt);
+        refuel(pl);
         if (pl.fuel <= 0) {
             pl.used &= ~(Has.SHIELD | Has.CLOAKING_DEVICE | Has.DEFLECTOR);
             pl.status &= ~Obj.THRUSTING;
@@ -468,39 +656,41 @@ public final class Ships {
         if (pl.fuel > pl.fuelMax - REFUEL_RATE) {
             pl.used &= ~Has.REFUEL;
         }
-        thrustAcceleration(pl, dt);
+        thrustAcceleration(pl);
         setMass(pl);
         if ((pl.status & Obj.WARPING) != 0) {
             warp(pl);
         }
         if ((pl.status & Obj.PAUSE) == 0) {
-            pl.vx += (pl.accX + w.gravityX(pl.bx, pl.by)) * dt;
-            pl.vy += (pl.accY + w.gravityY(pl.bx, pl.by)) * dt;
+            if ((pl.status & Obj.GRAVITY) != 0) {
+                pl.vx += pl.accX + w.gravityX(pl.bx, pl.by);
+                pl.vy += pl.accY + w.gravityY(pl.bx, pl.by);
+            } else {
+                pl.vx += pl.accX;
+                pl.vy += pl.accY;
+            }
             sim.mover.movePlayer(pl);
         }
         if (((pl.used & Has.CLOAKING_DEVICE) == 0 || p.cloakedExhaust) && (pl.used & Has.PHASING_DEVICE) == 0) {
             if ((pl.status & Obj.THRUSTING) != 0) {
                 sim.debris.thrust(pl);
             }
-            if (tf > 0 && p.turnThrust) {
-                int sparks = (int) ((5 + (((long) tf) >> 2)) * dt + w.rfrac());
-                if (sparks > 0) {
-                    sim.debris.turnThrust(pl, sparks);
-                }
+            if (tf != 0 && p.turnThrust) {
+                sim.debris.turnThrust(pl, (int) (5 + (tf >> 2)));
             }
         }
         pl.used &= pl.have;
     }
 
-    private static double clamp(double v, double lo, double hi) {
-        return v > hi ? hi : (v < lo ? lo : v);
+    /** C {@code LIMIT} of a float field against double bounds. */
+    private static float clamp(float v, double lo, double hi) {
+        return v > hi ? (float) hi : (v < lo ? (float) lo : v);
     }
 
     /** Shield timer (update.c:793-805). */
-    private void updateShieldTime(Player pl, double dt) {
+    private void updateShieldTime(Player pl) {
         if (pl.shieldTime > 0) {
-            pl.shieldTime = Math.max(0, pl.shieldTime - dt);
-            if (pl.shieldTime == 0 && (pl.used & Has.EMERGENCY_SHIELD) == 0) {
+            if (--pl.shieldTime == 0 && (pl.used & Has.EMERGENCY_SHIELD) == 0) {
                 pl.used &= ~Has.SHIELD;
             }
             if ((pl.used & Has.SHIELD) == 0) {
@@ -513,32 +703,23 @@ public final class Ships {
     }
 
     /**
-     * Turning (update.c:860-905) over dt frames.
+     * Turning (update.c:860-905), in float like C.
      * <p>
-     * BEHAVIOR: with resistance r &gt; 0, turnVel follows v' = (v + acc) * r per frame, integrated exactly:
-     * v = v*r^dt + acc*r*(1-r^dt)/(1-r) (acc*dt when r = 1); floatDir += v*dt.
-     * BEHAVIOR: with r = 0 (pointer control) floatDir += (turnVel + acc)*dt and turnVel becomes 0.
-     * BEHAVIOR: with turnThrust, turning costs (long)(0.005*256*|oldTurnVel - turnVel|) fuel (C TURN_FUEL). Not
-     * multiplied by dt: the cost is per change of turn velocity, and the per-tick change already shrinks with dt,
-     * so the total over a turn matches C. Without enough fuel (fuel &lt;= cost) the turn is cancelled
-     * (turnAcc = 0, turnVel restored). Returns the fuel used (for turn sparks).
-     * BEHAVIOR: floatDir is wrapped into [0, RES).
+     * BEHAVIOR: turnVel += turnAcc, then *= turnResistance unless it is 0 (pointer control).
+     * BEHAVIOR: with turnThrust, turning costs C's double truncation (long)(1.28 * |(long)(oldTurnVel - turnVel)|)
+     * fuel (C TURN_FUEL on a long); without enough fuel (fuel &lt;= cost) the turn is cancelled (turnAcc = 0,
+     * turnVel restored) and costs nothing. Returns the cost (C {@code tf}, for turn sparks).
+     * BEHAVIOR: floatDir += turnVel, wrapped into [0, RES); with resistance 0 turnVel then becomes 0.
      */
-    double turn(Player pl, Params p, double dt) {
-        double r = pl.turnResistance;
-        if (r != 0) {
-            if (r == 1) {
-                pl.turnVel += pl.turnAcc * dt;
-            } else {
-                double rdt = Math.pow(r, dt);
-                pl.turnVel = pl.turnVel * rdt + pl.turnAcc * r * (1 - rdt) / (1 - r);
-            }
-        } else {
-            pl.turnVel += pl.turnAcc;
+    long turn(Player pl, Params p) {
+        pl.turnVel += pl.turnAcc;
+        if (pl.turnResistance != 0) {
+            pl.turnVel *= pl.turnResistance;
         }
-        double tf = 0;
+        long tf = 0;
         if (p.turnThrust) {
-            tf = (long) (TURN_FUEL * Math.abs(pl.oldTurnVel - pl.turnVel));
+            tf = (long) (pl.oldTurnVel - pl.turnVel);
+            tf = (long) (TURN_FUEL * Math.abs(tf));
             if (pl.fuel <= tf) {
                 tf = 0;
                 pl.turnAcc = 0;
@@ -548,14 +729,14 @@ public final class Ships {
                 pl.oldTurnVel = pl.turnVel;
             }
         }
-        pl.floatDir += pl.turnVel * dt;
+        pl.floatDir += pl.turnVel;
         while (pl.floatDir < 0) {
             pl.floatDir += Const.RES;
         }
         while (pl.floatDir >= Const.RES) {
             pl.floatDir -= Const.RES;
         }
-        if (r == 0) {
+        if (pl.turnResistance == 0) {
             pl.turnVel = 0;
         }
         return tf;
@@ -566,16 +747,16 @@ public final class Ships {
      * <p>
      * BEHAVIOR: stops when more than 90 px from the station, full, the station is gone, phased, or (team play
      * with teamFuel) the station belongs to another team.
-     * BEHAVIOR: otherwise moves REFUEL_RATE*dt from the station; a station with less gives the rest and
+     * BEHAVIOR: otherwise moves REFUEL_RATE from the station; a station with less gives the rest and
      * refuelling stops.
      */
-    void refuel(Player pl, double dt) {
+    void refuel(Player pl) {
         if ((pl.used & Has.REFUEL) == 0) {
             return;
         }
         FuelStation f = w.map.fuels().get(pl.fs);
         Params p = w.params;
-        if (w.wrapLength(pl.px - f.x(), pl.py - f.y()) > 90.0
+        if (w.wrapLength(pl.px - (float) f.x(), pl.py - (float) f.y()) > 90.0
             || pl.fuel >= pl.fuelMax
             || w.map.block(f.bx(), f.by()) != BlockType.FUEL
             || (pl.used & Has.PHASING_DEVICE) != 0
@@ -583,10 +764,9 @@ public final class Ships {
             pl.used &= ~Has.REFUEL;
             return;
         }
-        double rate = REFUEL_RATE * dt;
-        if (w.fuelLevel[pl.fs] > rate) {
-            w.fuelLevel[pl.fs] -= rate;
-            pl.addFuel(rate);
+        if (w.fuelLevel[pl.fs] > REFUEL_RATE) {
+            w.fuelLevel[pl.fs] -= REFUEL_RATE;
+            pl.addFuel(REFUEL_RATE);
         } else {
             pl.addFuel(w.fuelLevel[pl.fs]);
             w.fuelLevel[pl.fs] = 0;
@@ -604,12 +784,12 @@ public final class Ships {
             return;
         }
         pl.used &= ~Has.REFUEL;
-        double best = 1e9;
+        float best = 1e9f;
         java.util.List<FuelStation> fuels = w.map.fuels();
         for (int i = 0; i < fuels.size(); i++) {
             FuelStation f = fuels.get(i);
             if (w.map.block(f.bx(), f.by()) == BlockType.FUEL) {
-                double l = w.wrapLength(pl.px - f.x(), pl.py - f.y());
+                float l = w.wrapLength(pl.px - (float) f.x(), pl.py - (float) f.y());
                 if ((pl.used & Has.REFUEL) == 0 || l < best) {
                     pl.used |= Has.REFUEL;
                     pl.fs = f.index();
@@ -620,36 +800,38 @@ public final class Ships {
     }
 
     /**
-     * Thrust (update.c:1018-1037).
+     * Thrust (update.c:1018-1037), C float arithmetic.
      * <p>
-     * BEHAVIOR: acc = power * (cos, sin)(dir) / mass, with afterburners power *= 1 + n*(3.2/16); fuel use per
-     * frame (long)(power*0.0008*256) ((f*(16+2n))/16 with afterburners), times dt.
+     * BEHAVIOR: acc = power * (tcos, tsin)(dir) / mass, with afterburners power *= 1 + n*(3.2/16); fuel use per
+     * frame (long)(-f * 256) with f = (float)(power*0.0008), ((f*(16+2n))/16 with afterburners).
      * BEHAVIOR: without thrust the acceleration is zero.
      */
-    void thrustAcceleration(Player pl, double dt) {
+    void thrustAcceleration(Player pl) {
         if ((pl.status & Obj.THRUSTING) == 0) {
             pl.accX = pl.accY = 0;
             return;
         }
-        double power = pl.power;
-        double f = pl.power * 0.0008;
+        float power = pl.power;
+        float f = (float) (pl.power * 0.0008);
         int a = pl.afterburners();
+        float inert = pl.mass;
         if (a != 0) {
-            power = power * (1.0 + a * ((4.2 - 1.0) / (15 + 1.0)));
-            f = (f * ((15 + 1) + a * (3 - 1))) / (15 + 1.0);
+            power = (float) (power * (1.0 + a * ((4.2 - 1.0) / (15 + 1.0))));
+            f = (float) ((f * ((15 + 1) + a * (3 - 1))) / (15 + 1.0));
         }
-        pl.accX = power * Trig.tcos(pl.dir) / pl.mass;
-        pl.accY = power * Trig.tsin(pl.dir) / pl.mass;
-        pl.addFuel(-((long) (f * 256)) * dt);
+        pl.accX = power * Trig.tcos(pl.dir) / inert;
+        pl.accY = power * Trig.tsin(pl.dir) / inert;
+        pl.addFuel((long) (-f * 256));
     }
 
     /**
      * C {@code Player_set_mass}.
      * <p>
-     * BEHAVIOR: mass = emptyMass + fuel*0.005/256 + armor*shipMass/14 + minItemMass per other item.
+     * BEHAVIOR: mass = (float)(emptyMass + fuel*0.005/256 + sum), sum in float of armor*(shipMass/14) and
+     * minItemMass per other item.
      */
     void setMass(Player pl) {
-        double items = 0;
+        float items = 0;
         for (int i = 0; i < Item.COUNT; i++) {
             if (i == Item.FUEL.ordinal() || i == Item.TANK.ordinal()) {
                 continue;
@@ -660,7 +842,7 @@ public final class Ships {
                 items += pl.items[i] * w.params.minItemMass;
             }
         }
-        pl.mass = pl.emptyMass + pl.fuel * 0.005 / 256 + items;
+        pl.mass = (float) (pl.emptyMass + pl.fuel * 0.005 / 256 + items);
     }
 
     /** C {@code Player_hit_armor}: one armor is used up; the last one removes HAS_ARMOR. */
@@ -672,20 +854,20 @@ public final class Ships {
 
     /**
      * C {@code Transport_to_home}: velocity that carries a dead ship to its base in RECOVERY_DELAY frames,
-     * accelerating for the first half and braking for the second.
+     * accelerating for the first half and braking for the second (C floats).
      * <p>
      * BEHAVIOR: with t = count + 0.5 and T = 3*FPS: m = 2/t while 2t &lt;= T, else t' = T - t and
      * m = 4t'/(T^2 - 2t'^2); velocity = wrapped distance to the base centre * m.
      */
     void transportToHome(Player pl) {
         Base b = w.map.bases().get(pl.homeBase);
-        double bx = (b.bx() + 0.5) * Const.BLOCK_SZ;
-        double by = (b.by() + 0.5) * Const.BLOCK_SZ;
-        double dx = w.wrapDx(bx - pl.px);
-        double dy = w.wrapDy(by - pl.py);
+        float bx = (float) ((b.bx() + 0.5) * Const.BLOCK_SZ);
+        float by = (float) ((b.by() + 0.5) * Const.BLOCK_SZ);
+        float dx = (float) w.wrapDx(bx - pl.px);
+        float dy = (float) w.wrapDy(by - pl.py);
         int bigT = 3 * w.params.fps;
-        double t = pl.count + 0.5f;
-        double m;
+        float t = pl.count + 0.5f;
+        float m;
         if (2 * t <= bigT) {
             m = 2 / t;
         } else {
@@ -698,12 +880,13 @@ public final class Ships {
 
     /** Self-destruct completes (update.c:765-778). */
     private void selfDestruct(Player pl) {
+        w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, pl.id, pl.id, 0f);
         if (w.params.selfDestructScoreMult != 0) {
-            sim.scoring.score(pl, -Scoring.rate(0, pl.score) * w.params.selfDestructScoreMult);
+            sim.scoring.score(pl, -Scoring.rate(0, pl.score) * w.params.selfDestructScoreMult, pl.bx, pl.by,
+                "Self-Destruct");
         }
         pl.status |= Obj.KILLED;
         w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" has committed suicide.");
-        w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, pl.id, pl.id, 0f);
         kill(pl);
     }
 
@@ -775,17 +958,24 @@ public final class Ships {
     // ================================================================ death
 
     /**
-     * C {@code Kill_player}: explosion debris, then {@code Player_death_reset}.
+     * C {@code Kill_player}: explosion debris, then {@link #deathReset}.
+     */
+    public void kill(Player pl) {
+        sim.debris.explodeShip(pl);
+        deathReset(pl);
+    }
+
+    /**
+     * C {@code Player_death_reset}.
      * <p>
      * BEHAVIOR: velocity and acceleration zeroed, mass reset, KILL_BITS cleared (so not PLAYING), items reset,
      * respawn count = max(3*FPS, count).
      * BEHAVIOR: fuel = max((long)(fuel*0.9), initialFuel*256 + (int)(rfrac*(1+that)*0.2)), capped at the tank.
      * BEHAVIOR: unless paused: deaths++; with limited lives a life is lost and the last one ends the game
-     * (GAME_OVER), without limited lives life counts up (C).
+     * (GAME_OVER, mychar 'D'), without limited lives life counts up (C).
      * BEHAVIOR: abilities reset to DEF_HAVE / DEF_USED minus USED_KILL.
      */
-    public void kill(Player pl) {
-        sim.debris.explodeShip(pl);
+    public void deathReset(Player pl) {
         Params p = w.params;
         pl.vx = pl.vy = 0;
         pl.accX = pl.accY = 0;
@@ -811,6 +1001,7 @@ public final class Ships {
                 if (pl.life == -1) {
                     pl.life = 0;
                     pl.status |= Obj.GAME_OVER;
+                    pl.mychar = 'D';
                 }
             } else {
                 pl.life++;

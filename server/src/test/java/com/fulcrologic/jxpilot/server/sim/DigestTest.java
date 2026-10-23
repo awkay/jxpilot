@@ -36,7 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 @DisplayName("Digest")
 class DigestTest {
-    static final String[] ROWS = {"xxxxxxxx", "x  r   x", "x _ _ #x", "xxxxxxxx"};
+    static final String[] ROWS = {"xxxxxxxx", "x@ r !@x", "x _ _ #x", "xxxxxxxx"};
 
     static Simulation fresh() {
         Simulation s = TestWorlds.sim("framesPerSecond: 60", ROWS);
@@ -62,7 +62,7 @@ class DigestTest {
             () -> assertEquals(base, twice1, "two equal worlds have the same digest"),
             () -> assertEquals(twice1, twice2, "computing the digest does not change the world"),
             () -> assertNotEquals(base, changed(x -> x.world.tick++), "tick"),
-            () -> assertNotEquals(base, changed(x -> x.world.frames += 0.5), "frame clock"),
+            () -> assertNotEquals(base, changed(x -> x.world.frames += 1), "frame clock"),
             () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).cx++), "player x"),
             () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).vy += 1e-9), "player velocity"),
             () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).fuel -= 1), "player fuel"),
@@ -77,7 +77,7 @@ class DigestTest {
             () -> assertNotEquals(base, changed(x -> x.world.events.addBurst(0, 0, 0, 0)), "burst count"),
             () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).id = 9), "player id"),
             () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).cy++), "player y"),
-            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).vx += 1e-9), "player vx"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).vx += 0.5f), "player vx"),
             () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).dir++), "player dir"),
             () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).status ^= 1), "player status"),
             () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).used ^= 1), "player abilities"),
@@ -88,7 +88,38 @@ class DigestTest {
             () -> assertNotEquals(base, changed(x -> x.world.objects.type[x.world.objects.active[0]] = 2), "object type"),
             () -> assertNotEquals(base, changed(x -> x.world.objects.cx[x.world.objects.active[0]] += 1), "object x"),
             () -> assertNotEquals(base, changed(x -> x.world.objects.vx[x.world.objects.active[0]] += 1), "object vx"),
-            () -> assertNotEquals(base, changed(x -> x.world.objects.vy[x.world.objects.active[0]] += 1), "object vy"));
+            () -> assertNotEquals(base, changed(x -> x.world.objects.vy[x.world.objects.active[0]] += 1), "object vy"),
+            () -> assertNotEquals(base, changed(x -> x.world.rng.nextInt()), "RNG state"),
+            () -> assertNotEquals(base, changed(x -> x.world.targetDeadTime[0] = 3), "target state"),
+            () -> assertNotEquals(base, changed(x -> x.world.wormLastDest[0] = 5), "wormhole destination"),
+            () -> assertNotEquals(base, changed(x -> x.world.wormCountdown[0] = 5), "wormhole countdown"),
+            () -> assertNotEquals(base, changed(x -> x.world.roundDelay = 3), "round delay"),
+            () -> assertNotEquals(base, changed(x -> x.world.roundTime = 3), "round time"),
+            () -> assertNotEquals(base, changed(x -> x.world.roundsPlayed = 3), "rounds played"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).accX = 1), "player acc x"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).accY = 1), "player acc y"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).turnVel = 1), "player turn velocity"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).oldTurnVel = 1), "player old turn velocity"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).turnAcc = 1), "player turn acceleration"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).power = 9), "player power"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).turnSpeed = 9), "player turnspeed"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).turnResistance = 0.5f), "player resistance"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).mass = 1), "player mass"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).have ^= 1), "player have"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).shieldTime = 4), "player shield time"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).team = 4), "player team"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).life = 4), "player lives"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).shots = 4), "player shots"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).shotTime = 4), "player shot time"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).homeBase = 4), "player home base"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).prevKeys = 4), "player keys"),
+            () -> assertNotEquals(base, changed(x -> x.world.playerAt(0).items[3] = 4), "player items"),
+            () -> assertNotEquals(base, changed(x -> x.world.objects.owner[x.world.objects.active[0]] = 9), "object owner"),
+            () -> assertNotEquals(base, changed(x -> x.world.objects.team[x.world.objects.active[0]] = 9), "object team"),
+            () -> assertNotEquals(base, changed(x -> x.world.objects.status[x.world.objects.active[0]] ^= 1), "object status"),
+            () -> assertNotEquals(base, changed(x -> x.world.objects.mass[x.world.objects.active[0]] += 1), "object mass"),
+            () -> assertNotEquals(base, changed(x -> x.world.objects.fuseLife[x.world.objects.active[0]] += 1), "object fuse"),
+            () -> assertNotEquals(base, changed(x -> x.world.objects.mods[x.world.objects.active[0]] ^= 1), "object mods"));
         Player p = s.world.playerAt(0);
         assertEquals(1, p.id, "fixture sanity: one player");
     }

@@ -33,6 +33,7 @@ import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
+import com.fulcrologic.jxpilot.server.world.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -46,7 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@link Mover#movePlayer} and {@link Mover#wallBounce}: C {@code Move_player} (walls.c:2209-2599).
- * Worlds run at 60 fps (dt = 1) unless stated. The default ship at heading 0 has hull points (15,0), (-9,8),
+ * Worlds run at 60 fps unless stated (one tick is one C frame at any fps). The default ship at heading 0 has hull points (15,0), (-9,8),
  * (-9,-8) px = (960,0), (-576,512), (-576,-512) clicks from its centre.
  */
 class MoverPlayerTest {
@@ -67,7 +68,7 @@ class MoverPlayerTest {
         Params p = s.world.params;
         p.friction = 0;
         p.coriolis = 0;
-        p.playerWallBrakeFactor = 0.5;
+        p.playerWallBrakeFactor = 0.5f;
         p.maxUnshieldedWallBounceSpeed = 10;
         p.maxShieldedWallBounceSpeed = 20;
         p.maxUnshieldedAngle = 64;
@@ -91,11 +92,9 @@ class MoverPlayerTest {
         p.remember();
         p.dir = dir;
         p.floatDir = dir;
-        p.vx = vx;
-        p.vy = vy;
-        p.velocity = Math.hypot(vx, vy);
-        p.remX = 0;
-        p.remY = 0;
+        p.vx = (float) vx;
+        p.vy = (float) vy;
+        p.velocity = (float) Math.hypot(vx, vy);
         p.lastWallTouch = -1;
         s.world.objects.clear();
         return p;
@@ -148,7 +147,6 @@ class MoverPlayerTest {
                 () -> assertEquals(10000 - 768, p.fuel, "fuel drops by cost << 8 * wallBounceFuelDrainMult = 768"),
                 () -> assertEquals(7.0, p.lastWallTouch, "last wall touch is now"),
                 () -> assertEquals(10176 >> 6, p.prevX, "the bounce makes the new position the previous one"),
-                () -> assertEquals(0.0, p.remX, "the remainder is reset"),
                 () -> assertEquals(false, killed(p), "the ship survives"),
                 () -> assertEquals(expectedSparks, o.count(), "intensity 3: 1 + (int)(rfrac * 2) sparks"),
                 () -> assertEquals(Obj.SPARK, o.type[h], "the particles are sparks"),
@@ -160,6 +158,18 @@ class MoverPlayerTest {
         }
 
         @Test
+        @DisplayName("a traced move near the wall that touches nothing keeps the pre-move position as the previous one")
+        void tracedNoBounce() {
+            Simulation s = sim("", RIGHT_WALL);
+            Player p = ship(s, 10112, 5600, 0, 1, 0);
+            s.mover.movePlayer(p);
+            assertAll(
+                () -> assertEquals(10112 + 64, p.cx, "moved 1 px towards the wall, no bounce"),
+                () -> assertEquals(1.0, p.vx, "velocity unchanged"),
+                () -> assertEquals(10112 >> 6, p.prevX, "previous position: before the move"));
+        }
+
+        @Test
         @DisplayName("cost formula: (long)((1-brake/2)*(int)(mass-0.75*emptyMass)*((int)speed>>2)) * (RES/2+|delta|)/RES")
         void costFormula() {
             Simulation s = sim("", RIGHT_WALL);
@@ -167,9 +177,9 @@ class MoverPlayerTest {
             Params prm = w.params;
             prm.maxUnshieldedWallBounceSpeed = 30;
             prm.wallBounceFuelDrainMult = 2;
-            prm.wallBounceExplosionMult = Math.sqrt(2);
-            // heading up; its rightmost hull point (-9,-8) rotated is at +511 clicks, 100 clicks from the wall
-            Player p = ship(s, 11200 - 100 - 511, 5600, 32, 20, 0);
+            prm.wallBounceExplosionMult = (float) Math.sqrt(2);
+            // heading up; its rightmost hull point (-9,-8) rotated is at +512 clicks (C float rotation), 100 from the wall
+            Player p = ship(s, 11200 - 100 - 512, 5600, 32, 20, 0);
             p.mass = 30;
             p.fuel = 100000;
             w.rng.seed(42);
@@ -181,7 +191,7 @@ class MoverPlayerTest {
                 () -> assertEquals(100000 - 21504, p.fuel, "fuel drops by 42 * 256 * 2"),
                 () -> assertEquals(expectedSparks, w.objects.count(), "29 + (int)(rfrac * 30) sparks for intensity 59"),
                 () -> assertEquals(-10.0, p.vx, "velocity reflected and halved"),
-                () -> assertEquals(10099, p.cx, "100 in, bounce, (int)(-1180*0.5) = 590 back"),
+                () -> assertEquals(10098, p.cx, "100 in, bounce, (int)(-1180*0.5) = 590 back"),
                 () -> assertEquals(5600, p.cy, "y unchanged (the nose is 15 px above the centre)"),
                 () -> assertEquals(32, p.dir, "the heading is outside RES/16 of the normal: unchanged"),
                 () -> assertEquals(32.0, p.floatDir, "floatDir unchanged"));
@@ -198,19 +208,19 @@ class MoverPlayerTest {
             b.world.params.playerWallBrakeFactor = 0;
             // heading 127: leftmost hull point is at -600 clicks
             Player pb = ship(b, 4480 + 100 + 600, 5600, 127, -4, 0);
-            pb.floatDir = 127.4;
+            pb.floatDir = 127.4f;
             b.mover.movePlayer(pb);
             Simulation c = sim("", LEFT_WALL);
             c.world.params.playerWallBrakeFactor = 0;
             Player pc = ship(c, 4480 + 100 + 600, 5600, 1, -4, 0);
-            pc.floatDir = 0.6;
+            pc.floatDir = 0.6f;
             c.mover.movePlayer(pc);
             assertAll(
                 () -> assertEquals(62.0, pa.floatDir, 1e-9, "heading 60, normal 64: floatDir += 0.5 * 4"),
                 () -> assertEquals(60, pa.dir, "dir itself is left to Turn_player"),
                 () -> assertTrue(pa.vx < 0, "(it bounced)"),
-                () -> assertEquals(0.4, pb.floatDir, 1e-9, "127.4 + 1 = 128.4 wraps to 0.4"),
-                () -> assertEquals(127.6, pc.floatDir, 1e-9, "0.6 - 1 = -0.4 wraps to 127.6"),
+                () -> assertEquals((127.4f + 1.0f) - 128, pb.floatDir, "127.4 + 1 = 128.4 wraps to 0.4 (C float)"),
+                () -> assertEquals((0.6f - 1.0f) + 128, pc.floatDir, "0.6 - 1 = -0.4 wraps to 127.6 (C float)"),
                 () -> assertEquals(0.0, pb.vx, "brake factor 0 stops the ship"));
         }
 
@@ -236,7 +246,7 @@ class MoverPlayerTest {
         @DisplayName("too fast: CRASH_WALL_SPEED ('smashed'), killed on the face, braked velocity, no fuel cost")
         void speed() {
             Simulation s = sim("", RIGHT_WALL);
-            s.world.params.maxUnshieldedWallBounceSpeed = 3.9;
+            s.world.params.maxUnshieldedWallBounceSpeed = 3.9f;
             Player p = headOn(s);
             s.mover.movePlayer(p);
             assertAll(
@@ -366,7 +376,7 @@ class MoverPlayerTest {
             q.used = Has.EMERGENCY_SHIELD;
             e.mover.movePlayer(q);
             Simulation hi = sim("", RIGHT_WALL);
-            hi.world.params.maxShieldedWallBounceSpeed = 3.5;
+            hi.world.params.maxShieldedWallBounceSpeed = 3.5f;
             hi.world.params.maxUnshieldedWallBounceSpeed = 3;
             Player r = ship(hi, 10112, 5600, 0, 120, 0);
             r.used = Has.SHIELD | Has.EMERGENCY_SHIELD;
@@ -417,7 +427,7 @@ class MoverPlayerTest {
             u.items[Item.ARMOR.ordinal()] = 3;
             unneeded.mover.movePlayer(u);
             Simulation tooFast = sim("", RIGHT_WALL);
-            tooFast.world.params.maxUnshieldedWallBounceSpeed = 3.5;
+            tooFast.world.params.maxUnshieldedWallBounceSpeed = 3.5f;
             tooFast.world.params.maxShieldedWallBounceSpeed = 3;
             Player v = headOn(tooFast);
             v.have = Has.ARMOR;
@@ -542,10 +552,10 @@ class MoverPlayerTest {
         final int c = 4 * BC + 1000;
 
         @Test
-        @DisplayName("far from walls the ship moves vel*dt with the remainder carried")
-        void remainder() {
+        @DisplayName("far from walls the ship moves FLOAT_TO_CLICK(vel) clicks, the fraction dropped as in C")
+        void truncates() {
             Simulation s = sim("", OPEN);
-            Player p = ship(s, c, c, 0, 1.0078125, 0);
+            Player p = ship(s, c, c, 0, 1.0078125, -1.0078125);
             p.prevX = -5;
             s.mover.movePlayer(p);
             int x1 = p.cx;
@@ -554,44 +564,45 @@ class MoverPlayerTest {
             assertAll(
                 () -> assertEquals(c + 64, x1, "tick 1: 64 of 64.5 clicks"),
                 () -> assertEquals(c >> 6, prev1, "the previous position is remembered before moving"),
-                () -> assertEquals(c + 129, p.cx, "tick 2: 65 clicks"),
-                () -> assertEquals(1.0078125, p.velocity, "velocity is the speed"));
+                () -> assertEquals(c + 128, p.cx, "tick 2: 64 again (no remainder is carried)"),
+                () -> assertEquals(c - 128, p.cy, "negative velocity truncates toward zero"),
+                () -> assertEquals((float) Math.hypot(1.0078125, 1.0078125), p.velocity,
+                    "velocity is the speed (C VECTOR_LENGTH as a float)"));
         }
 
         @Test
-        @DisplayName("friction damps velocity by (1-f)^dt; blockFriction applies on FRICTION blocks unless phased")
+        @DisplayName("friction multiplies by (1.0f - f) in float; blockFriction applies on FRICTION blocks unless phased")
         void friction() {
             Simulation s = sim("", OPEN);
-            s.world.params.friction = 0.1;
+            s.world.params.friction = 0.1f;
             Player p = ship(s, c, c, 0, 10, 0);
             s.mover.movePlayer(p);
             Simulation slow = sim("framesPerSecond: 14", OPEN);
-            slow.world.params.friction = 0.1;
+            slow.world.params.friction = 0.1f;
             Player q = ship(slow, c, c, 0, 10, 0);
             slow.mover.movePlayer(q);
-            double vq = 10 * Math.pow(0.9, 14.0 / 60);
+            float vp = (1.0f - 0.1f) * (10f * 1f + 0f * 0f);
             String[] fr = OPEN.clone();
             fr[4] = "    z    ";
             Simulation f = sim("", fr);
-            f.world.params.blockFriction = 0.5;
+            f.world.params.blockFriction = 0.5f;
             Player r = ship(f, c, c, 0, 10, 0);
             f.mover.movePlayer(r);
             Simulation ph = sim("", fr);
-            ph.world.params.blockFriction = 0.5;
+            ph.world.params.blockFriction = 0.5f;
             Player t = ship(ph, c, c, 0, 10, 0);
             t.used = Has.PHASING_DEVICE;
             ph.mover.movePlayer(t);
             assertAll(
-                () -> assertEquals(9.0, p.vx, 1e-12, "60 fps: 10 * 0.9"),
-                () -> assertEquals(c + 576, p.cx, "and moves 9 px = 576 clicks"),
-                () -> assertEquals(vq, q.vx, 1e-12, "14 fps: 10 * 0.9^(14/60)"),
-                () -> assertEquals(c + (int) (vq * (14.0 / 60) * 64), q.cx, "and moves vel*dt"),
-                () -> assertEquals(5.0, r.vx, "on a friction block blockFriction 0.5 halves the velocity"),
-                () -> assertEquals(10.0, t.vx, "a phased ship uses the normal friction (0) there"));
+                () -> assertEquals(vp, p.vx, "10 * (1.0f - 0.1f) in float (C: 9.0000004)"),
+                () -> assertEquals(c + (int) (vp * 64), p.cx, "and moves FLOAT_TO_CLICK(vx)"),
+                () -> assertEquals(vp, q.vx, "14 fps damps exactly the same per tick (one tick is one frame)"),
+                () -> assertEquals(5.0f, r.vx, "on a friction block blockFriction 0.5 halves the velocity"),
+                () -> assertEquals(10.0f, t.vx, "a phased ship uses the normal friction (0) there"));
         }
 
         @Test
-        @DisplayName("coriolis rotates the velocity clockwise by coriolis*dt degrees (MOD RES)")
+        @DisplayName("coriolis rotates the velocity clockwise by coriolis*RES/360 RES units (MOD RES), float tables")
         void coriolis() {
             Simulation s = sim("", OPEN);
             s.world.params.coriolis = 90;
@@ -603,24 +614,21 @@ class MoverPlayerTest {
             n.mover.movePlayer(q);
             Simulation f = sim("", OPEN);
             f.world.params.coriolis = 360;
-            f.world.params.friction = 0.5;
+            f.world.params.friction = 0.5f;
             Player r = ship(f, c, c, 0, 2, 2);
             f.mover.movePlayer(r);
             Simulation slow = sim("framesPerSecond: 14", OPEN);
             slow.world.params.coriolis = 90;
-            slow.world.params.friction = 0.5;
             Player t = ship(slow, c, c, 0, 2, 0);
             slow.mover.movePlayer(t);
-            double a = Math.PI / 2 * 14.0 / 60;
-            double damp = Math.pow(0.5, 14.0 / 60);
+            float c32 = Trig.tcos(32);
             assertAll(
-                () -> assertEquals(0.0, p.vx, 1e-12, "90 degrees: (2,0) -> (0,-2): x"),
-                () -> assertEquals(-2.0, p.vy, 1e-12, "90 degrees: (2,0) -> (0,-2): y"),
-                () -> assertEquals(2.0, q.vy, 1e-12, "-90 degrees is MOD2(-32, RES) = 96: (2,0) -> (0,2)"),
-                () -> assertEquals(1.0, r.vx, 1e-12, "360 degrees is no rotation; friction 0.5 still halves x"),
-                () -> assertEquals(1.0, r.vy, 1e-12, "and y"),
-                () -> assertEquals(damp * 2 * Math.cos(a), t.vx, 1e-12, "14 fps: rotated by 90*dt degrees and damped: x"),
-                () -> assertEquals(-damp * 2 * Math.sin(a), t.vy, 1e-12, "y"));
+                () -> assertEquals((1.0f - 0f) * (2f * c32 + 0f), p.vx, "90 degrees: (2,0) -> (2*tcos(32), -2): x"),
+                () -> assertEquals(-2.0f, p.vy, "90 degrees: (2,0) -> (0,-2): y"),
+                () -> assertEquals(2.0f, q.vy, "-90 degrees is MOD2(-32, RES) = 96: (2,0) -> (0,2)"),
+                () -> assertEquals(1.0f, r.vx, "360 degrees is no rotation; friction 0.5 still halves x"),
+                () -> assertEquals(1.0f, r.vy, "and y"),
+                () -> assertEquals(-2.0f, t.vy, "14 fps rotates by the same 90 degrees per tick"));
         }
 
         @Test
@@ -630,18 +638,13 @@ class MoverPlayerTest {
             Player p = ship(s, c, c, 64, 200, 0);
             p.velocity = 122;
             s.mover.movePlayer(p);
-            Simulation slow = sim("framesPerSecond: 14", OPEN);
-            Player r = ship(slow, c, c, 64, 1000, 0);
-            r.velocity = 200;
-            slow.mover.movePlayer(r);
             Simulation t = sim("", OPEN);
             Player q = ship(t, c, c, 64, 200, 0);
             t.mover.movePlayer(q);
             assertAll(
                 () -> assertEquals(c + 12800, p.cx,
                     "stale speed 122 = ((10-3)*35)>>1: free flight, the ship jumps 200 px, even out of the world"),
-                () -> assertEquals(c + (int) (1000 * (14.0 / 60) * 64), r.cx, "14 fps: 200 * dt = 46.7 <= 122: free flight"),
-                () -> assertEquals(200.0, p.velocity, "velocity is updated afterwards"),
+                () -> assertEquals(200.0f, p.velocity, "velocity is updated afterwards"),
                 () -> assertEquals(-200.0, q.vx, "with the real speed the move is traced and bounces off the edge"),
                 () -> assertEquals(16406, q.cx, "7840 + 1120 in open-space chunks, 663 to the edge, 3177 back"));
         }
@@ -652,6 +655,7 @@ class MoverPlayerTest {
             Simulation s = sim("", OPEN);
             Player p = ship(s, c, c, 64, 100, 0);
             p.velocity = 200;
+            int prev0 = p.prevX;
             s.mover.movePlayer(p);
             Simulation t = sim("", OPEN);
             Player q = ship(t, c, c, 0, 40, -140);
@@ -671,7 +675,8 @@ class MoverPlayerTest {
                 () -> assertEquals(c - 8960, q.cy, "y arrives at -8960 (a 7840 vertical chunk, then traced)"),
                 () -> assertEquals(c + 19200 - wr.world.clickWidth, r.cx, "with wrap the chunks wrap around: x"),
                 () -> assertEquals(c - 19200 + wy.world.clickHeight, u.cy, "with wrap the chunks wrap around: y"),
-                () -> assertEquals(300.0, r.vx, "no bounce"));
+                () -> assertEquals(300.0, r.vx, "no bounce"),
+                () -> assertEquals(prev0, p.prevX, "without a bounce or crash the previous position is kept"));
         }
 
         @Test
@@ -723,9 +728,9 @@ class MoverPlayerTest {
             assertAll(
                 () -> assertEquals(10112 + 64, x1, "drifts 64 of 64.5 clicks"),
                 () -> assertEquals(10112 >> 6, prev1, "remembers the old position"),
-                () -> assertEquals(10112 + 129, p.cx, "then 65: the remainder is carried"),
-                () -> assertEquals(Math.hypot(1.0078125, 1.0078125), p.velocity, "velocity is recomputed"),
-                () -> assertEquals(5600 - 129, p.cy, "y drifts too (-64, then -65)"),
+                () -> assertEquals(10112 + 128, p.cx, "then 64 again: nothing is carried"),
+                () -> assertEquals((float) Math.hypot(1.0078125, 1.0078125), p.velocity, "velocity is recomputed"),
+                () -> assertEquals(5600 - 128, p.cy, "y drifts too (-64, then -64)"),
                 () -> assertEquals(10112, q.cx, "a killed ship does not move"),
                 () -> assertEquals(5.0, q.velocity, "but its velocity is updated: |(3,4)| = 5"),
                 () -> assertEquals(10112, r.cx, "a paused ship does not move"),
@@ -785,7 +790,7 @@ class MoverPlayerTest {
             a.wormhole = 2;
             a.target = 3;
             a.treasure = 4;
-            a.start(10, 20, 1.5, -2.5, 30, 40, 7);
+            a.start(10, 20, 1.5f, -2.5f, 30, 40, 7);
             MoveState src = new MoveState();
             src.edgeWrap = true;
             src.edgeBounce = true;
@@ -834,8 +839,8 @@ class MoverPlayerTest {
         final int c = 4 * BC + 1000;
 
         @Test
-        @DisplayName("a traced move without contact carries the remainder; one with a bounce resets it")
-        void remainder() {
+        @DisplayName("a traced move truncates its velocity to clicks like a free one")
+        void traced() {
             Simulation s = sim("", RIGHT_WALL);
             Player p = ship(s, 9300, 5600, 0, 1.0078125, 0.0078125);
             s.mover.movePlayer(p);
@@ -845,11 +850,8 @@ class MoverPlayerTest {
             assertAll(
                 () -> assertEquals(2, s.world.wallDist(4, 2), "(fixture: traced)"),
                 () -> assertEquals(9364, p.cx, "64 of 64.5 clicks"),
-                () -> assertEquals(0.5, p.remX, "the half click is carried"),
-                () -> assertEquals(0.5, p.remY, "on both axes"),
-                () -> assertEquals(0.0, q.remY, "on both axes"),
-                () -> assertEquals(10176, q.cx, "256 of 256.5 clicks: same bounce as at speed 4"),
-                () -> assertEquals(0.0, q.remX, "a bounce drops the remainder"));
+                () -> assertEquals(5600, p.cy, "0.5 clicks is nothing"),
+                () -> assertEquals(10176, q.cx, "256 of 256.5 clicks: same bounce as at speed 4"));
         }
 
         @Test
@@ -859,10 +861,12 @@ class MoverPlayerTest {
             s.world.params.coriolis = 45;
             Player p = ship(s, c, c, 0, 2, 1);
             s.mover.movePlayer(p);
-            double r = Math.sqrt(0.5);
+            float c16 = Trig.tcos(16);
+            float s16 = Trig.tsin(16);
             assertAll(
-                () -> assertEquals(3 * r, p.vx, 1e-12, "x = vx cos + vy sin"),
-                () -> assertEquals(-r, p.vy, 1e-12, "y = vy cos - vx sin"));
+                () -> assertEquals((1.0f - 0f) * (2f * c16 + 1f * s16), p.vx, "x = (1-f) * (vx tcos + vy tsin) in float"),
+                () -> assertEquals((1.0f - 0f) * (1f * c16 - 2f * s16), p.vy, "y = (1-f) * (vy tcos - vx tsin)"),
+                () -> assertEquals(3 * Math.sqrt(0.5), p.vx, 1e-6, "about 3/sqrt2 (float rounding)"));
         }
 
         @Test

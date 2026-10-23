@@ -37,8 +37,7 @@ import com.fulcrologic.jxpilot.server.world.World;
  * {@code Cannon_fire} ({@code src/server/cannon.c}) for the plain-shot weapon (cannons have no items in
  * S1, so {@code Cannon_select_weapon} always picks CW_SHOT and draws no random numbers).
  * <p>
- * Time scaling: C checks a live cannon with probability 1/16 per frame; we use dt/16 per tick, so cannons
- * fire at the same average rate.
+ * One tick is one C frame: a live cannon looks for a target with probability 1/16 per frame.
  */
 public final class Cannons {
     /** C {@code CANNON_DISTANCE}. */
@@ -63,20 +62,18 @@ public final class Cannons {
      * One tick for every cannon.
      * <p>
      * BEHAVIOR: a dead cannon counts down and comes back (its block becomes CANNON again) at zero.
-     * BEHAVIOR: a live cannon looks for a target with probability dt/16 and fires if it finds one.
+     * BEHAVIOR: a live cannon looks for a target with probability 1/16 and fires if it finds one.
      */
     public void update() {
-        double dt = w.params.dt;
         for (int i = 0; i < w.cannonDeadTime.length; i++) {
             if (w.cannonDeadTime[i] > 0) {
-                w.cannonDeadTime[i] = Math.max(0, w.cannonDeadTime[i] - dt);
-                if (w.cannonDeadTime[i] == 0) {
+                if (--w.cannonDeadTime[i] == 0) {
                     Cannon c = w.map.cannons().get(i);
                     w.map.setBlock(c.bx(), c.by(), BlockType.CANNON);
                 }
                 continue;
             }
-            if (w.rfrac() * 16 < dt) {
+            if (w.rfrac() * 16 < 1) {
                 checkFire(i);
             }
         }
@@ -124,7 +121,7 @@ public final class Cannons {
             if (Math.abs(tdy) >= visualRange) {
                 continue;
             }
-            int tdist = (int) Math.hypot(tdx, tdy);
+            int tdist = (int) StrictMath.hypot(tdx, tdy);
             if (tdist > visualRange) {
                 continue;
             }
@@ -144,7 +141,7 @@ public final class Cannons {
                 case 3 -> {
                     if (tdist < range) {
                         // C: DFLOAT time = tdist / speed with two ints, an integer division.
-                        double time = tdist / speed;
+                        float time = tdist / speed;
                         int npx = (int) (pl.px + pl.vx * time + pl.accX * time * time);
                         int npy = (int) (pl.py + pl.vy * time + pl.accY * time * time);
                         int ndx = (int) w.wrapDx(npx - cpx);
@@ -152,7 +149,7 @@ public final class Cannons {
                         int tdir = (int) XMath.findDir(ndx, ndy);
                         int ddir = (tdir - c.dir()) & (Const.RES - 1);
                         if ((ddir < (CANNON_SPREAD * 0.5) || ddir > Const.RES - (CANNON_SPREAD * 0.5))
-                            && (int) Math.hypot(ndx, ndy) < closest) {
+                            && (int) StrictMath.hypot(ndx, ndy) < closest) {
                             dir = tdir;
                             found = true;
                         }

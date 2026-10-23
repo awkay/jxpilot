@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.sim;
 
+import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Cannon;
@@ -283,7 +284,35 @@ class CrashesTest {
             assertAll(
                 () -> assertTrue((a.status & Obj.KILLED) != 0, "the ship is killed"),
                 () -> assertEquals(-10.0 * 1024 / (2000 + 1024), a.score, EPS, "loses Rate(2000, 0)"),
-                () -> assertEquals(List.of("2:-1:" + a.id), gameEvents(w, seq), "emits CRASH"));
+                () -> assertEquals(List.of("2:" + a.id + ":-1"), gameEvents(w, seq), "emits CRASH"));
+        }
+
+        @Test
+        @DisplayName("the CRASH event carries the C crash kind and comes before its score popup (S12 / client order)")
+        void crashKindAndOrder() {
+            setup("");
+            long seq = w.events.seq();
+            s.crashes.playerCrashed(a, ms(CRASH_WALL_SPEED), 2);
+            int first = com.fulcrologic.jxpilot.server.world.Events.index(seq + 1);
+            List<String> ev = ShipFx.events(w, seq);
+            assertAll(
+                () -> assertEquals(com.fulcrologic.jxpilot.server.world.Events.GAME_EVENT, w.events.kind[first],
+                    "after the message comes the crash event"),
+                () -> assertEquals((float) Msg.GameEvent.CRASH_WALL, w.events.value[first], "value = CRASH_WALL"),
+                () -> assertTrue(ev.get(2).startsWith("SCORE_OBJECT " + a.id + " "), "then the score popup: " + ev),
+                () -> assertTrue(ev.get(2).endsWith(" [Wall]"), "labelled like C's hudmsg"),
+                () -> assertEquals(List.of(Msg.GameEvent.CRASH_WALL, Msg.GameEvent.CRASH_WALL, Msg.GameEvent.CRASH_WALL,
+                        Msg.GameEvent.CRASH_WALL, Msg.GameEvent.CRASH_TARGET, Msg.GameEvent.CRASH_TREASURE,
+                        Msg.GameEvent.CRASH_CANNON, Msg.GameEvent.CRASH_UNIVERSE, Msg.GameEvent.CRASH_UNKNOWN),
+                    List.of(Crashes.crashKind(CRASH_WALL), Crashes.crashKind(CRASH_WALL_SPEED),
+                        Crashes.crashKind(CRASH_WALL_NO_FUEL), Crashes.crashKind(CRASH_WALL_ANGLE),
+                        Crashes.crashKind(CRASH_TARGET), Crashes.crashKind(CRASH_TREASURE),
+                        Crashes.crashKind(CRASH_CANNON), Crashes.crashKind(CRASH_UNIVERSE),
+                        Crashes.crashKind(CRASH_UNKNOWN)), "each C crash kind maps to its sub-type"),
+                () -> assertEquals(List.of("[Wall]", "[Target]", "[Treasure]", "[Cannon]", "[Universe]", "[Bug]"),
+                    List.of(Crashes.hud(CRASH_WALL_ANGLE), Crashes.hud(CRASH_TARGET), Crashes.hud(CRASH_TREASURE),
+                        Crashes.hud(CRASH_CANNON), Crashes.hud(CRASH_UNIVERSE), Crashes.hud(CRASH_UNKNOWN)),
+                    "C hudmsg labels"));
         }
 
         @Test
@@ -401,14 +430,14 @@ class CrashesTest {
             a.shovePusher[0] = b.id;
             a.shoveTime[0] = 80;
             a.shovePusher[1] = c.id;
-            a.shoveTime[1] = 79.9;
+            a.shoveTime[1] = 79;
             a.shovePusher[2] = 77;
             a.shoveTime[2] = 99;
             long seq = w.events.seq();
             s.crashes.playerCrashed(a, ms(CRASH_WALL), 1);
             assertAll(
                 () -> assertEquals(List.of("A crashed against a wall with help from B."), messages(w, seq),
-                    "a shove exactly 20 frames old counts, 20.1 does not, departed ids are skipped"),
+                    "a shove exactly 20 frames old counts, 21 does not, departed ids are skipped"),
                 () -> assertEquals(1, b.kills, "the only shover gets the kill"),
                 () -> assertEquals(0.0, c.score, EPS, "the stale shover gets nothing"),
                 () -> assertEquals(1, s.crashes.collectPushers(a), "one pusher counted"));

@@ -181,17 +181,16 @@ class ShipsFuelTest {
         }
 
         @Test
-        void at14FpsTheTransferIsScaledByDt() {
+        void at14FpsATickTransfersOneFrameOfFuel() {
             Simulation s = sim(FPS14, STATIONS);
             World w = s.world;
             Player p = s.ships.join("a", 0);
             unshield(p);
             int f = station(w, 3);
             tick(s, p, REFUEL);
-            double dt = 14.0 / 60;
             assertAll(
-                () -> assertEquals(5120 + 15 * dt - 1280 * dt, w.fuelLevel[f], 1e-9, "station: +15*dt - 1280*dt"),
-                () -> assertEquals(256000 + 1280 * dt, p.fuel, 1e-9, "player: +1280*dt"));
+                () -> assertEquals(5120 + 15 - 1280.0, w.fuelLevel[f], "station: +15 - 1280 (one tick is one frame)"),
+                () -> assertEquals(256000 + 1280.0, p.fuel, "player: +1280"));
         }
 
         @Test
@@ -215,20 +214,20 @@ class ShipsFuelTest {
             s.ships.startRefuel(p);
             // the station centre is (122.5, 227.5); ship pixels are whole numbers
             p.initPixels(213, 227); // dx 90.5: beyond 90 px
-            s.ships.refuel(p, 1);
+            s.ships.refuel(p);
             int far = p.used & Has.REFUEL;
             p.initPixels(212, 227); // dx 89.5, dy -0.5: within 90 px
             s.ships.startRefuel(p);
-            s.ships.refuel(p, 1);
+            s.ships.refuel(p);
             int at90 = p.used & Has.REFUEL;
             double fuelAt90 = p.fuel;
             p.fuel = p.fuelMax;
-            s.ships.refuel(p, 1);
+            s.ships.refuel(p);
             int full = p.used & Has.REFUEL;
             p.fuel = 1000;
             s.ships.startRefuel(p);
             w.map.setBlock(3, 6, BlockType.SPACE);
-            s.ships.refuel(p, 1);
+            s.ships.refuel(p);
             assertAll(
                 () -> assertEquals(0, far, "90.5 px away stops refuelling (> 90.0)"),
                 () -> assertEquals(Has.REFUEL, at90, "89.5 px away still refuels"),
@@ -245,7 +244,7 @@ class ShipsFuelTest {
             Player p = s.ships.join("a", 0);
             s.ships.startRefuel(p);
             p.used |= Has.PHASING_DEVICE;
-            s.ships.refuel(p, 1);
+            s.ships.refuel(p);
             assertAll(
                 () -> assertEquals(0, p.used & Has.REFUEL, "phasing stops refuelling"),
                 () -> assertEquals(256000.0, p.fuel, "no fuel is moved"));
@@ -282,7 +281,7 @@ class ShipsFuelTest {
             Player p = s.ships.join("a", 0);
             s.ships.startRefuel(p);
             w.fuelLevel[p.fs] = 1280;
-            s.ships.refuel(p, 1);
+            s.ships.refuel(p);
             assertAll(
                 () -> assertEquals(256000 + 1280.0, p.fuel, "the last 1280 are given"),
                 () -> assertEquals(0.0, w.fuelLevel[p.fs], "the station is empty"),
@@ -296,15 +295,15 @@ class ShipsFuelTest {
             Player two = s.ships.join("two", 2);
             one.initPixels(two.px, two.py);
             s.ships.startRefuel(one);
-            s.ships.refuel(one, 1);
+            s.ships.refuel(one);
             s.ships.startRefuel(two);
-            s.ships.refuel(two, 1);
+            s.ships.refuel(two);
             Simulation open = sim(C_FRAMES + "teamPlay: yes\n", TEAM_STATION);
             Player o1 = open.ships.join("one", 1);
             Player o2 = open.ships.join("two", 2);
             o1.initPixels(o2.px, o2.py);
             open.ships.startRefuel(o1);
-            open.ships.refuel(o1, 1);
+            open.ships.refuel(o1);
             assertAll(
                 () -> assertEquals(2, s.world.map.fuels().get(0).team(), "the station belongs to team 2"),
                 () -> assertEquals(256000.0, one.fuel, "team 1 gets nothing from team 2's station"),
@@ -326,10 +325,9 @@ class ShipsFuelTest {
             Player p = s.ships.join("a", 0);
             w.fuelLevel[1] = 500 * 256 - 1;
             tick(s, p, 0);
-            double dt = 14.0 / 60;
             assertAll(
                 () -> assertEquals(5120.0, none, "nothing without players"),
-                () -> assertEquals(5120 + 15 * dt, w.fuelLevel[0], 1e-9, "(int)(1*15.36) = 15 per frame, times dt"),
+                () -> assertEquals(5120 + 15.0, w.fuelLevel[0], "(int)(1*15.36) = 15 per frame (= tick)"),
                 () -> assertEquals(500 * 256.0, w.fuelLevel[1], "capped at MAX_STATION_FUEL"));
         }
     }

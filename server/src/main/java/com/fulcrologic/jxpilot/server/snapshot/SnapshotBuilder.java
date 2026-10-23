@@ -45,15 +45,16 @@ import java.nio.ByteBuffer;
  * Fills SNAPSHOT bodies for one viewer from the {@link World} with common's {@link SnapshotWriter}.
  * Allocation free; one instance per server thread.
  * <p>
- * Sections in priority order: SELF, SHIP (other playing ships in view), SHOT (grouped by
- * kind/colour relative to the viewer), BURST (bursts made since the viewer's cursor, in view), CANNON,
- * FUEL, and RADAR (whole world, when requested). Objects farther than the view half-size from the viewer
- * (or not encodable, {@link SnapshotWriter#inView}) are culled. When a datagram fills up, the snapshot
- * continues in the next buffer as a new self-contained part (same tick, part numbers 0..n-1, the last
- * flagged {@link SnapshotWriter#FLAG_LAST_PART}); what does not fit in the given buffers is dropped.
+ * Sections in order: SELF, SHIP (other ships in view), CANNON, FUEL, RADAR (whole world, when requested),
+ * BURST (bursts made since the viewer's cursor, in view) and last SHOT, which fills the remaining room
+ * nearest first ({@link ShotHash}, grouped by kind/colour relative to the viewer). Objects farther than the
+ * view half-size from the viewer (or not encodable, {@link SnapshotWriter#inView}) are culled. When a
+ * datagram fills up, the snapshot continues in the next buffer as a new self-contained part (same tick,
+ * part numbers 0..n-1, the last flagged {@link SnapshotWriter#FLAG_LAST_PART}); a record that does not fit
+ * in the given buffers is dropped, and smaller records of later sections are still tried.
  * <p>
- * The header tick is the tick whose simulation produced this state ({@code world.tick - 1}); burst ages
- * are measured from it.
+ * The header tick is the number of the sim tick whose result this is ({@link World#tick} after
+ * {@code Simulation.tick}); burst ages are measured from it.
  */
 public final class SnapshotBuilder {
     /** Default view half-width/height in pixels (the C client's maximum view is 1024 px wide). */
@@ -61,8 +62,14 @@ public final class SnapshotBuilder {
     /** Extra margin for bursts, whose particles spread from the origin. */
     public static final double BURST_MARGIN = 400;
 
+    /** Assumed section headers per part when estimating the room left for shots. */
+    static final int SHOT_SECTIONS_PER_PART = 8;
+
     private final World w;
     private final SnapshotWriter wr = new SnapshotWriter();
+    private final ShotHash hash;
+    /** {@link World#frames} when {@link #hash} was last rebuilt (-1: never). */
+    private long hashFrames = -1;
     private final int[] shotList;
     private final int[] shotVariant;
     private double viewHalfX = DEFAULT_VIEW_HALF;
@@ -75,7 +82,8 @@ public final class SnapshotBuilder {
     private final int[] partStart = new int[MAX_PARTS];
     private int maxParts;
     private int part;
-    private boolean full;
+    /** Smallest record size that failed to fit in the last buffer (records this big are skipped). */
+    private int failedSize;
     private int curType = -1;
     private int curVariant;
     private int tick;
@@ -88,6 +96,31 @@ public final class SnapshotBuilder {
         wr.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
         shotList = new int[w.objects.capacity];
         shotVariant = new int[w.objects.capacity];
+        hash = new ShotHash(w);
+        initRecordClasses();
+    }
+
+    /**
+     * Load and initialize every {@link Records} record class now, so the first snapshot does not allocate
+     * while the JVM loads them lazily.
+     */
+    public static void initRecordClasses() {
+        for (Class<?> c : Records.class.getDeclaredClasses()) {
+            try {
+                Class.forName(c.getName(), true, c.getClassLoader());
+            } catch (ClassNotFoundException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+    }
+
+    /**
+     * Start a snapshot round: rebuild the shot hash from the current objects. {@link #build} does this by
+     * itself once per tick ({@link World#frames}); call it after changing objects within a tick.
+     */
+    public void beginRound() {
+        hash.rebuild();
+        hashFrames = w.frames;
     }
 
     /** Set the view half-size in pixels (C view size / 2 plus a margin). */
@@ -112,23 +145,26 @@ public final class SnapshotBuilder {
     public int build(Player viewer, int lastInputSeq, long burstFrom, boolean radar, ByteBuffer[] parts) {
         this.parts = parts;
         this.maxParts = Math.min(parts.length, MAX_PARTS);
-        this.tick = w.tick - 1;
+        this.tick = w.tick;
         this.lastInputSeq = lastInputSeq;
         this.cx = viewer.cx / (double) Click.CLICK;
         this.cy = viewer.cy / (double) Click.CLICK;
+        if (hashFrames != w.frames) {
+            beginRound();
+        }
         part = -1;
-        full = false;
+        failedSize = Integer.MAX_VALUE;
         curType = -1;
         startPart();
         writeSelf(viewer);
         writeShips(viewer);
-        writeShots(viewer);
-        writeBursts(burstFrom);
         writeCannons();
         writeFuel();
         if (radar) {
             writeRadar(viewer);
         }
+        writeBursts(burstFrom);
+        writeShots(viewer);
         closeSection();
         int count = part + 1;
         for (int i = 0; i < count; i++) {
@@ -155,24 +191,28 @@ public final class SnapshotBuilder {
 
     /**
      * Make sure a section of (type, variant) is open with room for one record, starting a new part if
-     * needed. Returns false when all buffers are full (the record is dropped).
+     * needed.
+     * <p>
+     * BEHAVIOR: returns false when the record fits in none of the buffers: only that record is dropped;
+     * records of the same or a larger size are skipped from then on, smaller ones are still tried.
      */
     private boolean need(int type, int variant) {
-        if (full) {
-            return false;
-        }
         if (curType == type && curVariant == variant && wr.hasRoom()) {
             return true;
+        }
+        int size = Section.recordSize(type);
+        if (size >= failedSize) {
+            return false;
         }
         closeSection();
         if (!wr.beginSection(type, variant)) {
             if (part + 1 >= maxParts) {
-                full = true;
+                failedSize = size;
                 return false;
             }
             startPart();
             if (!wr.beginSection(type, variant)) {
-                full = true;
+                failedSize = size;
                 return false;
             }
         }
@@ -224,13 +264,21 @@ public final class SnapshotBuilder {
         }
         Records.Self.put(wr, v.id, shipFlags(v, v), (float) cx, (float) cy, (float) v.vx, (float) v.vy,
             (float) heading(v), (float) (v.fuel / 256), (float) (v.fuelMax / 256), Protocol.NO_ID, 0, 0,
-            (v.status & Obj.PLAYING) == 0 && v.count > 0 ? (int) Math.ceil(v.count) : 0);
+            (v.status & Obj.PLAYING) == 0 && v.count > 0 ? v.count : 0);
+    }
+
+    /**
+     * BEHAVIOR: other ships are sent when playing or paused and not GAME_OVER (C frame.c: dead ships being
+     * carried home are not shown; a paused ship is shown, with the PAUSED flag).
+     */
+    static boolean shown(Player pl) {
+        return (pl.status & (Obj.PLAYING | Obj.PAUSE)) != 0 && (pl.status & Obj.GAME_OVER) == 0;
     }
 
     private void writeShips(Player v) {
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
-            if (pl == v || !pl.isAlive()) {
+            if (pl == v || !shown(pl)) {
                 continue;
             }
             double x = pl.cx / (double) Click.CLICK;
@@ -242,7 +290,11 @@ public final class SnapshotBuilder {
         }
     }
 
-    /** BEHAVIOR: the SHOT section variant of a shot relative to the viewer (kind and colour). */
+    /**
+     * BEHAVIOR: the SHOT section variant of a shot relative to the viewer: kind, colour, and
+     * {@code FLAG_HARMLESS} when C frame.c would draw it as harmless to the viewer (team immune owner, paused
+     * owner, an unowned shot of the viewer's team in team play, or the viewer's own shot with selfImmunity).
+     */
     int shotVariant(int h, Player v) {
         Objects o = w.objects;
         int kind;
@@ -264,24 +316,62 @@ public final class SnapshotBuilder {
         } else {
             color = Records.ObjColor.ENEMY;
         }
-        return Records.ShotKind.variant(kind, color);
+        return Records.ShotKind.variant(kind, color, harmless(owner, o.team[h], v));
     }
 
-    private void writeShots(Player v) {
-        Objects o = w.objects;
-        int n = 0;
-        for (int k = 0; k < o.count(); k++) {
-            int h = o.active[k];
-            if ((o.type[h] & (Obj.SHOT | Obj.CANNON_SHOT)) == 0 || o.life[h] <= 0) {
-                continue;
-            }
-            if (!visible(o.cx[h] / (double) Click.CLICK, o.cy[h] / (double) Click.CLICK, 0)) {
-                continue;
-            }
-            shotList[n] = h;
-            shotVariant[n] = shotVariant(h, v);
-            n++;
+    /** C frame.c:818-828 for a shot of {@code owner}/{@code team} seen by {@code v}. */
+    boolean harmless(int owner, int team, Player v) {
+        if (w.teamImmune(owner, v.id)) {
+            return true;
         }
+        if (owner != Obj.NO_ID) {
+            Player op = w.byId(owner);
+            if (op != null && (op.status & Obj.PAUSE) != 0) {
+                return true;
+            }
+        } else if (w.params.teamPlay && team == v.team) {
+            return true;
+        }
+        return owner == v.id && w.params.selfImmunity;
+    }
+
+    /**
+     * BEHAVIOR: how many more SHOT records fit in the open part and the unused buffers, keeping
+     * {@link #SHOT_SECTIONS_PER_PART} section headers of room per part.
+     */
+    int shotRoom() {
+        int bytes = parts[part].remaining() - SHOT_SECTIONS_PER_PART * Section.HEADER_SIZE;
+        for (int p = part + 1; p < maxParts; p++) {
+            bytes += parts[p].remaining() - SnapshotWriter.HEADER_SIZE - SHOT_SECTIONS_PER_PART * Section.HEADER_SIZE;
+        }
+        return Math.max(0, bytes / Records.Shot.SIZE);
+    }
+
+    /** Shots in view, nearest cells first, up to the room left; then grouped by variant. */
+    private void writeShots(Player v) {
+        int cap = shotRoom();
+        ShotHash hs = hash;
+        int n = 0;
+        int vcx = (int) Math.floor(cx / ShotHash.CELL);
+        int vcy = (int) Math.floor(cy / ShotHash.CELL);
+        int rx = Math.min(ShotHash.RADIUS, (int) Math.ceil(viewHalfX / ShotHash.CELL) + 1);
+        int ry = Math.min(ShotHash.RADIUS, (int) Math.ceil(viewHalfY / ShotHash.CELL) + 1);
+        hs.beginWalk();
+        for (int k = 0; k < hs.ringX.length && n < cap; k++) {
+            int c = hs.cellAt(k, vcx, vcy, rx, ry);
+            if (c < 0) {
+                continue;
+            }
+            for (int i = hs.start[c], e = hs.start[c + 1]; i < e && n < cap; i++) {
+                if (!visible(hs.x[i], hs.y[i], 0)) {
+                    continue;
+                }
+                shotList[n] = i;
+                shotVariant[n] = shotVariant(hs.handle[i], v);
+                n++;
+            }
+        }
+        Objects o = w.objects;
         // group by variant: repeatedly emit the variant of the first not-yet-written shot
         for (int i = 0; i < n; i++) {
             int var = shotVariant[i];
@@ -293,9 +383,10 @@ public final class SnapshotBuilder {
                     continue;
                 }
                 shotVariant[j] = -1;
-                int h = shotList[j];
+                int e = shotList[j];
+                int h = hs.handle[e];
                 if (need(Section.SHOT, var)) {
-                    Records.Shot.put(wr, o.cx[h] / (double) Click.CLICK, o.cy[h] / (double) Click.CLICK, o.vx[h], o.vy[h]);
+                    Records.Shot.put(wr, hs.x[e], hs.y[e], o.vx[h], o.vy[h]);
                 }
             }
         }

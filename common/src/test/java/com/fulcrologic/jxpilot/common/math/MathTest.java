@@ -97,6 +97,10 @@ class MathTest {
                 () -> assertEquals(32.0, XMath.findDir(0, 1), EPS, "up is 32"),
                 () -> assertEquals(96.0, XMath.findDir(0, -1), EPS, "down is 96 (wraps negatives)"),
                 () -> assertEquals(0.0, XMath.findDir(0, 0), EPS, "zero vector is 0"),
+                () -> assertEquals((float) (StrictMath.atan2(4, 3) / (2 * Math.PI)) * 128, XMath.findDir(3, 4),
+                    "C DFLOAT: the angle is rounded to float before scaling by RES (bit-exact)"),
+                () -> assertEquals(((float) (StrictMath.atan2(-4, 3) / (2 * Math.PI)) + 1f) * 128,
+                    XMath.findDir(3, -4), "C DFLOAT: angle++ happens in float"),
                 () -> assertEquals(3.0, XMath.clamp(5.0, 1.0, 3.0), EPS, "clamps high"),
                 () -> assertEquals(1.0, XMath.clamp(-5.0, 1.0, 3.0), EPS, "clamps low"),
                 () -> assertEquals(2.0, XMath.clamp(2.0, 1.0, 3.0), EPS, "keeps values inside"),
@@ -753,34 +757,30 @@ class MathTest {
             DebrisBurst n = new DebrisBurst();
             DebrisBurst a = new DebrisBurst();
             Rng rng = new Rng(0);
-            ThrustSparks.compute(1234, 100, 200, 0, 1.5f, -2f, 45, 0, 60, 14, 1f, 9000, rng, n, a);
+            ThrustSparks.compute(1234, 100, 200, 0, 1.5f, -2f, 45, 0, 60, 14, 9000, rng, n, a);
             // independent replay of the draws
             Rng r = new Rng(1234);
             int thisRand = r.nextInt() & 3;
-            int total = (int) (45 * 0.15 + thisRand + 1);
-            int perTick = (int) (total * 1f + r.nextFloat());
+            int perTick = (int) (45 * 0.15 + thisRand + 1);
             int seedA = r.nextInt();
             int seedB = r.nextInt();
             DebrisBurst n2 = new DebrisBurst();
             DebrisBurst a2 = new DebrisBurst();
-            ThrustSparks.compute(1234, 100, 200, 0, 1.5f, -2f, 45, 15, 60, 14, 1f, 9000, rng, n2, a2);
+            ThrustSparks.compute(1234, 100, 200, 0, 1.5f, -2f, 45, 15, 60, 14, 9000, rng, n2, a2);
             int alt = ((perTick - 1) * 15 >> 4) + 1;
+            DebrisBurst one = new DebrisBurst();
+            DebrisBurst oneAlt = new DebrisBurst();
+            ThrustSparks.compute(1234, 100, 200, 0, 1.5f, -2f, 45, 1, 60, 14, 9000, rng, one, oneAlt);
             DebrisBurst capped = new DebrisBurst();
-            ThrustSparks.compute(1, 0, 0, 100, 0, 0, 45, 0, 10, 10, 1f, 0, rng, capped, new DebrisBurst());
+            ThrustSparks.compute(1, 0, 0, 100, 0, 0, 45, 0, 10, 10, 0, rng, capped, new DebrisBurst());
             DebrisBurst uncapped = new DebrisBurst();
-            ThrustSparks.compute(1, 0, 0, 100, 0, 0, 45, 0, 5, 14, 1f, 0, rng, uncapped, new DebrisBurst());
+            ThrustSparks.compute(1, 0, 0, 100, 0, 0, 45, 0, 5, 14, 0, rng, uncapped, new DebrisBurst());
             DebrisBurst tiny = new DebrisBurst();
-            ThrustSparks.compute(1, 0, 0, 100, 0, 0, 45, 0, 2, 1, 1f, 0, rng, tiny, new DebrisBurst());
+            ThrustSparks.compute(1, 0, 0, 100, 0, 0, 45, 0, 2, 1, 0, rng, tiny, new DebrisBurst());
             DebrisBurst equalFps = new DebrisBurst();
-            ThrustSparks.compute(1, 0, 0, 100, 0, 0, 45, 0, 14, 14, 1f, 0, rng, equalFps, new DebrisBurst());
-            DebrisBurst quarter = new DebrisBurst();
-            ThrustSparks.compute(1234, 0, 0, 0, 0, 0, 45, 0, 60, 14, 0.25f, 0, rng, quarter, new DebrisBurst());
-            Rng rq = new Rng(1234);
-            int qRand = rq.nextInt() & 3;
-            int qTotal = (int) (45 * 0.15 + qRand + 1);
-            int qExpected = (int) (qTotal * 0.25f + rq.nextFloat());
+            ThrustSparks.compute(1, 0, 0, 100, 0, 0, 45, 0, 14, 14, 0, rng, equalFps, new DebrisBurst());
             assertAll(
-                () -> assertEquals(perTick, n.count, "per original frame: (int)(power*0.15 + rand + 1) sparks"),
+                () -> assertEquals(perTick, n.count, "per C frame (= sim tick): (int)(power*0.15 + rand + 1) sparks"),
                 () -> assertTrue(n.count >= 7 && n.count <= 10, "power 45 gives 7..10 sparks"),
                 () -> assertEquals(0, a.count, "no afterburner sparks without afterburners"),
                 () -> assertEquals(37, n.minDir, "min dir = (int)(dir + 64 - 25.6 - 1)"),
@@ -803,8 +803,35 @@ class MathTest {
                 () -> assertEquals(18, uncapped.maxLife, "shotLife < fps does not cap"),
                 () -> assertEquals(2, tiny.minLife, "a shotLife below 3 also lowers the min life"),
                 () -> assertEquals(2, tiny.maxLife, "and the max life"),
-                () -> assertEquals(qExpected, quarter.count, "a quarter frame per tick scales and stochastically rounds"),
+                () -> assertEquals(1, oneAlt.count, "one afterburner: ((n-1)*1 >> 4) + 1 = 1 blue spark, as C"),
+                () -> assertEquals(perTick - 1, one.count, "one afterburner leaves the rest red"),
                 () -> assertEquals(14, equalFps.maxLife, "shotLife == fps also caps the max life"));
+        }
+
+        @Test
+        @DisplayName("computeWire quantizes the ship state like the wire, then computes")
+        void computeWire() {
+            Rng rng = new Rng(0);
+            DebrisBurst n = new DebrisBurst();
+            DebrisBurst a = new DebrisBurst();
+            ThrustSparks.computeWire(7, 3, 100.30, 200.80, 1.25f, -2.5f, 96, 1.53, -0.44, 45.5f, 3, 60, 14,
+                9000, rng, n, a);
+            DebrisBurst n2 = new DebrisBurst();
+            DebrisBurst a2 = new DebrisBurst();
+            ThrustSparks.compute(ThrustSparks.seed(7, 3), 100.5f + 1.25f, 201.0f - 2.5f, 96, 1.5f, -0.4375f, 45.5f,
+                3, 60, 14, 9000, rng, n2, a2);
+            assertAll(
+                () -> assertEquals(100.5f, ThrustSparks.wirePos(100.30), "positions round to half pixels"),
+                () -> assertEquals(201.0f, ThrustSparks.wirePos(200.80), "up as well"),
+                () -> assertEquals(-0.4375f, ThrustSparks.wireVel(-0.44), "velocities round to 1/16"),
+                () -> assertEquals(n2.x, n.x, "engine x = quantized x + engine offset"),
+                () -> assertEquals(n2.y, n.y, "engine y = quantized y + engine offset"),
+                () -> assertEquals(n2.vx, n.vx, "velocity x quantized"),
+                () -> assertEquals(n2.vy, n.vy, "velocity y quantized"),
+                () -> assertEquals(n2.seed, n.seed, "seeded from (tick, id)"),
+                () -> assertEquals(n2.count, n.count, "same count"),
+                () -> assertEquals(a2.count, a.count, "same afterburner split"),
+                () -> assertEquals(n2.maxSpeed, n.maxSpeed, "power passes through as the float"));
         }
     }
 

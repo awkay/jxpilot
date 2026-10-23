@@ -331,6 +331,38 @@ public final class Msg {
         }
     }
 
+    /**
+     * {@link ReliableType#SCORE_OBJECT}: a score change shown at a map position on the receiver's HUD
+     * (C {@code Send_score_object}, sent to the player whose score changed).
+     */
+    public static final class ScoreObject implements Payload {
+        /** Points gained (negative when lost). */
+        public float score;
+        /** Block coordinates where the points were made. */
+        public int bx;
+        public int by;
+        /** Short label ("[Wall]", a player name, ...); may be empty. */
+        public final StringBuilder text = new StringBuilder();
+
+        public void write(ByteBuffer b) {
+            b.putFloat(score);
+            b.putShort((short) bx);
+            b.putShort((short) by);
+            Wire.putString8(b, text);
+        }
+
+        public void read(ByteBuffer b) {
+            score = b.getFloat();
+            bx = b.getShort() & 0xFFFF;
+            by = b.getShort() & 0xFFFF;
+            Wire.getString8(b, text);
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.SCORE_OBJECT);
+        }
+    }
+
     /** {@link ReliableType#PLAYER_LEAVE}. */
     public static final class PlayerLeave implements Payload {
         public int id;
@@ -479,12 +511,33 @@ public final class Msg {
 
     /** {@link ReliableType#GAME_EVENT}: generic event with two ids and a value. */
     public static final class GameEvent implements Payload {
-        /** a = killer (or NO_ID), b = victim. */
+        /**
+         * a = killer (or NO_ID), b = victim. A shove into a wall is a KILL by the last pusher with value = the
+         * crash sub-type ({@link #CRASH_WALL}...); other kills have value 0.
+         */
         public static final int KILL = 1;
-        /** a = player who crashed. */
+        /**
+         * a = player who crashed, b = the other ship in a two-ship crash (else NO_ID), value = the crash
+         * sub-type ({@link #CRASH_WALL}...).
+         */
         public static final int CRASH = 2;
         /** a = player, b = base index. */
         public static final int SPAWN = 3;
+
+        /** CRASH / shove-KILL value: a wall (C CrashWall, CrashWallSpeed, CrashWallNoFuel, CrashWallAngle). */
+        public static final int CRASH_WALL = 1;
+        /** CRASH value: a target. */
+        public static final int CRASH_TARGET = 2;
+        /** CRASH value: a treasure. */
+        public static final int CRASH_TREASURE = 3;
+        /** CRASH value: a cannon. */
+        public static final int CRASH_CANNON = 4;
+        /** CRASH value: left the known universe. */
+        public static final int CRASH_UNIVERSE = 5;
+        /** CRASH value: two ships crashed into each other. */
+        public static final int CRASH_SHIPS = 6;
+        /** CRASH value: C CrashUnknown ("slammed into a programming error"). */
+        public static final int CRASH_UNKNOWN = 7;
         /** a = winning team or player, value = score. */
         public static final int ROUND_END = 4;
         /** a = player, b = target/treasure index. */

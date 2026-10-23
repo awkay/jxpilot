@@ -34,8 +34,8 @@ import java.nio.file.Path;
 
 /**
  * Test fixtures: small worlds built from map rows (row 0 is the TOP of the map, as in .xp files) plus
- * option lines, and helpers to run ticks. {@code framesPerSecond: 60} makes dt = 1, so one sim tick is
- * exactly one original C frame and C formulas apply verbatim.
+ * option lines, and helpers to run ticks. One sim tick is exactly one C frame at every framesPerSecond,
+ * so C formulas apply verbatim.
  */
 public final class TestWorlds {
     private TestWorlds() {}

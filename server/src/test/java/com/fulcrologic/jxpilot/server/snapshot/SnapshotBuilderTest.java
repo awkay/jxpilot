@@ -49,6 +49,7 @@ import java.util.TreeMap;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("SnapshotBuilder")
@@ -83,8 +84,8 @@ class SnapshotBuilderTest {
         c.initPixels(1800, 120);
         a.dir = 10;
         b.dir = 40;
-        b.vx = 2.5;
-        b.vy = -1.0;
+        b.vx = 2.5f;
+        b.vy = -1.0f;
         b.used &= ~Has.SHIELD;
         a.used |= Has.SHIELD;
         a.fuel = 500.5 * 256;
@@ -183,13 +184,13 @@ class SnapshotBuilderTest {
             int farShot = sim.shots.fire(c, c.team, false, 1800, 140, Obj.SHOT, 0, 0);
             a.vx = 0;
             a.fuel = 500.5 * 256;
-            b.vx = 2.5;
-            b.vy = -1.0;
+            b.vx = 2.5f;
+            b.vy = -1.0f;
             long burstFrom = w.events.burstSeq();
-            sim.debris.make(250, 110, 1, 0, a.id, a.team, Obj.DEBRIS, 3.5, Obj.GRAVITY, Records.ObjColor.RED,
+            sim.debris.make(250, 110, 1, 0, a.id, a.team, Obj.DEBRIS, 3.5f, Obj.GRAVITY, Records.ObjColor.RED,
                 Records.BurstKind.DEBRIS, 8, 10, 10, 0, 127, 20, 30, 5, 20);
             w.tick = 44;
-            sim.debris.make(1900, 110, 0, 0, Obj.NO_ID, 0, Obj.DEBRIS, 3.5, Obj.GRAVITY, Records.ObjColor.RED,
+            sim.debris.make(1900, 110, 0, 0, Obj.NO_ID, 0, Obj.DEBRIS, 3.5f, Obj.GRAVITY, Records.ObjColor.RED,
                 Records.BurstKind.DEBRIS, 8, 10, 10, 0, 127, 20, 30, 5, 20);
             w.tick = 46;
             sim.crashes.cannonDies(0, Obj.NO_ID);
@@ -207,8 +208,9 @@ class SnapshotBuilderTest {
             int cannon = Records.ShotKind.variant(Records.ShotKind.CANNON_SHOT, Records.ObjColor.ENEMY);
             assertAll(
                 () -> assertEquals(1, n, "everything fits in one part"),
-                () -> assertEquals(List.of(45, 77, 0, 1, SnapshotWriter.FLAG_LAST_PART).toString(),
-                    toList(d.headers.get(0)).toString(), "header: tick of the last simulated tick, input seq, part 0 of 1, last"),
+                () -> assertEquals(List.of(46, 77, 0, 1, SnapshotWriter.FLAG_LAST_PART).toString(),
+                    toList(d.headers.get(0)).toString(),
+                    "header: world.tick (the tick just simulated), input seq, part 0 of 1, last"),
                 () -> assertEquals(List.of(a.id + " " + (Records.ShipFlags.SHIELD | Records.ShipFlags.FRIENDLY) + " "
                     + ax + "," + ay + " v0.0,0.0 h" + (float) (10 * 2 * Math.PI / Const.RES) + " f500.5/2600.0"),
                     d.self, "SELF has full-precision position, heading dir*2pi/RES and fuel in units"),
@@ -222,9 +224,9 @@ class SnapshotBuilderTest {
                     d.shots.get(own), "shot position and whole-pixel velocity"),
                 () -> assertEquals(2, d.bursts.size(), "the bursts in view are sent (the far one is culled)"),
                 () -> assertTrue(d.bursts.get(0).startsWith(near.x + "," + near.y + " n10 k" + Records.BurstKind.DEBRIS
-                    + " c" + Records.ObjColor.RED + " age3 seed" + near.seed), "burst parameters, age = 45 - 42"),
+                    + " c" + Records.ObjColor.RED + " age4 seed" + near.seed), "burst parameters, age = 46 - 42"),
                 () -> assertTrue(d.bursts.get(1).contains(" k" + Records.BurstKind.DEBRIS + " c" + Records.ObjColor.RED
-                    + " age0 "), "the dying cannon burst follows (a future tick clamps to age 0)"),
+                    + " age0 "), "the dying cannon burst of this tick follows with age 0"),
                 () -> assertEquals(List.of("0:" + Records.CannonState.FLAG_DEAD), d.cannons, "the dead cannon is flagged"),
                 () -> assertEquals(1, d.fuel.size(), "the fuel station in view is sent"),
                 () -> assertEquals(0.5, Float.parseFloat(d.fuel.get(0).substring(2)), 1.0 / 65535,
@@ -279,7 +281,7 @@ class SnapshotBuilderTest {
                 () -> {
                     for (int p = 0; p < n; p++) {
                         int[] h = d.headers.get(p);
-                        assertEquals(42 - 1, h[0], "part " + p + " has the snapshot tick");
+                        assertEquals(42, h[0], "part " + p + " has the snapshot tick (world.tick)");
                         assertEquals(p, h[2], "part " + p + " is numbered");
                         assertEquals(n, h[3], "part " + p + " has the part count");
                         assertEquals(p == n - 1 ? SnapshotWriter.FLAG_LAST_PART : 0, h[4], "only the last part is flagged");
@@ -347,12 +349,50 @@ class SnapshotBuilderTest {
                 () -> assertEquals(Records.ShipFlags.FRIENDLY, sb.shipFlags(p2, p1) & Records.ShipFlags.FRIENDLY,
                     "a team mate is FRIENDLY"),
                 () -> assertEquals(0, sb.shipFlags(p3, p1) & Records.ShipFlags.FRIENDLY, "an opponent is not"),
-                () -> assertEquals(Records.ShotKind.variant(0, Records.ObjColor.TEAM), sb.shotVariant(mate, p1),
-                    "a team mate's shot is TEAM"),
+                () -> assertEquals(Records.ShotKind.variant(0, Records.ObjColor.TEAM, true), sb.shotVariant(mate, p1),
+                    "a team mate's shot is TEAM, and harmless with teamImmunity"),
                 () -> assertEquals(Records.ShotKind.variant(0, Records.ObjColor.ENEMY), sb.shotVariant(foe, p1),
                     "an opponent's shot is ENEMY"),
                 () -> assertEquals(Records.ShotKind.variant(0, Records.ObjColor.NEUTRAL), sb.shotVariant(unowned, p1),
                     "an unowned shot of another team is NEUTRAL"));
+        }
+
+        @Test
+        @DisplayName("the harmless flag follows C frame.c: team immune, paused owner, unowned own team, selfImmunity")
+        void harmless() {
+            Simulation ts = TestWorlds.sim("framesPerSecond: 60\ngravity: 0\nteamPlay: yes\nteamImmunity: no",
+                "xxxxxxxxxx", "x 1 1 2  x", "x        x", "xxxxxxxxxx");
+            World tw = ts.world;
+            Player p1 = TestWorlds.join(ts, "p1", 1);
+            Player p2 = TestWorlds.join(ts, "p2", 1);
+            Player p3 = TestWorlds.join(ts, "p3", 2);
+            SnapshotBuilder sb = new SnapshotBuilder(tw);
+            int mate = ts.shots.fire(p2, p2.team, false, 100, 60, Obj.SHOT, 0, 0);
+            int foe = ts.shots.fire(p3, p3.team, false, 100, 60, Obj.SHOT, 0, 0);
+            int own = ts.shots.fire(p1, p1.team, false, 100, 60, Obj.SHOT, 0, 0);
+            int unownedMine = tw.objects.alloc();
+            tw.objects.type[unownedMine] = Obj.CANNON_SHOT;
+            tw.objects.team[unownedMine] = 1;
+            int unownedOther = tw.objects.alloc();
+            tw.objects.type[unownedOther] = Obj.CANNON_SHOT;
+            tw.objects.team[unownedOther] = 2;
+            boolean mateNoImmunity = Records.ShotKind.harmless(sb.shotVariant(mate, p1));
+            boolean foeLive = Records.ShotKind.harmless(sb.shotVariant(foe, p1));
+            boolean ownNoSelf = Records.ShotKind.harmless(sb.shotVariant(own, p1));
+            p3.status |= Obj.PAUSE;
+            boolean foePaused = Records.ShotKind.harmless(sb.shotVariant(foe, p1));
+            tw.params.selfImmunity = true;
+            boolean ownSelf = Records.ShotKind.harmless(sb.shotVariant(own, p1));
+            assertAll(
+                () -> assertFalse(mateNoImmunity, "a team mate's shot hurts without teamImmunity"),
+                () -> assertFalse(foeLive, "an opponent's shot hurts"),
+                () -> assertTrue(foePaused, "a paused owner's shot is harmless"),
+                () -> assertFalse(ownNoSelf, "the own shot hurts without selfImmunity"),
+                () -> assertTrue(ownSelf, "the own shot is harmless with selfImmunity"),
+                () -> assertTrue(Records.ShotKind.harmless(sb.shotVariant(unownedMine, p1)),
+                    "an unowned shot of the own team is harmless in team play"),
+                () -> assertFalse(Records.ShotKind.harmless(sb.shotVariant(unownedOther, p1)),
+                    "an unowned shot of another team hurts"));
         }
 
         @Test
@@ -433,12 +473,12 @@ class SnapshotBuilderTest {
     @DisplayName("other fields")
     class Fields {
         @Test
-        @DisplayName("a dead viewer's SELF carries the frames until respawn (rounded up); a live one 0")
+        @DisplayName("a dead viewer's SELF carries the frames until respawn; a live one 0")
         void respawn() {
             Records.Self self = new Records.Self();
             SnapshotReader r = new SnapshotReader();
             a.status &= ~Obj.PLAYING;
-            a.count = 41.2;
+            a.count = 41;
             new SnapshotBuilder(w).build(a, 0, w.events.burstSeq(), false, parts);
             ByteBuffer buf = parts[0].duplicate().flip();
             r.begin(buf);
@@ -452,7 +492,7 @@ class SnapshotBuilderTest {
             r.nextSection();
             int alive = self.wrap(r, 0).respawnFrames();
             assertAll(
-                () -> assertEquals(42, dead, "41.2 frames left are sent as 42"),
+                () -> assertEquals(41, dead, "41 frames left are sent as 41"),
                 () -> assertEquals(0, alive, "a playing ship sends 0"));
         }
 
@@ -494,14 +534,181 @@ class SnapshotBuilderTest {
         }
 
         @Test
-        @DisplayName("a buffer too small for any record gives one empty, last part")
+        @DisplayName("a buffer too small for any record gives one empty, last part; I8: a record that does not fit drops only itself")
         void tiny() {
+            ByteBuffer none = ByteBuffer.allocate(SnapshotWriter.HEADER_SIZE + 7);
+            int n = new SnapshotBuilder(w).build(a, 0, w.events.burstSeq(), true, new ByteBuffer[] {none});
             ByteBuffer small = ByteBuffer.allocate(SnapshotWriter.HEADER_SIZE + 10);
-            int n = new SnapshotBuilder(w).build(a, 0, w.events.burstSeq(), true, new ByteBuffer[] {small});
+            new SnapshotBuilder(w).build(a, 0, w.events.burstSeq(), true, new ByteBuffer[] {small});
             assertAll(
                 () -> assertEquals(1, n, "one part"),
-                () -> assertEquals(SnapshotWriter.HEADER_SIZE, small.position(), "only the header was written"),
-                () -> assertEquals(SnapshotWriter.FLAG_LAST_PART, small.get(10), "flagged last"));
+                () -> assertEquals(SnapshotWriter.HEADER_SIZE, none.position(), "only the header was written"),
+                () -> assertEquals(SnapshotWriter.FLAG_LAST_PART, none.get(10), "flagged last"),
+                () -> assertEquals(SnapshotWriter.HEADER_SIZE + 5 + 3, small.position(),
+                    "SELF (38 bytes) did not fit, but a later 3-byte record (cannon) still did"),
+                () -> assertEquals(Section.CANNON, small.get(SnapshotWriter.HEADER_SIZE), "the cannon section"));
+        }
+    }
+
+    int shotAt(World wd, int owner, double x, double y) {
+        int h = wd.objects.alloc();
+        wd.objects.type[h] = Obj.SHOT;
+        wd.objects.owner[h] = owner;
+        wd.objects.life[h] = 10;
+        wd.objects.initPixels(h, x, y);
+        return h;
+    }
+
+    @Nested
+    @DisplayName("budget, order and visibility (perf F1/F2, I3, I7)")
+    class Budget {
+        @Test
+        @DisplayName("under saturation the fixed sections are all present and the nearest shots win the room")
+        void saturation() {
+            List<String> near = new ArrayList<>();
+            for (int i = 0; i < 30; i++) {
+                int h = shotAt(w, b.id, 160 + i * 3, 100 + (i % 5) * 8);
+                near.add(w.objects.cx[h] / 64f + "," + w.objects.cy[h] / 64f);
+            }
+            for (int i = 0; i < 1500; i++) {
+                shotAt(w, b.id, 700 + (i % 100), 100 + (i / 100) * 2);
+            }
+            long burstFrom = w.events.burstSeq();
+            sim.debris.make(250, 110, 1, 0, a.id, a.team, Obj.DEBRIS, 3.5f, Obj.GRAVITY, Records.ObjColor.RED,
+                Records.BurstKind.DEBRIS, 8, 10, 10, 0, 127, 20, 30, 5, 20);
+            ByteBuffer[] two = {ByteBuffer.allocate(1200), ByteBuffer.allocate(1200)};
+            parts[0] = two[0];
+            parts[1] = two[1];
+            int n = new SnapshotBuilder(w).build(a, 0, burstFrom, true, two);
+            Decoded d = decode(n);
+            List<String> sent = new ArrayList<>();
+            for (List<String> l : d.shots.values()) {
+                for (String e : l) {
+                    sent.add(e.substring(0, e.indexOf(' ')));
+                }
+            }
+            int total = sent.size();
+            assertAll(
+                () -> assertEquals(2, n, "both datagrams are used"),
+                () -> assertEquals(1, d.self.size(), "SELF is present"),
+                () -> assertEquals(1, d.ships.size(), "the ship in view is present"),
+                () -> assertEquals(1, d.cannons.size(), "the cannon is present"),
+                () -> assertEquals(1, d.fuel.size(), "the fuel station is present"),
+                () -> assertEquals(3, d.radar.size(), "the radar is present"),
+                () -> assertEquals(1, d.bursts.size(), "the burst is present"),
+                () -> assertTrue(total > 300 && total < 1530, "shots fill the rest, not everything: " + total),
+                () -> assertTrue(sent.containsAll(near), "every near shot is sent (nearest first)"));
+        }
+
+        @Test
+        @DisplayName("shots are collected only up to the room left, so a far variant written first cannot crowd out near shots")
+        void mixedVariants() {
+            int first = shotAt(w, Obj.NO_ID, 201, 121);
+            w.objects.type[first] = Obj.CANNON_SHOT;
+            List<String> near = new ArrayList<>();
+            for (int i = 0; i < 40; i++) {
+                int h = shotAt(w, b.id, 160 + i * 2, 100 + (i % 5) * 8);
+                near.add(w.objects.cx[h] / 64f + "," + w.objects.cy[h] / 64f);
+            }
+            for (int i = 0; i < 1500; i++) {
+                int h = shotAt(w, Obj.NO_ID, 700 + (i % 100), 100 + (i / 100) * 2);
+                w.objects.type[h] = Obj.CANNON_SHOT;
+            }
+            ByteBuffer[] two = {ByteBuffer.allocate(1200), ByteBuffer.allocate(1200)};
+            parts[0] = two[0];
+            parts[1] = two[1];
+            Decoded d = decode(new SnapshotBuilder(w).build(a, 0, w.events.burstSeq(), false, two));
+            List<String> sent = new ArrayList<>();
+            for (List<String> l : d.shots.values()) {
+                for (String e : l) {
+                    sent.add(e.substring(0, e.indexOf(' ')));
+                }
+            }
+            assertAll(
+                () -> assertEquals(2, d.shots.size(), "(fixture: two shot variants, the cannon one written first)"),
+                () -> assertTrue(sent.containsAll(near), "every near shot of the second variant is sent"));
+        }
+
+        @Test
+        @DisplayName("I7: paused ships are sent with PAUSED; dead (being carried home) and game-over ships are not")
+        void pausedShips() {
+            b.status = Obj.PAUSE | Obj.GRAVITY;
+            Player d1 = c;
+            d1.initPixels(260, 120);
+            d1.status = Obj.GRAVITY;
+            int n = new SnapshotBuilder(w).build(a, 0, w.events.burstSeq(), true, parts);
+            Decoded d = decode(n);
+            b.status = Obj.PLAYING | Obj.GAME_OVER;
+            parts[0].clear();
+            Decoded g = decode(new SnapshotBuilder(w).build(a, 0, w.events.burstSeq(), false, parts));
+            assertAll(
+                () -> assertEquals(1, d.ships.size(), "only the paused ship B (C is dead)"),
+                () -> assertTrue(d.ships.get(0).startsWith(b.id + " " + (Records.ShipFlags.PAUSED | Records.ShipFlags.DEAD)
+                    + " "), "B is flagged PAUSED (and DEAD: not playing): " + d.ships.get(0)),
+                () -> assertEquals(1, d.radar.size(), "radar shows only playing ships (C frame.c), here A itself"),
+                () -> assertEquals(0, g.ships.size(), "a GAME_OVER ship is not sent"));
+        }
+
+        @Test
+        @DisplayName("I3: on a wrapping map a shot across the seam is in view")
+        void wrapCull() {
+            Simulation ws = TestWorlds.sim("framesPerSecond: 60\ngravity: 0\nedgeWrap: yes", ROWS);
+            World ww = ws.world;
+            Player v = TestWorlds.join(ws, "V", 0);
+            v.initPixels(20, 120);
+            shotAt(ww, Obj.NO_ID, ww.pixelWidth - 20, 120);
+            shotAt(ww, Obj.NO_ID, 1000, 120);
+            ByteBuffer[] one = {ByteBuffer.allocate(1200)};
+            parts[0] = one[0];
+            World keep = w;
+            w = ww;
+            Decoded d = decode(new SnapshotBuilder(ww).build(v, 0, ww.events.burstSeq(), false, one));
+            w = keep;
+            int shots = d.shots.values().stream().mapToInt(List::size).sum();
+            assertAll(
+                () -> assertEquals(1, shots, "the shot 40 px away across the seam is sent, the one 980 px away is not"),
+                () -> assertEquals((ww.pixelWidth - 20) + ".0,120.0",
+                    d.shots.values().iterator().next().get(0).substring(0, d.shots.values().iterator().next().get(0).indexOf(' ')),
+                    "at its true position"));
+        }
+
+        @Test
+        @DisplayName("I3: bursts older than the ring are skipped (the cursor is clamped to the oldest readable burst)")
+        void burstClamp() {
+            for (int i = 0; i < com.fulcrologic.jxpilot.server.world.Events.BURSTS; i++) {
+                com.fulcrologic.jxpilot.common.math.DebrisBurst db = w.events.addBurst(0, 0, -1, 42);
+                db.x = 1500;
+                db.y = 100;
+            }
+            for (int i = 0; i < 10; i++) {
+                com.fulcrologic.jxpilot.common.math.DebrisBurst db = w.events.addBurst(0, 0, -1, 42);
+                db.x = 210;
+                db.y = 120;
+                db.count = 1;
+            }
+            Decoded d = decode(new SnapshotBuilder(w).build(a, 0, 0, false, parts));
+            assertEquals(10, d.bursts.size(), "each in-view burst once (a stale cursor 0 would revisit the ring)");
+        }
+
+        @Test
+        @DisplayName("the shot hash is rebuilt once per frame; beginRound picks up objects changed within the frame")
+        void rounds() {
+            SnapshotBuilder sb = new SnapshotBuilder(w);
+            sb.build(a, 0, w.events.burstSeq(), false, parts);
+            shotAt(w, b.id, 210, 120);
+            parts[0].clear();
+            int stale = decode(sb.build(a, 0, w.events.burstSeq(), false, parts)).shots.size();
+            sb.beginRound();
+            parts[0].clear();
+            int fresh = decode(sb.build(a, 0, w.events.burstSeq(), false, parts)).shots.size();
+            w.frames++;
+            shotAt(w, b.id, 220, 120);
+            parts[0].clear();
+            int next = decode(sb.build(a, 0, w.events.burstSeq(), false, parts)).shots.values().iterator().next().size();
+            assertAll(
+                () -> assertEquals(0, stale, "within the frame the hash is not rebuilt"),
+                () -> assertEquals(1, fresh, "beginRound rebuilds it"),
+                () -> assertEquals(2, next, "a new frame rebuilds it automatically"));
         }
     }
 }

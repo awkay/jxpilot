@@ -32,6 +32,7 @@ import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.ShipGeom;
+import com.fulcrologic.jxpilot.server.world.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
 
 import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
@@ -40,10 +41,8 @@ import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
  * Moves pool objects and ships through the map: ports of {@code Move_object}, {@code Move_player} and
  * {@code Turn_player} ({@code src/server/walls.c}), using {@link Segment} for the per-block wall tracing.
  * <p>
- * Time scaling: C moves {@code FLOAT_TO_CLICK(vel)} clicks per original frame; we move
- * {@code vel * dt} per sim tick. The fraction of a click that C's truncation would drop is carried to the
- * next tick in {@code remX/remY} (otherwise the 60 Hz tick would lose ~4x more distance than C does); a
- * crash or bounce resets it. Wall-bounce costs, speeds and angles are per event and are not scaled.
+ * One sim tick is one C frame: a move is C's {@code FLOAT_TO_CLICK(vel)} clicks (truncated toward zero, the
+ * fraction is lost exactly as in C), and velocities, friction and bounce arithmetic are C floats.
  */
 public final class Mover {
     private static final int BS = Const.BLOCK_SZ;
@@ -54,11 +53,8 @@ public final class Mover {
     private final Segment seg;
     private final MoveState ms = new MoveState();
     private final MoveState[] hull = new MoveState[ShipShape.MAX_SHIP_PTS];
-    private final double[] rx = new double[ShipShape.MAX_SHIP_PTS];
-    private final double[] ry = new double[ShipShape.MAX_SHIP_PTS];
-    /** Fraction of a click left over by the last {@link #ticks} call. */
-    private double fracX;
-    private double fracY;
+    private final float[] rx = new float[ShipShape.MAX_SHIP_PTS];
+    private final float[] ry = new float[ShipShape.MAX_SHIP_PTS];
 
     public Mover(World w, Simulation sim) {
         this.w = w;
@@ -69,19 +65,9 @@ public final class Mover {
         }
     }
 
-    /**
-     * Clicks to move this tick on one axis: {@code (int)(v*dt*CLICK + rem)}; the remainder is left in
-     * {@link #fracX} (axis 0) or {@link #fracY} (axis 1).
-     */
-    private int ticks(double v, double rem, int axis) {
-        double f = v * w.params.dt * Click.CLICK + rem;
-        int t = (int) f;
-        if (axis == 0) {
-            fracX = f - t;
-        } else {
-            fracY = f - t;
-        }
-        return t;
+    /** C {@code VECTOR_LENGTH}: the double hypot of a float vector, stored as a float. */
+    static float length(float x, float y) {
+        return (float) StrictMath.hypot(x, y);
     }
 
     private int blockOf(int pixel, int n) {
@@ -107,22 +93,16 @@ public final class Mover {
         Objects o = w.objects;
         Params p = w.params;
         o.remember(h);
-        int tx = ticks(o.vx[h], o.remX[h], 0);
-        int ty = ticks(o.vy[h], o.remY[h], 1);
+        int tx = Click.fromPixels(o.vx[h]);
+        int ty = Click.fromPixels(o.vy[h]);
         int dist = w.wallDist(blockOf(o.px[h], w.width), blockOf(o.py[h], w.height));
         if (dist > 2) {
             int max = ((dist - 2) * BS) >> 1;
-            double sx = o.vx[h] * p.dt;
-            double sy = o.vy[h] * p.dt;
-            if ((double) max * max >= sx * sx + sy * sy) {
+            if ((float) (max * max) >= o.vx[h] * o.vx[h] + o.vy[h] * o.vy[h]) {
                 o.setClicks(h, w.wrapXClick(o.cx[h] + tx), w.wrapYClick(o.cy[h] + ty));
-                o.remX[h] = fracX;
-                o.remY[h] = fracY;
                 return;
             }
         }
-        double remX = fracX;
-        double remY = fracY;
         int type = o.type[h];
         ms.pl = null;
         ms.obj = h;
@@ -197,8 +177,6 @@ public final class Mover {
         o.vx[h] = ms.velX;
         o.vy[h] = ms.velY;
         o.missileDir[h] = ms.dir;
-        o.remX[h] = posUpdate ? 0 : remX;
-        o.remY[h] = posUpdate ? 0 : remY;
         if (ms.crash != NOT_A_CRASH) {
             sim.crashes.objectCrashed(h, ms);
         }
@@ -225,47 +203,39 @@ public final class Mover {
         Params p = w.params;
         if (!pl.isAlive()) {
             if ((pl.status & (Obj.KILLED | Obj.PAUSE)) == 0) {
-                int tx = ticks(pl.vx, pl.remX, 0);
-                int ty = ticks(pl.vy, pl.remY, 1);
-                pl.remX = fracX;
-                pl.remY = fracY;
-                int x = w.wrapXClick(pl.cx + tx);
-                int y = w.wrapYClick(pl.cy + ty);
+                int x = w.wrapXClick(pl.cx + Click.fromPixels(pl.vx));
+                int y = w.wrapYClick(pl.cy + Click.fromPixels(pl.vy));
                 if (x != pl.cx || y != pl.cy) {
                     pl.remember();
                     pl.setClicks(x, y);
                 }
             }
-            pl.velocity = Math.hypot(pl.vx, pl.vy);
+            pl.velocity = length(pl.vx, pl.vy);
             return;
         }
 
         applyFriction(pl, p);
         pl.remember();
 
-        int tx = ticks(pl.vx, pl.remX, 0);
-        int ty = ticks(pl.vy, pl.remY, 1);
         int dist = w.wallDist(blockOf(pl.px, w.width), blockOf(pl.py, w.height));
         if (dist > 3) {
             int max = ((dist - 3) * BS) >> 1;
-            if (max >= pl.velocity * p.dt) {
-                pl.setClicks(w.wrapXClick(pl.cx + tx), w.wrapYClick(pl.cy + ty));
-                pl.remX = fracX;
-                pl.remY = fracY;
-                pl.velocity = Math.hypot(pl.vx, pl.vy);
+            if (max >= pl.velocity) {
+                pl.setClicks(w.wrapXClick(pl.cx + Click.fromPixels(pl.vx)),
+                    w.wrapYClick(pl.cy + Click.fromPixels(pl.vy)));
+                pl.velocity = length(pl.vx, pl.vy);
                 return;
             }
         }
-        double remX = fracX;
-        double remY = fracY;
-        boolean posUpdate = traceShip(pl, tx, ty, p);
-        pl.remX = posUpdate ? 0 : remX;
-        pl.remY = posUpdate ? 0 : remY;
+        traceShip(pl, Click.fromPixels(pl.vx), Click.fromPixels(pl.vy), p);
     }
 
-    /** Friction and coriolis (walls.c:2250-2268), scaled to dt. */
+    /**
+     * Friction and coriolis (walls.c:2250-2268) in C float arithmetic:
+     * {@code v' = (1 - f) * (v rotated by coriolis*RES/360 RES units)}.
+     */
     private void applyFriction(Player pl, Params p) {
-        double fric;
+        float fric;
         if ((pl.used & Has.PHASING_DEVICE) != 0) {
             fric = p.friction;
         } else {
@@ -273,24 +243,17 @@ public final class Mover {
                 ? p.blockFriction : p.friction;
         }
         int corRes = (p.coriolis * Const.RES / 360) & (Const.RES - 1);
-        double damp = fric == 0 ? 1.0 : Math.pow(1.0 - fric, p.dt);
-        if (corRes == 0) {
-            pl.vx *= damp;
-            pl.vy *= damp;
-            return;
-        }
-        double a = corRes * p.dt * (2 * Math.PI / Const.RES);
-        double c = Math.cos(a);
-        double s = Math.sin(a);
-        double ovx = pl.vx;
-        double ovy = pl.vy;
-        pl.vx = damp * (ovx * c + ovy * s);
-        pl.vy = damp * (ovy * c - ovx * s);
+        float c = Trig.tcos(corRes);
+        float sn = Trig.tsin(corRes);
+        float ovx = pl.vx;
+        float ovy = pl.vy;
+        pl.vx = (1.0f - fric) * (ovx * c + ovy * sn);
+        pl.vy = (1.0f - fric) * (ovy * c - ovx * sn);
     }
 
-    /** The hull-point loop of Move_player; returns whether a crash or bounce happened. */
+    /** The hull-point loop of Move_player; after a crash or bounce the new position is remembered. */
     @SuppressWarnings({"checkstyle:CyclomaticComplexity", "checkstyle:MethodLength"})
-    private boolean traceShip(Player pl, int tx, int ty, Params p) {
+    private void traceShip(Player pl, int tx, int ty, Params p) {
         ShipGeom ship = pl.ship;
         int n = ship.numPoints;
         MoveState mi = hull[0];
@@ -315,8 +278,8 @@ public final class Mover {
             m.start(pl.cx + Click.fromPixels(ship.ptX[i][pl.dir]), pl.cy + Click.fromPixels(ship.ptY[i][pl.dir]),
                 pl.vx, pl.vy, tx, ty, pl.dir);
         }
-        double velX = pl.vx;
-        double velY = pl.vy;
+        float velX = pl.vx;
+        float velY = pl.vy;
         int worst = 0;
         int nothingDone = 0;
         boolean posUpdate = false;
@@ -456,14 +419,13 @@ public final class Mover {
             w.wrapYClick(wm.posY - Click.fromPixels(ship.ptY[worst][pl.dir])));
         pl.vx = wm.velX;
         pl.vy = wm.velY;
-        pl.velocity = Math.hypot(pl.vx, pl.vy);
+        pl.velocity = length(pl.vx, pl.vy);
         if (wm.crash != NOT_A_CRASH) {
             sim.crashes.playerCrashed(pl, wm, worst);
         }
         if (posUpdate) {
             pl.remember();
         }
-        return posUpdate;
     }
 
     private static int clampBlock(int b, int n) {
@@ -483,13 +445,13 @@ public final class Mover {
      * fuel drops by cost*256*wallBounceFuelDrainMult and cost &gt; 0 makes wall sparks.
      */
     boolean wallBounce(Player pl, MoveState m, Params p) {
-        double speed = Math.hypot(m.velX, m.velY);
+        float speed = length(m.velX, m.velY);
         int v = (int) speed >> 2;
         int mass = (int) (pl.mass - pl.emptyMass * 0.75f);
-        double b = 1 - 0.5f * p.playerWallBrakeFactor;
+        float b = 1 - 0.5f * p.playerWallBrakeFactor;
         long cost = (long) (b * mass * v);
         boolean shield = (pl.used & Has.SHIELD) != 0;
-        double maxSpeed = shield ? p.maxShieldedWallBounceSpeed : p.maxUnshieldedWallBounceSpeed;
+        float maxSpeed = shield ? p.maxShieldedWallBounceSpeed : p.maxUnshieldedWallBounceSpeed;
         int maxAngle = shield ? p.maxShieldedAngle : p.maxUnshieldedAngle;
         if (pl.fullyShielded()) {
             if (maxSpeed < 100) {
@@ -679,7 +641,7 @@ public final class Mover {
     }
 
     /** Turn_player's edge clamp (walls.c:2670-2710) for one axis. */
-    private static int keepInside(int pos, double[][] pt, int n, int dir, int limit) {
+    private static int keepInside(int pos, float[][] pt, int n, int dir, int limit) {
         if (pos <= 22 * Click.CLICK) {
             for (int i = 0; i < n; i++) {
                 if (pos + Click.fromPixels(pt[i][dir]) < 0) {

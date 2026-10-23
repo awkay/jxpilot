@@ -28,25 +28,26 @@ import com.fulcrologic.jxpilot.common.math.ShipShape;
 
 /**
  * A ship shape with its points pre-rotated to every RES heading, as C {@code Rotate_point} fills
- * {@code shipobj.pts[i][dir]} ({@code src/common/shipshape.c}). Built once per player shape (join time,
- * never per tick).
+ * {@code shipobj.pts[i][dir]} ({@code src/common/shipshape.c}): in float arithmetic over the float
+ * {@link Trig} tables, so the hull points truncate to exactly C's clicks. Built once per player shape
+ * (join time, never per tick).
  */
 public final class ShipGeom {
     public final ShipShape shape;
     public final int numPoints;
     /** {@code ptX[i][dir]}: hull point i rotated to heading dir. */
-    public final double[][] ptX;
-    public final double[][] ptY;
-    public final double[] engineX = new double[Const.RES];
-    public final double[] engineY = new double[Const.RES];
-    public final double[] gunX = new double[Const.RES];
-    public final double[] gunY = new double[Const.RES];
+    public final float[][] ptX;
+    public final float[][] ptY;
+    public final float[] engineX = new float[Const.RES];
+    public final float[] engineY = new float[Const.RES];
+    public final float[] gunX = new float[Const.RES];
+    public final float[] gunY = new float[Const.RES];
 
     public ShipGeom(ShipShape shape) {
         this.shape = shape;
         this.numPoints = shape.numPoints();
-        ptX = new double[numPoints][Const.RES];
-        ptY = new double[numPoints][Const.RES];
+        ptX = new float[numPoints][Const.RES];
+        ptY = new float[numPoints][Const.RES];
         for (int i = 0; i < numPoints; i++) {
             rotate(shape.ptX[i], shape.ptY[i], ptX[i], ptY[i]);
         }
@@ -54,11 +55,19 @@ public final class ShipGeom {
         rotate(shape.mainGunX, shape.mainGunY, gunX, gunY);
     }
 
-    /** BEHAVIOR: out[dir] = (x tcos(dir) - y tsin(dir), x tsin(dir) + y tcos(dir)). */
-    static void rotate(int x, int y, double[] outX, double[] outY) {
-        for (int d = 0; d < Const.RES; d++) {
-            outX[d] = Trig.tcos(d) * x - Trig.tsin(d) * y;
-            outY[d] = Trig.tsin(d) * x + Trig.tcos(d) * y;
+    /**
+     * C {@code Rotate_point}.
+     * <p>
+     * BEHAVIOR: out[0] = (x, y); out[dir] = (tcos(dir) x - tsin(dir) y, tsin(dir) x + tcos(dir) y) in float.
+     */
+    static void rotate(int x, int y, float[] outX, float[] outY) {
+        float fx = x;
+        float fy = y;
+        outX[0] = fx;
+        outY[0] = fy;
+        for (int d = 1; d < Const.RES; d++) {
+            outX[d] = Trig.tcos(d) * fx - Trig.tsin(d) * fy;
+            outY[d] = Trig.tsin(d) * fx + Trig.tcos(d) * fy;
         }
     }
 

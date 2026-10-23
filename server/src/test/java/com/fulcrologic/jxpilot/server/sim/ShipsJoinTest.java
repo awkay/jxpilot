@@ -89,12 +89,12 @@ class ShipsJoinTest {
                 () -> assertEquals(1000 * 256.0, p.fuel, "fuel is initialFuel in fixed point"),
                 () -> assertEquals(2600 * 256.0, p.fuelMax, "the tank holds MAX_PLAYER_FUEL"),
                 () -> assertEquals(20 + 1000 * 256.0 * 0.005 / 256, p.mass, "mass is ship mass plus FUEL_MASS"),
-                () -> assertEquals(45.0, p.power, "power 45"),
-                () -> assertEquals(30.0, p.turnSpeed, "turnspeed 30"),
-                () -> assertEquals(0.12, p.turnResistance, "turnresistance 0.12"),
-                () -> assertEquals(35.0, p.powerS, "alternate power 35"),
-                () -> assertEquals(25.0, p.turnSpeedS, "alternate turnspeed 25"),
-                () -> assertEquals(0.12, p.turnResistanceS, "alternate turnresistance 0.12"),
+                () -> assertEquals(45.0f, p.power, "power 45 (the client default)"),
+                () -> assertEquals(35.0f, p.turnSpeed, "turnspeed 35 (the client default, until SETTINGS)"),
+                () -> assertEquals(0.12f, p.turnResistance, "turnresistance 0.12"),
+                () -> assertEquals(35.0f, p.powerS, "alternate power 35"),
+                () -> assertEquals(25.0f, p.turnSpeedS, "alternate turnspeed 25"),
+                () -> assertEquals(0.12f, p.turnResistanceS, "alternate turnresistance 0.12"),
                 () -> assertEquals(-1.0, p.count, "no countdown running"),
                 () -> assertEquals(Obj.PLAYING | Obj.GRAVITY, p.status, "PLAYING with gravity"),
                 () -> assertEquals(w.params.defHave, p.have, "abilities are DEF_HAVE"),
@@ -111,9 +111,11 @@ class ShipsJoinTest {
             List<String> joined = events(s.world, 0);
             s.tick(new long[1]);
             assertAll(
-                () -> assertEquals(List.of("JOIN 1 0 0", "BASE_OWNER 0 1 0", "GAME_EVENT " + Msg.GameEvent.SPAWN + " 1 0"),
-                    joined, "the join, the base owner, then the spawn (clients learn the id before it spawns)"),
-                () -> assertEquals("SCORE 1 -1 0 0.0", events(s.world, 3).get(0),
+                () -> assertEquals(List.of("JOIN 1 0 0", "BASE_OWNER 0 1 0", "GAME_EVENT " + Msg.GameEvent.SPAWN + " 1 0",
+                        "MESSAGE " + Msg.Text.KIND_GAME + " -1 Player entered. Delaying 0 seconds until next round."),
+                    joined, "the join, the base owner, then the spawn (clients learn the id before it spawns); the"
+                        + " first player (re)starts the round delay as in C Handle_login"),
+                () -> assertEquals("SCORE 1 -1 0 0.0", events(s.world, 4).get(0),
                     "the tick reports score 0, unlimited lives, alive"),
                 () -> assertFalse(p.scoreDirty, "the score is reported once"));
         }
@@ -139,8 +141,8 @@ class ShipsJoinTest {
                 () -> assertEquals(2600 * 256.0, p.fuel, "fuel is capped at MAX_PLAYER_FUEL"),
                 () -> assertEquals(2, p.items[Item.ARMOR.ordinal()], "initial armor is given"),
                 () -> assertEquals(3, p.items[Item.MINE.ordinal()], "initial mines are given"),
-                () -> assertEquals(20 + 2600 * 256.0 * 0.005 / 256 + 2 * (20.0 / 14) + 3 * 1.0, p.mass,
-                    1e-12, "mass counts fuel, armor and other items (rounding only)"),
+                () -> assertEquals((float) (20f + 2600 * 256.0 * 0.005 / 256 + (3 * 1f + 2 * (20f / 14))), p.mass,
+                    "mass counts fuel, armor and other items (C floats, items summed in item order)"),
                 () -> assertTrue((p.have & Has.ARMOR) != 0, "initial armor grants HAS_ARMOR"));
         }
 
@@ -183,9 +185,10 @@ class ShipsJoinTest {
             w.teamScore[1] = 30;
             Player b = s.ships.join("b", 1);
             // netserver.c Handle_login: NumMembers == 1 -> score = 0; TEAM_SCORE(team, 0) shares score / members
+            // among Players[0..NumPlayers), which does not include the joiner yet
             assertAll(
                 () -> assertEquals(15.0, a.score, "the earlier member gets half of the team score"),
-                () -> assertEquals(15.0, b.score, "the new member gets half of the team score"),
+                () -> assertEquals(0.0, b.score, "the new member keeps 0 until the next team score change (C timing)"),
                 () -> assertEquals(30.0, w.teamScore[1], "a later join keeps the team score"),
                 () -> assertTrue(w.teamScoreDirty[1], "the team score is reported"));
         }
@@ -218,6 +221,7 @@ class ShipsJoinTest {
             s.ships.recordShove(b, a);
             s.ships.recordShove(b, b);
             long seq = w.events.seq();
+            int home = a.homeBase;
             s.ships.leave(a);
             Player again = s.ships.join("c", 1);
             assertAll(
@@ -225,7 +229,8 @@ class ShipsJoinTest {
                 () -> assertEquals(b.id, w.objects.owner[theirs], "other players' objects keep theirs"),
                 () -> assertEquals(Obj.NO_ID, b.shovePusher[0], "shoves by the leaver are forgotten"),
                 () -> assertEquals(b.id, b.shovePusher[1], "other shoves are kept"),
-                () -> assertEquals("LEAVE 1 0 0", events(w, seq).get(0), "LEAVE is announced with the id"),
+                () -> assertEquals(List.of("BASE_OWNER " + home + " -1 0", "LEAVE 1 0 0"), events(w, seq).subList(0, 2),
+                    "the home base is released, then LEAVE is announced with the id"),
                 () -> assertEquals(1, w.teamMembers[1], "team 1 lost a member and gained the new one"),
                 () -> assertEquals(1, again.id, "the freed id 1 is reused"),
                 () -> assertTrue(a == again && again.inUse, "the freed slot is reused for the new player"));
@@ -471,6 +476,7 @@ class ShipsJoinTest {
         /** A player of {@code team} counted as a member (C NumMembers) without a base. */
         Player member(int team, double score) {
             Player p = s.world.addPlayer();
+            s.world.enter(p);
             p.team = team;
             p.status = Obj.PLAYING;
             p.score = score;
@@ -598,6 +604,7 @@ class ShipsJoinTest {
         void theJoiningPlayerItselfIsNotCounted() {
             world("");
             Player j = s.world.addPlayer();
+            s.world.enter(j);
             j.team = 3;
             j.status = Obj.PLAYING;
             member(2, 0);
@@ -651,7 +658,8 @@ class ShipsJoinTest {
             assertAll(
                 () -> assertEquals(Obj.NO_ID, c.shovePusher[0], "the last player in order is updated too"),
                 () -> assertEquals(2, s.world.numPlayers, "two remain"),
-                () -> assertEquals(b, s.world.playerAt(0), "in order"));
+                () -> assertEquals(c, s.world.playerAt(0), "C Delete_player: the last player takes the leaver's place"),
+                () -> assertEquals(b, s.world.playerAt(1), "the others keep their place"));
         }
     }
 }

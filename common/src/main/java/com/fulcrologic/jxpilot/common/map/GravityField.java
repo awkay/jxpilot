@@ -32,6 +32,11 @@ import java.util.List;
  * Per-block gravity, a port of {@code Compute_global_gravity}, {@code Compute_grav_tab} and
  * {@code Compute_local_gravity} in {@code src/server/map.c}. Arrays are indexed {@code by*w + bx}.
  * Pure functions over plain arrays.
+ * <p>
+ * C keeps gravity in {@code DFLOAT} (float) vectors and the option values in floats, so every stored
+ * value here is rounded to float at the same steps as C, with {@link StrictMath} for the transcendental
+ * functions: the server simulation is frame-exact against C traces only with these exact values. The
+ * arrays stay {@code double[]} (every element holds a float value).
  */
 public final class GravityField {
     private GravityField() {}
@@ -39,21 +44,25 @@ public final class GravityField {
     /**
      * Fill the global gravity.
      * <p>
-     * BEHAVIOR: without a point source every block gets {@code (cos(angle) * g, sin(angle) * g)}.
+     * BEHAVIOR: without a point source every block gets {@code (float)(cos(angle) * g), (float)(sin(angle) * g)}
+     * with g and the angle taken as C floats.
      * BEHAVIOR: with a point source a block at block offset (dx,dy) from the point (in pixels, wrapped
-     * when {@code wrap}) gets {@code (dx, dy) * g / |(dx,dy)|}: negative g pulls toward the point.
-     * BEHAVIOR: clockwise point gravity gives {@code (dy, -dx) * g/len}; anticlockwise {@code (-dy, dx) * g/len};
+     * when {@code wrap}) gets {@code (dx, dy) * s} with {@code s = (float)(g / |(dx,dy)|)}: negative g pulls
+     * toward the point.
+     * BEHAVIOR: clockwise point gravity gives {@code (dy, -dx) * s}; anticlockwise {@code (-dy, dx) * s};
      * clockwise wins if both are set.
      * BEHAVIOR: the block at the point itself gets zero.
-     * Deviation from C: the y offset wraps with the world height (C used WRAP_DX for y).
+     * Deviation from C (kept on purpose, see docs/DEVIATIONS-server.md): the y offset wraps with the world
+     * height (C used WRAP_DX for y).
      */
     public static void global(int w, int h, boolean wrap, double gravity, double angleDegrees,
                               boolean pointSource, int pointX, int pointY, boolean clockwise,
                               boolean anticlockwise, double[] gx, double[] gy) {
+        float g = (float) gravity;
         if (!pointSource) {
-            double theta = angleDegrees * Math.PI / 180.0;
-            double xf = Math.cos(theta) * gravity;
-            double yf = Math.sin(theta) * gravity;
+            double theta = ((float) angleDegrees * Math.PI) / 180.0;
+            float xf = (float) (StrictMath.cos(theta) * g);
+            float yf = (float) (StrictMath.sin(theta) * g);
             for (int i = 0; i < w * h; i++) {
                 gx[i] = xf;
                 gy[i] = yf;
@@ -63,16 +72,16 @@ public final class GravityField {
         int pw = w * Const.BLOCK_SZ;
         int ph = h * Const.BLOCK_SZ;
         for (int xi = 0; xi < w; xi++) {
-            double dx = XMath.wrapDelta((xi - pointX) * (double) Const.BLOCK_SZ, pw, wrap);
+            int dx = (int) XMath.wrapDelta((xi - pointX) * Const.BLOCK_SZ, pw, wrap);
             for (int yi = 0; yi < h; yi++) {
-                double dy = XMath.wrapDelta((yi - pointY) * (double) Const.BLOCK_SZ, ph, wrap);
+                int dy = (int) XMath.wrapDelta((yi - pointY) * Const.BLOCK_SZ, ph, wrap);
                 int i = yi * w + xi;
                 if (dx == 0 && dy == 0) {
                     gx[i] = 0.0;
                     gy[i] = 0.0;
                     continue;
                 }
-                double strength = gravity / Math.hypot(dx, dy);
+                float strength = (float) (g / StrictMath.hypot(dx, dy));
                 if (clockwise) {
                     gx[i] = dy * strength;
                     gy[i] = -dx * strength;
@@ -88,28 +97,28 @@ public final class GravityField {
     }
 
     /**
-     * The inverse-square table: entry [x][y] = (x, y) / (x^2 + y^2)^1.5, [0][0] = 0.
+     * The inverse-square table: entry [x][y] = (float)(x, y) / (x^2 + y^2)^1.5, [0][0] = 0 (C stores floats).
      * <p>
      * BEHAVIOR: returns {x-table, y-table} of size (GRAV_RANGE+1)^2.
      */
-    static double[][][] table() {
+    static float[][][] table() {
         int gr = Const.GRAV_RANGE;
-        double[][] tx = new double[gr + 1][gr + 1];
-        double[][] ty = new double[gr + 1][gr + 1];
+        float[][] tx = new float[gr + 1][gr + 1];
+        float[][] ty = new float[gr + 1][gr + 1];
         for (int x = 0; x <= gr; x++) {
             for (int y = (x == 0 ? 1 : 0); y <= gr; y++) {
-                double s = Math.pow((double) (x * x + y * y), -1.5);
-                tx[x][y] = x * s;
-                ty[x][y] = y * s;
+                double s = StrictMath.pow((double) (x * x + y * y), -1.5);
+                tx[x][y] = (float) (x * s);
+                ty[x][y] = (float) (y * s);
             }
         }
-        return new double[][][] {tx, ty};
+        return new float[][][] {tx, ty};
     }
 
     /**
-     * Add the effect of map gravity blocks within {@link Const#GRAV_RANGE} blocks (a square).
-     * With (dx, dy) = source - block and v = table[|dx|][|dy|], f = force signed by the side
-     * (f = -force when the block is right of/above the source):
+     * Add the effect of map gravity blocks within {@link Const#GRAV_RANGE} blocks (a square), in float
+     * arithmetic like C. With (dx, dy) = source - block and v = table[|dx|][|dy|], f = force signed by the
+     * side (f = -force when the block is right of/above the source):
      * <p>
      * BEHAVIOR: POS/NEG: {@code gx += fx*v.x, gy += fy*v.y} (force &lt; 0 repels, &gt; 0 attracts).
      * BEHAVIOR: CWISE/ACWISE: {@code gx -= fy*v.y, gy += fx*v.x}.
@@ -121,9 +130,9 @@ public final class GravityField {
     public static void addLocal(int w, int h, boolean wrap, byte[] blocks, List<GravitySource> gravs,
                                 double[] gx, double[] gy) {
         final int gr = Const.GRAV_RANGE;
-        double[][][] tab = table();
-        double[][] tabX = tab[0];
-        double[][] tabY = tab[1];
+        float[][][] tab = table();
+        float[][] tabX = tab[0];
+        float[][] tabY = tab[1];
         int minXi = wrap ? -Math.min(gr, w) : 0;
         int maxXi = wrap ? w - 1 + Math.min(gr, w) : w - 1;
         int minYi = wrap ? -Math.min(gr, h) : 0;
@@ -131,7 +140,7 @@ public final class GravityField {
         for (GravitySource g : gravs) {
             int sx = g.bx();
             int sy = g.by();
-            double force = g.force();
+            float force = (float) g.force();
             int firstXi = Math.max(sx - gr, minXi);
             int lastXi = Math.min(sx + gr, maxXi);
             int firstYi = Math.max(sy - gr, minYi);
@@ -142,34 +151,36 @@ public final class GravityField {
             boolean horizontal = gtype == BlockType.RIGHT_GRAV || gtype == BlockType.LEFT_GRAV;
             for (int xi = firstXi; xi <= lastXi; xi++) {
                 int dx = sx - xi;
-                double fx = dx < 0 ? -force : force;
+                float fx = dx < 0 ? -force : force;
                 int ax = Math.abs(dx);
                 int modXi = Math.floorMod(xi, w);
                 for (int yi = firstYi; yi <= lastYi; yi++) {
                     int dy = sy - yi;
                     int i = Math.floorMod(yi, h) * w + modXi;
+                    float cgx = (float) gx[i];
+                    float cgy = (float) gy[i];
                     if (dx == 0 && dy == 0) {
                         if (vertical) {
-                            gy[i] += force;
+                            gy[i] = cgy + force;
                         } else if (horizontal) {
-                            gx[i] += force;
+                            gx[i] = cgx + force;
                         }
                         continue;
                     }
-                    double fy = dy < 0 ? -force : force;
+                    float fy = dy < 0 ? -force : force;
                     int ay = Math.abs(dy);
-                    double vx = tabX[ax][ay];
-                    double vy = tabY[ax][ay];
+                    float vx = tabX[ax][ay];
+                    float vy = tabY[ax][ay];
                     if (rotating) {
-                        gx[i] -= fy * vy;
-                        gy[i] += fx * vx;
+                        gx[i] = cgx - fy * vy;
+                        gy[i] = cgy + fx * vx;
                     } else if (vertical) {
-                        gy[i] += force * vx;
+                        gy[i] = cgy + force * vx;
                     } else if (horizontal) {
-                        gx[i] += force * vy;
+                        gx[i] = cgx + force * vy;
                     } else {
-                        gx[i] += fx * vx;
-                        gy[i] += fy * vy;
+                        gx[i] = cgx + fx * vx;
+                        gy[i] = cgy + fy * vy;
                     }
                 }
             }

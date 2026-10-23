@@ -98,8 +98,36 @@ class DebrisTest {
 
         int make(double x, double y, int type, int burstKind, int min, int max, double minSpeed, double maxSpeed,
                  int minLife, int maxLife) {
-            return s.debris.make(x, y, 1.5, -2.25, p.id, 3, type, 3.5, Obj.GRAVITY, Records.ObjColor.BLUE, burstKind,
+            return s.debris.make(x, y, 1.5f, -2.25f, p.id, 3, type, 3.5f, Obj.GRAVITY, Records.ObjColor.BLUE, burstKind,
                 8, min, max, 5, 40, minSpeed, maxSpeed, minLife, maxLife);
+        }
+
+        @Test
+        @DisplayName("I2: the origin is quantized to half pixels first, then wrapped and bounds-checked")
+        void quantizeThenWrap() {
+            setup(FRAME + "edgeWrap: yes\n", 20);
+            float edge = w.pixelWidth - 0.2f;
+            int wrapped = make(edge, 300.1, Obj.DEBRIS, Records.BurstKind.DEBRIS, 3, 3, 1, 2, 5, 5);
+            DebrisBurst d = lastBurst(w);
+            int h = w.objects.active[w.objects.count() - 1];
+            Simulation flat = sim(FRAME, 20, 20, "_");
+            Player q = ready(flat, "Q", 0, 300, 300);
+            long b0 = flat.world.events.burstSeq();
+            int none = flat.debris.make(flat.world.pixelWidth - 0.2, 300, 1, 0, q.id, 0, Obj.DEBRIS, 3.5f, Obj.GRAVITY,
+                Records.ObjColor.RED, Records.BurstKind.DEBRIS, 8, 3, 3, 0, 10, 1, 2, 5, 5);
+            int atZeroX = flat.debris.make(0, 300, 1, 0, q.id, 0, Obj.DEBRIS, 3.5f, Obj.GRAVITY,
+                Records.ObjColor.RED, Records.BurstKind.DEBRIS, 8, 3, 3, 0, 10, 1, 2, 5, 5);
+            int atZeroY = flat.debris.make(300, 0, 1, 0, q.id, 0, Obj.DEBRIS, 3.5f, Obj.GRAVITY,
+                Records.ObjColor.RED, Records.BurstKind.DEBRIS, 8, 3, 3, 0, 10, 1, 2, 5, 5);
+            assertAll(
+                () -> assertEquals(3, wrapped, "the burst is made"),
+                () -> assertEquals(0f, d.x, "width - 0.2 rounds to width (half pixels) and wraps to 0"),
+                () -> assertEquals(300f, d.y, "y is rounded to the half pixel"),
+                () -> assertEquals(0, w.objects.cx[h], "the server's particles start where clients expand them"),
+                () -> assertEquals(0, none, "without wrap the rounded origin is outside: nothing is made"),
+                () -> assertEquals(3, atZeroX, "x = 0 is inside"),
+                () -> assertEquals(3, atZeroY, "y = 0 is inside"),
+                () -> assertEquals(b0 + 2, flat.world.events.burstSeq(), "nothing is recorded for the outside one"));
         }
 
         @Test
@@ -417,12 +445,12 @@ class DebrisTest {
             DebrisBurst n = new DebrisBurst();
             DebrisBurst a = new DebrisBurst();
             int dir = p.dir;
-            double qx = Wire.posToU16(p.cx / 64.0) * 0.5;
-            double qy = Wire.posToU16(p.cy / 64.0) * 0.5;
-            ThrustSparks.compute(ThrustSparks.seed(w.tick, p.id), (float) (qx + p.ship.engineX[dir]),
-                (float) (qy + p.ship.engineY[dir]), dir, Wire.i16ToVel(Wire.velToI16(p.vx)),
+            float qx = Wire.posToU16(p.cx / 64.0) * 0.5f;
+            float qy = Wire.posToU16(p.cy / 64.0) * 0.5f;
+            ThrustSparks.compute(ThrustSparks.seed(w.tick, p.id), qx + p.ship.engineX[dir],
+                qy + p.ship.engineY[dir], dir, Wire.i16ToVel(Wire.velToI16(p.vx)),
                 Wire.i16ToVel(Wire.velToI16(p.vy)), p.power, p.afterburners(), w.params.shotLife, w.params.fps,
-                (float) w.params.dt, (float) w.params.hypotenuse, new Rng(0), n, a);
+                (float) w.params.hypotenuse, new Rng(0), n, a);
             return new DebrisBurst[] {n, a};
         }
 
@@ -431,8 +459,8 @@ class DebrisTest {
         void thrust() {
             setup(FPS14);
             p.initPixels(500.3, 600.9);
-            p.vx = 1.23;
-            p.vy = -0.51;
+            p.vx = 1.23f;
+            p.vy = -0.51f;
             p.dir = 10;
             p.items[Item.AFTERBURNER.ordinal()] = 3;
             w.tick = 1234;
@@ -457,9 +485,9 @@ class DebrisTest {
             Objects o = w.objects;
             int hn = hs.get(0);
             int ha = hs.get(hs.size() - 1);
-            checks.add(() -> assertEquals(ThrustSparks.THRUST_MASS, o.mass[hn], EPS, "normal sparks: THRUST_MASS"));
+            checks.add(() -> assertEquals((float) ThrustSparks.THRUST_MASS, o.mass[hn], "normal sparks: THRUST_MASS (a C float)"));
             checks.add(() -> assertEquals(Records.ObjColor.RED, o.color[hn], "normal sparks are red"));
-            checks.add(() -> assertEquals(ThrustSparks.THRUST_MASS * 4.2, o.mass[ha], EPS,
+            checks.add(() -> assertEquals((float) (ThrustSparks.THRUST_MASS * 4.2), o.mass[ha],
                 "afterburner sparks: THRUST_MASS * ALT_SPARK_MASS_FACT"));
             checks.add(() -> assertEquals(Records.ObjColor.BLUE, o.color[ha], "afterburner sparks are blue"));
             checks.add(() -> assertEquals(Obj.GRAVITY | Obj.OWNERIMMUNE, o.status[hn], "owner immune with gravity"));

@@ -1,0 +1,23 @@
+# Server: known deviations from C XPilot 4.5.5
+
+The simulation runs one tick per C frame at the map's `framesPerSecond` and uses C's float (`DFLOAT`)
+arithmetic, so with the same map, options and inputs it matches the C server frame for frame. The golden
+traces in `server/src/test/resources/ctrace/` check that bit for bit (`CTraceTest`). The deviations below
+are deliberate.
+
+| Area | C | JXPilot | Why |
+|---|---|---|---|
+| Point-source gravity (`Compute_global_gravity`) | wraps the y offset with `WRAP_DX` (the world width) | wraps y with the world height | C bug; kept fixed (lead decision S11). Only maps with `gravityPoint` on a non-square wrapping world differ. |
+| `in_range_acd` across the seam | four fixed shifts; misses objects on opposite sides of the seam that did not cross it | shifts by the closest world copy | C bug; results differ only for end points exactly half a world apart. |
+| Random numbers | Mersenne Twister `rfrac()`, static `keep_rand` in `Thrust()`, extra `rfrac()` draws (robot war on shoves, cloak visibility) | one seeded xorshift per world; thrust sparks and bursts seeded from (tick, id) so clients can replay them | Different sequences by design; everything random differs in detail, nothing else. |
+| Key input | every key event of a client packet | the client sends its key mask; the server handles the edges between consecutive masks once per tick (= C frame) | Our protocol. A press and release inside one tick is lost. |
+| Keys after `Go_home` | `last_keyv`/`prev_keyv` cleared; the next keyboard packet (sent on a key change) brings the full state | held keys are ignored until the client's mask changes, then all held keys count as pressed | Same effect (lead decision S9). |
+| Default engine settings | `Init_player` 45/30/0.12; the client then sends its own settings | 45/35/0.12 (alternate 35/25/0.12), the C client's defaults, until SETTINGS arrives | Lead decision S2. The C client sends settings as 1/256 fixed point, so a C server holds 30/256 = 0.1171875 for 0.12; our SETTINGS carries floats. |
+| Score | `DFLOAT` | double | Not physics; scores agree to float display precision. |
+| `teamShareScore` when a player leaves | `TEAM_SCORE(team, -score)` runs after `NumPlayers--` but before the array swap, so the last player in the array misses the re-share | the leaver is removed first, then every remaining member gets the new share | C ordering bug. |
+| `Init_player` limited-lives "too late" check | uses the slot's stale `team` | runs after the team is chosen | Lead decision S10. |
+| Rounds | race mode (`Race_game_over`), treasure destruction and hover pause | not ported (S1 has no race scoring, treasures or autopilot); timing maps play without rounds | Scope. Team rounds end by lives or by `maxRoundTime`. |
+| `Give_best_player_bonus` with nobody eligible | reads an unset array entry | announces nothing | C undefined behaviour. |
+| Login messages (`Handle_login`) | "Welcome to ...", "X has entered ..." | not emitted by the simulation (the round-delay message is) | They belong to the network layer. |
+| Paused ships on the wire | `Send_paused(x, y, count)` | a SHIP record with the PAUSED flag (no count) | Our protocol. |
+| Floating point | GCC may fuse multiply-adds (arm64 `fmadd`) | separate float operations | Matters only for products of non-trivial floats added together (coriolis, local gravity tables); the golden traces show no difference. |

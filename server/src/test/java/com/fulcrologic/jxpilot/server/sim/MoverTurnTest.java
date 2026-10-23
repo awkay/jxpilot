@@ -54,7 +54,7 @@ class MoverTurnTest {
     static final String[] OPEN5 = {"     ", "     ", "     ", "     ", "_    "};
 
     static Player turnTo(Simulation s, Player p, double floatDir) {
-        p.floatDir = floatDir;
+        p.floatDir = (float) floatDir;
         s.mover.turnPlayer(p);
         return p;
     }
@@ -213,7 +213,7 @@ class MoverTurnTest {
             Player round = turnTo(r, ship(r, 4 * BC + 1000, 4 * BC + 1000, 32, 0, 0), 127.6);
             assertAll(
                 () -> assertEquals(100, p.dir, "walldist 10: (int)(100.4 + 0.5) = 100 at once"),
-                () -> assertEquals(100.4, p.floatDir, "floatDir is untouched"),
+                () -> assertEquals(100.4f, p.floatDir, "floatDir is untouched"),
                 () -> assertEquals(40, dead.dir, "a ship that is not playing turns through the wall"),
                 () -> assertEquals(32, same.dir, "(int)(32.3 + 0.5) = 32: nothing to do"),
                 () -> assertEquals(-1.0, same.lastWallTouch, "and no wall touch"),

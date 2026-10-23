@@ -520,6 +520,32 @@ class MessagesTest {
         }
 
         @Test
+        @DisplayName("SCORE_OBJECT carries score, block position and label")
+        void scoreObject() {
+            ReliableChannel tx = new ReliableChannel();
+            Msg.ScoreObject o = new Msg.ScoreObject();
+            o.score = -12.5f;
+            o.bx = 300;
+            o.by = 65535;
+            o.text.append("[Wall]");
+            o.send(tx);
+            ByteBuffer p = buf();
+            tx.write(p, 0);
+            p.flip();
+            Capture cap = new Capture();
+            new ReliableChannel().read(p, cap);
+            Msg.ScoreObject o2 = new Msg.ScoreObject();
+            o2.read(cap.payloads.get(0));
+            assertAll(
+                () -> assertEquals(List.of(ReliableType.SCORE_OBJECT), cap.types, "sent as SCORE_OBJECT (12)"),
+                () -> assertEquals(12, ReliableType.SCORE_OBJECT, "type id 12"),
+                () -> assertEquals(-12.5f, o2.score, "carries the (negative) score"),
+                () -> assertEquals(300, o2.bx, "carries block x"),
+                () -> assertEquals(65535, o2.by, "carries block y as u16"),
+                () -> assertEquals("[Wall]", o2.text.toString(), "carries the label"));
+        }
+
+        @Test
         @DisplayName("a data chunk past the destination is rejected")
         void chunkOutOfRange() {
             ByteBuffer b = ByteBuffer.allocate(8);

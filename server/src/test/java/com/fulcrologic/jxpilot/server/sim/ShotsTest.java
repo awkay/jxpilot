@@ -80,7 +80,7 @@ class ShotsTest {
             setup("");
             p.vx = 1;
             p.vy = 2;
-            double m = p.mass;
+            float m = p.mass;
             s.shots.fireMainShot(p, 0);
             Objects o = w.objects;
             int h = o.active[0];
@@ -90,9 +90,9 @@ class ShotsTest {
                 () -> assertEquals(Click.fromPixels(200 + p.ship.gunX[0]), o.cx[h], "at the main gun x"),
                 () -> assertEquals(Click.fromPixels(300 + p.ship.gunY[0]), o.cy[h], "at the main gun y"),
                 () -> assertEquals(o.px[h], o.prevX[h], "previous position = position"),
-                () -> assertEquals(1 + 21.0, o.vx[h], EPS, "vx = ship vx + shotSpeed * tcos(0)"),
-                () -> assertEquals(2 + 0.0, o.vy[h], EPS, "vy = ship vy + shotSpeed * tsin(0)"),
-                () -> assertEquals(0.1, o.mass[h], EPS, "mass shotMass"),
+                () -> assertEquals(1 + 21.0f, o.vx[h], "vx = ship vx + shotSpeed * tcos(0)"),
+                () -> assertEquals(2 + 0.0f, o.vy[h], "vy = ship vy + shotSpeed * tsin(0)"),
+                () -> assertEquals(0.1f, o.mass[h], "mass shotMass (a C float)"),
                 () -> assertEquals(60.0, o.life[h], EPS, "life shotLife"),
                 // fuse = (int)(2*SHIP_SZ/shotSpeed + 1) = (int)(32/21 + 1) = 2 (shot.c Fire_general_shot)
                 () -> assertEquals(58.0, o.fuseLife[h], EPS, "fuse life = life - (int)(2*SHIP_SZ/speed + 1)"),
@@ -104,7 +104,7 @@ class ShotsTest {
                 () -> assertEquals(FUEL0 - 51, p.fuel, EPS, "costs (long)ED_SHOT = 51 fuel"),
                 () -> assertEquals(1, p.shots, "counts one shot in the air"),
                 // Recoil: v -= (shot.v - ship.v) * shot.mass / ship.mass
-                () -> assertEquals(1 - 21 * 0.1 / m, p.vx, EPS, "recoil x = (shot.vx - vx) * 0.1 / mass"),
+                () -> assertEquals(1f - ((22f - 1f) * 0.1f) / m, p.vx, "recoil x = (shot.vx - vx) * 0.1 / mass (floats)"),
                 () -> assertEquals(2.0, p.vy, EPS, "no recoil across the shot direction"));
         }
 
@@ -113,14 +113,14 @@ class ShotsTest {
         void headingUp() {
             setup("");
             p.dir = 32;
-            double m = p.mass;
+            float m = p.mass;
             s.shots.fireMainShot(p, 32);
             Objects o = w.objects;
             int h = o.active[0];
             assertAll(
                 () -> assertEquals(Click.fromPixels(300 + p.ship.gunY[32]), o.cy[h], "at the gun y of heading 32"),
                 () -> assertEquals(15.0, p.ship.gunY[32], 1e-12, "the gun is 15 px ahead"),
-                () -> assertEquals(-21 * 0.1 / m, p.vy, EPS, "recoil y = -(shot.vy - vy) * 0.1 / mass"));
+                () -> assertEquals(0f - ((21f - 0f) * 0.1f) / m, p.vy, "recoil y = -(shot.vy - vy) * 0.1 / mass"));
         }
 
         @Test
@@ -221,7 +221,7 @@ class ShotsTest {
                 () -> assertTrue(s.shots.fire(null, 0, true, 300, 0, Obj.CANNON_SHOT, 0, 0) >= 0, "y = 0 is inside"),
                 () -> assertEquals(-1, s.shots.fire(null, 0, true, 700, 300, Obj.CANNON_SHOT, 0, 0), "x = width is outside"),
                 () -> assertEquals(-1, s.shots.fire(null, 0, true, 300, 700, Obj.CANNON_SHOT, 0, 0), "y = height is outside"),
-                () -> assertEquals(-1, s.shots.fire(null, 0, true, 300, -0.5, Obj.CANNON_SHOT, 0, 0), "y < 0 is outside"),
+                () -> assertEquals(-1, s.shots.fire(null, 0, true, 300, -0.5f, Obj.CANNON_SHOT, 0, 0), "y < 0 is outside"),
                 () -> assertEquals(2, w.objects.count(), "only the two inside shots exist"));
         }
 
@@ -239,7 +239,7 @@ class ShotsTest {
                 () -> assertEquals(Obj.CANNON_SHOT, o.type[h], "of type CANNON_SHOT"),
                 () -> assertEquals((double) life, o.life[h], EPS, "life = 8 + randomMT() % 24"),
                 () -> assertEquals(life - 2.0, o.fuseLife[h], EPS, "fuse life = life - 2"),
-                () -> assertEquals(0.4, o.mass[h], EPS, "CANNON_SHOT_MASS"),
+                () -> assertEquals(0.4f, o.mass[h], "CANNON_SHOT_MASS (assigned to a C float)"),
                 () -> assertEquals(Obj.GRAVITY | Obj.FROMCANNON, o.status[h], "GRAVITY | FROMCANNON"),
                 () -> assertEquals(Obj.NO_ID, o.owner[h], "unowned"),
                 () -> assertEquals(2, o.team[h], "the cannon's team"),
@@ -261,23 +261,23 @@ class ShotsTest {
             Simulation s = sim(FRAME + "fireRepeatRate: 5\n", 20, 20, "_");
             World w = s.world;
             Player p = ready(s, "P", 0, 200, 300);
-            w.frames = 4.9;
+            w.frames = 4;
             s.shots.fireNormalShots(p);
             int early = w.objects.count();
             w.frames = 5;
             s.shots.fireNormalShots(p);
             int onTime = w.objects.count();
             double t = p.shotTime;
-            w.frames = 9.9;
+            w.frames = 9;
             s.shots.fireNormalShots(p);
             int again = w.objects.count();
             w.frames = 10;
             s.shots.fireNormalShots(p);
             assertAll(
-                () -> assertEquals(0, early, "4.9 frames after shot time 0 is too early"),
+                () -> assertEquals(0, early, "4 frames after shot time 0 is too early"),
                 () -> assertEquals(1, onTime, "5 frames later it fires"),
                 () -> assertEquals(5.0, t, EPS, "remembers the frame clock as shot time"),
-                () -> assertEquals(1, again, "9.9 is too early for the next"),
+                () -> assertEquals(1, again, "9 is too early for the next"),
                 () -> assertEquals(2, w.objects.count(), "10 fires again"));
         }
 
@@ -290,17 +290,17 @@ class ShotsTest {
             return (int) Math.round((FUEL0 - p.fuel) / 51);
         }
 
-        /** C model: a shot whenever frame_loops >= shot_time + rate, the clock stepping by dt. */
-        int model(double dt, int ticks, int rate) {
-            double f = 0;
-            double last = 0;
+        /** C model: a shot whenever frame_loops (1, 2, ...) >= shot_time (initially 0) + rate. */
+        int model(int ticks, int rate) {
+            long f = 1;
+            long last = 0;
             int n = 0;
             for (int k = 0; k < ticks; k++) {
                 if (f >= last + rate) {
                     n++;
                     last = f;
                 }
-                f += dt;
+                f++;
             }
             return n;
         }
@@ -309,11 +309,11 @@ class ShotsTest {
         @DisplayName("holding fire repeats every fireRepeatRate original frames; releasing stops it")
         void autofire() {
             assertAll(
-                () -> assertEquals(4, heldShots(FRAME, 10, 10), "dt 1: shots at frames 2, 4, 6, 8"),
-                () -> assertEquals(model(1.0, 10, 2), heldShots(FRAME, 10, 10), "matches the frame-clock model"),
-                () -> assertEquals(model(14.0 / 60, 60, 2), heldShots(FPS14, 60, 60),
-                    "at 14 fps shots follow the original frame clock"),
-                () -> assertEquals(6, heldShots(FPS14, 60, 60), "14 frames of holding give 6 shots"),
+                () -> assertEquals(5, heldShots(FRAME, 10, 10),
+                    "frame_loops starts at 1: the press at frame 1 is too early, then shots at frames 2, 4, 6, 8, 10"),
+                () -> assertEquals(model(10, 2), heldShots(FRAME, 10, 10), "matches the frame-clock model"),
+                () -> assertEquals(model(14, 2), heldShots(FPS14, 14, 14), "at 14 fps a tick is a frame too"),
+                () -> assertEquals(7, heldShots(FPS14, 14, 14), "14 frames of holding give 7 shots"),
                 () -> assertEquals(2, heldShots(FRAME, 20, 5), "releasing after 5 ticks stops at 2 shots"));
         }
     }
@@ -416,7 +416,7 @@ class ShotsTest {
         }
 
         @Test
-        @DisplayName("flak explodes into cluster shots: 2 white fragments, kinetic mass, life 2")
+        @DisplayName("flak explodes into cluster shots: 2 fragments, kinetic mass, life 2, sent as shots not a burst")
         void flak() {
             setup();
             int h = obj(w, Obj.CANNON_SHOT, Obj.NO_ID, 300, 300, 0, 0, 0.4, 1);
@@ -424,24 +424,23 @@ class ShotsTest {
             w.objects.mods[h] = Obj.MOD_CLUSTER;
             // seed 6 draws 0.527: a wrong min count of 0 would give (int)(0.527 * 3) = 1 fragment
             w.rng.seed(6);
+            long bursts = w.events.burstSeq();
             s.shots.delete(h);
-            DebrisBurst d = lastBurst(w);
-            int i = Events.burstIndex(w.events.burstSeq() - 1);
             List<Integer> l = live(w);
             Objects o = w.objects;
             int first = l.get(0);
             // intensity = (int)(0.4 * 0.9 / 0.1) = 3; min (int)(0.2f*3*4) = 2, max (int)(0.3f*3*4) = 3
             assertAll(
-                () -> assertEquals(2, d.count, "2 + (int)(rfrac * 1) = 2 fragments"),
-                () -> assertEquals(20.0f, d.maxSpeed, "speed 20 (max (3>>2) raised to min)"),
-                () -> assertEquals(1, d.minLife, "min life (int)(8 * 0.2f) = 1"),
-                () -> assertEquals(1, d.maxLife, "max life (int)(1 * 0.2f) = 0 raised to 1"),
-                () -> assertEquals(Records.ObjColor.WHITE, w.events.burstColor[i], "white"),
+                () -> assertEquals(2, l.size(), "2 + (int)(rfrac * 1) = 2 fragments"),
+                () -> assertEquals(bursts, w.events.burstSeq(), "no burst: the fragments reach clients as CLUSTER shots"),
+                () -> assertEquals(20.0f, (float) Math.hypot(o.vx[first], o.vy[first]), 0.01,
+                    "speed 20 (max (3>>2) raised to min; the direction between table entries is a chord, <= 0.01 shorter)"),
+                () -> assertEquals(Records.ObjColor.WHITE, o.color[first], "white"),
                 () -> assertEquals(Obj.SHOT, o.type[first], "fragments are shots"),
                 () -> assertEquals(Obj.MOD_CLUSTER, o.mods[first], "marked CLUSTER"),
                 () -> assertEquals(Obj.GRAVITY, o.status[first], "without FROMCANNON when the shot had none"),
                 // kinetic: mass = 3 * shotMass / (speed / shotSpeed)^2 with speed 20
-                () -> assertEquals(0.3 / ((20.0 / 21) * (20.0 / 21)), o.mass[first], 1e-6, "cluster kinetic mass"),
+                () -> assertEquals(0.3 / ((20.0 / 21) * (20.0 / 21)), o.mass[first], 1e-5, "cluster kinetic mass (floats)"),
                 () -> assertEquals(2.0, o.life[first], EPS, "life (int)(1 + r*0 + 1) = 2"));
         }
     }

@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Click (click.h / walls.h DOUBLE_TO_INT), Trig (const.h tsin/tcos) and ShipGeom (shipshape.c Rotate_point). */
 class GeometryHelpersTest {
@@ -74,15 +75,16 @@ class GeometryHelpersTest {
         @Test
         @DisplayName("tables hold the exact quarter values and wrap modulo RES")
         void identities() {
-            boolean cosIsShiftedSin = true;
+            boolean cosTable = true;
             boolean pythagoras = true;
             for (int d = -Const.RES; d < 2 * Const.RES; d++) {
-                cosIsShiftedSin &= Trig.tcos(d) == Trig.tsin(d + Const.RES / 4);
+                int m = d & (Const.RES - 1);
+                cosTable &= Trig.tcos(d) == (float) StrictMath.cos(m * (2.0 * Math.PI / Const.RES));
                 double s = Trig.tsin(d);
                 double c = Trig.tcos(d);
-                pythagoras &= Math.abs(s * s + c * c - 1) < EPS;
+                pythagoras &= Math.abs(s * s + c * c - 1) < 1e-6;
             }
-            boolean cosOk = cosIsShiftedSin;
+            boolean cosOk = cosTable;
             boolean pyOk = pythagoras;
             assertAll(
                 () -> assertEquals(0.0, Trig.tsin(0), "sin(0) = 0"),
@@ -90,13 +92,15 @@ class GeometryHelpersTest {
                 () -> assertEquals(-1.0, Trig.tsin(96), "sin(3RES/4) = -1"),
                 () -> assertEquals(1.0, Trig.tcos(0), "cos(0) = 1"),
                 () -> assertEquals(-1.0, Trig.tcos(64), "cos(RES/2) = -1"),
-                () -> assertEquals(Math.sqrt(0.5), Trig.tsin(16), EPS, "sin(RES/8) = sqrt(1/2)"),
-                () -> assertEquals(StrictMath.sin(5 * 2.0 * Math.PI / 128), Trig.tsin(5), "entry i is StrictMath.sin(2 pi i / RES)"),
+                () -> assertEquals((float) Math.sqrt(0.5), Trig.tsin(16), "sin(RES/8) = sqrt(1/2) as a float"),
+                () -> assertEquals((float) StrictMath.sin(5 * (2.0 * Math.PI / 128)), Trig.tsin(5),
+                    "entry i is (float) sin(2 pi i / RES), C's DFLOAT tbl_sin"),
+                () -> assertTrue(Trig.tcos(32) != 0f, "C's tbl_cos[32] = (float) cos(pi/2) is not 0 (its own table)"),
                 () -> assertEquals(Trig.tsin(96), Trig.tsin(-32), "a negative heading is taken modulo RES"),
                 () -> assertEquals(Trig.tsin(32), Trig.tsin(160), "a heading above RES is taken modulo RES"),
                 () -> assertEquals(Trig.tcos(1), Trig.tcos(129), "tcos also takes the heading modulo RES"),
-                () -> assertEquals(true, cosOk, "tcos(d) == tsin(d + RES/4) for every heading"),
-                () -> assertEquals(true, pyOk, "sin^2 + cos^2 = 1 for every heading"),
+                () -> assertEquals(true, cosOk, "tcos(d) is (float) cos(2 pi d / RES) for every heading, mod RES"),
+                () -> assertEquals(true, pyOk, "sin^2 + cos^2 = 1 for every heading (float rounding)"),
                 () -> assertEquals(127, Trig.mod(-1), "MOD2(-1, RES) is RES-1"),
                 () -> assertEquals(2, Trig.mod(130), "MOD2(130, RES) is 2"),
                 () -> assertEquals(0, Trig.mod(128), "MOD2(RES, RES) is 0"));
@@ -118,8 +122,9 @@ class GeometryHelpersTest {
                 () -> assertEquals(0.0, g.ptY[0][0], "heading 0 keeps the nose at (15, 0): y"),
                 () -> assertEquals(0.0, g.ptX[0][32], EPS, "heading up puts the nose at x 0"),
                 () -> assertEquals(15.0, g.ptY[0][32], EPS, "heading up puts the nose at y 15"),
-                () -> assertEquals(15 * r, g.ptX[0][16], EPS, "heading 45 degrees: nose x = 15 cos 45"),
-                () -> assertEquals(15 * r, g.ptY[0][16], EPS, "heading 45 degrees: nose y = 15 sin 45"),
+                () -> assertEquals(Trig.tcos(16) * 15f - Trig.tsin(16) * 0f, g.ptX[0][16], "heading 45: nose x (floats)"),
+                () -> assertEquals(Trig.tsin(16) * 15f + Trig.tcos(16) * 0f, g.ptY[0][16], "heading 45: nose y (floats)"),
+                () -> assertEquals(15 * r, g.ptX[0][16], 1e-5, "which is 15 cos 45"),
                 () -> assertEquals(-8.0, g.ptX[1][32], EPS, "(-9, 8) rotated by 90 degrees: x = -y = -8"),
                 () -> assertEquals(-9.0, g.ptY[1][32], EPS, "(-9, 8) rotated by 90 degrees: y = x = -9"),
                 () -> assertEquals(9.0, g.ptX[2][64], EPS, "(-9, -8) rotated by 180 degrees: x = 9"),
@@ -132,13 +137,43 @@ class GeometryHelpersTest {
         @Test
         @DisplayName("rotate uses (x cos - y sin, x sin + y cos) with the table values")
         void rotateFormula() {
-            double[] ox = new double[Const.RES];
-            double[] oy = new double[Const.RES];
+            float[] ox = new float[Const.RES];
+            float[] oy = new float[Const.RES];
             ShipGeom.rotate(3, -7, ox, oy);
             assertAll(
                 () -> assertEquals(Trig.tcos(5) * 3 - Trig.tsin(5) * -7, ox[5], "x is x cos - y sin"),
                 () -> assertEquals(Trig.tsin(5) * 3 + Trig.tcos(5) * -7, oy[5], "y is x sin + y cos"),
                 () -> assertEquals(Trig.tcos(127) * 3 - Trig.tsin(127) * -7, ox[127], "the last heading is filled"));
+        }
+
+        @Test
+        @DisplayName("hull points truncate to C's clicks at every heading (float tables, float math)")
+        void clickExactLikeC() {
+            ShipGeom g = ShipGeom.defaultShip();
+            int bad = 0;
+            String first = "";
+            for (int i = 0; i < g.numPoints; i++) {
+                for (int d = 0; d < Const.RES; d++) {
+                    float c = (float) StrictMath.cos(d * (2.0 * Math.PI / Const.RES));
+                    float sn = (float) StrictMath.sin(d * (2.0 * Math.PI / Const.RES));
+                    float x = g.shape.ptX[i];
+                    float y = g.shape.ptY[i];
+                    int cx = (int) ((d == 0 ? x : c * x - sn * y) * 64);
+                    int cy = (int) ((d == 0 ? y : sn * x + c * y) * 64);
+                    if (Click.fromPixels(g.ptX[i][d]) != cx || Click.fromPixels(g.ptY[i][d]) != cy) {
+                        bad++;
+                        first = first.isEmpty() ? "point " + i + " dir " + d : first;
+                    }
+                }
+            }
+            int badCount = bad;
+            String where = first;
+            assertAll(
+                () -> assertEquals(0, badCount, "every point at every heading matches C's float rotation: " + where),
+                () -> assertEquals(-512, Click.fromPixels(g.ptX[1][32]), "(-9, 8) at heading 32: x is exactly -8 px"),
+                () -> assertEquals(-576, Click.fromPixels(g.ptY[1][32]), "(-9, 8) at heading 32: y is exactly -9 px"),
+                () -> assertEquals(576, Click.fromPixels(g.ptX[1][64]), "(-9, 8) at heading 64: x is exactly 9 px"),
+                () -> assertEquals(-512, Click.fromPixels(g.ptY[1][64]), "(-9, 8) at heading 64: y is exactly -8 px"));
         }
 
         @Test

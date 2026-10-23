@@ -182,18 +182,19 @@ class ShipsDeathTest {
             tick(s, p, 0);
             // update.c Transport_to_home, T = 180: count 179 -> t = 179.5, 2t > T: t = 0.5,
             // m = 4*0.5 / (180^2 - 2*0.25); velocity = (base - pos) * m
-            double m1 = (4 * 0.5) / (180.0 * 180 - 2 * 0.5 * 0.5);
+            float t1 = 180 - (179 + 0.5f);
+            float m1 = (4 * t1) / (180 * 180 - 2 * t1 * t1);
             double vx1 = p.vx;
             double vy1 = p.vy;
-            double dx = 192.5 - 100;
-            double dy = 192.5 - 300;
+            float dx = 192.5f - 100;
+            float dy = 192.5f - 300;
             ticks(s, p, 179, 0);
             int alive180 = p.status & Obj.PLAYING;
             double count180 = p.count;
             tick(s, p, 0);
             assertAll(
-                () -> assertEquals(dx * m1, vx1, 1e-12, "x: distance * m (accelerating phase)"),
-                () -> assertEquals(dy * m1, vy1, 1e-12, "y: distance * m"),
+                () -> assertEquals(dx * m1, vx1, "x: distance * m (accelerating phase, C floats)"),
+                () -> assertEquals(dy * m1, vy1, "y: distance * m"),
                 () -> assertEquals(0, alive180, "after 180 frames the ship is still dead"),
                 () -> assertEquals(0.0, count180, "with count 0"),
                 () -> assertEquals(Obj.PLAYING, p.status & Obj.PLAYING, "frame 181: PLAYING again"),
@@ -213,28 +214,28 @@ class ShipsDeathTest {
             s.ships.kill(p);
             p.count = 90;
             tick(s, p, 0);
-            double t = 89 + 0.5;
+            float t = 89 + 0.5f;
             // 2t = 179 <= 180: m = 2 / t
             double vx = p.vx;
             assertAll(
                 () -> assertEquals(89.0, p.count, "count went down one frame"),
-                () -> assertEquals((192.5 - 100) * (2 / t), vx, 1e-12, "m = 2/t near the end"));
+                () -> assertEquals((192.5f - 100) * (2 / t), vx, "m = 2/t near the end (C floats)"));
         }
 
         @Test
-        void at14FpsTheRecoveryTakes180TicksToo() {
+        void at14FpsTheRecoveryTakes42Ticks() {
             Simulation s = sim(FPS14, ROOM);
             Player p = s.ships.join("a", 0);
             p.initPixels(100.5, 300.5);
             s.ships.kill(p);
             double count0 = p.count;
-            ticks(s, p, 180, 0);
-            int alive180 = p.status & Obj.PLAYING;
+            ticks(s, p, 42, 0);
+            int alive42 = p.status & Obj.PLAYING;
             tick(s, p, 0);
             assertAll(
                 () -> assertEquals(42.0, count0, "3*14 = 42 frames"),
-                () -> assertEquals(0, alive180, "dead for 180 ticks (42 frames / dt)"),
-                () -> assertEquals(Obj.PLAYING, p.status & Obj.PLAYING, "alive on tick 181"),
+                () -> assertEquals(0, alive42, "dead for 42 ticks (one tick is one frame)"),
+                () -> assertEquals(Obj.PLAYING, p.status & Obj.PLAYING, "alive on tick 43"),
                 () -> assertEquals(12320, p.cx, "on the base"));
         }
 
@@ -276,9 +277,9 @@ class ShipsDeathTest {
                 () -> assertEquals(0, p.status & (Obj.PLAYING | Obj.SELF_DESTRUCT), "dead after 150, not armed"),
                 () -> assertEquals(1, p.deaths, "a death"),
                 () -> assertEquals(0.0, p.score, "selfDestructScoreMult 0: no score change"),
-                () -> assertEquals(List.of("MESSAGE " + Msg.Text.KIND_GAME + " -1 a has committed suicide.",
-                        "GAME_EVENT " + Msg.GameEvent.KILL + " 1 1"), ev.subList(0, 2),
-                    "the suicide is announced and reported as a self kill"));
+                () -> assertEquals(List.of("GAME_EVENT " + Msg.GameEvent.KILL + " 1 1",
+                        "MESSAGE " + Msg.Text.KIND_GAME + " -1 a has committed suicide."), ev.subList(0, 2),
+                    "the self kill is reported (before any score it causes) and announced"));
         }
 
         @Test

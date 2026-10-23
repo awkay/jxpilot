@@ -259,7 +259,7 @@ class CannonsTest {
         void leading() {
             Player p = setup("cannonSmartness: 3\n", 0, 200);
             p.vx = 10;
-            p.accX = 0.5;
+            p.accX = 0.5f;
             boolean fired = c.aim(0);
             int dir = c.aimDir;
             p.vy = -4;
@@ -393,10 +393,6 @@ class CannonsTest {
             World w14 = s14.world;
             w14.cannonDeadTime[0] = 1;
             w14.map.setBlock(cn.bx(), cn.by(), BlockType.SPACE);
-            for (int i = 0; i < 4; i++) {
-                s14.cannons.update();
-            }
-            byte after4 = w14.map.block(cn.bx(), cn.by());
             s14.cannons.update();
             assertAll(
                 () -> assertEquals(BlockType.SPACE, mid, "still dead after 2 frames"),
@@ -404,9 +400,23 @@ class CannonsTest {
                 () -> assertEquals(new Rng(2).nextInt(), next, "dead cannons draw no random numbers"),
                 () -> assertEquals(BlockType.CANNON, w.map.block(cn.bx(), cn.by()), "back after 3 frames"),
                 () -> assertEquals(0.0, w.cannonDeadTime[0], EPS, "alive again"),
-                () -> assertEquals(BlockType.SPACE, after4, "at 14 fps one frame is more than 4 ticks"),
-                () -> assertEquals(BlockType.CANNON, w14.map.block(cn.bx(), cn.by()), "and back on the 5th"),
+                () -> assertEquals(BlockType.CANNON, w14.map.block(cn.bx(), cn.by()), "at 14 fps one tick is one frame"),
                 () -> assertEquals(0.0, w14.cannonDeadTime[0], EPS, "the countdown stops at 0"));
+        }
+
+        @Test
+        @DisplayName("a live cannon (dead time 0) draws its 1/16 chance every frame")
+        void liveDraws() {
+            Simulation s = sim(FRAME, "_");
+            World w = s.world;
+            w.rng.seed(2);
+            s.cannons.update();
+            int next = w.rng.nextInt();
+            Rng r = new Rng(2);
+            r.nextFloat();
+            assertAll(
+                () -> assertEquals(r.nextInt(), next, "one draw this frame"),
+                () -> assertEquals(0.0, w.cannonDeadTime[0], EPS, "and stays alive (0)"));
         }
 
         int fires(String extra, int ticks) {
@@ -427,10 +437,10 @@ class CannonsTest {
         void fireRate() {
             int n60 = fires(FRAME, 16000);
             int n14 = fires(FPS14, 16000);
-            // binomial: 1000 +- 31 (dt = 1) and 233 +- 15 (dt = 14/60); 4 sigma bounds
+            // binomial: 1000 +- 31 at any fps (one check chance of 1/16 per frame = tick); 4 sigma bounds
             assertAll(
-                () -> assertTrue(Math.abs(n60 - 1000) < 125, "about 16000/16 checks at dt 1, got " + n60),
-                () -> assertTrue(Math.abs(n14 - 233.3) < 61, "about 16000*(14/60)/16 at 14 fps, got " + n14));
+                () -> assertTrue(Math.abs(n60 - 1000) < 125, "about 16000/16 checks at 60 fps, got " + n60),
+                () -> assertTrue(Math.abs(n14 - 1000) < 125, "and at 14 fps, got " + n14));
         }
 
         @Test

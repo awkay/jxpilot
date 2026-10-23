@@ -60,6 +60,37 @@ class ServerSimTest {
     }
 
     @Nested
+    @DisplayName("Args.parse validation (I6)")
+    class Validation {
+        String error(String... a) {
+            return assertThrows(IllegalArgumentException.class, () -> ServerSim.Args.parse(a)).getMessage();
+        }
+
+        @Test
+        @DisplayName("bad values are named in the message; the usage line lists every flag")
+        void messages() {
+            assertAll(
+                () -> assertEquals("--ticks needs an integer, got x", error("--map", "m", "--ticks", "x"),
+                    "a non-integer value"),
+                () -> assertEquals("--seed needs an integer, got 1.5", error("--map", "m", "--seed", "1.5"),
+                    "seed is any integer, but an integer"),
+                () -> assertEquals("--players must not be negative", error("--map", "m", "--players", "-1"),
+                    "negative players"),
+                () -> assertEquals("--ticks must not be negative", error("--map", "m", "--ticks", "-1"), "negative ticks"),
+                () -> assertEquals("--every must not be negative", error("--map", "m", "--every", "-2"), "negative every"),
+                () -> assertEquals(0, ServerSim.Args.parse(new String[] {"--map", "m", "--every", "0"}).every(),
+                    "0 is not negative"),
+                () -> assertEquals("missing value for --map", error("--map"), "a flag without value"),
+                () -> assertEquals("missing --map", error("--ticks", "3"), "no map"),
+                () -> assertEquals("unknown argument --x", error("--map", "m", "--x", "1"), "unknown flag"),
+                () -> assertEquals(-7, ServerSim.Args.parse(new String[] {"--map", "m", "--seed", "-7"}).seed(),
+                    "a negative seed is fine"),
+                () -> assertEquals("usage: ServerSim --map FILE [--ticks N] [--seed S] [--players P] [--every K]",
+                    ServerSim.USAGE, "usage line"));
+        }
+    }
+
+    @Nested
     @DisplayName("run")
     class Run {
         String out(ServerSim.Args a, long[] digest) {
@@ -114,6 +145,19 @@ class ServerSimTest {
             assertAll(
                 () -> assertEquals(manual, d[0], "run equals 30 ticks with RandomPilot(seed + 1)"),
                 () -> org.junit.jupiter.api.Assertions.assertNotEquals(initial, d[0], "the world advanced"));
+        }
+
+        @Test
+        @DisplayName("output uses Locale.ROOT: a decimal point whatever the default locale")
+        void locale() {
+            java.util.Locale before = java.util.Locale.getDefault();
+            try {
+                java.util.Locale.setDefault(java.util.Locale.GERMANY);
+                String o = out(new ServerSim.Args("arena", 1, 5, 1, 0), new long[1]);
+                assertTrue(o.contains(" score 0.00 "), "score printed as 0.00: " + o);
+            } finally {
+                java.util.Locale.setDefault(before);
+            }
         }
 
         @Test

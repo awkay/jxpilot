@@ -25,26 +25,32 @@ package com.fulcrologic.jxpilot.server.world;
 
 import com.fulcrologic.jxpilot.common.Const;
 
-/** C {@code tcos}/{@code tsin} tables over RES headings, computed with StrictMath so every JVM agrees. */
+/**
+ * C {@code tcos}/{@code tsin}: the {@code tbl_cos}/{@code tbl_sin} tables of {@code Make_table} (math.c),
+ * {@code (float) cos(i * 2pi/RES)} and {@code (float) sin(...)}: C stores them as {@code DFLOAT}, and two
+ * separate tables (cos is not a shifted sine). Computed with StrictMath so every JVM agrees.
+ */
 public final class Trig {
     private Trig() {}
 
-    private static final double[] SIN = new double[Const.RES];
+    private static final float[] SIN = new float[Const.RES];
+    private static final float[] COS = new float[Const.RES];
 
     static {
         for (int i = 0; i < Const.RES; i++) {
-            SIN[i] = StrictMath.sin(i * 2.0 * Math.PI / Const.RES);
+            SIN[i] = (float) StrictMath.sin(i * (2.0 * Math.PI / Const.RES));
+            COS[i] = (float) StrictMath.cos(i * (2.0 * Math.PI / Const.RES));
         }
     }
 
-    /** BEHAVIOR: sine of a RES heading; any int is taken modulo RES (C {@code MOD2}). */
-    public static double tsin(int dir) {
+    /** BEHAVIOR: sine of a RES heading as a C float; any int is taken modulo RES (C {@code MOD2}). */
+    public static float tsin(int dir) {
         return SIN[dir & (Const.RES - 1)];
     }
 
-    /** BEHAVIOR: cosine of a RES heading, {@code tsin(dir + RES/4)}. */
-    public static double tcos(int dir) {
-        return SIN[(dir + Const.RES / 4) & (Const.RES - 1)];
+    /** BEHAVIOR: cosine of a RES heading as a C float, from its own table. */
+    public static float tcos(int dir) {
+        return COS[dir & (Const.RES - 1)];
     }
 
     /** C {@code MOD2(x, RES)}. */

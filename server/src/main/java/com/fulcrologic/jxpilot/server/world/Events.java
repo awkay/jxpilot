@@ -33,7 +33,7 @@ import com.fulcrologic.jxpilot.common.math.DebrisBurst;
  *   <li><b>Reliable events</b> ({@link #seq()}): one record per change that clients must not miss,
  *       mapped 1:1 onto {@code ReliableType} messages: {@link #JOIN}, {@link #LEAVE}, {@link #TEAM},
  *       {@link #SCORE}, {@link #TEAM_SCORE}, {@link #MESSAGE}, {@link #BASE_OWNER}, {@link #GAME_EVENT},
- *       {@link #THRUST}. Fields: {@code a, b, c} ints and {@code value} float as documented per kind;
+ *       {@link #THRUST}, {@link #SCORE_OBJECT}. Fields: {@code a, b, c} ints and {@code value} float as documented per kind;
  *       {@link #text} for MESSAGE.</li>
  *   <li><b>Bursts</b> ({@link #burstSeq()}): wire-quantized spark/debris bursts (one per C
  *       {@code Make_debris}) with the sim tick they were made in, for the SNAPSHOT BURST section.</li>
@@ -58,12 +58,22 @@ public final class Events {
     public static final int TEAM_SCORE = 5;
     /** a = Msg.Text kind, b = sender id or {@link Obj#NO_ID}; text in {@link #text}. */
     public static final int MESSAGE = 6;
-    /** a = base index, b = player id. */
+    /** a = base index, b = player id ({@link Obj#NO_ID} when the base is released). */
     public static final int BASE_OWNER = 7;
-    /** a = Msg.GameEvent kind, b = first id (killer, or NO_ID), c = second id (victim), value. */
+    /**
+     * a = Msg.GameEvent kind, b = first id, c = second id, value. KILL: b = killer (or NO_ID), c = victim,
+     * value = crash sub-type for a shove into a wall, else 0. CRASH: b = the player who crashed, c = the other
+     * player in a two-ship crash, else NO_ID, value = crash sub-type ({@code Msg.GameEvent.CRASH_*}). SPAWN:
+     * b = player, c = base index. A kill or crash event always precedes the SCORE_OBJECT/SCORE events it causes.
+     */
     public static final int GAME_EVENT = 8;
     /** a = player id, b = afterburners, value = power. */
     public static final int THRUST = 9;
+    /**
+     * A score popup for one player's HUD (C {@code Send_score_object}): a = the player whose score changed
+     * (the only receiver), b = block x, c = block y, value = points; label in {@link #text}.
+     */
+    public static final int SCORE_OBJECT = 10;
 
     public final int[] kind = new int[CAPACITY];
     public final int[] a = new int[CAPACITY];

@@ -37,9 +37,9 @@ import java.util.List;
 final class ShipFx {
     private ShipFx() {}
 
-    /** dt = 1 (one tick = one C frame), no gravity. */
+    /** 60 fps (one tick = one C frame at every fps), no gravity. */
     static final String C_FRAMES = "framesPerSecond: 60\ngravity: 0\n";
-    /** Default 14 fps (dt = 14/60), no gravity. */
+    /** Default 14 fps, no gravity. */
     static final String FPS14 = "gravity: 0\n";
 
     /** 11x11 room, one base in the centre (block 5,5), far from every wall. */
@@ -105,10 +105,13 @@ final class ShipFx {
                 case Events.BASE_OWNER -> "BASE_OWNER";
                 case Events.GAME_EVENT -> "GAME_EVENT";
                 case Events.THRUST -> "THRUST";
+                case Events.SCORE_OBJECT -> "SCORE_OBJECT";
                 default -> "?" + e.kind[i];
             };
             if (e.kind[i] == Events.MESSAGE) {
                 out.add(k + " " + e.a[i] + " " + e.b[i] + " " + e.text[i]);
+            } else if (e.kind[i] == Events.SCORE_OBJECT) {
+                out.add(k + " " + e.a[i] + " " + e.b[i] + " " + e.c[i] + " " + e.value[i] + " " + e.text[i]);
             } else if (e.kind[i] == Events.SCORE || e.kind[i] == Events.TEAM_SCORE) {
                 out.add(k + " " + e.a[i] + " " + e.b[i] + " " + e.c[i] + " " + e.value[i]);
             } else {

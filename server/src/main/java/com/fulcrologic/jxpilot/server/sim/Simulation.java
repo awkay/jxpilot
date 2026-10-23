@@ -33,9 +33,10 @@ import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 
 /**
- * The fixed-rate (60 Hz) simulation step: C {@code Handle_keyboard} for every player, then
- * {@code Update_objects} ({@code src/server/update.c}), in C's order. Deterministic: all randomness comes
- * from {@link World#rng}; no clock, no I/O, no allocation per tick.
+ * One simulation tick = one C frame ({@code Main_loop}: {@code Handle_keyboard} for every player, then
+ * {@code Update_objects} in {@code src/server/update.c}), in C's order, at the map's framesPerSecond (SPEC
+ * "Time model"). Deterministic: all randomness comes from {@link World#rng}; no clock, no I/O, no allocation
+ * per tick.
  * <p>
  * Tick phases:
  * <ol>
@@ -47,9 +48,10 @@ import com.fulcrologic.jxpilot.server.world.World;
  *   <li>players ({@link Ships#update}: turn, fuel, thrust, warp, move, sparks);</li>
  *   <li>wormhole countdowns;</li>
  *   <li>collisions ({@link Collisions}) over the rebuilt {@link com.fulcrologic.jxpilot.server.world.Grid};</li>
- *   <li>killed ships explode and reset ({@link Ships#kill});</li>
+ *   <li>killed ships explode and reset ({@link Ships#kill}), idle pause, pause-time kick;</li>
  *   <li>object lifetimes run down, expired objects are deleted ({@link Shots#delete});</li>
- *   <li>score events for changed players/teams; tick and frame clock advance.</li>
+ *   <li>game status: rounds end, round delay ({@link Rounds});</li>
+ *   <li>score events for changed players/teams; the frame clock advances.</li>
  * </ol>
  */
 public final class Simulation {
@@ -68,6 +70,7 @@ public final class Simulation {
     public final Collisions collisions;
     public final Cannons cannons;
     public final Keys keys;
+    public final Rounds rounds;
 
     public Simulation(World world) {
         this.world = world;
@@ -80,16 +83,30 @@ public final class Simulation {
         this.collisions = new Collisions(world, this);
         this.cannons = new Cannons(world, this);
         this.keys = new Keys(world, this);
+        this.rounds = new Rounds(world, this);
+        com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder.initRecordClasses();
     }
 
     /**
-     * Advance one sim tick.
+     * Run the next tick ({@code world.tick + 1}).
      *
      * @param input control key masks indexed by player slot ({@link Player#slot}); slots not in the game
      *              are ignored
      */
     public void tick(long[] input) {
+        tick(world.tick + 1, input);
+    }
+
+    /**
+     * Run tick number {@code t}: {@link World#tick} is {@code t} during and after the tick, so the network
+     * layer can number ticks itself (bursts are tagged and thrust sparks seeded with it, and a snapshot
+     * built after this call shows tick {@code t}).
+     * <p>
+     * BEHAVIOR: sets the tick number, runs the phases in C order and advances {@link World#frames} by one.
+     */
+    public void tick(int t, long[] input) {
         World w = world;
+        w.tick = t;
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
             keys.apply(pl, input[pl.slot]);
@@ -103,17 +120,16 @@ public final class Simulation {
         }
         countDownWormholes();
         w.grid.rebuild(w.objects);
-        collisions.check();
-        for (int k = w.numPlayers - 1; k >= 0; k--) {
-            Player pl = w.playerAt(k);
-            if ((pl.status & Obj.KILLED) != 0) {
-                ships.kill(pl);
-            }
+        if (w.roundDelay == 0) {
+            collisions.check();
         }
+        killPlayers();
         expireObjects();
+        if (w.gameDuration >= 0 || w.params.maxRoundTime > 0) {
+            rounds.computeGameStatus();
+        }
         emitScores();
-        w.tick++;
-        w.frames += w.params.dt;
+        w.frames++;
     }
 
     /** Autorepeat fire for players holding fire (update.c:507-514). */
@@ -130,7 +146,7 @@ public final class Simulation {
     }
 
     /**
-     * Fuel stations regenerate (int)(players * 0.06*256) per frame, times dt, up to 500*256 (update.c:530-549).
+     * Fuel stations regenerate (int)(players * 0.06*256) per frame up to 500*256 (update.c:530-549).
      * <p>
      * BEHAVIOR: nothing without players.
      */
@@ -139,52 +155,88 @@ public final class Simulation {
         if (w.numPlayers <= 0) {
             return;
         }
-        double fuel = (int) (w.numPlayers * STATION_REGENERATION) * w.params.dt;
+        int fuel = (int) (w.numPlayers * STATION_REGENERATION);
         for (int i = 0; i < w.fuelLevel.length; i++) {
             w.fuelLevel[i] = Math.min(MAX_STATION_FUEL, w.fuelLevel[i] + fuel);
         }
     }
 
     /**
-     * Object speed and movement (update.c:551-582): {@code vel += (acc + gravity if GRAVITY) * dt}, then move.
+     * Object speed and movement (update.c:551-582, C {@code update_object_speed} in float):
+     * {@code vel += acc + gravity} (gravity only with GRAVITY), then move.
      */
     void moveObjects() {
         World w = world;
         Objects o = w.objects;
-        double dt = w.params.dt;
         for (int k = 0; k < o.count(); k++) {
             int h = o.active[k];
             if ((o.status[h] & Obj.GRAVITY) != 0) {
-                int bx = Math.floorDiv(o.px[h], Const.BLOCK_SZ);
-                int by = Math.floorDiv(o.py[h], Const.BLOCK_SZ);
-                o.vx[h] += (o.accX[h] + w.gravityX(bx, by)) * dt;
-                o.vy[h] += (o.accY[h] + w.gravityY(bx, by)) * dt;
+                int bx = o.px[h] / Const.BLOCK_SZ;
+                int by = o.py[h] / Const.BLOCK_SZ;
+                o.vx[h] += o.accX[h] + w.gravityX(bx, by);
+                o.vy[h] += o.accY[h] + w.gravityY(bx, by);
             } else {
-                o.vx[h] += o.accX[h] * dt;
-                o.vy[h] += o.accY[h] * dt;
+                o.vx[h] += o.accX[h];
+                o.vy[h] += o.accY[h];
             }
             mover.moveObject(h);
         }
     }
 
-    /** Wormhole countdowns run down by dt (update.c:1222-1230). */
+    /** Wormhole countdowns run down by one frame (update.c:1222-1230). */
     void countDownWormholes() {
-        double[] c = world.wormCountdown;
+        int[] c = world.wormCountdown;
         for (int i = c.length - 1; i >= 0; i--) {
             if (c[i] > 0) {
-                c[i] = Math.max(0, c[i] - world.params.dt);
+                c[i]--;
             }
         }
     }
 
-    /** Lifetimes run down by dt; objects at or below zero are deleted (update.c:1310-1315). */
+    /**
+     * The kill loop of update.c:1287-1316, last player first.
+     * <p>
+     * BEHAVIOR: a KILLED player explodes and resets ({@link Ships#kill}); a human who has been idle for more
+     * than 60*FPS frames is then paused when another human is in the game.
+     * BEHAVIOR: a human paused for longer than maxPauseTime (if &gt; 0) is kicked with a message
+     * ({@link Ships#leave}: the network layer sees the LEAVE event and closes the connection).
+     */
+    void killPlayers() {
+        World w = world;
+        for (int k = w.numPlayers - 1; k >= 0; k--) {
+            Player pl = w.playerAt(k);
+            if ((pl.status & Obj.KILLED) != 0) {
+                ships.kill(pl);
+                if (!pl.robot && w.frames - pl.frameLastBusy > 60L * w.params.fps && humans() > 1) {
+                    ships.pause(pl, true);
+                }
+            }
+            if (w.params.maxPauseTime > 0 && !pl.robot && (pl.status & Obj.PAUSE) != 0
+                && w.frames - pl.frameLastBusy > w.params.maxPauseTime) {
+                w.events.message(Msg.Text.KIND_SERVER, Obj.NO_ID).append(pl.name)
+                    .append(" was auto-kicked for pausing too long [*Server notice*]");
+                ships.leave(pl);
+            }
+        }
+    }
+
+    /** Human players in the game (C {@code NumPlayers - NumRobots - NumPseudoPlayers}). */
+    int humans() {
+        int n = 0;
+        for (int k = 0; k < world.numPlayers; k++) {
+            if (!world.playerAt(k).robot) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** Lifetimes run down by one frame; objects at or below zero are deleted, last first (update.c:1310-1315). */
     void expireObjects() {
         Objects o = world.objects;
-        double dt = world.params.dt;
         for (int k = o.count() - 1; k >= 0; k--) {
             int h = o.active[k];
-            o.life[h] -= dt;
-            if (o.life[h] <= 0) {
+            if (--o.life[h] <= 0) {
                 shots.delete(h);
             }
         }
@@ -213,8 +265,13 @@ public final class Simulation {
         }
     }
 
-    /** {@code Msg.Score} status bits for a player. */
-    static int scoreStatus(Player pl) {
+    /**
+     * {@code Msg.Score} status bits for a player (the network layer sends them in SCORE messages).
+     * <p>
+     * BEHAVIOR: DEAD when not playing, PAUSED when paused, WAITING for C's 'W' (a late joiner waiting for
+     * the next round), OUT_OF_LIVES for GAME_OVER otherwise.
+     */
+    public static int scoreStatus(Player pl) {
         int s = 0;
         if ((pl.status & Obj.PLAYING) == 0) {
             s |= Msg.Score.STATUS_DEAD;
@@ -223,7 +280,7 @@ public final class Simulation {
             s |= Msg.Score.STATUS_PAUSED;
         }
         if ((pl.status & Obj.GAME_OVER) != 0) {
-            s |= Msg.Score.STATUS_OUT_OF_LIVES;
+            s |= pl.mychar == 'W' ? Msg.Score.STATUS_WAITING : Msg.Score.STATUS_OUT_OF_LIVES;
         }
         return s;
     }

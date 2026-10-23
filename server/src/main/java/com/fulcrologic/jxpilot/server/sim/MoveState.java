@@ -27,8 +27,8 @@ import com.fulcrologic.jxpilot.server.world.Player;
 
 /**
  * State of one point being moved through the map (C {@code move_state_t} plus its {@code move_info_t},
- * {@code src/server/walls.h}). Positions and movement are in clicks; velocity in pixels per frame (only
- * its sign and ratios matter for wall tracing).
+ * {@code src/server/walls.h}). Positions and movement are in clicks; velocity in pixels per frame, a C
+ * float (only its sign and ratios matter for wall tracing; bounces flip and brake it).
  */
 public final class MoveState {
     // ---- crash codes (move_crash_t)
@@ -81,8 +81,8 @@ public final class MoveState {
     public int bounce;
     public int posX;
     public int posY;
-    public double velX;
-    public double velY;
+    public float velX;
+    public float velY;
     public int todoX;
     public int todoY;
     public int doneX;
@@ -98,7 +98,7 @@ public final class MoveState {
      * <p>
      * BEHAVIOR: clears crash, bounce, done and the hit cannon/wormhole/target/treasure indices.
      */
-    public void start(int x, int y, double vx, double vy, int tx, int ty, int heading) {
+    public void start(int x, int y, float vx, float vy, int tx, int ty, int heading) {
         posX = x;
         posY = y;
         velX = vx;

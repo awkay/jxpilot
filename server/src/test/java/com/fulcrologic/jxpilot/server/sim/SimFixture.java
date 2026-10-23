@@ -39,9 +39,9 @@ import java.util.List;
 final class SimFixture {
     private SimFixture() {}
 
-    /** One sim tick is one C frame, no gravity. */
+    /** One sim tick is one C frame (60 fps), no gravity. */
     static final String FRAME = "framesPerSecond: 60\ngravity: 0\n";
-    /** Default 14 fps (dt = 14/60), no gravity. */
+    /** Default 14 fps, no gravity (one tick is still one C frame). */
     static final String FPS14 = "gravity: 0\n";
 
     /**
@@ -87,9 +87,9 @@ final class SimFixture {
         o.type[h] = type;
         o.owner[h] = owner;
         o.initPixels(h, x, y);
-        o.vx[h] = vx;
-        o.vy[h] = vy;
-        o.mass[h] = mass;
+        o.vx[h] = (float) vx;
+        o.vy[h] = (float) vy;
+        o.mass[h] = (float) mass;
         o.life[h] = life;
         o.fuseLife[h] = life;
         return h;

@@ -109,7 +109,10 @@ public final class Records {
         public static final int FRIENDLY = 1 << 15;
     }
 
-    /** Shot kinds (high nibble of the SHOT section variant). */
+    /**
+     * Shot kinds: bits 4-6 of the SHOT section variant; bit 7 is {@link #FLAG_HARMLESS}, bits 0-3 the
+     * {@link ObjColor}.
+     */
     public static final class ShotKind {
         private ShotKind() {}
 
@@ -119,14 +122,31 @@ public final class Records {
         public static final int CLUSTER = 2;
         public static final int PULSE = 3;
 
+        /**
+         * Variant bit: the shot cannot hurt the receiver (C frame.c draws it in the friendly colour):
+         * team immune, owner paused, an unowned shot of the receiver's team in team play, or the
+         * receiver's own shot with selfImmunity.
+         */
+        public static final int FLAG_HARMLESS = 0x80;
+
         /** Section variant for a kind and {@link ObjColor}. */
         public static int variant(int kind, int color) {
-            return (kind << 4) | (color & 0xF);
+            return ((kind & 0x7) << 4) | (color & 0xF);
+        }
+
+        /** BEHAVIOR: section variant for a kind, {@link ObjColor} and the harmless flag. */
+        public static int variant(int kind, int color, boolean harmless) {
+            return variant(kind, color) | (harmless ? FLAG_HARMLESS : 0);
         }
 
         /** Kind from a variant. */
         public static int kindOf(int variant) {
-            return (variant >> 4) & 0xF;
+            return (variant >> 4) & 0x7;
+        }
+
+        /** BEHAVIOR: whether a variant has {@link #FLAG_HARMLESS}. */
+        public static boolean harmless(int variant) {
+            return (variant & FLAG_HARMLESS) != 0;
         }
 
         /** Colour from a variant. */

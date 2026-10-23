@@ -32,12 +32,16 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Expected values follow the formulas of Compute_global_gravity / Compute_local_gravity in map.c. */
 @DisplayName("GravityField")
 class GravityFieldTest {
-    /** Results are sums of a few doubles; 1e-12 covers rounding only. */
-    static final double EPS = 1e-12;
+    /**
+     * Results are C floats (DFLOAT) of magnitude below 3, compared with double formulas: 1e-6 covers the
+     * float rounding of a few operations (the exact float semantics are pinned by {@code cFloats}).
+     */
+    static final double EPS = 1e-6;
     static final double F = Const.GRAVS_POWER;
 
     /** C grav_tab entry: x component = ax / (ax^2 + ay^2)^1.5. */
@@ -72,6 +76,28 @@ class GravityFieldTest {
                 () -> assertEquals(-0.5, gx[0], EPS, "every block gets the same value"),
                 () -> assertEquals(2.0, hy[0], EPS, "angle 90: y = g"),
                 () -> assertEquals(0.0, hx[0], EPS, "angle 90: x = 0"));
+        }
+
+        @Test
+        @DisplayName("values are rounded to float at C's steps (bit-exact)")
+        void cFloats() {
+            double[] gx = new double[1];
+            double[] gy = new double[1];
+            GravityField.global(1, 1, false, -0.14, 90, false, 0, 0, false, false, gx, gy);
+            double[] px = new double[100];
+            double[] py = new double[100];
+            GravityField.global(10, 10, false, -0.14, 0, true, 2, 3, false, false, px, py);
+            float strength = (float) (-0.14f / StrictMath.hypot(3 * 35, 4 * 35));
+            double[][] loc = local(21, 21, false, 10, 10, BlockType.NEG_GRAV, -2.7);
+            float tab = (float) (2 * StrictMath.pow(4 + 1, -1.5));
+            assertAll(
+                () -> assertEquals((double) -0.14f, gy[0], "y = (float)(sin(pi/2) * -0.14f), not the double -0.14"),
+                () -> assertEquals((double) (float) (StrictMath.cos(90 * Math.PI / 180.0) * -0.14f), gx[0],
+                    "x = (float)(cos(pi/2) * g): a tiny non-zero value, as C"),
+                () -> assertTrue(gx[0] != 0.0, "C's cos(pi/2) is not exactly zero"),
+                () -> assertEquals((double) (3 * 35 * strength), px[7 * 10 + 5], "point: dx * (float) strength"),
+                () -> assertEquals((double) (4 * 35 * strength), py[7 * 10 + 5], "point: dy * (float) strength"),
+                () -> assertEquals((double) (-2.7f * tab), loc[0][11 * 21 + 8], "local: (float) force * (float) tab"));
         }
 
         @Test

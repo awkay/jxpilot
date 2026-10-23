@@ -78,15 +78,15 @@ class WorldMapTest {
         WorldMap m = TestMaps.build("gravity: 0", "-   ", "    ");
         m.setBlock(3, 1, BlockType.FRICTION);
         assertAll(
-            () -> assertEquals(GravityFieldTest.F * GravityFieldTest.tx(3, 0), -m.gravityX(3, 1), EPS,
-                "gravityX(3,1) is the block 3 right of the '-' at (0,1)"),
-            () -> assertEquals(GravityFieldTest.F, m.gravityY(0, 0),
-                EPS, "gravityY(0,0) is pulled up by the '-' directly above (tab[0][1].y = 1)"),
+            () -> assertEquals(GravityFieldTest.F * GravityFieldTest.tx(3, 0), -m.gravityX(3, 1), GravityFieldTest.EPS,
+                "gravityX(3,1) is the block 3 right of the '-' at (0,1) (a C float)"),
+            () -> assertEquals((double) (float) GravityFieldTest.F, m.gravityY(0, 0),
+                "gravityY(0,0) is pulled up by the '-' directly above (tab[0][1].y = 1), the force as a C float"),
             () -> assertEquals(BlockType.FRICTION, m.blocks()[7], "setBlock(3,1) writes index 1*4+3"),
             () -> assertEquals("-  z\n    \n", m.dump(), "dump shows the changed block in the top row"),
             () -> assertEquals(0.0, m.gravityY(3, 1), EPS, "gravityY(3,1) is on the source's row: no y pull"),
-            () -> assertEquals(GravityFieldTest.F * 1 / Math.pow(10, 1.5), m.gravityY(3, 0), EPS,
-                "gravityY(3,0) is 3 right and 1 below the '-': force * tab[3][1].y"));
+            () -> assertEquals(GravityFieldTest.F * 1 / Math.pow(10, 1.5), m.gravityY(3, 0), GravityFieldTest.EPS,
+                "gravityY(3,0) is 3 right and 1 below the '-': force * tab[3][1].y (a C float)"));
     }
 
     @Nested
@@ -130,7 +130,7 @@ class WorldMapTest {
             double before = m.gravityY(0, 0);
             m.recomputeGravity(o);
             assertAll(
-                () -> assertEquals(-0.14, before, EPS, "starts with the default downward gravity"),
+                () -> assertEquals((double) -0.14f, before, "starts with the default downward gravity (a C float)"),
                 () -> assertEquals(0.5, m.gravityX(1, 1), EPS, "new gravity points along angle 0"),
                 () -> assertEquals(0.0, m.gravityY(1, 1), EPS, "old y gravity is replaced, not added"));
         }

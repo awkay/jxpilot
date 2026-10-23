@@ -80,9 +80,13 @@ public final class Arena {
 
     /** Add shots and debris flying around the centre with long lives. */
     public static void fill(Simulation s, int shots, int debris, int seed) {
+        fill(s, shots, debris, new com.fulcrologic.jxpilot.common.math.Rng(seed));
+    }
+
+    /** {@link #fill} with a caller-owned RNG: allocation free (for topping up during allocation tests). */
+    public static void fill(Simulation s, int shots, int debris, com.fulcrologic.jxpilot.common.math.Rng r) {
         World w = s.world;
         Objects o = w.objects;
-        com.fulcrologic.jxpilot.common.math.Rng r = new com.fulcrologic.jxpilot.common.math.Rng(seed);
         for (int i = 0; i < shots + debris; i++) {
             int h = o.alloc();
             if (h < 0) {
@@ -92,14 +96,14 @@ public final class Arena {
             o.type[h] = shot ? Obj.SHOT : Obj.DEBRIS;
             o.status[h] = Obj.GRAVITY;
             o.owner[h] = shot ? w.playerAt(i % w.numPlayers).id : Obj.NO_ID;
-            o.mass[h] = shot ? 0.1 : 3.5;
+            o.mass[h] = shot ? 0.1f : 3.5f;
             o.life[h] = 200 + r.nextFloat() * 600;
             o.fuseLife[h] = o.life[h];
             o.plRange[h] = shot ? 0 : 8;
             o.plRadius[h] = o.plRange[h];
             o.initPixels(h, 100 + r.nextFloat() * 1900, 100 + r.nextFloat() * 1900);
-            o.vx[h] = (r.nextFloat() - 0.5) * 30;
-            o.vy[h] = (r.nextFloat() - 0.5) * 30;
+            o.vx[h] = (r.nextFloat() - 0.5f) * 30;
+            o.vy[h] = (r.nextFloat() - 0.5f) * 30;
         }
     }
 }

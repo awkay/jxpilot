@@ -41,7 +41,7 @@ import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
  * treasures/balls are not simulated.
  */
 public final class Crashes {
-    /** Shoves older than this many original frames don't count (walls.c:2147). */
+    /** Shoves older than this many frames don't count (walls.c:2147). */
     static final int SHOVE_WINDOW = 20;
 
     private final World w;
@@ -82,6 +82,8 @@ public final class Crashes {
      * of the last 20 frames share Rate(pusher, victim) * shoveKillScoreMult and the last one gets the
      * kill; the victim loses Rate(average pusher score, score) * shoveKillScoreMult. Without shovers the
      * victim loses Rate(WALL_SCORE, score).
+     * BEHAVIOR: the GAME_EVENT comes before the score changes it causes: CRASH(victim, NO_ID, sub-type) without
+     * shovers, else KILL(last pusher, victim, sub-type) ({@link #crashKind}).
      */
     public void playerCrashed(Player pl, MoveState ms, int pt) {
         String how;
@@ -123,13 +125,16 @@ public final class Crashes {
         if (how != null) {
             msg.append(how);
         }
+        String hud = hud(ms.crash);
+        int kind = crashKind(ms.crash);
         int num = collectPushers(pl);
         if (num == 0) {
-            sim.scoring.score(pl, -Scoring.rate(Scoring.WALL_SCORE, pl.score));
+            w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, pl.id, Obj.NO_ID, kind);
+            sim.scoring.score(pl, -Scoring.rate(Scoring.WALL_SCORE, pl.score), pl.bx, pl.by, hud);
             msg.append('.');
-            w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, Obj.NO_ID, pl.id, 0f);
             return;
         }
+        w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, pushers[num - 1].id, pl.id, kind);
         int total = 0;
         double totalScore = 0;
         for (int i = 0; i < num; i++) {
@@ -141,14 +146,38 @@ public final class Crashes {
             Player pusher = pushers[i];
             msg.append(i == 0 ? " with help from " : (i < num - 1 ? ", " : " and ")).append(pusher.name);
             double sc = pushCount[i] * Scoring.rate(pusher.score, pl.score) * w.params.shoveKillScoreMult / total;
-            sim.scoring.score(pusher, sc);
+            sim.scoring.score(pusher, sc, pl.bx, pl.by, pl.name);
             if (i >= num - 1) {
                 pusher.kills++;
-                w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, pusher.id, pl.id, 0f);
             }
         }
-        sim.scoring.score(pl, -Scoring.rate(average, pl.score) * w.params.shoveKillScoreMult);
+        sim.scoring.score(pl, -Scoring.rate(average, pl.score) * w.params.shoveKillScoreMult, pl.bx, pl.by,
+            "[Shove]");
         msg.append('.');
+    }
+
+    /** BEHAVIOR: the {@code Msg.GameEvent} crash sub-type of a crash code. */
+    static int crashKind(int crash) {
+        return switch (crash) {
+            case CRASH_WALL, CRASH_WALL_SPEED, CRASH_WALL_NO_FUEL, CRASH_WALL_ANGLE -> Msg.GameEvent.CRASH_WALL;
+            case CRASH_TARGET -> Msg.GameEvent.CRASH_TARGET;
+            case CRASH_TREASURE -> Msg.GameEvent.CRASH_TREASURE;
+            case CRASH_CANNON -> Msg.GameEvent.CRASH_CANNON;
+            case CRASH_UNIVERSE -> Msg.GameEvent.CRASH_UNIVERSE;
+            default -> Msg.GameEvent.CRASH_UNKNOWN;
+        };
+    }
+
+    /** BEHAVIOR: the score popup label C gives each crash kind (walls.c Player_crash {@code hudmsg}). */
+    static String hud(int crash) {
+        return switch (crash) {
+            case CRASH_WALL, CRASH_WALL_SPEED, CRASH_WALL_NO_FUEL, CRASH_WALL_ANGLE -> "[Wall]";
+            case CRASH_TARGET -> "[Target]";
+            case CRASH_TREASURE -> "[Treasure]";
+            case CRASH_CANNON -> "[Cannon]";
+            case CRASH_UNIVERSE -> "[Universe]";
+            default -> "[Bug]";
+        };
     }
 
     private static String verb(int crash) {
@@ -212,7 +241,7 @@ public final class Crashes {
         w.map.setBlock(c.bx(), c.by(), BlockType.SPACE);
         int x = (int) c.x();
         int y = (int) c.y();
-        sim.debris.make(x, y, 0.0, 0.0, Obj.NO_ID, c.team(), Obj.DEBRIS, 4.5, Obj.GRAVITY, Records.ObjColor.RED,
+        sim.debris.make(x, y, 0f, 0f, Obj.NO_ID, c.team(), Obj.DEBRIS, 4.5f, Obj.GRAVITY, Records.ObjColor.RED,
             Records.BurstKind.DEBRIS, 6, 20, 40, (int) (c.dir() - (Const.RES * 0.2)), (int) (c.dir() + (Const.RES * 0.2)),
             20, 50, 8, 68);
         Player pl = w.byId(killerId);
@@ -223,7 +252,7 @@ public final class Crashes {
             sim.scoring.teamScore(c.team(), -w.params.cannonPoints);
         }
         if (pl.score <= w.params.cannonMaxScore && !(w.params.teamPlay && pl.team == c.team())) {
-            sim.scoring.score(pl, w.params.cannonPoints);
+            sim.scoring.score(pl, w.params.cannonPoints, c.bx(), c.by(), "");
         }
     }
 }

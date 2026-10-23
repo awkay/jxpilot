@@ -122,9 +122,17 @@ public final class XMath {
         return rad * (Const.RES / TWO_PI);
     }
 
-    /** C {@code findDir}. BEHAVIOR: direction of (x,y) in RES units in {@code [0, RES)}; (0,0) gives 0. */
+    /**
+     * C {@code findDir}, with C's float ({@code DFLOAT}) arguments, intermediate and result and a
+     * {@link StrictMath} atan2 so every platform agrees.
+     * <p>
+     * BEHAVIOR: direction of (x,y) in RES units in {@code [0, RES]}; (0,0) gives 0. (C can return exactly RES
+     * when a tiny negative angle rounds to 1 after {@code angle++}; callers mask or truncate as C does.)
+     */
     public static double findDir(double x, double y) {
-        double angle = (x != 0.0 || y != 0.0) ? Math.atan2(y, x) / TWO_PI : 0.0;
+        float fx = (float) x;
+        float fy = (float) y;
+        float angle = (fx != 0.0f || fy != 0.0f) ? (float) (StrictMath.atan2(fy, fx) / (2 * Math.PI)) : 0.0f;
         if (angle < 0) {
             angle++;
         }

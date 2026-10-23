@@ -48,6 +48,11 @@ public final class Rng {
         state = z == 0 ? 0x6D2B79F5 : z;
     }
 
+    /** The internal state (for state digests): equal states give equal sequences. */
+    public int state() {
+        return state;
+    }
+
     /** Next 32 random bits (xorshift32 13/17/5). */
     public int nextInt() {
         int x = state;

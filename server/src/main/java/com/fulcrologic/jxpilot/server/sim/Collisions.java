@@ -40,14 +40,12 @@ import com.fulcrologic.jxpilot.server.world.World;
  * {@code Player_collides_with_debris}, {@code Player_collides_with_killing_shot}, {@code in_range_acd}
  * ({@code src/server/collision.c}) and {@code Delta_mv}/{@code Obj_repel} ({@code ship.c}).
  * Objects near a ship are found with the {@link com.fulcrologic.jxpilot.server.world.Grid} (C cells:
- * blocks within 4*sqrt(2), at most 500 objects).
- * <p>
- * Time scaling: ship-ship overlap is resolved by C every frame it lasts, so its repulsion and fuel cost
- * are scaled by dt; particle hits are discrete events and are not.
+ * blocks within 4*sqrt(2), at most 500 objects). One tick is one C frame; velocities and masses are C floats.
+ * The simulation skips collisions entirely during the round delay (collision.c:250).
  */
 public final class Collisions {
-    /** C {@code ED_PL_CRASH}. */
-    static final double ED_PL_CRASH = -100.0 * 256;
+    /** C {@code (long) ED_PL_CRASH}. */
+    static final long ED_PL_CRASH = (long) (-100.0 * 256);
     /** C {@code ED_SHOT_HIT}. */
     static final double ED_SHOT_HIT = -25.0 * 256;
 
@@ -140,6 +138,23 @@ public final class Collisions {
     }
 
     /**
+     * A cheap test that two simultaneous moves p1-&gt;p2 and q1-&gt;q2 cannot come within r (perf: it skips most
+     * {@link #inRange} calls).
+     * <p>
+     * BEHAVIOR: true only if on one axis the (wrapped) end-point distance exceeds r plus both moves' lengths
+     * on that axis; then the two never get within r of each other during the move, so {@link #inRange} would
+     * also say no.
+     */
+    boolean farApart(int p1x, int p1y, int p2x, int p2y, int q1x, int q1y, int q2x, int q2y, int r) {
+        int dx = Math.abs((int) w.wrapDx(q2x - p2x));
+        if (dx > r + Math.abs(p2x - p1x) + Math.abs(q2x - q1x)) {
+            return true;
+        }
+        int dy = Math.abs((int) w.wrapDy(q2y - p2y));
+        return dy > r + Math.abs(p2y - p1y) + Math.abs(q2y - q1y);
+    }
+
+    /**
      * C {@code PlayerCollision} (without balls and checkpoints).
      * <p>
      * BEHAVIOR: only playing, unphased ships collide. A ship outside the world is killed.
@@ -158,8 +173,8 @@ public final class Collisions {
             if (pl.px < 0 || pl.py < 0 || pl.px >= w.pixelWidth || pl.py >= w.pixelHeight) {
                 pl.status |= Obj.KILLED;
                 w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" left the known universe.");
-                sim.scoring.score(pl, -Scoring.rate(Scoring.WALL_SCORE, pl.score));
-                w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, Obj.NO_ID, pl.id, 0f);
+                w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, pl.id, Obj.NO_ID, Msg.GameEvent.CRASH_UNIVERSE);
+                sim.scoring.score(pl, -Scoring.rate(Scoring.WALL_SCORE, pl.score), pl.bx, pl.by, pl.name);
                 continue;
             }
             if ((pl.used & Has.PHASING_DEVICE) != 0) {
@@ -187,15 +202,14 @@ public final class Collisions {
 
     /** The body of the ship-ship loop of PlayerCollision for a colliding pair. */
     private void shipsCollide(Player pl, Player o, Params p) {
-        double dt = p.dt;
         if (p.bounceWithPlayer) {
             if (!pl.fullyShielded()) {
-                pl.addFuel(ED_PL_CRASH * dt);
+                pl.addFuel(ED_PL_CRASH);
             }
             if (!o.fullyShielded()) {
-                o.addFuel(ED_PL_CRASH * dt);
+                o.addFuel(ED_PL_CRASH);
             }
-            repel(pl, o, 2 * Const.SHIP_SZ, dt);
+            repel(pl, o, 2 * Const.SHIP_SZ);
         }
         if (!p.crashWithPlayer) {
             return;
@@ -219,8 +233,8 @@ public final class Collisions {
                 .append(" crashed.");
             double sc = Scoring.rate(o.score, pl.score) * p.crashScoreMult;
             double sc2 = Scoring.rate(pl.score, o.score) * p.crashScoreMult;
-            sim.scoring.scorePlayers(pl, -sc, o, -sc2);
-            w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, o.id, pl.id, 0f);
+            w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, pl.id, o.id, Msg.GameEvent.CRASH_SHIPS);
+            sim.scoring.scorePlayers(pl, -sc, o.name, o, -sc2, pl.name);
         } else if (oDead) {
             ranOver(pl, o, p);
         } else if (plDead) {
@@ -233,30 +247,30 @@ public final class Collisions {
             .append(victim.name).append('.');
         winner.kills++;
         double sc = Scoring.rate(winner.score, victim.score) * p.runoverKillScoreMult;
-        sim.scoring.scorePlayers(winner, sc, victim, -sc);
         w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, winner.id, victim.id, 0f);
+        sim.scoring.scorePlayers(winner, sc, victim.name, victim, -sc, winner.name);
     }
 
     /**
-     * C {@code Obj_repel} between two ships, scaled by dt.
+     * C {@code Obj_repel} between two ships (C floats).
      * <p>
      * BEHAVIOR: overlap force = min(10, dist - length) along the line between them (RES-quantized direction),
      * split by the mass ratio; both record the other as a shover.
      */
-    void repel(Player a, Player b, int repelDist, double dt) {
-        double xd = w.wrapDx(b.px - a.px);
-        double yd = w.wrapDy(b.py - a.py);
-        double force = repelDist - Math.hypot(xd, yd);
+    void repel(Player a, Player b, int repelDist) {
+        float xd = (float) w.wrapDx(b.px - a.px);
+        float yd = (float) w.wrapDy(b.py - a.py);
+        float force = (float) (repelDist - StrictMath.hypot(xd, yd));
         if (force <= 0) {
             return;
         }
-        force = Math.min(force, 10) * dt;
+        force = Math.min(force, 10);
         int theta = (int) XMath.findDir(xd, yd);
-        double dm = a.mass / b.mass;
-        double dvx2 = Trig.tcos(theta) * force * dm;
-        double dvy2 = Trig.tsin(theta) * force * dm;
-        double dvx1 = -(Trig.tcos(theta) * force / dm);
-        double dvy1 = -(Trig.tsin(theta) * force / dm);
+        float dm = a.mass / b.mass;
+        float dvx2 = Trig.tcos(theta) * force * dm;
+        float dvy2 = Trig.tsin(theta) * force * dm;
+        float dvx1 = -(Trig.tcos(theta) * force / dm);
+        float dvy1 = -(Trig.tsin(theta) * force / dm);
         sim.ships.recordShove(a, b);
         sim.ships.recordShove(b, a);
         a.vx += dvx1;
@@ -289,7 +303,8 @@ public final class Collisions {
                 continue;
             }
             int range = Const.SHIP_SZ + o.plRange[h];
-            if (!inRange(pl.prevX, pl.prevY, pl.px, pl.py, o.prevX[h], o.prevY[h], o.px[h], o.py[h], range)) {
+            if (farApart(pl.prevX, pl.prevY, pl.px, pl.py, o.prevX[h], o.prevY[h], o.px[h], o.py[h], range)
+                || !inRange(pl.prevX, pl.prevY, pl.px, pl.py, o.prevX[h], o.prevY[h], o.px[h], o.py[h], range)) {
                 continue;
             }
             int owner = o.owner[h];
@@ -344,9 +359,9 @@ public final class Collisions {
      */
     void deltaMv(Player pl, int h) {
         Objects o = w.objects;
-        double m = pl.mass + Math.abs(o.mass[h]);
-        double vx = (pl.vx * pl.mass + o.vx[h] * o.mass[h]) / m;
-        double vy = (pl.vy * pl.mass + o.vy[h] * o.mass[h]) / m;
+        float m = pl.mass + Math.abs(o.mass[h]);
+        float vx = (pl.vx * pl.mass + o.vx[h] * o.mass[h]) / m;
+        float vy = (pl.vy * pl.mass + o.vy[h] * o.mass[h]) / m;
         if (o.owner[h] != Obj.NO_ID && (o.status[h] & Obj.COLLISIONSHOVE) != 0) {
             Player pusher = w.byId(o.owner[h]);
             if (pusher != null && pusher != pl) {
@@ -369,7 +384,7 @@ public final class Collisions {
     void debris(Player pl, int h) {
         Objects o = w.objects;
         Params p = w.params;
-        double v = Math.hypot(o.vx[h], o.vy[h]);
+        float v = (float) StrictMath.hypot(o.vx[h], o.vy[h]);
         long cost = Math.abs((long) (2 * o.mass[h] * v));
         if (!pl.fullyShielded()) {
             pl.addFuel(-cost);
@@ -392,13 +407,14 @@ public final class Collisions {
             msg.append('.');
         }
         if (killer == null || killer == pl) {
-            sim.scoring.score(pl, -Scoring.rate(0, pl.score) * p.explosionKillScoreMult * p.selfKillScoreMult);
             w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, Obj.NO_ID, pl.id, 0f);
+            sim.scoring.score(pl, -Scoring.rate(0, pl.score) * p.explosionKillScoreMult * p.selfKillScoreMult,
+                pl.bx, pl.by, killer == null ? "[Explosion]" : pl.name);
         } else {
             killer.kills++;
             double sc = Scoring.rate(killer.score, pl.score) * p.explosionKillScoreMult;
-            sim.scoring.scorePlayers(killer, sc, pl, -sc);
             w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, killer.id, pl.id, 0f);
+            sim.scoring.scorePlayers(killer, sc, pl.name, pl, -sc, killer.name);
         }
         o.life[h] = 0;
     }
@@ -420,12 +436,12 @@ public final class Collisions {
         int type = o.type[h];
         if ((pl.used & Has.SHIELD) != 0 || (pl.have & Has.ARMOR) != 0) {
             if (!pl.fullyShielded()) {
-                double drainFactor = 1.0;
+                float drainFactor = 1.0f;
                 if (p.shotHitFuelDrainUsesKineticEnergy) {
-                    double rel = Math.hypot(pl.vx - o.vx[h], pl.vy - o.vy[h]);
+                    float rel = (float) StrictMath.hypot(pl.vx - o.vx[h], pl.vy - o.vy[h]);
                     drainFactor = (rel * rel * Math.abs(o.mass[h])) / (p.shotSpeed * p.shotSpeed * p.shotMass);
                 }
-                pl.addFuel((long) (ED_SHOT_HIT * drainFactor));
+                pl.addFuel((long) (ED_SHOT_HIT * drainFactor * 1.0f));
             }
             if (pl.fuel <= 0) {
                 pl.used &= ~Has.SHIELD;
@@ -458,17 +474,17 @@ public final class Collisions {
             }
         }
         sc *= (type == Obj.SHOT && (o.mods[h] & Obj.MOD_CLUSTER) != 0) ? p.clusterKillScoreMult : p.shotKillScoreMult;
+        w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, killer != null ? killer.id : Obj.NO_ID, pl.id, 0f);
         if (fromCannon) {
-            sim.scoring.score(pl, -sc);
+            sim.scoring.score(pl, -sc, pl.bx, pl.by, "Cannon");
             if (p.teamPlay && pl.team != o.team[h]) {
                 sim.scoring.teamScore(o.team[h], sc);
             }
         } else if (killer == null || killer == pl) {
-            sim.scoring.score(pl, -sc);
+            sim.scoring.score(pl, -sc, pl.bx, pl.by, killer == null ? "" : pl.name);
         } else {
-            sim.scoring.scorePlayers(killer, sc, pl, -sc);
+            sim.scoring.scorePlayers(killer, sc, pl.name, pl, -sc, killer.name);
         }
-        w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, killer != null ? killer.id : Obj.NO_ID, pl.id, 0f);
         pl.status |= Obj.KILLED;
     }
 

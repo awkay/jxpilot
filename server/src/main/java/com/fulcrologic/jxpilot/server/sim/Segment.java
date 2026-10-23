@@ -94,8 +94,8 @@ public final class Segment {
         }
         int tx = ms.todoX;
         int ty = ms.todoY;
-        double vx = ms.velX;
-        double vy = ms.velY;
+        float vx = ms.velX;
+        float vy = ms.velY;
         switch (bounce) {
             case BOUNCE_HOR_LO, BOUNCE_HOR_HI -> {
                 ms.todoX = -tx;

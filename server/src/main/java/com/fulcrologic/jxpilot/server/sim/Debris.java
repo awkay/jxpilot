@@ -27,7 +27,6 @@ import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 import com.fulcrologic.jxpilot.common.math.ThrustSparks;
 import com.fulcrologic.jxpilot.common.net.Records;
-import com.fulcrologic.jxpilot.common.net.Wire;
 import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.Obj;
@@ -52,7 +51,7 @@ public final class Debris implements DebrisBurst.Sink {
 
     // ---- particle template for the sink
     private int pType;
-    private double pMass;
+    private float pMass;
     private int pStatus;
     private int pOwner;
     private int pTeam;
@@ -69,7 +68,8 @@ public final class Debris implements DebrisBurst.Sink {
     /**
      * C {@code Make_debris}: a burst of {@code type} particles.
      * <p>
-     * BEHAVIOR: the origin wraps on wrapping maps; an origin outside the world makes nothing.
+     * BEHAVIOR: the origin wraps on wrapping maps, is then rounded to the half pixel the wire carries (and
+     * wrapped again if that reached the world edge); an origin outside the world makes nothing.
      * BEHAVIOR: lives are capped at shotLife when shotLife &gt;= FPS; speeds are capped so that
      * speed * life stays within the world diagonal (play.c:189-197).
      * BEHAVIOR: count = min + (int)(rfrac * (max - min)), limited to the free pool slots; zero makes nothing.
@@ -78,28 +78,31 @@ public final class Debris implements DebrisBurst.Sink {
      * shotHitFuelDrainUsesKineticEnergy their mass is mass/(speed/shotSpeed)^2.
      *
      * @param color     {@code Records.ObjColor} of the particles
-     * @param burstKind {@code Records.BurstKind}, or -1 for particles clients do not draw
+     * @param burstKind {@code Records.BurstKind}, or -1 for particles clients do not draw as a burst
      * @return number of particles made
      */
     @SuppressWarnings("checkstyle:ParameterNumber")
-    public int make(double x, double y, double vx, double vy, int owner, int team, int type, double mass,
+    public int make(double x, double y, float vx, float vy, int owner, int team, int type, float mass,
                     int status, int color, int burstKind, int radius, int minDebris, int maxDebris, int minDir,
                     int maxDir, double minSpeed, double maxSpeed, int minLife, int maxLife) {
         Params p = w.params;
         lastCount = 0;
+        float fx = (float) x;
+        float fy = (float) y;
         if (w.wrap) {
-            if (x < 0) {
-                x += w.pixelWidth;
-            } else if (x >= w.pixelWidth) {
-                x -= w.pixelWidth;
-            }
-            if (y < 0) {
-                y += w.pixelHeight;
-            } else if (y >= w.pixelHeight) {
-                y -= w.pixelHeight;
-            }
+            fx = (float) w.wrapXPixel(fx);
+            fy = (float) w.wrapYPixel(fy);
         }
-        if (x < 0 || x >= w.pixelWidth || y < 0 || y >= w.pixelHeight) {
+        if (fx < 0 || fx >= w.pixelWidth || fy < 0 || fy >= w.pixelHeight) {
+            return 0;
+        }
+        fx = ThrustSparks.wirePos(fx);
+        fy = ThrustSparks.wirePos(fy);
+        if (w.wrap) {
+            fx = (float) w.wrapXPixel(fx);
+            fy = (float) w.wrapYPixel(fy);
+        }
+        if (fx >= w.pixelWidth || fy >= w.pixelHeight) {
             return 0;
         }
         if (maxLife < minLife) {
@@ -113,14 +116,16 @@ public final class Debris implements DebrisBurst.Sink {
                 maxLife = p.shotLife;
             }
         }
-        if (minSpeed * maxLife > p.hypotenuse) {
-            minSpeed = p.hypotenuse / maxLife;
+        float minSp = (float) minSpeed;
+        float maxSp = (float) maxSpeed;
+        if (minSp * maxLife > p.hypotenuse) {
+            minSp = (float) (p.hypotenuse / maxLife);
         }
-        if (maxSpeed * minLife > p.hypotenuse) {
-            maxSpeed = p.hypotenuse / minLife;
+        if (maxSp * minLife > p.hypotenuse) {
+            maxSp = (float) (p.hypotenuse / minLife);
         }
-        if (maxSpeed < minSpeed) {
-            maxSpeed = minSpeed;
+        if (maxSp < minSp) {
+            maxSp = minSp;
         }
         if (type == Obj.SHOT && !p.shotsGravity) {
             status &= ~Obj.GRAVITY;
@@ -134,16 +139,16 @@ public final class Debris implements DebrisBurst.Sink {
             return 0;
         }
         DebrisBurst d = burstKind >= 0 ? w.events.addBurst(burstKind, color, owner, w.tick) : scratch;
-        d.x = (float) x;
-        d.y = (float) y;
-        d.vx = (float) vx;
-        d.vy = (float) vy;
+        d.x = fx;
+        d.y = fy;
+        d.vx = vx;
+        d.vy = vy;
         d.seed = w.rng.nextInt();
         d.count = num;
         d.minDir = minDir & (Const.RES - 1);
         d.dirSpan = maxDir - minDir;
-        d.minSpeed = (float) minSpeed;
-        d.maxSpeed = (float) maxSpeed;
+        d.minSpeed = minSp;
+        d.maxSpeed = maxSp;
         d.minLife = minLife;
         d.maxLife = maxLife;
         d.hypotenuse = (float) p.hypotenuse;
@@ -159,7 +164,7 @@ public final class Debris implements DebrisBurst.Sink {
      * pl_range = pl_radius = radius; stops early if the pool fills.
      */
     @SuppressWarnings("checkstyle:ParameterNumber")
-    int expand(DebrisBurst d, int owner, int team, int type, double mass, int status, int color, int radius,
+    int expand(DebrisBurst d, int owner, int team, int type, float mass, int status, int color, int radius,
                boolean kinetic) {
         pType = type;
         pMass = mass;
@@ -193,7 +198,7 @@ public final class Debris implements DebrisBurst.Sink {
         o.vx[h] = vx;
         o.vy[h] = vy;
         if (pKinetic) {
-            double r = speed / w.params.shotSpeed;
+            float r = speed / w.params.shotSpeed;
             o.mass[h] = pMass / (r * r);
         } else {
             o.mass[h] = pMass;
@@ -221,7 +226,7 @@ public final class Debris implements DebrisBurst.Sink {
         minDebris >>= 1;
         maxDebris >>= 1;
         make(pl.px, pl.py, pl.vx, pl.vy, pl.id, pl.team, Obj.DEBRIS,
-            3.5, Obj.GRAVITY, Records.ObjColor.RED, Records.BurstKind.DEBRIS, 8, minDebris, maxDebris, 0,
+            3.5f, Obj.GRAVITY, Records.ObjColor.RED, Records.BurstKind.DEBRIS, 8, minDebris, maxDebris, 0,
             Const.RES - 1, 20.0, 20 + (((int) pl.mass) >> 1), 5, (int) (5 + (pl.mass * 1.5)));
     }
 
@@ -232,15 +237,16 @@ public final class Debris implements DebrisBurst.Sink {
      * wall normal, speed 20 .. 20 + intensity/4, life 10 .. 10 + intensity/2 (a WALL_SPARK burst).
      */
     public void wallSparks(Player pl, int wallDir, int intensity) {
-        make(pl.px, pl.py, pl.vx, pl.vy, pl.id, pl.team, Obj.SPARK, 3.5,
+        make(pl.px, pl.py, pl.vx, pl.vy, pl.id, pl.team, Obj.SPARK, 3.5f,
             Obj.GRAVITY | Obj.OWNERIMMUNE | Obj.FROMBOUNCE, Records.ObjColor.RED, Records.BurstKind.WALL_SPARK, 1,
             intensity >> 1, intensity, wallDir - (Const.RES / 4), wallDir + (Const.RES / 4), 20,
             20 + (intensity >> 2), 10, 10 + (intensity >> 1));
     }
 
     /**
-     * Exhaust of a thrusting ship for one sim tick (C {@code Thrust}) via {@link ThrustSparks}, using the
-     * wire-quantized position, velocity and heading so clients reproduce the same sparks.
+     * Exhaust of a thrusting ship for one frame (C {@code Thrust}) via {@link ThrustSparks#computeWire}: the
+     * tick and id seed, and the position and velocity quantized like the wire, so clients reproduce the
+     * same sparks.
      * <p>
      * BEHAVIOR: red sparks of mass THRUST_MASS and blue afterburner sparks of mass
      * THRUST_MASS*ALT_SPARK_MASS_FACT, owner immune, radius 8.
@@ -248,20 +254,16 @@ public final class Debris implements DebrisBurst.Sink {
     public void thrust(Player pl) {
         Params p = w.params;
         int dir = pl.dir;
-        double qx = Wire.posToU16(pl.cx / (double) Click.CLICK) * 0.5;
-        double qy = Wire.posToU16(pl.cy / (double) Click.CLICK) * 0.5;
-        float qvx = Wire.i16ToVel(Wire.velToI16(pl.vx));
-        float qvy = Wire.i16ToVel(Wire.velToI16(pl.vy));
-        ThrustSparks.compute(ThrustSparks.seed(w.tick, pl.id), (float) (qx + pl.ship.engineX[dir]),
-            (float) (qy + pl.ship.engineY[dir]), dir, qvx, qvy, pl.power, pl.afterburners(), p.shotLife, p.fps,
-            (float) p.dt, (float) p.hypotenuse, w.burstRng, normal, alt);
+        ThrustSparks.computeWire(w.tick, pl.id, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK,
+            pl.ship.engineX[dir], pl.ship.engineY[dir], dir, pl.vx, pl.vy, pl.power, pl.afterburners(), p.shotLife,
+            p.fps, (float) p.hypotenuse, w.burstRng, normal, alt);
         int status = Obj.GRAVITY | Obj.OWNERIMMUNE;
         if (normal.count > 0 && inWorld(normal)) {
-            expand(normal, pl.id, pl.team, Obj.SPARK, ThrustSparks.THRUST_MASS, status, Records.ObjColor.RED, 8,
-                false);
+            expand(normal, pl.id, pl.team, Obj.SPARK, (float) ThrustSparks.THRUST_MASS, status,
+                Records.ObjColor.RED, 8, false);
         }
         if (alt.count > 0 && inWorld(alt)) {
-            expand(alt, pl.id, pl.team, Obj.SPARK, ThrustSparks.THRUST_MASS * ThrustSparks.ALT_SPARK_MASS_FACT,
+            expand(alt, pl.id, pl.team, Obj.SPARK, (float) (ThrustSparks.THRUST_MASS * ThrustSparks.ALT_SPARK_MASS_FACT),
                 status, Records.ObjColor.BLUE, 8, false);
         }
     }
@@ -281,13 +283,13 @@ public final class Debris implements DebrisBurst.Sink {
      * (dir +- RES/4 by turn direction, +-0.1 RES), speed 1..3, life 1..2*FPS (a SPARK burst).
      */
     public void turnThrust(Player pl, int num) {
-        double x = pl.px + pl.ship.ptX[0][pl.dir];
-        double y = pl.py + pl.ship.ptY[0][pl.dir];
+        float x = pl.px + pl.ship.ptX[0][pl.dir];
+        float y = pl.py + pl.ship.ptY[0][pl.dir];
         int dir = pl.dir + ((pl.turnAcc > 0.0) ? (Const.RES / 4) : (3 * (Const.RES / 4)));
         if ((pl.used & Has.CLOAKING_DEVICE) != 0 && !w.params.cloakedExhaust) {
             return;
         }
-        make((int) x, (int) y, pl.vx, pl.vy, pl.id, pl.team, Obj.SPARK, ThrustSparks.THRUST_MASS,
+        make((int) x, (int) y, pl.vx, pl.vy, pl.id, pl.team, Obj.SPARK, (float) ThrustSparks.THRUST_MASS,
             Obj.GRAVITY | Obj.OWNERIMMUNE, Records.ObjColor.RED, Records.BurstKind.SPARK, 1, num, num,
             (int) (dir - (Const.RES * 0.1) - 1), (int) (dir + (Const.RES * 0.1) + 1), 1, 3, 1, 2 * w.params.fps);
     }

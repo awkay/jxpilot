@@ -64,7 +64,7 @@ class SegmentTest {
         ms.treasureCrashes = true;
         ms.wormholeWarps = true;
         ms.team = 0;
-        ms.start(x, y, vx, vy, tx, ty, 0);
+        ms.start(x, y, (float) vx, (float) vy, tx, ty, 0);
         return ms;
     }
 

@@ -73,8 +73,6 @@ class ObjectsTest {
             o.team[h] = 2;
             o.setClicks(h, 640, 704);
             o.remember(h);
-            o.remX[h] = 0.5;
-            o.remY[h] = 0.25;
             o.vx[h] = 1;
             o.vy[h] = 2;
             o.accX[h] = 3;
@@ -97,7 +95,6 @@ class ObjectsTest {
                 () -> assertEquals(0, o.team[g], "team is cleared"),
                 () -> assertEquals(0, o.cx[g] | o.cy[g] | o.px[g] | o.py[g], "the position is cleared"),
                 () -> assertEquals(0, o.prevX[g] | o.prevY[g], "the previous position is cleared"),
-                () -> assertEquals(0.0, o.remX[g] + o.remY[g], "the sub-click remainder is cleared"),
                 () -> assertEquals(0.0, Math.abs(o.vx[g]) + Math.abs(o.vy[g]), "velocity is cleared"),
                 () -> assertEquals(0.0, Math.abs(o.accX[g]) + Math.abs(o.accY[g]), "acceleration is cleared"),
                 () -> assertEquals(0.0, o.mass[g] + o.life[g] + o.fuseLife[g], "mass, life and fuse life are cleared"),

@@ -68,7 +68,6 @@ class ParamsTest {
             Params p = params("");
             assertAll(
                 () -> assertEquals(14, p.fps, "framesPerSecond defaults to 14"),
-                () -> assertEquals(14.0 / 60, p.dt, "dt = fps / 60"),
                 () -> assertEquals(544.0, p.hypotenuse, "(int) hypot of the world in pixels"),
                 () -> assertEquals(20.0, p.shipMass, "shipMass 20"),
                 () -> assertEquals(1000.0, p.initialFuel, "initialFuel 1000"),
@@ -80,8 +79,12 @@ class ParamsTest {
         }
 
         @Test
-        void sixtyFpsGivesOneFramePerTick() {
-            assertEquals(1.0, params("framesPerSecond: 60\n").dt, "dt = 1 at 60 fps");
+        void floatOptionsAreCFloats() {
+            Params p = params("framesPerSecond: 60\nfriction: 0.1\nshotSpeed: 21.3\n");
+            assertAll(
+                () -> assertEquals(60, p.fps, "the tick rate is framesPerSecond"),
+                () -> assertEquals(0.1f, p.friction, "DFLOAT options are rounded to float like C"),
+                () -> assertEquals(21.3f, p.shotSpeed, "shotSpeed is a C float"));
         }
     }
 
@@ -104,7 +107,7 @@ class ParamsTest {
                 () -> assertEquals(0.0, p.objectWallBrakeFactor, "brake factor raised to 0"),
                 () -> assertEquals(0.5, p.objectWallBounceLifeFactor, "an in-range life factor is kept"),
                 () -> assertEquals(1000.0, p.wallBounceFuelDrainMult, "fuel drain limited to 1000"),
-                () -> assertEquals(Math.sqrt(1000), p.wallBounceExplosionMult, "explosion mult = sqrt(drain)"));
+                () -> assertEquals((float) Math.sqrt(1000), p.wallBounceExplosionMult, "explosion mult = sqrt(drain), a C float"));
         }
 
         @Test

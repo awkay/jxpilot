@@ -35,6 +35,7 @@ import com.fulcrologic.jxpilot.server.world.World;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Path;
+import java.util.Locale;
 
 /**
  * Headless simulation runner for determinism checks and profiling:
@@ -45,11 +46,15 @@ import java.nio.file.Path;
 public final class ServerSim {
     private ServerSim() {}
 
+    /** The usage line printed for bad arguments. */
+    static final String USAGE = "usage: ServerSim --map FILE [--ticks N] [--seed S] [--players P] [--every K]";
+
     /** Parsed command line. */
     record Args(String map, int ticks, int seed, int players, int every) {
         /**
-         * BEHAVIOR: defaults ticks 600, seed 1, players 4, every 0; unknown flags or a missing --map throw
-         * IllegalArgumentException.
+         * BEHAVIOR: defaults ticks 600, seed 1, players 4, every 0.
+         * BEHAVIOR: unknown flags, a flag without a value, a non-integer value, a negative ticks/players/every
+         * or a missing --map throw IllegalArgumentException whose message names the problem.
          */
         static Args parse(String[] a) {
             String map = null;
@@ -57,23 +62,40 @@ public final class ServerSim {
             int seed = 1;
             int players = 4;
             int every = 0;
-            for (int i = 0; i < a.length; i++) {
-                String v = i + 1 < a.length ? a[i + 1] : null;
+            for (int i = 0; i < a.length; i += 2) {
+                if (i + 1 >= a.length) {
+                    throw new IllegalArgumentException("missing value for " + a[i]);
+                }
+                String v = a[i + 1];
                 switch (a[i]) {
                     case "--map" -> map = v;
-                    case "--ticks" -> ticks = Integer.parseInt(v);
-                    case "--seed" -> seed = Integer.parseInt(v);
-                    case "--players" -> players = Integer.parseInt(v);
-                    case "--every" -> every = Integer.parseInt(v);
+                    case "--ticks" -> ticks = nonNegative(a[i], v);
+                    case "--seed" -> seed = integer(a[i], v);
+                    case "--players" -> players = nonNegative(a[i], v);
+                    case "--every" -> every = nonNegative(a[i], v);
                     default -> throw new IllegalArgumentException("unknown argument " + a[i]);
                 }
-                i++;
             }
             if (map == null) {
-                throw new IllegalArgumentException(
-                    "usage: ServerSim --map FILE [--ticks N] [--seed S] [--players P] [--every K]");
+                throw new IllegalArgumentException("missing --map");
             }
             return new Args(map, ticks, seed, players, every);
+        }
+
+        private static int integer(String flag, String v) {
+            try {
+                return Integer.parseInt(v);
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException(flag + " needs an integer, got " + v);
+            }
+        }
+
+        private static int nonNegative(String flag, String v) {
+            int n = integer(flag, v);
+            if (n < 0) {
+                throw new IllegalArgumentException(flag + " must not be negative");
+            }
+            return n;
         }
     }
 
@@ -83,6 +105,7 @@ public final class ServerSim {
             a = Args.parse(argv);
         } catch (IllegalArgumentException e) {
             System.err.println(e.getMessage());
+            System.err.println(USAGE);
             System.exit(2);
             return;
         }
@@ -90,7 +113,7 @@ public final class ServerSim {
         ConfigParser.parseFile(Path.of(a.map()), OptionOrigin.MAP, o);
         long t0 = System.nanoTime();
         run(o, a, System.out);
-        System.err.printf("%.1f us/tick%n", (System.nanoTime() - t0) / 1000.0 / Math.max(1, a.ticks()));
+        System.err.printf(Locale.ROOT, "%.1f us/tick%n", (System.nanoTime() - t0) / 1000.0 / Math.max(1, a.ticks()));
     }
 
     /** Run the simulation described by {@code a} on parsed options and print the report to {@code out}. */
@@ -107,17 +130,20 @@ public final class ServerSim {
         for (int t = 1; t <= a.ticks(); t++) {
             sim.tick(pilot.next());
             if (a.every() > 0 && t % a.every() == 0) {
-                out.printf("tick %d digest %016x objects %d%n", t, Digest.of(w), w.objects.count());
+                out.printf(Locale.ROOT, "tick %d digest %016x objects %d%n", t, Digest.of(w), w.objects.count());
             }
         }
         long digest = Digest.of(w);
-        out.printf("map %s players %d ticks %d seed %d%n", w.map.name(), w.numPlayers, a.ticks(), a.seed());
+        out.printf(Locale.ROOT, "map %s players %d ticks %d seed %d%n", w.map.name(), w.numPlayers, a.ticks(),
+            a.seed());
         for (int k = 0; k < w.numPlayers; k++) {
             Player p = w.playerAt(k);
-            out.printf("  %s id %d score %.2f kills %d deaths %d%n", p.name, p.id, p.score, p.kills, p.deaths);
+            out.printf(Locale.ROOT, "  %s id %d score %.2f kills %d deaths %d%n", p.name, p.id, p.score, p.kills,
+                p.deaths);
         }
-        out.printf("objects %d events %d bursts %d%n", w.objects.count(), w.events.seq(), w.events.burstSeq());
-        out.printf("digest %016x%n", digest);
+        out.printf(Locale.ROOT, "objects %d events %d bursts %d%n", w.objects.count(), w.events.seq(),
+            w.events.burstSeq());
+        out.printf(Locale.ROOT, "digest %016x%n", digest);
         return digest;
     }
 }

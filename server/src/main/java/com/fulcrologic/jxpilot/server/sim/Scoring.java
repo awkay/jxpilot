@@ -24,12 +24,14 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 
 /**
  * Score rules, a port of {@code src/server/score.c} (alliances are not supported). Changed players and
- * teams are marked dirty; {@link Simulation} emits SCORE/TEAM_SCORE events once per tick for them.
+ * teams are marked dirty; {@link Simulation} emits SCORE/TEAM_SCORE events once per tick for them. Every
+ * player score change also emits a SCORE_OBJECT event for that player's HUD (C {@code Send_score_object}).
  */
 public final class Scoring {
     /** C {@code CANNON_SCORE}. */
@@ -62,12 +64,14 @@ public final class Scoring {
     }
 
     /**
-     * C {@code SCORE}.
+     * C {@code SCORE(ind, points, x, y, msg)}.
      * <p>
      * BEHAVIOR: in team play the team score changes and the player's own score changes only without
      * teamShareScore; otherwise the player's score changes. The player is marked dirty.
+     * BEHAVIOR: a human player gets a SCORE_OBJECT event (a = id, b = block x, c = block y, value = points,
+     * text = the label).
      */
-    public void score(Player pl, double points) {
+    public void score(Player pl, double points, int bx, int by, CharSequence msg) {
         if (w.params.teamPlay) {
             if (!w.params.teamShareScore) {
                 pl.score += points;
@@ -77,6 +81,9 @@ public final class Scoring {
             pl.score += points;
         }
         pl.scoreDirty = true;
+        if (!pl.robot) {
+            w.events.text[w.events.add(Events.SCORE_OBJECT, pl.id, bx, by, (float) points)].append(msg);
+        }
     }
 
     /**
@@ -106,9 +113,10 @@ public final class Scoring {
      * C {@code Score_players}.
      * <p>
      * BEHAVIOR: team mates get both scores made non-positive (no profit from team kills), then each gets
-     * their score via {@link #score}.
+     * their score via {@link #score} at the loser's block position with their own label.
      */
-    public void scorePlayers(Player winner, double winnerScore, Player loser, double loserScore) {
+    public void scorePlayers(Player winner, double winnerScore, CharSequence winnerMsg, Player loser,
+                             double loserScore, CharSequence loserMsg) {
         if (w.sameTeam(winner, loser)) {
             if (winnerScore > 0) {
                 winnerScore = -winnerScore;
@@ -117,7 +125,7 @@ public final class Scoring {
                 loserScore = -loserScore;
             }
         }
-        score(winner, winnerScore);
-        score(loser, loserScore);
+        score(winner, winnerScore, loser.bx, loser.by, winnerMsg);
+        score(loser, loserScore, loser.bx, loser.by, loserMsg);
     }
 }

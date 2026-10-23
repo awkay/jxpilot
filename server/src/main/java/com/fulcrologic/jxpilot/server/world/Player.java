@@ -28,10 +28,10 @@ import com.fulcrologic.jxpilot.common.Item;
 
 /**
  * A player slot (C {@code player}, the subset needed for S1). Preallocated by {@link World}; reused when a
- * player leaves. Units follow C: positions in clicks/pixels, velocities in pixels per original frame,
- * headings in RES units, fuel in C fixed point ({@code FUEL_SCALE_FACT} = 256 per fuel unit, kept as a
- * double so per-tick fractions survive). Timers that C counts in frames are doubles in original frames,
- * decremented by {@code dt} each sim tick.
+ * player leaves. Units and types follow C: positions in clicks/pixels, velocities in pixels per frame,
+ * headings in RES units, fuel in C fixed point ({@code FUEL_SCALE_FACT} = 256 per fuel unit). Fields that C
+ * keeps as {@code DFLOAT} (float) are {@code float} here so the physics rounds exactly like C; timers count
+ * frames (one sim tick is one C frame).
  */
 public final class Player {
     /** C {@code MAX_RECORDED_SHOVES}. */
@@ -42,10 +42,19 @@ public final class Player {
     /** Wire id (stable while the player is in the game). */
     public int id;
     public boolean inUse;
+    /** False between {@code Ships.reserve} and {@code Ships.spawn}: the slot is taken but not in the game. */
+    public boolean spawned;
+    /** A robot (C {@code IS_ROBOT_PTR}); robots are not simulated in S1, so this is always false there. */
+    public boolean robot;
     public final StringBuilder name = new StringBuilder(Const.MAX_CHARS);
     public int team = Const.TEAM_NOT_SET;
     public int pseudoTeam;
     public ShipGeom ship = ShipGeom.defaultShip();
+    /**
+     * C {@code mychar}: the score list marker: ' ' playing, 'P' paused, 'W' waiting for the next round
+     * (limited lives), 'D' dead until the next round.
+     */
+    public char mychar = ' ';
 
     // ---- position (clicks authoritative, pixels/blocks derived as C objposition)
     public int cx;
@@ -56,51 +65,49 @@ public final class Player {
     public int by;
     public int prevX;
     public int prevY;
-    /** Sub-click remainder of the per-tick move (vel*dt is rarely a whole number of clicks). */
-    public double remX;
-    public double remY;
 
-    public double vx;
-    public double vy;
-    public double accX;
-    public double accY;
+    public float vx;
+    public float vy;
+    public float accX;
+    public float accY;
     /** C {@code velocity}: |v| after the last move. */
-    public double velocity;
-    public double mass;
-    public double emptyMass;
+    public float velocity;
+    public float mass;
+    public float emptyMass;
 
     public int status;
     public int have;
     public int used;
-    /** Respawn / self-destruct countdown in original frames; -1 when idle (C {@code count}). */
-    public double count = -1;
+    /** Respawn / self-destruct / pause countdown in frames; -1 when idle (C {@code count}). */
+    public int count = -1;
 
     public int dir;
-    public double floatDir;
-    public double turnVel;
-    public double oldTurnVel;
-    public double turnAcc;
-    public double turnSpeed;
-    public double turnResistance;
-    public double power;
-    public double powerS;
-    public double turnSpeedS;
-    public double turnResistanceS;
+    public float floatDir;
+    public float turnVel;
+    public float oldTurnVel;
+    public float turnAcc;
+    public float turnSpeed;
+    public float turnResistance;
+    public float power;
+    public float powerS;
+    public float turnSpeedS;
+    public float turnResistanceS;
 
-    /** Fuel in C fixed point units (256 per displayed unit). */
+    /** Fuel in C fixed point units (256 per displayed unit, C {@code long fuel.sum}). */
     public double fuel;
     public double fuelMax;
-    public double shieldTime;
-    public double damaged;
-    public double stunned;
+    public int shieldTime;
+    public int damaged;
+    public int stunned;
 
     public int shots;
     public int shotMax;
     /** Frame clock value of the last shot (C {@code shot_time}). */
-    public double shotTime;
+    public long shotTime;
     /** Fuel station being used (C {@code fs}). */
     public int fs;
     public int homeBase;
+    /** Score (C keeps a float; double here, see docs/DEVIATIONS-server.md). */
     public double score;
     public int kills;
     public int deaths;
@@ -108,15 +115,24 @@ public final class Player {
     public final int[] items = new int[Item.COUNT];
 
     public final int[] shovePusher = new int[MAX_SHOVES];
-    public final double[] shoveTime = new double[MAX_SHOVES];
+    public final long[] shoveTime = new long[MAX_SHOVES];
     public int shoveNext;
 
     public int wormHoleHit = -1;
     public int wormHoleDest = -1;
-    public double lastWallTouch;
+    public long lastWallTouch;
+    /** Frame of the last key activity (C {@code frame_last_busy}): idle pause and maxPauseTime. */
+    public long frameLastBusy;
 
     /** Control keys as last handled ({@link com.fulcrologic.jxpilot.common.net.ControlKey} mask, C {@code prev_keyv}). */
     public long prevKeys;
+    /** The key mask the client sent last (whether or not it was handled). */
+    public long lastReceivedKeys;
+    /**
+     * Set by Go_home (C clears {@code last_keyv}/{@code prev_keyv}): keys still held are ignored until the
+     * client's key state changes.
+     */
+    public boolean keysCleared;
 
     /** Score, lives or status changed this tick (a SCORE event is emitted at the end of the tick). */
     public boolean scoreDirty;
@@ -139,12 +155,14 @@ public final class Player {
         by = py / Const.BLOCK_SZ;
     }
 
-    /** C {@code Player_position_init_pixels}: set the position and make it the previous position too. */
+    /**
+     * C {@code Player_position_init_pixels}: set the position and make it the previous position too.
+     * <p>
+     * BEHAVIOR: the pixel arguments are C {@code DFLOAT}s: rounded to float, then truncated to clicks.
+     */
     public void initPixels(double x, double y) {
-        setClicks(Click.fromPixels(x), Click.fromPixels(y));
+        setClicks(Click.fromPixels((float) x), Click.fromPixels((float) y));
         remember();
-        remX = 0;
-        remY = 0;
     }
 
     /** C {@code Player_position_remember}. */

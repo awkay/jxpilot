@@ -34,22 +34,24 @@ import com.fulcrologic.jxpilot.common.map.WorldMap;
  * after the limits applied by {@code Move_init} (walls.c), {@code Set_world_rules} and
  * {@code Set_initial_resources} (rules.c) and the robot count resolution in {@code map.c:933-938}.
  * Plain public fields so tests can tweak a copy.
+ * <p>
+ * The simulation runs one tick per C frame at {@link #fps} (SPEC "Time model"), so every per-frame C rule
+ * applies verbatim. Options that C keeps as {@code DFLOAT} (float) are {@code float} fields here, so the
+ * physics computes in the same precision as C.
  */
 public final class Params {
-    /** Server simulation rate. */
-    public static final int SIM_HZ = 60;
     /** C {@code MAX_TOTAL_SHOTS}: default object pool capacity. */
     public static final int MAX_TOTAL_SHOTS = 16384;
 
+    /** Simulation ticks (= C frames) per second: the map's {@code framesPerSecond}. */
     public int fps;
-    /** Original frames per sim tick ({@code fps / SIM_HZ}). */
-    public double dt;
+    /** C {@code World.hypotenuse}: (int) diagonal of the world in pixels. */
     public double hypotenuse;
 
-    public double shipMass;
-    public double minItemMass;
-    public double shotMass;
-    public double shotSpeed;
+    public float shipMass;
+    public float minItemMass;
+    public float shotMass;
+    public float shotSpeed;
     public int shotLife;
     public int fireRepeatRate;
     public int maxPlayerShots;
@@ -70,28 +72,28 @@ public final class Params {
 
     public boolean edgeWrap;
     public boolean edgeBounce;
-    public double maxObjectWallBounceSpeed;
-    public double maxShieldedWallBounceSpeed;
-    public double maxUnshieldedWallBounceSpeed;
+    public float maxObjectWallBounceSpeed;
+    public float maxShieldedWallBounceSpeed;
+    public float maxUnshieldedWallBounceSpeed;
     /** In RES units ({@code mp.max_shielded_angle}). */
     public int maxShieldedAngle;
     public int maxUnshieldedAngle;
     /** Option values in degrees, converted into {@link #maxShieldedAngle}/{@link #maxUnshieldedAngle} by resolve. */
-    public double maxShieldedAngleDeg;
-    public double maxUnshieldedAngleDeg;
-    public double playerWallBrakeFactor;
-    public double objectWallBrakeFactor;
-    public double objectWallBounceLifeFactor;
-    public double wallBounceFuelDrainMult;
-    public double wallBounceExplosionMult;
+    public float maxShieldedAngleDeg;
+    public float maxUnshieldedAngleDeg;
+    public float playerWallBrakeFactor;
+    public float objectWallBrakeFactor;
+    public float objectWallBounceLifeFactor;
+    public float wallBounceFuelDrainMult;
+    public float wallBounceExplosionMult;
     /** {@code mp.obj_bounce_mask}, {@code obj_cannon_mask}, {@code obj_target_mask}, {@code obj_treasure_mask}. */
     public int objBounceMask;
     public int objCannonMask;
     public int objTargetMask;
     public int objTreasureMask;
 
-    public double friction;
-    public double blockFriction;
+    public float friction;
+    public float blockFriction;
     public int coriolis;
 
     public boolean teamPlay;
@@ -107,12 +109,30 @@ public final class Params {
     public int cannonDeadTime;
     public int cannonSmartness;
     public boolean cannonFlak;
+    /** C {@code keepShots}: a leaving player's shots keep flying. */
+    public boolean keepShots;
 
     public boolean limitedLives;
     public int worldLives;
     public boolean turnThrust;
     public boolean cloakedExhaust;
     public int wormTime;
+
+    // ---- rounds (player.c Compute_game_status and friends)
+    /** C {@code gameDuration} in minutes (only its sign matters to the simulation). */
+    public float gameDuration;
+    /** C {@code roundDelaySeconds}. */
+    public int roundDelaySeconds;
+    /** C {@code maxRoundTime} in seconds. */
+    public int maxRoundTime;
+    /** C {@code roundsToPlay} (0 = unlimited). */
+    public int roundsToPlay;
+    /** C {@code endOfRoundReset} (option {@code reset}). */
+    public boolean endOfRoundReset;
+    /** C {@code resetOnHuman}. */
+    public int resetOnHuman;
+    /** C {@code maxPauseTime} in frames (0 = never kick). */
+    public int maxPauseTime;
 
     public double initialFuel;
     /** Initial item counts ({@code World.items[i].initial}, limited). */
@@ -126,33 +146,32 @@ public final class Params {
     public boolean robotsTalk;
     public boolean robotsLeave;
 
-    public double shotKillScoreMult;
-    public double clusterKillScoreMult;
-    public double runoverKillScoreMult;
-    public double explosionKillScoreMult;
-    public double shoveKillScoreMult;
-    public double crashScoreMult;
-    public double selfKillScoreMult;
-    public double selfDestructScoreMult;
-    public double unownedKillScoreMult;
-    public double tankKillScoreMult;
-    public double cannonPoints;
-    public double cannonMaxScore;
+    public float shotKillScoreMult;
+    public float clusterKillScoreMult;
+    public float runoverKillScoreMult;
+    public float explosionKillScoreMult;
+    public float shoveKillScoreMult;
+    public float crashScoreMult;
+    public float selfKillScoreMult;
+    public float selfDestructScoreMult;
+    public float unownedKillScoreMult;
+    public float tankKillScoreMult;
+    public float cannonPoints;
+    public float cannonMaxScore;
 
-    public double minVisibilityDistance;
-    public double maxVisibilityDistance;
+    public float minVisibilityDistance;
+    public float maxVisibilityDistance;
     public boolean cannonsUseItems;
 
     /** Parameters with C defaults for a map (for tests that only need a world size). */
     public static Params from(Options o, WorldMap map) {
         Params p = new Params();
         p.fps = o.framesPerSecond();
-        p.dt = (double) p.fps / SIM_HZ;
-        p.hypotenuse = (int) Math.hypot(map.pixelWidth(), map.pixelHeight());
+        p.hypotenuse = (int) StrictMath.hypot(map.pixelWidth(), map.pixelHeight());
 
-        p.shipMass = o.getDouble(Opt.SHIP_MASS);
-        p.shotMass = o.getDouble(Opt.SHOT_MASS);
-        p.shotSpeed = o.getDouble(Opt.SHOT_SPEED);
+        p.shipMass = f(o, Opt.SHIP_MASS);
+        p.shotMass = f(o, Opt.SHOT_MASS);
+        p.shotSpeed = f(o, Opt.SHOT_SPEED);
         p.shotLife = o.getInt(Opt.SHOT_LIFE);
         p.fireRepeatRate = o.getInt(Opt.FIRE_REPEAT_RATE);
         p.maxPlayerShots = o.getInt(Opt.MAX_PLAYER_SHOTS);
@@ -168,15 +187,15 @@ public final class Params {
 
         p.edgeWrap = map.edgeWrap();
         p.edgeBounce = o.getBool(Opt.EDGE_BOUNCE);
-        p.maxObjectWallBounceSpeed = o.getDouble(Opt.MAX_OBJECT_WALL_BOUNCE_SPEED);
-        p.maxShieldedWallBounceSpeed = o.getDouble(Opt.MAX_SHIELDED_WALL_BOUNCE_SPEED);
-        p.maxUnshieldedWallBounceSpeed = o.getDouble(Opt.MAX_UNSHIELDED_WALL_BOUNCE_SPEED);
-        p.maxShieldedAngleDeg = o.getDouble(Opt.MAX_SHIELDED_PLAYER_WALL_BOUNCE_ANGLE);
-        p.maxUnshieldedAngleDeg = o.getDouble(Opt.MAX_UNSHIELDED_PLAYER_WALL_BOUNCE_ANGLE);
-        p.playerWallBrakeFactor = o.getDouble(Opt.PLAYER_WALL_BOUNCE_BRAKE_FACTOR);
-        p.objectWallBrakeFactor = o.getDouble(Opt.OBJECT_WALL_BOUNCE_BRAKE_FACTOR);
-        p.objectWallBounceLifeFactor = o.getDouble(Opt.OBJECT_WALL_BOUNCE_LIFE_FACTOR);
-        p.wallBounceFuelDrainMult = o.getDouble(Opt.WALL_BOUNCE_FUEL_DRAIN_MULT);
+        p.maxObjectWallBounceSpeed = f(o, Opt.MAX_OBJECT_WALL_BOUNCE_SPEED);
+        p.maxShieldedWallBounceSpeed = f(o, Opt.MAX_SHIELDED_WALL_BOUNCE_SPEED);
+        p.maxUnshieldedWallBounceSpeed = f(o, Opt.MAX_UNSHIELDED_WALL_BOUNCE_SPEED);
+        p.maxShieldedAngleDeg = f(o, Opt.MAX_SHIELDED_PLAYER_WALL_BOUNCE_ANGLE);
+        p.maxUnshieldedAngleDeg = f(o, Opt.MAX_UNSHIELDED_PLAYER_WALL_BOUNCE_ANGLE);
+        p.playerWallBrakeFactor = f(o, Opt.PLAYER_WALL_BOUNCE_BRAKE_FACTOR);
+        p.objectWallBrakeFactor = f(o, Opt.OBJECT_WALL_BOUNCE_BRAKE_FACTOR);
+        p.objectWallBounceLifeFactor = f(o, Opt.OBJECT_WALL_BOUNCE_LIFE_FACTOR);
+        p.wallBounceFuelDrainMult = f(o, Opt.WALL_BOUNCE_FUEL_DRAIN_MULT);
         int bounce = 0;
         bounce |= o.getBool(Opt.SPARKS_WALL_BOUNCE) ? Obj.SPARK : 0;
         bounce |= o.getBool(Opt.DEBRIS_WALL_BOUNCE) ? Obj.DEBRIS : 0;
@@ -188,8 +207,8 @@ public final class Params {
         bounce |= o.getBool(Opt.ASTEROIDS_WALL_BOUNCE) ? Obj.ASTEROID : 0;
         p.objBounceMask = bounce;
 
-        p.friction = o.getDouble(Opt.FRICTION);
-        p.blockFriction = o.getDouble(Opt.BLOCK_FRICTION);
+        p.friction = f(o, Opt.FRICTION);
+        p.blockFriction = f(o, Opt.BLOCK_FRICTION);
         p.coriolis = o.getInt(Opt.CORIOLIS);
 
         p.teamPlay = map.teamPlay();
@@ -205,6 +224,7 @@ public final class Params {
         p.cannonDeadTime = o.getFrames(Opt.CANNON_DEAD_TIME);
         p.cannonSmartness = o.getInt(Opt.CANNON_SMARTNESS);
         p.cannonFlak = o.getBool(Opt.CANNON_FLAK);
+        p.keepShots = o.getBool(Opt.KEEP_SHOTS);
 
         p.limitedLives = o.getBool(Opt.LIMITED_LIVES);
         p.worldLives = o.getInt(Opt.WORLD_LIVES);
@@ -212,9 +232,17 @@ public final class Params {
         p.cloakedExhaust = o.getBool(Opt.CLOAKED_EXHAUST);
         p.wormTime = o.getFrames(Opt.WORM_TIME);
 
+        p.gameDuration = f(o, Opt.GAME_DURATION);
+        p.roundDelaySeconds = o.getInt(Opt.ROUND_DELAY);
+        p.maxRoundTime = o.getInt(Opt.MAX_ROUND_TIME);
+        p.roundsToPlay = o.getInt(Opt.ROUNDS_TO_PLAY);
+        p.endOfRoundReset = o.getBool(Opt.RESET);
+        p.resetOnHuman = o.getInt(Opt.RESET_ON_HUMAN);
+        p.maxPauseTime = o.getFrames(Opt.MAX_PAUSE_TIME);
+
         // C Set_initial_resources: LIMIT(fuel limit, 0, MAX_FUEL = 10000), LIMIT(initial, 0, limit)
         p.initialFuel = clamp(o.getInt(Opt.INITIAL_FUEL), 0, clamp(o.getInt(Opt.MAX_FUEL), 0, 10000));
-        p.minItemMass = o.getDouble(Opt.MIN_ITEM_MASS);
+        p.minItemMass = f(o, Opt.MIN_ITEM_MASS);
         readItems(o, p.initialItems);
 
         p.maxRobots = o.getInt(Opt.MAX_ROBOTS);
@@ -225,24 +253,29 @@ public final class Params {
         p.robotsTalk = o.getBool(Opt.ROBOTS_TALK);
         p.robotsLeave = o.getBool(Opt.ROBOTS_LEAVE);
 
-        p.shotKillScoreMult = o.getDouble(Opt.SHOT_KILL_SCORE_MULT);
-        p.clusterKillScoreMult = o.getDouble(Opt.CLUSTER_KILL_SCORE_MULT);
-        p.runoverKillScoreMult = o.getDouble(Opt.RUNOVER_KILL_SCORE_MULT);
-        p.explosionKillScoreMult = o.getDouble(Opt.EXPLOSION_KILL_SCORE_MULT);
-        p.shoveKillScoreMult = o.getDouble(Opt.SHOVE_KILL_SCORE_MULT);
-        p.crashScoreMult = o.getDouble(Opt.CRASH_SCORE_MULT);
-        p.selfKillScoreMult = o.getDouble(Opt.SELF_KILL_SCORE_MULT);
-        p.selfDestructScoreMult = o.getDouble(Opt.SELF_DESTRUCT_SCORE_MULT);
-        p.unownedKillScoreMult = o.getDouble(Opt.UNOWNED_KILL_SCORE_MULT);
-        p.tankKillScoreMult = o.getDouble(Opt.TANK_KILL_SCORE_MULT);
-        p.cannonPoints = o.getDouble(Opt.CANNON_POINTS);
-        p.cannonMaxScore = o.getDouble(Opt.CANNON_MAX_SCORE);
-        p.minVisibilityDistance = o.getDouble(Opt.MIN_VISIBILITY_DISTANCE);
-        p.maxVisibilityDistance = o.getDouble(Opt.MAX_VISIBILITY_DISTANCE);
+        p.shotKillScoreMult = f(o, Opt.SHOT_KILL_SCORE_MULT);
+        p.clusterKillScoreMult = f(o, Opt.CLUSTER_KILL_SCORE_MULT);
+        p.runoverKillScoreMult = f(o, Opt.RUNOVER_KILL_SCORE_MULT);
+        p.explosionKillScoreMult = f(o, Opt.EXPLOSION_KILL_SCORE_MULT);
+        p.shoveKillScoreMult = f(o, Opt.SHOVE_KILL_SCORE_MULT);
+        p.crashScoreMult = f(o, Opt.CRASH_SCORE_MULT);
+        p.selfKillScoreMult = f(o, Opt.SELF_KILL_SCORE_MULT);
+        p.selfDestructScoreMult = f(o, Opt.SELF_DESTRUCT_SCORE_MULT);
+        p.unownedKillScoreMult = f(o, Opt.UNOWNED_KILL_SCORE_MULT);
+        p.tankKillScoreMult = f(o, Opt.TANK_KILL_SCORE_MULT);
+        p.cannonPoints = f(o, Opt.CANNON_POINTS);
+        p.cannonMaxScore = f(o, Opt.CANNON_MAX_SCORE);
+        p.minVisibilityDistance = f(o, Opt.MIN_VISIBILITY_DISTANCE);
+        p.maxVisibilityDistance = f(o, Opt.MAX_VISIBILITY_DISTANCE);
         p.cannonsUseItems = o.getBool(Opt.CANNONS_USE_ITEMS);
 
         p.resolve(map.bases().size());
         return p;
+    }
+
+    /** A C {@code DFLOAT} option: the parsed double rounded to float, as C stores it. */
+    private static float f(Options o, Opt opt) {
+        return (float) o.getDouble(opt);
     }
 
     /**
@@ -291,16 +324,18 @@ public final class Params {
      * BEHAVIOR: maxRobots = -1 means one robot per base; minRobots = -1 means maxRobots (map.c:933-938).
      */
     public void resolve(int numBases) {
-        maxObjectWallBounceSpeed = clamp(maxObjectWallBounceSpeed, 0, hypotenuse);
-        maxShieldedWallBounceSpeed = clamp(maxShieldedWallBounceSpeed, 0, hypotenuse);
-        maxUnshieldedWallBounceSpeed = clamp(maxUnshieldedWallBounceSpeed, 0, hypotenuse);
-        maxShieldedAngle = (int) (clamp(maxShieldedAngleDeg, 0, 180) * Const.RES / 360);
-        maxUnshieldedAngle = (int) (clamp(maxUnshieldedAngleDeg, 0, 180) * Const.RES / 360);
-        playerWallBrakeFactor = clamp(playerWallBrakeFactor, 0, 1);
-        objectWallBrakeFactor = clamp(objectWallBrakeFactor, 0, 1);
-        objectWallBounceLifeFactor = clamp(objectWallBounceLifeFactor, 0, 1);
-        wallBounceFuelDrainMult = clamp(wallBounceFuelDrainMult, 0, 1000);
-        wallBounceExplosionMult = Math.sqrt(wallBounceFuelDrainMult);
+        maxObjectWallBounceSpeed = (float) clamp(maxObjectWallBounceSpeed, 0, hypotenuse);
+        maxShieldedWallBounceSpeed = (float) clamp(maxShieldedWallBounceSpeed, 0, hypotenuse);
+        maxUnshieldedWallBounceSpeed = (float) clamp(maxUnshieldedWallBounceSpeed, 0, hypotenuse);
+        maxShieldedAngleDeg = (float) clamp(maxShieldedAngleDeg, 0, 180);
+        maxUnshieldedAngleDeg = (float) clamp(maxUnshieldedAngleDeg, 0, 180);
+        maxShieldedAngle = (int) (maxShieldedAngleDeg * Const.RES / 360);
+        maxUnshieldedAngle = (int) (maxUnshieldedAngleDeg * Const.RES / 360);
+        playerWallBrakeFactor = (float) clamp(playerWallBrakeFactor, 0, 1);
+        objectWallBrakeFactor = (float) clamp(objectWallBrakeFactor, 0, 1);
+        objectWallBounceLifeFactor = (float) clamp(objectWallBounceLifeFactor, 0, 1);
+        wallBounceFuelDrainMult = (float) clamp(wallBounceFuelDrainMult, 0, 1000);
+        wallBounceExplosionMult = (float) StrictMath.sqrt(wallBounceFuelDrainMult);
 
         killingShots = playerKillings ? Obj.KILLING_SHOTS : 0;
         objCannonMask = killingShots | Obj.MINE | Obj.SHOT | Obj.PULSE | Obj.SMART_SHOT | Obj.TORPEDO
