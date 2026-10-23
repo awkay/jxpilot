@@ -84,7 +84,7 @@ public final class FakeServer {
     public static final int PLAYER_ID = 7;
     public static final int OTHER_ID = 9;
 
-    private final Port port;
+    private Port port;
     public final Options options;
     public final WorldMap map;
     private final ConfigTransfer.Blob blob;
@@ -127,6 +127,12 @@ public final class FakeServer {
         map = WorldMap.fromOptions(options);
         blob = ConfigTransfer.encode(options.toConfigText());
         writer.setWorld(map.pixelWidth(), map.pixelHeight(), true);
+    }
+
+    /** Continue with another port (same session state); returns this. */
+    public FakeServer withPort(Port p) {
+        port = p;
+        return this;
     }
 
     /** Handle everything waiting from the client. */

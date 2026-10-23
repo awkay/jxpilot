@@ -39,6 +39,32 @@
   <build>
     <plugins>
       <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <excludes>
+            <exclude>**/*NetAllocationTest.java</exclude>
+          </excludes>
+        </configuration>
+        <executions>
+          <!-- client-net allocation test runs separately with escape analysis off (as in common). -->
+          <execution>
+            <id>net-allocation-tests</id>
+            <phase>test</phase>
+            <goals>
+              <goal>test</goal>
+            </goals>
+            <configuration>
+              <excludes combine.self="override"/>
+              <includes>
+                <include>**/*NetAllocationTest.java</include>
+              </includes>
+              <argLine>-XX:-DoEscapeAnalysis</argLine>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <!-- mvn -pl client exec:exec, optionally with -Dclient.args="(viewer options)" -->
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
@@ -56,12 +82,20 @@
             <param>com.fulcrologic.jxpilot.client.render.*</param>
             <param>com.fulcrologic.jxpilot.client.map.*</param>
             <param>com.fulcrologic.jxpilot.client.viewer.*</param>
+            <param>com.fulcrologic.jxpilot.client.net.*</param>
+            <param>com.fulcrologic.jxpilot.client.game.*</param>
           </targetClasses>
+          <excludedClasses>
+            <param>com.fulcrologic.jxpilot.client.net.UdpTransport</param>
+            <param>com.fulcrologic.jxpilot.client.net.ClientSim</param>
+          </excludedClasses>
           <targetTests>
             <param>com.fulcrologic.jxpilot.client.*</param>
           </targetTests>
           <excludedTestClasses>
             <param>com.fulcrologic.jxpilot.client.AllocationTest</param>
+            <param>*NetAllocationTest*</param>
+            <param>*UdpLoopbackTest*</param>
           </excludedTestClasses>
         </configuration>
       </plugin>
