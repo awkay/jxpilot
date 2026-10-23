@@ -1,0 +1,362 @@
+[[running-a-server]]
+= Running a server
+ifdef::env-github[]
+:toc:
+:toclevels: 2
+:experimental:
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+NOTE: *Unmerged branch* (`server-net`). Everything in this chapter about starting the server, its
+command line and network binding describes `ServerMain` on the `server-net` branch. Until that branch
+is merged, the release server jar cannot be started. The server also still runs a stand-in game
+(players can connect and chat, ships just float); the real simulation is wired in later. The option
+and map file handling (precedence, `\override:`, `define:`/`expand:`) is on main.
+
+[[server-cli]]
+== Command line
+
+[source,shell]
+----
+java [JVM options] -jar jxpilot-server-VERSION.jar --map MAPFILE [--port N] [--bind SELECTOR ...] [--bindWait]
+     [-OPTION VALUE ...] [CONFIGFILE]
+----
+
+`--map MAPFILE`:: The map to serve, an XPilot `.xp` file (required, here or in the config file). A
+relative path is relative to the directory the server is started in.
+`--port N`:: The UDP port to listen on, default 15345 (option `contactPort`).
+`--bind SELECTOR`:: Which local addresses to listen on, default `all`. Repeat it or give a comma list:
+`--bind tailscale0 --bind loopback` is the same as `--bind tailscale0,loopback`. See <<binding>>.
+`--bindWait`:: Start even if a `--bind` selector matches no address yet, and bind it when it appears
+(for example when a VPN comes up after the server). See <<bind-wait>>.
+`-OPTION VALUE`:: Any server option, by its name or short name, for example `-gravity -0.3`,
+`--maxClientsPerIP 8` or `-FPS 20`. All options are listed in
+<<05-server-options.adoc#server-options,Server configuration reference>>.
+`CONFIGFILE`:: One server configuration file (<<config-files>>). Anything on the command line that is
+not an option is taken as the config file name; two such arguments are an error.
+
+[[cli-syntax]]
+=== Option syntax
+
+* An option is `-name value` or `--name value`. Names are matched without regard to case or spaces,
+  and the short name works as well as the full name: `-port`, `--contactPort` and `-CONTACTPORT` are
+  the same option.
+* *Boolean options take no value.* `-name` (or `--name`) turns it on, `+name` turns it off:
+  `-teams` turns team play on, `+edgeWrap` turns wrapping off.
++
+CAUTION: `-teams yes` does not do what it looks like: `-teams` turns team play on, and `yes` is then
+taken as the config file name, which fails to load (the server prints `jxpilot server: yes` and exits).
+* Text and list values containing spaces need shell quoting: `-mapName "My map"`.
+* A value that does not parse (for example `-port abc`) is reported as an "option warning" at startup
+  and the option keeps its default.
+* `-help`, `-version` and `-dump` are in XPilot's option table, but the server does not act on them yet.
+
+[[exit-status]]
+=== Exit status and stopping
+
+The server runs until it is stopped with kbd:[Ctrl+C] or `SIGTERM`. It then tells connected players
+it is going away, closes its sockets and exits; as for any Java program, the exit status is then 130
+(after kbd:[Ctrl+C]) or 143 (after `SIGTERM`). It exits with status 1 for bad arguments, a missing or
+unreadable map, or a bind failure (with the reason and a usage line on standard error), and with
+status 2 if the server loop fails while running.
+
+[[jvm-options]]
+=== Java options
+
+The server needs no special Java options. The recommended collector is ZGC, which keeps pauses short:
+`java -XX:+UseZGC -jar jxpilot-server-VERSION.jar ...`. Memory use is small; `-Xmx256m` is plenty for
+a normal game.
+
+[[server-output]]
+=== What the server prints
+
+Startup and connection events go to standard error, one line each:
+
+----
+listening on 10.224.0.16:15345 (utun4)          <1>
+listening on 127.0.0.1:15345 (lo0)
+serving map 'The Newbie Globe' (170x170 blocks) at 12 frames/s   <2>
+join: player 1 'alice' from /10.224.0.20:53122 on channel 0      <3>
+leave: player 1 (timeout)
+----
+<1> One line per bound address, with its interface. Tell players these addresses.
+<2> The map and the simulation rate, which is the map's `framesPerSecond`.
+<3> Players joining and leaving.
+
+Option problems appear as `option warning: ...`, binding problems as `bind warning: ...`, and changes
+found by the interface rescan as `listening on ...`, `unbound ...` or `interface renamed: ...`.
+
+[[map-selection]]
+== Choosing the map
+
+The map comes from `--map` (or `mapFileName: FILE` in the config file). A map file holds the map
+itself (`mapData`) and usually options for it, such as `gravity` or `teamPlay`
+(<<06-config-and-maps.adoc#config-and-maps,Config and map files>>). The 19 maps that come with
+JXPilot are listed in <<06-config-and-maps.adoc#shipped-maps,Shipped maps>>; any XPilot 4.5.5
+block-based map should work.
+
+The server simulates at the map's `framesPerSecond` (default 14; many maps set their own). One
+simulation step is one XPilot frame, so the game runs at the same speed as on an original server.
+
+[[precedence-summary]]
+=== Which setting wins
+
+The same option can come from several places. From strongest to weakest:
+
+. the command line;
+. the map file;
+. the config file;
+. the built-in default.
+
+An `\override:` value in the config file beats the map (`gravity: \override: 0`). Details:
+<<06-config-and-maps.adoc#precedence,Precedence>>.
+
+[[binding]]
+== Network binding
+
+JXPilot servers are often run on a VPN (WireGuard, a corporate tunnel, Tailscale), a LAN, or a public
+host, and often on machines with several of these at once. The `bind` option says which local
+addresses the server listens on.
+
+[[bind-selectors]]
+=== Bind selectors
+
+`bind` takes one or more selectors, separated by commas or given by repeating `--bind`:
+
+[cols="2,3,5",options="header"]
+|===
+|Selector |Example |Binds
+
+|`all` (the default)
+|`--bind all`
+|Every address of every interface that is up, except IPv6 link-local addresses.
+
+|`loopback`
+|`--bind loopback`
+|The loopback addresses (`127.0.0.1`, `::1`): only this machine can connect. Good for testing.
+
+|IP address
+|`--bind 10.224.0.16`, `--bind ::1`
+|That one local address.
+
+|CIDR network
+|`--bind 10.224.0.0/22`, `--bind 100.64.0.0/10`
+|Every local address inside the network. This keeps working when a VPN interface is renumbered
+(`utun4` becomes `utun5`) or its address changes within the network.
+
+|Interface name
+|`--bind en0`, `--bind tailscale0`, `--bind if:utun4`
+|Every address of that interface (except IPv6 link-local). `if:` forces the word to be read as an
+interface name.
+
+|Host name
+|`--bind myhost.example.org`, `--bind host:vpn-name`
+|The local addresses the name resolves to, at startup. `host:` forces the word to be read as a host name.
+
+|Wildcard
+|`--bind 0.0.0.0`, `--bind ::`
+|The wildcard socket itself. Allowed, with a warning; see <<multi-homed>>.
+|===
+
+A bare word such as `en0` or `gameserver` is an interface name if such an interface exists, otherwise a
+host name if it resolves, otherwise an interface name that may appear later (with a warning).
+
+[[multi-homed]]
+=== Replies from the right address
+
+On a machine with several addresses, a server listening on a wildcard address (`0.0.0.0` or `::`) can
+send its replies from a different address than the one the player contacted, for example from the LAN
+address to a player who came in over the VPN. The player's computer then drops the replies and cannot
+connect. Java offers no way to choose the reply address on a wildcard socket.
+
+JXPilot avoids this. The selectors `all`, interfaces and CIDRs are turned into the concrete local
+addresses they match, and the server opens one socket per address. Each player is tied to the socket
+they first reached, and every reply goes out from that same address. So the default `all` is safe on
+multi-homed machines; a literal `0.0.0.0` or `::` is allowed only because you asked for it, and the
+server warns about it.
+
+Notes:
+
+* `::` alone also serves IPv4 (Java opens IPv6 sockets dual-stack). Giving both `0.0.0.0` and `::`
+  binds only `::`, with a warning, because Linux refuses to bind both on one port.
+* A wildcard and specific addresses cannot share a port; if both are given, only the wildcard is
+  used, with a warning naming the dropped addresses.
+
+[[rescan]]
+=== Interfaces that come and go
+
+When any selector is not a plain IP address (or `bindWait` is on), the server checks the network
+interfaces every 3 seconds. It binds addresses that newly match (the VPN came up), closes sockets on
+addresses that went away (the VPN dropped; players on it time out normally), and retries binds that
+failed earlier. Plain IP addresses without `bindWait` are bound once at startup.
+
+[[bind-wait]]
+=== Selectors that match nothing: `bindWait`
+
+By default, a selector that matches no local address at startup is an error, and the server exits:
+
+----
+bind warning: bind 'tailscale0' is neither a current interface nor a resolvable host name; treating it as an interface name
+jxpilot server: bind selector(s) [if:tailscale0] match no local address (use bindWait to wait for them)
+----
+
+With `--bindWait` (or `bindWait: true` in the config file) the server starts anyway. If nothing at
+all matches, it waits, checking every 3 seconds, until something does; selectors that match later are
+bound by the rescan. Use this when the server starts before its VPN, for example at boot.
+
+[[bind-examples]]
+=== Examples
+
+[cols="2,4",options="header"]
+|===
+|Situation |Command line
+|Testing on your own machine |`--bind loopback`
+|A home or office LAN |`--bind 192.168.1.0/24` (your LAN's network), or `--bind en0` / `--bind eth0`
+|Tailscale only |`--bind 100.64.0.0/10 --bindWait` (or `--bind tailscale0 --bindWait`)
+|A corporate VPN on `utunN` with `10.224.0.0/22` |`--bind 10.224.0.0/22 --bindWait`
+|A public server |`--bind all` (the default), or its public address(es)
+|VPN plus local testing |`--bind 100.64.0.0/10,loopback --bindWait`
+|===
+
+`bind` and `bindWait` can be set on the command line or in the config file, never in a map.
+
+[[firewalls]]
+== Ports and firewalls
+
+A JXPilot server uses *one UDP port*, `contactPort` (default 15345), on every address it binds.
+Players only need to reach that port; there are no TCP connections and no extra ports. (XPilot's
+`clientPortStart` and `clientPortEnd` options are accepted but not used.)
+
+Each datagram is at most 1200 bytes, so it fits VPN and IPv6 paths without fragmentation.
+
+[cols="1,4",options="header"]
+|===
+|Firewall |Allow the port
+|Linux, ufw |`sudo ufw allow 15345/udp`
+|Linux, firewalld |`sudo firewall-cmd --permanent --add-port=15345/udp && sudo firewall-cmd --reload`
+|Linux, nftables/iptables |`sudo iptables -A INPUT -p udp --dport 15345 -j ACCEPT` (or your nftables equivalent)
+|macOS |The application firewall asks once whether `java` may accept incoming connections; allow it.
+|Windows (PowerShell, as administrator)
+|`New-NetFirewallRule -DisplayName "JXPilot" -Direction Inbound -Protocol UDP -LocalPort 15345 -Action Allow`
+|Home router (NAT) |Forward UDP port 15345 to the server's LAN address.
+|===
+
+[[abuse-limits]]
+=== Connection and traffic limits
+
+NOTE: *Unmerged branch* (`server-net`). These options exist on that branch and join the option
+reference when it is merged.
+
+[cols="2,1,5",options="header"]
+|===
+|Option |Default |Meaning
+|`maxClientsPerIP` (short `maxPerIP`) |4 |Players allowed from one IPv4 address or one IPv6 /64;
+0 or less is unlimited. (XPilot's default is 2.)
+|`ipPacketRate` |400 |Packets per second accepted from one address (IPv6: one /64) for connecting
+and for packets outside a session.
+|`ipPacketBurst` |800 |Burst size, in packets, for `ipPacketRate`.
+|`sessionPacketRate` |400 |Packets per second accepted from one connected player.
+|`sessionPacketBurst` |800 |Burst size, in packets, for `sessionPacketRate`.
+|`snapshotDivisor` |1 |Send a snapshot every N simulation frames (1 = every frame).
+|`radarDivisor` |3 |Include the radar in every Nth snapshot.
+|`bind` |`all` |See <<binding>>.
+|`bindWait` |false |See <<bind-wait>>.
+|===
+
+All of these can be set on the command line or in the config file, but not in a map. A player that
+sends nothing for 10 seconds, or does not acknowledge reliable messages for that long, is dropped.
+
+[[config-files]]
+== Configuration files
+
+A server configuration file uses the same `name: value` format as map files
+(<<06-config-and-maps.adoc#file-format,File format>>), so any option can be set there, except the few
+marked as command-line only in the option reference. Pass the file as the last argument:
+
+[source,shell]
+----
+java -jar jxpilot-server-VERSION.jar --map maps/teamball.xp /etc/jxpilot/server.conf
+----
+
+An example:
+
+[source,text]
+----
+# /etc/jxpilot/server.conf
+port:            15345
+bind:            100.64.0.0/10, loopback   # Tailscale plus local testing
+bindWait:        true                      # start before the VPN is up
+maxClientsPerIP: 8
+gravity:         \override: -0.2           # beats the map's own gravity
+----
+
+XPilot's file options (`defaults`, `passwordFileName`, `motd`, `scoretable`, `adminMessage`) are
+accepted, but the server does not read those files yet. Use the positional config file instead.
+
+[[robots]]
+== Robots
+
+NOTE: *Planned* (milestone M1). Robots are not implemented yet. Their options (`maxRobots`, `minRobots`,
+`robotsTalk`, `robotsLeave`, ...) are parsed and listed in
+<<05-server-options.adoc#opts-robots,Robots>>, and will behave as in XPilot.
+
+[[service]]
+== Running as a service (systemd)
+
+On Linux, run the server as a systemd service under its own user. Set it up once:
+
+[source,shell]
+----
+sudo useradd --system --home /opt/jxpilot --shell /usr/sbin/nologin jxpilot
+sudo mkdir -p /opt/jxpilot /etc/jxpilot
+sudo cp jxpilot-server-VERSION.jar /opt/jxpilot/jxpilot-server.jar
+sudo cp -R jxpilot-maps-VERSION/maps /opt/jxpilot/maps
+sudo cp server.conf /etc/jxpilot/server.conf
+----
+
+Then create `/etc/systemd/system/jxpilot.service`:
+
+[source,ini]
+----
+[Unit]
+Description=JXPilot server
+Wants=network-online.target
+After=network-online.target
+# On a VPN, also wait for it, e.g.: After=tailscaled.service (and use bindWait)
+
+[Service]
+Type=simple
+User=jxpilot
+Group=jxpilot
+WorkingDirectory=/opt/jxpilot
+ExecStart=/usr/bin/java -XX:+UseZGC -Xmx256m -jar /opt/jxpilot/jxpilot-server.jar \
+    --map /opt/jxpilot/maps/default.xp /etc/jxpilot/server.conf
+# Java exits with 143 after SIGTERM (systemctl stop): that is a clean stop.
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+----
+
+Start it, enable it at boot, and read its log:
+
+[source,shell]
+----
+sudo systemctl daemon-reload
+sudo systemctl enable --now jxpilot
+journalctl -u jxpilot -f
+----
+
+To change the map, edit `ExecStart` (or set `mapFileName:` in the config file) and run
+`sudo systemctl restart jxpilot`. Adjust `/usr/bin/java` if Java 25 is installed elsewhere
+(`readlink -f "$(which java)"`).
