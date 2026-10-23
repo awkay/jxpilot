@@ -193,6 +193,23 @@ public final class ServerNet {
             parts[i] = ByteBuffer.allocateDirect(Protocol.MAX_PACKET);
         }
         writer.setWorld(cfg.worldWidth, cfg.worldHeight, cfg.edgeWrap);
+        host.attach(this::kick);
+    }
+
+    /**
+     * The host removed a player on its own ({@link GameHost.Sessions#kick}).
+     * <p>
+     * BEHAVIOR: the connection of {@code playerId} gets DISCONNECT (kicked, {@code reason}) 3 times if verified
+     * and is dropped (the host gets {@link GameHost#leave}); without such a connection nothing happens.
+     */
+    void kick(int playerId, CharSequence reason) {
+        for (int i = 0; i < activeCount; i++) {
+            Connection c = active[i];
+            if (c.playerId == playerId) {
+                drop(c, Msg.Disconnect.REASON_KICKED, reason, true);
+                return;
+            }
+        }
     }
 
     // ------------------------------------------------------------------ receiving
@@ -308,7 +325,7 @@ public final class ServerNet {
             sendReject(channel, from, connect.nonce, -id, rejectText(-id), size);
             return;
         }
-        if (existing != null) {
+        if (existing != null && existing.addr != null) {
             drop(existing, Msg.Disconnect.REASON_QUIT, "reconnected", false);
         }
         Connection c = free[--freeCount];
@@ -527,7 +544,7 @@ public final class ServerNet {
      * Remove a peer. DISCONNECT goes only to verified peers (never reflect to an unproven address); the
      * reliable channel is reset at once so a peer dropped for a backlog releases its overflow memory.
      */
-    private void drop(Connection c, int reason, String why, boolean notify) {
+    private void drop(Connection c, int reason, CharSequence why, boolean notify) {
         if (notify && c.verified) {
             disconnect.reason = reason;
             disconnect.text.setLength(0);

@@ -95,6 +95,7 @@ class LoopbackIntegrationTest {
             }
         };
         s.rescanMillis = 100;
+        s.factory = (o, m) -> new StubGameHost(m, 32);
         return s;
     }
 

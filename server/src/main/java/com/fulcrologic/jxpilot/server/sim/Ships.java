@@ -73,6 +73,20 @@ public final class Ships {
     /** Race-mode start order (WorldMap.baseOrder() copies on every call). */
     private final int[] baseOrder;
 
+    /** Told when a human has entered the game (see {@link #enterListener}). */
+    @FunctionalInterface
+    public interface EnterListener {
+        /** {@code pl} is in the game (JOIN, BASE_OWNER and SPAWN emitted); Handle_login's round part follows. */
+        void entered(Player pl);
+    }
+
+    /**
+     * Called in {@link #spawn} for a human right after it entered the game and before Handle_login's round
+     * part, where C sets the "Welcome to ..." / "... has entered ..." message (the network layer's text);
+     * null for none.
+     */
+    public EnterListener enterListener;
+
     public Ships(World w, Simulation sim) {
         this.w = w;
         this.sim = sim;
@@ -128,8 +142,9 @@ public final class Ships {
      * and the ship starts at home.
      * BEHAVIOR: with teamShareScore the first member resets the team score; the share is redistributed to the
      * members already in the game (as C, the joiner itself keeps 0 until the next team score change).
-     * BEHAVIOR: for a human, resetOnHuman ends the round for the first N humans; a join during the round
-     * delay, or the first player, (re)starts the round delay with a message (C Handle_login). A robot's round
+     * BEHAVIOR: for a human, the {@link #enterListener} is told first; then resetOnHuman ends the round for the
+     * first N humans; a join during the round delay, or the first player, (re)starts the round delay with a
+     * message (C Handle_login). A robot's round
      * part is C Robot_create's, which the robot manager runs after the robot's ENTER talk
      * ({@code Rounds.robotEntered}).
      */
@@ -169,6 +184,9 @@ public final class Ships {
         w.events.add(Events.GAME_EVENT, Msg.GameEvent.SPAWN, pl.id, pl.homeBase, 0f);
         pl.scoreDirty = true;
         if (!pl.robot) {
+            if (enterListener != null) {
+                enterListener.entered(pl);
+            }
             sim.rounds.playerEntered(pl);
         }
         return true;
@@ -312,7 +330,7 @@ public final class Ships {
      * BEHAVIOR: one candidate is chosen; among several the one with the lowest summed (long) score that is not
      * the robot team; none gives TEAM_NOT_SET.
      */
-    int pickTeam(Player joining) {
+    public int pickTeam(Player joining) {
         Params p = w.params;
         for (int i = 0; i < Const.MAX_TEAMS; i++) {
             teamFree[i] = w.map.teamBaseCount(i) - w.teamMembers[i];

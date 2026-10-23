@@ -55,6 +55,7 @@ class ServerMainTest {
         s.interfaces = () -> List.of(new NetIf("lo0", true, true, List.of(lo)));
         s.resolver = h -> List.of();
         s.log = line -> { };
+        s.factory = (o, m) -> new StubGameHost(m, 4);
         return s;
     }
 

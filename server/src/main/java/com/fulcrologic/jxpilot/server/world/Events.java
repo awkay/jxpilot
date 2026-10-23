@@ -56,7 +56,10 @@ public final class Events {
     public static final int SCORE = 4;
     /** a = team, value = team score. */
     public static final int TEAM_SCORE = 5;
-    /** a = Msg.Text kind, b = sender id or {@link Obj#NO_ID}; text in {@link #text}. */
+    /**
+     * a = Msg.Text kind, b = sender id or {@link Obj#NO_ID}, c = the only receiver's id (C
+     * {@code Set_player_message}) or 0 for everyone (C {@code Set_message}); text in {@link #text}.
+     */
     public static final int MESSAGE = 6;
     /** a = base index, b = player id ({@link Obj#NO_ID} when the base is released). */
     public static final int BASE_OWNER = 7;
@@ -133,9 +136,18 @@ public final class Events {
         return i;
     }
 
-    /** Append a MESSAGE and return its cleared text buffer for the caller to fill. */
+    /** Append a MESSAGE for everyone and return its cleared text buffer for the caller to fill. */
     public StringBuilder message(int msgKind, int from) {
         return text[add(MESSAGE, msgKind, from, 0, 0f)];
+    }
+
+    /**
+     * Append a MESSAGE for one player (C {@code Set_player_message}) and return its cleared text buffer.
+     * <p>
+     * BEHAVIOR: the event's c is the receiver's id (ids are &gt;= 1, so it never means "everyone").
+     */
+    public StringBuilder playerMessage(int msgKind, int from, int to) {
+        return text[add(MESSAGE, msgKind, from, to, 0f)];
     }
 
     // ------------------------------------------------------------------ bursts

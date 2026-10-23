@@ -42,6 +42,22 @@ import java.nio.ByteBuffer;
  */
 public interface GameHost {
 
+    /** What the host may ask of the network layer. */
+    @FunctionalInterface
+    interface Sessions {
+        /**
+         * Drop the connection of {@code playerId} now (C {@code Destroy_connection}): it gets DISCONNECT
+         * (kicked) with {@code reason}, and the host gets the usual {@link #leave} before this returns.
+         * Nothing happens when no connection has that player. Call it from {@link #join} or {@link #tick}
+         * only, never while a client message is being delivered.
+         */
+        void kick(int playerId, CharSequence reason);
+    }
+
+    /** Called once by the network layer, before any other method, with its session control. */
+    default void attach(Sessions sessions) {
+    }
+
     /**
      * A client asks to join (on its first CONNECT, or a CONNECT with a new nonce from the same address).
      * <p>

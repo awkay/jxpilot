@@ -52,7 +52,8 @@ public final class Server implements AutoCloseable {
         public NetLog log = System.err::println;
         public LongSupplier clock = System::nanoTime;
         public long rescanMillis = 3000;
-        public GameHostFactory factory = (o, m) -> new StubGameHost(m, 32);
+        /** The real simulation ({@link com.fulcrologic.jxpilot.server.host.SimGameHost}); tests may use the stub. */
+        public GameHostFactory factory = new com.fulcrologic.jxpilot.server.host.SimGameHostFactory();
     }
 
     private final Settings s;

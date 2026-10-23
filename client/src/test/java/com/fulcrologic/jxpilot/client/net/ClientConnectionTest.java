@@ -318,6 +318,26 @@ class ClientConnectionTest {
         }
 
         @Test
+        @DisplayName("every ACCEPT of the session (the first and repeats while joining) is answered with a bare ACK"
+            + " carrying the session id: the server's proof that the client receives at its address")
+        void acceptIsAnswered() {
+            c.start(0);
+            int sentBefore = t.out.size();
+            accept(MS);
+            List<ByteBuffer> first = new ArrayList<>(t.out.subList(sentBefore, t.out.size()));
+            int afterFirst = t.out.size();
+            accept(2 * MS);
+            List<ByteBuffer> repeat = new ArrayList<>(t.out.subList(afterFirst, t.out.size()));
+            assertAll(
+                () -> assertEquals(1, first.size(), "one datagram right after the ACCEPT"),
+                () -> assertEquals(PacketType.ACK, first.get(0).get(3) & 0xFF, "a bare ACK"),
+                () -> assertEquals(PacketHeader.SIZE, first.get(0).remaining(), "header only"),
+                () -> assertEquals(SESSION, first.get(0).getShort(4) & 0xFFFF, "with the new session id"),
+                () -> assertEquals(1, repeat.size(), "a repeated ACCEPT is answered again"),
+                () -> assertEquals(PacketType.ACK, repeat.get(0).get(3) & 0xFF, "with another bare ACK"));
+        }
+
+        @Test
         @DisplayName("WELCOME and the config build the map, then READY is sent and the state is PLAYING")
         void config() {
             playing(0);

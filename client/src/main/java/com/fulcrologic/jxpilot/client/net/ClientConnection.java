@@ -258,6 +258,8 @@ public final class ClientConnection {
      * BEHAVIOR: datagrams with a bad header are counted as malformed and dropped.
      * BEHAVIOR: once a session exists, datagrams for another session are ignored, and every accepted
      * datagram refreshes the timeout and acknowledges reliable messages via its header.
+     * BEHAVIOR: the session-starting ACCEPT, and every repeated ACCEPT while JOINING, is answered at once with a
+     * bare ACK carrying the session id (the server's proof that the client receives at its address).
      * BEHAVIOR: CONNECT is resent every {@link Protocol#CONNECT_RESEND_MS} ms while CONNECTING.
      * BEHAVIOR: after {@link Protocol#TIMEOUT_MS} ms of silence an established session is lost: it
      * reconnects when auto-reconnect is on (status says so), else CLOSED. While CONNECTING the attempt
@@ -465,7 +467,12 @@ public final class ClientConnection {
             case PacketType.SNAPSHOT -> onSnapshot(in);
             case PacketType.PING -> onPing(in);
             case PacketType.DISCONNECT -> onDisconnect(in);
-            default -> { } // ACK, PONG, duplicate ACCEPT: header already processed
+            case PacketType.ACCEPT -> {
+                if (state == ConnectionState.JOINING) {
+                    proveSession();
+                }
+            }
+            default -> { } // ACK, PONG: header already processed
         }
     }
 
@@ -486,6 +493,7 @@ public final class ClientConnection {
         status.setLength(0);
         status.append("Joining ").append(serverLabel).append("...");
         setState(ConnectionState.JOINING);
+        proveSession();
     }
 
     private void onReject(ByteBuffer in) {
@@ -629,6 +637,15 @@ public final class ClientConnection {
         status.append("Connecting to ").append(serverLabel).append(" (attempt ").append(attempts).append(")...");
         begin(PacketType.CONNECT);
         connect.write(tx);
+        transmit();
+    }
+
+    /**
+     * The server sends a new session nothing but ACCEPT until a packet with the session id proves the client
+     * receives at its address (PROTOCOL.md "Connection flow"): answer every ACCEPT with a bare ACK.
+     */
+    private void proveSession() {
+        begin(PacketType.ACK);
         transmit();
     }
 
