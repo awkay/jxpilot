@@ -533,6 +533,20 @@ public final class XpTranslator {
         return Records.Radar.FLAG_MISSILE;
     }
 
+    /**
+     * Missile kind from its drawn length (C {@code Frame_shots} with distinguishMissiles: smart 12, heat
+     * 15, torpedo 18; without it every missile is 15 long).
+     * <p>
+     * BEHAVIOR: 18 is a torpedo, 15 a heat seeker, anything else a smart missile.
+     */
+    static int missileKind(int len) {
+        return switch (len) {
+            case 18 -> Records.Missile.KIND_TORPEDO;
+            case 15 -> Records.Missile.KIND_HEAT;
+            default -> Records.Missile.KIND_SMART;
+        };
+    }
+
     /** BEHAVIOR: the M2 object sections (items, mines, missiles, balls, lasers, ...); culled like ships. */
     private void writeObjects(XpFrame f) {
         if (f.itemObjs > 0 && w.beginSection(Section.ITEM)) {
@@ -563,7 +577,7 @@ public final class XpTranslator {
                 double y = wrapY(f.missileY[k]);
                 if (visible(x, y)) {
                     Records.Missile.put(w, Protocol.NO_ID, x, y, f.missileDir[k] * RAD_PER_DIR,
-                        Records.Missile.KIND_SMART, f.missileLen[k]);
+                        missileKind(f.missileLen[k]), f.missileLen[k]);
                 }
             }
             w.endSection();

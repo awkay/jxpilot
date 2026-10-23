@@ -377,7 +377,8 @@ class XpTranslatorTest {
                     "MINE pos=1005.0,1006.0 flags=0 owner=" + Protocol.NO_ID,
                     "MINE pos=1.0,2.0 flags=0 owner=" + Protocol.NO_ID), SnapDump.only(s, "MINE"),
                     "team mine friendly; expired or unknown owner is NO_ID"),
-                () -> assertEquals(List.of("MISSILE id=" + Protocol.NO_ID + " pos=1007.0,1008.0 h=1.571 kind=0 len=15"),
+                () -> assertEquals(List.of("MISSILE id=" + Protocol.NO_ID + " pos=1007.0,1008.0 h=1.571 kind="
+                    + Records.Missile.KIND_HEAT + " len=15"),
                     SnapDump.only(s, "MISSILE"), "missile"),
                 () -> assertEquals(List.of("BALL id=4 pos=1009.0,1010.0 team=" + Protocol.NO_TEAM + " holder="
                     + Protocol.NO_ID), SnapDump.only(s, "BALL"), "ball"),
@@ -395,6 +396,15 @@ class XpTranslatorTest {
                     "transporter"),
                 () -> assertEquals(List.of("TEMP_WORMHOLE 29,30 type=0"), SnapDump.only(s, "TEMP_WORMHOLE"),
                     "block of the wormhole centre"));
+        }
+
+        @Test
+        void missileKindsByLength() {
+            assertAll(
+                () -> assertEquals(Records.Missile.KIND_SMART, XpTranslator.missileKind(12), "smart"),
+                () -> assertEquals(Records.Missile.KIND_HEAT, XpTranslator.missileKind(15), "heat / generic"),
+                () -> assertEquals(Records.Missile.KIND_TORPEDO, XpTranslator.missileKind(18), "torpedo"),
+                () -> assertEquals(Records.Missile.KIND_SMART, XpTranslator.missileKind(20), "other"));
         }
 
         @Test
