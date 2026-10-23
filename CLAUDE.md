@@ -28,8 +28,13 @@ Java 25 / Maven / LWJGL reimplementation of XPilot 4.5.5 (C source: `/Users/tony
   `perf-reviewer` checks allocation, GC, CPU and wire size. The lead triages findings and
   relays the accepted ones to the implementer. Each module passes both reviews before the
   next phase builds on it.
-- Git: only the lead commits, as a checkpoint after each reviewed phase (on `main`, then `git push`; remote: github.com/awkay/jxpilot, public).
-  Implementation agents and reviewers never commit, reset, checkout, or stash.
+- Git: only the lead commits to `main` and pushes (remote: github.com/awkay/jxpilot, public).
+  Agents in the main tree (`/Users/tonykay/Downloads/jxpilot`) never commit, reset, checkout, or stash.
+  Parallel agents work in a dedicated git worktree under `/Users/tonykay/Downloads/jxpilot-wt/<branch>`
+  and may commit only to that branch (never push, merge, or rebase); the lead merges into `main`.
+- Worktree builds: NEVER `mvn install` from a worktree. It overwrites the shared jxpilot jars in
+  ~/.m2 that main-tree agents build against. Build in-reactor instead:
+  `MAVEN_OPTS= mvn -q -o -pl <module> -am test`.
 - License: GPL-2.0-or-later (derivative of XPilot 4.5.5). Every `.java` file must start with the
   header in `license-header.txt`; the build fails without it (`mvn license:format` adds it).
   Never alter files in `maps/` (unmodified XPilot originals). Any new bundled asset needs a
