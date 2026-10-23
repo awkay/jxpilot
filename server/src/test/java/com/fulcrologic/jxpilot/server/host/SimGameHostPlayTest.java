@@ -166,6 +166,82 @@ class SimGameHostPlayTest {
     }
 
     @Nested
+    @DisplayName("deferred kicks")
+    class DeferredKicks {
+        /** Teams 1 and 2 full of robots, team 0 (2 bases) reserved: Ann and Bob (login team 1) find no base. */
+        static final String[] ROWS = {
+            "xxxxxxxxxxxxxx",
+            "x            x",
+            "x 0 0 1 1 2  x",
+            "x            x",
+            "xxxxxxxxxxxxxx",
+        };
+
+        Simulation world() {
+            return sim("teamPlay: yes\nrestrictRobots: no\nmaxRobots: 3\nminRobots: 3\n", ROWS);
+        }
+
+        @Test
+        @DisplayName("several pending kicks all happen; one whose player left is dropped, the others stay")
+        void several() {
+            String[] rows = {
+                "xxxxxxxxxxxxxxx",
+                "x             x",
+                "x 0 0 0 1 1 2 x",
+                "x             x",
+                "xxxxxxxxxxxxxxx",
+            };
+            Simulation s = sim("teamPlay: yes\nrestrictRobots: no\nmaxRobots: 3\nminRobots: 3\n", rows);
+            SimGameHost h = new SimGameHost(s);
+            HostFx.Kicks kicks = new HostFx.Kicks(h);
+            int ann = h.join("Ann", 1, "");
+            int bob = h.join("Bob", 1, "");
+            int cid = h.join("Cid", 1, "");
+            addRobots(s, 3);
+            h.clientMessage(ann, ReliableType.READY, empty());
+            h.clientMessage(bob, ReliableType.READY, empty());
+            h.clientMessage(cid, ReliableType.READY, empty());
+            h.leave(bob);
+            h.tick(1);
+            List<String> first = List.copyOf(kicks.calls);
+            boolean annFreed = s.world.byId(ann) == null;
+            boolean cidFreed = s.world.byId(cid) == null;
+            int dee = h.join("Dee", 1, "");
+            h.tick(2);
+            assertAll(
+                () -> assertEquals(List.of(ann + " no free base", cid + " no free base"), first,
+                    "Ann and Cid are kicked in order; Bob, who left, is not kicked"),
+                () -> assertEquals(ann, dee, "Dee gets Ann's id"),
+                () -> assertEquals(first, kicks.calls, "the next tick kicks nobody: the done kicks are forgotten"),
+                () -> assertTrue(annFreed, "Ann's slot was freed"),
+                () -> assertTrue(cidFreed, "Cid's slot was freed"));
+        }
+
+        @Test
+        @DisplayName("the kick list is empty after a tick: a later pending kick for a reused id still happens")
+        void reusedIdKickedAgain() {
+            Simulation s = world();
+            SimGameHost h = new SimGameHost(s);
+            HostFx.Kicks kicks = new HostFx.Kicks(h);
+            int ann = h.join("Ann", 1, "");
+            addRobots(s, 3);
+            h.clientMessage(ann, ReliableType.READY, empty());
+            h.tick(1);
+            int cid = h.join("Cid", 1, "");
+            h.leave(cid);
+            int dee = h.join("Dee", 1, "");
+            addRobots(s, 3);
+            h.clientMessage(dee, ReliableType.READY, empty());
+            h.tick(2);
+            assertAll(
+                () -> assertEquals(ann, cid, "Cid got Ann's id (and left again without trouble)"),
+                () -> assertEquals(ann, dee, "so did Dee"),
+                () -> assertEquals(List.of(ann + " no free base", dee + " no free base"), kicks.calls,
+                    "Dee, again without a base, is kicked at the next tick"));
+        }
+    }
+
+    @Nested
     @DisplayName("clientMessage: SETTINGS, CHAT and the rest")
     class Messages {
         @Test

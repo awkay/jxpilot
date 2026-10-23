@@ -367,11 +367,7 @@ public final class SimGameHost implements GameHost {
     private void cancelKick(int id) {
         for (int i = 0; i < kicks; i++) {
             if (kickIds[i] == id) {
-                kicks--;
-                kickIds[i] = kickIds[kicks];
-                kickReasons[i] = kickReasons[kicks];
-                kickReasons[kicks] = null;
-                return;
+                kickIds[i] = 0; // no connection holds id 0: runKicks skips the entry
             }
         }
     }

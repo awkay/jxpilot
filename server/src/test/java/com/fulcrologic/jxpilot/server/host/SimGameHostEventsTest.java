@@ -272,6 +272,33 @@ class SimGameHostEventsTest {
         }
 
         @Test
+        @DisplayName("a viewer id reused by a new join starts with nothing announced")
+        void reusedViewer() {
+            Simulation s = sim("", THREE);
+            World w = s.world;
+            SimGameHost h = new SimGameHost(s);
+            int ann = enter(h, "Ann", 0);
+            int bob = enter(h, "Bob", 0);
+            HostFx.Wire a = new HostFx.Wire();
+            h.initialState(ann, a.out);
+            h.leave(bob);
+            h.leave(ann);
+            int cid = enter(h, "Cid", 0);
+            HostFx.Wire c = new HostFx.Wire();
+            h.initialState(cid, c.out);
+            c.take();
+            for (int i = 0; i < Events.CAPACITY + 1; i++) {
+                w.events.add(Events.TEAM_SCORE, 1, 0, 0, i);
+            }
+            h.drainEvents(cid, c.out);
+            Player cp = w.byId(cid);
+            assertAll(
+                () -> assertEquals(ann, cid, "Cid has Ann's old viewer id"),
+                () -> assertEquals(List.of(join(cp, Msg.PlayerJoin.FLAG_SELF), "BASE " + cp.homeBase + " " + cid,
+                    "SCORE " + cid + " 0.0 lives=-1 status=0"), c.take(), "no PLAYER_LEAVE for Bob, whom Cid never saw"));
+        }
+
+        @Test
         @DisplayName("exactly CAPACITY events behind is still readable (no resync)")
         void boundary() {
             Simulation s = sim("", THREE);

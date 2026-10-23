@@ -97,6 +97,7 @@ class SimGameHostLoginTest {
                 () -> assertEquals(List.of(), events(w, from), "no event announces a reserved player"),
                 () -> assertEquals(Protocol.NO_TEAM, h.team(first), "outside team play the request is ignored: NO_TEAM"),
                 () -> assertEquals(Protocol.NO_TEAM, h.team(0), "an id that is not a player has NO_TEAM"),
+                () -> assertEquals(Protocol.NO_TEAM, h.team(7), "an id nobody joined with has NO_TEAM"),
                 () -> assertEquals(Protocol.NO_TEAM, h.team(World.MAX_IDS), "an id beyond the range has NO_TEAM"));
         }
     }
@@ -240,6 +241,8 @@ class SimGameHostLoginTest {
             String latin = out.toString();
             SimGameHost.clampName("ab ", out);
             String wide = out.toString();
+            SimGameHost.clampName("\u00ff\u0100", out);
+            String edge = out.toString();
             SimGameHost.clampName("", out);
             String none = out.toString();
             assertAll(
@@ -247,6 +250,7 @@ class SimGameHostLoginTest {
                 () -> assertEquals("abcdefghijklmnop", cut, "cut to MAX_NAME_LEN = 16"),
                 () -> assertEquals("a?bé", latin, "a char above 0xFF becomes '?', Latin-1 stays"),
                 () -> assertEquals("ab?", wide, "a non-ASCII blank is not stripped (C isascii), it becomes '?'"),
+                () -> assertEquals("\u00ff?", edge, "0xFF is the last Latin-1 char kept, 0x100 the first replaced"),
                 () -> assertEquals("", none, "an empty name stays empty (the buffer is cleared)"));
         }
     }
@@ -327,14 +331,17 @@ class SimGameHostLoginTest {
             int ann = enter(h, "Ann", 1);
             int dee = enter(h, "Dee", 2);
             s.ships.pause(w.byId(dee), true);
+            s.ships.pause(w.byId(ann), true);
             long from = w.events.seq();
             int eve = h.join("Eve", 2, "");
             assertAll(
-                () -> assertEquals(List.of(dee + " no pause with full team"), kicks.calls, "Dee is dropped with C's reason"),
+                () -> assertEquals(List.of(dee + " no pause with full team"), kicks.calls,
+                    "Dee is dropped with C's reason; Ann, paused on team 1, is not"),
                 () -> assertTrue(events(w, from).contains("MESSAGE 3 -1 0 The paused \"Dee\" was kicked because team 2 is full."),
                     "and announced: " + events(w, from)),
                 () -> assertEquals(dee, eve, "Eve gets the freed id"),
-                () -> assertEquals(2, h.team(eve), "Pick_team: with one team playing, the empty team 2 (team 0 is reserved)"),
+                () -> assertEquals(1, h.team(eve),
+                    "Pick_team again: no team playing (Ann is paused), teams 1 and 2 have room, the tie goes to team 1"),
                 () -> assertEquals(1, h.team(ann), "Ann is untouched"));
         }
 
@@ -434,6 +441,22 @@ class SimGameHostLoginTest {
                 () -> assertEquals(0, w.numPlayers, "nobody is in the game"),
                 () -> assertEquals(List.of(), events(w, from3), "repeated, unknown and out-of-range ids are ignored"),
                 () -> assertEquals(1, h.join("Ann", 0, ""), "the id can be reused"));
+        }
+    }
+
+    @Nested
+    @DisplayName("constructor")
+    class Construct {
+        @Test
+        @DisplayName("applies maxRobots (minRobots lowered to it) and listens for humans entering")
+        void construct() {
+            Simulation s = sim("maxRobots: 1\nminRobots: 3\n", THREE);
+            int before = s.world.params.minRobots;
+            new SimGameHost(s);
+            assertAll(
+                () -> assertEquals(3, before, "minRobots 3 from the options"),
+                () -> assertEquals(1, s.world.params.minRobots, "lowered to maxRobots 1 (C tuner)"),
+                () -> assertTrue(s.ships.enterListener != null, "the welcome message listener is installed"));
         }
     }
 

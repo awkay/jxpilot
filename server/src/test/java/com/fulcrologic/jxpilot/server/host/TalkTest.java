@@ -190,6 +190,7 @@ class TalkTest {
                 () -> assertFalse(Talk.allDigits(":9", 0, 1), "':' (just above '9') is not"),
                 () -> assertEquals(1234L, Talk.parseTeam("1234:", 4), "decimal digits"),
                 () -> assertEquals(2147483648L, Talk.parseTeam("214748364800", 12), "stops once past INT_MAX"),
+                () -> assertEquals(2147483647L, Talk.parseTeam("21474836470", 11), "and once at INT_MAX"),
                 () -> assertTrue(Talk.addressedTo(e, all, 5), "c = 0 is for everyone"),
                 () -> assertTrue(Talk.addressedTo(e, toTwo, 2), "c = 2 is for player 2"),
                 () -> assertFalse(Talk.addressedTo(e, toTwo, 3), "and not for player 3"));
