@@ -85,7 +85,14 @@
             <param>com.fulcrologic.jxpilot.client.render.*</param>
             <param>com.fulcrologic.jxpilot.client.map.*</param>
             <param>com.fulcrologic.jxpilot.client.viewer.*</param>
+            <param>com.fulcrologic.jxpilot.client.paint.*</param>
           </targetClasses>
+          <!-- DemoWorld and DemoHud are fake animation data for the demo viewer mode: its tests pin counts, determinism,
+               wrapping, looks and motion, not the arbitrary choreography that mutants would change. -->
+          <excludedClasses>
+            <param>com.fulcrologic.jxpilot.client.viewer.DemoWorld</param>
+            <param>com.fulcrologic.jxpilot.client.viewer.DemoHud</param>
+          </excludedClasses>
           <targetTests>
             <param>com.fulcrologic.jxpilot.client.*</param>
           </targetTests>

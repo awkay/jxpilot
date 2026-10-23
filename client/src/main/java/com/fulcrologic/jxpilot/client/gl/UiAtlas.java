@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.client.gl;
 
 import com.fulcrologic.jxpilot.client.map.RadarImage;
+import com.fulcrologic.jxpilot.client.paint.ItemBitmaps;
 import com.fulcrologic.jxpilot.client.render.Font;
 import org.lwjgl.system.MemoryUtil;
 
@@ -36,7 +37,8 @@ import static org.lwjgl.opengl.GL33C.*;
 /**
  * The single RGBA texture all UI drawing samples: a 4x4 white block at the origin (solid shapes
  * use UV (0,0), which with clamping samples only that block), the baked font (left half, rebaked
- * when the pixel ratio changes) and the radar picture (from x = {@link #RADAR_X}).
+ * when the pixel ratio changes), the radar picture (x {@link #RADAR_X} to 767) and the item symbols
+ * ({@link ItemBitmaps#ATLAS_X} on, two rows of 16).
  * Sampling is nearest-neighbour: glyph quads are pixel-snapped at their baked size, and the radar is
  * magnified by whole pixel ratios, so it stays crisp and never bleeds into neighbouring texels.
  */
@@ -67,6 +69,26 @@ public final class UiAtlas {
             MemoryUtil.memFree(zero);
         }
         bakeFont(fontPixels);
+        bakeItems();
+    }
+
+    /** Upload the item symbols ({@link ItemBitmaps}) into their block. */
+    private void bakeItems() {
+        int w = 16 * ItemBitmaps.SIZE;
+        int h = 2 * ItemBitmaps.SIZE;
+        int[] full = new int[SIZE * h];
+        ItemBitmaps.bake(full, SIZE);
+        IntBuffer b = MemoryUtil.memAllocInt(w * h);
+        try {
+            for (int y = 0; y < h; y++) {
+                b.put(full, y * SIZE + ItemBitmaps.ATLAS_X, w);
+            }
+            b.flip();
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, ItemBitmaps.ATLAS_X, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, b);
+        } finally {
+            MemoryUtil.memFree(b);
+        }
     }
 
     /** (Re)bake the font at {@code pixels} framebuffer pixels into the left half, with the white block. */

@@ -135,4 +135,15 @@ class ViewerOverlayTest {
             () -> assertEquals(1.0, ViewerOverlay.wrap01(1.5), "above 1"),
             () -> assertEquals(0.25, ViewerOverlay.wrap01(0.25), "inside"));
     }
+
+    @Test
+    void radarRectIsWhereTheRadarQuadIsDrawn() {
+        float[] r = new float[4];
+        ViewerOverlay.radarRect(cam(), RADAR, r);
+        assertAll(
+            () -> assertEquals(16f, r[0], "left = margin 8 * ratio 2"),
+            () -> assertEquals(328f, r[1], "bottom = 600 - 16 - 128 * 2"),
+            () -> assertEquals(528f, r[2], "right = 16 + 256 * 2"),
+            () -> assertEquals(584f, r[3], "top = 600 - 16"));
+    }
 }

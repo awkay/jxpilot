@@ -24,12 +24,16 @@
 package com.fulcrologic.jxpilot.client;
 
 import com.fulcrologic.jxpilot.client.map.MapState;
+import com.fulcrologic.jxpilot.client.paint.RadarPainter;
+import com.fulcrologic.jxpilot.client.paint.SceneData;
+import com.fulcrologic.jxpilot.client.paint.ScenePainter;
 import com.fulcrologic.jxpilot.client.map.MapSymbols;
 import com.fulcrologic.jxpilot.client.render.Camera;
 import com.fulcrologic.jxpilot.client.render.FrameStats;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.client.render.TextWriter;
 import com.fulcrologic.jxpilot.client.render.VertexBatch;
+import com.fulcrologic.jxpilot.client.viewer.DemoWorld;
 import com.fulcrologic.jxpilot.client.viewer.ViewerController;
 import com.fulcrologic.jxpilot.client.viewer.ViewerOverlay;
 import com.fulcrologic.jxpilot.common.Const;
@@ -52,7 +56,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class AllocationTest {
     static final int WARMUP = 40_000;
     static final int WINDOWS = 5;
-    static final int WINDOW_FRAMES = 2_000;
+    static final int WINDOW_FRAMES = 10_000;
 
     @Test
     void steadyStateFrameAllocatesZeroBytes() throws Exception {
@@ -84,6 +88,11 @@ class AllocationTest {
         ctl.reset(10, 10, 0.5);
         ctl.press(ViewerController.RIGHT | ViewerController.ZOOM_IN);
         FrameStats stats = new FrameStats();
+        // the dynamic scene: demo objects of every kind, the scene painter and the radar overlay
+        DemoWorld demo = new DemoWorld(map.pixelWidth(), map.pixelHeight(), true, 500, 500, 3, 32, 200, 500); // every path, fewer objects
+        SceneData scene = new SceneData();
+        ScenePainter scenePainter = new ScenePainter(p);
+        RadarPainter radarPainter = new RadarPainter(p);
         // cannons die and revive frame by frame so dead-cannon dots (points) are exercised too
         long[] loops = new long[1];
         MapState state = new MapState() {
@@ -111,6 +120,15 @@ class AllocationTest {
                 b.clear();
                 symbols.draw(b, text, cam, state);
                 dotSymbols.draw(b, text, dotCam, state);
+                demo.update(0.016);
+                demo.fill(scene);
+                scenePainter.draw(b, text, cam, scene);
+                radarPainter.begin(16, 300, 528, 584, 142, map.pixelWidth(), map.pixelHeight(), true);
+                for (int i = 0; i < scene.shipCount; i++) {
+                    radarPainter.blip(b, scene.shipX[i], scene.shipY[i], 3, i % 3 == 1);
+                }
+                radarPainter.self(b, demo.shipX(0), demo.shipY(0), demo.shipHeading(0), scene.loops);
+                radarPainter.checkpoint(b, 3, 4);
                 overlay.draw(b, text, cam, stats, "teamball.xp", radar, true);
                 text.drawInt(b, (int) n, 0, 0, 0);
                 text.drawFixed(b, n * 0.37, 2, 0, 0, 0);
@@ -120,8 +138,9 @@ class AllocationTest {
         for (int i = 0; i < WARMUP; i++) {
             frame.run();
         }
-        // Several back-to-back windows: a late JIT (re)install can allocate once inside the JVM, so the
-        // claim is about the steady state, i.e. the last window; all windows are shown on failure.
+        // Five back-to-back windows: a late JIT (re)install can allocate once inside the JVM, which is
+        // tolerated only in the first window; any later window, or two of them, means real per-frame
+        // (or periodic) allocation. All windows are shown on failure.
         long[] windows = new long[WINDOWS];
         for (int w = 0; w < WINDOWS; w++) {
             long before = mx.getCurrentThreadAllocatedBytes();
@@ -135,6 +154,16 @@ class AllocationTest {
             () -> assertTrue(cam.offsetCount() > 1, "the view spans world copies"),
             () -> assertTrue(flushed[0] > 0, "the batch overflowed and flushed during the run"),
             () -> assertTrue(points[0] > 0, "dead-cannon dots were drawn"),
-            () -> assertEquals(0, windows[WINDOWS - 1], "zero bytes allocated in the last window; all windows: " + all));
+            () -> assertTrue(allZeroAfterFirst(windows), "at most the first window allocates; windows: " + all));
+    }
+
+    /** True when every window but the first allocated nothing. */
+    static boolean allZeroAfterFirst(long[] windows) {
+        for (int w = 1; w < windows.length; w++) {
+            if (windows[w] != 0) {
+                return false;
+            }
+        }
+        return true;
     }
 }

@@ -27,17 +27,28 @@ import com.fulcrologic.jxpilot.client.map.FullMapState;
 import com.fulcrologic.jxpilot.client.map.MapSymbols;
 import com.fulcrologic.jxpilot.client.map.RadarImage;
 import com.fulcrologic.jxpilot.client.map.StaticMap;
+import com.fulcrologic.jxpilot.client.paint.HudListPainter;
+import com.fulcrologic.jxpilot.client.paint.HudPainter;
+import com.fulcrologic.jxpilot.client.paint.PaintConfig;
+import com.fulcrologic.jxpilot.client.paint.RadarPainter;
+import com.fulcrologic.jxpilot.client.paint.SceneData;
+import com.fulcrologic.jxpilot.client.paint.ScenePainter;
+import com.fulcrologic.jxpilot.client.paint.ScreenSpace;
 import com.fulcrologic.jxpilot.client.render.Camera;
 import com.fulcrologic.jxpilot.client.render.FrameStats;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.client.render.TextWriter;
 import com.fulcrologic.jxpilot.client.render.VertexBatch;
+import com.fulcrologic.jxpilot.client.viewer.DemoHud;
+import com.fulcrologic.jxpilot.client.viewer.DemoWorld;
 import com.fulcrologic.jxpilot.client.viewer.LaunchOptions;
 import com.fulcrologic.jxpilot.client.viewer.MapCatalog;
 import com.fulcrologic.jxpilot.client.viewer.ViewerController;
 import com.fulcrologic.jxpilot.client.viewer.ViewerOverlay;
 import com.fulcrologic.jxpilot.common.map.Base;
+import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
+import com.fulcrologic.jxpilot.common.math.ShipShape;
 import org.lwjgl.system.MemoryUtil;
 
 import java.io.IOException;
@@ -58,6 +69,13 @@ public final class MapViewerApp {
     static final int DYNAMIC_VERTICES = 65536;
     static final int DYNAMIC_SEGMENTS = 32768;
     static final int DYNAMIC_POINTS = 16384;
+    /** Demo: seed and object counts (the perf target: 32 ships, 2000 shots, 5000 particles). */
+    static final long DEMO_SEED = 7;
+    static final int DEMO_SHIPS = 32;
+    static final int DEMO_SHOTS = 2000;
+    static final int DEMO_PARTICLES = 5000;
+    static final String DEMO_MODS = "N C2 F";
+    static final String DEMO_SCORE = "+12";
     /** Game frames per second used to pace the wormhole/concentrator animation (C default). */
     static final double ANIMATION_FPS = 14;
 
@@ -91,6 +109,18 @@ public final class MapViewerApp {
     private boolean filled;
     private boolean showRadar = true;
     private boolean nextMapRequested;
+    private final SceneData scene = new SceneData();
+    private final ScenePainter scenePainter = new ScenePainter(palette);
+    private final RadarPainter radarPainter = new RadarPainter(palette);
+    private final float[] radarRect = new float[4];
+    private DemoWorld demo;
+    private final DemoHud demoHud = new DemoHud();
+    private final ScreenSpace screen = new ScreenSpace();
+    private HudListPainter hudList;
+    private HudPainter hudPainter;
+    private final int[] itemCounts = new int[Item.COUNT];
+    private final float[] lockShipX = new float[ShipShape.MAX_SHIP_PTS];
+    private final float[] lockShipY = new float[ShipShape.MAX_SHIP_PTS];
 
     public MapViewerApp(LaunchOptions opts) {
         this.opts = opts;
@@ -104,11 +134,22 @@ public final class MapViewerApp {
             atlas = new UiAtlas(FONT_PX * (float) window.pixelRatio());
             gl = new GlRenderer(atlas.texture());
             gpuTimer = opts.gpuTimer() ? new GpuTimer() : null;
-            gl.checkCapacity(DYNAMIC_SEGMENTS, DYNAMIC_POINTS);
             text = new TextWriter(atlas.font());
+            hudList = HudListPainter.xpilot(text, palette);
+            hudPainter = new HudPainter(text, palette);
+            for (int i = 0; i < itemCounts.length; i++) {
+                itemCounts[i] = i % 4 == 3 ? -1 : (i * 7) % 12 + 1; // demo inventory: some items absent
+            }
+            ShipShape lockShape = ShipShape.defaultShip();
+            for (int i = 0; i < lockShape.numPoints(); i++) {
+                lockShipX[i] = lockShape.ptX[i];
+                lockShipY[i] = lockShape.ptY[i];
+            }
             dynTri = MemoryUtil.memAlloc(DYNAMIC_VERTICES * VertexBatch.STRIDE);
-            dynSeg = MemoryUtil.memAlloc(DYNAMIC_SEGMENTS * VertexBatch.SEGMENT_STRIDE);
-            dynPt = MemoryUtil.memAlloc(DYNAMIC_POINTS * VertexBatch.POINT_STRIDE);
+            // GL 3.3 only guarantees 65536 buffer-texture texels: cap the streams to what this driver
+            // addresses (a full stream just flushes early)
+            dynSeg = MemoryUtil.memAlloc(Math.min(DYNAMIC_SEGMENTS, gl.maxSegments()) * VertexBatch.SEGMENT_STRIDE);
+            dynPt = MemoryUtil.memAlloc(Math.min(DYNAMIC_POINTS, gl.maxPoints()) * VertexBatch.POINT_STRIDE);
             dyn = VertexBatch.fixed(dynTri, dynSeg, dynPt, 256, gl);
             overlay = new ViewerOverlay(palette);
             Path file = Path.of(opts.viewMap()).toAbsolutePath().normalize();
@@ -135,6 +176,11 @@ public final class MapViewerApp {
             u0 + (float) RadarImage.WIDTH / UiAtlas.SIZE, (float) atlas.radarHeight() / UiAtlas.SIZE);
         map = m;
         symbols = new MapSymbols(m, palette);
+        if (opts.demo()) {
+            demo = new DemoWorld(m.pixelWidth(), m.pixelHeight(), m.edgeWrap(), m.pixelWidth() / 2.0,
+                m.pixelHeight() / 2.0, DEMO_SEED,
+                DEMO_SHIPS, DEMO_SHOTS, DEMO_PARTICLES);
+        }
         cam.setWorld(m.pixelWidth(), m.pixelHeight(), m.edgeWrap());
         if (keepCentre) {
             ctl.reset(opts.centreX(), opts.centreY(), opts.zoom());
@@ -211,7 +257,7 @@ public final class MapViewerApp {
             if (gpuTimer != null) {
                 gpuTimer.begin(stats);
             }
-            renderFrame(now - start);
+            renderFrame(now - start, dtNanos);
             if (gpuTimer != null) {
                 gpuTimer.end();
             }
@@ -241,11 +287,19 @@ public final class MapViewerApp {
         if (px != atlas.fontPixels()) {
             atlas.bakeFont(px);
             text = new TextWriter(atlas.font());
+            hudList = HudListPainter.xpilot(text, palette);
+            hudPainter = new HudPainter(text, palette);
         }
     }
 
-    private void renderFrame(long elapsedNanos) {
+    private void renderFrame(long elapsedNanos, long dtNanos) {
         gl.resetStats();
+        if (demo != null) {
+            demo.update(dtNanos / 1e9);
+            if (!opts.hasCentre()) {
+                ctl.setPosition(demo.shipX(0), demo.shipY(0)); // follow self unless placed with --at
+            }
+        }
         ctl.applyTo(cam);
         cam.setViewport(window.framebufferWidth(), window.framebufferHeight(), window.pixelRatio());
         cam.update();
@@ -268,9 +322,64 @@ public final class MapViewerApp {
         gl.setTransform(xf);
         dyn.clear();
         symbols.draw(dyn, text, cam, state);
+        if (demo != null) {
+            demo.fill(scene);
+            scenePainter.draw(dyn, text, cam, scene);
+        }
         overlay.draw(dyn, text, cam, stats, mapLabel, radarTex, showRadar);
+        if (demo != null && showRadar) {
+            radarDynamic();
+        }
+        if (demo != null) {
+            demoHud();
+        }
         gl.flush(dyn);
         dyn.clear();
+    }
+
+    /** Demo radar: blips for the other ships, the own heading line. */
+    private void radarDynamic() {
+        ViewerOverlay.radarRect(cam, radarTex, radarRect);
+        radarPainter.begin(radarRect[0], radarRect[1], radarRect[2], radarRect[3], radarTex.height(),
+            map.pixelWidth(), map.pixelHeight(), map.edgeWrap());
+        dyn.identity();
+        for (int i = 0; i < scene.shipCount; i++) {
+            if (scene.shipId[i] != scene.selfId) {
+                radarPainter.blip(dyn, scene.shipX[i], scene.shipY[i], 3, scene.shipColor[i] == Palette.BLUE);
+            }
+        }
+        radarPainter.self(dyn, demo.shipX(0), demo.shipY(0), demo.shipHeading(0), scene.loops);
+    }
+
+    /** Demo HUD: the fake draw list (game-client layout) plus the pieces drawn directly. */
+    private void demoHud() {
+        screen.set(window.framebufferHeight(), window.pixelRatio());
+        int viewW = screen.logicalWidth(window.framebufferWidth());
+        int viewH = screen.logicalHeight();
+        long loops = scene.loops;
+        int hud = PaintConfig.HUD_COLOR;
+        dyn.identity();
+        int scoreTop = (int) ViewerOverlay.MARGIN + (showRadar ? radarTex.height() : 0) + 4;
+        demoHud.build(viewW, viewH, scoreTop, loops, text, window.pixelRatio());
+        hudList.paint(dyn, screen, demoHud);
+        int hx = viewW / 2;
+        int hy = viewH / 2;
+        int target = Math.min(5, scene.shipCount - 1);
+        double dx = map.wrapDx(scene.shipX[target] - scene.shipX[0]);
+        double dy = map.wrapDy(scene.shipY[target] - scene.shipY[0]);
+        int dist = (int) Math.sqrt(dx * dx + dy * dy);
+        int dir = (int) Math.round(Math.atan2(dy, dx) * 128 / (2 * Math.PI)) & 127;
+        hudPainter.paintLockText(dyn, screen, hx, hy, scene.shipName[target], false, 0, dist, hud);
+        hudPainter.paintLockShip(dyn, screen, hx, hy, lockShipX, lockShipY, ShipShape.defaultShip().numPoints(), hud);
+        hudPainter.paintLockDisc(dyn, screen, hx, hy, dist, dir, HudPainter.mapDiag(map.width(), map.height()), false,
+            (loops & 1) == 0, hud, PaintConfig.HUD_LOCK_COLOR);
+        hudPainter.paintItems(dyn, screen, hx, hy, itemCounts, 9, (loops & 4) != 0, hud);
+        hudPainter.paintTimeLeft(dyn, screen, hx, hy, 754 - (int) (loops / 14), hud);
+        hudPainter.paintMods(dyn, screen, hx, hy, DEMO_MODS, hud);
+        hudPainter.paintAutopilot(dyn, screen, hx, hy, hud);
+        if (HudPainter.scoreObjectVisible((int) (loops % 100) + 1)) {
+            hudPainter.paintScoreObject(dyn, screen, DEMO_SCORE, hx + 160, hy - 120, hud);
+        }
     }
 
     private void dispose() {

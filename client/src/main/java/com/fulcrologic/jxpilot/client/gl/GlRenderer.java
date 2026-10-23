@@ -235,15 +235,33 @@ public final class GlRenderer implements VertexBatch.Sink {
         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     }
 
-    /** Fail early if a batch of this many segments or points could not be addressed by a buffer texture. */
+    /**
+     * Fail early if a static mesh of this many segments or points could not be addressed by a buffer
+     * texture, naming the limit that was hit.
+     */
     public void checkCapacity(int segments, int points) {
-        if ((long) segments * SEGMENT_TEXELS > maxTexels || points > maxTexels) {
-            throw new IllegalStateException("GL_MAX_TEXTURE_BUFFER_SIZE " + maxTexels + " too small for "
-                + segments + " segments / " + points + " points");
+        if ((long) segments * SEGMENT_TEXELS > maxTexels) {
+            throw new IllegalStateException("GL_MAX_TEXTURE_BUFFER_SIZE is " + maxTexels + " texels; the mesh's "
+                + segments + " segments need " + (long) segments * SEGMENT_TEXELS + " (" + SEGMENT_TEXELS + " each)");
+        }
+        if (points > maxTexels) {
+            throw new IllegalStateException("GL_MAX_TEXTURE_BUFFER_SIZE is " + maxTexels + " texels; the mesh's "
+                + points + " points need one each");
         }
     }
 
-    private static void createStreams(Streams s) {
+    /** Most segments one buffer texture can hold (GL 3.3 only guarantees 65536 texels, i.e. 21845). */
+    public int maxSegments() {
+        return maxTexels / SEGMENT_TEXELS;
+    }
+
+    /** Most points one buffer texture can hold. */
+    public int maxPoints() {
+        return maxTexels;
+    }
+
+    /** Create a stream set's GL objects; binds buffer textures, so the bound-texture caches are reset. */
+    private void createStreams(Streams s) {
         s.triVao = glGenVertexArrays();
         s.triVbo = glGenBuffers();
         glBindVertexArray(s.triVao);
@@ -269,6 +287,8 @@ public final class GlRenderer implements VertexBatch.Sink {
         glBindTexture(GL_TEXTURE_BUFFER, s.ptTex);
         glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32UI, s.ptBuf);
         glActiveTexture(GL_TEXTURE0);
+        boundSegTex = -1;
+        boundPtTex = -1;
     }
 
     /** Set the position transform used by subsequent draws ({@code ndc = pos * xy + zw}). */

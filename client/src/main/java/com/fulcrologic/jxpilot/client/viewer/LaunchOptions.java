@@ -31,6 +31,7 @@ package com.fulcrologic.jxpilot.client.viewer;
  *   --frames N             frames to render before the screenshot (default 3)
  *   --warmup N             frames excluded from the reported statistics and allocation (default frames / 2)
  *   --gpu-timer            measure GPU time per frame with timer queries (costs CPU time on some drivers)
+ *   --demo                 animate fake ships, shots, particles and every other object over the map
  *   --size WxH             window size in logical pixels (default 1280x800)
  *   --zoom Z               initial zoom (default 1)
  *   --filled               filled walls instead of XPilot's default outlines
@@ -43,7 +44,7 @@ package com.fulcrologic.jxpilot.client.viewer;
  */
 public record LaunchOptions(String viewMap, String screenshot, int frames, int width, int height,
                             double zoom, boolean filled, boolean hasCentre, double centreX, double centreY,
-                            boolean vsync, int warmup, boolean gpuTimer) {
+                            boolean vsync, int warmup, boolean gpuTimer, boolean demo) {
 
     /**
      * First measured frame: {@code --warmup} if given, else half the frames.
@@ -75,6 +76,7 @@ public record LaunchOptions(String viewMap, String screenshot, int frames, int w
         boolean vsync = true;
         int warmup = -1;
         boolean gpuTimer = false;
+        boolean demo = false;
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
             switch (a) {
@@ -99,6 +101,7 @@ public record LaunchOptions(String viewMap, String screenshot, int frames, int w
                 case "--filled" -> filled = true;
                 case "--no-vsync" -> vsync = false;
                 case "--gpu-timer" -> gpuTimer = true;
+                case "--demo" -> demo = true;
                 case "--warmup" -> warmup = positiveInt(value(args, ++i, a), a, 0);
                 case "--at" -> {
                     String v = value(args, ++i, a);
@@ -116,7 +119,7 @@ public record LaunchOptions(String viewMap, String screenshot, int frames, int w
         if (warmup >= frames) {
             throw new IllegalArgumentException("--warmup must be less than --frames: " + warmup + " >= " + frames);
         }
-        return new LaunchOptions(viewMap, screenshot, frames, width, height, zoom, filled, hasCentre, cx, cy, vsync, warmup, gpuTimer);
+        return new LaunchOptions(viewMap, screenshot, frames, width, height, zoom, filled, hasCentre, cx, cy, vsync, warmup, gpuTimer, demo);
     }
 
     private static String value(String[] args, int i, String flag) {

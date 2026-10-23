@@ -51,6 +51,7 @@ class LaunchOptionsTest {
             () -> assertTrue(o.vsync(), "vsync on"),
             () -> assertEquals(-1, o.warmup(), "no explicit warm-up"),
             () -> assertFalse(o.gpuTimer(), "no GPU timer"),
+            () -> assertFalse(o.demo(), "no demo"),
             () -> assertEquals(1, o.measureFrom(), "measure from half of the 3 frames (integer division)"));
     }
 
@@ -63,6 +64,7 @@ class LaunchOptionsTest {
             () -> assertEquals(40, o.measureFrom(), "measured from frame 40"),
             () -> assertEquals(0, zero.measureFrom(), "0 measures from the first frame"),
             () -> assertTrue(zero.gpuTimer(), "--gpu-timer turns the GPU timer on"),
+            () -> assertTrue(parse("--demo").demo(), "--demo turns the demo on"),
             () -> assertEquals(50, parse("--frames", "100").measureFrom(), "default: half of the frames"));
     }
 
