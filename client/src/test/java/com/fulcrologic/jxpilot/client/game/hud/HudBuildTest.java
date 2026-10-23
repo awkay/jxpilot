@@ -175,6 +175,77 @@ class HudBuildTest {
     }
 
     @Nested
+    @DisplayName("zoom (C WINSCALE)")
+    class Zoom {
+        @Test
+        @DisplayName("at zoom 2 HUD anchors and sizes are scaled from the extended view; font offsets are not")
+        void zoom2() {
+            ClientGame g = game(300, 0, 0, 0);
+            Hud h = new Hud();
+            h.zoom = 2;
+            h.fuelMeter = true;
+            h.ptrMoveFact = 1;
+            HudFrame f = new HudFrame();
+            h.build(f, g, new TalkLine(), 800, 600, M, 0);
+            HudFrame s = new HudFrame();
+            ScoreObjects so = new ScoreObjects();
+            so.add(2.5f, null, false, 0, 0);
+            h.scoreStack(s, 200, 150, so, false, M);
+            assertAll(
+                () -> assertTrue(lines(f).containsAll(List.of("220,160-580,160 dashed", "220,440-580,440 dashed")),
+                    "HUD lines around (200,150) of the 400x300 extended view, scaled: " + lines(f)),
+                () -> assertTrue(texts(f).contains("546,456 0300"), "fuel text at WINSCALE(273) + unscaled ascent: " + texts(f)),
+                () -> assertTrue(rects(f).containsAll(List.of("box 551,171 19x259", "fill 553,353 16x76")),
+                    "gauge: WINSCALE of position and size, unscaled +-1/+3 borders: " + rects(f)),
+                () -> assertTrue(texts(f).contains("347,49 Fuel"),
+                    "meter title: WINSCALE(x) - (5 + text width), WINSCALE(y) + (ascent + 8)/2: " + texts(f)),
+                () -> assertTrue(rects(f).contains("box 380,40 400x16"), "meter outline scaled: " + rects(f)),
+                () -> assertEquals(List.of("390,456 2.5"), texts(s), "score stack: WINSCALE(hx) - width/2, WINSCALE(hy+73) + ascent"));
+        }
+
+        @Test
+        @DisplayName("at zoom 2: speed pointer, vertical lines, a right-hand meter and the wide-score threshold are scaled")
+        void zoom2Pieces() {
+            Hud h = new Hud();
+            h.zoom = 2;
+            h.ptrMoveFact = 2;
+            h.horizontalLines = false;
+            h.verticalLines = true;
+            HudFrame f = new HudFrame();
+            h.speedPointer(f, 400, 300, 10, 5);
+            h.hudLines(f, 200, 150);
+            HudFrame m = new HudFrame();
+            h.meter(m, 400, 0, 10, "X", 1, 2, M);
+            HudFrame s = new HudFrame();
+            ScoreObjects so = new ScoreObjects();
+            so.add(1, "x".repeat(26), false, 0, 0);
+            h.scoreStack(s, 200, 150, so, true, M);
+            assertAll(
+                () -> assertEquals(List.of("400,300-360,320", "260,120-260,480 dashed", "540,120-540,480 dashed"), lines(f),
+                    "pointer from WINSCALE of the view centre; vertical HUD lines scaled"),
+                () -> assertEquals("405,29 X", texts(m).get(0), "title right of the meter: WINSCALE(x + 200) + 5"),
+                () -> assertEquals(List.of("0,12-0,44", "400,12-400,44"), lines(m).subList(0, 2), "scale ticks scaled"),
+                () -> assertEquals(456f, s.textY(0), "a 210 px text is not wider than WINSCALE(140) = 280: not bumped"));
+        }
+
+        @Test
+        @DisplayName("winScale rounds like C's scale array (min 1, sign kept, capped); extent is ext_view_width")
+        void winScale() {
+            Hud h = new Hud();
+            h.zoom = 2;
+            assertAll(
+                () -> assertEquals(0, Hud.winScale(0, 2), "0 stays 0"),
+                () -> assertEquals(7, Hud.winScale(7, 1), "zoom 1 is the identity"),
+                () -> assertEquals(1, Hud.winScale(1, 0.2), "never below 1"),
+                () -> assertEquals(5, Hud.winScale(3, 1.5), "floor(4.5 + 0.5)"),
+                () -> assertEquals(-5, Hud.winScale(-3, 1.5), "negative: sign kept"),
+                () -> assertEquals(32767, Hud.winScale(100_000, 1), "capped at a short"),
+                () -> assertEquals(401, h.extent(801), "(int)(801 / 2 + 0.5)"),
+                () -> assertEquals(800, new Hud().extent(800), "zoom 1"));
+        }
+    }
+
+    @Nested
     @DisplayName("boundaries")
     class Bounds {
         @Test
