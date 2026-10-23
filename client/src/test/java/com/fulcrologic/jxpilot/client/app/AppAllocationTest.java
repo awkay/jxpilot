@@ -205,11 +205,21 @@ class AppAllocationTest {
             frame.run();
         }
         long snapshotsBefore = conn.snapshotsReceived();
-        long before = mx.getCurrentThreadAllocatedBytes();
+        // per frame (as XpNetAllocationTest): a bracket around the whole loop also catches the occasional
+        // allocation of the thread MXBean / JIT between frames (152-byte multiples, not this code)
+        int allocatingFrames = 0;
+        long worst = 0;
         for (int i = 0; i < 1500; i++) {
+            long b0 = mx.getCurrentThreadAllocatedBytes();
             frame.run();
+            long d = mx.getCurrentThreadAllocatedBytes() - b0;
+            if (d > 0) {
+                allocatingFrames++;
+                worst = Math.max(worst, d);
+            }
         }
-        long after = mx.getCurrentThreadAllocatedBytes();
+        int nz = allocatingFrames;
+        long w = worst;
         assertAll(
             () -> assertEquals(ConnectionState.PLAYING, conn.state(), "still playing"),
             () -> assertTrue(conn.snapshotsReceived() - snapshotsBefore >= 250, "snapshots flowed while measured (12 fps for 25 s)"),
@@ -220,7 +230,7 @@ class AppAllocationTest {
             () -> assertTrue(cf.extras().lock, "lock shown"),
             () -> assertTrue(cf.viewHud().textCount() > 3, "HUD built"),
             () -> assertTrue(cf.panelHud().textCount() >= 5, "score list built"),
-            () -> assertEquals(0, after - before, "zero bytes allocated per frame in steady state"));
+            () -> assertEquals(0, nz, "no frame allocates in steady state (worst " + w + " bytes)"));
     }
 
     static byte[] copy(ByteBuffer b) {
