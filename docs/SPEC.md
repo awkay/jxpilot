@@ -28,9 +28,22 @@ use `command grep -a ...` or `rg -a`. Key files:
 - Recommended runtime flags: `-XX:+UseZGC` (generational is default in 25).
 
 ## Time model
-- Server simulation runs at a fixed `simHz` = 60 ticks/s.
-- Original XPilot physics are per-frame at `framesPerSecond` (map option, default 14 if absent). We preserve game *feel* by scaling: each sim tick advances `dt = gameFPS / simHz` original-frames. All per-frame quantities (velocity add, lifetimes in ticks, fire repeat, fuel use, etc.) are multiplied by `dt`; lifetimes are kept as float "original frames remaining".
-- Client renders at vsync, interpolating object positions between the two most recent snapshots (render ~1 snapshot interval behind). Own ship may be extrapolated.
+- **Revised 2026-10-23.** The original design ran the simulation at a fixed 60 Hz with
+  `dt = gameFPS/60`. Three C-fidelity reviews found a whole class of fractional-frame bugs:
+  resting wall contact, autofire rate, turn sparks and fuel, shove credit, afterburner spark split,
+  coriolis/friction scaling and input granularity.
+- **The server simulates at the map's `framesPerSecond`** (default 14). One tick = one C frame,
+  and `dt` is exactly 1. The dt-scaling code may remain, but must be exact (a no-op) at dt = 1.
+  The tick rate comes from Options, and nothing may hard-code 60 Hz.
+- **Snapshots:** the server snapshots every tick by default (divisor 1). Radar is sent every 3rd
+  snapshot unless configured otherwise.
+- **Client rendering:** the client renders at vsync and interpolates between the two most recent
+  snapshots, rendering about one snapshot interval behind. It extrapolates the own ship to hide
+  input latency.
+- **Client input:** sent immediately on any key change, otherwise at about the tick rate. The server
+  applies input at the next frame, as C does.
+- **Goal:** with the same map, options and inputs, the Java server matches the C server frame for
+  frame, up to RNG sequences. This is verified against `tools/xpilot-ref` traces.
 
 ## Coordinates
 - `BLOCK_SZ = 35` pixels. World size = mapWidth*35 x mapHeight*35. Map row 0 in the file is the TOP of the world; world y increases upward (as in XPilot), so file row r maps to block y = mapHeight-1-r.
