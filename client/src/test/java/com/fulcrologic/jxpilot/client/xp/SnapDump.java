@@ -172,6 +172,10 @@ final class SnapDump {
                 Records.TempWormhole c = new Records.TempWormhole().wrap(r, i);
                 yield "TEMP_WORMHOLE " + c.bx() + "," + c.by() + " type=" + c.type();
             }
+            case Section.TIMERS -> {
+                Records.Timers c = new Records.Timers().wrap(r, i);
+                yield "TIMERS damaged=" + c.damaged() + " roundDelay=" + c.roundDelay() + " timeLeft=" + c.timeLeft();
+            }
             default -> "UNKNOWN " + r.type();
         };
     }

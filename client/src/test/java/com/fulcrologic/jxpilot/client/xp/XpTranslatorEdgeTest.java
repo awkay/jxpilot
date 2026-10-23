@@ -97,6 +97,20 @@ class XpTranslatorEdgeTest {
     }
 
     @Test
+    void hudTimersBecomeATimersRecord() {
+        List<String> with = frame(c(1).self(1000, 1000).damaged(9).countMax(XpProto.PKT_ROUNDDELAY, 28, 40)
+            .timeLeft(300).end(1));
+        List<String> without = frame(c(2).self(1000, 1000).end(2));
+        List<String> noSelf = frame(c(3).damaged(4).end(3));
+        assertAll(
+            () -> assertEquals(List.of("TIMERS damaged=9 roundDelay=28 timeLeft=300"), SnapDump.only(with, "TIMERS"),
+                "damaged, round delay and time left of this frame"),
+            () -> assertEquals(List.of("TIMERS damaged=0 roundDelay=0 timeLeft=-1"), SnapDump.only(without, "TIMERS"),
+                "nothing reported: 0, 0 (no round delay) and -1"),
+            () -> assertEquals(List.of(), SnapDump.only(noSelf, "TIMERS"), "only with PKT_SELF"));
+    }
+
+    @Test
     void exactlyTeleportDistanceStillHasVelocity() {
         frame(c(1).self(1000, 1000).ship(1000, 1000, 4, 0).end(1));
         List<String> s = frame(c(2).self(1000, 1000).ship(1000 + XpTranslator.TELEPORT_PX, 1000, 4, 0).end(2));

@@ -105,8 +105,13 @@ final class ScriptedServer {
         blob = ConfigTransfer.encode(options.toConfigText());
         writer.setWorld(map.pixelWidth(), map.pixelHeight(), map.edgeWrap());
         Base b = map.bases().get(0);
-        baseX = b.x();
-        baseY = b.y();
+        if (!map.fuels().isEmpty()) {
+            baseX = map.fuels().get(0).x() + 40; // next to a fuel station, refuelling
+            baseY = map.fuels().get(0).y();
+        } else {
+            baseX = b.x();
+            baseY = b.y();
+        }
         itemCounts[Item.AFTERBURNER.ordinal()] = 2;
         itemCounts[Item.MISSILE.ordinal()] = 4;
         itemCounts[Item.CLOAK.ordinal()] = 1;
@@ -279,7 +284,8 @@ final class ScriptedServer {
         writer.begin(tx, tick, 0, 0, 1, SnapshotWriter.FLAG_LAST_PART, baseX, baseY);
         writer.beginSection(Section.SELF);
         double heading = Math.PI / 2 + Math.sin(tick * 0.03) * 0.6;
-        int selfFlags = (tick / fps) % 3 == 0 ? Records.ShipFlags.SHIELD : Records.ShipFlags.THRUSTING;
+        int selfFlags = ((tick / fps) % 3 == 0 ? Records.ShipFlags.SHIELD : Records.ShipFlags.THRUSTING)
+            | Records.ShipFlags.REFUELING;
         Records.Self.put(writer, SELF, selfFlags, (float) baseX, (float) baseY, 0, 0, (float) heading, 800, 1000,
             ROBOTS[1], 0, 0, 0);
         writer.endSection();
@@ -338,8 +344,49 @@ final class ScriptedServer {
         writer.beginSection(Section.SELF_ITEMS);
         Records.SelfItems.put(writer, itemCounts);
         writer.endSection();
+        objects();
         send();
         snapshots++;
+    }
+
+    /** One of every M2 object kind around the own ship; a missile and a ball move. */
+    private void objects() {
+        double m = (tick % 40) * 8;
+        writer.beginSection(Section.ITEM);
+        Records.ItemObj.put(writer, baseX - 120, baseY + 120, Item.MISSILE.ordinal());
+        Records.ItemObj.put(writer, baseX - 80, baseY + 120, Item.CLOAK.ordinal());
+        writer.endSection();
+        writer.beginSection(Section.MINE);
+        Records.Mine.put(writer, baseX - 160, baseY - 80, 0, ROBOTS[1]);
+        Records.Mine.put(writer, baseX - 120, baseY - 80, Records.Mine.FLAG_FRIENDLY, ROBOTS[0]);
+        writer.endSection();
+        writer.beginSection(Section.MISSILE);
+        Records.Missile.put(writer, 77, baseX + 200 - m, baseY - 140, Math.PI, Records.Missile.KIND_SMART, 15);
+        writer.endSection();
+        writer.beginSection(Section.BALL);
+        Records.Ball.put(writer, 5, baseX + 60, baseY + 160 + Math.sin(tick * 0.1) * 20, 1, ROBOTS[0]);
+        writer.endSection();
+        writer.beginSection(Section.CONNECTOR);
+        Records.Connector.put(writer, baseX + 60, baseY + 160 + Math.sin(tick * 0.1) * 20, robotX(0), robotY(0),
+            Records.Connector.KIND_BALL);
+        writer.endSection();
+        writer.beginSection(Section.LASER);
+        Records.Laser.put(writer, baseX + 120, baseY - 40, Math.PI / 4, 60, Records.ObjColor.RED);
+        writer.endSection();
+        writer.beginSection(Section.ASTEROID);
+        Records.Asteroid.put(writer, baseX - 200, baseY + 40, 2, tick * 0.05);
+        writer.endSection();
+        writer.beginSection(Section.WRECKAGE);
+        Records.Wreckage.put(writer, baseX - 200, baseY - 160, 1, 12, tick * 0.1);
+        writer.endSection();
+        if (tick % 28 < 6) {
+            writer.beginSection(Section.ECM);
+            Records.Ecm.put(writer, baseX + 200, baseY + 60, 40 + (tick % 28) * 10);
+            writer.endSection();
+        }
+        writer.beginSection(Section.TIMERS);
+        Records.Timers.put(writer, 0, 0, Math.max(0, 600 - tick / fps));
+        writer.endSection();
     }
 
     private void begin(int type) {
