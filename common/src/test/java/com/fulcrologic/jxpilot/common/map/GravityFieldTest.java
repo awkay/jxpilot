@@ -117,7 +117,13 @@ class GravityFieldTest {
             double[] wx = new double[w * h];
             double[] wy = new double[w * h];
             GravityField.global(w, h, true, -0.14, 90, true, 0, 0, false, false, wx, wy);
+            // a wide wrapping map, 20 x 4 blocks: C wraps the y offset with the width (WRAP_DX), so the top row
+            // (3 blocks up) is not seen as one block below the point
+            double[] nx = new double[20 * 4];
+            double[] ny = new double[20 * 4];
+            GravityField.global(20, 4, true, -0.14, 90, true, 0, 0, false, false, nx, ny);
             assertAll(
+                () -> assertEquals(-0.14, ny[3 * 20], EPS, "C: row 3 is 3 blocks above the point (pulls down)"),
                 () -> assertEquals(-0.14, gx[3 * w + 3], EPS, "one block right of the point pulls left by g"),
                 () -> assertEquals(0.0, gy[3 * w + 3], EPS, "on the same row there is no y pull"),
                 () -> assertEquals(-0.14 * 3 / 5, gx[7 * w + 5], EPS, "x = dx * g / dist (3,4,5)"),

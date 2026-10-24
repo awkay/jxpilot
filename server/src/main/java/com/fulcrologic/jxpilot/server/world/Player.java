@@ -53,6 +53,11 @@ public final class Player {
     public boolean robot;
     public final StringBuilder name = new StringBuilder(Const.MAX_CHARS);
     public int team = Const.TEAM_NOT_SET;
+    /**
+     * The slot was used before (C: the reused player struct still holds its last occupant's team; a never-used
+     * struct is calloc'd, team 0). Read by Init_player's limited-lives check ({@code Ships.initPlayer}).
+     */
+    public boolean structUsed;
     public int pseudoTeam;
     public ShipGeom ship = ShipGeom.defaultShip();
     /**

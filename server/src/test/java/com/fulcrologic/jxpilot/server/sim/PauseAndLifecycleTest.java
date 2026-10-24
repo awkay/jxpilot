@@ -545,19 +545,31 @@ class PauseAndLifecycleTest {
         }
 
         @Test
-        @DisplayName("S10: in team play the limited-lives check runs after the team is chosen (team mates' deaths don't count)")
+        @DisplayName("in team play the limited-lives check uses the slot's stale team, as C (player.c:505-521)")
         void teamTooLate() {
             Simulation s = TestWorlds.sim(C_FRAMES + "teamPlay: yes\nlimitedLives: yes\nworldLives: 3\n",
-                "xxxxxxxxx", "x 1 1 2 x", "xxxxxxxxx");
+                "xxxxxxxxxxxxx", "x 1 1 1 1 2 x", "xxxxxxxxxxxxx");
             Player a = TestWorlds.join(s, "a", 1);
             a.life = 2;
+            Player gone = TestWorlds.join(s, "gone", 1);
+            s.ships.leave(gone);
             Player mate = TestWorlds.join(s, "mate", 1);
+            Player mate2 = TestWorlds.join(s, "mate2", 1);
             Player foe = TestWorlds.join(s, "foe", 2);
+            Simulation z = TestWorlds.sim(C_FRAMES + "teamPlay: yes\nlimitedLives: yes\nworldLives: 3\n"
+                + "reserveRobotTeam: no\n", "xxxxxxx", "x 0 1 x", "xxxxxxx");
+            Player zero = TestWorlds.join(z, "zero", 0);
+            zero.life = 2;
+            Player fresh = TestWorlds.join(z, "fresh", 1);
             assertAll(
-                () -> assertEquals(3, mate.life, "a team mate lost the life: the joiner plays"),
+                () -> assertEquals(3, mate.life, "the slot a team-1 player left: stale team 1, the joiner plays"),
                 () -> assertEquals(' ', mate.mychar, "not waiting"),
-                () -> assertEquals('W', foe.mychar, "for the other team it is too late"),
-                () -> assertEquals(Const.TEAM_NOT_SET != foe.team, true, "(foe has a team)"));
+                () -> assertEquals('W', mate2.mychar, "a never-used slot (stale team 0): too late even for a mate"),
+                () -> assertEquals('W', foe.mychar, "and for the other team"),
+                () -> assertEquals(1, mate2.team, "(mate2 is on team 1)"),
+                () -> assertEquals(3, fresh.life, "stale team 0 matches a team-0 player who lost a life: plays"),
+                () -> assertEquals(1, fresh.team, "(though fresh is on team 1)"),
+            () -> assertEquals(0, zero.team, "(zero is on team 0)"));
         }
     }
 }
