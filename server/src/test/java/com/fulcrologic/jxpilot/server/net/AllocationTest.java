@@ -265,9 +265,11 @@ class AllocationTest {
         long measuredTicks;
         long allocated;
         int snapshots;
+        long[] windows = new long[5];
         String[] args = {"--map", Path.of("..", "maps", "doggy.xp").toString(), "--port", Integer.toString(port),
             "--bind", "127.0.0.1", "-maxRobots", "8", "-minRobots", "8"};
         warmUp(args);
+        warmUpTransport(lo);
         try (Server server = Server.start(args, s);
              LoopbackIntegrationTest.UdpClient u = new LoopbackIntegrationTest.UdpClient(31, new InetSocketAddress(lo, port))) {
             u.connect("alloc");
@@ -285,14 +287,28 @@ class AllocationTest {
             int snapshotsBefore = 0;
             int tickBefore = 0;
             boolean measuring = false;
+            // five 2 s windows: a C2 compile request from the loop thread can still allocate once (it resolves the
+            // class's string constants and loads its signature classes, see warmUpTransport); steady-state
+            // allocation would show in every window
+            long windowStart = 0;
+            long windowEnd = 0;
+            int window = 0;
             long keys = ControlKey.THRUST.mask() | ControlKey.FIRE_SHOT.mask();
             long frame = 0;
             while (System.nanoTime() < end) {
                 if (!measuring && System.nanoTime() > warmEnd) {
                     measuring = true;
                     before = MX.getThreadAllocatedBytes(id);
+                    windowStart = before;
+                    windowEnd = System.nanoTime() + 2_000_000_000L;
                     snapshotsBefore = u.c.snapshotTicks.size();
                     tickBefore = server.net().currentTick();
+                }
+                if (measuring && window < windows.length && System.nanoTime() > windowEnd) {
+                    long nowBytes = MX.getThreadAllocatedBytes(id);
+                    windows[window++] = nowBytes - windowStart;
+                    windowStart = nowBytes;
+                    windowEnd += 2_000_000_000L;
                 }
                 TestClient c = u.c;
                 if (c.hasMap() && !c.readySent) {
@@ -306,6 +322,9 @@ class AllocationTest {
                 u.pump();
             }
             allocated = MX.getThreadAllocatedBytes(id) - before;
+            if (window < windows.length) {
+                windows[window++] = MX.getThreadAllocatedBytes(id) - windowStart;
+            }
             snapshots = u.c.snapshotTicks.size() - snapshotsBefore;
             measuredTicks = server.net().currentTick() - tickBefore;
         }
@@ -320,10 +339,15 @@ class AllocationTest {
         long allocatedBytes = allocated;
         int snaps = snapshots;
         long ticks = measuredTicks;
-        System.out.printf("[AllocationTest] real game: %d B over %d ticks, %d snapshots, %d robots, %d events%n",
-            allocatedBytes, ticks, snaps, robots, w.events.seq());
+        long clean = java.util.Arrays.stream(windows).min().orElseThrow();
+        long worst = java.util.Arrays.stream(windows).max().orElseThrow();
+        System.out.printf("[AllocationTest] real game: %d B over %d ticks, %d snapshots, %d robots, %d events,"
+            + " windows %s%n", allocatedBytes, ticks, snaps, robots, w.events.seq(), java.util.Arrays.toString(windows));
         assertAll(
-            () -> assertEquals(0, allocatedBytes, "8 s of the real game (1 peer, 8 robots) allocate nothing on the loop thread"),
+            () -> assertEquals(0, clean, "a 2 s window of the real game (1 peer, 8 robots) allocates nothing on the loop"
+                + " thread " + java.util.Arrays.toString(windows)),
+            () -> assertTrue(allocatedBytes <= 4096, "10 s allocate at most a one-off JIT request's ~2 KB, never per tick ("
+                + allocatedBytes + " B)"),
             () -> assertTrue(ticks > 100, "the game ticked during the measurement (" + ticks + ")"),
             () -> assertTrue(snaps > 80, "snapshots flowed during the measurement (" + snaps + ")"),
             () -> assertTrue(joins >= 8, "8 robots joined (" + joins + " robot joins)"),
@@ -337,12 +361,48 @@ class AllocationTest {
      * need minutes) and the rare first-time paths (class loading, constant resolution) are behind us. Only the
      * real-time window afterwards is measured.
      */
+    /**
+     * Drive the UDP receive path ({@code UdpTransport.poll/drain}, {@code DatagramChannelImpl.receive}, its
+     * {@code ReentrantLock}, {@code ServerNet.onDatagram}) hot on a throwaway server first.
+     * <p>
+     * Why: when a method crosses the C2 threshold, HotSpot's {@code CompileBroker::compile_method} first resolves
+     * all string constants of the method's class and loads its signature classes, on the thread that asked for
+     * the compile. Measured on the loop thread about 30 s into a game: {@code DatagramChannelImpl.receive}
+     * resolving 15 strings (1136 B) and {@code AbstractQueuedSynchronizer.signalNext} loading
+     * {@code AbstractQueuedSynchronizer$Node} (on runs where no other thread had loaded it). Together they are
+     * most of the one-off ~2 KB this test used to see now and then. Once the throwaway server's loop thread has
+     * made those requests, the measured loop has nothing left to resolve for them; a rarely called sim method may
+     * still reach C2 late, which the measurement windows tolerate.
+     */
+    static void warmUpTransport(InetAddress lo) throws Exception {
+        int port = LoopbackIntegrationTest.freePort(lo);
+        Server.Settings s = LoopbackIntegrationTest.settings(new LoopbackIntegrationTest.MutableInterfaces(lo),
+            new ArrayList<>());
+        s.factory = (o, m) -> new StubGameHost(m, 4);
+        try (Server server = Server.start(new String[] {"--map", Path.of("..", "maps", "doggy.xp").toString(),
+            "--port", Integer.toString(port), "--bind", "127.0.0.1"}, s);
+             DatagramChannel c = DatagramChannel.open()) {
+            c.connect(new InetSocketAddress(lo, port));
+            ByteBuffer junk = ByteBuffer.allocate(16);
+            for (int i = 0; i < 60_000; i++) {
+                junk.clear();
+                junk.putLong(i).putLong(~i).flip();
+                c.write(junk);
+                if (i % 100 == 99) {
+                    Thread.sleep(1);
+                }
+            }
+            long deadline = System.nanoTime() + 5_000_000_000L;
+            while (server.net().stray() + server.net().malformed() + server.net().rateLimited() < 50_000
+                && System.nanoTime() < deadline) {
+                Thread.sleep(20);
+            }
+        }
+    }
+
     static void warmUp(String[] args) throws Exception {
-        com.fulcrologic.jxpilot.common.config.Options o = new com.fulcrologic.jxpilot.common.config.Options();
-        o.parseCommandLine(args);
-        com.fulcrologic.jxpilot.common.config.ConfigParser.parseFile(Path.of(o.getString(
-            com.fulcrologic.jxpilot.common.config.Opt.MAP_FILE_NAME)), com.fulcrologic.jxpilot.common.config.OptionOrigin.MAP, o);
-        o.finishParsing();
+        // the measured server's options (lib/defaults included), so the same paths get hot here
+        com.fulcrologic.jxpilot.common.config.Options o = Server.readOptions(args);
         com.fulcrologic.jxpilot.server.host.SimGameHost h = (com.fulcrologic.jxpilot.server.host.SimGameHost)
             new com.fulcrologic.jxpilot.server.host.SimGameHostFactory(() -> 5).create(o,
                 com.fulcrologic.jxpilot.common.map.WorldMap.fromOptions(o));
