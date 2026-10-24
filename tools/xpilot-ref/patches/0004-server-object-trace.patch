@@ -1,4 +1,4 @@
-xpilot-ref patch 0003: optional per-tick object, pulse, ECM and item trace.
+xpilot-ref patch 0004: optional per-tick object, pulse, ECM and item trace.
 
 This patch modifies XPilot 4.5.5 (GPL-2.0-or-later, Copyright (C) 1991-2010
 by Bjoern Stabell, Ken Ronny Schouten, Bert Gijsbers, Dick Balaska et al.).

@@ -28,6 +28,8 @@ import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.OptionOrigin;
 import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.map.Base;
+import com.fulcrologic.jxpilot.common.net.ControlKey;
+import com.fulcrologic.jxpilot.server.net.DefaultsFile;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 
@@ -44,8 +46,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Loader and replay set-up for the C item traces in {@code src/test/resources/ctrace/items} (patch 0003 line
- * formats, see the README there). Used by {@link CTraceItemsTest}.
+ * Loader and replay set-up for the C item traces in {@code src/test/resources/ctrace/items} (patch 0004 line
+ * formats, and the patch 0005 lines of the replay traces; see the README there). Used by {@link CTraceItemsTest}.
  */
 final class CTraceItems {
     private CTraceItems() {}
@@ -95,7 +97,41 @@ final class CTraceItems {
         }
     }
 
-    /** Everything the trace holds for one frame of the traced player. */
+    /**
+     * One XPRAND line (patch 0005): a C {@code rfrac()} ({@code real}) or {@code randomMT()} draw, its C function and
+     * {@code file:line}; {@code caller} is the C function that called {@code Make_debris} for the draws inside it,
+     * and {@code first} marks the first draw of each {@code Make_debris} call (its particle count).
+     */
+    record CDraw(String func, String site, boolean real, long value, String caller, boolean first) {
+        /** The C {@code rfrac()} value of this draw: value / 2^32, exact in a double. */
+        double rfrac() {
+            return value * 0x1p-32;
+        }
+    }
+
+    /** One XPDEBRIS line (patch 0005): a C {@code Make_debris} call and its caller. */
+    record CDebris(String caller, String site, float x, float y, float vx, float vy, int id, int team, int type,
+                   float mass, long status, int color, int radius, int minDebris, int maxDebris, int minDir,
+                   int maxDir, float minSpeed, float maxSpeed, int minLife, int maxLife) {
+        static CDebris parse(String[] c) {
+            return new CDebris(c[2], c[3], f(c[4]), f(c[5]), f(c[6]), f(c[7]), Integer.parseInt(c[8]),
+                Integer.parseInt(c[9]), Integer.parseInt(c[10]), f(c[11]), Long.parseLong(c[12]),
+                Integer.parseInt(c[13]), Integer.parseInt(c[14]), Integer.parseInt(c[15]), Integer.parseInt(c[16]),
+                Integer.parseInt(c[17]), Integer.parseInt(c[18]), f(c[19]), f(c[20]), Integer.parseInt(c[21]),
+                Integer.parseInt(c[22]));
+        }
+    }
+
+    /** One XPCANNON line (patch 0005): a cannon that is not idle. */
+    record CCannon(int index, int deadTime, int damaged, int tractorCount, int used, int shieldLeft,
+                   int phasingLeft) {}
+
+    /** A C {@code %a} (or decimal) float. */
+    static float f(String s) {
+        return (float) Double.parseDouble(s);
+    }
+
+    /** Everything the trace holds for one frame. {@code ship}/{@code items} are the first traced player's. */
     static final class CFrame {
         long frame;
         CTraceTest.Frame ship;
@@ -103,16 +139,95 @@ final class CTraceItems {
         final List<CObj> objs = new ArrayList<>();
         final List<CPulse> pulses = new ArrayList<>();
         final List<CEcm> ecms = new ArrayList<>();
+        /** Every traced player of the frame by C id, in C's order: physics, status word, name, items. */
+        final Map<Integer, CTraceTest.Frame> ships = new LinkedHashMap<>();
+        final Map<Integer, Integer> status = new LinkedHashMap<>();
+        final Map<Integer, String> names = new LinkedHashMap<>();
+        final Map<Integer, CItems> itemsOf = new LinkedHashMap<>();
+        /** The C draws, Make_debris calls and keyboard updates of this frame's tick (they precede its XPTRACE). */
+        final List<CDraw> draws = new ArrayList<>();
+        final List<CDebris> debris = new ArrayList<>();
+        /**
+         * The draws of each {@link #debris} call: the particle count, then dir, dir fraction, speed and life of each
+         * particle (only the count for the thrust exhaust); empty when the call made nothing.
+         */
+        final List<List<CDraw>> debrisDraws = new ArrayList<>();
+        /** Keyboard updates of this tick: player id to its key mask (Java {@link ControlKey} bits). */
+        final Map<Integer, Long> keys = new LinkedHashMap<>();
+        /** Players whose client sent two keyboard updates in this tick (Java sees only the last). */
+        final List<Integer> keysTwice = new ArrayList<>();
+        final List<CCannon> cannons = new ArrayList<>();
+    }
+
+    /** True when the trace has the patch 0005 lines (draws, keys) that a full replay needs. */
+    static boolean replayable(List<CFrame> frames) {
+        for (CFrame f : frames) {
+            if (!f.draws.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static List<CFrame> load(String name) throws IOException {
         Map<Long, CFrame> frames = new LinkedHashMap<>();
-        try (InputStream in = CTraceItems.class.getResourceAsStream("/ctrace/items/" + name)) {
+        List<CDraw> draws = new ArrayList<>();
+        List<CDebris> debris = new ArrayList<>();
+        List<List<CDraw>> debrisDraws = new ArrayList<>();
+        Map<Integer, Long> keys = new LinkedHashMap<>();
+        List<Integer> twice = new ArrayList<>();
+        String caller = null;
+        boolean first = false;
+        try (InputStream in = name.startsWith("/") ? java.nio.file.Files.newInputStream(Path.of(name))
+            : CTraceItems.class.getResourceAsStream("/ctrace/items/" + name)) {
             BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.ISO_8859_1));
             for (String l = r.readLine(); l != null; l = r.readLine()) {
                 String[] c = l.trim().split("\\s+");
                 if (c.length < 3 || c[0].endsWith("_HDR")) {
                     continue;
+                }
+                // patch 0005 lines carry no usable frame number: they belong to the tick of the next XPTRACE
+                switch (c[0]) {
+                    case "XPRAND" -> {
+                        // one value, or several in order (tools/xpilot-ref/compact-rand.sh)
+                        boolean inDebris = "Make_debris".equals(c[1]);
+                        for (int v = 4; v < c.length; v++) {
+                            CDraw d = new CDraw(c[1], c[2], "f".equals(c[3]), Long.parseLong(c[v]),
+                                inDebris ? caller : null, inDebris && first);
+                            draws.add(d);
+                            if (inDebris && !debrisDraws.isEmpty()) {
+                                debrisDraws.get(debrisDraws.size() - 1).add(d);
+                            }
+                            first = false;
+                        }
+                        continue;
+                    }
+                    case "XPDEBRIS" -> {
+                        CDebris d = CDebris.parse(c);
+                        debris.add(d);
+                        debrisDraws.add(new ArrayList<>());
+                        caller = d.caller();
+                        first = true;
+                        continue;
+                    }
+                    case "XPKEYS" -> {
+                        long mask = 0;
+                        if (!"-".equals(c[3])) {
+                            for (String k : c[3].split(",")) {
+                                ControlKey key = ControlKey.ofXpilotId(Integer.parseInt(k));
+                                if (key != null) {
+                                    mask |= key.mask();
+                                }
+                            }
+                        }
+                        int id = Integer.parseInt(c[2]);
+                        if (keys.containsKey(id)) {
+                            twice.add(id);
+                        }
+                        keys.put(id, mask);
+                        continue;
+                    }
+                    default -> { }
                 }
                 long f;
                 try {
@@ -125,15 +240,45 @@ final class CTraceItems {
                     n.frame = k;
                     return n;
                 });
+                if ("XPTRACE".equals(c[0]) && fr.ships.isEmpty()) {
+                    fr.draws.addAll(draws);
+                    fr.debris.addAll(debris);
+                    fr.debrisDraws.addAll(debrisDraws);
+                    fr.keys.putAll(keys);
+                    fr.keysTwice.addAll(twice);
+                    twice.clear();
+                    draws.clear();
+                    debris.clear();
+                    debrisDraws.clear();
+                    keys.clear();
+                }
                 switch (c[0]) {
-                    case "XPTRACE" -> fr.ship = CTraceTest.Frame.parse(l);
+                    case "XPTRACE" -> {
+                        CTraceTest.Frame sh = CTraceTest.Frame.parse(l);
+                        int id = Integer.parseInt(c[3]);
+                        if (fr.ship == null) {
+                            fr.ship = sh;
+                        }
+                        fr.ships.put(id, sh);
+                        fr.status.put(id, (int) Long.decode(c[21]).longValue());
+                        fr.names.put(id, String.join(" ", Arrays.copyOfRange(c, 22, c.length)));
+                    }
+                    case "XPCANNON" -> fr.cannons.add(new CCannon(Integer.parseInt(c[3]), Integer.parseInt(c[4]),
+                        Integer.parseInt(c[5]), Integer.parseInt(c[6]), (int) Long.decode(c[7]).longValue(),
+                        Integer.parseInt(c[8]), Integer.parseInt(c[9])));
                     case "XPOBJ" -> fr.objs.add(CObj.parse(c));
                     case "XPPULSE" -> fr.pulses.add(new CPulse(Integer.parseInt(c[4]), Float.parseFloat(c[6]),
                         Float.parseFloat(c[7]), Integer.parseInt(c[8]), Integer.parseInt(c[9]),
                         Integer.parseInt(c[10]), !"0".equals(c[11])));
                     case "XPECM" -> fr.ecms.add(new CEcm(Integer.parseInt(c[4]), Float.parseFloat(c[5]),
                         Float.parseFloat(c[6]), Integer.parseInt(c[7])));
-                    case "XPITEMS" -> fr.items = CItems.parse(c);
+                    case "XPITEMS" -> {
+                        CItems it = CItems.parse(c);
+                        if (fr.items == null) {
+                            fr.items = it;
+                        }
+                        fr.itemsOf.put(Integer.parseInt(c[3]), it);
+                    }
                     default -> { }
                 }
             }
@@ -174,6 +319,32 @@ final class CTraceItems {
             Simulation s = new Simulation(new World(o, 1));
             Arrays.fill(s.world.cannonDeadTime, Integer.MAX_VALUE);
             return s;
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * The Java world of a replay trace, configured as the C server was: the bundled lib/defaults, then the map,
+     * then the scenario's command line ({@code opts}: option name and value pairs). Nothing is silenced: item
+     * spawns, cannons and every random draw follow C through {@link CDraws}.
+     */
+    static Simulation cworld(String map, String... opts) {
+        try {
+            Options o = new Options();
+            DefaultsFile.applyBundled(o);
+            Path p = Path.of("..", "maps", map);
+            if (!p.toFile().exists()) {
+                p = Path.of("maps", map);
+            }
+            if (!p.toFile().exists()) {
+                p = Path.of("src", "test", "resources", "ctrace", "items", map); // a test map (items-arena.xp)
+            }
+            ConfigParser.parseFile(p, OptionOrigin.MAP, o);
+            for (int i = 0; i + 1 < opts.length; i += 2) {
+                o.force(Opt.find(opts[i]), opts[i + 1]);
+            }
+            return new Simulation(new World(o, 1));
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }

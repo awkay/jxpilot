@@ -186,7 +186,7 @@ public final class Shots {
         int status = Obj.GRAVITY;
         if (cannon) {
             mass = CANNON_SHOT_MASS;
-            life = 8 + Integer.remainderUnsigned(w.rng.nextInt(), 24);
+            life = 8 + Integer.remainderUnsigned(w.randomMT(), 24);
             status |= Obj.FROMCANNON;
         }
         if (type == Obj.SHOT) {

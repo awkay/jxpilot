@@ -76,7 +76,7 @@ public final class CannonWeapons {
 
     /** C {@code ENERGY_PACK_FUEL >> FUEL_SCALE_BITS}: 500 + (randomMT() &amp; 511) units. */
     private int energyPackUnits() {
-        return 500 + (w.rng.nextInt() & 511);
+        return 500 + (w.randomMT() & 511);
     }
 
     // ================================================================ inventory

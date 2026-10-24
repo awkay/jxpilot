@@ -156,9 +156,9 @@ public final class Mines {
         if (pl != null && (pl.status & Obj.KILLED) != 0) {
             life = (int) (w.rfrac() * w.params.fps);
         } else if ((status & Obj.FROMCANNON) != 0) {
-            life = CANNON_SHOT_LIFE_BASE + Integer.remainderUnsigned(w.rng.nextInt(), 24);
+            life = CANNON_SHOT_LIFE_BASE + Integer.remainderUnsigned(w.randomMT(), 24);
         } else {
-            life = ip.mineLife != 0 ? ip.mineLife : 5000 + (w.rng.nextInt() & 255);
+            life = ip.mineLife != 0 ? ip.mineLife : 5000 + (w.randomMT() & 255);
         }
         if (!Mods.isCluster(mods)) {
             mods = Mods.withVelocity(mods, 0);
