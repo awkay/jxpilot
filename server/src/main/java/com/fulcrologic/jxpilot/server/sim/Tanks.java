@@ -230,8 +230,8 @@ public final class Tanks {
         }
     }
 
-    /** C {@code TANK_THRUST_FACT}. */
-    static final float TANK_THRUST_FACT = 0.7f;
+    /** C {@code TANK_THRUST_FACT} (a double: {@code power *= 0.7} rounds the double product to float). */
+    static final double TANK_THRUST_FACT = 0.7;
 
     /** The tank ship (C {@code tankShipShape}), parsed once. */
     private com.fulcrologic.jxpilot.server.world.ShipGeom tankShip;

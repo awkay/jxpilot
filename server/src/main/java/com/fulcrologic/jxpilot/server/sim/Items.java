@@ -151,7 +151,7 @@ public final class Items {
      * BEHAVIOR: a world item is moving (GRAVITY) with movingItemProb, a RANDOM_ITEM with randomItemProb, and
      * near a random item concentrator with itemConcentratorProb (radius itemConcentratorRadius blocks); it gets
      * up to 8 tries for a space or cannon block, else nothing is made. A moving one starts against the local
-     * gravity plus a random -3..4 px/frame.
+     * gravity times Gravity (C multiplies by it twice) plus a random -3..4 px/frame.
      */
     public void place(int item, Player pl) {
         Objects o = w.objects;
@@ -302,8 +302,9 @@ public final class Items {
                     vy += Trig.tsin(dir) * vel;
                 }
             } else {
-                vx -= w.gravityX(bx, by);
-                vy -= w.gravityY(bx, by);
+                // C item.c:332-333: Gravity * World.gravity[bx][by], where the field already includes Gravity
+                vx -= ip.gravity * w.gravityX(bx, by);
+                vy -= ip.gravity * w.gravityY(bx, by);
                 vx += (int) (w.rfrac() * 8) - 3;
                 vy += (int) (w.rfrac() * 8) - 3;
             }
@@ -405,7 +406,8 @@ public final class Items {
      * velocity plus up to 4 px/frame in a random direction (nuclear only with at least nukeMinMines left).
      * BEHAVIOR: each missile goes off with detonateItemOnKillProb while the shot limit allows, locked on a
      * random player, as a random torpedo, heat-seeker or smart missile in a random direction (nuclear only
-     * with at least nukeMinSmarts left).
+     * with at least nukeMinSmarts left). As C's swapped arguments, they have team 0 and are cannon shots
+     * (FROMCANNON) unless the ship is in team 0.
      * BEHAVIOR: as C, a tank's mines and missiles are launched for the tank's owner: the owner pays their fuel
      * and items and launches them (from the tank's position).
      */
@@ -454,7 +456,9 @@ public final class Items {
                 if (Mods.isNuclear(mods) && pl.items[MISSILE] < ip.nukeMinSmarts) {
                     mods = Mods.withNuclear(mods, Mods.nuclear(mods) & ~Mods.NUCLEAR);
                 }
-                sim.missiles.fire(owner, pl.team, false, pl.px, pl.py, type, (int) (w.rfrac() * Const.RES),
+                // C item.c:484 calls Fire_general_shot(owner_ind, 0, pl->team, ...) against the signature
+                // (ind, team, cannon, ...): team 0, and a cannon shot unless the ship is in team 0. Kept.
+                sim.missiles.fire(owner, 0, pl.team != 0, pl.px, pl.py, type, (int) (w.rfrac() * Const.RES),
                     mods, -1);
             }
         }

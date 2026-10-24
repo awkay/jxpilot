@@ -261,10 +261,14 @@ public final class Collisions {
         }
     }
 
-    /** Both ships died and {@code tank} is a tank: its owner scores tankKillScoreMult from the other (C, two tanks: none). */
+    /**
+     * Both ships died and {@code tank} is a tank: its owner scores tankKillScoreMult from the other. As C, when both
+     * are tanks the first one's owner scores (collision.c:378; C's "don't bother scoring two tanks" comment is not
+     * what its code does).
+     */
     private void tankCrash(Player tank, Player other, Params p) {
         Player owner = w.byId(tank.lockPlId);
-        if (other.tank || owner == null) {
+        if (owner == null) {
             return;
         }
         double sc = Scoring.rate(owner.score, other.score) * p.tankKillScoreMult;

@@ -261,8 +261,11 @@ public final class Player {
     /**
      * C {@code Add_fuel}: the change is clamped so the sum stays in {@code [0, fuelMax]}, then added to the sum
      * and to the current tank.
+     * <p>
+     * BEHAVIOR: the change is first truncated toward zero, as C converts the argument to its {@code long} parameter.
      */
     public void addFuel(double f) {
+        f = (long) f;
         if (fuel + f > fuelMax) {
             f = fuelMax - fuel;
         } else if (fuel + f < 0) {

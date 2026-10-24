@@ -197,6 +197,10 @@ class AllocationTest {
         for (int i = 0; i < WARMUP; i++) {
             loop.step(false);
         }
+        // robots leave and are replaced ~28 ticks later; do not start measuring inside such a gap
+        for (int i = 0; i < 200 && loop.host.simulation().robots.numRobots() < 8; i++) {
+            loop.step(false);
+        }
         int robots = loop.host.simulation().robots.numRobots();
         long kills0 = loop.seen.kills;
         long messages0 = loop.seen.messages;

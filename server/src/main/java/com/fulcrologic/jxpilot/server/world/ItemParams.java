@@ -120,6 +120,8 @@ public final class ItemParams {
     public int maxOffensiveItems;
     public int maxDefensiveItems;
     public int tankScoreDecrement;
+    /** C {@code Gravity}: Place_item multiplies the (already scaled) block gravity by it once more (item.c:332). */
+    public float gravity;
 
     /**
      * Read the options and build the item table for a map of {@code blocksX * blocksY} blocks at {@code fps}.
@@ -191,6 +193,7 @@ public final class ItemParams {
         p.maxOffensiveItems = o.getInt(Opt.MAX_OFFENSIVE_ITEMS);
         p.maxDefensiveItems = o.getInt(Opt.MAX_DEFENSIVE_ITEMS);
         p.tankScoreDecrement = o.getInt(Opt.TANK_SCORE_DECREMENT);
+        p.gravity = f(o, Opt.GRAVITY);
 
         item(p, o, Item.FUEL, Opt.ITEM_ENERGY_PACK_PROB, Opt.INITIAL_FUEL, Opt.MAX_FUEL, MAX_FUEL, 0, 0);
         item(p, o, Item.TANK, Opt.ITEM_TANK_PROB, Opt.INITIAL_TANKS, Opt.MAX_TANKS, Player.MAX_TANKS, 1, 1);
