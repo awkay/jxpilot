@@ -66,6 +66,8 @@ public final class ItemParams {
     public boolean limitedVisibility;
     public boolean cloakedShield;
     public boolean lockOtherTeam;
+    /** C {@code allowViewing}: paused players may look through any locked player's eyes. */
+    public boolean allowViewing;
     public boolean loseItemDestroys;
     public boolean shieldedItemPickup;
     public boolean shieldedMining;
@@ -139,6 +141,7 @@ public final class ItemParams {
         p.limitedVisibility = o.getBool(Opt.LIMITED_VISIBILITY);
         p.cloakedShield = o.getBool(Opt.CLOAKED_SHIELD);
         p.lockOtherTeam = o.getBool(Opt.LOCK_OTHER_TEAM);
+        p.allowViewing = o.getBool(Opt.ALLOW_VIEWING);
         p.loseItemDestroys = o.getBool(Opt.LOSE_ITEM_DESTROYS);
         p.shieldedItemPickup = o.getBool(Opt.SHIELDED_ITEM_PICKUP);
         p.shieldedMining = o.getBool(Opt.SHIELDED_MINING);

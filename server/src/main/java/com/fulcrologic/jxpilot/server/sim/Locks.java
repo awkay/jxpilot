@@ -168,6 +168,28 @@ public final class Locks {
     }
 
     /**
+     * Whose eyes {@code pl}'s snapshot shows (C frame.c:1314-1336, Frame_update).
+     * <p>
+     * BEHAVIOR: with a player lock on someone in the game, a player out of the game (GAME_OVER while PLAYING)
+     * sees through the locked player; so does a paused one when the locked player is a team mate in team play
+     * or allowViewing is on. Everyone else sees through their own eyes. (C's server-owner exception has no
+     * equivalent: there is no owner.)
+     */
+    public Player viewOf(Player pl) {
+        if ((pl.lockTagged & Player.LOCK_PLAYER) == 0) {
+            return pl;
+        }
+        Player t = w.byId(pl.lockPlId);
+        if (t == null) {
+            return pl;
+        }
+        boolean over = (pl.status & (Obj.GAME_OVER | Obj.PLAYING)) == (Obj.GAME_OVER | Obj.PLAYING);
+        boolean paused = (pl.status & Obj.PAUSE) != 0
+            && ((w.params.teamPlay && pl.team != Const.TEAM_NOT_SET && pl.team == t.team) || w.items.allowViewing);
+        return over || paused ? t : pl;
+    }
+
+    /**
      * C {@code Player_lock_closest}: lock on the closest allowed playing player farther than the current lock
      * ({@code next}), or the closest at all.
      * <p>

@@ -591,6 +591,8 @@ public final class SimGameHost implements GameHost {
      * sections.
      * BEHAVIOR: part 0 sends the viewer's queued sounds and empties its queue (C {@code sound_play_queued}), so
      * each sound goes out in one snapshot.
+     * BEHAVIOR: a viewer out of the game (or paused, see {@code Locks.viewOf}) gets the snapshot, sounds included,
+     * of the player it has locked on (C frame.c:1314-1336).
      */
     @Override
     public boolean fillSnapshot(int viewerId, int part, boolean radar, SnapshotWriter out) {
@@ -603,9 +605,10 @@ public final class SimGameHost implements GameHost {
                 b.clear();
                 b.position(PacketHeader.SIZE);
             }
-            scratchParts = builder.build(p, 0, burstCursor[viewerId], radar, scratch);
+            Player view = sim.locks.viewOf(p);
+            scratchParts = builder.build(view, 0, burstCursor[viewerId], radar, scratch);
             burstCursor[viewerId] = w.events.burstSeq();
-            p.audio.clear();
+            view.audio.clear();
         }
         if (part >= scratchParts) {
             return false;
