@@ -9,8 +9,8 @@ endif::[]
 
 A Java (25) + LWJGL/OpenGL reimplementation of https://www.xpilot.org/[XPilot] 4.5.5,
 the classic multiplayer gravity war game. It plays from the original block-based `.xp`
-map files without changes. It is *not* network-compatible with the C XPilot client or
-server; it uses its own UDP protocol (`docs/PROTOCOL.md`).
+map files without changes. It has its own server and UDP protocol (`docs/PROTOCOL.md`); the
+JXPilot client can also play on original XPilot 4.5.5 servers (`docs/XPILOT-PROTOCOL.md`).
 
 [IMPORTANT]
 ====
@@ -21,9 +21,9 @@ and do not endorse it. Please don't send them bug reports about JXPilot; open an
 here instead.
 ====
 
-Status: work in progress. The map/config parser, protocol, and map renderer/viewer are
-done. The server simulation and networked gameplay are being built. See `docs/SPEC.md`
-for the plan and milestones, and the user guide's
+Status: work in progress, but playable: the Java server runs the XPilot game with robots, and the
+client plays on it or on original XPilot servers. Items, balls, targets and races (milestone M2)
+are being added. See `docs/SPEC.md` for the plan and milestones, and the user guide's
 link:docs/guide/01-introduction.adoc#status[status table].
 
 == Documentation
@@ -41,7 +41,9 @@ link:docs/guide/02-quick-start.adoc[Quick start].
 
 [source,bash]
 ----
-java -jar jxpilot-client-VERSION.jar --view-map maps/default.xp
+java -jar jxpilot-client-VERSION.jar --local --map maps/default.xp    # a game against robots
+java -jar jxpilot-server-VERSION.jar --map maps/default.xp            # a server for others
+java -jar jxpilot-client-VERSION.jar --connect HOST                   # join it
 ----
 
 == Building and running
@@ -52,7 +54,7 @@ Requires JDK 25 and Maven.
 ----
 mvn install                                   # build + test all modules
 mvn -pl client exec:exec                      # map viewer (default.xp)
-mvn -pl client exec:exec -Dclient.args="--view-map ../maps/planetx.xp"
+mvn -pl client exec:exec -Dclient.args="--local --map ../maps/planetx.xp"
 mvn -Prelease verify                          # also build the release jars into dist/target/release/
 ----
 

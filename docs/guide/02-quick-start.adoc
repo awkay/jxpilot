@@ -66,23 +66,24 @@ The jars need a Java 25 (or newer) runtime. The application downloads (`JXPilot-
   binary instead.
 
 [[run-client]]
-== Running the client
-
-NOTE: Today the client is a *map viewer*: it shows any map with a free-flying camera and can animate
-a fake game (`--demo`). Joining a server comes with the client networking work
-(<<07-client-reference.adoc#network-flags,Network flags>>).
+== Playing right away: a game against robots
 
 Unzip `jxpilot-maps-VERSION.zip`, then from the directory that contains it run:
 
 [source,shell]
 ----
-java -jar jxpilot-client-VERSION.jar --view-map jxpilot-maps-VERSION/maps/default.xp
+java -jar jxpilot-client-VERSION.jar --local --map jxpilot-maps-VERSION/maps/default.xp
 ----
 
-Use the arrow keys to pan, kbd:[+] and kbd:[-] (or the mouse wheel) to zoom, kbd:[Tab] for the next
-map in the same directory, kbd:[F] to switch between outlined and filled walls, kbd:[R] to toggle the
-radar, kbd:[S] to swap to the alternative zoom and kbd:[Esc] or kbd:[Q] to quit. Add `--demo` to see ships, shots and the HUD in action. All
-client flags are in <<07-client-reference.adoc#client-reference,Client reference>>.
+`--local` starts a JXPilot server inside the client, reachable only from your own computer, and joins
+it. Robots join too (four by default), so you have someone to fight. Any other map works the same way.
+Your player name is your login name; choose another with `--name`. The keys are XPilot's: kbd:[A] and
+kbd:[S] turn, kbd:[Shift] thrusts, kbd:[Enter] fires, kbd:[Space] is the shield, kbd:[M] opens the talk
+line and kbd:[Esc] quits (<<03-playing.adoc#controls,Controls>>).
+
+To look at a map without playing, use the map viewer:
+`java -jar jxpilot-client-VERSION.jar --view-map jxpilot-maps-VERSION/maps/default.xp` (add `--demo` to
+see ships, shots and the HUD in action; <<07-client-reference.adoc#viewer-flags,Viewer flags>>).
 
 [[platform-notes]]
 === Platform notes
@@ -111,8 +112,8 @@ by the same release process, with less testing so far. Please report problems.
 == Running the application downloads (no Java needed)
 
 The `JXPilot-VERSION-PLATFORM` archives contain the client with a trimmed Java runtime and the maps.
-Started without arguments, the application opens the map viewer on the bundled `default.xp`; started
-from a terminal it takes the same flags as the jar.
+Started without arguments, the application starts a game against robots on the bundled `default.xp`
+(as `--local --map default.xp`); started from a terminal it takes the same flags as the jar.
 
 [cols="1,3,4",options="header"]
 |===
@@ -154,11 +155,6 @@ and checked against `SHA256SUMS.txt`. The jars are not affected: they run in the
 [[run-server]]
 == Running a server
 
-NOTE: *Unmerged branch.* The server's entry point, `ServerMain`, is on the `server-net` branch. Until
-it is merged, the release server jar has no main class and `java -jar` reports
-`ClassNotFoundException`. On that branch the server runs end to end with a stand-in game: players can
-connect and chat, but there is no real gameplay yet (<<01-introduction.adoc#status,Status>>).
-
 [source,shell]
 ----
 java -jar jxpilot-server-VERSION.jar --map jxpilot-maps-VERSION/maps/default.xp
@@ -173,13 +169,23 @@ listening on [::1]:15999 (lo0)
 serving map 'The Newbie Globe' (170x170 blocks) at 12 frames/s
 ----
 
-Players connect to one of the listed addresses on UDP port 15345 (the default). To run a server for
-other people, read <<04-running-a-server.adoc#running-a-server,Running a server>>; it covers choosing
-addresses on a VPN or LAN, firewalls, configuration files and running the server as a service.
+Players connect to one of the listed addresses on UDP port 15345 (the default). Robots fill the game
+while humans play (four by default). To run a server for other people, read
+<<04-running-a-server.adoc#running-a-server,Running a server>>; it covers choosing addresses on a VPN or
+LAN, firewalls, configuration files, robots, hosting for friends far away and running the server as a
+service.
 
 [[connect]]
-== Connecting to a server
+== Joining a server
 
-NOTE: *Planned.* The windowed client cannot join a server yet. The `client-net` branch has the
-networking and a headless test client; the `--connect` flag of the game client is described in
-<<07-client-reference.adoc#network-flags,Network flags>>.
+[source,shell]
+----
+java -jar jxpilot-client-VERSION.jar --connect HOST                  # a JXPilot server, port 15345
+java -jar jxpilot-client-VERSION.jar --connect HOST:PORT --name Ace
+java -jar jxpilot-client-VERSION.jar --connect xp://HOST             # an original XPilot 4.5.5 server
+----
+
+`HOST` is a name or an IP address; write IPv6 addresses in brackets with a port (`[2001:db8::1]:15345`).
+If the server refuses you, the client shows why, for example `Rejected by HOST: name not accepted` when
+your name is already taken (<<04-running-a-server.adoc#joining,Joining, leaving and full servers>>). All
+client flags are in <<07-client-reference.adoc#client-reference,Client reference>>.
