@@ -37,7 +37,12 @@ package com.fulcrologic.jxpilot.client.game;
  * The estimate the renderer reads ({@link #serverTick}) never jumps on a smoothed sample: it slews toward
  * the smoothed offset at most {@link #SLEW} ticks per tick of local time, so a correction changes the
  * apparent speed of everything by a few percent for a moment instead of displacing it in one frame
- * (at 12 Hz a 0.014-tick jump moves a fast ship 1-2 px at once). The first sample and resyncs still jump.
+ * (at 12 Hz a 0.014-tick jump moves a fast ship 1-2 px at once). The first sample and resyncs still jump,
+ * and so does a shown offset more than {@link #SNAP_TICKS} from the smoothed one (F7).
+ * <p>
+ * F7/R4: the server's rate is estimated from the arrivals (least squares over the last {@link #RATE_WINDOW}
+ * accepted samples spanning at least {@link #RATE_MIN_SPAN_SECONDS}), so a server running a few percent slow
+ * or fast is followed instead of drifting until a resync. Local time is counted from the first sample.
  * Pure, allocation free.
  */
 public final class TickClock {
@@ -55,9 +60,27 @@ public final class TickClock {
     /** Time constant (ticks) of the shown offset's approach to the smoothed offset, below the SLEW cap. */
     public static final double SLEW_TICKS = 2;
 
+    /** Samples kept for the rate estimate (about 4.5 s at 14 Hz). */
+    public static final int RATE_WINDOW = 64;
+    /** Samples needed before the rate is estimated. */
+    public static final int RATE_MIN_SAMPLES = 16;
+    /** Local time (s) the rate samples must span before the rate is estimated. */
+    public static final double RATE_MIN_SPAN_SECONDS = 1.0;
+    /** The estimated rate stays within [1/RATE_LIMIT, RATE_LIMIT] of the nominal one. */
+    public static final double RATE_LIMIT = 1.25;
+    /** F7: the shown offset snaps (instead of slewing) when it is this far (ticks) from the smoothed one. */
+    public static final double SNAP_TICKS = 0.5;
+
     private double simHz = 60;
     private boolean synced;
     private double offset;
+    /** Server ticks per local tick (F7/R4: a server running slow or fast); 1 = nominal. */
+    private double rate = 1;
+    private final double[] sampleTick = new double[RATE_WINDOW];
+    private final double[] sampleLocal = new double[RATE_WINDOW];
+    private int samples;
+    private int sampleHead;
+    private double anchor;
     private int behind;
     /** Offset {@link #serverTick} uses: slews toward {@link #offset}. */
     private double shown;
@@ -72,6 +95,14 @@ public final class TickClock {
         behind = 0;
         shown = 0;
         jump = true;
+        rate = 1;
+        samples = 0;
+        sampleHead = 0;
+    }
+
+    /** Server ticks per local tick at the nominal rate (1 until estimated). */
+    public double rate() {
+        return rate;
     }
 
     public boolean synced() {
@@ -103,7 +134,12 @@ public final class TickClock {
      * restarts that count.
      */
     public void sample(int tick, long nowNanos) {
-        double s = tick - localTicks(nowNanos);
+        double local = localTicks(nowNanos);
+        if (!synced) {
+            anchor = local;
+        }
+        double l = local - anchor;
+        double s = tick - rate * l;
         double d = s - offset;
         double resync = resyncTicks();
         if (!synced || d > resync) {
@@ -111,16 +147,67 @@ public final class TickClock {
             synced = true;
             behind = 0;
             jump = true;
+            samples = 0;
         } else if (d < -resync) {
             if (++behind >= BACKWARD_RESYNC_SAMPLES) {
                 offset = s;
                 behind = 0;
                 jump = true;
+                samples = 0;
             }
+            return;
         } else {
             offset += d * SMOOTHING;
             behind = 0;
         }
+        remember(tick, l);
+        estimateRate(l);
+    }
+
+    private void remember(int tick, double l) {
+        sampleTick[sampleHead] = tick;
+        sampleLocal[sampleHead] = l;
+        sampleHead = (sampleHead + 1) % RATE_WINDOW;
+        samples = Math.min(samples + 1, RATE_WINDOW);
+    }
+
+    /**
+     * Least-squares slope of the remembered samples; the offsets are re-based so the estimate at {@code l}
+     * does not move when the rate changes.
+     */
+    private void estimateRate(double l) {
+        if (samples < RATE_MIN_SAMPLES) {
+            return;
+        }
+        double mt = 0;
+        double ml = 0;
+        double lo = Double.MAX_VALUE;
+        double hi = -Double.MAX_VALUE;
+        for (int i = 0; i < samples; i++) {
+            mt += sampleTick[i];
+            ml += sampleLocal[i];
+            lo = Math.min(lo, sampleLocal[i]);
+            hi = Math.max(hi, sampleLocal[i]);
+        }
+        if ((hi - lo) / simHz < RATE_MIN_SPAN_SECONDS) {
+            return;
+        }
+        mt /= samples;
+        ml /= samples;
+        double sxy = 0;
+        double sxx = 0;
+        for (int i = 0; i < samples; i++) {
+            double dl = sampleLocal[i] - ml;
+            sxy += dl * (sampleTick[i] - mt);
+            sxx += dl * dl;
+        }
+        if (sxx <= 0) {
+            return;
+        }
+        double r = Math.max(1 / RATE_LIMIT, Math.min(RATE_LIMIT, sxy / sxx));
+        offset += (rate - r) * l;
+        shown += (rate - r) * l;
+        rate = r;
     }
 
     /**
@@ -135,8 +222,8 @@ public final class TickClock {
         if (!synced) {
             return 0;
         }
-        double local = localTicks(nowNanos);
-        if (jump) {
+        double local = localTicks(nowNanos) - anchor;
+        if (jump || Math.abs(offset - shown) > SNAP_TICKS) {
             shown = offset;
             jump = false;
         } else {
@@ -148,7 +235,7 @@ public final class TickClock {
             shown += Math.max(-max, Math.min(max, step));
         }
         lastLocal = local;
-        return local + shown;
+        return rate * local + shown;
     }
 
     /** The smoothed offset samples converge to (ticks; {@link #serverTick} slews toward it). */

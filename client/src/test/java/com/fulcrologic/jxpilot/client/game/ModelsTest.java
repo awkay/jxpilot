@@ -132,12 +132,83 @@ class ModelsTest {
             assertAll(
                 () -> assertEquals(0.0, before, "0 before any sample"),
                 () -> assertEquals(660.0, first, 1e-9, "600 at 1 s, 60 ticks per second later"),
-                () -> assertEquals(540.3, offset, 1e-9, "a sample 3 ticks ahead moves the smoothed offset by 10% (0.3)"),
+                () -> assertEquals(600.3, offset, 1e-9,
+                    "a sample 3 ticks ahead moves the smoothed offset (from the first sample's time) by 10% (0.3)"),
                 () -> assertEquals(660.0, same, 1e-9, "no local time elapsed: the shown estimate has not moved yet"),
                 () -> assertEquals(665.15, fiveTicks, 1e-6, "5 ticks later (nanosecond rounding): slewed by 5 * 3% = 0.15"),
                 () -> assertEquals(720.3, later, 1e-9, "1 s later: the whole 0.3 is in"),
                 () -> assertEquals(5000.0, c.serverTick(3_000_000_000L), 1e-9, "a sample 30+ ticks away resyncs at once"),
                 () -> assertTrue(c.synced(), "synced"));
+        }
+
+        /** Feed a server running at {@code speed} x nominal (14 Hz) for {@code secs}; returns the worst error after 6 s. */
+        double drift(double speed, double secs, java.util.SplittableRandom rnd, TickClock c) {
+            c.reset(14);
+            double worst = 0;
+            int tick = 0;
+            for (double t = 0; t < secs; t += 1 / (14 * speed)) {
+                long now = Math.round((t + rnd.nextDouble(-0.008, 0.008)) * 1e9);
+                c.sample(tick, now);
+                for (int k = 0; k < 4; k++) {
+                    double rt = t + k * 0.25 / (14 * speed);
+                    double est = c.serverTick(Math.round(rt * 1e9));
+                    double truth = rt * 14 * speed;
+                    if (t > 6) {
+                        worst = Math.max(worst, Math.abs(est - truth));
+                    }
+                }
+                tick++;
+            }
+            return worst;
+        }
+
+        @Test
+        @DisplayName("F7/R4: servers at 0.95x and 1.10x the nominal rate are followed (rate estimated, error < 0.3 tick)")
+        void rate() {
+            TickClock slow = new TickClock();
+            TickClock fast = new TickClock();
+            double eSlow = drift(0.95, 20, new java.util.SplittableRandom(1), slow);
+            double eFast = drift(1.10, 20, new java.util.SplittableRandom(2), fast);
+            TickClock nominal = new TickClock();
+            double eNom = drift(1.0, 20, new java.util.SplittableRandom(3), nominal);
+            assertAll(
+                () -> assertEquals(0.95, slow.rate(), 0.01, "slow server rate estimated"),
+                () -> assertEquals(1.10, fast.rate(), 0.01, "fast server rate estimated"),
+                () -> assertEquals(1.0, nominal.rate(), 0.01, "nominal rate"),
+                () -> assertTrue(eSlow < 0.3, "slow: the estimate stays within 0.3 tick (" + eSlow + ")"),
+                () -> assertTrue(eFast < 0.3, "fast: within 0.3 tick (" + eFast + ")"),
+                () -> assertTrue(eNom < 0.3, "nominal: within 0.3 tick (" + eNom + ")"));
+        }
+
+        @Test
+        @DisplayName("the rate waits for enough samples over a second, is clamped, and resets; a far shown offset snaps")
+        void rateRulesAndSnap() {
+            TickClock c = new TickClock();
+            c.reset(10);
+            for (int i = 0; i < TickClock.RATE_MIN_SAMPLES - 1; i++) {
+                c.sample((int) Math.round(i * 1.4), i * 100_000_000L);
+            }
+            double early = c.rate();
+            for (int i = TickClock.RATE_MIN_SAMPLES - 1; i < 40; i++) {
+                c.sample((int) Math.round(i * 1.4), i * 100_000_000L);
+            }
+            double clamped = c.rate();
+            c.reset(10);
+            double afterReset = c.rate();
+            TickClock d = new TickClock();
+            d.reset(10);
+            d.sample(100, 0);
+            d.serverTick(0);
+            for (int i = 1; i <= 8; i++) {
+                d.sample(100 + i * 10 + 4, i * 1_000_000_000L);
+            }
+            double snapped = d.serverTick(8_000_000_000L);
+            assertAll(
+                () -> assertEquals(1.0, early, "15 samples: no estimate yet"),
+                () -> assertEquals(TickClock.RATE_LIMIT, clamped, 1e-9, "a server 1.4x as fast is clamped to 1.25"),
+                () -> assertEquals(1.0, afterReset, "reset forgets the rate"),
+                () -> assertEquals(d.offset() + d.rate() * 80, snapped, 1e-6,
+                    "the smoothed offset moved more than 0.5 tick from the shown one: snapped, not slewed"));
         }
 
         @Test
