@@ -59,6 +59,8 @@ public final class WorldMap {
     final List<Base> bases;
     final List<FuelStation> fuels;
     final List<Cannon> cannons;
+    /** The cannons, replaced in place when an operator changes teamCannons ({@link #setCannonTeam}). */
+    private final java.util.ArrayList<Cannon> cannonList;
     final List<Target> targets;
     final List<Treasure> treasures;
     final List<GravitySource> gravs;
@@ -86,7 +88,8 @@ public final class WorldMap {
         this.gravY = l.gravY;
         this.bases = List.copyOf(l.bases);
         this.fuels = List.copyOf(l.fuels);
-        this.cannons = List.copyOf(l.cannons);
+        this.cannonList = new java.util.ArrayList<>(l.cannons);
+        this.cannons = java.util.Collections.unmodifiableList(cannonList);
         this.targets = List.copyOf(l.targets);
         this.treasures = List.copyOf(l.treasures);
         this.gravs = List.copyOf(l.gravs);
@@ -206,6 +209,21 @@ public final class WorldMap {
     public List<FuelStation> fuels() { return fuels; }
 
     public List<Cannon> cannons() { return cannons; }
+
+    /**
+     * Give cannon {@code index} to {@code team} (C tuner {@code teamcannons} sets {@code World.cannon[i].team}).
+     * <p>
+     * BEHAVIOR: the cannon record is replaced by one with the new team; everything else stays.
+     */
+    public void setCannonTeam(int index, int team) {
+        Cannon c = cannonList.get(index);
+        cannonList.set(index, new Cannon(c.index(), c.bx(), c.by(), c.dir(), c.x(), c.y(), team));
+    }
+
+    /** C {@code Find_closest_team} for block (bx, by): see {@link MapLoader#closestTeam}. */
+    public int closestTeam(int bx, int by) {
+        return MapLoader.closestTeam(bases, bx, by, width, height, edgeWrap);
+    }
 
     public List<Target> targets() { return targets; }
 

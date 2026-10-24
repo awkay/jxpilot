@@ -174,7 +174,7 @@ class SimGameHostLoginTest {
         }
 
         @Test
-        @DisplayName("refuses with REASON_FULL when nothing can be kicked; reserved players count as taken")
+        @DisplayName("queues (REASON_QUEUED, C contact.c) when nothing can be kicked; reserved players count as taken")
         void refuses() {
             Simulation s = sim("", TWO);
             World w = s.world;
@@ -191,11 +191,12 @@ class SimGameHostLoginTest {
             hr.join("Bob", 0, "");
             int reserved = hr.join("Cid", 0, "");
             assertAll(
-                () -> assertEquals(FULL, playing, "two humans playing on two bases: full"),
+                () -> assertEquals(-Msg.Reject.REASON_QUEUED, playing, "two humans playing on two bases: Cid waits"),
+                () -> assertEquals(1, h.queuePosition(), "first in line"),
                 () -> assertEquals(List.of(), kicks.calls, "nobody is kicked"),
                 () -> assertEquals(List.of(), events(w, from), "nothing happens in the game"),
                 () -> assertEquals(2, w.numPlayers, "both stay"),
-                () -> assertEquals(FULL, reserved, "two reserved players on two bases: full"));
+                () -> assertEquals(-Msg.Reject.REASON_QUEUED, reserved, "two reserved players on two bases: Cid waits"));
         }
     }
 

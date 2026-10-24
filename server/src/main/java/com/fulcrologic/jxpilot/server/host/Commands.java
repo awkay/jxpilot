@@ -41,8 +41,7 @@ import com.fulcrologic.jxpilot.server.world.World;
  * everyone (C {@code Set_message}). Operator status ({@link Player#isOperator}) comes from {@code /password},
  * checked against the {@code password} option (command line, defaults file or {@code passwordFileName}).
  * <p>
- * JXPilot has no login queue (a full game refuses a newcomer), so {@code /queue} always finds it empty and
- * {@code /advance} never finds the player. Commands run between ticks and may allocate.
+ * Commands run between ticks and may allocate.
  */
 final class Commands {
     static final int SUCCESS = 0;
@@ -189,10 +188,10 @@ final class Commands {
     // ================================================================ commands
 
     /**
-     * C {@code Cmd_advance} with C {@code Queue_advance_player} over JXPilot's (always empty) queue.
+     * C {@code Cmd_advance} with C {@code Queue_advance_player} ({@link LoginQueue#advance}).
      * <p>
      * BEHAVIOR: not an operator: NOT_OPERATOR; no name: NO_NAME; a name of 16 characters or more: "Name too
-     * long." (ERROR); otherwise "Player \"NAME\" not in queue." (SUCCESS).
+     * long." (ERROR); otherwise the queue's answer (SUCCESS).
      */
     int advance(String arg, boolean oper) {
         if (!oper) {
@@ -201,17 +200,12 @@ final class Commands {
         if (arg.isEmpty()) {
             return NO_NAME;
         }
-        if (arg.length() >= Const.MAX_NAME_LEN) {
-            msg.append("Name too long.");
-            return ERROR;
-        }
-        msg.append("Player \"").append(arg).append("\" not in queue.");
-        return SUCCESS;
+        return host.loginQueue.advance(arg, msg) ? SUCCESS : ERROR;
     }
 
-    /** C {@code Cmd_queue} with {@code Queue_show_list}: BEHAVIOR: "The queue is empty." (SUCCESS). */
+    /** C {@code Cmd_queue} with {@code Queue_show_list} ({@link LoginQueue#showList}): BEHAVIOR: always SUCCESS. */
     int queue() {
-        msg.append("The queue is empty.");
+        host.loginQueue.showList(msg);
         return SUCCESS;
     }
 

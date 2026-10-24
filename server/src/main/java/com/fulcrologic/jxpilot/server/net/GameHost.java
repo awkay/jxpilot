@@ -83,6 +83,20 @@ public interface GameHost {
      */
     int join(CharSequence name, int team, CharSequence shape);
 
+    /**
+     * server-commands: {@link #join(CharSequence, int, CharSequence)} knowing the request's source (an address
+     * key, see SourceKeys), for the login queue. A host may answer {@code -Msg.Reject.REASON_QUEUED}: the player
+     * waits at {@link #queuePosition} and asks again.
+     */
+    default int join(CharSequence name, int team, CharSequence shape, long source) {
+        return join(name, team, shape);
+    }
+
+    /** server-commands: the queue position of the last REASON_QUEUED answer of {@link #join}. */
+    default int queuePosition() {
+        return 0;
+    }
+
     /** The team assigned to a joined player ({@code Protocol.NO_TEAM} when there are no teams). */
     int team(int playerId);
 

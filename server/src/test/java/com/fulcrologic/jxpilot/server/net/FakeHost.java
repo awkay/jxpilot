@@ -110,6 +110,21 @@ final class FakeHost implements GameHost {
         return nextId++;
     }
 
+    /** server-commands: the queue position {@link #queuePosition} reports, and the last join's source. */
+    int queuePos;
+    long lastSource;
+
+    @Override
+    public int join(CharSequence name, int t, CharSequence shape, long source) {
+        lastSource = source;
+        return join(name, t, shape);
+    }
+
+    @Override
+    public int queuePosition() {
+        return queuePos;
+    }
+
     @Override
     public int team(int playerId) {
         return team;

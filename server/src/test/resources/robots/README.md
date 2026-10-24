@@ -35,7 +35,7 @@ episode decide stuckThrustFraction, and pooled speed quantiles move in whole pix
 3 pixels); `movingThrustFraction` and `stuckThrustFraction` split the thrust share between moving and stuck
 frames. The traces themselves (4-17 MB each) are not committed.
 
-Stuck robots are C behaviour. Recorded with patch 0006 (`XPILOT_TRACE_ROBOT`), C robots get stuck the same two
+Stuck robots are C behaviour. Recorded with patch 0007 (`XPILOT_TRACE_ROBOT`), C robots get stuck the same two
 ways Java's do: resting on a floor in an evade mode with the turn blocked by the wall and no thrust (the evade
 check takes the gravity direction as the travel direction below 0.2 px/frame and sees the floor), or thrusting
 into a wall or slope in refuel, idle or climb mode with the turn blocked. Without items both sides spend the same
