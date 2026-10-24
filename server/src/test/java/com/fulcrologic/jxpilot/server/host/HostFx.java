@@ -232,6 +232,11 @@ final class HostFx {
                 m.read(p);
                 yield "SCORE_OBJECT " + m.score + " " + m.bx + "," + m.by + " " + m.text;
             }
+            case ReliableType.SEEK -> {
+                Msg.Seek m = new Msg.Seek();
+                m.read(p);
+                yield "SEEK " + m.programmerId + " " + m.robotId + " " + m.soughtId;
+            }
             default -> "type " + type;
         };
         if (p.hasRemaining()) {

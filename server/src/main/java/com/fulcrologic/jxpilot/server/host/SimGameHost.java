@@ -122,6 +122,7 @@ public final class SimGameHost implements GameHost {
     private final Msg.GameEvent gameEvent = new Msg.GameEvent();
     private final Msg.PlayerThrust thrust = new Msg.PlayerThrust();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
+    private final Msg.Seek seek = new Msg.Seek();
     private final Msg.Settings settingsMsg = new Msg.Settings();
     private final Msg.Display displayMsg = new Msg.Display();
     private final StringBuilder nameBuf = new StringBuilder(Const.MAX_CHARS);
@@ -812,6 +813,12 @@ public final class SimGameHost implements GameHost {
                     scoreObject.text.append(e.text[i]);
                     scoreObject.send(out);
                 }
+            }
+            case Events.SEEK -> {
+                seek.programmerId = wireId(e.a[i]);
+                seek.robotId = wireId(e.b[i]);
+                seek.soughtId = wireId(e.c[i]);
+                seek.send(out);
             }
             default -> { }
         }

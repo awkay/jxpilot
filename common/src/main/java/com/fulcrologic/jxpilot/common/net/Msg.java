@@ -668,6 +668,29 @@ public final class Msg {
         }
     }
 
+    /** {@link ReliableType#SEEK}: u16 programmerId, u16 robotId, u16 soughtId (C {@code "%c%hd%hd%hd"}). */
+    public static final class Seek implements Payload {
+        public int programmerId;
+        public int robotId;
+        public int soughtId;
+
+        public void write(ByteBuffer b) {
+            b.putShort((short) programmerId);
+            b.putShort((short) robotId);
+            b.putShort((short) soughtId);
+        }
+
+        public void read(ByteBuffer b) {
+            programmerId = b.getShort() & 0xFFFF;
+            robotId = b.getShort() & 0xFFFF;
+            soughtId = b.getShort() & 0xFFFF;
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.SEEK);
+        }
+    }
+
     /** {@link ReliableType#CHANGE_TEAM}. */
     public static final class ChangeTeam implements Payload {
         public int team;

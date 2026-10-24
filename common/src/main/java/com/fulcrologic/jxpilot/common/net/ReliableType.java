@@ -60,6 +60,11 @@ public final class ReliableType {
      * (C {@code PKT_DISPLAY}), sent before READY and whenever it changes.
      */
     public static final int DISPLAY = 15;
+    /**
+     * Server to client: a player's ECM reprogrammed a robot to seek someone (C {@code PKT_SEEK},
+     * {@code Send_seek}, item.c:1207); body {@link Msg.Seek}.
+     */
+    public static final int SEEK = 13;
 
     // ---- client -> server
     /** Empty body: client has the config/map and is ready to play. */

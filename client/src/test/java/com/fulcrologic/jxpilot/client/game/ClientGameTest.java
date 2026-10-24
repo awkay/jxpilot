@@ -69,6 +69,28 @@ class ClientGameTest {
     }
 
     @Test
+    @DisplayName("SEEK logs C's \"has programmed ... to seek ...\" game message; unknown players log nothing")
+    void seek() {
+        ClientGame g = configured();
+        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(9, 1, "Robby")));
+        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(10, 1, "Ann")));
+        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(11, 2, "Bob")));
+        Msg.Seek m = new Msg.Seek();
+        m.programmerId = 10;
+        m.robotId = 9;
+        m.soughtId = 11;
+        g.onReliable(ReliableType.SEEK, payload(m));
+        int before = g.messages().gameCount();
+        m.soughtId = 42;
+        g.onReliable(ReliableType.SEEK, payload(m));
+        int after = g.messages().gameCount();
+        assertAll(
+            () -> assertEquals("Ann has programmed Robby to seek Bob.", g.messages().game(0).text().toString(),
+                "the message (client.c:1153)"),
+            () -> assertEquals(before, after, "an unknown sought player logs nothing"));
+    }
+
+    @Test
     @DisplayName("reliable events apply in arrival order: an event for an unknown player is a no-op")
     void ordering() {
         ClientGame g = configured();

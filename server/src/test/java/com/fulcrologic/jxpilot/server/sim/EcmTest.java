@@ -799,8 +799,19 @@ class EcmTest {
             p.lockTagged = Player.LOCK_PLAYER;
             p.lockPlId = q.id;
             v.items[LASER] = 4;
+            long seq0 = w.events.seq();
             s.ecm.fireGeneral(p, p.team, 300, 300);
+            String seek = "";
+            for (long e = seq0; e < w.events.seq(); e++) {
+                int i = com.fulcrologic.jxpilot.server.world.Events.index(e);
+                if (w.events.kind[i] == com.fulcrologic.jxpilot.server.world.Events.SEEK) {
+                    seek += w.events.a[i] + " " + w.events.b[i] + " " + w.events.c[i];
+                }
+            }
+            String seekSeen = seek;
             assertAll(
+                () -> assertEquals(p.id + " " + v.id + " " + q.id, seekSeen,
+                    "a SEEK event: programmer, robot, sought (C Send_seek to everyone, item.c:1207)"),
                 () -> assertEquals(List.of("V->" + q.id), calls, "V is programmed to hunt Q"),
                 () -> assertEquals(0, v.damaged, "and not blinded"),
                 () -> assertEquals(18, v.forceVisible, "but seen"),

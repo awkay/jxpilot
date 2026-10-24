@@ -270,6 +270,7 @@ public final class Ecm {
                     && (pl.lockDistance < pl.sensorRange || !w.items.limitedVisibility)
                     && t != null && pl.canSee[t.ind] && pl.lockPlId != p.id && robotProgrammer != null) {
                     robotProgrammer.program(p, pl.lockPlId);
+                    w.events.add(com.fulcrologic.jxpilot.server.world.Events.SEEK, pl.id, p.id, pl.lockPlId, 0f);
                 }
             }
         }

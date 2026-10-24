@@ -78,6 +78,11 @@ public final class Events {
      * (the only receiver), b = block x, c = block y, value = points; label in {@link #text}.
      */
     public static final int SCORE_OBJECT = 10;
+    /**
+     * An ECM reprogrammed a robot (C {@code Send_seek} to every connection, item.c:1207): a = the programmer, b =
+     * the robot, c = the sought player.
+     */
+    public static final int SEEK = 11;
 
     // ---- KILL causes (server-internal: {@link #cause}, never on the wire). They decide C's robot reaction.
     /**
