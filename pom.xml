@@ -25,6 +25,7 @@
     <module>server</module>
     <module>client</module>
     <module>dist</module>
+    <module>tools/lagproxy</module>
   </modules>
 
   <properties>
