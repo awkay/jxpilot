@@ -83,6 +83,8 @@ public final class XpConnection implements GameConnection {
         public int debrisColors = 0;
         /** Chance a spark is sent each frame, 0..1 (C {@code sparkProb}, default 0.5). */
         public double sparkProb = 0.5;
+        /** Ask for PKT_AUDIO (C {@code Send_audio_request(1)} in a client built with sound). */
+        public boolean audio;
     }
 
     /** Internal steps of the handshake. */
@@ -564,7 +566,8 @@ public final class XpConnection implements GameConnection {
 
     /**
      * C {@code Net_start}: shape (first {@value #SHAPE_TRIES} tries), PKT_PLAY, the six power
-     * settings (value * 256), PKT_DISPLAY, PKT_REQUEST_AUDIO off and PKT_ASYNC_FPS (the server rate).
+     * settings (value * 256), PKT_DISPLAY, PKT_REQUEST_AUDIO (on iff {@link Login#audio}) and PKT_ASYNC_FPS
+     * (the server rate).
      */
     private void sendPlay() {
         tries++;
@@ -592,7 +595,7 @@ public final class XpConnection implements GameConnection {
         XpWriter.u8(tx, login.debrisColors);
         XpWriter.u8(tx, (int) Math.round(Math.max(0, Math.min(1, login.sparkProb)) * XpProto.MAX_SPARK_RAND));
         XpWriter.u8(tx, XpProto.PKT_REQUEST_AUDIO);
-        XpWriter.u8(tx, 0);
+        XpWriter.u8(tx, login.audio ? 1 : 0);
         XpWriter.u8(tx, XpProto.PKT_ASYNC_FPS);
         XpWriter.u8(tx, fps());
         transmit(player);

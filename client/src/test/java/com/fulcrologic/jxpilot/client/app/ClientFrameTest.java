@@ -267,11 +267,18 @@ class ClientFrameTest {
             cf.key(GLFW_KEY_F12, GLFW_PRESS, 0, T0);
             boolean swap1 = cf.takeSwapScale();
             boolean swap2 = cf.takeSwapScale();
+            boolean noSound = cf.takeToggleSound();
+            cf.key(GLFW_KEY_0, GLFW_PRESS, 0, T0);
+            boolean sound1 = cf.takeToggleSound();
+            boolean sound2 = cf.takeToggleSound();
             cf.key(GLFW_KEY_ESCAPE, GLFW_PRESS, 0, T0);
             assertAll(
                 () -> assertFalse(before, "no quit at start"),
                 () -> assertTrue(swap1, "swap reported"),
                 () -> assertFalse(swap2, "only once"),
+                () -> assertFalse(noSound, "the swap key is no sound toggle"),
+                () -> assertTrue(sound1, "the sound key is reported"),
+                () -> assertFalse(sound2, "once"),
                 () -> assertTrue(cf.quitRequested(), "Escape: quit"));
         }
 

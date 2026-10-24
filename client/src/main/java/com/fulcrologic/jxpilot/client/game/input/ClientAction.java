@@ -60,7 +60,9 @@ public enum ClientAction {
     MSG_17(""),
     MSG_18(""),
     MSG_19(""),
-    MSG_20("");
+    MSG_20(""),
+    /** JXPilot only (after C's keys): sound on/off. C has no such key; its sound is the {@code sound} resource. */
+    TOGGLE_SOUND("0");
 
     /** Default X11 keysym names, space separated (empty = unbound). */
     public final String defaultKeys;

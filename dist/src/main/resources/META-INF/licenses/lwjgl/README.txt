@@ -7,3 +7,9 @@ Texts copied from https://github.com/LWJGL/lwjgl3/tree/3.3.6 unless noted.
   libffi_license.txt   libffi, in lwjgl core natives (MIT)     modules/lwjgl/core/libffi_license.txt
   liburing_license.txt liburing, in Linux core natives (MIT)   modules/lwjgl/core/liburing_license.txt
   stb_license.txt      stb, in lwjgl-stb natives (MIT or public domain), from github.com/nothings/stb
+  openal_soft_license.txt
+                       OpenAL Soft, in lwjgl-openal natives (GNU LGPL 2, "or any later version")
+                                                               modules/lwjgl/openal/openal_soft_license.txt
+                       The natives are built from https://github.com/kcat/openal-soft at commit
+                       90191edd20bb877c5cbddfdac7ec0fe49ad93727 (the .git files in the natives jars);
+                       that source is the corresponding source of the bundled libopenal.

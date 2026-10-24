@@ -170,6 +170,8 @@ public final class XpTranslator {
      * BURST (debris), CANNON/FUEL/TARGET (updates, C numbers mapped to WorldMap indices), RADAR,
      * SELF_ITEMS (with PKT_SELF), the M2 object sections and TIMERS (with PKT_SELF: damaged, round delay
      * (none = 0) and the time left of a PKT_TIME_LEFT in this frame, else -1).
+     * BEHAVIOR: the frame's PKT_AUDIO become the SOUND section (C {@code Handle_audio}: type and volume as
+     * sent), with or without PKT_SELF.
      * BEHAVIOR: does nothing before {@link #configure}.
      */
     public void frame(XpFrame f, long nowNanos) {
@@ -190,6 +192,7 @@ public final class XpTranslator {
         if (f.hasSelf) {
             writeSelf(f, selfShip);
         }
+        writeSounds(f);
         writeShips(f);
         writeShots(f);
         writeDebris(f);
@@ -209,6 +212,17 @@ public final class XpTranslator {
         snap.flip();
         snapshots++;
         listener.onSnapshot(snap, nowNanos);
+    }
+
+    private void writeSounds(XpFrame f) {
+        int n = Math.min(f.audioCount, XpFrame.AUDIO_CAP);
+        if (n == 0 || !w.beginSection(Section.SOUND)) {
+            return;
+        }
+        for (int i = 0; i < n && w.hasRoom(); i++) {
+            Records.Sound.put(w, f.audioType[i], f.audioVolume[i]);
+        }
+        w.endSection();
     }
 
     private double wrapX(double x) {

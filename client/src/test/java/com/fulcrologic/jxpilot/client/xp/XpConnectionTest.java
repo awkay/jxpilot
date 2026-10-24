@@ -153,6 +153,14 @@ class XpConnectionTest {
     @DisplayName("joining")
     class Joining {
         @Test
+        @DisplayName("with sound on, the play bundle asks for audio (C Send_audio_request(1))")
+        void audioRequested() {
+            login.audio = true;
+            play();
+            assertTrue(server.loginPackets.contains("audio 1"), "PKT_REQUEST_AUDIO 1 is sent");
+        }
+
+        @Test
         void fullHandshakeReachesPlaying() {
             play();
             assertAll(

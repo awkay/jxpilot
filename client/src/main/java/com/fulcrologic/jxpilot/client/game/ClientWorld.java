@@ -48,7 +48,7 @@ import java.util.Arrays;
  * {@link SnapshotFrame}s (triple buffer: the two the renderer interpolates between plus the newest).
  * Bursts are expanded into the {@link ParticlePool}; thrust sparks are generated for every sim tick
  * of a thrusting ship ({@link ThrustSparkEmitter}); map object state (cannons, fuel, targets,
- * treasures), radar and own items are applied from the newest tick only.
+ * treasures), radar, own items and sounds ({@link #sounds()}) are applied from the newest tick only.
  * <p>
  * <b>Render</b> ({@link #update}): the tick clock takes one sample per receive batch (the newest tick
  * ingested since the last update). The render tick is the estimated server tick minus
@@ -123,6 +123,10 @@ public final class ClientWorld {
     private final Records.Transporter transRec = new Records.Transporter();
     private final ObjectLists outObjs = new ObjectLists(SnapshotFrame.OBJECT_CAP);
     private final Records.Timers timersRec = new Records.Timers();
+    private final Records.Sound soundRec = new Records.Sound();
+    /** Sounds kept for the player: several snapshots' worth (C sends at most one of each event per frame). */
+    public static final int SOUND_CAP = 256;
+    private final SoundQueue sounds = new SoundQueue(SOUND_CAP);
     private int damaged;
     private int roundDelay;
     private boolean haveTimeLeft;
@@ -332,6 +336,8 @@ public final class ClientWorld {
      * BEHAVIOR: thrust sparks are generated only for ticks after the previous newest tick (each tick
      * once), at most {@link #MAX_SPARK_TICKS} per ship; late ticks generate none.
      * BEHAVIOR: map object state, radar, own items and HUD timers are applied only from the newest tick.
+     * BEHAVIOR: SOUND records are appended to {@link #sounds()} only from the newest tick (a late or repeated
+     * part plays nothing).
      * BEHAVIOR: malformed data stops decoding at the error and returns {@link #MALFORMED}; so does a part
      * number of {@link #MAX_PARTS} or more (nothing is merged, so repeats cannot double a frame).
      */
@@ -610,6 +616,14 @@ public final class ClientWorld {
                         haveTimeLeft = true;
                         timeLeftValue = timersRec.timeLeft();
                         timeLeftTick = f.tick;
+                    }
+                }
+            }
+            case Section.SOUND -> {
+                if (newest) {
+                    for (int i = 0; i < n; i++) {
+                        soundRec.wrap(reader, i);
+                        sounds.add(soundRec.event(), soundRec.volume());
                     }
                 }
             }
@@ -1158,6 +1172,9 @@ public final class ClientWorld {
 
     /** Snapshot parts accepted so far. */
     public long ingested() { return ingested; }
+
+    /** Sounds received, in arrival order (see {@link SoundQueue}). */
+    public SoundQueue sounds() { return sounds; }
 
     public long malformedSnapshots() { return malformedCount; }
 
