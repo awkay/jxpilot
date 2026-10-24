@@ -36,6 +36,8 @@ public final class HudFrame {
     public static final int SOLID = 0;
     /** Dashed line (XPilot's HUD frame uses LineOnOffDash). */
     public static final int DASHED = 1;
+    /** Dashed with X11's default dash list {4, 4}, unscaled (C's score list GC, which never sets its dashes). */
+    public static final int DASHED_X = 2;
 
     private final int lineCap;
     private final int rectCap;

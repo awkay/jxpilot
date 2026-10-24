@@ -106,12 +106,18 @@ class HudListPainterTest {
         @Test
         void hudColorsMapToTheXPilotPalette() {
             assertAll(
-                () -> assertArrayEquals(new int[] {4, 1, 3, 1, 0, 1, 12}, HudListPainter.XPILOT_PALETTE,
-                    "HUD 4, WHITE 1, RED 3, OLD_MESSAGE 1, BLACK 0, SCORE 1, SCORE_DIM 12"),
-                () -> assertArrayEquals(new boolean[] {false, false, false, false, false, true, false},
+                () -> assertArrayEquals(new int[] {4, 1, 3, 1, 0, 1, 0, 2, 3}, HudListPainter.XPILOT_PALETTE,
+                    "HUD 4, WHITE 1, RED 3, OLD_MESSAGE 1, BLACK 0, SCORE 1, SCORE_DIM 0 (C black), WINDOW 2, BUTTON 3"),
+                () -> assertArrayEquals(new boolean[] {false, false, false, false, false, true, false, false, false},
                     HudListPainter.XPILOT_SHADOW, "only SCORE text is shadowed"),
                 () -> assertEquals(P.color(4), lp.rgba(HUD), "HUD is the default hudColor 4"),
-                () -> assertEquals(P.color(12), lp.rgba(SCORE_DIM), "SCORE_DIM is grey 12"));
+                () -> assertEquals(P.color(0), lp.rgba(SCORE_DIM), "SCORE_DIM is black, as C on its blue window"));
+        }
+
+        @Test
+        void aListColourCanBeRemapped() {
+            lp.setPaletteIndex(SCORE_DIM, 12);
+            assertEquals(P.color(12), lp.rgba(SCORE_DIM), "SCORE_DIM remapped to grey 12 (C blockBitmaps)");
         }
 
         @Test
@@ -179,7 +185,7 @@ class HudListPainterTest {
         void textSitsOnItsBaselineCutToItsLength() {
             lp.paint(b, ss, new List_().text("hello", 3, 10, 20, WHITE).text("old", 3, 10, 40, OLD_MESSAGE)
                 .text("dim", 3, 10, 60, SCORE_DIM).text("bg", 2, 10, 80, BLACK).text("hud", 3, 10, 100, HUD));
-            assertEquals(List.of("'hel'@10,580#" + hex(1), "'old'@10,560#" + hex(1), "'dim'@10,540#" + hex(12),
+            assertEquals(List.of("'hel'@10,580#" + hex(1), "'old'@10,560#" + hex(1), "'dim'@10,540#" + hex(0),
                     "'bg'@10,520#" + hex(0), "'hud'@10,500#" + hex(4)), Drawn.runStrings(b),
                 "pen at x, baseline at y, textLength chars, each colour mapped");
         }

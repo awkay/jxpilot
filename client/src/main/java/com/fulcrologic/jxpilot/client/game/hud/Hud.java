@@ -499,30 +499,44 @@ public final class Hud {
         return viewW - 2 * (TALK_WINDOW_X + TALK_OUTSIDE_BORDER);
     }
 
-    /**
-     * The score list panel at (x0, y0) of the given width (C draws it in its own window).
-     * <p>
-     * BEHAVIOR: heading at baseline y0 + SCORE_BORDER + ascent with a line under it; entry n at baseline
-     * y0 + 2*SCORE_BORDER + ascent + spacing*(n+1), spacing = ascent + descent + 3; the best row
-     * underlined; dimmed rows in SCORE_DIM.
-     */
+    /** The score list without its window background (tests and callers that draw no window). */
     public void scoreboard(HudFrame out, Scoreboard sb, int x0, int y0, int width, TextMetrics m) {
+        scoreboard(out, sb, x0, y0, width, 0, m);
+    }
+
+    /**
+     * The score list window at (x0, y0), {@code width} x {@code height} (C {@code players} window,
+     * {@code Paint_score_start}/{@code Paint_score_entry}).
+     * <p>
+     * BEHAVIOR: a filled WINDOW (C {@code windowColor}, blue) background of the whole window when height &gt; 0.
+     * BEHAVIOR: heading in shadowed white at baseline y0 + SCORE_BORDER + ascent with a solid white line under
+     * it; entry n at baseline y0 + 2*SCORE_BORDER + ascent + spacing*(n+1), spacing = ascent + descent + 3;
+     * rows of 'D'/'P'/'W' players in SCORE_DIM (C: plain black), the others in shadowed white (SCORE).
+     * BEHAVIOR: the best row is underlined with X11's default dashes (C's score list GC is left in
+     * LineOnOffDash after the heading) in the row's colour.
+     */
+    public void scoreboard(HudFrame out, Scoreboard sb, int x0, int y0, int width, int height, TextMetrics m) {
+        if (height > 0) {
+            out.rect(x0, y0, width, height, true, HudColor.WINDOW);
+        }
         int spacing = m.ascent() + m.descent() + 3;
         int headY = y0 + SCORE_BORDER + m.ascent();
         CharBuf h = out.text(x0 + SCORE_BORDER, headY, HudColor.SCORE);
         if (h != null) {
             h.append(sb.heading());
         }
-        out.line(x0 + SCORE_BORDER, headY, x0 + width - SCORE_BORDER, headY, HudFrame.SOLID, HudColor.SCORE);
+        out.line(x0 + SCORE_BORDER, headY, x0 + width - SCORE_BORDER, headY, HudFrame.SOLID, HudColor.WHITE);
         int first = y0 + 2 * SCORE_BORDER + m.ascent() + spacing;
         for (int r = 0; r < sb.rowCount(); r++) {
             int y = first + spacing * sb.rowLine(r);
-            CharBuf t = out.text(x0 + SCORE_BORDER, y, sb.dimmed(r) ? HudColor.SCORE_DIM : HudColor.SCORE);
+            int color = sb.dimmed(r) ? HudColor.SCORE_DIM : HudColor.SCORE;
+            CharBuf t = out.text(x0 + SCORE_BORDER, y, color);
             if (t != null) {
                 t.append(sb.label(r));
             }
             if (r == sb.bestRow()) {
-                out.line(x0 + SCORE_BORDER, y, x0 + width - SCORE_BORDER, y, HudFrame.SOLID, HudColor.SCORE);
+                out.line(x0 + SCORE_BORDER, y, x0 + width - SCORE_BORDER, y, HudFrame.DASHED_X,
+                    color == HudColor.SCORE ? HudColor.WHITE : HudColor.SCORE_DIM);
             }
         }
     }

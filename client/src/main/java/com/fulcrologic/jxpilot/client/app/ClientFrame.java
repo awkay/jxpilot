@@ -187,7 +187,7 @@ public final class ClientFrame {
         extras.fill(game, hud, viewW, viewH, zoom, centreX, centreY, scene.loops);
         extras.loseItem(router.loseSelection(), dt);
         panelHud.clear();
-        hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, m);
+        hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, Math.max(0, viewH - scoreTop), m);
         String motdText = game.takeMotd();
         if (motdText != null) {
             motd = motdPanel(motdText);
