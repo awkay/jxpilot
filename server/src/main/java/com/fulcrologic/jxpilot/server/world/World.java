@@ -111,6 +111,13 @@ public final class World {
     public int roundsPlayed;
     /** C {@code gameDuration} after {@code Game_Over} sets it to -1 (the game no longer ends rounds). */
     public float gameDuration;
+    /**
+     * Frame ({@link #frames}) at which a positive gameDuration ends the game (C {@code gameOverTime}, which is
+     * wall-clock time from the server start), or -1.
+     */
+    public long gameOverFrame = -1;
+    /** C {@code ShutdownServer}: frames until the server should shut down after the game ended, -1 none. */
+    public int shutdownDelay = -1;
 
     /** Build the map from {@code options} (map data + settings) and the initial state. */
     public World(Options options, int seed) {
@@ -146,6 +153,9 @@ public final class World {
         wormCountdown = new int[map.wormholes().size()];
         initWormholes();
         gameDuration = params.gameDuration;
+        if (gameDuration > 0) {
+            gameOverFrame = frames + (long) (gameDuration * 60 * params.fps);
+        }
         roundTime = params.maxRoundTime > 0 ? params.maxRoundTime * params.fps : -1;
     }
 

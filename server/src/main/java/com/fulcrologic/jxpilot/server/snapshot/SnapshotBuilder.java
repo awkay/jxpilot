@@ -472,12 +472,17 @@ public final class SnapshotBuilder {
     /**
      * BEHAVIOR: the viewer's HUD timers, sent while any is active: ECM damage frames, the round delay while C
      * would send it (round_delay_send, which runs one second past the delay so clients see 0), and the time
-     * left: the round timer rounded up to seconds when maxRoundTime is set and running, else -1.
+     * left: the gameDuration timer, else the round timer with maxRoundTime, rounded up to seconds, else -1.
      */
     void writeTimers(Player v) {
         int delay = w.roundDelaySend > 0 ? w.roundDelay : 0;
         int fps = w.params.fps;
-        int left = w.params.maxRoundTime > 0 && w.roundTime >= 0 ? (w.roundTime + fps - 1) / fps : -1;
+        int left;
+        if (w.gameOverFrame >= 0) {
+            left = (int) ((w.gameOverFrame - w.frames + fps - 1) / fps);
+        } else {
+            left = w.params.maxRoundTime > 0 && w.roundTime >= 0 ? (w.roundTime + fps - 1) / fps : -1;
+        }
         if ((w.roundDelaySend <= 0 && left < 0 && v.damaged <= 0) || !need(Section.TIMERS, 0)) {
             return;
         }

@@ -151,6 +151,7 @@ public final class Simulation {
         if (w.gameDuration >= 0 || w.params.maxRoundTime > 0) {
             rounds.computeGameStatus();
         }
+        rounds.checkGameDuration();
         emitScores();
         w.frames++;
     }

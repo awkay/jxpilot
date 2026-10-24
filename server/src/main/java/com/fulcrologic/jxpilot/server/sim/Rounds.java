@@ -476,6 +476,25 @@ public final class Rounds {
         countRounds();
     }
 
+    /**
+     * The gameDuration part of C {@code Frame_update}, after each frame.
+     * <p>
+     * BEHAVIOR: once the frame clock reaches {@link World#gameOverFrame} the game is over ({@link #gameOver})
+     * and the server is to shut down in 30 seconds ({@link World#shutdownDelay}); only once.
+     * BEHAVIOR: the shutdown countdown runs down by one frame.
+     */
+    public void checkGameDuration() {
+        if (w.shutdownDelay > 0) {
+            w.shutdownDelay--;
+        }
+        if (w.gameOverFrame < 0 || w.frames < w.gameOverFrame) {
+            return;
+        }
+        w.gameOverFrame = -1;
+        gameOver();
+        w.shutdownDelay = 30 * w.params.fps;
+    }
+
     /** C {@code Count_rounds}: with roundsToPlay, announce the round and end the game after the last one. */
     void countRounds() {
         Params p = w.params;
