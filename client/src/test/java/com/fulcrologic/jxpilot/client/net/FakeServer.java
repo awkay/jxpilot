@@ -190,6 +190,16 @@ public final class FakeServer {
                     });
                 }
                 case PacketType.ACK -> channel.onAck(header.reliableAck(), now);
+                case PacketType.PING -> {
+                    // as ServerNet: PONG echoes the 12-byte body
+                    channel.onAck(header.reliableAck(), now);
+                    begin(PacketType.PONG, SESSION);
+                    for (int i = 0; i < 12 && rx.hasRemaining(); i++) {
+                        tx.put(rx.get());
+                    }
+                    send();
+                    pongs++;
+                }
                 case PacketType.DISCONNECT -> disconnectsReceived++;
                 default -> { }
             }
@@ -367,6 +377,9 @@ public final class FakeServer {
         Records.Burst.quantize(d);
         return d;
     }
+
+    /** PONGs sent (answers to the client's RTT probes). */
+    public int pongs;
 
     private void begin(int type, int session) {
         tx.clear();

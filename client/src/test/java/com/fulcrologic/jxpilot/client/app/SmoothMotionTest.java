@@ -211,6 +211,7 @@ class SmoothMotionTest {
         double[] oy = new double[600];
         double[] lag = new double[600];
         double[] dir = new double[600];
+        boolean drawnFromNewest = true;
         for (long now = t0 + 500_000_000L; now < t0 + 4_500_000_000L; now += 1_000_000_000L / 120) {
             while (next < ticks && arrive[next] <= now) {
                 double t = next;
@@ -231,6 +232,7 @@ class SmoothMotionTest {
                 ox[n] = g.world().selfX();
                 oy[n] = g.world().selfY();
                 lag[n] = g.world().newestSelfTick() - g.world().selfDrawnTick();
+                drawnFromNewest &= g.world().selfDrawnFromTick() == g.world().newestSelfTick();
                 dir[n] = 0.08 * g.world().selfDrawnTick();
                 n++;
             }
@@ -255,12 +257,14 @@ class SmoothMotionTest {
         double fl = worstLag;
         double mean = sumLag / (n - 2);
         boolean fwd = forward;
+        boolean fromNewest = drawnFromNewest;
         int fn = n;
         System.out.printf("[F1 smooth] frames=%d worst step change %.3f px, worst lag %.3f ticks, mean lag %.3f%n", n,
             worst, worstLag, mean);
         assertAll(
             () -> assertTrue(fn > 300, "rendered 3 s at 120 Hz"),
             () -> assertTrue(fwd, "the drawn ship never moves against its direction (no reversals)"),
+            () -> assertTrue(fromNewest, "every frame draws the own ship from the newest SELF received before it"),
             () -> assertTrue(fw < 0.5, "the 120 Hz step changes by less than 0.5 px: " + fw),
             () -> assertTrue(fl <= 0.2, "never more than 0.2 ticks behind the newest SELF: " + fl),
             () -> assertTrue(mean < 0, "on average ahead of the newest SELF (predicted to the present): " + mean));

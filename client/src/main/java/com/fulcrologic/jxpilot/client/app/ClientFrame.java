@@ -72,6 +72,9 @@ public final class ClientFrame {
     private final HudFrame panelHud = new HudFrame(128, 1536, 320, 256);
     private final HudFrame helpHud = new HudFrame(4, 4, 320, 160);
     private final KeyHelp help;
+    /** JXPilot's network diagnostics line (keyToggleNetStats), in the view HUD. */
+    private final com.fulcrologic.jxpilot.client.game.hud.NetStatsLine netStats =
+        new com.fulcrologic.jxpilot.client.game.hud.NetStatsLine();
     /** The map list of a lobby server, shown (instead of the key help) while the connection is in the lobby. */
     private final LobbyPanel lobbyPanel = new LobbyPanel();
     /** {@code --lobby-map}: the map to pick by itself, or null (cleared once tried). */
@@ -356,12 +359,15 @@ public final class ClientFrame {
     }
 
     /**
-     * client-ui-look: the packet meters in the view HUD (while PLAYING), the clock over the score window (unless a panel covers it), the
+     * client-ui-look: the packet meters and the net diagnostics line (when shown) in the view HUD (while PLAYING), the clock over the score window (unless a panel covers it), the
      * bell and the title flip of this frame ({@link LookFrame}).
      */
     private void lookExtras(int viewW, TextMetrics gameFont, TextMetrics scoreFont, int scoreTop, int panelW) {
         if (game.state() == ConnectionState.PLAYING) {
             look.packetMeters(viewHud, hud, hud.extent(viewW), conn.packetStats(), gameFont);
+            ClientWorld w = game.world();
+            netStats.layout(viewHud, hud.extent(viewW), conn.netDiagnostics(),
+                w.interpolationDelayTicks() * 1000 / w.clock().simHz(), gameFont);
         }
         if (!ui.coversScores()) {
             look.clock(panelHud, 0, scoreTop, panelW, scoreFont, scene.loops, scene.fps);
@@ -475,6 +481,7 @@ public final class ClientFrame {
      * {@link #quitRequested()}; SWAP_SCALE sets {@link #takeSwapScale()}; TOGGLE_SOUND sets
      * {@link #takeToggleSound()}; SETTINGS sends the control settings ({@link GameConnection#sendSettings});
      * SHOW_CONTROLS shows the power and turn speed meters; HELP closes an open MOTD panel, else toggles the key help;
+     * NET_STATS toggles the network diagnostics line ({@link #netStats()});
      * TOGGLE_ITEMS toggles {@link HudExtras#showItems} (C {@code Key_press_show_items}); FUEL_NOTIFY shows the fuel
      * ({@link Hud#notifyFuel}); TOGGLE_MESSAGES toggles {@link Hud#showMessages} (C {@code Key_press_show_messages}).
      * BEHAVIOR: the play events (ID mode, print, talk macros, pointer control) go to {@link PlayActions#handle};
@@ -539,6 +546,9 @@ public final class ClientFrame {
         }
         if ((ev & KeyRouter.PASTE) != 0) {
             paste();
+        }
+        if ((ev & KeyRouter.NET_STATS) != 0) {
+            netStats.toggle();
         }
         if ((ev & KeyRouter.CHAT) != 0) {
             conn.sendChat(router.chat(), nowNanos);
@@ -831,6 +841,9 @@ public final class ClientFrame {
     public HudFrame helpHud() { return helpHud; }
 
     public KeyHelp keyHelp() { return help; }
+
+    /** The network diagnostics line (keyToggleNetStats). */
+    public com.fulcrologic.jxpilot.client.game.hud.NetStatsLine netStats() { return netStats; }
 
     public ControlSettings settings() { return settings; }
 

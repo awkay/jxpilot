@@ -168,6 +168,9 @@ public final class NativeGameConnection implements GameConnection {
     public com.fulcrologic.jxpilot.client.net.PacketStats packetStats() { return conn.packetStats(); }
 
     @Override
+    public com.fulcrologic.jxpilot.client.net.NetDiagnostics netDiagnostics() { return conn.netDiagnostics(); }
+
+    @Override
     public void close() {
         if (transport != null) {
             transport.close();

@@ -16,3 +16,4 @@ xpilot.keySendMsg10:
 xpilot.keyIdMode:                            ! u is detonate now; ID mode left unbound
 xpilot.keyReprogram:          F8             ! grave is select-item now
 xpilot.keySendMsg8:                          ! frees F8 for keyReprogram
+xpilot.keyToggleNetStats:     equal          ! net diagnostics line ("=" is free now; Insert has no Mac key)

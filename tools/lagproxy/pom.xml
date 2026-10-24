@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.fulcrologic.jxpilot</groupId>
+    <artifactId>jxpilot-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+  <artifactId>jxpilot-lagproxy</artifactId>
+  <name>JXPilot lag proxy</name>
+  <description>
+    A UDP proxy that runs the lossy-link emulator (delay, jitter, spikes, bursty loss, reordering,
+    duplication, bandwidth cap) in real time between real JXPilot clients and a real server.
+    See README.md.
+  </description>
+
+  <dependencies>
+    <!-- the emulator is the shared test fixture of jxpilot-common (common.net.link) -->
+    <dependency>
+      <groupId>com.fulcrologic.jxpilot</groupId>
+      <artifactId>jxpilot-common</artifactId>
+      <type>test-jar</type>
+    </dependency>
+    <dependency>
+      <groupId>com.fulcrologic.jxpilot</groupId>
+      <artifactId>jxpilot-server</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.pitest</groupId>
+        <artifactId>pitest-maven</artifactId>
+        <configuration>
+          <targetClasses>
+            <param>com.fulcrologic.jxpilot.lagproxy.*</param>
+          </targetClasses>
+          <targetTests>
+            <param>com.fulcrologic.jxpilot.lagproxy.*</param>
+          </targetTests>
+          <excludedClasses>
+            <!-- the socket loop and main: covered by LagProxyLoopbackTest -->
+            <param>com.fulcrologic.jxpilot.lagproxy.LagProxy</param>
+            <param>com.fulcrologic.jxpilot.lagproxy.LagProxy$*</param>
+          </excludedClasses>
+          <excludedTestClasses>
+            <param>*LoopbackTest*</param>
+          </excludedTestClasses>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>com.fulcrologic.jxpilot.lagproxy.LagProxy</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

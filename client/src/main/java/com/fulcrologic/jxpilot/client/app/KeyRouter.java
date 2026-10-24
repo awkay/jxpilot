@@ -79,6 +79,8 @@ public final class KeyRouter {
     public static final int TALK_MACRO = 8192;
     /** Paste the clipboard into the talk line (JXPilot: Control-V or Command-V; C pastes with mouse button 2). */
     public static final int PASTE = 16384;
+    /** Show or hide the network diagnostics line (JXPilot keyToggleNetStats). */
+    public static final int NET_STATS = 32768;
 
     private final InputState input;
     private final TalkLine talk;
@@ -220,8 +222,8 @@ public final class KeyRouter {
      * The client actions of a press (C {@code Key_press}).
      * <p>
      * BEHAVIOR: TALK opens the talk line (game keys released, the key's character is not typed); SWAP_SCALEFACTOR,
-     * TOGGLE_SOUND, HELP, ID_MODE, TOGGLE_OWNED_ITEMS, TOGGLE_MESSAGES, POINTER_CONTROL and PRINT_MSGS_STDOUT
-     * are their events; keySendMsgN marks macro N-1 and is {@link #TALK_MACRO}.
+     * TOGGLE_SOUND, HELP, NET_STATS, ID_MODE, TOGGLE_OWNED_ITEMS, TOGGLE_MESSAGES, POINTER_CONTROL and
+     * PRINT_MSGS_STDOUT are their events; keySendMsgN marks macro N-1 and is {@link #TALK_MACRO}.
      */
     private int actions(long acts) {
         int ev = NONE;
@@ -238,6 +240,9 @@ public final class KeyRouter {
         }
         if (KeyBindings.has(acts, ClientAction.HELP)) {
             ev |= HELP;
+        }
+        if (KeyBindings.has(acts, ClientAction.NET_STATS)) {
+            ev |= NET_STATS;
         }
         if (KeyBindings.has(acts, ClientAction.ID_MODE)) {
             ev |= ID_MODE;

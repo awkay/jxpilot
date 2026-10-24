@@ -65,11 +65,15 @@ class AllocationTest {
         long now;
         long bytes;
         long packets;
+        long pongs;
 
         @Override
         public void send(int channel, SocketAddress to, ByteBuffer data) {
             bytes += data.remaining();
             packets++;
+            if (data.get(data.position() + 3) == PacketType.PONG) {
+                pongs++;
+            }
             for (int i = 0; i < CLIENTS; i++) {
                 if (addrs[i] == to && clients[i] != null && clients[i].accepted) {
                     clients[i].ch.onAck(data.getShort(data.position() + 6) & 0xFFFF, now);
@@ -80,7 +84,7 @@ class AllocationTest {
     }
 
     @Test
-    @DisplayName("ServerNet: inputs, chat, acks, ticks, snapshots for 3 peers")
+    @DisplayName("ServerNet: inputs, chat, PINGs, acks, ticks, snapshots for 3 peers")
     void serverNet() {
         Loop loop = new Loop();
         Harness h = new Harness();
@@ -98,6 +102,8 @@ class AllocationTest {
         FakeHost host = h.host;
         ByteBuffer[] input = new ByteBuffer[CLIENTS];
         ByteBuffer[] rel = new ByteBuffer[CLIENTS];
+        ByteBuffer ping = ByteBuffer.allocateDirect(Protocol.MAX_PACKET);
+        long[] pongsBefore = {0};
         Msg.Text chat = new Msg.Text();
         chat.text.append("steady chat line");
         int[] seq = new int[CLIENTS];
@@ -132,6 +138,14 @@ class AllocationTest {
                 }
                 b.flip();
                 net.onDatagram(0, loop.addrs[i], b, h.now);
+                if ((seq[i] & 7) == 0) {
+                    // the client's RTT probe (once a second in play): PONG goes straight back
+                    ping.clear();
+                    PacketHeader.write(ping, PacketType.PING, c.session, c.ch.ack());
+                    ping.putInt(seq[i]).putLong(h.now);
+                    ping.flip();
+                    net.onDatagram(0, loop.addrs[i], ping, h.now);
+                }
             }
             h.now += Harness.TICK;
             loop.now = h.now;
@@ -141,6 +155,7 @@ class AllocationTest {
             step.run();
         }
         long inputsBefore = host.inputCount;
+        pongsBefore[0] = loop.pongs;
         long before = MX.getCurrentThreadAllocatedBytes();
         for (int i = 0; i < 20_000; i++) {
             step.run();
@@ -152,7 +167,8 @@ class AllocationTest {
             () -> assertEquals(20_000L * CLIENTS, inputs, "every input was applied (the loop did real work)"),
             () -> assertEquals(CLIENTS, net.connections(), "no peer timed out"),
             () -> assertEquals(0, net.malformed(), "no packet was malformed"),
-            () -> assertTrue(loop.packets > 20_000, "snapshots and acks were sent (" + loop.packets + ")"));
+            () -> assertTrue(loop.packets > 20_000, "snapshots and acks were sent (" + loop.packets + ")"),
+            () -> assertEquals(20_000L * CLIENTS / 8, loop.pongs - pongsBefore[0], "every measured PING got its PONG"));
     }
 
     @Test

@@ -25,6 +25,7 @@
     <module>server</module>
     <module>client</module>
     <module>dist</module>
+    <module>tools/lagproxy</module>
   </modules>
 
   <properties>
@@ -57,6 +58,12 @@
       </dependency>
       <dependency>
         <groupId>com.fulcrologic.jxpilot</groupId>
+        <artifactId>jxpilot-common</artifactId>
+        <version>${project.version}</version>
+        <type>test-jar</type>
+      </dependency>
+      <dependency>
+        <groupId>com.fulcrologic.jxpilot</groupId>
         <artifactId>jxpilot-server</artifactId>
         <version>${project.version}</version>
       </dependency>
@@ -70,6 +77,16 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <profiles>
+    <!-- -Platency: only the latency baseline runs (client/pom.xml's latency profile); every other test is skipped -->
+    <profile>
+      <id>latency</id>
+      <properties>
+        <skipTests>true</skipTests>
+      </properties>
+    </profile>
+  </profiles>
 
   <build>
     <pluginManagement>

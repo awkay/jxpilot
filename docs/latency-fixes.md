@@ -1,16 +1,21 @@
 # Latency fixes: a plan for playing JXPilot over 150-300 ms RTT
 
-Status: design only, written 2026-10-23 against `main` at `31e9f40`. No code has changed.
+Status: design written 2026-10-23 against `main` at `31e9f40`. Phase 0 (measurement) is done; its
+measured figures replace the first estimates in §1, §2.1, §4.1, §5 and §8. See
+[latency-measurements.md](latency-measurements.md).
 
 Target: friends on opposite sides of the planet, 150-300 ms round trip time (RTT), with jitter and some
 loss, playing on a JXPilot server hosted somewhere in the middle.
 
 ## 1. The answer in brief
 
-**Today a key press shows up on your own ship after about RTT + 135 ms.** At 200 ms RTT that is about
-335 ms. Around 90 ms of the 135 ms is our own interpolation delay. The C client shows a frame the moment
-it arrives, so on the same link it is about 90 ms snappier than JXPilot, but it draws only 14 frames
-a second.
+**Today a key press shows up on your own ship after about RTT + 44 ms** (measured; see
+[latency-measurements.md](latency-measurements.md)). At 200 ms RTT that is about 244 ms. This plan first
+estimated RTT + 135 ms, of which 91 ms was interpolating the own ship like the others. Commit `d722c79`
+(F1) landed after the plan was written: it draws the own ship from the newest SELF, dead-reckoned to the
+present, so that term is gone. What is left is the round trip, the wait for the next 71 ms tick (36 ms on
+average) and a render frame at each end. That is about what the C client gets on the same link, drawn at
+vsync instead of at 14 frames a second.
 
 **The fix with the largest gain is client-side prediction of your own ship, with server reconciliation.**
 XPilot suits it unusually well:
@@ -64,23 +69,23 @@ T = 1000/framesPerSecond ms. That is 71 ms at the default 14 fps and 83 ms at 12
 | Wait for the next server tick | 0-T, average T/2 ≈ 36 ms. Every mask received is queued and applied at the next tick | `ServerNet.onInput` → `SimGameHost.input` → `applyQueuedInput` |
 | Simulate and send the snapshot | < 1 ms. The snapshot goes out right after the tick | `Server.runLoop` → `ServerNet.tick` |
 | Downlink | RTT/2 | |
-| Interpolation delay | 1 snapshot interval + 20 ms = **1.28 T ≈ 91 ms**. The own ship is interpolated like the others | `ClientWorld.configure` (`delayTicks`), `ClientWorld.interpolateSelf` |
-| Render and present | ≈ 5-10 ms | |
-| **Total** | **≈ RTT + 135 ms** (± 36 ms from tick phase, plus jitter) | |
+| Wait for the next render frame to draw it | 0-8 ms. The own ship is drawn from the newest SELF, dead-reckoned to the present (F1, `d722c79`); there is no interpolation delay for it | `ClientWorld.predictSelf` |
+| Render and present | ≈ 5-10 ms (not in the measurement) | |
+| **Total** | **≈ RTT + 44 ms** mean, measured; RTT + 0..88 ms from tick and frame phase, plus jitter | |
 
-| RTT | JXPilot today | C client on a C server (no interpolation, 14 fps drawing) |
+| RTT | JXPilot today (measured mean, p95) | C client on a C server (estimate: no interpolation, 14 fps drawing) |
 |---|---|---|
-| 0 (LAN) | ≈ 135 ms | ≈ 45 ms |
-| 100 ms | ≈ 235 ms | ≈ 145 ms |
-| 200 ms | ≈ 335 ms | ≈ 245 ms |
-| 300 ms | ≈ 435 ms | ≈ 345 ms |
+| 0 (LAN) | ≈ 43 ms, 77 ms | ≈ 45 ms |
+| 100 ms | ≈ 143 ms, 177 ms | ≈ 145 ms |
+| 200 ms | ≈ 243 ms, 277 ms | ≈ 245 ms |
+| 300 ms | ≈ 343 ms, 377 ms | ≈ 345 ms |
 
-The interpolation was a deliberate trade: smooth motion at vsync from 12-14 Hz snapshots, at the cost of
-~1.3 ticks of latency (the comment on `ClientWorld.interpolateSelf` explains why extrapolation was
-rejected). Prediction removes that trade for the own ship.
-
-Note: `docs/SPEC.md` "Time model" says the client "extrapolates the own ship to hide input latency".
-The code interpolates the own ship. The spec line is stale, and phase 1 replaces both.
+Measured headless on the real server and client through the link emulator: see
+[latency-measurements.md](latency-measurements.md) for the method and the tables with jitter and loss.
+This section first estimated RTT + 135 ms. That was right for the code it was written against (`31e9f40`),
+which interpolated the own ship 1.28 T ≈ 91 ms in the past like every other ship. `d722c79` (F1) replaced
+that with prediction from the newest SELF before this plan's phase 0 ran. Other ships, shots and other
+objects are still interpolated (§2.2).
 
 ### 2.2 Other ships
 
@@ -170,11 +175,11 @@ explosion appears where the server killed you.
 
 **Perceived own-ship latency:**
 
-| RTT | Today | With prediction and the speculative step | Prediction without the speculative step |
+| RTT | Today (measured) | With prediction and the speculative step | Prediction without the speculative step |
 |---|---|---|---|
-| 100 ms | ≈ 235 ms | ≈ 10-45 ms | ≈ 115 ms |
-| 200 ms | ≈ 335 ms | ≈ 10-45 ms | ≈ 115 ms |
-| 300 ms | ≈ 435 ms | ≈ 10-45 ms | ≈ 115 ms |
+| 100 ms | ≈ 143 ms | ≈ 10-45 ms | ≈ 115 ms |
+| 200 ms | ≈ 243 ms | ≈ 10-45 ms | ≈ 115 ms |
+| 300 ms | ≈ 343 ms | ≈ 10-45 ms | ≈ 115 ms |
 
 **Cost:** about 800-1200 lines plus tests in `client` (`game/predict/`: `OwnShipPredictor`,
 `PredictedClock`, `CorrectionSmoother`). It also needs the kernel (§4.4) and protocol v2 (§4.3). It must
@@ -428,11 +433,15 @@ the default only if the friends prefer it. The numbers suggest they will at 200+
 
 **Fixes:** firing feels immediate.
 
-| RTT | Today, the shot appears after | With prediction |
+| RTT | Today, the shot appears after (estimate) | With prediction |
 |---|---|---|
 | 100 ms | ≈ 235 ms | ≈ 10-45 ms |
 | 200 ms | ≈ 335 ms | ≈ 10-45 ms |
 | 300 ms | ≈ 435 ms | ≈ 10-45 ms |
+
+The "today" column is still an estimate (phase 0 measured the own ship, not shots). It stays at RTT +
+~135 ms because shots are drawn on the interpolated timeline with the other objects (`ClientWorld.drawShots`
+at the render tick, 1.28 T behind), unlike the own ship since F1 (§2.1).
 
 **Does not fix:** hits. The server decides them, and you learn of a hit about RTT + interpolation later.
 
@@ -602,10 +611,10 @@ authority with own-entity prediction is the standard and right answer here.
 |---|---|---|---|---|---|
 | 4.4 | Shared ship kernel in `common` | (enables 4.1 near walls) | 1-1.5 wk | common, server | DO FIRST |
 | 4.3 | Tick-tagged input, input buffer, lead control | (enables exact 4.1) | 1 wk | common, server, client | DO FIRST |
-| 4.1 | Own-ship prediction, replay, speculative tick | own ship ≈ 235/335/435 → ≈ 10-45 ms | 1-1.5 wk | client | DO FIRST |
+| 4.1 | Own-ship prediction, replay, speculative tick | own ship ≈ 143/243/343 (measured) → ≈ 10-45 ms | 1-1.5 wk | client | DO FIRST |
 | 4.2 | Correction smoothing | (makes 4.1 look right) | 2 d | client | DO FIRST |
 | 4.1 | View-cull margin for the lead | (no pop-in at the leading edge) | < 1 d | server | DO FIRST |
-| 4.7 | Predicted own shots and `OWN_SHOTS` | shot appears ≈ 235/335/435 → ≈ 10-45 ms | 1 wk | all | LATER (phase 2) |
+| 4.7 | Predicted own shots and `OWN_SHOTS` | shot appears ≈ 235/335/435 (estimate) → ≈ 10-45 ms | 1 wk | all | LATER (phase 2) |
 | 4.8 | Predicted sparks, sound and shield | thrust cue as 4.1 | 2 d | client | LATER (phase 2) |
 | 4.13 | Burst redundancy | no lost explosions | 1 d | server, client | LATER (phase 2) |
 | 4.6-A | Adaptive interpolation delay | 0-15 ms; fewer glitches | 2 d | client | LATER (phase 3) |
@@ -710,7 +719,7 @@ estimates.
 
 | Phase | Content | Effort | Tests and exit criteria |
 |---|---|---|---|
-| **0. Measure** | `LinkEmulator`, headless I2P harness on `ClientSim` plus the real server, metric tables, HUD net line, `tools/lagproxy`, and the hosting page in the guide | 4-6 d | Baseline tables at 0/100/200/300 ms that reproduce §2's ≈ RTT + 135 ms. This is the yardstick for everything after |
+| **0. Measure** | `LinkEmulator`, headless I2P harness on `ClientSim` plus the real server, metric tables, HUD net line, `tools/lagproxy`, and the hosting page in the guide | 4-6 d | Baseline tables at 0/100/200/300 ms; this is the yardstick for everything after. Done: own-ship I2P measured RTT + ≈ 44 ms (not §2's first estimate of RTT + 135; see §2.1 and latency-measurements.md) |
 | **1a. Kernel** | Extract the ship kernel to `common/sim` as a pure move (`ShipBody`, `KernelEvents`, injected tie-break source). The server delegates to it | 6-8 d | xpilot-ref and `Digest` bit-identical on all maps, the differential test, the no-`Math`-transcendentals test, allocation test, PIT ≥ 85%, and a C-fidelity re-review of the moved code |
 | **1b. Protocol v2 and input buffer** | Per-tick INPUT with taps, server `InputBuffer`, `inputTick`/`inputSlack` header, the `PREDICT` section, the view-cull margin, and the PROTOCOL/SPEC updates. Optionally the `predictableBounces` option | 5-7 d | Buffer unit tests (reorder, duplicate, late, missing, far future), the lead controller converging under RTT steps, starvation 0 at jitter ≤ 30 ms |
 | **1c. Predictor** | `PredictedClock`, `OwnShipPredictor` (ring, reconcile, replay), the speculative partial tick, `CorrectionSmoother`, camera follow, and no prediction while dead/paused/warping | 6-9 d | I2P p95 ≤ 50 ms at 300 ms RTT; 100% bit-equal reconciliation on contact-free courses; no smoothness regression; allocation test. **The friends' playtest happens here.** |
@@ -719,8 +728,9 @@ estimates.
 | **4. C servers** (optional) | Heading prediction in the xp layer, reconciled by `dir` and `key_ack`; adaptive delay | 3-5 d | Heading I2P p95 ≤ 50 ms against the xpilot-ref C server through the emulator; heading corrections ≤ 1 RES step |
 
 The cheapest big win is **phase 0 + phase 1** (≈ 3-4 weeks). It turns own-ship response from
-≈ RTT + 135 ms into ≈ 10-45 ms, which is snappier than C XPilot on a LAN, and leaves the other phases
-optional.
+≈ RTT + 44 ms (measured) into ≈ 10-45 ms, which is snappier than C XPilot on a LAN, and leaves the other
+phases optional. The gain is smaller than first estimated (F1 already removed 91 ms) but still the whole
+RTT: about 100-300 ms on the target links.
 
 ## 9. Decisions needed from the user or lead
 

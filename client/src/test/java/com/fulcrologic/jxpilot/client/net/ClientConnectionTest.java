@@ -564,6 +564,170 @@ class ClientConnectionTest {
         }
 
         @Test
+        @DisplayName("our PING goes out 1 s after the first PLAYING flush and every second; a matching PONG is an RTT sample")
+        void rttProbe() {
+            playing(0);
+            c.flush(0); // arms the probe
+            c.flush(999 * MS);
+            boolean early = t.types().contains(PacketType.PING);
+            c.flush(1000 * MS);
+            ByteBuffer p = t.last();
+            PacketHeader h = new PacketHeader();
+            h.read(p);
+            int id = p.getInt();
+            long sentAt = p.getLong();
+            int pings = (int) t.types().stream().filter(x -> x == PacketType.PING).count();
+            t.in.add(pkt(PacketType.PONG, SESSION, 0, b -> b.putInt(id).putLong(sentAt)));
+            c.update(1180 * MS);
+            double rtt = c.netDiagnostics().rttMs();
+            c.flush(1500 * MS);
+            int stillOne = (int) t.types().stream().filter(x -> x == PacketType.PING).count();
+            c.flush(2000 * MS);
+            int two = (int) t.types().stream().filter(x -> x == PacketType.PING).count();
+            assertAll(
+                () -> assertFalse(early, "no PING before 1 s"),
+                () -> assertEquals(PacketType.PING, h.type(), "a PING at 1 s"),
+                () -> assertEquals(1, pings, "one"),
+                () -> assertEquals(1000 * MS, sentAt, "carrying its send time"),
+                () -> assertEquals(180, rtt, 1e-9, "the PONG 180 ms later is a 180 ms RTT"),
+                () -> assertEquals(1, stillOne, "none at 1.5 s"),
+                () -> assertEquals(2, two, "the next at 2 s"));
+        }
+
+        @Test
+        @DisplayName("a PONG that returns after newer PINGs went out still counts (RTT over 1 s); a duplicate does not")
+        void slowPong() {
+            playing(0);
+            c.flush(0);
+            c.flush(1000 * MS);
+            ByteBuffer p = lastPing();
+            int id = p.getInt();
+            long sentAt = p.getLong();
+            c.flush(2000 * MS);
+            c.flush(3000 * MS); // two newer PINGs out
+            t.in.add(pkt(PacketType.PONG, SESSION, 0, b -> b.putInt(id).putLong(sentAt)));
+            c.update(3500 * MS);
+            double rtt = c.netDiagnostics().rttMs();
+            t.in.add(pkt(PacketType.PONG, SESSION, 0, b -> b.putInt(id).putLong(sentAt)));
+            c.update(3600 * MS);
+            assertAll(
+                () -> assertEquals(2500, rtt, 1e-9, "the first PING's PONG after 2.5 s"),
+                () -> assertEquals(2500, c.netDiagnostics().lastRttMs(), 1e-9, "the duplicate is no second sample"));
+        }
+
+        @Test
+        @DisplayName("an older snapshot tick is late, not lost; another part of the newest tick is neither")
+        void lateSnapshots() {
+            playing(0);
+            // WELCOME: 60 Hz, 30 snapshots/s: a snapshot every 2 ticks, the loss window 28 snapshots = 56 ticks
+            for (int k = 2; k <= 56; k += 2) {
+                if (k != 20) {
+                    int tk = k;
+                    t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(tk)));
+                }
+            }
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(56))); // another part of 56
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(20))); // late
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(20))); // its second part: one late tick
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(58))); // closes the window
+            c.update(MS);
+            assertAll(
+                () -> assertEquals(100 / 28.0, c.netDiagnostics().latePercent(), 1e-9, "tick 20 was late"),
+                () -> assertEquals(0, c.netDiagnostics().lossPercent(), 1e-9, "every snapshot arrived; the extra part counts for nothing"));
+        }
+
+        @Test
+        @DisplayName("late frames keep the PING schedule's phase; after a stall the schedule restarts without a burst")
+        void probeSchedule() {
+            playing(0);
+            c.flush(0);
+            c.flush(1004 * MS); // due at 1000, sent 4 ms late
+            c.flush(1999 * MS);
+            long beforePhase = pings();
+            c.flush(2000 * MS); // the next is still due at 2000, not 2004
+            long atPhase = pings();
+            c.flush(7300 * MS); // a long stall: one PING, then due 1 s later
+            long afterStall = pings();
+            c.flush(7310 * MS);
+            long noBurst = pings();
+            c.flush(8299 * MS);
+            long early = pings();
+            c.flush(8300 * MS);
+            assertAll(
+                () -> assertEquals(1, beforePhase, "one PING by 1999 ms"),
+                () -> assertEquals(2, atPhase, "the second at 2000 ms: the phase is kept"),
+                () -> assertEquals(3, afterStall, "one PING after the stall"),
+                () -> assertEquals(3, noBurst, "no catch-up burst"),
+                () -> assertEquals(3, early, "none before 8300 ms"),
+                () -> assertEquals(4, pings(), "the next 1 s after the stall's PING"));
+        }
+
+        @Test
+        @DisplayName("a flush exactly one interval late sends one PING and the next a full interval later")
+        void probeExactlyLate() {
+            playing(0);
+            c.flush(0);
+            c.flush(2000 * MS); // due at 1000, exactly one interval late
+            long one = pings();
+            c.flush(2008 * MS);
+            long stillOne = pings();
+            c.flush(3000 * MS);
+            assertAll(
+                () -> assertEquals(1, one, "one PING"),
+                () -> assertEquals(1, stillOne, "not again on the next frame"),
+                () -> assertEquals(2, pings(), "the next at 3000 ms"));
+        }
+
+        /** The newest PING sent, positioned after its header. */
+        ByteBuffer lastPing() {
+            for (int i = t.out.size() - 1; i >= 0; i--) {
+                ByteBuffer b = t.out.get(i).duplicate();
+                PacketHeader h = new PacketHeader();
+                if (h.read(b) && h.type() == PacketType.PING) {
+                    return b;
+                }
+            }
+            throw new AssertionError("no PING sent");
+        }
+
+        long pings() {
+            return t.types().stream().filter(x -> x == PacketType.PING).count();
+        }
+
+        @Test
+        @DisplayName("a PONG of an older PING, a forged time or a short body is no RTT sample (short: malformed)")
+        void stalePong() {
+            playing(0);
+            c.flush(0);
+            c.flush(1000 * MS);
+            ByteBuffer p = t.last();
+            new PacketHeader().read(p);
+            int id = p.getInt();
+            long sentAt = p.getLong();
+            t.in.add(pkt(PacketType.PONG, SESSION, 0, b -> b.putInt(id - 1).putLong(sentAt)));
+            t.in.add(pkt(PacketType.PONG, SESSION, 0, b -> b.putInt(id).putLong(sentAt - 5 * MS)));
+            t.in.add(pkt(PacketType.PONG, SESSION, 0, b -> b.putInt(id)));
+            long bad = c.malformed();
+            c.update(1100 * MS);
+            assertAll(
+                () -> assertTrue(Double.isNaN(c.netDiagnostics().rttMs()), "no sample from an older id or another time"),
+                () -> assertEquals(bad + 1, c.malformed(), "the 4-byte body is malformed"));
+        }
+
+        @Test
+        @DisplayName("snapshots feed the diagnostics; WELCOME sets their tick length")
+        void snapshotDiagnostics() {
+            playing(0);
+            NetDiagnostics d = c.netDiagnostics();
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(10)));
+            c.update(100 * MS);
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(11)));
+            c.update(100 * MS + 1_000_000_000L / 60 + 4 * MS);
+            // tolerance: 1e9/60 is not a whole number of nanoseconds
+            assertEquals(4, d.jitterMs(), 1e-5, "one tick (1/60 s, the WELCOME's simHz) late by 4 ms: jitter 4 ms");
+        }
+
+        @Test
         @DisplayName("a server DISCONNECT closes with its text")
         void serverDisconnect() {
             playing(0);

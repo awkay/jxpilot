@@ -230,6 +230,8 @@ public final class ClientWorld {
     private boolean teleportPending;
     private int teleportTick;
     private double drawnTick;
+    /** Tick of the SELF the last {@link #update} drew the own ship from. */
+    private int drawnSelfTick;
     private double serverTickNow;
     private boolean outSelf;
     private int outSelfId = Protocol.NO_ID;
@@ -1261,6 +1263,7 @@ public final class ClientWorld {
             return;
         }
         outSelf = true;
+        drawnSelfTick = n.tick;
         double decay = havePrediction ? Math.exp(-Math.max(0, nowNanos - lastPredictNanos) / 1e9 / ERROR_DECAY_SECONDS)
             : 0;
         lastPredictNanos = nowNanos;
@@ -1329,6 +1332,12 @@ public final class ClientWorld {
 
     /** The tick the own ship was drawn at by the last {@link #update} (F1: about the server tick now). */
     public double selfDrawnTick() { return drawnTick; }
+
+    /**
+     * The tick of the SELF record the last {@link #update} drew the own ship from (its newest SELF at that moment);
+     * meaningful while {@link #hasSelf()}. A SELF that arrives after the update is not counted until the next one.
+     */
+    public int selfDrawnFromTick() { return drawnSelfTick; }
 
     /** Newest tick with a SELF record in the ring (0 before any). */
     public int newestSelfTick() {

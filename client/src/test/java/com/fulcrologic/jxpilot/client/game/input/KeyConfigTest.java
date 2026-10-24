@@ -127,6 +127,8 @@ class KeyConfigTest {
                 () -> assertEquals(ControlKey.DETONATE_MINES.mask(), game(c, GLFW_KEY_U), "u detonates mines"),
                 () -> assertFalse(KeyBindings.has(acts(c, GLFW_KEY_U), ClientAction.ID_MODE), "ID mode is unbound"),
                 () -> assertEquals(0L, game(c, GLFW_KEY_EQUAL), "= no longer detonates"),
+                () -> assertTrue(KeyBindings.has(acts(c, GLFW_KEY_EQUAL), ClientAction.NET_STATS),
+                    "= shows the net diagnostics line (Insert, its default, is not on a Mac)"),
                 () -> assertEquals(ControlKey.FIRE_LASER.mask(), game(c, GLFW_KEY_SLASH), "slash fires the laser"),
                 () -> assertTrue(KeyBindings.has(acts(c, GLFW_KEY_F2), ClientAction.MSG_2), "F2 keeps its macro"),
                 () -> assertEquals(List.of(), c.conflicts(), "no key is bound twice"),

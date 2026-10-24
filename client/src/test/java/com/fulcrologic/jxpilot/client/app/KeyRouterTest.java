@@ -235,6 +235,7 @@ class KeyRouterTest {
                     "and the swap key goes to the server"),
                 () -> assertEquals(KeyRouter.SWAP_SCALE, press(GLFW_KEY_F13), "swap key: swap"),
                 () -> assertEquals(KeyRouter.TOGGLE_SOUND, press(GLFW_KEY_MINUS), "minus: sound toggle (ClientAction.TOGGLE_SOUND, a key C leaves unbound)"),
+                () -> assertEquals(KeyRouter.NET_STATS, press(GLFW_KEY_INSERT), "Insert: net diagnostics line (ClientAction.NET_STATS, unbound in C)"),
                 () -> assertEquals(KeyRouter.TOGGLE_ITEMS, press(GLFW_KEY_KP_8),
                     "KP_8: toggle the owned items list (C keyToggleOwnedItems)"),
                 () -> assertEquals(KeyRouter.TOGGLE_MESSAGES, press(GLFW_KEY_KP_9),

@@ -17,6 +17,36 @@
       <properties><lwjgl.natives>natives-linux</lwjgl.natives><jvm.platform.args>-Dnone</jvm.platform.args></properties></profile>
     <profile><id>windows</id><activation><os><family>windows</family></os></activation>
       <properties><lwjgl.natives>natives-windows</lwjgl.natives><jvm.platform.args>-Dnone</jvm.platform.args></properties></profile>
+    <!-- The phase 0 latency baseline (docs/latency-measurements.md):
+         MAVEN_OPTS= mvn -q -o -pl client -am test -Platency
+         The root pom's latency profile skips every other test; this execution runs LatencyBaselineTest once. -->
+    <profile>
+      <id>latency</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>latency-baseline</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>test</goal>
+                </goals>
+                <configuration>
+                  <skipTests>false</skipTests>
+                  <excludes combine.self="override"/>
+                  <includes>
+                    <include>**/LatencyBaselineTest.java</include>
+                  </includes>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
   </profiles>
 
   <properties>
@@ -26,6 +56,7 @@
   <dependencies>
     <dependency><groupId>com.fulcrologic.jxpilot</groupId><artifactId>jxpilot-common</artifactId></dependency>
     <dependency><groupId>com.fulcrologic.jxpilot</groupId><artifactId>jxpilot-server</artifactId></dependency>
+    <dependency><groupId>com.fulcrologic.jxpilot</groupId><artifactId>jxpilot-common</artifactId><type>test-jar</type><scope>test</scope></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl</artifactId></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-glfw</artifactId></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-opengl</artifactId></dependency>
@@ -60,6 +91,8 @@
             <exclude>**/AllocationTest.java</exclude>
             <exclude>**/*NetAllocationTest.java</exclude>
             <exclude>**/AppAllocationTest.java</exclude>
+            <!-- ~40 s of virtual-time games: opt in with -Platency (docs/latency-measurements.md) -->
+            <exclude>**/LatencyBaselineTest.java</exclude>
           </excludes>
         </configuration>
         <executions>
@@ -147,9 +180,12 @@
             <param>*NetAllocationTest*</param>
             <param>*AppAllocationTest*</param>
             <param>*UdpLoopbackTest*</param>
+            <!-- the latency harness: whole games in virtual time, a measurement rather than unit tests -->
+            <param>com.fulcrologic.jxpilot.client.latency.*</param>
           </excludedTestClasses>
         </configuration>
       </plugin>
     </plugins>
   </build>
+
 </project>
