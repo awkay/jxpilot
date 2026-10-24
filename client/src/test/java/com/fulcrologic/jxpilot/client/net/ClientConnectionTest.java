@@ -1065,6 +1065,55 @@ class ClientConnectionTest {
         }
 
         @Test
+        @DisplayName("taps: a press and release on consecutive frames; early copies carry the taps so far; the gap and"
+            + " repeat edges are inclusive")
+        void tapsAndEdges() {
+            ticking();
+            c.sendInput(0, 0, at(0));
+            c.sendInput(4, 0, at(0) + 9 * MS);
+            c.sendInput(0, 0, at(0) + 12 * MS);
+            int fin = c.sendInput(0, 0, at(1));
+            Input tapped = Input.of(t.last());
+            c.sendInput(2, 0, at(1) + 3 * MS);
+            c.sendInput(0, 0, at(1) + 5 * MS);
+            int early = c.sendInput(8, 0, at(1) + ClientConnection.MIN_INPUT_GAP_NANOS);
+            Input earlyIn = Input.of(t.last());
+            c.sendInput(8, 0, at(2));
+            int repeat = c.sendInput(8, 0, at(2) + INTERVAL / 2);
+            assertAll(
+                () -> assertEquals(E0 + 1, fin, "the final entry"),
+                () -> assertEquals(4L, (long) tapped.taps.get(0), "a key down one frame and up the next is a tap"),
+                () -> assertEquals(E0 + 2, early, "an early copy exactly 1/120 s after the final send"),
+                () -> assertEquals(2L, (long) earlyIn.taps.get(0), "it carries the tap of 2 so far"),
+                () -> assertEquals(8L, (long) earlyIn.keys.get(0), "and the held 8"),
+                () -> assertEquals(E0 + 2, repeat, "a repeat exactly half a tick after the last send"));
+        }
+
+        @Test
+        @DisplayName("PLAYER_JOIN of the own id gives the kernel its hull; a restart forgets the PREDICT state")
+        void kernelHooks() {
+            ticking();
+            Msg.PlayerJoin j = new Msg.PlayerJoin();
+            j.id = 7;
+            j.flags = Msg.PlayerJoin.FLAG_SELF;
+            j.shape.append("(SH: 15,0 -8,8 -8,-8)(EN: -8,0)(MG: 15,0)");
+            j.send(server);
+            com.fulcrologic.jxpilot.common.sim.ShipBody b = new com.fulcrologic.jxpilot.common.sim.ShipBody();
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, p -> p.put(KernelSyncTest.predict(T0 + 1, 0, b, 0, 0, true))));
+            reliable(at(1));
+            c.update(at(1));
+            boolean hull = c.kernel().hull() != com.fulcrologic.jxpilot.common.sim.ShipGeom.defaultShip();
+            boolean had = c.kernel().have();
+            c.start(at(2));
+            assertAll(
+                () -> assertTrue(hull, "the own join's shape is the kernel's hull"),
+                () -> assertTrue(had, "the PREDICT was read"),
+                () -> assertFalse(c.kernel().have(), "a restart forgets it"),
+                () -> assertTrue(c.kernel().hull() == com.fulcrologic.jxpilot.common.sim.ShipGeom.defaultShip(),
+                    "and the hull"));
+        }
+
+        @Test
         @DisplayName("half a tick after the last send, unchanged keys repeat the INPUT (a second copy before the deadline)")
         void repeat() {
             ticking();

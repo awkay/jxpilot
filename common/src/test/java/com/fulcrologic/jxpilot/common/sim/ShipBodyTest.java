@@ -415,6 +415,16 @@ class ShipBodyTest {
             b.decodeRare(rare, 0);
             ShipBody same = full();
             same.lastReceivedKeys = same.prevKeys;
+            ShipBody other = full();
+            other.keysCleared = false;
+            ByteBuffer core2 = ByteBuffer.allocate(ShipBody.CORE_SIZE);
+            other.encodeCore(core2, 0, F, 99, 0);
+            ShipBody d = new ShipBody();
+            d.prevKeys = 5;
+            d.keysCleared = true;
+            d.decodeCore(core2, 0, F, 99);
+            int rareRead = d.decodeRare(rare, 0);
+            int keysRead = d.decodeKeys(keys, 0);
             assertAll(
                 () -> assertEquals(71, n, "core 71 bytes"),
                 () -> assertEquals(62, r, "rare 62 bytes"),
@@ -426,7 +436,16 @@ class ShipBodyTest {
                 () -> assertEquals(9, version, "the rare version comes back"),
                 () -> assertEquals(applied, b.prevKeys, "a flagged mask is the applied keys"),
                 () -> assertEquals(6L, keptReceived, "an unflagged one waits for the keys block"),
-                () -> assertTrue(b.sameState(a, F), "core + rare + keys restore the state"));
+                () -> assertTrue(b.sameState(a, F), "core + rare + keys restore the state"),
+                () -> assertEquals(ShipBody.RARE_SIZE, rareRead, "decodeRare returns its size"),
+                () -> assertEquals(ShipBody.KEYS_SIZE, keysRead, "decodeKeys returns its size"));
+            ShipBody e = new ShipBody();
+            e.prevKeys = 5;
+            e.keysCleared = true;
+            e.decodeCore(core2, 0, F, 99);
+            assertAll(
+                () -> assertEquals(5L, e.prevKeys, "a clear prevKeys flag leaves prevKeys to the keys block"),
+                () -> assertFalse(e.keysCleared, "keysCleared false is read as false"));
         }
 
         @Test

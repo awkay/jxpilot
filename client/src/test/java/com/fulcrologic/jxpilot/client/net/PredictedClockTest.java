@@ -107,6 +107,10 @@ class PredictedClockTest {
         double moved = c.tick(0);
         c.rtt(0, 0);
         double kept = c.tick(0);
+        double adjusted = c.adjustment();
+        PredictedClock zero = clock();
+        zero.rtt(0, 0);
+        boolean zeroCounts = zero.haveRtt();
         PredictedClock d = clock();
         d.rtt(-5, 0);
         boolean ignored = d.haveRtt();
@@ -114,6 +118,8 @@ class PredictedClockTest {
         assertAll(
             () -> assertEquals(100 + 0.7 + 3, moved, 1e-9, "present (100 + RTT/2 = 0.7 tick) + 3"),
             () -> assertEquals(moved, kept, 1e-9, "a later RTT does not move it"),
+            () -> assertEquals(0.7 + 3 - 2, adjusted, 1e-9, "the move counts as the clock's own adjustment"),
+            () -> assertTrue(zeroCounts, "an RTT of 0 is a sample"),
             () -> assertEquals(3 + 0.7 - 0, c.leadTicks(0), 1, "the lead is measured with the newest RTT (0 now)"),
             () -> assertFalse(ignored, "a negative RTT is ignored"),
             () -> assertFalse(d.haveRtt(), "and NaN"));
@@ -127,6 +133,8 @@ class PredictedClockTest {
         c.tick(0);
         c.feedback(100, 9, false, 0, 0);
         double inBand = c.dilation();
+        c.feedback(100, 10, false, 0, 0);
+        double edge = c.dilation();
         c.feedback(100, 12, false, 0, 0);
         double quarter = c.dilation();
         c.feedback(100, 30, false, 0, 0);
@@ -139,6 +147,7 @@ class PredictedClockTest {
         double slow = c.tick(at(10)) - from;
         assertAll(
             () -> assertEquals(0, inBand, 1e-12, "9/16: 0.0625 over the 0.5 target is inside the 0.125 band"),
+            () -> assertEquals(-0.0075, edge, 1e-12, "10/16: exactly 0.125 over is outside the band"),
             () -> assertEquals(-0.015, quarter, 1e-12, "12/16: 0.25 over: half the 3%, running slow"),
             () -> assertEquals(-0.03, over, 1e-12, "far over: -3%"),
             () -> assertEquals(0.03, under, 1e-12, "late arrivals (negative slack): +3%"),
@@ -247,11 +256,40 @@ class PredictedClockTest {
             d.feedback(200, NO, false, 0, 0);
         }
         double back = d.tick(0);
+        d.tick(at(0.5));
+        long stable = d.resyncs();
         assertAll(
+            () -> assertEquals(1, stable, "after the resync the lead is in range: no further resync"),
             () -> assertTrue(up - 110 > 1, "the server estimate jumped ahead of the clock: the clock follows (" + up + ")"),
             () -> assertEquals(1, upResyncs, "counted"),
             () -> assertEquals(102, back, 1e-6, "20 jumps would lead by 22 ticks > 13: back to the initial lead"),
             () -> assertEquals(1, d.resyncs(), "counted"));
+    }
+
+    @Test
+    @DisplayName("the estimate counts the dilation up to the report's arrival; sent() records the adjustment of its time")
+    void dilationInEstimate() {
+        PredictedClock c = clock();
+        c.snapshot(100, 0);
+        c.tick(0);
+        c.feedback(100, -20, false, 0, 0);
+        c.sent(102, 0);
+        c.feedback(105, -20, false, 0, at(10));
+        double estimate = c.slackEstimate();
+        PredictedClock d = clock();
+        d.snapshot(100, 0);
+        d.tick(0);
+        d.feedback(100, -20, false, 0, 0);
+        d.sent(102, at(10));
+        d.feedback(105, -20, false, 0, at(10));
+        double later = d.slackEstimate();
+        PredictedClock z = new PredictedClock();
+        z.reset(0);
+        assertAll(
+            () -> assertEquals(-1.25 + 10 * 0.03, estimate, 1e-9,
+                "10 ticks at +3% since entry 102 went out: the report plus 0.3"),
+            () -> assertEquals(-1.25, later, 1e-9, "an entry sent at the report's time: the report itself"),
+            () -> assertEquals(60, z.simHz(), 1e-12, "a rate of 0 means the 60 Hz default"));
     }
 
     @Test

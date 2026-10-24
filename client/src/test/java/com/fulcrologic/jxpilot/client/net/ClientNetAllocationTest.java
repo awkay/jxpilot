@@ -217,6 +217,7 @@ class ClientNetAllocationTest {
         int start = frameNo[0];
         measuring[0] = true;
         int pongsBefore = server.pongs;
+        long predictsBefore = sim.connection().kernel().predicts();
         for (int i = 0; i < MEASURED; i++) {
             frame.run();
         }
@@ -233,6 +234,9 @@ class ClientNetAllocationTest {
             () -> assertEquals(ConnectionState.PLAYING, sim.connection().state(), "still playing"),
             () -> assertTrue(sim.connection().snapshotsReceived() > total / 2 - 100, "snapshots flowed"),
             () -> assertTrue(server.inputPackets > 0, "INPUT reached the server"),
+            () -> assertTrue(sim.connection().kernel().predicts() - predictsBefore > MEASURED / 4,
+                "PREDICT sections were decoded while measured"),
+            () -> assertTrue(!Double.isNaN(sim.connection().netDiagnostics().leadTicks), "the HUD lead was filled"),
             () -> assertTrue(server.pongs - pongsBefore > 10, "RTT probes went out and came back while measured: "
                 + (server.pongs - pongsBefore)),
             () -> assertTrue(sim.connection().netDiagnostics().rttMs() >= 0, "an RTT was measured"),

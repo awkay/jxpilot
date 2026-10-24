@@ -92,6 +92,7 @@ public final class FakeServer {
     private final ByteBuffer tx = ByteBuffer.allocate(Protocol.MAX_PACKET);
     private final PacketHeader header = new PacketHeader();
     private final SnapshotWriter writer = new SnapshotWriter();
+    private final com.fulcrologic.jxpilot.common.sim.ShipBody predictBody = new com.fulcrologic.jxpilot.common.sim.ShipBody();
     private final InputReader inputReader = new InputReader();
     public ReliableChannel channel = new ReliableChannel();
     private ConfigTransfer.Sender sender;
@@ -335,6 +336,24 @@ public final class FakeServer {
         writer.beginSection(Section.SELF);
         Records.Self.put(writer, PLAYER_ID, 0, 100, 100, 1, 0, 0, 900, 1000, Protocol.NO_ID, 0, 0, 0);
         writer.endSection();
+        // protocol v2: the owner's PREDICT core every snapshot, the rare block every 14th, the keys every 2nd
+        predictBody.setClicks(6400 + 64 * (tick % 50), 6400);
+        predictBody.vx = 1;
+        predictBody.prevKeys = lastKeys;
+        predictBody.lastReceivedKeys = snapshotsSent % 2 == 0 ? lastKeys : ~lastKeys;
+        writer.beginSection(Section.PREDICT);
+        Records.Predict.put(writer, predictBody, tick + 1, 0, lastKeys, 1);
+        writer.endSection();
+        if (snapshotsSent % 14 == 0) {
+            writer.beginSection(Section.PREDICT_RARE);
+            Records.PredictRare.put(writer, predictBody, 1);
+            writer.endSection();
+        }
+        if (predictBody.keysDiffer(lastKeys)) {
+            writer.beginSection(Section.PREDICT_KEYS);
+            Records.PredictKeys.put(writer, predictBody);
+            writer.endSection();
+        }
         writer.beginSection(Section.SHIP);
         Records.Ship.put(writer, OTHER_ID, otherThrusting ? Records.ShipFlags.THRUSTING : 0, otherX, otherY, 0,
             otherVx, 0);

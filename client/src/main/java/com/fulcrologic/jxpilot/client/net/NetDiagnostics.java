@@ -25,8 +25,9 @@ package com.fulcrologic.jxpilot.client.net;
 
 /**
  * Live network measurements for the HUD's net diagnostics line (docs/latency-fixes.md §7.6): round trip time
- * from PING/PONG, snapshot inter-arrival jitter, snapshot loss and late (reordered) snapshots, plus the fields the phase 1 predictor will fill
- * (input lead, input slack, corrections), NaN until then. Fed by {@link ClientConnection}; pure and allocation
+ * from PING/PONG, snapshot inter-arrival jitter, snapshot loss and late (reordered) snapshots, the input lead and slack
+ * (protocol v2, filled by {@link ClientConnection}), and the prediction corrections the phase 1c predictor will fill
+ * (NaN until then). Fed by {@link ClientConnection}; pure and allocation
  * free (time is a parameter).
  */
 public final class NetDiagnostics {
@@ -61,9 +62,9 @@ public final class NetDiagnostics {
     private double lossPercent = Double.NaN;
     private double latePercent = Double.NaN;
 
-    /** Input lead of the predicted clock in ticks (phase 1b/1c); NaN until something measures it. */
+    /** Input lead of the predicted clock over the server's present, in ticks ({@link PredictedClock}); NaN until it runs. */
     public double leadTicks = Double.NaN;
-    /** The server's input slack report in ticks (phase 1b); NaN until then. */
+    /** The server's input slack report in ticks (the snapshot header's inputSlack); NaN until the first report. */
     public double inputSlackTicks = Double.NaN;
     /** Prediction corrections per second (phase 1c); NaN until then. */
     public double correctionsPerSecond = Double.NaN;

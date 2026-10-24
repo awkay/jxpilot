@@ -188,6 +188,30 @@ class KernelConfigTest {
     }
 
     @Test
+    @DisplayName("runs: one at index 0 and one ending the blob; long runs split at 65535; no map stays no map")
+    void runs() throws IOException {
+        Options o = options(mapText("pad.xp"), "");
+        String client = o.mapData();
+        byte[] text = new byte[0];
+        java.nio.ByteBuffer raw = java.nio.ByteBuffer.allocate(4 + 4 + 2 * 6 + 4);
+        raw.putInt(0).putInt(2).putInt(0).putShort((short) 2).put((byte) 'A').put((byte) 'B')
+            .putInt(5).putShort((short) 2).put((byte) 'C').put((byte) 'D');
+        Options patched = KernelConfig.decode(raw.array(), client);
+        Options big = new Options();
+        big.force(Opt.MAP_DATA, "x".repeat(70_000));
+        Options bigBack = KernelConfig.decode(KernelConfig.encode(big, null), null);
+        Options none = new Options();
+        Options noneBack = KernelConfig.decode(KernelConfig.encode(none, null), null);
+        assertAll(
+            () -> assertEquals("AB" + client.substring(2, 5) + "CD" + client.substring(7), patched.mapData(),
+                "both runs applied, the first at index 0, the last ending the blob"),
+            () -> assertEquals(70_000, bigBack.mapData().length(), "a 70000-char map in runs of at most 65535"),
+            () -> assertEquals(big.mapData(), bigBack.mapData(), "intact"),
+            () -> assertEquals(none.mapData(), noneBack.mapData(), "no map stays no map"),
+            () -> assertEquals(0, text.length, "no option text needed"));
+    }
+
+    @Test
     @DisplayName("a truncated blob or a run outside the map is refused")
     void malformed() throws IOException {
         Options o = options(mapText("pad.xp"), "");

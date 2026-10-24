@@ -163,6 +163,139 @@ class KernelSyncTest {
             () -> assertEquals(0, k.badKernel(), "nothing malformed"));
     }
 
+    /** A snapshot payload (header + sections) with PREDICT, and optionally PREDICT_RARE and PREDICT_KEYS. */
+    static ByteBuffer predict(int tick, int inputTick, com.fulcrologic.jxpilot.common.sim.ShipBody b, long applied,
+                              int version, boolean rare) {
+        ByteBuffer out = ByteBuffer.allocate(1200);
+        com.fulcrologic.jxpilot.common.net.SnapshotWriter w = new com.fulcrologic.jxpilot.common.net.SnapshotWriter();
+        w.begin(out, tick, inputTick, 0, 1, 1, 0, 0);
+        w.beginSection(com.fulcrologic.jxpilot.common.net.Section.SHOT, 0);
+        w.endSection();
+        w.beginSection(com.fulcrologic.jxpilot.common.net.Section.PREDICT);
+        com.fulcrologic.jxpilot.common.net.Records.Predict.put(w, b, 500 + tick, 7, applied, version);
+        w.endSection();
+        if (rare) {
+            w.beginSection(com.fulcrologic.jxpilot.common.net.Section.PREDICT_RARE);
+            com.fulcrologic.jxpilot.common.net.Records.PredictRare.put(w, b, version);
+            w.endSection();
+        }
+        if (b.keysDiffer(applied)) {
+            w.beginSection(com.fulcrologic.jxpilot.common.net.Section.PREDICT_KEYS);
+            com.fulcrologic.jxpilot.common.net.Records.PredictKeys.put(w, b);
+            w.endSection();
+        }
+        out.flip();
+        return out;
+    }
+
+    @Test
+    @DisplayName("PREDICT: the body, frames and roundDelay; valid only with the rare version it names and known keys")
+    void snapshots() {
+        KernelSync k = new KernelSync();
+        com.fulcrologic.jxpilot.common.net.InputHistory in = new com.fulcrologic.jxpilot.common.net.InputHistory();
+        in.set(40, 6, 0, 0);
+        com.fulcrologic.jxpilot.common.sim.ShipBody b = new com.fulcrologic.jxpilot.common.sim.ShipBody();
+        b.setClicks(6400, 3200);
+        b.vx = 2.5f;
+        b.power = 33;
+        b.prevKeys = 6;
+        b.lastReceivedKeys = 6;
+        boolean before = k.have();
+        k.onSnapshot(predict(41, 40, b, 6, 3, false), in);
+        boolean noRare = k.valid();
+        k.onSnapshot(predict(42, 40, b, 6, 3, true), in);
+        boolean withRare = k.valid();
+        float vx = k.body().vx;
+        float power = k.body().power;
+        long keysFromFlag = k.body().prevKeys;
+        k.onSnapshot(predict(43, 99, b, 6, 3, false), in);
+        boolean unknownKeys = k.valid();
+        b.lastReceivedKeys = 9;
+        k.onSnapshot(predict(44, 99, b, 6, 3, false), in);
+        boolean keysSent = k.valid();
+        long received = k.body().lastReceivedKeys;
+        ByteBuffer empty = ByteBuffer.allocate(64);
+        new com.fulcrologic.jxpilot.common.net.SnapshotWriter().begin(empty, 45, 40, 0, 1, 1, 0, 0);
+        empty.flip();
+        k.onSnapshot(empty, in);
+        ByteBuffer shortOne = ByteBuffer.allocate(4);
+        k.onSnapshot(shortOne, in);
+        assertAll(
+            () -> assertFalse(before, "nothing before a PREDICT"),
+            () -> assertFalse(noRare, "a core naming rare version 3 before that rare block: not valid"),
+            () -> assertTrue(withRare, "with it: valid"),
+            () -> assertEquals(2.5f, vx, "the body's velocity"),
+            () -> assertEquals(33f, power, "the rare block's power"),
+            () -> assertEquals(6L, keysFromFlag, "prevKeys from the flag: the client's entry for the inputTick"),
+            () -> assertFalse(unknownKeys, "an inputTick the history does not hold: the keys are unknown"),
+            () -> assertTrue(keysSent, "unless PREDICT_KEYS carries them"),
+            () -> assertEquals(9L, received, "lastReceivedKeys from PREDICT_KEYS"),
+            () -> assertEquals(44, k.tick(), "a snapshot without PREDICT (or a short one) changes nothing"),
+            () -> assertEquals(544, k.frames(), "the frame clock"),
+            () -> assertEquals(7, k.roundDelay(), "roundDelay"),
+            () -> assertEquals(4, k.predicts(), "four PREDICTs read"),
+            () -> assertTrue(k.have(), "have"));
+    }
+
+    @Test
+    @DisplayName("wormhole entries mirror into the world, before and after it is built; indices beyond the world"
+        + " and empty messages are harmless; RESET's forgetting survives the next blob")
+    void wormholesAndEdges() {
+        Options o = server();
+        KernelSync k = new KernelSync();
+        k.onConfig(o);
+        deliver(k, state(Msg.KernelState.WORM_COUNT, 0, 0, 0, 3, Msg.KernelState.WORM, 2, 4, 1, 2,
+            Msg.KernelState.CANNON, 0, 0, 1, 0));
+        deliver(k, blob(o, 1));
+        int count = k.world().wormholeCount();
+        int type = k.world().wormholeType(2);
+        int bx = k.world().wormholeBx(2);
+        com.fulcrologic.jxpilot.common.map.WorldMap m = k.world().map();
+        int w = m.width();
+        deliver(k, state(Msg.KernelState.WORM, 2, 5, 1, 1, Msg.KernelState.BLOCK, 4, 1, BlockType.FILLED & 0xFF, 9,
+            Msg.KernelState.CANNON, k.world().cannonPhased.length, 0, 1, 0,
+            Msg.KernelState.TARGET, k.world().targetTeam.length, 0, 0, 3,
+            Msg.KernelState.BLOCK, w, 1, BlockType.FILLED & 0xFF, 0));
+        int movedBx = k.world().wormholeBx(2);
+        int item = k.world().map().itemId(4, 1);
+        ReliableChannel ch = new ReliableChannel();
+        Msg.KernelState writer = new Msg.KernelState().begin(ch);
+        writer.end(ch);
+        ByteBuffer zero = ByteBuffer.allocate(1);
+        k.onReliable(ReliableType.KERNEL_STATE, zero, 7);
+        long bad = k.badKernel();
+        deliver(k, state(Msg.KernelState.RESET, 0, 0, 0, 0));
+        long rebuilt = k.rebuilds();
+        deliver(k, blob(o, 2));
+        boolean phasedAfter = k.world().cannonPhased[0];
+        assertAll(
+            () -> assertEquals(3, count, "the count from before the blob"),
+            () -> assertEquals(2, type, "the temporary wormhole's type"),
+            () -> assertEquals(4, bx, "its block"),
+            () -> assertEquals(5, movedBx, "moved after the world exists"),
+            () -> assertEquals(9, item, "a BLOCK entry's item id"),
+            () -> assertEquals(0, bad, "an index beyond the world, a block outside the map and an empty message are no error"),
+            () -> assertEquals(2, rebuilt, "RESET rebuilds the world"),
+            () -> assertFalse(phasedAfter, "and what it forgot stays forgotten in the next blob's world"),
+            () -> assertTrue(k.params() != null, "the parameters come with the world"),
+            () -> assertNull(new KernelSync().params(), "none without a world"));
+    }
+
+    @Test
+    @DisplayName("a failed PLAYER_JOIN in the middle of a kernel transfer does not abandon it")
+    void joinFailureKeepsTransfer() {
+        Options o = server();
+        KernelSync k = new KernelSync();
+        k.onConfig(o);
+        List<ByteBuffer[]> b = blob(o, 1);
+        deliver(k, b.subList(0, 1));
+        k.onReliable(ReliableType.PLAYER_JOIN, ByteBuffer.allocate(1), 7);
+        deliver(k, b.subList(1, b.size()));
+        assertAll(
+            () -> assertEquals(1, k.badKernel(), "the truncated join is counted"),
+            () -> assertTrue(k.world() != null, "the blob still completes"));
+    }
+
     @Test
     @DisplayName("PLAYER_JOIN of the own id sets the hull, others do not; the payload is left where it was")
     void hull() {

@@ -64,6 +64,39 @@ The figures below are seeds 1-3 on the walls course, against the clean link at t
   ms. A burst can eat the INPUT that carries the key and its redundant copy one tick later; then the SELF
   that shows it is lost too, and the next one has to arrive.
 
+## After phase 1b (protocol v2)
+
+Phase 1b tags each input with the client's predicted tick and the server applies it at that tick
+(latency-fixes.md §4.3). The own ship is still drawn by F1 dead reckoning (the predictor is phase 1c), so
+own-ship I2P now pays the input lead:
+
+| link (seed 1, 4 courses, 48 trials per cell) | phase 0 | phase 1b |
+|---|---|---|
+| clean, mean | RTT + 43 | RTT + 80..93 |
+| clean, p95 | RTT + 77 | at most RTT + 124 |
+| σ 15 ms jitter, p50 | RTT + 36..64 | RTT + 124..146 |
+| Pareto spikes, p50 / p95 | RTT + 43..53 / at most RTT + 145 | RTT + 107..124 / at most RTT + 353 |
+| 5% bursty loss, p95 | RTT + 82..430 | at most RTT + 273 (no jitter), 276 (σ15), 380 (spikes) |
+
+The cause: a key goes into the entry of the next predicted tick (the same T/2 average wait as before) and that
+entry reaches the server `slack` ahead of its tick. The lead controller holds the slack at 0.5 tick plus
+2 × the measured jitter (plus up to half its 0.125-tick deadband): about 40 ms at 14 Hz on a clean link,
+about 75 ms more with σ 15 ms jitter. Today's arrival-time landing has no such margin, and it is exactly
+that margin which lets the client know the landing tick (latency-fixes.md §4.3). Bursty loss is better than
+before: a starvation jumps the lead up at once, and the mid-tick repeat sends each entry twice before its
+deadline. Phase 1c's predictor shows the own ship at the predicted tick, so the own ship's I2P drops to the
+render pipeline whatever the lead; what remains of the lead is how late others see your inputs.
+
+The lead controller itself (`LeadControlTest`, virtual time, real server and client):
+
+- **RTT step 100 → 300 ms:** the first starvation report jumps the lead after 372 ms, and the slack is back
+  in the band after 1.66 s with no starvation after.
+- **RTT step 300 → 100 ms:** no starvation; the 1.4 ticks of extra slack drain at 3% and reach the band
+  after 4.6 s. The ±3% dilation limit bounds the drain at about 0.42 tick per second.
+- **The loss/jitter matrix** (RTT 0/100/200/300 × jitter none/σ15/Pareto × loss none/1%/5% bursty, 20 s
+  after a 6 s settle): no starvation in any loss-free cell at jitter ≤ σ 15 ms; 0-1 per 20 s with 1%
+  uniform loss; 3-8 per 20 s (1-3% of ticks) with 5% bursty loss; 0-3 with Pareto spikes.
+
 ## Method
 
 `client/src/test/java/com/fulcrologic/jxpilot/client/latency/`:

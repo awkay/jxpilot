@@ -103,10 +103,10 @@ final class KernelState {
         }
     }
 
-    private int track(int i) {
+    private void track(int i) {
         for (int k = 0; k < tracked; k++) {
             if (idx[k] == i) {
-                return k;
+                return;
             }
         }
         if (tracked == idx.length) {
@@ -122,7 +122,7 @@ final class KernelState {
         item0[tracked] = pristineItems[i];
         block[tracked] = pristineBlocks[i];
         item[tracked] = pristineItems[i];
-        return tracked++;
+        tracked++;
     }
 
     private void log(int k, int a, int b, int c, int d) {

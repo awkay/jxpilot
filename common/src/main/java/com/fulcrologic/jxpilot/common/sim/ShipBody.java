@@ -477,11 +477,4 @@ public class ShipBody {
         return b.get(off) << 16 | (b.getShort(off + 1) & 0xFFFF);
     }
 
-    private static int bits(float f) {
-        return Float.floatToRawIntBits(f);
-    }
-
-    private static long bits(double d) {
-        return Double.doubleToRawLongBits(d);
-    }
 }

@@ -815,9 +815,13 @@ class MessagesTest {
         void set() {
             InputHistory h = new InputHistory();
             h.set(10, T, F, 3);
+            long firstTaps = h.taps(10);
             h.set(10, F, 0, 4);
             boolean newer = h.set(13, 0, 0, 100_000);
             boolean older = h.set(12, T, T, 1);
+            long t10 = h.taps(10);
+            boolean newestHeld = h.has(13);
+            boolean started = h.started();
             long k10 = h.keys(10);
             int a10 = h.aimTurn(10);
             long k11 = h.keys(11);
@@ -827,7 +831,11 @@ class MessagesTest {
             boolean far = h.set(100, T, 0, -100_000);
             assertAll(
                 () -> assertEquals(F, k10, "a second entry for tick 10 replaces the first"),
+                () -> assertEquals(0L, t10, "with its own (no) taps"),
+                () -> assertTrue(newestHeld, "the newest tick is remembered"),
+                () -> assertTrue(started, "started after an entry"),
                 () -> assertEquals(4, a10, "its aim too"),
+                () -> assertEquals(F, firstTaps, "taps are kept per entry"),
                 () -> assertTrue(newer, "a newer tick is accepted"),
                 () -> assertEquals(F, k11, "skipped tick 11 holds the keys of 10"),
                 () -> assertEquals(0L, t12, "a filled tick has no taps (the older set of 12 was ignored)"),

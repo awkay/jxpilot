@@ -224,7 +224,9 @@ class InputBufferTest {
             () -> assertEquals(5, stillMin, "5 is still within the 3-tick window"),
             () -> assertEquals(30, aged, "after 3 ticks only the later arrival (30) is left"),
             () -> assertEquals(SnapshotWriter.NO_SLACK, empty, "no arrival in the last 3 ticks"),
-            () -> assertEquals(SnapshotWriter.NO_SLACK, new InputBuffer(14, 0).slack16(), "window clamps to 1"));
+            () -> assertEquals(SnapshotWriter.NO_SLACK, new InputBuffer(14, 0).slack16(), "window clamps to 1"),
+            () -> assertEquals(SnapshotWriter.NO_SLACK, new InputBuffer(14, 1000).slack16(),
+                "a window above MAX_WINDOW clamps to it"));
     }
 
     @Test
@@ -258,16 +260,19 @@ class InputBufferTest {
         b.offer(10, A, 0, 0, 10, 10, 8);
         b.offer(11, A, 0, 0, 11, 10, 8);
         b.take(10);
-        b.offer(30, A, 0, 0, 30, 11, 8);
+        b.offer(25, A, 0, 0, 25, 11, 8);
         b.take(11);
         b.take(12);
         b.reset();
-        boolean had = b.take(11);
+        boolean had = b.take(25);
+        int lateAfter = b.offer(12, A, 0, 0, 12, 26, 0);
         InputBuffer wide = new InputBuffer(1000, 4);
         int over = wide.offer(10 + InputBuffer.RING, A, 0, 0, 0, 10, 0);
         int edge = wide.offer(10 + InputBuffer.RING - 1, A, 0, 0, 0, 10, 0);
         assertAll(
-            () -> assertFalse(had, "the stored 11 is gone"),
+            () -> assertFalse(had, "the stored 25 is gone"),
+            () -> assertEquals(InputBuffer.PAST, lateAfter, "a late entry for 12 (starved before the reset)"),
+            () -> assertEquals(0L, b.late(), "is not counted: the starvation marks were cleared"),
             () -> assertEquals(0L, b.keys(), "no held keys"),
             () -> assertEquals(0L, b.starvations(), "starvations reset (and none counted before a new entry)"),
             () -> assertEquals(0L, b.farFuture(), "far-future count reset"),
