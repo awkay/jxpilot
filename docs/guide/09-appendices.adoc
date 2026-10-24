@@ -90,6 +90,14 @@ pressed and released within one frame (1/14 s) is lost
 choices) differ, nothing else
 |Gravity of a `gravityPoint` on a non-square wrapping map; objects exactly half a world apart |XPilot bugs
 |fixed
+|Hyperjump with `wormTime` |leaves a pair of temporary wormholes |no temporary wormholes; the jump is
+the same
+|Mines, missiles and nukes on the radar |blink |always shown
+|An ECM reprogramming a robot |all players are told |the robot goes to war without a message
+|Modifier banks |the XPilot client loads them from its resources when you join |start empty; store
+them in the game with the reprogram key (<<03-playing.adoc#modifiers,Weapon modifiers>>)
+|Selecting an item to drop |the server marks the selected item on the HUD |not shown; the HUD shows the
+item counts
 |`denyHosts` |IPv4; `:` also separates entries |IPv4 and IPv6, so `:` does not separate entries
 |`serverHost` |the address the contact socket binds |the bind selector when `--bind` is not given
 |`logRobots` |on standard output, with a time stamp |on the server log, without a time stamp
@@ -190,7 +198,7 @@ the system's sound output, or use `--no-sound` to skip the attempt.
 
 Can I play JXPilot now?::
 Yes: against robots with `--local`, on a JXPilot server with `--connect`, or on an original XPilot
-server with `--connect xp://...`. Items, balls, targets and races are not on the JXPilot server yet
+server with `--connect xp://...`. Balls, targets, races and asteroids are not on the JXPilot server yet
 (<<01-introduction.adoc#status,Status>>).
 
 Can I join an original XPilot server, or use the original XPilot client with a JXPilot server?::
