@@ -157,14 +157,14 @@ class ClientWorldTest {
         }
 
         @Test
-        @DisplayName("shots are extrapolated from A by their whole-pixel velocity")
+        @DisplayName("F14: a shot with a (wire) velocity that B no longer has died: drawn where A has it, no overshoot")
         void shots() {
             WorldFixture f = twoSnapshots(true, 690, 10);
             f.world.update(at(101));
             assertAll(
                 () -> assertEquals(1, f.world.shotCount(), "A's one shot"),
-                () -> assertEquals(201.0, f.world.shotX(0), CLOCK_EPS, "x + 4 px/frame * 0.25 frames"),
-                () -> assertEquals(149.5, f.world.shotY(0), CLOCK_EPS, "y - 2 px/frame * 0.25 frames"),
+                () -> assertEquals(200.0, f.world.shotX(0), CLOCK_EPS, "x as in A (not + 4 px/frame * 0.25)"),
+                () -> assertEquals(150.0, f.world.shotY(0), CLOCK_EPS, "y as in A"),
                 () -> assertEquals(Records.ShotKind.CANNON_SHOT, f.world.shotKind(0), "kind from the variant"),
                 () -> assertEquals(Records.ObjColor.TEAM, f.world.shotColor(0), "colour from the variant"));
         }
@@ -209,13 +209,17 @@ class ClientWorldTest {
             w.update(at(102));
             float x = w.selfX();
             float y = w.selfY();
+            double drawn = w.selfDrawnTick();
             w.update(at(130));
             assertAll(
                 () -> assertTrue(w.hasSelf(), "own ship present"),
                 () -> assertEquals(7, w.selfId(), "own id"),
-                () -> assertEquals(100.0, x, CLOCK_EPS, "render tick 98.8 is before tick 100: drawn at tick 100"),
-                () -> assertEquals(50.0, y, CLOCK_EPS, "y as sent"),
-                () -> assertEquals(104.0, w.selfX(), CLOCK_EPS, "render tick 126.8: extrapolated, capped at 4 ticks"),
+                () -> assertEquals(102.0, x, CLOCK_EPS, "predicted to the server tick now (102): 4 px/frame * 0.5 frames"),
+                () -> assertEquals(54.0, y, CLOCK_EPS, "8 px/frame * 0.5 frames"),
+                () -> assertEquals(102.0, drawn, CLOCK_EPS, "drawn at the server tick now (F1)"),
+                () -> assertEquals(104.0, w.selfDrawnTick(), CLOCK_EPS, "the prediction horizon is capped at 4 ticks"),
+                () -> assertEquals(100, w.newestSelfTick(), "newest SELF"),
+                () -> assertEquals(104.0, w.selfX(), CLOCK_EPS, "server tick 130: predicted, capped at 4 ticks"),
                 () -> assertEquals(58.0, w.selfY(), CLOCK_EPS, "8 px/frame for 1 frame"),
                 () -> assertEquals(1.5f, w.selfHeading(), "full-precision heading"),
                 () -> assertEquals(700f, w.selfFuel(), "fuel"),
@@ -226,8 +230,8 @@ class ClientWorldTest {
         }
 
         @Test
-        @DisplayName("the own ship is interpolated between the SELF records around the render tick")
-        void selfInterpolated() {
+        @DisplayName("the own ship is predicted from the newest SELF with its velocity and the estimated acceleration")
+        void selfPredicted() {
             WorldFixture f = new WorldFixture(true);
             f.begin(100).self(7, 0, 100, 50, 4, 8, 1.5f).ingestAtTick(100);
             f.begin(102).self(7, ShipFlags.SHIELD, 104, 54, 6, 8, 1.7f).ingestAtTick(102);
@@ -238,13 +242,84 @@ class ClientWorldTest {
             float h = w.selfHeading();
             float vx = w.selfVx();
             w.update(at(104.8));
+            // a = (6 - 4) / (2 ticks * 0.25) = 4 px/frame^2; at 104.2: 2.2 ticks = 0.55 frames past 102
             assertAll(
-                () -> assertEquals(102.0, x, CLOCK_EPS, "halfway between 100 and 104"),
-                () -> assertEquals(52.0, y, CLOCK_EPS, "halfway between 50 and 54"),
-                () -> assertEquals(1.6f, h, 1e-5f, "heading halfway"),
-                () -> assertEquals(5.0f, vx, 1e-5f, "velocity halfway"),
-                () -> assertEquals(103.2, w.selfX(), CLOCK_EPS, "render tick 101.6: 0.8 of the way"),
-                () -> assertEquals(ShipFlags.SHIELD, w.selfFlags(), "flags from the nearer (later) record"));
+                () -> assertEquals(104 + 6 * 0.55 + 2 * 0.55 * 0.55, x, CLOCK_EPS, "x + v t + a t^2 / 2"),
+                () -> assertEquals(54 + 8 * 0.55, y, CLOCK_EPS, "y: no acceleration"),
+                () -> assertEquals(1.7f, h, 1e-6f, "the newest heading as is"),
+                () -> assertEquals(6 + 4 * 0.55, vx, 1e-5, "velocity + a t"),
+                () -> assertEquals(104 + 6 * 0.7 + 2 * 0.7 * 0.7, w.selfX(), CLOCK_EPS, "at 104.8: 0.7 frames"),
+                () -> assertEquals(ShipFlags.SHIELD, w.selfFlags(), "flags from the newest record"));
+        }
+
+        @Test
+        @DisplayName("records arriving out of order: the newest two by tick give the acceleration, in x and y")
+        void selfPredictedOutOfOrder() {
+            WorldFixture f = new WorldFixture(true);
+            f.begin(104).self(7, 0, 104, 58, 6, 7, 0).ingestAtTick(104);
+            f.begin(100).self(7, 0, 100, 50, 4, 8, 0).ingestAtTick(100);
+            f.begin(102).self(7, 0, 102, 54, 4, 8, 0).ingestAtTick(102);
+            ClientWorld w = f.world;
+            w.update(at(105.2));
+            // from 102 to 104 (0.5 frames): a = (2 / 0.5, -1 / 0.5) = (4, -2); 1.2 ticks = 0.3 frames past 104
+            assertAll(
+                () -> assertEquals(104, w.newestSelfTick(), "newest by tick, not by arrival"),
+                () -> assertEquals(104 + 6 * 0.3 + 0.5 * 4 * 0.09, w.selfX(), CLOCK_EPS, "x"),
+                () -> assertEquals(58 + 7 * 0.3 - 0.5 * 2 * 0.09, w.selfY(), CLOCK_EPS, "y decelerates"),
+                () -> assertEquals(7 - 2 * 0.3, w.selfVy(), 1e-5, "vy + ay t"));
+        }
+
+        @Test
+        @DisplayName("blending keeps the old accelerating trajectory in x and y; a jump beyond TELEPORT_PX over "
+            + "both axes snaps")
+        void selfBlended2d() {
+            WorldFixture f = new WorldFixture(true);
+            f.begin(100).self(7, 0, 100, 50, 4, 4, 0).ingestAtTick(100);
+            f.begin(102).self(7, 0, 101, 51, 5, 5, 0).ingestAtTick(102);
+            ClientWorld w = f.world;
+            w.update(at(103.0));
+            f.begin(104).self(7, 0, 120, 60, 5, 5, 0).ingestAtTick(104);
+            w.update(at(103.2));
+            float bx = w.selfX();
+            float by = w.selfY();
+            WorldFixture g = new WorldFixture(false);
+            g.begin(100).self(7, 0, 10, 20, 0, 0, 0).ingestAtTick(100);
+            g.world.update(at(101.0));
+            g.begin(102).self(7, 0, 310, 220, 0, 0, 0).ingestAtTick(102);
+            g.world.update(at(101.2));
+            // old trajectory from 102 (a = (1 / 0.5) = 2 in both axes) at 103.2: 0.3 frames
+            assertAll(
+                () -> assertEquals(101 + 5 * 0.3 + 0.5 * 2 * 0.09, bx, CLOCK_EPS, "x: no jump at the new SELF"),
+                () -> assertEquals(51 + 5 * 0.3 + 0.5 * 2 * 0.09, by, CLOCK_EPS, "y: no jump at the new SELF"),
+                () -> assertEquals(310.0, g.world.selfX(), CLOCK_EPS,
+                    "300 px in x and 200 in y: 361 px, beyond TELEPORT_PX (350): snapped"),
+                () -> assertEquals(220.0, g.world.selfY(), CLOCK_EPS, "y snapped too"));
+        }
+
+        @Test
+        @DisplayName("a new SELF that differs from the prediction is blended in: no jump, the error decays")
+        void selfBlended() {
+            WorldFixture f = new WorldFixture(true);
+            f.begin(100).self(7, 0, 100, 50, 4, 0, 0).ingestAtTick(100);
+            ClientWorld w = f.world;
+            w.update(at(101));
+            float before = w.selfX();
+            f.begin(102).self(7, 0, 110, 50, 4, 0, 0).ingestAtTick(102);
+            w.update(at(101.2));
+            float atSwitch = w.selfX();
+            w.update(at(102.2));
+            float later = w.selfX();
+            for (double t = 102.4; t < 140; t += 1) {
+                w.update(at(t));
+            }
+            double decay = Math.exp(-(1.0 / 60) / ClientWorld.ERROR_DECAY_SECONDS);
+            assertAll(
+                () -> assertEquals(101.0, before, CLOCK_EPS, "prediction from tick 100: 100 + 4 * 0.25"),
+                () -> assertEquals(101.2, atSwitch, CLOCK_EPS,
+                    "the frame the new SELF arrives: where the old prediction is now (no jump)"),
+                () -> assertEquals(110.2 + (101.2 - 109.2) * decay, later, CLOCK_EPS,
+                    "one tick (1/60 s) later: the new prediction plus the decayed error"),
+                () -> assertEquals(110 + 4 * 1.0, w.selfX(), 0.01, "after many frames: the new prediction"));
         }
 
         @Test
@@ -263,17 +338,51 @@ class ClientWorldTest {
         }
 
         @Test
-        @DisplayName("a teleport (respawn) between SELF records snaps instead of sliding across the map")
+        @DisplayName("a teleport (respawn) snaps to the new SELF instead of blending across the map")
         void selfTeleport() {
             WorldFixture f = new WorldFixture(false);
             f.begin(100).self(7, 0, 10, 50, 0, 0, 0).ingestAtTick(100);
-            f.begin(102).self(7, 0, 600, 300, 0, 0, 0).ingestAtTick(102);
-            f.world.update(at(104.0));
+            f.world.update(at(101.0));
             float early = f.world.selfX();
-            f.world.update(at(104.6));
+            f.begin(102).self(7, 0, 600, 300, 0, 0, 0).ingestAtTick(102);
+            f.world.update(at(101.2));
             assertAll(
-                () -> assertEquals(10.0, early, CLOCK_EPS, "t = 0.4: the earlier record, no slide"),
-                () -> assertEquals(600.0, f.world.selfX(), CLOCK_EPS, "t = 0.7: the later record, no slide"));
+                () -> assertEquals(10.0, early, CLOCK_EPS, "before: the only record"),
+                () -> assertEquals(600.0, f.world.selfX(), CLOCK_EPS, "an error beyond TELEPORT_PX is not blended"),
+                () -> assertEquals(300.0, f.world.selfY(), CLOCK_EPS, "y too"));
+        }
+
+        @Test
+        @DisplayName("R15: a server teleport signal (wormhole/hyperjump sound, own respawn) snaps even a short jump")
+        void selfTeleportSignal() {
+            WorldFixture blended = new WorldFixture(true);
+            blended.begin(100).self(7, 0, 100, 50, 0, 0, 0).ingestAtTick(100);
+            blended.world.update(at(101.0));
+            blended.begin(102).self(7, 0, 150, 50, 0, 0, 0).ingestAtTick(102);
+            blended.world.update(at(101.2));
+            WorldFixture worm = new WorldFixture(true);
+            worm.begin(100).self(7, 0, 100, 50, 0, 0, 0).ingestAtTick(100);
+            worm.world.update(at(101.0));
+            worm.begin(102).self(7, 0, 150, 50, 0, 0, 0).sound(
+                com.fulcrologic.jxpilot.common.SoundEvent.WORM_HOLE.ordinal(), 50).ingestAtTick(102);
+            worm.world.update(at(101.2));
+            WorldFixture marked = new WorldFixture(true);
+            marked.begin(100).self(7, 0, 100, 50, 0, 0, 0).ingestAtTick(100);
+            marked.world.update(at(101.0));
+            marked.world.markSelfTeleport(102);
+            marked.begin(102).self(7, 0, 150, 50, 0, 0, 0).ingestAtTick(102);
+            marked.world.update(at(101.2));
+            float b = blended.world.selfX();
+            float wx = worm.world.selfX();
+            float mx = marked.world.selfX();
+            marked.begin(104).self(7, 0, 160, 50, 0, 0, 0).ingestAtTick(104);
+            marked.world.update(at(103.2));
+            assertAll(
+                () -> assertEquals(100.0, b, CLOCK_EPS, "a 50 px jump without a signal is blended (no jump yet)"),
+                () -> assertEquals(150.0, wx, CLOCK_EPS, "with the wormhole sound: snapped"),
+                () -> assertEquals(150.0, mx, CLOCK_EPS, "marked (own respawn): snapped"),
+                () -> assertEquals(150.0, marked.world.selfX(), CLOCK_EPS,
+                    "the mark is used once: the next jump (to 160) is blended again, no jump yet"));
         }
 
         @Test

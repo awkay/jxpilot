@@ -80,17 +80,33 @@ public final class NativeGameConnection implements GameConnection {
 
     /**
      * BEHAVIOR: copies the settings into the connection's SETTINGS (sent before READY on every join); while
-     * JOINING or PLAYING also queues them as a reliable SETTINGS now (true).
+     * JOINING or PLAYING also queues them as one reliable SETTINGS now (true), unless they equal the ones
+     * already sent in this state (false: one key press, one message).
      */
     @Override
     public boolean sendSettings(Msg.Settings settings, long nowNanos) {
         copy(settings, conn.settings);
         ConnectionState s = conn.state();
         if (s != ConnectionState.JOINING && s != ConnectionState.PLAYING) {
+            haveSent = false;
+            return false;
+        }
+        if (haveSent && same(conn.settings, sent)) {
             return false;
         }
         conn.settings.send(conn.channel());
+        copy(conn.settings, sent);
+        haveSent = true;
         return true;
+    }
+
+    private final Msg.Settings sent = new Msg.Settings();
+    private boolean haveSent;
+
+    static boolean same(Msg.Settings a, Msg.Settings b) {
+        return a.power == b.power && a.turnSpeed == b.turnSpeed && a.turnResistance == b.turnResistance
+            && a.altPower == b.altPower && a.altTurnSpeed == b.altTurnSpeed
+            && a.altTurnResistance == b.altTurnResistance && a.flags == b.flags;
     }
 
     /**
