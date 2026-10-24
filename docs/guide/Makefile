@@ -13,7 +13,7 @@ VERSION ?= dev
 BUILD := build
 
 SOURCES := $(wildcard *.adoc) $(wildcard generated/*.adoc)
-IMAGES := $(wildcard images/*.png) $(wildcard images/*/*.png)
+IMAGES := $(wildcard images/*.png) $(wildcard images/*/*.png) $(wildcard images/*/*.gif)
 
 .PHONY: html generate clean
 

@@ -1,0 +1,255 @@
+[[on-screen]]
+= What you see on screen
+ifdef::env-github[]
+:toc:
+:toclevels: 2
+:experimental:
+:imagesdir: images
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+Everything below was drawn by the JXPilot client's own drawing code, which follows the XPilot client's
+look (<<08-building.adoc#gallery-pictures,how the pictures are made>>). Most pictures are enlarged
+twice; the animated ones loop at the game's 14 frames per second. "Map symbol" is the character that
+puts the feature into a map file (<<06-config-and-maps.adoc#map-symbols,Map symbols>>).
+
+image::gallery/screen.png[The whole screen: radar, scoreboard, HUD around your ship, talk line and messages,width=100%]
+
+[[on-screen-map]]
+== Map features
+
+[cols="4,1,5",options="header"]
+|===
+|Picture |Map symbol |What it is
+
+|image:gallery/walls-outline.png[Walls as outlines,width=140]
+image:gallery/walls-filled.png[Walls filled,width=140]
+|`x` `s` `a` `w` `q`
+|*Walls*, drawn as outlines (XPilot's default) or filled (the viewer's kbd:[F] key, `--filled`). Touch a
+wall gently and at a shallow angle and you bounce off; hit it too hard, or unshielded too fast, and you
+crash (the `...WallBounce...` and `maxUnshielded...` options,
+<<05-server-options.adoc#opts-walls,Walls, crashes and bouncing>>).
+
+|image:gallery/wall-x.png[x,width=63] image:gallery/wall-s.png[s,width=63]
+image:gallery/wall-a.png[a,width=63] image:gallery/wall-w.png[w,width=63]
+image:gallery/wall-q.png[q,width=63]
+|`x` `s` `a` `w` `q`
+|The five wall blocks: `x` full, `s` upper-left half, `a` upper-right half, `w` lower-left half,
+`q` lower-right half (left to right in the pictures).
+
+|image:gallery/decor.png[Decoration,width=140]
+|`b` `h` `g` `y` `t`
+|*Decoration*: drawn like walls in orange, but you fly straight through it. `b` is full, `h` `g` `y` `t`
+are the four halves, like `s` `a` `w` `q`.
+
+|image:gallery/fuel-full.png[Full fuel station,width=63]
+image:gallery/fuel-half.png[Half-empty fuel station,width=63]
+image:gallery/fuel-empty.png[Empty fuel station,width=63]
+|`#`
+|*Fuel station*: full, half empty, empty. Hold the refuel key (kbd:[F] or kbd:[Ctrl]) near it to take
+fuel; the red bar shows what is left, and it refills slowly.
+
+|image:gallery/base-up.png[Base facing up,width=77]
+image:gallery/base-down.png[Base facing down,width=77]
+image:gallery/base-right.png[Base facing right,width=77]
+image:gallery/base-left.png[Base facing left,width=77]
+|`_` `0`-`9` (`$` sets the facing)
+|*Home base*: where you start and restart. The white line is the landing pad; your ship starts on it,
+facing away from it. Bases face up unless gravity or an adjacent `$` says otherwise. In team play the
+digit is the team that owns it.
+
+|image:gallery/cannon-up.png[Cannon facing up,width=77]
+image:gallery/cannon-down.png[Cannon facing down,width=77]
+image:gallery/cannon-left.png[Cannon facing left,width=77]
+image:gallery/cannon-right.png[Cannon facing right,width=77]
+|`r` `c` `d` `f`
+|*Cannons* (up, down, left, right), usually set into a wall. They fire at players in front of them;
+shoot them to destroy them for a while (`cannonDeadTime`).
+
+|image:gallery/cannon-dead.png[Destroyed cannon,width=77]
+|
+|A *destroyed cannon* disappears; on a block that carries a background dot, the dot shows instead.
+
+|image:gallery/target.png[Target,width=63] image:gallery/target-damaged.png[Damaged target,width=63]
+image:gallery/target-badly-damaged.png[Badly damaged target,width=63]
+image:gallery/target-own-team.png[Own team's target,width=63]
+|`!`
+|*Target*: healthy, damaged, badly damaged, and one of your own team (blue). It belongs to the team with
+the closest base (the digit). Shoot enemy targets to destroy them; your team repairs its own with the
+repair key (kbd:[F]).
+
+|image:gallery/treasure.png[Treasure with its ball,width=70]
+image:gallery/treasure-empty.png[Empty treasure,width=70]
+|`*` `^`
+|*Treasure* (ball home) with its ball, and an *empty treasure*, which has no ball of its own. It belongs
+to the team with the closest base. Steal the enemy's ball and bring it home to your treasure to score
+(`captureTheFlag` and the ball options, <<05-server-options.adoc#opts-objectives,Treasures, balls and
+targets>>).
+
+|image:gallery/gravity-plus.png[+,width=63] image:gallery/gravity-minus.png[-,width=63]
+image:gallery/gravity-clockwise.png[>,width=63] image:gallery/gravity-anticlockwise.png[<,width=63]
+|`+` `-` `>` `<`
+|*Gravity sources*: `+` pushes ships away, `-` pulls them in, `>` swirls them clockwise and `<`
+anticlockwise.
+
+|image:gallery/gravity-up.png[i,width=63] image:gallery/gravity-down.png[m,width=63]
+image:gallery/gravity-left.png[j,width=63] image:gallery/gravity-right.png[k,width=63]
+|`i` `m` `j` `k`
+|*Gravity currents*: a steady pull up, down, left or right inside the block.
+
+|image:gallery/wormhole.gif[Wormhole,width=63]
+|`@` `(` `)`
+|*Wormhole*: fly into it and you come out at another wormhole. `@` works both ways and `(` is an
+entrance only; both look like this. `)` is an exit only and is not drawn.
+
+|image:gallery/item-concentrator.gif[Item concentrator,width=63]
+|`%`
+|*Item concentrator* (three turning triangles): items appear around it
+(`itemConcentratorRadius`, `itemConcentratorProb`, <<03-playing.adoc#items,Items>>).
+
+|image:gallery/asteroid-concentrator.gif[Asteroid concentrator,width=63]
+|`&`
+|*Asteroid concentrator* (three turning squares): asteroids appear around it.
+
+|image:gallery/checkpoints.png[Checkpoints,width=385]
+|`A`-`Z`
+|*Race checkpoints*, only in race mode (`timing`): fly through them in order, `A` first. The next one
+you must reach is filled.
+
+|
+|`z`
+|*Friction block*: ships inside it feel `blockFriction`. XPilot shows it as decoration when the server
+sets `blockFrictionVisible`; the JXPilot client does not draw it yet.
+
+|
+|space, `.`
+|*Background dots*: small blue dots every 8 blocks in empty space (visible in the whole-screen picture
+above), so you can see your own motion where there is nothing else.
+|===
+
+[[on-screen-objects]]
+== Ships and objects
+
+[cols="3,5",options="header"]
+|===
+|Picture |What it is
+
+|image:gallery/ships.png[Your ship, a team mate and an enemy,width=300]
+|*Ships*: yours (left, no name), a team mate (blue, with name) and anyone else (white, with name).
+Robots look exactly like human players. While a round is about to start, ships are drawn red.
+
+|image:gallery/ship-lights.gif[Marking lights,width=60]
+|*Marking lights*: the small red and green lights blinking on a ship's sides.
+
+|image:gallery/ship-shield.png[Shield,width=60]
+image:gallery/ship-emergency-shield.png[Emergency shield,width=60]
+image:gallery/ship-deflector.png[Deflector,width=60]
+|*Shield* (dashed circle), *emergency shield* (a second circle) and *deflector* (blue circle).
+
+|image:gallery/ship-cloaked.png[Cloaked ship,width=60]
+image:gallery/ship-phasing.png[Phasing ship,width=60]
+|A *cloaked* ship you can still see (with sensors, or a team mate) and a *phasing* ship have a dashed
+hull.
+
+|image:gallery/ship-locked.png[Locked ship,width=80]
+|The player you have *locked on* (lock keys, <<03-playing.adoc#controls,Controls>>) is drawn filled.
+
+|image:gallery/shots.png[Shots,width=100]
+|*Shots*: white squares. Shots that cannot hurt you (a team mate's with team immunity, a paused player's,
+your own with `selfImmunity`) are blue crosses; nuclear shots blink red.
+
+|image:gallery/sparks-debris.gif[Sparks and debris,width=80]
+|*Sparks and debris*: engine exhaust and explosion fragments, cooling from yellow to red.
+
+|image:gallery/mines.png[Mines,width=100]
+|*Mines*: someone else's mine (filled blue, left) and a team mine (outline, with its owner's name).
+
+|image:gallery/missiles.png[Missiles,width=100]
+|*Missiles*: thick white lines, pointing where they fly.
+
+|image:gallery/laser.png[Laser,width=120]
+|*Laser* beam from a ship.
+
+|image:gallery/ecm.gif[ECM,width=100]
+|*ECM* burst: a growing white circle that confuses missiles, mines and robots, and can blind players.
+
+|image:gallery/tractor-beam.png[Tractor beam,width=140]
+|*Tractor or pressor beam* between two ships: short dashes.
+
+|image:gallery/transporter-beam.gif[Transporter beam,width=130]
+|*Transporter beam*: crawling dashes while a player steals an item.
+
+|image:gallery/refuel-beam.gif[Refuel beam,width=100]
+|*Refuel beam*: crawling dashes from a refuelling ship to the fuel station.
+
+|image:gallery/ball-tether.png[Ball on its tether,width=120]
+image:gallery/ball-connecting.png[Ball being picked up,width=120]
+|*Ball*: carried on a solid tether (left); dashed while it is being picked up (right).
+
+|image:gallery/paused.gif[Paused player,width=60]
+|A *paused* player: a blue square with a `P`, blinking during the 10-second pause countdown
+(<<03-playing.adoc#pausing,Pausing>>).
+
+|image:gallery/wreckage.png[Wreckage,width=160]
+|*Wreckage* of a destroyed ship: white pieces are still deadly, red ones are not.
+
+|image:gallery/asteroids.png[Asteroids,width=150]
+|*Asteroids* of three sizes.
+
+|image:gallery/items-in-play.png[Items,width=125]
+|*Items*: a blue triangle with the item's symbol. Every item is pictured in
+<<03-playing.adoc#items,Items>>.
+|===
+
+[[on-screen-hud]]
+== The HUD and the panels
+
+[cols="3,5",options="header"]
+|===
+|Picture |What it is
+
+|image:gallery/hud-box.png[The HUD,width=150]
+|The *HUD* around your ship: the dashed lines, with the pieces below arranged around them.
+
+|image:gallery/hud-lock.png[Lock indicator,width=200]
+|*Lock*: the locked player's name, a small ship symbol, the distance in blocks (`012`), and the dot that
+shows the direction to them.
+
+|image:gallery/hud-items.png[Item column,width=35]
+|*Items you carry*, with their counts.
+
+|image:gallery/hud-fuel-meter.png[Fuel meter,width=25]
+|*Fuel meter*: how much fuel you have.
+
+|image:gallery/hud-time-left.png[Time left,width=70]
+|*Time left* in the round or game.
+
+|image:gallery/hud-modifiers.png[Modifiers,width=90]
+|*Weapon modifiers* in use, when the server allows them (`allowModifiers`): `F` full nuclear, `N`
+nuclear, `C` cluster, `I` implosion, `V` velocity, `X` mini, `Z` spread and `B` power with their levels,
+and `LS`/`LB` for a stun or blinding laser. The picture shows nuclear cluster, velocity 2, spread 1.
+
+|image:gallery/score-popup.png[Score popup,width=100]
+|*Score popup*: points you just gained or lost, where it happened.
+
+|image:gallery/fuel-gauge.png[Fuel gauge,width=250]
+|*Fuel gauge* (top right).
+
+|image:gallery/radar.png[Radar,width=268]
+|*Radar* (top left): the map in miniature, your ship with its heading line, other players (team mates
+blue) and objects such as asteroids.
+
+|image:gallery/score-list.png[Score list,width=270]
+|*Score list*: team, score and name; `*` marks you, `D` a player out of lives, `P` a paused player and
+`W` one waiting for the next round.
+
+|image:gallery/talk-line.png[Talk line,width=420]
+|*Talk line*, opened with kbd:[M].
+
+|image:gallery/messages.png[Messages,width=320]
+|*Messages*: game events and chat, fading after a while.
+|===

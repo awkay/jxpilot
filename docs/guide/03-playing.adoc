@@ -127,6 +127,9 @@ swap-scale-factor key
 
 image::demo-hud.png[The --demo viewer: radar, scoreboard, HUD and messages,align=center]
 
+Every map feature, object and HUD element is pictured, with its meaning, in
+<<gallery.adoc#on-screen,What you see on screen>>.
+
 The picture shows the `--demo` viewer, which draws fake data with the real painters. In a game you see:
 
 Radar (top left):: The whole map in miniature: walls, your own ship (a heading line), other ships
