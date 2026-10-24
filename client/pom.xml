@@ -26,6 +26,7 @@
   <dependencies>
     <dependency><groupId>com.fulcrologic.jxpilot</groupId><artifactId>jxpilot-common</artifactId></dependency>
     <dependency><groupId>com.fulcrologic.jxpilot</groupId><artifactId>jxpilot-server</artifactId></dependency>
+    <dependency><groupId>com.fulcrologic.jxpilot</groupId><artifactId>jxpilot-common</artifactId><type>test-jar</type><scope>test</scope></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl</artifactId></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-glfw</artifactId></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-opengl</artifactId></dependency>

@@ -25,6 +25,26 @@
       </resource>
     </resources>
     <plugins>
+      <!-- The test-jar shares test fixtures (the lossy-link emulator, common.net.link) with the client and
+           server tests and with tools/lagproxy. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.1</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+            <configuration>
+              <!-- each test module has its own JUnit configuration -->
+              <excludes>
+                <exclude>junit-platform.properties</exclude>
+              </excludes>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
