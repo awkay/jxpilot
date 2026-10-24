@@ -118,7 +118,7 @@ public final class Player {
     public int fs;
     public int homeBase;
     /** Score (C keeps a float; double here, see docs/DEVIATIONS-server.md). */
-    public double score;
+    public float score;
     public int kills;
     public int deaths;
     public int life;

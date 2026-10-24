@@ -58,8 +58,8 @@ class CollisionsTest {
     static final double FUEL0 = 1000 * 256;
 
     /** C score.c Rate(winner, loser). */
-    static double rate(double winner, double loser) {
-        double t = (10.0 * 1024) / (Math.abs(loser - winner) + 1024);
+    static float rate(float winner, float loser) {
+        float t = (10 * 1024) / (Math.abs(loser - winner) + 1024); // C DFLOAT: float arithmetic
         return loser > winner ? 20 - t : t;
     }
 
@@ -350,8 +350,8 @@ class CollisionsTest {
                 () -> assertEquals(List.of("2:" + a.id + ":" + b.id), gameEvents(w, seq),
                     "emits CRASH(first, other): b = a player who crashed, c = the other"),
                 // sc = Rate(B, A) * crashScoreMult; sc2 = Rate(A, B) * crashScoreMult (collision.c PlayerCollision)
-                () -> assertEquals(100 - rate(0, 100) * 0.75, a.score, EPS, "A loses Rate(B, A) * crashScoreMult"),
-                () -> assertEquals(-rate(100, 0) * 0.75, b.score, EPS, "B loses Rate(A, B) * crashScoreMult"),
+                () -> assertEquals(100 - rate(0, 100) * 0.75f, a.score, EPS, "A loses Rate(B, A) * crashScoreMult"),
+                () -> assertEquals(-rate(100, 0) * 0.75f, b.score, EPS, "B loses Rate(A, B) * crashScoreMult"),
                 // ED_PL_CRASH = -100*256 per frame of overlap
                 () -> assertEquals(FUEL0 - 25600, a.fuel, EPS, "A pays ED_PL_CRASH for the bounce"),
                 () -> assertEquals(FUEL0 - 25600, b.fuel, EPS, "B pays ED_PL_CRASH for the bounce"),
@@ -376,7 +376,7 @@ class CollisionsTest {
             a.score = 100;
             long seq = w.events.seq();
             check(s);
-            double sc = rate(0, 100) * 0.25;
+            float sc = rate(0, 100) * 0.25f;
             assertAll(
                 () -> assertTrue(killed(a), "the unshielded ship dies"),
                 () -> assertFalse(killed(b), "the shielded ship survives"),
@@ -679,7 +679,7 @@ class CollisionsTest {
             int h = shot(k.id, 21);
             long seq = w.events.seq();
             check(s);
-            double sc = rate(50, 100) * 2;
+            float sc = rate(50, 100) * 2;
             assertAll(
                 () -> assertTrue(killed(v), "the victim dies"),
                 () -> assertEquals(List.of("V was killed by a shot from K."), messages(w, seq), "names the killer"),
@@ -705,7 +705,7 @@ class CollisionsTest {
             w.objects.fuseLife[h] = 10;
             long seq = w.events.seq();
             check(s);
-            double sc = rate(0, 100) * 0.5 * 2;
+            float sc = rate(0, 100) * 0.5f * 2;
             assertAll(
                 () -> assertTrue(aliveBeforeFuse, "the owner is immune while life > fuse life"),
                 () -> assertEquals(10.0, lifeBeforeFuse, EPS, "the shot flies on through its owner"),
@@ -756,7 +756,7 @@ class CollisionsTest {
             shot(Obj.NO_ID, 21);
             long seq = w.events.seq();
             check(s);
-            double sc = rate(0, 100) * 0.5 * 2;
+            float sc = rate(0, 100) * 0.5f * 2;
             assertAll(
                 () -> assertTrue(killed(v), "an unowned shot kills"),
                 () -> assertEquals(List.of("V was killed by a shot."), messages(w, seq), "no killer named"),
@@ -1051,7 +1051,7 @@ class CollisionsTest {
             int h = debris(k.id);
             long seq = w.events.seq();
             check(s);
-            double sc = rate(50, 100) * 0.4f;
+            float sc = rate(50, 100) * 0.4f;
             assertAll(
                 () -> assertTrue(killed(v), "an empty tank means death"),
                 () -> assertEquals(List.of("V succumbed to an explosion from K."), messages(w, seq), "names the owner"),
@@ -1083,7 +1083,7 @@ class CollisionsTest {
             debris(Obj.NO_ID);
             long seq2 = w.events.seq();
             check(s);
-            double sc = rate(0, 100) * 0.4f * 0.5f;
+            float sc = rate(0, 100) * 0.4f * 0.5f;
             assertAll(
                 () -> assertEquals(List.of("V succumbed to an explosion from V.  How strange!"), own, "own debris is strange"),
                 () -> assertEquals(List.of("1:-1:" + v.id), ownEv, "own debris: KILL(NO_ID, V)"),

@@ -421,7 +421,7 @@ public final class Mines {
             msg.append(rep != null ? rep.name : T_SOME_JERK).append('.');
         }
         if (killer != null) {
-            double sc = Scoring.rate(killer.score, pl.score) * w.items.mineScoreMult;
+            float sc = Scoring.rate(killer.score, pl.score) * w.items.mineScoreMult;
             sim.scoring.scorePlayers(killer, sc, pl.name, pl, -sc, killer.name);
         }
     }

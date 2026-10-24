@@ -523,17 +523,17 @@ public final class Lasers {
                     msg.append(T_GOT_ROASTED_ALIVE_BY).append(pl.name).append(T_S_LASER);
                     if (v.id == pl.id) {
                         w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, Obj.NO_ID, v.id, 0f);
-                        double sc = Scoring.rate(0, pl.score) * w.items.laserKillScoreMult * w.params.selfKillScoreMult;
+                        float sc = Scoring.rate(0, pl.score) * w.items.laserKillScoreMult * w.params.selfKillScoreMult;
                         sim.scoring.score(v, -sc, v.bx, v.by, v.name);
                         msg.append(T_HOW_STRANGE);
                     } else {
                         w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, pl.id, v.id, 0f);
-                        double sc = Scoring.rate(pl.score, v.score) * w.items.laserKillScoreMult;
+                        float sc = Scoring.rate(pl.score, v.score) * w.items.laserKillScoreMult;
                         sim.scoring.scorePlayers(pl, sc, v.name, v, -sc, pl.name);
                     }
                 } else {
                     w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, Obj.NO_ID, v.id, 0f);
-                    double sc = Scoring.rate(Scoring.CANNON_SCORE, v.score) / 4;
+                    float sc = Scoring.rate(Scoring.CANNON_SCORE, v.score) / 4;
                     sim.scoring.score(v, -sc, v.bx, v.by, T_CANNON);
                     if (w.params.teamPlay && v.team != p.team[i]) {
                         sim.scoring.teamScore(p.team[i], sc);

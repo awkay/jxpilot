@@ -76,7 +76,7 @@ class SimGameHostEventsTest {
             Player robot = w.playerAt(2);
             h.join("Res", 0, "");
             s.ships.pause(bob, true);
-            ann.score = 12.5;
+            ann.score = 12.5f;
             HostFx.Wire wire = new HostFx.Wire();
             h.initialState(bob.id, wire.out);
             List<String> got = wire.take();

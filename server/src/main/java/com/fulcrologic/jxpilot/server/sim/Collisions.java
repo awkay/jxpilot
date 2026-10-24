@@ -271,8 +271,8 @@ public final class Collisions {
                 .append(T_CRASHED);
             w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, pl.id, o.id, Msg.GameEvent.CRASH_SHIPS);
             if (!pl.tank && !o.tank) {
-                double sc = Scoring.rate(o.score, pl.score) * p.crashScoreMult;
-                double sc2 = Scoring.rate(pl.score, o.score) * p.crashScoreMult;
+                float sc = Scoring.rate(o.score, pl.score) * p.crashScoreMult;
+                float sc2 = Scoring.rate(pl.score, o.score) * p.crashScoreMult;
                 sim.scoring.scorePlayers(pl, -sc, o.name, o, -sc2, pl.name);
             } else if (pl.tank) {
                 tankCrash(pl, o, p);
@@ -296,7 +296,7 @@ public final class Collisions {
         if (owner == null) {
             return;
         }
-        double sc = Scoring.rate(owner.score, other.score) * p.tankKillScoreMult;
+        float sc = Scoring.rate(owner.score, other.score) * p.tankKillScoreMult;
         sim.scoring.scorePlayers(owner, sc, other.name, other, -sc, tank.name);
     }
 
@@ -312,7 +312,7 @@ public final class Collisions {
         Sounds.play(w, victim.px, victim.py, SoundEvent.PLAYER_RAN_OVER_PLAYER);
         winner.kills++;
         Player scorer = winner;
-        double sc;
+        float sc;
         if (winner.tank) {
             Player owner = w.byId(winner.lockPlId);
             if (owner != null && owner != victim) {
@@ -535,7 +535,7 @@ public final class Collisions {
                 pl.bx, pl.by, killer == null ? T_EXPLOSION : pl.name);
         } else {
             killer.kills++;
-            double sc = Scoring.rate(killer.score, pl.score) * p.explosionKillScoreMult;
+            float sc = Scoring.rate(killer.score, pl.score) * p.explosionKillScoreMult;
             w.events.kill(killer.id, pl.id, 0f, Events.KILL_EXPLOSION);
             sim.scoring.scorePlayers(killer, sc, pl.name, pl, -sc, killer.name);
         }
@@ -606,7 +606,7 @@ public final class Collisions {
             return;
         }
         Player killer = null;
-        double sc;
+        float sc;
         StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name);
         boolean fromCannon = (o.status[h] & Obj.FROMCANNON) != 0;
         if (fromCannon) {
@@ -631,7 +631,7 @@ public final class Collisions {
                 sc = Scoring.rate(killer.score, pl.score);
             }
         }
-        double factor;
+        float factor;
         switch (type) {
             case Obj.SHOT -> factor = Mods.isCluster(o.mods[h]) ? p.clusterKillScoreMult : p.shotKillScoreMult;
             case Obj.TORPEDO -> factor = w.items.torpedoKillScoreMult;

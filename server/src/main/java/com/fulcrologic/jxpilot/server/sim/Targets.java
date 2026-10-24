@@ -314,8 +314,8 @@ public final class Targets {
             Const.RES - 1, 20, 70, 10, 100);
         w.events.add(Events.GAME_EVENT, Msg.GameEvent.TARGET_DESTROYED, killer.id, target, 0f);
 
-        double winScore = 0;
-        double loseScore = 0;
+        float winScore = 0;
+        float loseScore = 0;
         int winMembers = 0;
         int loseMembers = 0;
         boolean somebody = false;
@@ -354,7 +354,7 @@ public final class Targets {
             }
         }
         if (remaining > 0) {
-            double sc = Scoring.rate(killer.score, Scoring.CANNON_SCORE) / 4;
+            float sc = Scoring.rate(killer.score, Scoring.CANNON_SCORE) / 4;
             sc = sc * (total - remaining) / (total + 1);
             if (sc >= 0.01) {
                 sim.scoring.score(killer, sc, targ.bx(), targ.by(), "Target: ");
@@ -370,8 +370,8 @@ public final class Targets {
         if (p.targetKillTeam) {
             killer.kills++;
         }
-        double sc = Scoring.rate(winScore, loseScore);
-        double por = (sc * loseMembers) / winMembers;
+        float sc = Scoring.rate(winScore, loseScore);
+        float por = (sc * loseMembers) / winMembers;
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
             if (Balls.ignored(pl)) {

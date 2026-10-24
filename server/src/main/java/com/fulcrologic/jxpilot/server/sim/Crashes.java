@@ -76,6 +76,8 @@ public final class Crashes {
     private final Simulation sim;
     private final Player[] pushers = new Player[Player.MAX_SHOVES];
     private final int[] pushCount = new int[Player.MAX_SHOVES];
+    /** C {@code total_pusher_score}: the pushers' scores summed once per shove record, in record order (float). */
+    private float pushScore;
 
     public Crashes(World w, Simulation sim) {
         this.w = w;
@@ -193,16 +195,14 @@ public final class Crashes {
         }
         int ev = w.events.kill(pushers[num - 1].id, pl.id, kind, Events.KILL_SHOVE);
         int total = 0;
-        double totalScore = 0;
         for (int i = 0; i < num; i++) {
             total += pushCount[i];
-            totalScore += pushCount[i] * pushers[i].score;
         }
-        int average = (int) (totalScore / total);
+        int average = (int) (pushScore / total);
         for (int i = 0; i < num; i++) {
             Player pusher = pushers[i];
             msg.append(i == 0 ? T_WITH_HELP_FROM : (i < num - 1 ? T_PUNCT : T_AND)).append(pusher.name);
-            double sc = pushCount[i] * Scoring.rate(pusher.score, pl.score) * w.params.shoveKillScoreMult / total;
+            float sc = pushCount[i] * Scoring.rate(pusher.score, pl.score) * w.params.shoveKillScoreMult / total;
             sim.scoring.score(pusher, sc, pl.bx, pl.by, pl.name);
             if (i >= num - 1) {
                 pusher.kills++;
@@ -252,10 +252,11 @@ public final class Crashes {
 
     /**
      * Distinct pushers among the shove records of the last {@link #SHOVE_WINDOW} frames, in record order,
-     * with their counts (walls.c:2142-2165). Returns the number of pushers.
+     * with their counts (walls.c:2142-2165), and {@link #pushScore}. Returns the number of pushers.
      */
     int collectPushers(Player pl) {
         int num = 0;
+        pushScore = 0;
         for (int i = 0; i < Player.MAX_SHOVES; i++) {
             int id = pl.shovePusher[i];
             if (id == Obj.NO_ID || pl.shoveTime[i] < w.frames - SHOVE_WINDOW) {
@@ -275,6 +276,7 @@ public final class Crashes {
                 num++;
             }
             pushCount[j]++;
+            pushScore += pushers[j].score;
         }
         return num;
     }

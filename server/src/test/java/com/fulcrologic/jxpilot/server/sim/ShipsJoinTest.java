@@ -463,10 +463,10 @@ class ShipsJoinTest {
             Simulation s = sim(C_FRAMES + "teamPlay: yes\n", SIX);
             Player a = s.ships.join("a", 1);
             Player b = s.ships.join("b", 2);
-            a.score = 0.9;
-            b.score = 0.5;
+            a.score = 0.9f;
+            b.score = 0.5f;
             Player c = s.ships.join("c", 99);
-            b.score = -1.5;
+            b.score = -1.5f;
             Player d = s.ships.join("d", 99);
             // server.c Pick_team: least_players = 1 (teams 1 and 2); team 3 (0 players) is not a candidate;
             // team_score is a long: 0.9 and 0.5 both truncate to 0, so the first candidate (team 1) wins
@@ -539,7 +539,7 @@ class ShipsJoinTest {
             s.world.enter(p);
             p.team = team;
             p.status = Obj.PLAYING;
-            p.score = score;
+            p.score = (float) score;
             s.world.teamMembers[team]++;
             return p;
         }

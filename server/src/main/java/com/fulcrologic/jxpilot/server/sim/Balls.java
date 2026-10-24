@@ -444,8 +444,8 @@ public final class Balls implements Segment.TreasureHook, Ecm.BallDetacher {
             m.teamTreasuresDestroyed[ttTeam]++;
         }
         w.events.add(Events.GAME_EVENT, Msg.GameEvent.TREASURE_DESTROYED, pl.id, destroyed, 0f);
-        double sc = 3 * Scoring.rate(winScore, loseScore);
-        double por = (sc * loseMembers) / (2 * winMembers + 1);
+        float sc = 3 * Scoring.rate(winScore, loseScore);
+        float por = (sc * loseMembers) / (2 * winMembers + 1);
         for (int k = 0; k < w.numPlayers; k++) {
             Player p = w.playerAt(k);
             if (ignored(p)) {
@@ -515,7 +515,7 @@ public final class Balls implements Segment.TreasureHook, Ecm.BallDetacher {
                     pl.by, killer.name);
             } else {
                 killer.kills++;
-                double sc = Scoring.rate(killer.score, pl.score) * mult;
+                float sc = Scoring.rate(killer.score, pl.score) * mult;
                 w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, killer.id, pl.id, 0f);
                 sim.scoring.scorePlayers(killer, sc, pl.name, pl, -sc, killer.name);
             }

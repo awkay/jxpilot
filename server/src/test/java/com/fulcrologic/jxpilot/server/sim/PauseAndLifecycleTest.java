@@ -215,7 +215,7 @@ class PauseAndLifecycleTest {
             w.frames = 64;
             s.ships.update(p);
             assertAll(
-                () -> assertEquals(-0.02, p.score, 1e-12, "0.01 per frame"),
+                () -> assertEquals(-0.02f, p.score, 1e-12, "0.01 per frame"),
                 () -> assertFalse(dirty63, "not reported at frame 63"),
                 () -> assertTrue(p.scoreDirty, "reported at frame 64 (C frame_loops & 63)"),
                 () -> assertEquals(Msg.Score.STATUS_DEAD | Msg.Score.STATUS_PAUSED, Simulation.scoreStatus(p),

@@ -612,16 +612,16 @@ class BallsTest {
             Player mate = ship(s, "M", 1, 320, 200);
             Player v1 = ship(s, "V", 2, 500, 200);
             Player v2 = ship(s, "W", 2, 520, 200);
-            p.score = 100.7;
-            mate.score = 50.6;
-            v1.score = 10.9;
-            v2.score = 0.2;
+            p.score = 100.7f;
+            mate.score = 50.6f;
+            v1.score = 10.9f;
+            v2.score = 0.2f;
             w.teamScore[1] = 0;
             w.teamScore[2] = 0;
             long from = w.events.seq();
             boolean r = s.balls.punishTeam(p, 2, 0);
-            double sc = 3 * Scoring.rate(151, 11);
-            double por = (sc * 2) / (2 * 2 + 1);
+            float sc = 3 * Scoring.rate(151, 11);
+            float por = (sc * 2) / (2 * 2 + 1);
             assertAll(
                 () -> assertTrue(r, "punished"),
                 () -> assertEquals(" < P's (1) team has destroyed team 2 treasure >", messages(w, from).get(0), "message"),
