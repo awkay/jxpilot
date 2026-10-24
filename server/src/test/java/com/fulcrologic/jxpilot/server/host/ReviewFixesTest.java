@@ -230,6 +230,40 @@ class ReviewFixesTest {
     }
 
     @Nested
+    @DisplayName("options other classes keep are refreshed by /set")
+    class Reload {
+        @Test
+        @DisplayName("shipMass reaches new asteroids' mass (C ASTEROID_MASS reads ShipMass)")
+        void asteroidMass() {
+            TuningTest.Fx f = new TuningTest.Fx("shipMass: 20\n");
+            float before = f.s.asteroids.mass(1);
+            f.t.tune("shipMass", "10");
+            assertAll(
+                () -> assertEquals(60f, before, 1e-4, "3 * 20 for size 1"),
+                () -> assertEquals(30f, f.s.asteroids.mass(1), 1e-4, "3 * 10 after the change"),
+                () -> assertEquals((float) (30 * Math.pow(2.25, 3)), f.s.asteroids.mass(4), 1e-3, "every size"));
+        }
+
+        @Test
+        @DisplayName("min/maxVisibilityDistance become the sensor-range limits as given, in pixels (C tuner_dummy)")
+        void visibility() {
+            TuningTest.Fx f = new TuningTest.Fx("");
+            Player p = f.s.ships.join("Ann", 0);
+            p.fuel = 1e9;
+            f.t.tune("maxVisibilityDistance", "100");
+            f.s.locks.sensorRange(p);
+            float capped = p.sensorRange;
+            p.fuel = 0;
+            f.t.tune("maxVisibilityDistance", "1e6");
+            f.t.tune("minVisibilityDistance", "5000");
+            f.s.locks.sensorRange(p);
+            assertAll(
+                () -> assertEquals(100f, capped, 1e-3, "the maximum, in pixels, not blocks"),
+                () -> assertEquals(5000f, p.sensorRange, 1e-3, "the minimum, in pixels"));
+        }
+    }
+
+    @Nested
     @DisplayName("L10: /password brute-force cooldown (JXPilot)")
     class PasswordCooldown {
         @Test
