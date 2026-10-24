@@ -79,10 +79,12 @@ public final class WorldMapState implements MapState {
         return s < 0 ? Const.TEAM_NOT_SET : p.team(s);
     }
 
-    /** Race checkpoints are not modelled yet: always the first. */
+    /** BEHAVIOR: the own player's next race checkpoint (TIMING), 0 when the own player is unknown. */
     @Override
     public int nextCheckpoint() {
-        return 0;
+        Players p = game.players();
+        int s = p.slotOf(p.selfId());
+        return s < 0 ? 0 : p.check(s);
     }
 
     @Override

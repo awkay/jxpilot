@@ -122,6 +122,7 @@ public final class SimGameHost implements GameHost {
     private final Msg.GameEvent gameEvent = new Msg.GameEvent();
     private final Msg.PlayerThrust thrust = new Msg.PlayerThrust();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
+    private final Msg.Timing timing = new Msg.Timing();
     private final Msg.Settings settingsMsg = new Msg.Settings();
     private final StringBuilder nameBuf = new StringBuilder(Const.MAX_CHARS);
 
@@ -625,8 +626,9 @@ public final class SimGameHost implements GameHost {
      * Everything a newcomer needs (C Handle_login's sends to the new player).
      * <p>
      * BEHAVIOR: for each player in the game, in order: PLAYER_JOIN (SELF for the viewer, ROBOT, PAUSED; power,
-     * afterburners, name, default shape), BASE_OWNER (its home) and SCORE (score, lives with limitedLives else
-     * -1, status); then in team play TEAM_SCORE for every team with members. The event cursor starts at the
+     * afterburners, name, default shape), BASE_OWNER (its home), SCORE (score, lives with limitedLives else
+     * -1, status) and in race mode TIMING (check, round); then in team play TEAM_SCORE for every team with
+     * members. The event cursor starts at the
      * newest event (the burst cursor at the newest burst).
      */
     @Override
@@ -650,6 +652,12 @@ public final class SimGameHost implements GameHost {
             score.lives = w.params.limitedLives ? p.life : -1;
             score.status = Simulation.scoreStatus(p);
             score.send(out);
+            if (w.modeParams.timing) {
+                timing.id = p.id;
+                timing.check = p.check;
+                timing.round = p.round;
+                timing.send(out);
+            }
         }
         if (w.params.teamPlay) {
             for (int t = 0; t < Const.MAX_TEAMS; t++) {
@@ -689,8 +697,8 @@ public final class SimGameHost implements GameHost {
      * in the game, then the full state, and continues from the newest event.
      * BEHAVIOR: JOIN: PLAYER_JOIN of the player as it is now (none when it already left); LEAVE: PLAYER_LEAVE;
      * TEAM: PLAYER_TEAM; SCORE / TEAM_SCORE; MESSAGE for everyone or this viewer (from mapped); BASE_OWNER
-     * (NO_ID = released); GAME_EVENT (ids mapped, value kept); THRUST: PLAYER_THRUST; SCORE_OBJECT only to its
-     * player.
+     * (NO_ID = released); GAME_EVENT (ids mapped, value kept); THRUST: PLAYER_THRUST; TIMING (race progress);
+     * SCORE_OBJECT only to its player.
      */
     @Override
     public void drainEvents(int viewerId, ReliableChannel out) {
@@ -774,6 +782,12 @@ public final class SimGameHost implements GameHost {
                 thrust.afterburners = e.b[i];
                 thrust.power = e.value[i];
                 thrust.send(out);
+            }
+            case Events.TIMING -> {
+                timing.id = e.a[i];
+                timing.check = e.b[i];
+                timing.round = e.c[i];
+                timing.send(out);
             }
             case Events.SCORE_OBJECT -> {
                 if (e.a[i] == viewerId) {

@@ -106,6 +106,8 @@ class SnapshotBuilderTest {
         final List<String> cannons = new ArrayList<>();
         final List<String> fuel = new ArrayList<>();
         final List<String> radar = new ArrayList<>();
+        /** Types of the game-mode sections (tested in SnapshotModesTest). */
+        final List<Integer> modes = new ArrayList<>();
     }
 
     Decoded decode(int n) {
@@ -163,6 +165,8 @@ class SnapshotBuilderTest {
                             rd.wrap(r, i);
                             d.radar.add(rd.cellX() + "," + rd.cellY() + ":" + rd.flags());
                         }
+                        case Section.TARGET, Section.TREASURE, Section.TIMERS, Section.BALL, Section.CONNECTOR,
+                             Section.ASTEROID, Section.WRECKAGE -> d.modes.add(r.type());
                         default -> throw new AssertionError("unexpected section " + r.type());
                     }
                 }

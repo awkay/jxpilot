@@ -34,6 +34,7 @@ import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
 import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.server.world.ModeState;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
@@ -160,10 +161,15 @@ public final class SnapshotBuilder {
         writeShips(viewer);
         writeCannons();
         writeFuel();
+        writeTargets();
+        writeTreasures();
+        writeTimers(viewer);
         if (radar) {
             writeRadar(viewer);
+            writeModeRadar();
         }
         writeBursts(burstFrom);
+        writeModeObjects();
         writeShots(viewer);
         closeSection();
         int count = part + 1;
@@ -247,6 +253,12 @@ public final class SnapshotBuilder {
         }
         if ((pl.used & Has.REFUEL) != 0) {
             f |= Records.ShipFlags.REFUELING;
+        }
+        if ((pl.used & Has.REPAIR) != 0) {
+            f |= Records.ShipFlags.REPAIRING;
+        }
+        if ((pl.have & Has.BALL) != 0) {
+            f |= Records.ShipFlags.HAS_BALL;
         }
         if (pl == viewer || w.sameTeam(pl, viewer)) {
             f |= Records.ShipFlags.FRIENDLY;
@@ -425,6 +437,131 @@ public final class SnapshotBuilder {
                 continue;
             }
             Records.FuelState.put(wr, f.index(), w.fuelLevel[f.index()] / (Const.MAX_STATION_FUEL * 256));
+        }
+    }
+
+    // ================================================================ game modes (server-modes)
+
+    /** BEHAVIOR: targets in view: index, DEAD while dead, and the strength left (C {@code Send_target}). */
+    private void writeTargets() {
+        java.util.List<com.fulcrologic.jxpilot.common.map.Target> targets = w.map.targets();
+        ModeState m = w.modes;
+        for (int i = 0; i < targets.size(); i++) {
+            com.fulcrologic.jxpilot.common.map.Target t = targets.get(i);
+            if (!visible(t.x(), t.y(), 0) || !need(Section.TARGET, 0)) {
+                continue;
+            }
+            boolean dead = w.targetDeadTime[i] > 0;
+            Records.TargetState.put(wr, i, dead ? Records.TargetState.FLAG_DEAD : 0,
+                (double) m.targetDamage[i] / ModeState.TARGET_DAMAGE);
+        }
+    }
+
+    /** BEHAVIOR: treasures in view: index and HAS_BALL while their ball rests in them. */
+    private void writeTreasures() {
+        java.util.List<com.fulcrologic.jxpilot.common.map.Treasure> ts = w.map.treasures();
+        for (int i = 0; i < ts.size(); i++) {
+            com.fulcrologic.jxpilot.common.map.Treasure t = ts.get(i);
+            if (!visible(t.x(), t.y(), 0) || !need(Section.TREASURE, 0)) {
+                continue;
+            }
+            Records.TreasureState.put(wr, i, w.modes.treasureHave[i] ? Records.TreasureState.FLAG_HAS_BALL : 0);
+        }
+    }
+
+    /**
+     * BEHAVIOR: the viewer's HUD timers, sent while any is active: ECM damage frames, the round delay while C
+     * would send it (round_delay_send, which runs one second past the delay so clients see 0), and the time
+     * left: the round timer rounded up to seconds when maxRoundTime is set and running, else -1.
+     */
+    void writeTimers(Player v) {
+        int delay = w.roundDelaySend > 0 ? w.roundDelay : 0;
+        int fps = w.params.fps;
+        int left = w.params.maxRoundTime > 0 && w.roundTime >= 0 ? (w.roundTime + fps - 1) / fps : -1;
+        if ((w.roundDelaySend <= 0 && left < 0 && v.damaged <= 0) || !need(Section.TIMERS, 0)) {
+            return;
+        }
+        Records.Timers.put(wr, Math.max(0, v.damaged), delay, left);
+    }
+
+    /**
+     * Balls, connectors, asteroids and wreckage in view (C {@code Frame_shots}, {@code Frame_ships}).
+     * <p>
+     * BEHAVIOR: a ball: its handle, team (its treasure's), and the ship it is connected to (or NO_ID); a ship
+     * reaching for a ball (C {@code pl->ball}) shows a connector from the ball to the ship; asteroids with size
+     * and rotation; wreckage with shape, size and rotation.
+     */
+    private void writeModeObjects() {
+        Objects o = w.objects;
+        ModeState m = w.modes;
+        for (int k = 0; k < o.count(); k++) {
+            int h = o.active[k];
+            int type = o.type[h];
+            if ((type & (Obj.BALL | Obj.ASTEROID | Obj.WRECKAGE)) == 0 || o.life[h] <= 0) {
+                continue;
+            }
+            double x = o.cx[h] / (double) Click.CLICK;
+            double y = o.cy[h] / (double) Click.CLICK;
+            if (!visible(x, y, 0)) {
+                continue;
+            }
+            if (type == Obj.BALL) {
+                if (need(Section.BALL, 0)) {
+                    int team = m.treasureTeam[m.ballTreasure[h]];
+                    Records.Ball.put(wr, h, x, y, team < 0 ? Protocol.NO_TEAM : team,
+                        o.owner[h] == Obj.NO_ID ? Protocol.NO_ID : o.owner[h]);
+                }
+            } else if (type == Obj.ASTEROID) {
+                if (need(Section.ASTEROID, 0)) {
+                    Records.Asteroid.put(wr, x, y, m.wireSize[h], m.wireRotation[h] * (2 * Math.PI / Const.RES));
+                }
+            } else if (need(Section.WRECKAGE, 0)) {
+                Records.Wreckage.put(wr, x, y, m.wireInfo[h] & 0xFF, m.wireSize[h],
+                    m.wireRotation[h] * (2 * Math.PI / Const.RES));
+            }
+        }
+        for (int k = 0; k < w.numPlayers; k++) {
+            Player pl = w.playerAt(k);
+            int h = pl.ball;
+            if (h < 0 || !o.isLive(h) || o.type[h] != Obj.BALL || (pl.status & (Obj.PLAYING | Obj.PAUSE)) == 0) {
+                continue;
+            }
+            double bx = o.cx[h] / (double) Click.CLICK;
+            double by = o.cy[h] / (double) Click.CLICK;
+            if (!visible(bx, by, 0) || !wr.inView(pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK)
+                || !need(Section.CONNECTOR, 0)) {
+                continue;
+            }
+            Records.Connector.put(wr, bx, by, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK,
+                Records.Connector.KIND_BALL);
+        }
+    }
+
+    /**
+     * BEHAVIOR: radar blips for balls (with treasuresOnRadar, FLAG_BALL) and asteroids (with asteroidsOnRadar,
+     * FLAG_ASTEROID), whole world (C also limits them to the viewer's sensor range).
+     */
+    private void writeModeRadar() {
+        boolean balls = w.modeParams.treasuresOnRadar;
+        boolean asteroids = w.modeParams.asteroidsOnRadar;
+        if (!balls && !asteroids) {
+            return;
+        }
+        Objects o = w.objects;
+        for (int k = 0; k < o.count(); k++) {
+            int h = o.active[k];
+            int flag;
+            if (balls && o.type[h] == Obj.BALL) {
+                flag = Records.Radar.FLAG_BALL;
+            } else if (asteroids && o.type[h] == Obj.ASTEROID) {
+                flag = Records.Radar.FLAG_ASTEROID;
+            } else {
+                continue;
+            }
+            if (!need(Section.RADAR, 0)) {
+                return;
+            }
+            Records.Radar.put(wr, o.px[h], o.py[h], flag);
         }
     }
 

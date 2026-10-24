@@ -127,9 +127,10 @@ Server → client:
 | 7 | TEAM_SCORE | u8 team, f32 score |
 | 8 | MESSAGE | u8 kind (chat, team chat, private, server, game), u16 from (NO_ID = server), str16 text |
 | 9 | BASE_OWNER | u16 baseIndex (`WorldMap.bases()`), u16 playerId. A player owns one base: the client releases any other base of that player (C `Handle_base`); playerId NO_ID releases the base (the server sends BASE_OWNER(oldBase, NO_ID) when a player leaves or changes home) |
-| 10 | GAME_EVENT | u8 kind (kill, crash, spawn, round end, target/treasure destroyed, checkpoint), u16 a, u16 b, f32 value. CRASH: a = the player who crashed, b = the other ship in a two-ship crash or NO_ID, value = crash sub-type `Msg.GameEvent.CRASH_*`: 1 wall, 2 target, 3 treasure, 4 cannon, 5 universe, 6 ships, 7 unknown. A shove into a wall is a KILL by the last pusher with the sub-type in value. SPAWN: a = player, b = base index. A KILL or CRASH is always sent before the SCORE_OBJECT / SCORE it causes, in the same tick |
+| 10 | GAME_EVENT | u8 kind (kill, crash, spawn, round end, target/treasure destroyed, checkpoint), u16 a, u16 b, f32 value. TARGET_DESTROYED: a = the player credited, b = target index. TREASURE_DESTROYED: a = the player who cashed the ball, b = the destroyed treasure's index. CHECKPOINT: a = player, b = the next checkpoint, value = the last lap time in frames (0 before a lap completes). A ball, asteroid or (unowned) explosion kill is a KILL with a = NO_ID unless the ball had an owner. CRASH: a = the player who crashed, b = the other ship in a two-ship crash or NO_ID, value = crash sub-type `Msg.GameEvent.CRASH_*`: 1 wall, 2 target, 3 treasure, 4 cannon, 5 universe, 6 ships, 7 unknown. A shove into a wall is a KILL by the last pusher with the sub-type in value. SPAWN: a = player, b = base index. A KILL or CRASH is always sent before the SCORE_OBJECT / SCORE it causes, in the same tick |
 | 11 | PLAYER_THRUST | u16 id, f32 power, u8 afterburners — sent when they change (thrust sparks are generated client-side). `afterburners` is the effective value (C forces MAX_AFTERBURNER for emergency thrust, ship.c:75-77); the server seeds with the f32 power the client receives |
 | 12 | SCORE_OBJECT | f32 score (points gained, negative when lost), u16 bx, u16 by (block where they were made), str8 label (C `Send_score_object`: a player name, "[Wall]", "[Shove]", "Cannon", "[Deadliest]"...). Sent only to the player whose score changed; drives the HUD score popups (the client's ScoreObjects stack) |
+| 20 | TIMING | race mode only (C `Send_timing`): u16 id, u8 check (the next checkpoint the player must pass, C `pl->check`), u16 round (laps started, 0 before the first checkpoint). Sent for every player in the initial state and whenever a player passes a checkpoint or race progress is reset. The last checkpoint passed is check - 1 (wrapping); the own player's check is the checkpoint the client highlights. Ids 20-26 are the game-mode block |
 
 Client → server:
 
@@ -213,7 +214,16 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 | 21 | TEMP_WORMHOLE | 5 | u16 bx, u16 by, u8 type |
 | 22 | TIMERS | 8 | u16 damaged (frames of ECM damage left), u16 roundDelay (frames, 0 none), i32 timeLeft (seconds, -1 none) — the receiver's HUD timers |
 
-M1 uses 1-8; 9-22 are defined for M2. A BURST of one particle with no speed and no life is a
+M1 uses 1-8; 9-22 are defined for M2. The game-mode sections are sent as follows (server-modes):
+TARGET and TREASURE for map objects in view (target strength left, dead flag; treasure HAS_BALL while its ball
+rests in it); TIMERS while any timer is active (round delay while C's `round_delay_send` runs, which lasts one
+second past the delay so the client sees 0; time left = the round timer rounded up to seconds with
+`maxRoundTime`; ECM damage frames); BALL (id = the server's object handle, team = the team of the ball's
+treasure, holder = the connected ship or NO_ID: the client draws the ball connector from it); CONNECTOR kind
+BALL only for a ship still *reaching* for a ball with its connector (C `pl->ball`); ASTEROID (size 1-4,
+rotation) and WRECKAGE (shape, size 0-255, rotation); RADAR blips with FLAG_BALL (`treasuresOnRadar`) and
+FLAG_ASTEROID (`asteroidsOnRadar`). SHIP flags carry HAS_BALL and REPAIRING. Game-mode snapshot section ids
+30-36 are reserved for future mode sections (none used yet). A BURST of one particle with no speed and no life is a
 position-only point particle (C debris on the XPilot path) that the client tracks across frames. Indices refer to the `WorldMap` lists, which both sides build
 identically from the same config text.
 
