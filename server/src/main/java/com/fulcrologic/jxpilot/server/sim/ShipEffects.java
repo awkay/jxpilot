@@ -52,6 +52,17 @@ public final class ShipEffects implements KernelEvents {
         return (Player) b;
     }
 
+    /**
+     * BEHAVIOR: with predictableBounces, the flying phase (PHASE_FLY) of each ship starts by reseeding the bounce
+     * tie-break source from (net tick {@code w.tick}, player id): its turn and its move draw from there.
+     */
+    @Override
+    public void begin(ShipBody b, int phase) {
+        if (phase == PHASE_FLY && sim.predictableBounces) {
+            sim.tieBreak.reseed(w.tick, pl(b).id);
+        }
+    }
+
     @Override
     public boolean keyPressed(ShipBody b, ControlKey k) {
         return sim.keys.pressedOther(pl(b), k);

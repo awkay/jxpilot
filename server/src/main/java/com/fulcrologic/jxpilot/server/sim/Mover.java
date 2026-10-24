@@ -192,15 +192,8 @@ public final class Mover {
 
     // ================================================================ players (the ship kernel)
 
-    /**
-     * Move a ship one tick: C {@code Move_player} ({@link ShipMover#movePlayer}).
-     * <p>
-     * BEHAVIOR: with predictableBounces the tie-break source is first reseeded from (net tick, player id).
-     */
+    /** Move a ship one tick: C {@code Move_player} ({@link ShipMover#movePlayer}). */
     public void movePlayer(Player pl) {
-        if (sim.predictableBounces) {
-            sim.tieBreak.reseed(w.tick, pl.id);
-        }
         sim.kernel.mover.movePlayer(pl, sim.effects);
     }
 
