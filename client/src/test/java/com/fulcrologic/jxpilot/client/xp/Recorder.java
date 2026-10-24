@@ -104,6 +104,13 @@ final class Recorder implements ConnectionListener, XpReliableDecoder.Control {
                 t.read(p);
                 yield "message kind=" + t.kind + " from=" + t.from + " " + t.text;
             }
+            case ReliableType.MOTD -> {
+                int off = p.getInt();
+                int total = p.getInt();
+                byte[] t = new byte[p.remaining()];
+                p.get(t);
+                yield "motd " + off + "/" + total + " " + new String(t, java.nio.charset.StandardCharsets.ISO_8859_1);
+            }
             case ReliableType.TIMING -> {
                 Msg.Timing t = new Msg.Timing();
                 t.read(p);

@@ -83,6 +83,9 @@ the player name only
 pressed and released within one frame (1/14 s) is lost
 |Random events |XPilot's random number generator |another generator: random details (sparks, explosions, robot
 choices) differ, nothing else
+|Exhaust sparks |drawn from the server's random numbers |every client computes the server's sparks
+from the frame and the ship, so they are not sent; their push on other ships matches XPilot on
+average, not frame for frame
 |Gravity of a `gravityPoint` on a non-square wrapping map; objects exactly half a world apart; connecting
 to a ball that was just destroyed; a vanishing temporary wormhole cutting short every ship's warp |XPilot
 bugs |fixed
@@ -101,6 +104,12 @@ seconds |the client keeps asking every second and is told its position; the queu
 |Ship shape |sent when you join |the same; a shape change during the game is ignored
 |`/set` |connected clients see only what the server sends |the same: they keep the configuration they
 got when they joined
+|Wrong operator passwords |unlimited tries |after 3 wrong tries a wait of 10 seconds, doubling up to 5
+minutes
+|Option numbers |`inf` and `nan` are accepted |refused (the default at start-up, "invalid value" for
+`/set`)
+|Changing options over the network |an admin tool can list and change options through the contact port
+|not available; operators use `/get` and `/set` in the game
 |Password file |`LIBDIR/password` unless named otherwise; a missing file is skipped |read only when
 `passwordFileName` names it; a named file that cannot be read is an error
 |Network |XPilot's protocol, one port per player, meta server |JXPilot's protocol on one UDP port; no meta
@@ -119,8 +128,8 @@ server; the JXPilot client can still join XPilot servers
 |Turn speed default |35 |40
 |Engine sound |a short sound every frame |a loop while you thrust
 |ID mode, message and item toggles, pointer control, recording |available |not supported
-|Showing frames |each frame as it arrives |smooth motion at your screen's refresh rate, about 90 ms behind
-the latest frame
+|Showing frames |each frame as it arrives |smooth motion at your screen's refresh rate: other ships about
+90 ms behind the latest frame, your own ship predicted forward from it
 |===
 
 [appendix]
@@ -178,8 +187,8 @@ firewalls on both sides; the server answers only from the address you contacted
 (<<04-running-a-server.adoc#multi-homed,Replies from the right address>>).
 
 |Client: the game feels sluggish, your ship reacts late
-|Your keys take a round trip to the server plus about 135 ms. Play on a server closer to you, or host it
-half way between the players (<<04-running-a-server.adoc#hosting,Hosting for friends far away>>).
+|Your keys take a round trip to the server, plus the wait for its next frame (up to 1/14 s). Play on a
+server closer to you, or host it half way between the players (<<04-running-a-server.adoc#hosting,Hosting for friends far away>>).
 
 |Client: `jxpilot keys: ...` lines at startup
 |Your `~/.xpilotrc` (or `--keys` file) has a line JXPilot cannot use, or a key bound to more than one

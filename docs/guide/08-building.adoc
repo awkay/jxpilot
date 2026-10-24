@@ -80,6 +80,12 @@ with the maven-shade-plugin; the configuration is in `dist/pom.xml`.
 
 * `mvn install` runs every module's unit tests, the allocation tests (hot paths must not allocate;
   they run in their own JVM with escape analysis off), and the license-header check.
+* *Golden traces* hold the server's behavior to XPilot's: games recorded frame by frame on the original C
+  server with the `tools/xpilot-ref` harness are replayed in the Java simulation and compared every
+  frame. `server/src/test/resources/ctrace/` has the physics and game-mode traces (`CTraceTest`,
+  `ModeTraceTest`); `ctrace/items/` has 21 item and weapon traces (`CTraceItemsTest`), which also record
+  the C server's random draws. Each directory's `README.txt` gives the command line that recorded every
+  trace.
 * The OpenGL smoke test needs a display and is off by default: `mvn -pl client test -Djxpilot.glTest=true`.
 * Mutation testing with PIT, per module:
   `mvn -pl common org.pitest:pitest-maven:mutationCoverage`. The target is a mutation score of at least

@@ -650,12 +650,11 @@ public final class XpConnection implements GameConnection {
         XpWriter.s16(tx, clampView(login.viewHeight));
         XpWriter.u8(tx, login.debrisColors);
         XpWriter.u8(tx, (int) Math.round(Math.max(0, Math.min(1, login.sparkProb)) * XpProto.MAX_SPARK_RAND));
-        if (tries == 1) {
-            // C Client_power: Startup_server_motd (autoServerMotdPopup)
-            XpWriter.u8(tx, XpProto.PKT_MOTD);
-            XpWriter.s32(tx, 0);
-            XpWriter.s32(tx, XpProto.MAX_MOTD_SIZE);
-        }
+        // C Client_power: Startup_server_motd (autoServerMotdPopup), in every play request: a C server still
+        // draining the setup discards the whole first bundle ("Discarding packet 57"), only a retry gets through
+        XpWriter.u8(tx, XpProto.PKT_MOTD);
+        XpWriter.s32(tx, 0);
+        XpWriter.s32(tx, XpProto.MAX_MOTD_SIZE);
         for (int i = 0; i < login.modifierBanks.length; i++) {
             XpWriter.u8(tx, XpProto.PKT_MODIFIERBANK);
             XpWriter.u8(tx, i);

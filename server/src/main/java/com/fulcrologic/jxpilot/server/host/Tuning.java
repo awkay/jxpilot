@@ -222,7 +222,9 @@ final class Tuning {
      * INVALID; seconds: an int, as int; string: the value as given; position, list and void options are
      * UNDEFINED.
      * BEHAVIOR: the value is stored, the tuner runs ({@link #runTuner}), the parameters are brought up to date,
-     * the reloaders run, and the result is OK.
+     * the reloaders run (robots, collisions, wreckage, asteroid masses), and the result is OK.
+     * BEHAVIOR: min/maxVisibilityDistance go to the sensor-range limits as given, in pixels (C's variables after
+     * their start-up scaling, {@link com.fulcrologic.jxpilot.server.sim.Locks#tuneMinVisibility}).
      */
     int tune(String name, String value) {
         Opt o = find(name);
@@ -292,6 +294,12 @@ final class Tuning {
         sim.robots.reloadOptions();
         sim.collisions.reloadOptions();
         sim.wreckage.reloadOptions();
+        sim.asteroids.reloadOptions();
+        if (o == Opt.MIN_VISIBILITY_DISTANCE) {
+            sim.locks.tuneMinVisibility(opts.getDouble(o));
+        } else if (o == Opt.MAX_VISIBILITY_DISTANCE) {
+            sim.locks.tuneMaxVisibility(opts.getDouble(o));
+        }
         changed.accept(o);
         return OK;
     }

@@ -417,7 +417,13 @@ everyone is told.
 * best, as with XPilot's `lib/password`: a password file named by `passwordFileName`, readable only by
   the server's user (`chmod 600`), containing `password: \override: PW`.
 
-Without a password, nobody can become an operator.
+Without a password, nobody can become an operator. An empty password (`-password ""`) works as in
+XPilot: `/password` without an argument then makes anyone an operator, and the server warns about it at
+start-up.
+
+*Wrong passwords.* After 3 wrong tries in a row a player gets "Too many wrong passwords.  Try again in
+N seconds." for 10 seconds; each further 3 wrong tries double the wait, up to 5 minutes. The right
+password resets it. XPilot has no such limit.
 
 *`/set`.* 256 options can change while the server runs; the other 37 (the map, its size and data,
 `teamPlay`, `limitedLives`, `timing`, `edgeWrap`, `framesPerSecond`, file names, ports and the network
@@ -425,7 +431,9 @@ options) answer "This option cannot be changed at runtime.". A change takes effe
 same side effects as in XPilot: for example `maxRobots` removes surplus robots immediately, `gravity`
 recomputes the gravity field, `allowShields` raises or drops everyone's shields, `worldLives` with
 limited lives restarts the round, `teamCannons` reassigns the cannons' teams, and a `robotTeam` outside
-0-9 becomes 0. Clients that are already connected keep the configuration they received when they joined;
+0-9 becomes 0. `/set` and `/get` show the value the server really uses, after XPilot's limits: for
+example `/set maxArmor 500` sets 99. Numbers are read as XPilot reads them (hexadecimal such as `0x10`
+works); `inf` and `nan` are refused. Clients that are already connected keep the configuration they received when they joined;
 the server's snapshots correct their view. The status column of the
 <<05-server-options.adoc#server-options,option reference>> says which options the server uses.
 
@@ -589,9 +597,10 @@ A JXPilot server is small. Measured with six robots on `default.xp`, it uses abo
   different continents, a cheap cloud VM roughly half way between them is fairer and smoother than a
   home server at one end: two players with 150 ms to a server in the middle each lag 150 ms, while a
   server at one player's home gives the other the whole 300 ms.
-* *Today's lag.* Your own ship reacts to your keys after about one round trip plus 135 ms. Making that
-  faster with client-side prediction is planned; see
-  https://github.com/awkay/jxpilot/blob/main/docs/latency-fixes.md[docs/latency-fixes.md].
+* *Today's lag.* Your own ship reacts to your keys after one round trip to the server plus the wait
+  for the server's next frame (up to 1/14 s). The client draws your ship predicted forward from the
+  newest frame, so the client adds almost no display delay of its own. Predicting your keys on the client is future
+  work; see https://github.com/awkay/jxpilot/blob/main/docs/latency-fixes.md[docs/latency-fixes.md].
 * *Run it as a service* so it survives logouts and reboots (<<service>>), and give friends the address
   from the `listening on` lines.
 
