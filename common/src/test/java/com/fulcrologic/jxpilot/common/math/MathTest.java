@@ -38,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 
 @DisplayName("Math utilities")
 class MathTest {
@@ -111,6 +112,60 @@ class MathTest {
                 () -> assertEquals(1, XMath.toBlock(35.0), "toBlock: 35 px is block 1"),
                 () -> assertEquals(52.5, XMath.blockCenter(1), EPS, "block 1 centre is 52.5"),
                 () -> assertEquals(5.0, XMath.length(3, 4), EPS, "length is hypot"));
+        }
+    }
+
+    @Nested
+    @DisplayName("ShipShape cache and allocation (R10)")
+    class ShapeCache {
+        long allocated(Runnable r) {
+            com.sun.management.ThreadMXBean mx =
+                (com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory.getThreadMXBean();
+            long id = Thread.currentThread().threadId();
+            long before = mx.getThreadAllocatedBytes(id);
+            r.run();
+            return mx.getThreadAllocatedBytes(id) - before;
+        }
+
+        @Test
+        @DisplayName("the same string returns the same parsed instance; a new shape parses in a few KB, not ~100 KB")
+        void cache() {
+            String shape = "(SH: 15,0 -9,8 -9,-8)(GU: 15,0)(EN: -9,0)";
+            for (int i = 0; i < 3; i++) {
+                ShipShape.parse("(SH: 14,0 -9,7 -9,-7)(GU: 14,0)"); // warm up
+            }
+            String fresh = "(SH: 13,1 -8,8 -9,-8 2,3)(GU: 13,1)(EN: -9,0)";
+            long first = allocated(() -> ShipShape.parseOrDefault(fresh));
+            ShipShape a = ShipShape.parseOrDefault(shape);
+            long again = allocated(() -> ShipShape.parseOrDefault(shape));
+            ShipShape b = ShipShape.parseOrDefault(shape);
+            for (int i = 0; i < ShipShape.CACHE_SIZE + 1; i++) {
+                ShipShape.parseOrDefault("(SH: 15,0 -9,8 -9,-" + (i % 7 + 1) + ")(GU: 15," + i + ")");
+            }
+            ShipShape evicted = ShipShape.parseOrDefault(shape);
+            assertAll(
+                () -> assertSame(a, b, "cached: the same instance"),
+                () -> assertTrue(again < 1024, "a cached shape allocates nothing worth mentioning (" + again + " B)"),
+                () -> assertTrue(first < 30_000, "a first parse stays small (" + first + " B)"),
+                () -> assertEquals(a.numPoints(), evicted.numPoints(), "after eviction it parses again, equal"));
+        }
+
+        @Test
+        @DisplayName("the cache keeps exactly the CACHE_SIZE most recently used shapes")
+        void lru() {
+            String shape = "(SH: 15,0 -9,8 -9,-8)(GU: 15,0)(EN: -7,0)";
+            ShipShape a = ShipShape.parseOrDefault(shape);
+            for (int i = 0; i < ShipShape.CACHE_SIZE - 1; i++) {
+                ShipShape.parseOrDefault("(SH: 15,0 -9,8 -9,-8)(GU: 15," + (200 + i) + ")");
+            }
+            ShipShape kept = ShipShape.parseOrDefault(shape);
+            for (int i = 0; i < ShipShape.CACHE_SIZE; i++) {
+                ShipShape.parseOrDefault("(SH: 15,0 -9,8 -9,-8)(GU: 15," + (300 + i) + ")");
+            }
+            ShipShape dropped = ShipShape.parseOrDefault(shape);
+            assertAll(
+                () -> assertSame(a, kept, "with CACHE_SIZE - 1 newer shapes it is still cached"),
+                () -> assertNotSame(kept, dropped, "after CACHE_SIZE newer shapes it was evicted"));
         }
     }
 

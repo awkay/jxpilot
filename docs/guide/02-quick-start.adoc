@@ -162,10 +162,12 @@ and checked against `SHA256SUMS.txt`. The jars are not affected: they run in the
 
 [source,shell]
 ----
-java -jar jxpilot-server-VERSION.jar --map default
+java -jar jxpilot-server-VERSION.jar --map default -noQuit
 ----
 
-The server prints the addresses it listens on and runs until you press kbd:[Ctrl+C]. For example, with
+The server prints the addresses it listens on and runs until you press kbd:[Ctrl+C]. Without `-noQuit` it
+stops by itself when the last human player leaves (or when nobody joins within 5 minutes), as the original
+XPilot server does. For example, with
 `--bind loopback --port 15999`:
 
 ----
@@ -191,6 +193,7 @@ java -jar jxpilot-client-VERSION.jar --connect xp://HOST             # an origin
 ----
 
 `HOST` is a name or an IP address; write IPv6 addresses in brackets with a port (`[2001:db8::1]:15345`).
-If the server refuses you, the client shows why, for example `Rejected by HOST: name not accepted` when
+If the server is full you wait in its queue, and the client shows `Waiting in queue on HOST (position
+N)` until a place frees up. If the server refuses you, the client shows why, for example `Rejected by HOST: name not accepted` when
 your name is already taken (<<04-running-a-server.adoc#joining,Joining, leaving and full servers>>). All
 client flags are in <<07-client-reference.adoc#client-reference,Client reference>>.

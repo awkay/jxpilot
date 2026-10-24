@@ -79,7 +79,9 @@ class CommandsEndToEndTest {
             s.log = log::add;
             s.factory = new SimGameHostFactory(() -> 4242);
             List<String> args = new ArrayList<>(List.of("--map", map, "--port", Integer.toString(port), "--bind",
-                "127.0.0.1", "--defaults", "none", "-maxRobots", "0"));
+                "127.0.0.1", "--defaults", "none", "-maxRobots", "0",
+                // every test client comes from 127.0.0.1 (C's default allows 2 per address); clients come and go
+                "-maxClientsPerIP", "8", "-noQuit"));
             args.addAll(Arrays.asList(options));
             server = Server.start(args.toArray(String[]::new), s);
         }

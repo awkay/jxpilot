@@ -171,6 +171,23 @@ class XpTranslatorTest {
         }
 
         @Test
+        void statusOtherThanPlayingIsDeadEvenWithTheShipInView() {
+            List<String> paused = frame(c(1).self(10, 10, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 2, 768, 768, 0,
+                XpProto.STATUS_PLAYING | XpProto.STATUS_PAUSE, 0).ship(10, 10, 3, 0).end(1));
+            List<String> over = frame(c(2).self(10, 10, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 2, 768, 768, 0,
+                XpProto.STATUS_PLAYING | XpProto.STATUS_GAME_OVER, 0).ship(10, 10, 3, 0).end(2));
+            List<String> playing = frame(c(3).self(10, 10, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 2, 768, 768, 0,
+                XpProto.STATUS_PLAYING, 0).ship(10, 10, 3, 0).end(3));
+            assertAll(
+                () -> assertTrue(SnapDump.only(paused, "SELF").get(0).startsWith("SELF id=3 flags="
+                    + (Records.ShipFlags.DEAD | Records.ShipFlags.PAUSED) + " "), "PLAYING|PAUSE: not in play"),
+                () -> assertTrue(SnapDump.only(over, "SELF").get(0).startsWith("SELF id=3 flags="
+                    + Records.ShipFlags.DEAD + " "), "PLAYING|GAME_OVER: not in play"),
+                () -> assertTrue(SnapDump.only(playing, "SELF").get(0).startsWith("SELF id=3 flags=0 "),
+                    "PLAYING alone: in play"));
+        }
+
+        @Test
         void noSelfIdYetIsNoId() {
             XpTranslator t2 = new XpTranslator(rec);
             t2.configure(built, 0, XpProto.MY_VERSION);
@@ -299,7 +316,8 @@ class XpTranslatorTest {
         void pausedShipsHaveNoIdOnTheWire() {
             List<String> s = frame(c(1).self(1000, 1000).paused(1050, 1000, 3).end(1));
             assertEquals(List.of("SHIP id=" + Protocol.NO_ID + " flags=" + Records.ShipFlags.PAUSED
-                + " pos=1050.0,1000.0 h=0.000 vel=0.0,0.0"), SnapDump.only(s, "SHIP"), "paused ship");
+                + " pos=1050.0,1000.0 h=0.000 vel=3.0,0.0"), SnapDump.only(s, "SHIP"),
+                "paused ship: no id, C's pause count (3) as vx");
         }
     }
 
@@ -452,10 +470,10 @@ class XpTranslatorTest {
                     + " holder=4"), SnapDump.only(s, "BALL"), "ball: C's id is the connected player, the ball has none"),
                 () -> assertEquals(List.of("LASER pos=1011.0,1012.0 h=3.142 len=100 color=" + Records.ObjColor.BLUE),
                     SnapDump.only(s, "LASER"), "laser"),
-                () -> assertEquals(List.of("ASTEROID pos=1013.0,1014.0 size=3 rot=1.571"), SnapDump.only(s, "ASTEROID"),
-                    "asteroid"),
-                () -> assertEquals(List.of("WRECKAGE pos=1015.0,1016.0 shape=2 size=2 rot=3.142"),
-                    SnapDump.only(s, "WRECKAGE"), "deadly bit dropped from the shape"),
+                () -> assertEquals(List.of("ASTEROID pos=1013.0,1014.0 size=" + (1 << 4 | 3) + " rot=1.571"),
+                    SnapDump.only(s, "ASTEROID"), "asteroid: the C shape type (1) in the size byte's high nibble"),
+                () -> assertEquals(List.of("WRECKAGE pos=1015.0,1016.0 shape=" + 0x82 + " size=2 rot=3.142"),
+                    SnapDump.only(s, "WRECKAGE"), "the deadly bit (0x80) kept in the shape"),
                 () -> assertEquals(List.of("ECM pos=1017.0,1018.0 radius=35"), SnapDump.only(s, "ECM"), "size is a diameter"),
                 () -> assertEquals(List.of("CONNECTOR 1019.0,1020.0 1021.0,1022.0 kind=" + Records.Connector.KIND_BALL,
                     "CONNECTOR 1.0,2.0 3.0,4.0 kind=" + Records.Connector.KIND_TRACTOR), SnapDump.only(s, "CONNECTOR"),

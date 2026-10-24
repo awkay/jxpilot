@@ -194,6 +194,65 @@ class RobotKillsTest {
     }
 
     @Nested
+    @DisplayName("hook timing (C runs Robot_war inside the collision code)")
+    class Timing {
+        @Test
+        @DisplayName("a robot killer's hook runs in the frame of the kill, before the kill loop deletes a robot victim"
+            + " out of lives: it gloats about the victim and ends its war")
+        void beforeKillLoop() {
+            Simulation s = sim("robotsTalk: yes\nlimitedLives: yes\nworldLives: 3\nmaxRobots: 2\nminRobots: 2\n",
+                "____");
+            World w = s.world;
+            Player victim = s.robots.create();
+            Player killer = s.robots.create();
+            Player human = TestWorlds.join(s, "H", 0);
+            for (int i = 0; i < 400 && (victim.status & Obj.PLAYING) == 0; i++) {
+                TestWorlds.run(s, 1, 0L);
+            }
+            victim.life = 0;
+            victim.used &= ~com.fulcrologic.jxpilot.server.world.Has.SHIELD;
+            victim.fuel = 0;
+            DefaultRobot.setWar(s.robots.data(killer), human.id);
+            int h = w.objects.alloc();
+            w.objects.type[h] = Obj.SHOT;
+            w.objects.owner[h] = killer.id;
+            w.objects.life[h] = 20;
+            w.objects.mass[h] = w.params.shotMass;
+            w.objects.initPixels(h, victim.px, victim.py);
+            long from = w.events.seq();
+            s.tick(new long[w.players.length]);
+            List<String> msgs = RobotFixture.messages(w, from);
+            assertAll(
+                () -> assertFalse(victim.inUse, "the victim lost its last life and left in the kill loop"),
+                () -> assertEquals(Obj.NO_ID, s.robots.warOnPlayer(killer), "the killer's Robot_war ended its war"),
+                () -> assertTrue(msgs.stream().anyMatch(m -> m.contains(victim.name)
+                    && m.endsWith("[" + killer.name + "]")), "and it gloated about the victim: " + msgs));
+        }
+
+        @Test
+        @DisplayName("robots do not play during the round delay (robot.c Robot_update)")
+        void roundDelay() {
+            Simulation s = sim("", "___");
+            World w = s.world;
+            Player r = s.robots.create();
+            TestWorlds.join(s, "H", 0);
+            for (int i = 0; i < 400 && (r.status & Obj.PLAYING) == 0; i++) {
+                TestWorlds.run(s, 1, 0L);
+            }
+            w.roundDelay = 50;
+            int before = s.robots.data(r).robotCount;
+            s.robots.update();
+            int during = s.robots.data(r).robotCount;
+            w.roundDelay = 0;
+            s.robots.update();
+            assertAll(
+                () -> assertTrue((r.status & Obj.PLAYING) != 0, "the robot is in play"),
+                () -> assertEquals(before, during, "no Robot_play while round_delay > 0"),
+                () -> assertTrue(s.robots.data(r).robotCount != during, "it plays again afterwards"));
+        }
+    }
+
+    @Nested
     @DisplayName("out of lives (player.c:1938-1951)")
     class OutOfLives {
         private Player lastLife(Simulation s) {

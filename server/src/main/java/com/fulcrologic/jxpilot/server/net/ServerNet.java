@@ -252,8 +252,9 @@ public final class ServerNet {
      * {@link #versionRejects()} and, if at least as large as a bare REJECT, gets REJECT VERSION; any other
      * bad header is dropped as {@link #malformed()}.
      * BEHAVIOR: bodies that do not decode are dropped as malformed; no exception escapes.
-     * BEHAVIOR: CONNECT goes to the join logic (a source in denyHosts is ignored, counting {@link #denied()});
-     * other types need a known peer on this channel and its
+     * BEHAVIOR: a packet from a source in denyHosts that is not a known peer is ignored first of all, counting
+     * {@link #denied()} (no REJECT, no rate-limit charge).
+     * BEHAVIOR: CONNECT goes to the join logic; other types need a known peer on this channel and its
      * session id, else they are dropped (counting {@link #stray()}).
      * BEHAVIOR: the first packet with the session id verifies an unverified session and queues WELCOME.
      * BEHAVIOR: any valid packet from a peer refreshes its timeout and feeds the header ack to its
@@ -266,6 +267,10 @@ public final class ServerNet {
         int start = data.position();
         boolean valid = header.read(data);
         Connection c = valid ? peers(channel).get(from) : null;
+        if (c == null && cfg.denyHosts.denied(from)) {
+            denied++; // C contact.c:330 checks the address before anything else
+            return;
+        }
         boolean inSession = c != null && header.type() != PacketType.CONNECT && header.session() == c.session;
         if (inSession ? !c.allow(now) : !limiter.allow(keys.of(from), 1, now)) {
             rateLimited++;
@@ -324,10 +329,6 @@ public final class ServerNet {
     }
 
     private void onConnect(int channel, SocketAddress from, Connection existing, ByteBuffer data, int size, long now) {
-        if (DenyList.denied(cfg.denyHosts, from)) {
-            denied++;
-            return;
-        }
         if (!connect.tryRead(data)) {
             malformed++;
             return;
@@ -718,6 +719,9 @@ public final class ServerNet {
     /** Connected peers, verified or not. */
     public int connections() { return activeCount; }
 
+    /** {@link GameHost#humanEntered()} of the hosted game. */
+    public boolean humanEntered() { return host.humanEntered(); }
+
     /** Packets dropped as malformed (including client messages the host could not decode). */
     public long malformed() { return malformed; }
 
@@ -727,7 +731,8 @@ public final class ServerNet {
     /** Non-CONNECT packets from unknown peers or with a wrong session. */
     public long stray() { return stray; }
 
-    /** CONNECTs ignored because their source is in denyHosts (C contact.c Check_address). */
+
+    /** Packets outside a session ignored because their source is in denyHosts (C contact.c Check_address). */
     public long denied() { return denied; }
 
     /** Snapshots cut short at {@link #MAX_SNAPSHOT_PARTS}. */

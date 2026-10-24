@@ -44,7 +44,7 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
 1. Client sends CONNECT (repeat until ACCEPT/REJECT).
    - A CONNECT whose header has the JX magic but another protocol version gets `REJECT` with reason
      VERSION (if it is at least as large as a bare 14-byte REJECT).
-   - More than `maxClientsPerIP` sessions (default 4; an IPv4 address or an IPv6 /64 counts as one source;
+   - More than `maxClientsPerIP` sessions (default 2, as C; an IPv4 address or an IPv6 /64 counts as one source;
      0 = unlimited) get `REJECT` FULL.
    - A CONNECT with a new nonce from an address that already has a session replaces it, but the old
      session is dropped only after the new join succeeded.
@@ -120,7 +120,7 @@ Server → client:
 
 | id | name | body |
 |---|---|---|
-| 1 | WELCOME | u16 playerId, u8 team, u8 simHz, u8 snapshotHz, u8 flags (1 teamPlay, 2 edgeWrap, 4 timing), f32 gameFps, u32 configLength, u32 configCompressedLength, u32 configCrc32, str8 serverName. *(Server S1 fix round: the server simulates at the map's framesPerSecond, so simHz = gameFps; one tick is one C frame.)* |
+| 1 | WELCOME | u16 playerId, u8 team, u8 simHz, u8 snapshotHz, u8 flags (1 teamPlay, 2 edgeWrap, 4 timing, 8 radarBlinked: radar records are already blinked; only the XPilot-protocol client sets it for itself), f32 gameFps, u32 configLength, u32 configCompressedLength, u32 configCrc32, str8 serverName. *(Server S1 fix round: the server simulates at the map's framesPerSecond, so simHz = gameFps; one tick is one C frame.)* |
 | 2 | DATA_CHUNK | u32 offset, raw bytes (≤ 1024) to the end of the message |
 | 3 | PLAYER_JOIN | u16 id, u8 team, u8 flags (1 robot, 2 tank, 4 self, 8 paused), f32 power, u8 afterburners, str8 name, str16 shape (C's canonical form, `Convert_ship_2_string`; empty = the built-in default ship). A detached fuel tank is a pseudo player with flag 2, the name "NAME's tank" and the `tankShipShape` (with `allowShipShapes`, else `defaultShipShape`); it owns no base |
 | 4 | PLAYER_LEAVE | u16 id |
@@ -134,6 +134,7 @@ Server → client:
 | 12 | SCORE_OBJECT | f32 score (points gained, negative when lost), u16 bx, u16 by (block where they were made), str8 label (C `Send_score_object`: a player name, "[Wall]", "[Shove]", "Cannon", "[Deadliest]"...). Sent only to the player whose score changed; drives the HUD score popups (the client's ScoreObjects stack) |
 | 13 | SEEK | u16 programmerId, u16 robotId, u16 soughtId — a player's ECM reprogrammed a robot to hunt someone (C `Send_seek`, item.c:1207), sent to everyone; the client logs "PROGRAMMER has programmed ROBOT to seek SOUGHT." (C `Handle_seek`) |
 | 20 | TIMING | race mode only (C `Send_timing`): u16 id, u8 check (the next checkpoint the player must pass, C `pl->check`), u16 round (laps started, 0 before the first checkpoint). Sent for every player in the initial state and whenever a player passes a checkpoint or race progress is reset. The last checkpoint passed is check - 1 (wrapping); the own player's check is the checkpoint the client highlights. Ids 20-26 are the game-mode block |
+| 28 | MOTD | u32 offset, u32 total size, bytes: a piece of the server's message of the day (C `motdFileName`, Latin-1, at most 30 KB). *(server-batch2 block 28-30.)* The server sends all pieces once, with the first event drain after the initial state, when it has a MOTD; the client shows it (C's MOTD viewer) once every piece is in. Old clients skip it |
 | 31 | PLAYER_ALLIANCE | u16 id, u8 mark (Latin-1): the alliance mark of player id as this receiver sees it, C `Send_score`'s alliance character (netserver.c:1670-1678): ' ' not in an alliance, '+' in the receiver's own alliance (when `announceAlliances` is off; other alliances then show ' '), '0'-'9' the alliance number (when `announceAlliances` is on). Sent when a player's alliance changes (C resends the score then), and in the initial state for players in alliances (every player after a resync). The client shows it in the score list's team column outside team play and treats equal non-blank marks as friends (blue ship, friendly lock). Ids 32-33 are reserved for server-commands |
 
 Client → server:

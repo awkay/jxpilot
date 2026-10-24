@@ -75,21 +75,30 @@ class AppPartsTest {
                 () -> assertEquals(Const.TARGET_DAMAGE, t.targetDamage(0), "fresh: intact"),
                 () -> assertEquals(1, s.selfTeam(), "own team"),
                 () -> assertEquals(42L, s.loops(), "loops as set"),
-                () -> assertEquals(0, s.nextCheckpoint(), "no TIMING yet: checkpoint 0"));
+                () -> assertEquals(0, s.nextCheckpoint(), "SELF checkpoint 0"));
         }
 
         @Test
-        @DisplayName("the next checkpoint is the own player's check from TIMING")
-        void nextCheckpoint() {
-            AppFixture f = new AppFixture(true).players();
-            com.fulcrologic.jxpilot.common.net.Msg.Timing t = new com.fulcrologic.jxpilot.common.net.Msg.Timing();
-            t.id = f.game.players().selfId();
-            t.check = 3;
-            t.round = 1;
-            java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(16);
-            t.write(b);
-            f.game.onReliable(com.fulcrologic.jxpilot.common.net.ReliableType.TIMING, b.flip());
-            assertEquals(3, new WorldMapState(f.game).nextCheckpoint(), "TIMING check of the own player");
+        @DisplayName("F4/F12: the next checkpoint from SELF; base owner names from BASE_OWNER and the player list")
+        void checkpointAndOwners() {
+            AppFixture f = new AppFixture(true).players().twice(x -> {
+                x.w.beginSection(com.fulcrologic.jxpilot.common.net.Section.SELF);
+                Records.Self.put(x.w, AppFixture.SELF, 0, 100, 100, 0, 0, 0, 700, 1000,
+                    com.fulcrologic.jxpilot.common.net.Protocol.NO_ID, 0, 0, 0, 45, 40, 0.12, 0, 0, 3, 0);
+                x.w.endSection();
+            });
+            f.game.world().setBaseOwner(0, AppFixture.SELF);
+            WorldMapState s = new WorldMapState(f.game);
+            CharSequence owned = s.baseOwnerName(0);
+            f.game.world().setBaseOwner(0, 99);
+            CharSequence unknown = s.baseOwnerName(0);
+            f.game.world().setBaseOwner(0, com.fulcrologic.jxpilot.common.net.Protocol.NO_ID);
+            CharSequence free = s.baseOwnerName(0);
+            assertAll(
+                () -> assertEquals(3, s.nextCheckpoint(), "SELF check 3"),
+                () -> assertEquals("Me", owned == null ? null : owned.toString(), "the owner's name"),
+                () -> assertNull(unknown, "an owner the player list does not know: no name"),
+                () -> assertNull(free, "a free base: no name"));
         }
 
         @Test

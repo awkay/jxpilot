@@ -34,10 +34,10 @@ package com.fulcrologic.jxpilot.client.game;
  * after one empty line, ordered by team score, ties broken by lives (more first with limited lives,
  * fewer otherwise).
  * <p>
- * Known deviation (race mode is out of scope for now): in timing mode C sorts by race progress (round,
- * checkpoint, lap time) and fills the race column; the protocol does not carry race progress yet, so
- * timing mode keeps the score order, marks the first row best and leaves the race column blank
- * ({@link #appendRace}, the hook for it).
+ * Timing (race) mode (F4): C sorts by race progress instead (round * MAX_CHECKS + check, more first; equal
+ * progress by who got there first; paused, tank and waiting players last in join order), marks the first row
+ * best and fills the race column ("%d.%c" round and check letter, "%3d" above 99 rounds). Progress comes
+ * from TIMING messages (C PKT_TIMING).
  */
 public final class Scoreboard {
     /** C {@code MAX_TEAMS}. */
@@ -138,8 +138,8 @@ public final class Scoreboard {
                 bestRatio = ratio;
                 best = s;
             }
-            int j = 0;
-            while (j < i && p.score(order[j]) >= sc) {
+            int j = timing ? raceSlot(p, s, i) : 0;
+            while (!timing && j < i && p.score(order[j]) >= sc) {
                 j++;
             }
             System.arraycopy(order, j, order, j + 1, i - j);
@@ -162,12 +162,36 @@ public final class Scoreboard {
             rowSlot[rows] = s;
             rowLine[rows] = i;
             rowDim[rows] = c == 'D' || c == 'P' || c == 'W';
-            format(labels[rows], c, teamPlay ? p.team(s) : -1, p.alliance(s), p.score(s), p.lives(s), p.name(s));
+            format(labels[rows], c, teamPlay ? p.team(s) : -1, p.alliance(s), p.score(s), p.lives(s), p.name(s),
+                p.round(s), p.check(s));
             rows++;
         }
         if (teamPlay && !timing) {
             teamRows(n);
         }
+    }
+
+    /** C {@code Client_score_table} in timing mode: where player {@code s} goes among the first i. */
+    private int raceSlot(Players p, int s, int i) {
+        if (last(p.statusChar(s))) {
+            return i;
+        }
+        int t = p.timing(s);
+        int j = 0;
+        for (; j < i; j++) {
+            int o = order[j];
+            if (p.timing(o) < t || last(p.statusChar(o))) {
+                break;
+            }
+            if (p.timing(o) == t && p.timingTick(o) - p.timingTick(s) > 0) {
+                break;
+            }
+        }
+        return j;
+    }
+
+    private static boolean last(char c) {
+        return c == 'P' || c == 'T' || c == 'W';
     }
 
     private void accumulateTeam(Players p, int s, int life) {
@@ -235,14 +259,19 @@ public final class Scoreboard {
     }
 
     /**
-     * C label {@code "%c %s%s%s%s  %s"}: status char, race column (3 blanks in timing mode), team
-     * column (digit and blank in team play, else the alliance blank), score, lives (limited lives only),
-     * name.
+     * C label {@code "%c %s%s%s%s  %s"}: status char, race column (timing mode), team column (digit and
+     * blank in team play, else the alliance char, ' ' for none), score, lives (limited lives only), name.
      */
     void format(CharBuf b, char statusChar, int team, char alliance, float score, int lives, CharSequence name) {
+        format(b, statusChar, team, alliance, score, lives, name, 0, 0);
+    }
+
+    /** As above with race progress for the race column ({@link #appendRace}). */
+    void format(CharBuf b, char statusChar, int team, char alliance, float score, int lives, CharSequence name,
+                int round, int check) {
         b.clear();
         b.append(statusChar).append(' ');
-        appendRace(b);
+        appendRace(b, statusChar, round, check);
         if (team >= 0) {
             b.append((char) ('0' + (team % 10))).append(' ');
         } else {
@@ -252,11 +281,25 @@ public final class Scoreboard {
         b.append("  ").append(name);
     }
 
-    /** The race column: blank in timing mode (race progress is not on the wire yet, see the class comment). */
-    private void appendRace(CharBuf b) {
-        if (timing) {
-            b.append("   ");
+    /**
+     * C {@code Paint_score_entry}'s race column (timing mode only).
+     * <p>
+     * BEHAVIOR: for an active player (' ' or 'R') with round + check above 0: "%3d" rounds above 99, else
+     * round, '.', check as a letter ('a' + check); otherwise three blanks.
+     */
+    private void appendRace(CharBuf b, char statusChar, int round, int check) {
+        if (!timing) {
+            return;
         }
+        if ((statusChar == ' ' || statusChar == 'R') && round + check > 0) {
+            if (round > 99) {
+                b.appendInt(round, 3, ' ');
+            } else {
+                b.appendInt(round).append('.').append((char) ('a' + check));
+            }
+            return;
+        }
+        b.append("   ");
     }
 
     private void appendScoreAndLife(CharBuf b, float score, int lives) {

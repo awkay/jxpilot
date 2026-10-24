@@ -44,17 +44,17 @@ class ServerNetCommandsTest {
         o.force(Opt.DENY_HOSTS, "10.0.0.0/8, 192.168.1.1");
         o.force(Opt.MAX_CLIENTS_PER_IP, "7");
         h.host.sessions.optionChanged(Opt.SHOT_SPEED, o);
-        int before = h.cfg.denyHosts.length;
+        int before = h.cfg.denyHosts.size();
         int perIpBefore = h.cfg.maxPerIp;
         h.host.sessions.optionChanged(Opt.DENY_HOSTS, o);
         int perIpAfterDeny = h.cfg.maxPerIp;
         h.host.sessions.optionChanged(Opt.MAX_CLIENTS_PER_IP, o);
         assertAll(
             () -> assertEquals(0, before, "another option changes nothing here"),
-            () -> assertEquals(4, perIpBefore, "the default limit"),
-            () -> assertEquals(2, h.cfg.denyHosts.length, "two networks denied"),
-            () -> assertTrue(DenyList.denied(h.cfg.denyHosts, Harness.addr("10.1.2.3", 9)), "10/8 is denied"),
-            () -> assertEquals(4, perIpAfterDeny, "denyHosts does not touch the limit"),
+            () -> assertEquals(2, perIpBefore, "the default limit (C's 2)"),
+            () -> assertEquals(2, h.cfg.denyHosts.size(), "two networks denied"),
+            () -> assertTrue(h.cfg.denyHosts.denied(Harness.addr("10.1.2.3", 9)), "10/8 is denied"),
+            () -> assertEquals(2, perIpAfterDeny, "denyHosts does not touch the limit"),
             () -> assertEquals(7, h.cfg.maxPerIp, "the new limit"));
     }
 

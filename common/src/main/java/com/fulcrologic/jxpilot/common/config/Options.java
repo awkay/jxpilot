@@ -405,8 +405,8 @@ public final class Options {
     // ------------------------------------------------------------------ serialization
 
     /**
-     * Serialize all known options that are visible, map-settable and have a value (plus unknown options and
-     * mapData) as config-file text that {@link ConfigParser} reads back to the same values.
+     * Serialize all known options that are visible, map-settable and have a value (plus the map's unknown options
+     * and mapData) as config-file text that {@link ConfigParser} reads back to the same values.
      * Used to ship the effective configuration and map to clients.
      */
     public String toConfigText() {
@@ -431,7 +431,9 @@ public final class Options {
             appendValue(sb, o.optionName(), v);
         }
         for (Unknown u : unknown.values()) {
-            if (u.value != null && Character.isLetter(u.name.charAt(0))) {
+            // only the map's own unknown names: macros and settings of the defaults file, command line or
+            // password file are the server's business
+            if (u.value != null && u.origin == OptionOrigin.MAP && Character.isLetter(u.name.charAt(0))) {
                 appendValue(sb, u.name, u.value);
             }
         }

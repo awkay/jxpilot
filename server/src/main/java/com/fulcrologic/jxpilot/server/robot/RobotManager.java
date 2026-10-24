@@ -50,9 +50,9 @@ import com.fulcrologic.jxpilot.server.world.World;
  * after keyboard input and before autofire, as C calls it at the start of {@code Update_objects}.
  * <p>
  * The sim reports kills, crashes, spawns and departures as {@link Events}; the manager reads them with its
- * own cursor at the start of each update, so the C hooks {@code Robot_war}, {@code Robot_reset_war},
- * {@code Robot_go_home} and the negative-score re-homing of {@code Player_crash} run one frame later than in C
- * (before the robot's next decision, which is what they affect) and without hooks into the sim.
+ * own cursor right after the collision phase ({@link #afterCollisions}, before the kill loop, as C runs
+ * {@code Robot_war}, {@code Robot_reset_war} and the negative-score re-homing of {@code Player_crash} inside
+ * the movement and collision code) and at the start of each update (departures and anything later).
  * <p>
  * Off by default ({@link #setEnabled}): C only runs robots when the server runs (a human is playing, or
  * {@code -rawMode}). Allocation free per tick.
@@ -184,7 +184,8 @@ public final class RobotManager {
      * when there are more players than bases or than maxRobots (with more than minRobots robots).
      * BEHAVIOR: detached tanks (pseudo players) do not count as playing ships.
      * BEHAVIOR: with robots: the visibility distances are updated and every robot
-     * either checks whether it leaves (dead robots only on their respawn frame) or plays.
+     * either checks whether it leaves (dead robots only on their respawn frame) or plays (not during the round
+     * delay).
      */
     public void update() {
         if (!enabled) {
@@ -232,6 +233,9 @@ public final class RobotManager {
                 if (checkLeave(pl)) {
                     k--;
                     continue;
+                }
+                if (w.roundDelay > 0) {
+                    continue; // robot.c Robot_update: no Robot_play during the round delay
                 }
                 robot.play(pl, d);
                 reportPower(pl, d);
@@ -347,6 +351,19 @@ public final class RobotManager {
             default -> {
                 // explosions: C calls no robot hook
             }
+        }
+    }
+
+    /**
+     * The robot hooks of this frame's collisions, in C's place: C calls Robot_war and friends inside the
+     * collision code (collision.c:827, 1359; walls.c:2197), before the kill loop can delete a robot out of
+     * lives. Called by the simulation right after the collision phase.
+     * <p>
+     * BEHAVIOR: disabled: nothing; else {@link #handleEvents} for the events since the last call.
+     */
+    public void afterCollisions() {
+        if (enabled) {
+            handleEvents();
         }
     }
 

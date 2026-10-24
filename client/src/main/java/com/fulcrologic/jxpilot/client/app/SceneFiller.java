@@ -72,8 +72,8 @@ public final class SceneFiller {
      * BEHAVIOR: adds the own ship first (unless absent or dead), then every interpolated ship that is not
      * dead; paused ones become paused markers (countdown 0) instead (see {@link #addShip}).
      * BEHAVIOR: adds every shot ({@link #shotColor}, {@link #teamShot}), every visible particle
-     * ({@link #particleColor}), every radar blip ({@link #radarSize}, hidden blink phases skipped) and the
-     * own radar ship while visible.
+     * ({@link #particleColor}), every radar blip ({@link #radarSize}, hidden blink phases skipped; when the
+     * server already blinks them {@link #radarSizeUnblinked}) and the own radar ship while visible.
      */
     public void fill(SceneData out, RadarBlips radar, ClientGame g) {
         ClientWorld w = g.world();
@@ -93,11 +93,13 @@ public final class SceneFiller {
         int lock = w.hasSelf() ? w.selfLockId() : Protocol.NO_ID;
         boolean selfAlive = w.hasSelf() && (w.selfFlags() & Records.ShipFlags.DEAD) == 0;
         if (selfAlive) {
+            pauseCount = 0;
             addShip(out, p, w.selfId(), w.selfFlags(), w.selfX(), w.selfY(), w.selfHeading(), true, teamPlay, false);
         }
         for (int i = 0; i < w.shipCount(); i++) {
             int flags = w.shipFlags(i);
             if ((flags & Records.ShipFlags.DEAD) == 0) {
+                pauseCount = w.shipVx(i);
                 addShip(out, p, w.shipId(i), flags, w.shipX(i), w.shipY(i), w.shipHeading(i), false, teamPlay,
                     w.shipId(i) == lock);
             }
@@ -112,8 +114,9 @@ public final class SceneFiller {
         for (int i = 0; i < w.pointCount(); i++) {
             out.addParticle(w.pointX(i), w.pointY(i), pointColor(w.pointColor(i)));
         }
+        boolean blinked = g.radarBlinked();
         for (int i = 0; i < w.radarCount(); i++) {
-            int size = radarSize(w.radarFlags(i), loops);
+            int size = blinked ? radarSizeUnblinked(w.radarFlags(i)) : radarSize(w.radarFlags(i), loops);
             if (size != HIDDEN) {
                 radar.add(w.radarX(i), w.radarY(i), size);
             }
@@ -129,7 +132,8 @@ public final class SceneFiller {
     /**
      * One ship.
      * <p>
-     * BEHAVIOR: a PAUSED ship becomes a paused marker at its position (countdown 0: steadily shown).
+     * BEHAVIOR: a PAUSED ship becomes a paused marker at its position; one without an id (C PKT_PAUSED) carries
+     * C's pause count in its vx (the P blinks while it is above 0), others count 0 (steadily shown).
      * BEHAVIOR: otherwise a ship with the player's shape (the default ship for unknown players), the
      * {@link #SHIP_PAINT_FLAGS} of its flags, colour {@link ShipPainter#shipColor}(friendly, self, round delay
      * pending) with friendly from {@link #friendly}, the lock flag, and the player's name (null when
@@ -138,7 +142,7 @@ public final class SceneFiller {
     void addShip(SceneData out, Players p, int id, int flags, float x, float y, float heading, boolean self,
                  boolean teamPlay, boolean locked) {
         if ((flags & Records.ShipFlags.PAUSED) != 0) {
-            out.addPaused(x, y, 0);
+            out.addPaused(x, y, id == Protocol.NO_ID ? Math.max(0, Math.round(pauseCount)) : 0);
             return;
         }
         int slot = p.slotOf(id);
@@ -150,13 +154,16 @@ public final class SceneFiller {
 
     private boolean roundDelay;
     private WorldMap map;
+    /** The vx of the ship being added: C's pause count for a paused ship without an id (see XpTranslator). */
+    private float pauseCount;
 
     /**
      * The M2 objects of {@link ClientWorld#objects()} into the scene.
      * <p>
      * BEHAVIOR: items with their type; mines (team mine iff FRIENDLY, no name); missiles with their length
      * and RES direction; balls, each with its tether ({@link #ballTether}); lasers with RES direction and the object colour ({@link #pointColor});
-     * asteroids (type 0, RES rotation, size); wreckage (not deadly, its shape, RES rotation, size); ECM
+     * asteroids (shape type from the size byte's high nibble, RES rotation, size from its low nibble);
+     * wreckage (deadly iff its shape byte has bit 7 (C), the shape in the low 7 bits, RES rotation, size); ECM
      * flashes of diameter 2 * radius; connectors ({@link #linkKind}: ball pick-up lines, refuel/repair beams
      * from the server's endpoints, tractor/pressor beams) and transporter beams (LINK_TRANSPORTER), each the
      * short way ({@link #line}).
@@ -185,12 +192,14 @@ public final class SceneFiller {
                 res(o.get(ObjectLists.LASER, i, 2)), pointColor((int) o.get(ObjectLists.LASER, i, 4)));
         }
         for (int i = 0; i < o.count(ObjectLists.ASTEROID); i++) {
-            out.addAsteroid(o.get(ObjectLists.ASTEROID, i, 0), o.get(ObjectLists.ASTEROID, i, 1), 0,
-                res(o.get(ObjectLists.ASTEROID, i, 3)), (int) o.get(ObjectLists.ASTEROID, i, 2));
+            int sizeByte = (int) o.get(ObjectLists.ASTEROID, i, 2);
+            out.addAsteroid(o.get(ObjectLists.ASTEROID, i, 0), o.get(ObjectLists.ASTEROID, i, 1), sizeByte >> 4,
+                res(o.get(ObjectLists.ASTEROID, i, 3)), sizeByte & 0x0F);
         }
         for (int i = 0; i < o.count(ObjectLists.WRECK); i++) {
-            out.addWreck(o.get(ObjectLists.WRECK, i, 0), o.get(ObjectLists.WRECK, i, 1), false,
-                (int) o.get(ObjectLists.WRECK, i, 2), res(o.get(ObjectLists.WRECK, i, 4)), (int) o.get(ObjectLists.WRECK, i, 3));
+            int shape = (int) o.get(ObjectLists.WRECK, i, 2);
+            out.addWreck(o.get(ObjectLists.WRECK, i, 0), o.get(ObjectLists.WRECK, i, 1), (shape & 0x80) != 0,
+                shape & 0x7F, res(o.get(ObjectLists.WRECK, i, 4)), (int) o.get(ObjectLists.WRECK, i, 3));
         }
         for (int i = 0; i < o.count(ObjectLists.ECM); i++) {
             out.addEcm(o.get(ObjectLists.ECM, i, 0), o.get(ObjectLists.ECM, i, 1), 2 * o.get(ObjectLists.ECM, i, 2));
@@ -264,9 +273,9 @@ public final class SceneFiller {
     /**
      * C {@code Gui_calculate_ship_color}'s friend test.
      * <p>
-     * BEHAVIOR: true when the server marked the ship FRIENDLY, or in team play when both the ship's player
-     * and the own player are known and on the same team (not {@link Protocol#NO_TEAM}), or when both have the
-     * same non-blank alliance mark (C guiobjects.c:680-684).
+     * BEHAVIOR: true when the server marked the ship FRIENDLY; else, both players known and the ship not
+     * the own one: true when both have the same non-blank alliance mark (C guiobjects.c:680-684), or in team
+     * play on the same team (not {@link Protocol#NO_TEAM}).
      */
     static boolean friendly(int flags, Players p, int slot, boolean teamPlay) {
         if ((flags & Records.ShipFlags.FRIENDLY) != 0) {
@@ -276,13 +285,13 @@ public final class SceneFiller {
             return false;
         }
         int self = p.slotOf(p.selfId());
-        if (self >= 0 && p.alliance(self) != ' ' && p.alliance(self) == p.alliance(slot)) {
-            return true;
-        }
-        if (!teamPlay) {
+        if (self < 0 || self == slot) {
             return false;
         }
-        return self >= 0 && p.team(slot) != Protocol.NO_TEAM && p.team(slot) == p.team(self);
+        if (p.alliance(self) != ' ' && p.alliance(self) == p.alliance(slot)) {
+            return true; // C Gui_calculate_ship_color: same alliance
+        }
+        return teamPlay && p.team(slot) != Protocol.NO_TEAM && p.team(slot) == p.team(self);
     }
 
     /**
@@ -334,10 +343,10 @@ public final class SceneFiller {
         ParticlePool pp = w.particles();
         float ff = w.frameFraction();
         double rt = w.renderTick();
-        double now = w.serverTickNow();
+        double own = w.hasSelf() ? w.selfDrawnTick() : rt;
         for (int i = 0; i < pp.count(); i++) {
             if (pp.visible(i)) {
-                double tick = pp.own(i) ? now : rt;
+                double tick = pp.own(i) ? own : rt;
                 out.addParticle(pp.x(i), pp.y(i), particleColor(pp.life(i), pp.birth(i), tick, ff, pp.color(i)));
             }
         }
@@ -373,6 +382,29 @@ public final class SceneFiller {
             case Records.ObjColor.BLUE -> Palette.BLUE;
             default -> Palette.WHITE;
         };
+    }
+
+    /**
+     * F11: the size byte of a blip the server has already blinked (C path: a blip in its dark phase is simply
+     * not sent).
+     * <p>
+     * BEHAVIOR: SELF records {@link #HIDDEN}; missiles and mines 0; balls 2; asteroids as in
+     * {@link #radarSize}; players 3, 0x80 when FRIENDLY; never hidden otherwise.
+     */
+    static int radarSizeUnblinked(int flags) {
+        if ((flags & Records.Radar.FLAG_SELF) != 0) {
+            return HIDDEN;
+        }
+        if ((flags & (Records.Radar.FLAG_MINE | Records.Radar.FLAG_MISSILE)) != 0) {
+            return 0;
+        }
+        if ((flags & Records.Radar.FLAG_BALL) != 0) {
+            return RADAR_BALL;
+        }
+        if ((flags & Records.Radar.FLAG_ASTEROID) != 0) {
+            return RadarPainter.asteroidSizeByte(RADAR_ASTEROID_SIZE);
+        }
+        return (flags & Records.Radar.FLAG_FRIENDLY) != 0 ? RADAR_PLAYER | 0x80 : RADAR_PLAYER;
     }
 
     /**

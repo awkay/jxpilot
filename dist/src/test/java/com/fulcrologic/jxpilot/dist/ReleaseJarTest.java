@@ -120,7 +120,7 @@ class ReleaseJarTest {
         Run server = run(java(dir, alone(serverJar, dir), "--list-maps"));
         Run client = run(java(dir, alone(clientJar, dir), "--list-maps"));
         assertAll(
-            () -> assertEquals(0, server.status(), "the server exits 0: " + server.out()),
+            () -> assertEquals(1, server.status(), "the server exits 1 after an info request, as C (server.c:139-140): " + server.out()),
             () -> assertEquals(0, client.status(), "the client exits 0: " + client.out()),
             () -> assertTrue(server.out().startsWith("Bundled maps"), "the server prints the listing: " + server.out()),
             () -> assertEquals(19 + 2, server.out().lines().count(), "a heading, a header and 19 maps"),

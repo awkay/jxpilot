@@ -74,14 +74,17 @@ public final class ServerArgs {
      * consume.
      * <p>
      * BEHAVIOR: no arguments gives null; one non-option argument is the config file path.
+     * BEHAVIOR: an unknown option is a warning ("Unknown option '-x'") and is otherwise ignored, as C
+     * (parser.c:411-418) does.
      *
-     * @throws IllegalArgumentException for an unknown option or more than one positional argument
+     * @throws IllegalArgumentException for more than one positional argument
      */
-    public static Path configFile(List<String> rest) {
+    public static Path configFile(List<String> rest, Options opts) {
         Path file = null;
         for (String a : rest) {
             if (a.length() > 1 && (a.charAt(0) == '-' || a.charAt(0) == '+')) {
-                throw new IllegalArgumentException("unknown option " + a);
+                opts.warn("Unknown option '" + a + "'");
+                continue;
             }
             if (file != null) {
                 throw new IllegalArgumentException("more than one config file: " + file + ", " + a);

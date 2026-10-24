@@ -139,6 +139,27 @@ class InputTest {
                 () -> assertEquals(0L, b.gameMask(GLFW_KEY_X), "x unbound"),
                 () -> assertEquals(ControlKey.FIRE_SHOT.mask(), b.gameMask(GLFW_KEY_Y), "y still fires"));
         }
+
+        @Test
+        @DisplayName("set replaces a function's keysyms and counts the mapped ones; functionsOf lists a key's functions")
+        void setAndFunctionsOf() {
+            KeyBindings b = KeyBindings.defaults();
+            int n = b.set(KeyFunctions.of(ControlKey.FIRE_SHOT), "x NoSuchKey y");
+            List<KeyFunctions.Fn> f = b.functionsOf(GLFW_KEY_F);
+            List<KeyFunctions.Fn> enter = b.functionsOf(GLFW_KEY_ENTER);
+            List<KeyFunctions.Fn> past = b.functionsOf(KeyBindings.SIZE);
+            List<KeyFunctions.Fn> negative = b.functionsOf(-1);
+            assertAll(
+                () -> assertEquals(2, n, "x and y map to GLFW keys"),
+                () -> assertEquals(List.of("x", "NoSuchKey", "y"), b.keysyms(KeyFunctions.of(ControlKey.FIRE_SHOT)),
+                    "Return was replaced; the unknown keysym is remembered"),
+                () -> assertEquals(List.of(KeyFunctions.of(ControlKey.REFUEL), KeyFunctions.of(ControlKey.REPAIR)), f,
+                    "f refuels and repairs, in KeyFunctions order"),
+                () -> assertTrue(enter.stream().noneMatch(x -> x.key() == ControlKey.FIRE_SHOT), "Return no longer fires"),
+                () -> assertEquals(List.of(), past, "past the table: none"),
+                () -> assertEquals(List.of(), negative, "negative: none"),
+                () -> assertEquals(0L, b.gameMask(KeyBindings.SIZE), "game mask past the table: 0"));
+        }
     }
 
     @Nested
