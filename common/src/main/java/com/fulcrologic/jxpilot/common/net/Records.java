@@ -27,6 +27,8 @@ import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 import com.fulcrologic.jxpilot.common.math.XMath;
 
+import com.fulcrologic.jxpilot.common.sim.ShipBody;
+
 import java.nio.ByteBuffer;
 
 /**
@@ -911,6 +913,94 @@ public final class Records {
         public int index() { return u16(0); }
 
         public int flags() { return u8(2); }
+    }
+
+    /**
+     * The own ship for the predictor (protocol v2, docs/PROTOCOL.md "PREDICT"):
+     * {@code 0 u32 frames (the C frame clock, not the net tick), 4 u16 roundDelay, 6 ShipBody core block}
+     * ({@link ShipBody#encodeCore}, key flags against the input the server applied this tick).
+     */
+    public static final class Predict extends Fly {
+        public static final int SIZE = 6 + ShipBody.CORE_SIZE;
+
+        /** BEHAVIOR: frames as u32, roundDelay clamped to 0..65535, then the core block. */
+        public static void put(SnapshotWriter w, ShipBody body, long frames, int roundDelay, long appliedKeys,
+                               int rareVersion) {
+            ByteBuffer out = w.buffer();
+            int p = out.position();
+            out.putInt((int) frames);
+            out.putShort((short) Math.clamp(roundDelay, 0, 0xFFFF));
+            body.encodeCore(out, p + 6, frames, appliedKeys, rareVersion);
+            out.position(p + SIZE);
+        }
+
+        public Predict wrap(SnapshotReader r, int i) {
+            bind(r, i);
+            return this;
+        }
+
+        /** The C frame clock (u32). */
+        public long frames() { return b.getInt(o) & 0xFFFF_FFFFL; }
+
+        public int roundDelay() { return u16(4); }
+
+        /** The rare version the core refers to. */
+        public int rareVersion() { return u8(6 + ShipBody.CORE_SIZE - 1); }
+
+        /**
+         * BEHAVIOR: decodes the core block into {@code body} ({@link ShipBody#decodeCore}, the key flags against
+         * {@code appliedKeys}, the client's own entry for the snapshot's inputTick); returns the rare version.
+         */
+        public int read(ShipBody body, long appliedKeys) {
+            return body.decodeCore(b, o + 6, frames(), appliedKeys);
+        }
+    }
+
+    /** {@code 0 u8 version, 1 ShipBody rare block} ({@link ShipBody#encodeRare}). */
+    public static final class PredictRare extends Fly {
+        public static final int SIZE = 1 + ShipBody.RARE_SIZE;
+
+        public static void put(SnapshotWriter w, ShipBody body, int version) {
+            ByteBuffer out = w.buffer();
+            int p = out.position();
+            out.put((byte) version);
+            body.encodeRare(out, p + 1);
+            out.position(p + SIZE);
+        }
+
+        public PredictRare wrap(SnapshotReader r, int i) {
+            bind(r, i);
+            return this;
+        }
+
+        public int version() { return u8(0); }
+
+        /** BEHAVIOR: decodes the rare block into {@code body}. */
+        public void read(ShipBody body) {
+            body.decodeRare(b, o + 1);
+        }
+    }
+
+    /** {@code 0 u64 prevKeys, 8 u64 lastReceivedKeys} ({@link ShipBody#encodeKeys}). */
+    public static final class PredictKeys extends Fly {
+        public static final int SIZE = ShipBody.KEYS_SIZE;
+
+        public static void put(SnapshotWriter w, ShipBody body) {
+            ByteBuffer out = w.buffer();
+            int p = out.position();
+            body.encodeKeys(out, p);
+            out.position(p + SIZE);
+        }
+
+        public PredictKeys wrap(SnapshotReader r, int i) {
+            bind(r, i);
+            return this;
+        }
+
+        /** BEHAVIOR: decodes both key masks into {@code body}. */
+        public void read(ShipBody body) {
+            body.decodeKeys(b, o);
+        }
     }
 
     /** Temporary wormhole. {@code 0 u16 bx, 2 u16 by, 4 u8 type (Wormhole.Type ordinal)}. */

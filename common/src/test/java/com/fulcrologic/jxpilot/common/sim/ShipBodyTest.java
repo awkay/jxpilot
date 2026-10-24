@@ -199,6 +199,9 @@ class ShipBodyTest {
     }
 
     /** A body with a distinct value in every field (fields not on the wire included). */
+    /** The frame the wire tests encode at: 100 frames after full()'s shot. */
+    static final long F = (1L << 40) + 100;
+
     static ShipBody full() {
         ShipBody b = new ShipBody();
         b.setClicks(123456, -654);
@@ -230,7 +233,7 @@ class ShipBodyTest {
         b.tankFuel[1] = 7;
         b.numTanks = 2;
         b.currentTank = 1;
-        b.shieldTime = 70000;
+        b.shieldTime = 7000;
         b.stunned = 9;
         b.shots = 300;
         b.shotMax = 256;
@@ -259,7 +262,7 @@ class ShipBodyTest {
             ShipBody a = full();
             ShipBody b = new ShipBody();
             b.copyFrom(a);
-            boolean same = b.sameState(a);
+            boolean same = b.sameState(a, F);
             int prevX = b.prevX;
             float accY = b.accY;
             long busy = b.frameLastBusy;
@@ -285,7 +288,7 @@ class ShipBodyTest {
             for (ByteOrder order : new ByteOrder[] {ByteOrder.BIG_ENDIAN, ByteOrder.LITTLE_ENDIAN}) {
                 ByteBuffer buf = ByteBuffer.allocate(ShipBody.WIRE_SIZE + 20).order(order);
                 buf.position(3);
-                int n = a.encode(buf, 7);
+                int n = a.encode(buf, 7, F);
                 ShipBody b = new ShipBody();
                 b.prevX = -9;
                 b.accX = 9;
@@ -294,12 +297,12 @@ class ShipBodyTest {
                 b.lastWallTouch = 9;
                 b.numTanks = 9;
                 ShipGeom hull = b.ship;
-                int m = b.decode(buf, 7);
+                int m = b.decode(buf, 7, F);
                 assertAll(
                     () -> assertEquals(ShipBody.WIRE_SIZE, n, order + ": encode returns WIRE_SIZE"),
                     () -> assertEquals(ShipBody.WIRE_SIZE, m, order + ": decode returns WIRE_SIZE"),
                     () -> assertEquals(3, buf.position(), order + ": the buffer position does not move"),
-                    () -> assertTrue(b.sameState(a), order + ": every wire field round-trips bit for bit"),
+                    () -> assertTrue(b.sameState(a, F), order + ": every wire field round-trips bit for bit"),
                     () -> assertEquals(a.px, b.px, order + ": pixels are derived from the clicks"),
                     () -> assertEquals(a.py, b.py, order + ": y too"),
                     () -> assertEquals(a.bx, b.bx, order + ": blocks too"),
@@ -317,23 +320,23 @@ class ShipBodyTest {
         }
 
         @Test
-        @DisplayName("the wire layout writes nothing outside its WIRE_SIZE bytes, and every byte matters")
+        @DisplayName("the canonical layout writes nothing outside its WIRE_SIZE bytes, and every byte matters but two")
         void layout() {
             ByteBuffer buf = ByteBuffer.allocate(ShipBody.WIRE_SIZE + 2);
             for (int i = 0; i < buf.capacity(); i++) {
                 buf.put(i, (byte) 0x5c);
             }
-            full().encode(buf, 1);
+            full().encode(buf, 1, F);
             ShipBody ref = new ShipBody();
-            ref.decode(buf, 1);
+            ref.decode(buf, 1, F);
             int sensitive = 0;
             for (int i = 1; i <= ShipBody.WIRE_SIZE; i++) {
                 ByteBuffer c = ByteBuffer.allocate(buf.capacity());
                 c.put(0, buf, 0, buf.capacity());
                 c.put(i, (byte) (c.get(i) ^ 0x01));
                 ShipBody d = new ShipBody();
-                d.decode(c, 1);
-                if (!d.sameState(ref)) {
+                d.decode(c, 1, F);
+                if (!d.sameState(ref, F)) {
                     sensitive++;
                 }
             }
@@ -341,7 +344,9 @@ class ShipBodyTest {
             assertAll(
                 () -> assertEquals((byte) 0x5c, buf.get(0), "the byte before is untouched"),
                 () -> assertEquals((byte) 0x5c, buf.get(ShipBody.WIRE_SIZE + 1), "the byte after is untouched"),
-                () -> assertEquals(ShipBody.WIRE_SIZE, sens, "flipping any one byte changes the decoded state"));
+                () -> assertEquals(ShipBody.WIRE_SIZE - 2, sens, "flipping the low bit of any byte changes the decoded"
+                    + " state, except in the rare version byte and the flags byte (the prevKeys flag: the canonical"
+                    + " form always carries the keys block)"));
         }
 
         @Test
@@ -366,7 +371,7 @@ class ShipBodyTest {
                 a.copyFrom(b);
                 changes[i].run();
                 fields++;
-                if (!a.sameState(b)) {
+                if (!a.sameState(b, F)) {
                     differ++;
                 }
             }
@@ -384,8 +389,76 @@ class ShipBodyTest {
             int seen = differ;
             assertAll(
                 () -> assertEquals(all, seen, "a change to any wire field is seen"),
-                () -> assertTrue(x.sameState(full()), "equal states are the same"),
-                () -> assertTrue(x.sameState(y), "fields that are not on the wire are ignored"));
+                () -> assertTrue(x.sameState(full(), F), "equal states are the same"),
+                () -> assertTrue(x.sameState(y, F), "fields that are not on the wire are ignored"));
+        }
+
+        @Test
+        @DisplayName("the three blocks: 71 + 62 + 16 bytes; key flags against the applied keys; the keys block on mismatch")
+        void blocks() {
+            ShipBody a = full();
+            long applied = a.prevKeys;
+            ByteBuffer core = ByteBuffer.allocate(ShipBody.CORE_SIZE);
+            int n = a.encodeCore(core, 0, F, applied, 9);
+            int flags = core.get(ShipBody.CORE_FLAGS);
+            boolean differ = a.keysDiffer(applied);
+            ShipBody b = new ShipBody();
+            b.prevKeys = 5;
+            b.lastReceivedKeys = 6;
+            int version = b.decodeCore(core, 0, F, applied);
+            long keptReceived = b.lastReceivedKeys;
+            ByteBuffer keys = ByteBuffer.allocate(ShipBody.KEYS_SIZE);
+            int k = a.encodeKeys(keys, 0);
+            b.decodeKeys(keys, 0);
+            ByteBuffer rare = ByteBuffer.allocate(ShipBody.RARE_SIZE);
+            int r = a.encodeRare(rare, 0);
+            b.decodeRare(rare, 0);
+            ShipBody same = full();
+            same.lastReceivedKeys = same.prevKeys;
+            assertAll(
+                () -> assertEquals(71, n, "core 71 bytes"),
+                () -> assertEquals(62, r, "rare 62 bytes"),
+                () -> assertEquals(16, k, "keys 16 bytes"),
+                () -> assertEquals(ShipBody.FLAG_PREV_KEYS | ShipBody.FLAG_KEYS_CLEARED, flags,
+                    "prevKeys equals the applied keys, lastReceivedKeys does not; keysCleared"),
+                () -> assertTrue(differ, "so the keys block must follow"),
+                () -> assertFalse(same.keysDiffer(same.prevKeys), "both equal: no keys block"),
+                () -> assertEquals(9, version, "the rare version comes back"),
+                () -> assertEquals(applied, b.prevKeys, "a flagged mask is the applied keys"),
+                () -> assertEquals(6L, keptReceived, "an unflagged one waits for the keys block"),
+                () -> assertTrue(b.sameState(a, F), "core + rare + keys restore the state"));
+        }
+
+        @Test
+        @DisplayName("narrow fields: shot age saturates, u16 counts clamp, clicks are signed 24-bit, items clamp to a byte")
+        void narrow() {
+            ShipBody a = full();
+            a.shotTime = F - 70_000;
+            a.shieldTime = 70_000;
+            a.stunned = -3;
+            a.items[2] = 300;
+            a.setClicks(-(1 << 23), (1 << 23) - 1);
+            ByteBuffer buf = ByteBuffer.allocate(ShipBody.WIRE_SIZE);
+            a.encode(buf, 0, F);
+            ShipBody b = new ShipBody();
+            b.decode(buf, 0, F);
+            ShipBody old = full();
+            old.shotTime = F - 80_000;
+            ShipBody older = full();
+            older.shotTime = F - 70_000;
+            ShipBody future = full();
+            future.shotTime = F + 5;
+            ShipBody now = full();
+            now.shotTime = F;
+            assertAll(
+                () -> assertEquals(F - ShipBody.MAX_SHOT_AGE, b.shotTime, "a shot 70000 frames ago reads 65535 ago"),
+                () -> assertTrue(old.sameState(older, F), "two shots older than the cap are the same state"),
+                () -> assertTrue(future.sameState(now, F), "a shot time after frames reads as age 0"),
+                () -> assertEquals(65535, b.shieldTime, "shieldTime clamps to 65535"),
+                () -> assertEquals(0, b.stunned, "a negative count clamps to 0"),
+                () -> assertEquals(255, b.items[2], "an item count clamps to 255"),
+                () -> assertEquals(-(1 << 23), b.cx, "the smallest i24 click"),
+                () -> assertEquals((1 << 23) - 1, b.cy, "the largest"));
         }
     }
 }

@@ -245,6 +245,23 @@ class SnapshotTest {
             w.beginSection(Section.TIMERS);
             Records.Timers.put(w, 70, 41, -1, 90, 70000, 400, 12, 300, 7, 50, 40000, -5);
             w.endSection();
+            com.fulcrologic.jxpilot.common.sim.ShipBody pb = new com.fulcrologic.jxpilot.common.sim.ShipBody();
+            pb.setClicks(64 * 1000, 64 * 2000 + 5);
+            pb.vx = -2.5f;
+            pb.prevKeys = 6;
+            pb.lastReceivedKeys = 7;
+            pb.power = 33.5f;
+            pb.items[3] = 4;
+            pb.shotTime = 4_000_000_000L - 10;
+            w.beginSection(Section.PREDICT);
+            Records.Predict.put(w, pb, 4_000_000_000L, 70_000, 6, 200);
+            w.endSection();
+            w.beginSection(Section.PREDICT_RARE);
+            Records.PredictRare.put(w, pb, 200);
+            w.endSection();
+            w.beginSection(Section.PREDICT_KEYS);
+            Records.PredictKeys.put(w, pb);
+            w.endSection();
             w.beginSection(Section.SOUND);
             Records.Sound.put(w, SoundEvent.ASTEROID_BREAK.ordinal(), SoundEvent.MAX_VOLUME);
             Records.Sound.put(w, SoundEvent.START.ordinal(), SoundEvent.MIN_VOLUME);
@@ -491,6 +508,36 @@ class SnapshotTest {
                             () -> assertEquals(32767, s.shutdownCount(), "clamps the shutdown count to i16"),
                             () -> assertEquals(0, s.shutdownDelay(), "clamps a negative shutdown delay to 0"));
                     }
+                    case Section.PREDICT -> {
+                        Records.Predict s = new Records.Predict().wrap(r, 0);
+                        com.fulcrologic.jxpilot.common.sim.ShipBody pd = new com.fulcrologic.jxpilot.common.sim.ShipBody();
+                        int v = s.read(pd, 6);
+                        assertAll("predict",
+                            () -> assertEquals(4_000_000_000L, s.frames(), "keeps frames as u32"),
+                            () -> assertEquals(65535, s.roundDelay(), "clamps roundDelay to u16"),
+                            () -> assertEquals(200, s.rareVersion(), "keeps the rare version"),
+                            () -> assertEquals(200, v, "read returns it"),
+                            () -> assertEquals(64 * 2000 + 5, pd.cy, "decodes the core"),
+                            () -> assertEquals(-2.5f, pd.vx, "vx"),
+                            () -> assertEquals(4_000_000_000L - 10, pd.shotTime, "shotTime from the age and frames"),
+                            () -> assertEquals(6L, pd.prevKeys, "prevKeys equals the applied keys: from the flag"));
+                    }
+                    case Section.PREDICT_RARE -> {
+                        Records.PredictRare s = new Records.PredictRare().wrap(r, 0);
+                        com.fulcrologic.jxpilot.common.sim.ShipBody pd = new com.fulcrologic.jxpilot.common.sim.ShipBody();
+                        s.read(pd);
+                        assertAll("predict rare",
+                            () -> assertEquals(200, s.version(), "keeps the version"),
+                            () -> assertEquals(33.5f, pd.power, "decodes the rare block"),
+                            () -> assertEquals(4, pd.items[3], "items"));
+                    }
+                    case Section.PREDICT_KEYS -> {
+                        com.fulcrologic.jxpilot.common.sim.ShipBody pd = new com.fulcrologic.jxpilot.common.sim.ShipBody();
+                        new Records.PredictKeys().wrap(r, 0).read(pd);
+                        assertAll("predict keys",
+                            () -> assertEquals(6L, pd.prevKeys, "prevKeys"),
+                            () -> assertEquals(7L, pd.lastReceivedKeys, "lastReceivedKeys"));
+                    }
                     case Section.SOUND -> {
                         Records.Sound s0 = new Records.Sound().wrap(r, 0);
                         Records.Sound s1 = new Records.Sound().wrap(r, 1);
@@ -537,6 +584,11 @@ class SnapshotTest {
     class WireSize {
         /** Writes a scene and returns its encoded size: packet header + snapshot header + sections. */
         int scene(int ships, int shots, int bursts, int radar) {
+            return scene(ships, shots, bursts, radar, false, false);
+        }
+
+        /** As above, with the owner's PREDICT core (protocol v2), and optionally its rare block too. */
+        int scene(int ships, int shots, int bursts, int radar, boolean predict, boolean rare) {
             ByteBuffer b = ByteBuffer.allocate(64 * 1024);
             SnapshotWriter w = new SnapshotWriter();
             w.setWorld(7000, 7000, true);
@@ -545,6 +597,17 @@ class SnapshotTest {
             w.beginSection(Section.SELF);
             Records.Self.put(w, 0, Records.ShipFlags.THRUSTING, 3500, 3500, 0, 0, 0, 500, 1000, Protocol.NO_ID, 1, 0, 0);
             w.endSection();
+            if (predict) {
+                com.fulcrologic.jxpilot.common.sim.ShipBody body = new com.fulcrologic.jxpilot.common.sim.ShipBody();
+                w.beginSection(Section.PREDICT);
+                Records.Predict.put(w, body, 1000, 0, 0, 1);
+                w.endSection();
+                if (rare) {
+                    w.beginSection(Section.PREDICT_RARE);
+                    Records.PredictRare.put(w, body, 1);
+                    w.endSection();
+                }
+            }
             w.beginSection(Section.SHIP);
             for (int i = 0; i < ships; i++) {
                 // every ship is thrusting: its sparks cost nothing on the wire (client generates them)
@@ -591,6 +654,11 @@ class SnapshotTest {
             // 32 players + 300 radar objects: 332 blips; 8 ships in view.
             int radarHeavy = scene(8, 0, 0, 332);
             int radarHeavyAll = scene(31, 0, 0, 332);
+            int typicalPredict = scene(4, 30, 2, 8, true, false);
+            int typicalRare = scene(4, 30, 2, 8, true, true);
+            int fightPredict = scene(15, 150, 5, 15, true, false);
+            System.out.printf("[wire size] typical %d, + PREDICT %d, + rare %d; fight %d, + PREDICT %d%n", typical,
+                typicalPredict, typicalRare, fight, fightPredict);
             assertAll(
                 () -> assertEquals(8 + 16 + (5 + 47) + (5 + 15 * 14) + 3 * 5 + 150 * 6 + (5 + 5 * 27) + (5 + 15 * 3),
                     fight, "fight = 1396 bytes"),
@@ -602,7 +670,15 @@ class SnapshotTest {
                 () -> assertEquals(8 + 16 + 52 + (5 + 8 * 14) + (5 + 332 * 3), radarHeavy,
                     "radar-heavy: 332 blips at 3 bytes plus 8 ships = 1194 bytes"),
                 () -> assertTrue(radarHeavy <= Protocol.MAX_PACKET, "radar-heavy with 8 ships in view fits one datagram"),
-                () -> assertEquals(1516, radarHeavyAll, "radar-heavy with all 31 ships in view is 1516 bytes (2 parts)"));
+                () -> assertEquals(1516, radarHeavyAll, "radar-heavy with all 31 ships in view is 1516 bytes (2 parts)"),
+                () -> assertEquals(77, Records.Predict.SIZE, "PREDICT: u32 frames, u16 roundDelay, the 71-byte core"),
+                () -> assertEquals(63, Records.PredictRare.SIZE, "PREDICT_RARE: u8 version, the 62-byte rare block"),
+                () -> assertEquals(16, Records.PredictKeys.SIZE, "PREDICT_KEYS: two u64 masks"),
+                () -> assertEquals(420 + 5 + 77, typicalPredict, "the owner's typical snapshot carries PREDICT: 502 bytes"),
+                () -> assertEquals(502 + 5 + 63, typicalRare, "and with the rare block 570 bytes"),
+                () -> assertEquals(1396 + 82, fightPredict, "the fight with PREDICT: 1478 bytes"),
+                () -> assertTrue(fightPredict + 68 + 21 <= 1800, "with every PREDICT block still within the 1.8 KB target"),
+                () -> assertTrue(typicalRare + 21 <= Protocol.MAX_PACKET, "a typical scene with every block fits one datagram"));
         }
     }
 

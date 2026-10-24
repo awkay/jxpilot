@@ -169,6 +169,26 @@ public final class SnapshotBuilder {
         }
     }
 
+    private boolean predict;
+    private long predictKeys;
+    private int predictVersion;
+    private boolean predictRare;
+
+    /**
+     * Include the PREDICT sections for the next {@link #build} (the receiving player's own ship, protocol v2): only
+     * when the viewer is the receiving player (not while watching another).
+     *
+     * @param appliedKeys the input the server applied to the viewer this tick (the key flags compare with it)
+     * @param rareVersion the version of the viewer's rare block
+     * @param sendRare    also send the rare block
+     */
+    public void setPredict(boolean on, long appliedKeys, int rareVersion, boolean sendRare) {
+        predict = on;
+        predictKeys = appliedKeys;
+        predictVersion = rareVersion;
+        predictRare = sendRare;
+    }
+
     /** Set the view half-size in pixels (C view size / 2 plus a margin). */
     public void setView(double halfWidth, double halfHeight) {
         viewHalfX = halfWidth;
@@ -216,6 +236,7 @@ public final class SnapshotBuilder {
         markVisible(viewer);
         startPart();
         writeSelf(viewer);
+        writePredict(viewer);
         writeSounds(viewer);
         writeShips(viewer);
         writeRefuel();
@@ -385,6 +406,27 @@ public final class SnapshotBuilder {
             v.numTanks, v.currentTank,
             (v.status & Obj.PLAYING) == 0 && v.count > 0 ? v.count : 0, v.power, v.turnSpeed, v.turnResistance,
             itemSections.lockDist(v), itemSections.lockDir(v), v.check, ItemSections.selfMods(v.mods));
+    }
+
+    /**
+     * BEHAVIOR: with {@link #setPredict} on: PREDICT (frames, roundDelay, the core block), PREDICT_RARE when asked
+     * for, PREDICT_KEYS when a key mask differs from the applied input; nothing otherwise. Each call of
+     * {@link #build} needs its own {@link #setPredict}: it is switched off after use.
+     */
+    private void writePredict(Player v) {
+        if (!predict) {
+            return;
+        }
+        predict = false;
+        if (need(Section.PREDICT, 0)) {
+            Records.Predict.put(wr, v, w.frames, w.roundDelay, predictKeys, predictVersion);
+        }
+        if (predictRare && need(Section.PREDICT_RARE, 0)) {
+            Records.PredictRare.put(wr, v, predictVersion);
+        }
+        if (v.keysDiffer(predictKeys) && need(Section.PREDICT_KEYS, 0)) {
+            Records.PredictKeys.put(wr, v);
+        }
     }
 
     private void writeSounds(Player v) {

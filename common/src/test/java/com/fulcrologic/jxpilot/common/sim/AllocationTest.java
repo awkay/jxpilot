@@ -322,8 +322,8 @@ class AllocationTest {
         if (b.bx >= 0 && b.bx < w.width() && b.by >= 0 && b.by < w.height()) {
             visited[b.by * w.width() + b.bx] = true;
         }
-        b.encode(buf, 0);
-        copy.decode(buf, 0);
+        b.encode(buf, 0, w.frames);
+        copy.decode(buf, 0, w.frames);
         w.frames++;
         if (slot == RING - 1) {
             // the predictor: re-seed from the oldest kept state and replay the kept frames; the result must match
@@ -337,7 +337,7 @@ class AllocationTest {
             }
             w.frames = now;
             c.replays++;
-            if (!replay.sameState(b)) {
+            if (!replay.sameState(b, w.frames)) {
                 c.mismatches++;
             }
         }

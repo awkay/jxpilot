@@ -148,6 +148,7 @@ public final class ClientConnection {
 
     // INPUT per predicted tick (see sendInput)
     private final PredictedClock clock = new PredictedClock();
+    private final KernelSync kernel = new KernelSync();
     private long inputIntervalNanos = 1_000_000_000L / 60;
     private boolean inputSent;
     private long lastInputSend;
@@ -230,6 +231,9 @@ public final class ClientConnection {
     /** The predicted clock the INPUT entries are tagged with. */
     public PredictedClock predictedClock() { return clock; }
 
+    /** The own ship and kernel state from the PREDICT sections (protocol v2). */
+    public KernelSync kernel() { return kernel; }
+
     public long snapshotsReceived() { return snapshots; }
 
     /**
@@ -286,6 +290,7 @@ public final class ClientConnection {
         haveInputAck = false;
         ackedInputTick = 0;
         clock.reset(clock.simHz());
+        kernel.reset();
         ioBackoff = false;
         pingArmed = false; // open probes of the old session cannot match: its PONGs carry the old session id
     }
@@ -758,6 +763,9 @@ public final class ClientConnection {
                     diagnostics.inputSlackTicks = slack / 16.0;
                 }
                 clock.feedback(tick, slack, starved, diagnostics.jitterMs() * 1e6, now);
+                if ((in.get(p + 9) & 0xFF) == 0) {
+                    kernel.onSnapshot(in, input);
+                }
             }
         } else {
             stats.measure(tick / slotTicks, PacketStats.DROP);

@@ -564,14 +564,19 @@ class SimGameHostPlayTest {
             return Arrays.copyOfRange(b.array(), SimGameHost.SECTIONS_START, b.position());
         }
 
-        /** What a fresh builder writes for the viewer: the reference the host's parts must equal. */
+        /**
+         * What a fresh builder writes for the viewer: the reference the host's parts must equal (with the PREDICT
+         * sections of an own view in its first snapshots: no input yet, rare version 1, the rare block sent).
+         */
         static byte[][] reference(World w, Player viewer, long burstFrom, boolean radar) {
             ByteBuffer[] parts = new ByteBuffer[SimGameHost.SNAPSHOT_PARTS];
             for (int i = 0; i < parts.length; i++) {
                 parts[i] = ByteBuffer.allocate(Protocol.MAX_PACKET);
                 parts[i].position(PacketHeader.SIZE);
             }
-            int n = new SnapshotBuilder(w).build(viewer, 0, burstFrom, radar, parts);
+            SnapshotBuilder builder = new SnapshotBuilder(w);
+            builder.setPredict(true, 0, 1, true);
+            int n = builder.build(viewer, 0, burstFrom, radar, parts);
             byte[][] out = new byte[n][];
             for (int i = 0; i < n; i++) {
                 out[i] = sections(parts[i]);
@@ -582,6 +587,69 @@ class SimGameHostPlayTest {
         static void burst(Simulation s, Player near) {
             s.debris.make(near.cx / 64.0, near.cy / 64.0, 1, 0, near.id, near.team, Obj.DEBRIS, 3.5f, Obj.GRAVITY,
                 Records.ObjColor.RED, Records.BurstKind.DEBRIS, 8, 10, 10, 0, 127, 20, 30, 5, 20);
+        }
+
+        /** The section types of one filled part 0. */
+        static List<Integer> types(SimGameHost h, int id) {
+            SnapshotWriter wr = new SnapshotWriter();
+            ByteBuffer b = netPart(wr, 0);
+            h.fillSnapshot(id, 0, false, wr);
+            b.flip();
+            b.position(PacketHeader.SIZE);
+            com.fulcrologic.jxpilot.common.net.SnapshotReader r = new com.fulcrologic.jxpilot.common.net.SnapshotReader();
+            r.begin(b);
+            List<Integer> t = new java.util.ArrayList<>();
+            while (r.nextSection()) {
+                t.add(r.type());
+            }
+            return t;
+        }
+
+        static boolean has(List<Integer> types, int type) {
+            return types.contains(type);
+        }
+
+        @Test
+        @DisplayName("PREDICT: the core every snapshot; the rare block for 8 snapshots from a change and every 14th;"
+            + " the keys block when the masks differ from the applied input; nothing while watching another ship")
+        void predict() {
+            Simulation s = sim("", THREE);
+            World w = s.world;
+            SimGameHost h = new SimGameHost(s);
+            int ann = enter(h, "Ann", 0);
+            int bob = enter(h, "Bob", 0);
+            h.tick(1);
+            Player a = w.byId(ann);
+            boolean[] core = new boolean[30];
+            boolean[] rare = new boolean[30];
+            for (int i = 0; i < 30; i++) {
+                if (i == 20) {
+                    a.power += 1;
+                }
+                List<Integer> t = types(h, ann);
+                core[i] = has(t, com.fulcrologic.jxpilot.common.net.Section.PREDICT);
+                rare[i] = has(t, com.fulcrologic.jxpilot.common.net.Section.PREDICT_RARE);
+            }
+            boolean keysBefore = has(types(h, ann), com.fulcrologic.jxpilot.common.net.Section.PREDICT_KEYS);
+            a.lastReceivedKeys = 5;
+            boolean keysAfter = has(types(h, ann), com.fulcrologic.jxpilot.common.net.Section.PREDICT_KEYS);
+            a.status |= Obj.PAUSE;
+            a.lockTagged |= Player.LOCK_PLAYER;
+            a.lockPlId = bob;
+            w.items.allowViewing = true;
+            boolean watching = has(types(h, ann), com.fulcrologic.jxpilot.common.net.Section.PREDICT);
+            boolean[] fc = core;
+            boolean[] fr = rare;
+            assertAll(
+                () -> assertTrue(fc[0] && fc[13] && fc[29], "the core in every own snapshot"),
+                () -> assertTrue(fr[0] && fr[7], "the rare block in the first 8 snapshots"),
+                () -> assertFalse(fr[8] || fr[13], "not after them"),
+                () -> assertTrue(fr[14], "but in every 14th"),
+                () -> assertTrue(fr[20] && fr[27], "and in the 8 after a change (power)"),
+                () -> assertTrue(fr[28] && !fr[29], "then the 14th again (28), not 29"),
+                () -> assertFalse(keysBefore, "no keys block while the masks equal the applied keys (none yet)"),
+                () -> assertTrue(keysAfter, "a keys block once lastReceivedKeys differs"),
+                () -> assertFalse(watching, "no PREDICT while the snapshot shows another ship"));
         }
 
         @Test

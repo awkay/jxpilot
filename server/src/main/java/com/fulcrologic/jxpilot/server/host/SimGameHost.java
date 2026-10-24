@@ -110,6 +110,18 @@ public final class SimGameHost implements GameHost {
     private final boolean[] queued = new boolean[IDS];
     /** The client's input lead in ticks ({@link #inputLead}), for the owner's view cull. */
     private final int[] leadOf = new int[IDS];
+    /** The keys applied to the player at the last tick (the PREDICT key flags compare with them). */
+    private final long[] applied = new long[IDS];
+    // ---- PREDICT rare block per viewer: its last bytes, version, the snapshot it changed at, snapshots sent
+    /** Snapshots after a change of the rare block that carry it. */
+    public static final int RARE_RESEND = 8;
+    /** Every this many snapshots the rare block goes out anyway. */
+    public static final int RARE_REFRESH = 14;
+    private final byte[][] rareBytes = new byte[IDS][com.fulcrologic.jxpilot.common.sim.ShipBody.RARE_SIZE];
+    private final int[] rareVersion = new int[IDS];
+    private final long[] rareChanged = new long[IDS];
+    private final long[] snapshotsSent = new long[IDS];
+    private final ByteBuffer rareScratch = ByteBuffer.allocate(com.fulcrologic.jxpilot.common.sim.ShipBody.RARE_SIZE);
     /** Next event to deliver to a viewer. */
     private final long[] cursor = new long[IDS];
     /** First burst a viewer has not seen. */
@@ -338,6 +350,10 @@ public final class SimGameHost implements GameHost {
         spawnTeam[id] = t;
         queued[id] = false;
         leadOf[id] = 0;
+        applied[id] = 0;
+        snapshotsSent[id] = 0;
+        rareChanged[id] = 0;
+        java.util.Arrays.fill(rareBytes[id], (byte) 0);
         pendingSettings[id] = false;
         java.util.Arrays.fill(pendingBanks[id], 0);
         pl.viewWidth = Msg.Display.DEF_VIEW_SIZE;
@@ -794,6 +810,7 @@ public final class SimGameHost implements GameHost {
             }
             sim.keys.apply(p, keys);
             keysBySlot[p.slot] = keys;
+            applied[p.id] = keys;
             queued[p.id] = false;
         }
     }
@@ -980,6 +997,7 @@ public final class SimGameHost implements GameHost {
             }
             Player view = sim.locks.viewOf(p);
             builder.setViewSize(p.viewWidth, p.viewHeight);
+            predictFor(viewerId, p, view == p);
             sim.locks.hudLock(view, p.viewWidth, p.viewHeight);
             scratchParts = builder.build(view, 0, burstCursor[viewerId], radar, scratch);
             burstCursor[viewerId] = w.events.burstSeq();
@@ -995,6 +1013,36 @@ public final class SimGameHost implements GameHost {
             dst.put(src.get(i));
         }
         return part < scratchParts - 1;
+    }
+
+    /**
+     * The PREDICT sections of the next build.
+     * <p>
+     * BEHAVIOR: only for a viewer watching its own ship. Its rare block gets a new version (mod 256) when its bytes
+     * change; it is sent in the {@link #RARE_RESEND} snapshots from a change (and from the bind, so a newcomer has
+     * it) and in every {@link #RARE_REFRESH}th one.
+     */
+    private void predictFor(int id, Player p, boolean own) {
+        long n = snapshotsSent[id]++;
+        if (!own) {
+            builder.setPredict(false, 0, 0, false);
+            return;
+        }
+        p.encodeRare(rareScratch, 0);
+        byte[] last = rareBytes[id];
+        boolean changed = false;
+        for (int i = 0; i < last.length; i++) {
+            byte v = rareScratch.get(i);
+            if (v != last[i]) {
+                last[i] = v;
+                changed = true;
+            }
+        }
+        if (changed) {
+            rareVersion[id] = (rareVersion[id] + 1) & 0xFF;
+            rareChanged[id] = n;
+        }
+        builder.setPredict(true, applied[id], rareVersion[id], n - rareChanged[id] < RARE_RESEND || n % RARE_REFRESH == 0);
     }
 
     // ================================================================ reliable state and events

@@ -232,9 +232,9 @@ class KernelDifferentialTest {
             declared.add(f.getName());
             ShipBody a = new ShipBody();
             setDistinct(f, a);
-            a.encode(buf, 0);
+            a.encode(buf, 0, 1000);
             ShipBody b = new ShipBody();
-            b.decode(buf, 0);
+            b.decode(buf, 0, 1000);
             boolean carried = sameField(f, a, b);
             boolean changed = !sameField(f, a, new ShipBody());
             if (!changed || (ON_WIRE.containsKey(f.getName()) && carried != ON_WIRE.get(f.getName()))) {
@@ -430,11 +430,11 @@ class KernelDifferentialTest {
             if (d == null) {
                 ShipBody fresh = new ShipBody();
                 fresh.ship = pre.ship;
-                pre.encode(wire, 0);
-                fresh.decode(wire, 0);
+                pre.encode(wire, 0, w.frames);
+                fresh.decode(wire, 0, w.frames);
                 mirror();
                 replayPhase(client, fresh, ph, slot);
-                if (!fresh.sameState(b)) {
+                if (!fresh.sameState(b, w.frames)) {
                     d = "client path: " + wireDiff(fresh, b);
                 } else if (nextDraw != nDraws) {
                     d = "client path: tie-break draws " + nextDraw + " of " + nDraws;
