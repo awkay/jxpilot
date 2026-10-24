@@ -45,6 +45,11 @@ is not in the game; `active[count]` is a freed object handle, which `alloc` re-i
 
 ## Wall movement: Segment, Mover, WallDist, Grid, Click (SegmentOracleTest compares Segment with literal C transcriptions)
 
+**Moved (latency phase 1a):** Segment, WallDist, Click and the player half of Mover (Move_player, Turn_player, wall
+bounce, now `ShipMover`) are in `common.sim` with their tests; their current survivors are in `PIT-SURVIVORS.md`
+(`common.sim`). The Segment, WallDist, Click and player Mover rows below are kept for history (pre-move line numbers);
+the `Mover.java` rows for `moveObject` (75, 99-101, 163, 169) still apply, at shifted line numbers.
+
 | file:line (n) | mutator | mutated expression | why |
 |---|---|---|---|
 | Click.java:53 | Boundary | `d < 0` → `<=` | at d = 0 both branches give 0. |

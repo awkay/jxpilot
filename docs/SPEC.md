@@ -62,7 +62,8 @@ An `Options` object holding typed values with defaults from `cmdline.c` for the 
 
 ## Architecture
 ```
-common:  map parsing & model, Options, math utils, ship shape(s), protocol (message ids + codecs over ByteBuffer)
+common:  map parsing & model, Options, math utils, ship shape(s), protocol (message ids + codecs over ByteBuffer),
+         the own-ship kernel (common.sim: ShipKernel over ShipBody/ShipWorld/KernelEvents; server and client run it)
 server:  World (pools), Simulation.tick(), rules, robots, UDP server (ServerNet), headless main `ServerMain --map default --port 15345` (maps bundled as resources)
 client:  GLFW window, Renderer (batch, fonts, map VBO), HUD/radar/messages, input→ control bitmask, ClientNet, `ClientMain [--connect host:port | --local --map ...]`
 ```
