@@ -727,8 +727,8 @@ final class Tuning {
                 continue;
             }
             int base = mineLife != 0 ? mineLife
-                : mines ? 5000 + (w.rng.nextInt() & 255)
-                : Integer.remainderUnsigned(w.rng.nextInt(), 64 * fps - 1) + 128 * fps;
+                : mines ? 5000 + (w.randomMT() & 255)
+                : Integer.remainderUnsigned(w.randomMT(), 64 * fps - 1) + 128 * fps;
             int life = base / (com.fulcrologic.jxpilot.server.world.Mods.mini(o.mods[h]) + 1);
             o.life[h] = (int) (w.rfrac() * life);
         }
