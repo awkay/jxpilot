@@ -84,6 +84,28 @@ class HudExtrasTest {
         }
 
         @Test
+        @DisplayName("the server's lock distance and direction (SELF) win when non-zero; modifiers as C's string")
+        void serverLockAndMods() {
+            int mods = Records.Self.MOD_CLUSTER | 2 << Records.Self.MOD_MINI_SHIFT;
+            AppFixture f = new AppFixture(true).players().twice(x -> x
+                .selfControls(45, 40, FOE, 777, 32, mods)
+                .ship(FOE, 0, 400, 100, 0));
+            e.fill(f.game, hud, 800, 600, 1, 350, 175, 100);
+            AppFixture g = new AppFixture(true).players().twice(x -> x
+                .selfControls(45, 40, FOE, 0, 0, 0)
+                .ship(FOE, 0, 650, 175, 0));
+            HudExtras e2 = new HudExtras();
+            e2.fill(g.game, hud, 800, 600, 1, 350, 175, 100);
+            assertAll(
+                () -> assertEquals(777, e.lockDist, "SELF lock distance (C lock_dist)"),
+                () -> assertEquals(32, e.lockDir, "SELF lock direction"),
+                () -> assertEquals("C X3", e.mods.toString(), "modifier string"),
+                () -> assertEquals(300, e2.lockDist, "no server distance: computed from the ships"),
+                () -> assertEquals(0, e2.lockDir, "and the direction"),
+                () -> assertEquals("", e2.mods.toString(), "no modifiers: empty"));
+        }
+
+        @Test
         @DisplayName("lock across the wrap seam on a team mate; odd loops; no autopilot")
         void lockMateWrapped() {
             AppFixture f = new AppFixture(true).players().twice(x -> x

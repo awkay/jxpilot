@@ -226,19 +226,172 @@ public final class DevRun {
                 tap(f, frame, 160, GLFW_KEY_F11, now);
             }
             case "mods" -> {
-                // U11: toggle n c i v x z b l, one every 20 frames from frame 40; shots 10 frames after each
+                // U11: toggle n c i v x z b l, one every 20 frames from frame 40; shots 18 frames after each (--start 58 --every 20)
                 int[] keys = {GLFW_KEY_N, GLFW_KEY_C, GLFW_KEY_I, GLFW_KEY_V, GLFW_KEY_X, GLFW_KEY_Z, GLFW_KEY_B, GLFW_KEY_L};
                 for (int k = 0; k < keys.length; k++) {
                     tap(f, frame, 40 + 20 * k, keys[k], now);
                 }
-                if (frame >= 50 && (frame - 50) % 20 == 0) {
+                if (frame >= 58 && (frame - 58) % 20 == 0) {
                     com.fulcrologic.jxpilot.client.game.CharBuf m = new com.fulcrologic.jxpilot.client.game.CharBuf(64);
                     com.fulcrologic.jxpilot.client.game.Modifiers.format(f.game().world().selfMods(), m);
                     System.out.println("[mods] frame=" + frame + " modifiers='" + m + "'");
                 }
             }
             case "help" -> tap(f, frame, 20, GLFW_KEY_F1, now);
+            case "refuel" -> {
+                // U12: fly to the nearest fuel station, hold refuel (f) once within 80 px
+                var w = f.game().world();
+                var map = f.game().map();
+                if (!w.hasSelf() || map == null || map.fuels().isEmpty()) {
+                    return;
+                }
+                if (PILOT.targetX < 0) {
+                    // the nearest station with three free blocks in a row beside it; aim at the first of them
+                    double best = Double.MAX_VALUE;
+                    int[][] dirs = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
+                    for (var fs : map.fuels()) {
+                        for (int[] dd : dirs) {
+                            boolean open = true;
+                            for (int k = 1; k <= 3; k++) {
+                                open &= map.blockAt(fs.bx() + dd[0] * k, fs.by() + dd[1] * k)
+                                    == com.fulcrologic.jxpilot.common.map.BlockType.SPACE;
+                            }
+                            double tx = fs.x() + dd[0] * 35;
+                            double ty = fs.y() + dd[1] * 35;
+                            double d = Math.hypot(Pilot.dx(w, tx), Pilot.dy(w, ty));
+                            if (open && d < best) {
+                                best = d;
+                                PILOT.targetX = tx;
+                                PILOT.targetY = ty;
+                                PILOT.stationX = fs.x();
+                                PILOT.stationY = fs.y();
+                            }
+                        }
+                    }
+                }
+                PILOT.steer(f, 0, now);
+                double dist = Math.hypot(Pilot.dx(w, PILOT.stationX), Pilot.dy(w, PILOT.stationY));
+                PILOT.hold(f, GLFW_KEY_F, dist < 80, now);
+                if (frame % 20 == 0 || dist < 80) {
+                    int beams = 0;
+                    for (int i = 0; i < f.scene().linkCount; i++) {
+                        if (f.scene().linkKind[i] == com.fulcrologic.jxpilot.client.paint.SceneData.LINK_REFUEL) {
+                            beams++;
+                        }
+                    }
+                    System.out.printf("[refuel] frame=%d dist=%.0f fuel=%.0f connectors=%d refuel beams=%d%n", frame,
+                        dist, w.selfFuel(), w.objects().count(com.fulcrologic.jxpilot.client.game.ObjectLists.CONNECTOR),
+                        beams);
+                }
+            }
+            case "ball" -> {
+                // U2/U5: fly to the nearest ball, hold the connector (Control_L) until attached, fly, then drop (d)
+                var w = f.game().world();
+                if (!w.hasSelf()) {
+                    return;
+                }
+                var o = w.objects();
+                int balls = o.count(com.fulcrologic.jxpilot.client.game.ObjectLists.BALL);
+                if (frame < BALL_DROP_FRAME[0] || BALL_DROP_FRAME[0] < 0) {
+                    if (balls > 0 && !PILOT.attached) {
+                        double best = Double.MAX_VALUE;
+                        for (int i = 0; i < balls; i++) {
+                            double bx = o.get(com.fulcrologic.jxpilot.client.game.ObjectLists.BALL, i, 0);
+                            double by = o.get(com.fulcrologic.jxpilot.client.game.ObjectLists.BALL, i, 1);
+                            double d = Math.hypot(Pilot.dx(w, bx), Pilot.dy(w, by));
+                            if (d < best) {
+                                best = d;
+                                PILOT.targetX = bx;
+                                PILOT.targetY = by;
+                            }
+                        }
+                    }
+                    double dist = PILOT.targetX < 0 ? 1e9 : PILOT.steer(f, PILOT.attached ? 0 : 60, now);
+                    PILOT.hold(f, GLFW_KEY_LEFT_CONTROL, !PILOT.attached && dist < 160, now);
+                    int conns = o.count(com.fulcrologic.jxpilot.client.game.ObjectLists.CONNECTOR);
+                    if (!PILOT.attached && (w.selfFlags() & com.fulcrologic.jxpilot.common.net.Records.ShipFlags.HAS_BALL) != 0) {
+                        PILOT.attached = true;
+                        BALL_DROP_FRAME[0] = frame + 120;
+                        PILOT.targetX = w.selfX() + 600;
+                        PILOT.targetY = w.selfY();
+                        System.out.println("[ball] attached at frame " + frame);
+                    }
+                    if (frame % 10 == 0) {
+                        System.out.printf("[ball] frame=%d balls=%d connectors=%d attached=%s%n", frame, balls, conns,
+                            PILOT.attached);
+                    }
+                } else if (frame == BALL_DROP_FRAME[0]) {
+                    PILOT.release(f, now);
+                    f.key(GLFW_KEY_D, GLFW_PRESS, 0, now);
+                    System.out.println("[ball] drop at frame " + frame);
+                } else if (frame == BALL_DROP_FRAME[0] + 3) {
+                    f.key(GLFW_KEY_D, GLFW_RELEASE, 0, now);
+                }
+            }
             default -> { }
+        }
+    }
+
+    static final Pilot PILOT = new Pilot();
+    static final int[] BALL_DROP_FRAME = {-1};
+
+    /** A crude autopilot for scripted runs: steers the own ship toward a point and slows down near it. */
+    static final class Pilot {
+        double targetX = -1;
+        double targetY = -1;
+        double stationX;
+        double stationY;
+        boolean attached;
+        private boolean left;
+        private boolean right;
+        private boolean thrust;
+        private final java.util.Map<Integer, Boolean> held = new java.util.HashMap<>();
+
+        static double dx(com.fulcrologic.jxpilot.client.game.ClientWorld w, double x) {
+            return com.fulcrologic.jxpilot.common.math.XMath.wrapDelta(x - w.selfX(), w.worldWidth(), w.wraps());
+        }
+
+        static double dy(com.fulcrologic.jxpilot.client.game.ClientWorld w, double y) {
+            return com.fulcrologic.jxpilot.common.math.XMath.wrapDelta(y - w.selfY(), w.worldHeight(), w.wraps());
+        }
+
+        /** One frame of steering; returns the distance to the target. */
+        double steer(ClientFrame f, double stop, long now) {
+            var w = f.game().world();
+            double ddx = dx(w, targetX);
+            double ddy = dy(w, targetY);
+            double dist = Math.hypot(ddx, ddy);
+            double speed = Math.min(6, Math.max(0, (dist - stop) / 25));
+            double vx = dist > 0 ? ddx / dist * speed : 0;
+            double vy = dist > 0 ? ddy / dist * speed : 0;
+            double ex = vx - w.selfVx();
+            double ey = vy - w.selfVy();
+            double need = Math.hypot(ex, ey);
+            double want = need > 0.4 ? Math.atan2(ey, ex) : Math.atan2(ddy, ddx);
+            double err = Math.IEEEremainder(want - w.selfHeading(), 2 * Math.PI);
+            set(f, GLFW_KEY_A, err > 0.12, now);
+            set(f, GLFW_KEY_S, err < -0.12, now);
+            set(f, GLFW_KEY_RIGHT_SHIFT, need > 0.4 && Math.abs(err) < 0.4, now);
+            return dist;
+        }
+
+        void hold(ClientFrame f, int key, boolean down, long now) {
+            set(f, key, down, now);
+        }
+
+        void release(ClientFrame f, long now) {
+            set(f, GLFW_KEY_A, false, now);
+            set(f, GLFW_KEY_S, false, now);
+            set(f, GLFW_KEY_RIGHT_SHIFT, false, now);
+            set(f, GLFW_KEY_LEFT_CONTROL, false, now);
+        }
+
+        private void set(ClientFrame f, int key, boolean down, long now) {
+            boolean was = held.getOrDefault(key, false);
+            if (down != was) {
+                f.key(key, down ? GLFW_PRESS : GLFW_RELEASE, 0, now);
+                held.put(key, down);
+            }
         }
     }
 

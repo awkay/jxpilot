@@ -32,6 +32,7 @@ import com.fulcrologic.jxpilot.client.paint.SceneData;
 import com.fulcrologic.jxpilot.client.paint.ShipPainter;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
+import com.fulcrologic.jxpilot.common.net.Protocol;
 import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.common.net.Wire;
 import com.fulcrologic.jxpilot.common.net.Section;
@@ -449,24 +450,54 @@ class SceneFillerTest {
         }
 
         @Test
-        @DisplayName("refuel beam from the nearest station in range to the ship; repair beam from the ship to the target")
+        @DisplayName("refuel and repair beams are drawn from the server's endpoints; ship flags alone draw none")
         void beams() {
-            double fx = 13.5 * 35; // '#' in column 13
-            double fy = 8.5 * 35;
-            double tx = 17.5 * 35; // '!' in column 17
             AppFixture f = new AppFixture(true).players().twice(x -> x
-                .self(Records.ShipFlags.REFUELING, (float) (fx + 50), (float) fy, 0, 0xFFFF)
-                .ship(MATE, Records.ShipFlags.REFUELING, fx + 200, fy, 0)
-                .ship(FOE, Records.ShipFlags.REPAIRING, tx, fy - 60, 0));
+                .self(Records.ShipFlags.REFUELING, 400, 300, 0, 0xFFFF)
+                .ship(FOE, Records.ShipFlags.REPAIRING, 600, 240, 0)
+                .ship(MATE, Records.ShipFlags.REFUELING, 700, 300, 0)
+                .connector(472.5, 297.5, 400, 300, Records.Connector.KIND_REFUEL)
+                .connector(600, 240, 612.5, 297.5, Records.Connector.KIND_REPAIR));
             fill(f);
             assertAll(
-                () -> assertEquals(2, scene.linkCount, "self's refuel beam and the foe's repair beam; mate out of range"),
-                () -> assertEquals(SceneData.LINK_REFUEL, scene.linkKind[0], "refuel kind"),
-                () -> assertEquals((float) fx, scene.linkX1[0], "from the station x"),
-                () -> assertEquals((float) fy, scene.linkY1[0], "from the station y"),
-                () -> assertEquals((float) (fx + 50), scene.linkX2[0], "to the ship"),
-                () -> assertEquals((float) tx, scene.linkX2[1], "repair beam ends at the target"),
-                () -> assertEquals((float) (fy - 60), scene.linkY1[1], "repair beam starts at the ship"));
+                () -> assertEquals(2, scene.linkCount, "one beam per record; the mate's REFUELING flag adds none"),
+                () -> assertEquals(SceneData.LINK_REFUEL, scene.linkKind[0], "refuel: LINK_REFUEL"),
+                () -> assertEquals(472.5f, scene.linkX1[0], "from the station x"),
+                () -> assertEquals(297.5f, scene.linkY1[0], "from the station y"),
+                () -> assertEquals(400f, scene.linkX2[0], "to the ship x"),
+                () -> assertEquals(300f, scene.linkY2[0], "to the ship y"),
+                () -> assertEquals(SceneData.LINK_REFUEL, scene.linkKind[1], "repair: also LINK_REFUEL (C Paint_refuel)"),
+                () -> assertEquals(612.5f, scene.linkX2[1], "repair beam ends at the target"),
+                () -> assertEquals(SceneData.LINK_CONNECTOR, SceneFiller.linkKind(Records.Connector.KIND_BALL), "ball"),
+                () -> assertEquals(SceneData.LINK_TRACTOR, SceneFiller.linkKind(Records.Connector.KIND_TRACTOR), "tractor"),
+                () -> assertEquals(SceneData.LINK_TRACTOR, SceneFiller.linkKind(Records.Connector.KIND_PRESSOR),
+                    "pressor"));
+        }
+
+        @Test
+        @DisplayName("a connected ball is tethered to its holder's drawn ship (own or other, the near copy); free or "
+            + "unseen holders have none")
+        void ballTether() {
+            AppFixture f = new AppFixture(true).players().twice(x -> {
+                x.self(0, 100, 100, 0, 0xFFFF).ship(MATE, 0, 400, 100, 0);
+                x.w.beginSection(Section.BALL);
+                Records.Ball.put(x.w, Protocol.NO_ID, 150, 120, Protocol.NO_TEAM, AppFixture.SELF);
+                Records.Ball.put(x.w, Protocol.NO_ID, 380, 140, Protocol.NO_TEAM, MATE);
+                Records.Ball.put(x.w, Protocol.NO_ID, 300, 300, Protocol.NO_TEAM, Protocol.NO_ID);
+                Records.Ball.put(x.w, Protocol.NO_ID, 330, 300, Protocol.NO_TEAM, FOE);
+                Records.Ball.put(x.w, Protocol.NO_ID, 680, 100, Protocol.NO_TEAM, AppFixture.SELF);
+                x.w.endSection();
+            });
+            fill(f);
+            assertAll(
+                () -> assertEquals(5, scene.ballCount, "every ball drawn"),
+                () -> assertEquals(3, scene.linkCount, "three tethers: own (twice) and the mate's"),
+                () -> assertEquals(SceneData.LINK_BALL, scene.linkKind[0], "solid ball line"),
+                () -> assertEquals(150f, scene.linkX1[0], "from the ball"),
+                () -> assertEquals(100f, scene.linkX2[0], "to the own ship x"),
+                () -> assertEquals(100f, scene.linkY2[0], "to the own ship y"),
+                () -> assertEquals(400f, scene.linkX2[1], "the mate's ball to the mate"),
+                () -> assertEquals(800f, scene.linkX2[2], "across the seam: the own ship's copy nearest the ball"));
         }
 
         @Test

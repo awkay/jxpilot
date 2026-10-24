@@ -231,6 +231,20 @@ class XpTranslatorTest {
         }
 
         @Test
+        void refuelPacketsBecomeBeamsWithTheirEndpoints() {
+            List<String> s = frame(c(1).self(1000, 1000).ship(1000, 1000, 3, 0).ship(1100, 1000, 4, 0)
+                .refuel(700, 700, 1000, 1000).refuel(1100, 1000, 735, 735).refuel(1000, 1000, 1100, 1000)
+                .refuel(800, 800, 820, 820).end(1));
+            assertEquals(List.of(
+                    "CONNECTOR 700.0,700.0 1000.0,1000.0 kind=" + Records.Connector.KIND_REFUEL,
+                    "CONNECTOR 1100.0,1000.0 735.0,735.0 kind=" + Records.Connector.KIND_REPAIR,
+                    "CONNECTOR 1000.0,1000.0 1100.0,1000.0 kind=" + Records.Connector.KIND_REFUEL,
+                    "CONNECTOR 800.0,800.0 820.0,820.0 kind=" + Records.Connector.KIND_REFUEL),
+                SnapDump.only(s, "CONNECTOR"),
+                "station-to-ship is REFUEL; ship-to-non-ship is REPAIR; ship-to-ship and unknown default to REFUEL");
+        }
+
+        @Test
         void pausedShipsHaveNoIdOnTheWire() {
             List<String> s = frame(c(1).self(1000, 1000).paused(1050, 1000, 3).end(1));
             assertEquals(List.of("SHIP id=" + Protocol.NO_ID + " flags=" + Records.ShipFlags.PAUSED
@@ -381,8 +395,8 @@ class XpTranslatorTest {
                 () -> assertEquals(List.of("MISSILE id=" + Protocol.NO_ID + " pos=1007.0,1008.0 h=1.571 kind="
                     + Records.Missile.KIND_HEAT + " len=15"),
                     SnapDump.only(s, "MISSILE"), "missile"),
-                () -> assertEquals(List.of("BALL id=4 pos=1009.0,1010.0 team=" + Protocol.NO_TEAM + " holder="
-                    + Protocol.NO_ID), SnapDump.only(s, "BALL"), "ball"),
+                () -> assertEquals(List.of("BALL id=" + Protocol.NO_ID + " pos=1009.0,1010.0 team=" + Protocol.NO_TEAM
+                    + " holder=4"), SnapDump.only(s, "BALL"), "ball: C's id is the connected player, the ball has none"),
                 () -> assertEquals(List.of("LASER pos=1011.0,1012.0 h=3.142 len=100 color=" + Records.ObjColor.BLUE),
                     SnapDump.only(s, "LASER"), "laser"),
                 () -> assertEquals(List.of("ASTEROID pos=1013.0,1014.0 size=3 rot=1.571"), SnapDump.only(s, "ASTEROID"),

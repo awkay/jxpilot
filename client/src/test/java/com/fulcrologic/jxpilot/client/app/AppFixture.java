@@ -170,6 +170,13 @@ final class AppFixture {
         return this;
     }
 
+    AppFixture connector(double x0, double y0, double x1, double y1, int kind) {
+        w.beginSection(Section.CONNECTOR);
+        Records.Connector.put(w, x0, y0, x1, y1, kind);
+        w.endSection();
+        return this;
+    }
+
     AppFixture ship(int id, int flags, double x, double y, double heading) {
         w.beginSection(Section.SHIP);
         Records.Ship.put(w, id, flags, x, y, heading, 0, 0);

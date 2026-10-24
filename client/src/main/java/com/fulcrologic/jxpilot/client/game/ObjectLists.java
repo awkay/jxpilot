@@ -61,13 +61,21 @@ public final class ObjectLists {
     static final int MISSILE_ID = 5;
     static final int BALL_ID = 4;
 
+    /** The wire's "no id" (65535) as stored. */
+    static final float NO_ID = 65535f;
+
     private final int cap;
     private final int[] count = new int[KINDS];
+    /** Interpolation scratch: later objects already continued; earlier object's continuation. */
+    private final boolean[] taken;
+    private final int[] match;
     private final float[][] data = new float[KINDS][];
 
     /** @param cap objects per kind */
     public ObjectLists(int cap) {
         this.cap = cap;
+        taken = new boolean[cap];
+        match = new int[cap];
         for (int k = 0; k < KINDS; k++) {
             data[k] = new float[cap * STRIDE];
         }
@@ -115,63 +123,123 @@ public final class ObjectLists {
     }
 
     /**
-     * Move this frame's missiles and balls (a copy of the earlier frame) toward their continuations in
-     * the later frame {@code b} by fraction {@code t}, wrap-aware.
+     * Move this frame's moving objects (a copy of the earlier frame) toward their continuations in the later
+     * frame {@code b} by fraction {@code t}, wrap-aware: missiles and balls, and the endpoints of connectors
+     * and transporter beams.
      * <p>
-     * BEHAVIOR: a ball or missile with an id (not 65535) continues as the later object with the same id;
-     * one without an id as the nearest later object of its kind within {@code maxDist} that no earlier
-     * object has taken (greedy in list order; exclusivity is tracked for the first 64 later objects); unmatched objects stay where they are. A missile's heading
-     * turns the short way.
+     * BEHAVIOR: a ball or missile with an id (not 65535) continues as the later object with the same id when
+     * that one is within {@code maxDist} and not taken yet (two objects sharing an id cannot swap); otherwise
+     * it continues as the nearest later object of its kind within {@code maxDist} that no earlier object has
+     * taken (greedy in list order), where an object with an id only pairs with one without; unmatched objects
+     * stay where they are. A missile's heading turns the short way.
+     * BEHAVIOR: a connector or beam continues as the later one of the same kind (connectors) whose endpoints
+     * are each within {@code maxDist} and nearest in sum; both endpoints are interpolated.
      */
     public void interpolateMoving(ObjectLists b, double t, double maxDist, double worldW, double worldH,
                                   boolean wrap) {
         interpolate(MISSILE, MISSILE_ID, b, t, maxDist, worldW, worldH, wrap);
         interpolate(BALL, BALL_ID, b, t, maxDist, worldW, worldH, wrap);
+        interpolateLines(CONNECTOR, 4, b, t, maxDist, worldW, worldH, wrap);
+        interpolateLines(TRANSPORTER, -1, b, t, maxDist, worldW, worldH, wrap);
     }
 
     private void interpolate(int kind, int idField, ObjectLists b, double t, double maxDist, double worldW,
                              double worldH, boolean wrap) {
+        int n = count[kind];
         int nb = b.count[kind];
-        long used = 0;
-        for (int i = 0; i < count[kind]; i++) {
+        java.util.Arrays.fill(taken, 0, nb, false);
+        double max2 = maxDist * maxDist;
+        for (int i = 0; i < n; i++) {
+            match[i] = -1;
             float id = get(kind, i, idField);
-            int best = -1;
-            double bestD = maxDist * maxDist;
+            if (id == NO_ID) {
+                continue;
+            }
             for (int j = 0; j < nb; j++) {
-                float bid = b.get(kind, j, idField);
-                if (id != 65535f) {
-                    if (bid == id) {
-                        best = j;
-                        break;
-                    }
+                if (!taken[j] && b.get(kind, j, idField) == id && dist2(kind, i, b, j, 0, worldW, worldH, wrap) <= max2) {
+                    match[i] = j;
+                    taken[j] = true;
+                    break;
+                }
+            }
+        }
+        for (int i = 0; i < n; i++) {
+            if (match[i] >= 0) {
+                continue;
+            }
+            int best = -1;
+            double bestD = max2;
+            float id = get(kind, i, idField);
+            for (int j = 0; j < nb; j++) {
+                if (taken[j] || id != NO_ID && b.get(kind, j, idField) != NO_ID) {
                     continue;
                 }
-                if (j < 64 && (used & (1L << j)) != 0) {
-                    continue;
-                }
-                double dx = XMath.wrapDelta(b.get(kind, j, 0) - get(kind, i, 0), worldW, wrap);
-                double dy = XMath.wrapDelta(b.get(kind, j, 1) - get(kind, i, 1), worldH, wrap);
-                double d = dx * dx + dy * dy;
+                double d = dist2(kind, i, b, j, 0, worldW, worldH, wrap);
                 if (d <= bestD) {
                     bestD = d;
                     best = j;
                 }
             }
-            if (best < 0) {
-                continue;
-            }
-            if (best < 64) {
-                used |= 1L << best;
-            }
-            double dx = XMath.wrapDelta(b.get(kind, best, 0) - get(kind, i, 0), worldW, wrap);
-            double dy = XMath.wrapDelta(b.get(kind, best, 1) - get(kind, i, 1), worldH, wrap);
-            set(kind, i, 0, (float) wrapTo(get(kind, i, 0) + dx * t, worldW, wrap));
-            set(kind, i, 1, (float) wrapTo(get(kind, i, 1) + dy * t, worldH, wrap));
-            if (kind == MISSILE) {
-                double h = get(kind, i, 2);
-                set(kind, i, 2, (float) XMath.normalizeAngle(h + XMath.angleDiff(h, b.get(kind, best, 2)) * t));
+            if (best >= 0) {
+                match[i] = best;
+                taken[best] = true;
             }
         }
+        for (int i = 0; i < n; i++) {
+            int j = match[i];
+            if (j < 0) {
+                continue;
+            }
+            move(kind, i, b, j, 0, t, worldW, worldH, wrap);
+            if (kind == MISSILE) {
+                double h = get(kind, i, 2);
+                set(kind, i, 2, (float) XMath.normalizeAngle(h + XMath.angleDiff(h, b.get(kind, j, 2)) * t));
+            }
+        }
+    }
+
+    private void interpolateLines(int kind, int kindField, ObjectLists b, double t, double maxDist, double worldW,
+                                  double worldH, boolean wrap) {
+        int n = count[kind];
+        int nb = b.count[kind];
+        java.util.Arrays.fill(taken, 0, nb, false);
+        double max2 = maxDist * maxDist;
+        for (int i = 0; i < n; i++) {
+            int best = -1;
+            double bestD = Double.MAX_VALUE;
+            for (int j = 0; j < nb; j++) {
+                if (taken[j] || kindField >= 0 && b.get(kind, j, kindField) != get(kind, i, kindField)) {
+                    continue;
+                }
+                double d0 = dist2(kind, i, b, j, 0, worldW, worldH, wrap);
+                double d1 = dist2(kind, i, b, j, 2, worldW, worldH, wrap);
+                if (d0 <= max2 && d1 <= max2 && d0 + d1 < bestD) {
+                    bestD = d0 + d1;
+                    best = j;
+                }
+            }
+            if (best >= 0) {
+                taken[best] = true;
+                move(kind, i, b, best, 0, t, worldW, worldH, wrap);
+                move(kind, i, b, best, 2, t, worldW, worldH, wrap);
+            }
+        }
+    }
+
+    /** Squared wrap-aware distance between point (field, field + 1) of this object i and b's object j. */
+    private double dist2(int kind, int i, ObjectLists b, int j, int field, double worldW, double worldH,
+                         boolean wrap) {
+        double dx = XMath.wrapDelta(b.get(kind, j, field) - get(kind, i, field), worldW, wrap);
+        double dy = XMath.wrapDelta(b.get(kind, j, field + 1) - get(kind, i, field + 1), worldH, wrap);
+        return dx * dx + dy * dy;
+    }
+
+    private void move(int kind, int i, ObjectLists b, int j, int field, double t, double worldW, double worldH,
+                      boolean wrap) {
+        double dx = XMath.wrapDelta(b.get(kind, j, field) - get(kind, i, field), worldW, wrap);
+        double dy = XMath.wrapDelta(b.get(kind, j, field + 1) - get(kind, i, field + 1), worldH, wrap);
+        set(kind, i, field, (float) wrapTo(get(kind, i, field) + dx * t, worldW, wrap));
+        set(kind, i, field + 1, (float) wrapTo(get(kind, i, field + 1) + dy * t, worldH, wrap));
     }
 
     private static double wrapTo(double v, double size, boolean wrap) {

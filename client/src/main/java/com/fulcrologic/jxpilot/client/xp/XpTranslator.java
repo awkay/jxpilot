@@ -320,6 +320,15 @@ public final class XpTranslator {
         w.endSection();
     }
 
+    private static boolean isShipAt(XpFrame f, int x, int y) {
+        for (int i = 0; i < f.ships; i++) {
+            if (f.shipX[i] == x && f.shipY[i] == y) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static int refuelFlags(XpFrame f, int x, int y) {
         int fl = 0;
         for (int k = 0; k < f.refuels; k++) {
@@ -573,7 +582,11 @@ public final class XpTranslator {
         };
     }
 
-    /** BEHAVIOR: the M2 object sections (items, mines, missiles, balls, lasers, ...); culled like ships. */
+    /**
+     * BEHAVIOR: the M2 object sections (items, mines, missiles, balls, lasers, ...); culled like ships. A
+     * ball's C id is the player it is connected to (C {@code ball->id}, -1 when free): it becomes the record's
+     * connectedPlayer, the ball itself has no id.
+     */
     private void writeObjects(XpFrame f) {
         if (f.itemObjs > 0 && w.beginSection(Section.ITEM)) {
             for (int k = 0; k < f.itemObjs; k++) {
@@ -613,7 +626,9 @@ public final class XpTranslator {
                 double x = wrapX(f.ballX[k]);
                 double y = wrapY(f.ballY[k]);
                 if (visible(x, y)) {
-                    Records.Ball.put(w, f.ballId[k] & 0xFFFF, x, y, Protocol.NO_TEAM, Protocol.NO_ID);
+                    // C's ball id is the player the ball is connected to (-1 none), not an object id
+                    Records.Ball.put(w, Protocol.NO_ID, x, y, Protocol.NO_TEAM,
+                        f.ballId[k] < 0 ? Protocol.NO_ID : f.ballId[k] & 0xFFFF);
                 }
             }
             w.endSection();
@@ -668,9 +683,25 @@ public final class XpTranslator {
         }
     }
 
-    /** BEHAVIOR: connectors (tractor byte 0 = ball, else tractor beam) and transporter beams. */
+    /**
+     * BEHAVIOR: connectors (tractor byte 0 = ball, else tractor beam), then one CONNECTOR per PKT_REFUEL with
+     * its endpoints as sent (C Paint_refuel): kind REPAIR when it starts at a ship and does not end at one (C
+     * Send_refuel(ship, target)), else REFUEL (station to ship); and transporter beams.
+     */
     private void writeLines(XpFrame f) {
-        if (f.connectors > 0 && w.beginSection(Section.CONNECTOR)) {
+        if (f.connectors + f.refuels > 0 && w.beginSection(Section.CONNECTOR)) {
+            for (int k = 0; k < f.refuels; k++) {
+                double x0 = wrapX(f.refuelX0[k]);
+                double y0 = wrapY(f.refuelY0[k]);
+                double x1 = wrapX(f.refuelX1[k]);
+                double y1 = wrapY(f.refuelY1[k]);
+                if (visible(x0, y0) && visible(x1, y1)) {
+                    boolean repair = isShipAt(f, f.refuelX0[k], f.refuelY0[k])
+                        && !isShipAt(f, f.refuelX1[k], f.refuelY1[k]);
+                    Records.Connector.put(w, x0, y0, x1, y1,
+                        repair ? Records.Connector.KIND_REPAIR : Records.Connector.KIND_REFUEL);
+                }
+            }
             for (int k = 0; k < f.connectors; k++) {
                 double x0 = wrapX(f.connX0[k]);
                 double y0 = wrapY(f.connY0[k]);

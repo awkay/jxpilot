@@ -107,6 +107,7 @@ class SnapshotBuilderTest {
         final List<String> cannons = new ArrayList<>();
         final List<String> fuel = new ArrayList<>();
         final List<String> radar = new ArrayList<>();
+        final List<float[]> connectors = new ArrayList<>();
     }
 
     Decoded decode(int n) {
@@ -121,6 +122,7 @@ class SnapshotBuilderTest {
         Records.CannonState cs = new Records.CannonState();
         Records.FuelState fs = new Records.FuelState();
         Records.Radar rd = new Records.Radar();
+        Records.Connector cn = new Records.Connector();
         DebrisBurst db = new DebrisBurst();
         for (int p = 0; p < n; p++) {
             ByteBuffer buf = parts[p].duplicate();
@@ -165,6 +167,10 @@ class SnapshotBuilderTest {
                         case Section.RADAR -> {
                             rd.wrap(r, i);
                             d.radar.add(rd.cellX() + "," + rd.cellY() + ":" + rd.flags());
+                        }
+                        case Section.CONNECTOR -> {
+                            cn.wrap(r, i);
+                            d.connectors.add(new float[] {cn.x0(), cn.y0(), cn.x1(), cn.y1(), cn.kind()});
                         }
                         default -> throw new AssertionError("unexpected section " + r.type());
                     }
@@ -314,6 +320,43 @@ class SnapshotBuilderTest {
                 () -> assertEquals(1, n, "one buffer gives one part"),
                 () -> assertEquals(SnapshotWriter.FLAG_LAST_PART, d.headers.get(0)[4], "which is the last part"),
                 () -> assertTrue(total > 100 && total < 400, "the shots that fit are sent (" + total + ")"));
+        }
+    }
+
+    @Nested
+    @DisplayName("refuel beams")
+    class Refuel {
+        @Test
+        @DisplayName("a CONNECTOR of kind REFUEL from the station to each refuelling ship in view; paused, far and "
+            + "not refuelling ships have none")
+        void beams() {
+            com.fulcrologic.jxpilot.common.map.FuelStation f = w.map.fuels().get(0);
+            a.used |= Has.REFUEL;
+            a.fs = 0;
+            b.used |= Has.REFUEL;
+            b.fs = 0;
+            b.status |= Obj.PAUSE;
+            c.used |= Has.REFUEL;
+            c.fs = 0;
+            int n = new SnapshotBuilder(w).build(a, 1, w.events.burstSeq(), false, parts);
+            Decoded d = decode(n);
+            b.status &= ~Obj.PAUSE;
+            b.used &= ~Has.REFUEL;
+            a.used &= ~Has.REFUEL;
+            c.used &= ~Has.REFUEL;
+            for (ByteBuffer p : parts) {
+                p.clear();
+            }
+            Decoded none = decode(new SnapshotBuilder(w).build(a, 1, w.events.burstSeq(), false, parts));
+            float[] k = d.connectors.isEmpty() ? new float[5] : d.connectors.get(0);
+            assertAll(
+                () -> assertEquals(1, d.connectors.size(), "only A's beam (B is paused, C out of view)"),
+                () -> assertEquals(Records.Connector.KIND_REFUEL, (int) k[4], "kind REFUEL"),
+                () -> assertEquals(f.x(), k[0], 0.25, "from the station x"),
+                () -> assertEquals(f.y(), k[1], 0.25, "from the station y"),
+                () -> assertEquals(200.5, k[2], 0.25, "to the ship x"),
+                () -> assertEquals(120.25, k[3], 0.25, "to the ship y"),
+                () -> assertEquals(0, none.connectors.size(), "no refuelling: no beams"));
         }
     }
 

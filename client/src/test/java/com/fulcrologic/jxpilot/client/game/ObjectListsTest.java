@@ -108,6 +108,63 @@ class ObjectListsTest {
     }
 
     @Nested
+    @DisplayName("interpolateMoving: shared ids, exclusivity and lines")
+    class Gating {
+        @Test
+        @DisplayName("two balls sharing an id each take the one within reach; a taken ball is not reused")
+        void sharedIds() {
+            ObjectLists a = new ObjectLists(4);
+            ObjectLists b = new ObjectLists(4);
+            a.add(BALL, 100, 100, 0, NO_ID, 9, 0);
+            a.add(BALL, 400, 100, 0, NO_ID, 9, 0);
+            b.add(BALL, 410, 100, 0, NO_ID, 9, 0);
+            b.add(BALL, 110, 100, 0, NO_ID, 9, 0);
+            a.interpolateMoving(b, 0.5, 30, 2000, 2000, false);
+            ObjectLists c = new ObjectLists(4);
+            ObjectLists d = new ObjectLists(4);
+            c.add(BALL, 100, 100, 0, NO_ID, NO_ID, 0);
+            c.add(BALL, 104, 100, 0, NO_ID, NO_ID, 0);
+            d.add(BALL, 110, 100, 0, NO_ID, NO_ID, 0);
+            c.interpolateMoving(d, 0.5, 30, 2000, 2000, false);
+            ObjectLists e = new ObjectLists(4);
+            ObjectLists g = new ObjectLists(4);
+            e.add(BALL, 100, 100, 0, NO_ID, 4, 0);
+            g.add(BALL, 110, 100, 0, NO_ID, NO_ID, 0);
+            e.interpolateMoving(g, 0.5, 30, 2000, 2000, false);
+            assertAll(
+                () -> assertEquals(105f, a.get(BALL, 0, 0), 1e-4f, "the first id-9 ball does not jump to the far one"),
+                () -> assertEquals(405f, a.get(BALL, 1, 0), 1e-4f, "the second takes the far one"),
+                () -> assertEquals(105f, c.get(BALL, 0, 0), 1e-4f, "free balls: the first takes the only later one"),
+                () -> assertEquals(104f, c.get(BALL, 1, 0), 1e-4f, "the second finds it taken and stays"),
+                () -> assertEquals(105f, e.get(BALL, 0, 0), 1e-4f, "an id pairs with a later ball without one"));
+        }
+
+        @Test
+        @DisplayName("connectors follow the same-kind line nearest at both ends; beams too; out of reach stays")
+        void lines() {
+            ObjectLists a = new ObjectLists(4);
+            ObjectLists b = new ObjectLists(4);
+            a.add(CONNECTOR, 100, 100, 200, 100, 0, 0);
+            a.add(CONNECTOR, 100, 300, 200, 300, 3, 0);
+            a.add(CONNECTOR, 500, 500, 600, 500, 0, 0);
+            b.add(CONNECTOR, 110, 300, 210, 300, 0, 0);
+            b.add(CONNECTOR, 120, 100, 220, 110, 0, 0);
+            b.add(CONNECTOR, 104, 300, 204, 300, 3, 0);
+            a.add(TRANSPORTER, 10, 10, 40, 40, 0, 0);
+            b.add(TRANSPORTER, 20, 10, 50, 40, 0, 0);
+            a.interpolateMoving(b, 0.5, 30, 2000, 2000, false);
+            assertAll(
+                () -> assertEquals(110f, a.get(CONNECTOR, 0, 0), 1e-4f, "ball connector start halfway"),
+                () -> assertEquals(210f, a.get(CONNECTOR, 0, 2), 1e-4f, "end x halfway"),
+                () -> assertEquals(105f, a.get(CONNECTOR, 0, 3), 1e-4f, "end y halfway"),
+                () -> assertEquals(102f, a.get(CONNECTOR, 1, 0), 1e-4f, "the refuel line follows its own kind"),
+                () -> assertEquals(500f, a.get(CONNECTOR, 2, 0), 1e-4f, "nothing within reach: stays"),
+                () -> assertEquals(15f, a.get(TRANSPORTER, 0, 0), 1e-4f, "transporter beam start"),
+                () -> assertEquals(45f, a.get(TRANSPORTER, 0, 2), 1e-4f, "transporter beam end"));
+        }
+    }
+
+    @Nested
     @DisplayName("in ClientWorld")
     class InWorld {
         @Test
