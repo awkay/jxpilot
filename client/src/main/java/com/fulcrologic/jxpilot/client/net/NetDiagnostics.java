@@ -43,7 +43,8 @@ public final class NetDiagnostics {
 
     private double srttNanos = Double.NaN;
     private long lastRttNanos = -1;
-    private double tickNanos = 1e9 / 60;
+    /** Until {@link #reset}: XPilot's default 14 frames per second. */
+    private double tickNanos = 1e9 / 14;
     private int divisor = 1;
     private boolean haveSnapshot;
     private int lastTick;

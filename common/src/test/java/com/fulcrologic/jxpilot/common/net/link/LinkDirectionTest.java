@@ -152,6 +152,38 @@ class LinkDirectionTest {
         }
 
         @Test
+        @DisplayName("1000 packets with random due times come out in due order, ties in send order (heap order)")
+        void heapOrder() {
+            LinkDirection d = new LinkDirection(new LinkProfile().fifo(false), 1, 1024, 8);
+            java.util.SplittableRandom rnd = new java.util.SplittableRandom(42);
+            long[] due = new long[1000];
+            for (int i = 0; i < due.length; i++) {
+                due[i] = rnd.nextInt(50); // many ties
+                ByteBuffer b = ByteBuffer.allocate(2).putShort((short) i).flip();
+                d.send(b, due[i], 0, null);
+            }
+            int[] got = new int[due.length];
+            ByteBuffer dst = ByteBuffer.allocate(8);
+            int n = 0;
+            while (d.inFlight() > 0) {
+                dst.clear();
+                d.receive(dst, Long.MAX_VALUE);
+                got[n++] = dst.getShort(0);
+            }
+            boolean sorted = true;
+            for (int k = 1; k < n; k++) {
+                int a = got[k - 1];
+                int b = got[k];
+                sorted &= due[a] < due[b] || due[a] == due[b] && a < b;
+            }
+            boolean ok = sorted;
+            int count = n;
+            assertAll(
+                () -> assertEquals(1000, count, "every packet delivered"),
+                () -> assertTrue(ok, "by due time, then send order"));
+        }
+
+        @Test
         @DisplayName("a receive buffer smaller than the datagram gets its first bytes (truncation)")
         void truncates() {
             LinkDirection d = new LinkDirection(new LinkProfile(), 1, 8, 64);
@@ -538,12 +570,14 @@ class LinkDirectionTest {
             boolean b = d.send(sized(100, 2), 0, 0, null); // waits 100 <= 150: leaves at 200
             boolean c = d.send(sized(100, 3), 0, 0, null); // would wait 200 > 150: dropped
             boolean e = d.send(sized(100, 4), 60 * MS, 0, null); // waits 140: leaves at 300
+            boolean exact = d.send(sized(100, 5), 150 * MS, 0, null); // waits exactly 150: fits, leaves at 400
             assertAll(
                 () -> assertTrue(a && b, "the first two fit in the queue"),
                 () -> assertFalse(c, "the third would wait 200 ms > 150 ms: dropped"),
                 () -> assertTrue(e, "a later one that waits 140 ms fits (the dropped one took no time)"),
+                () -> assertTrue(exact, "a wait of exactly the limit fits"),
                 () -> assertEquals(1, d.queueDrops(), "one queue drop counted"),
-                () -> assertEquals(3, d.inFlight(), "three in flight"));
+                () -> assertEquals(4, d.inFlight(), "four in flight"));
         }
     }
 

@@ -139,6 +139,8 @@ class HarnessPartsTest {
                 () -> assertEquals(1000 * MS + (1500 + 3 * 263) * MS, InputToPhoton.t0(1000 * MS, 3), "fourth trial"),
                 () -> assertEquals(ControlKey.TURN_LEFT, InputToPhoton.keyOf(0), "even trials turn"),
                 () -> assertEquals(ControlKey.THRUST, InputToPhoton.keyOf(1), "odd trials thrust"),
+                () -> assertEquals(5, InputToPhoton.blockSeed(5, 0), "block 0 is the seed itself"),
+                () -> assertEquals(5 + 2 * 7919, InputToPhoton.blockSeed(5, 2), "later blocks step by 7919"),
                 () -> assertEquals(7_919_993L, InputToPhoton.tickPhase(1), "phase of seed 1"),
                 () -> assertTrue(InputToPhoton.tickPhase(-5) >= 0 && InputToPhoton.tickPhase(-5) < 71_000_000L,
                     "phase is within one 14 Hz tick for any seed"));
@@ -191,6 +193,9 @@ class HarnessPartsTest {
             t.put(3, 7, 95, 40, true, 0, 0, 0);
             t.put(4, 7, 5, 40, true, 0, 0, 0);
             t.put(5, 7, 5, 40, false, 0, 0, 0);
+            ServerTruth ends = new ServerTruth(1);
+            ends.put(1, 7, 0, 0, true, 0, 0, 0);
+            ends.put(2, 7, 10, 0, true, 0, 0, 0);
             double[] out = new double[2];
             boolean mid = t.positionAt(7, 1.25, 100, 100, false, out);
             double mx = out[0];
@@ -207,7 +212,18 @@ class HarnessPartsTest {
                 () -> assertFalse(t.positionAt(7, 5.0, 100, 100, true, out), "tick 6 not recorded: none"),
                 () -> assertFalse(t.positionAt(7, 0.5, 100, 100, true, out), "before tick 1: none"),
                 () -> assertFalse(t.positionAt(8, 1.5, 100, 100, true, out), "unknown player: none"),
-                () -> assertEquals(5, t.lastTick(), "newest tick"));
+                () -> assertEquals(5, t.lastTick(), "newest tick"),
+                () -> assertTrue(ends.positionAt(7, 1.5, 100, 100, false, new double[2]),
+                    "between the second-newest and the newest recorded tick"));
+        }
+
+        @Test
+        @DisplayName("ticks beyond the recording's capacity are ignored")
+        void capacity() {
+            ServerTruth t = new ServerTruth(1);
+            t.put(ServerTruth.MAX_TICKS - 1, 7, 1, 1, true, 0, 0, 0);
+            t.put(ServerTruth.MAX_TICKS, 7, 2, 2, true, 0, 0, 0);
+            assertEquals(ServerTruth.MAX_TICKS - 1, t.lastTick(), "the last slot is used, the one past it is not");
         }
 
         @Test
@@ -221,6 +237,13 @@ class HarnessPartsTest {
             ServerTruth wrap = new ServerTruth(1);
             wrap.put(1, 7, 995, 0, true, 0, 0, 0);
             wrap.put(2, 7, 5, 0, true, 0, 0, 0);
+            ServerTruth vertical = new ServerTruth(1);
+            vertical.put(1, 7, 0, 990, true, 0, 0, 0);
+            vertical.put(2, 7, 0, 10, true, 0, 0, 0);
+            vertical.put(3, 7, 0, 200, true, 0, 0, 0);
+            ServerTruth exact = new ServerTruth(1);
+            exact.put(1, 7, 0, 0, true, 0, 0, 0);
+            exact.put(2, 7, 60, 80, true, 0, 0, 0); // exactly 100 px
             assertAll(
                 () -> assertTrue(t.jumped(7, 1, 4, 96, 1000, 1000, false), "490 px between ticks 2 and 3"),
                 () -> assertTrue(t.jumped(7, 3, 3, 96, 1000, 1000, false), "the range includes the step into tick 3"),
@@ -228,7 +251,12 @@ class HarnessPartsTest {
                 () -> assertFalse(t.jumped(7, 1, 2, 96, 1000, 1000, false), "before it"),
                 () -> assertFalse(wrap.jumped(7, 1, 2, 96, 1000, 1000, true), "995 -> 5 across the wrap is 10 px"),
                 () -> assertTrue(wrap.jumped(7, 1, 2, 96, 1000, 1000, false), "without wrap it is 990 px"),
-                () -> assertFalse(t.jumped(9, 1, 4, 96, 1000, 1000, false), "unknown player"));
+                () -> assertFalse(t.jumped(9, 1, 4, 96, 1000, 1000, false), "unknown player"),
+                () -> assertFalse(vertical.jumped(7, 1, 2, 96, 1000, 1000, true), "990 -> 10 in y across the wrap is 20 px"),
+                () -> assertTrue(vertical.jumped(7, 3, 3, 96, 1000, 1000, true), "190 px in y is a jump"),
+                () -> assertFalse(exact.jumped(7, 1, 2, 100, 1000, 1000, false), "exactly the threshold is no jump"),
+                () -> assertFalse(vertical.jumped(7, 3, 3, 196, 1000, 1000, false), "10 -> 200 in y is 190 px, below 196"),
+                () -> assertTrue(exact.jumped(7, 1, 2, 99.9, 1000, 1000, false), "just over it is"));
         }
 
         @Test
@@ -279,6 +307,7 @@ class HarnessPartsTest {
                 () -> assertEquals("43", MetricTable.num(43.4, 0), "no decimals"),
                 () -> assertEquals("0.25", MetricTable.num(0.25, 2), "two decimals"),
                 () -> assertEquals("1.5", MetricTable.num(1.46, 1), "rounded"),
+                () -> assertEquals("4.3", MetricTable.num(4.25, 1), "ties round half up"),
                 () -> assertEquals("-", MetricTable.num(Double.NaN, 1), "NaN"));
         }
 
@@ -290,17 +319,25 @@ class HarnessPartsTest {
                 new InputToPhoton.Trial(ControlKey.THRUST, 0, 250, InputToPhoton.Outcome.MEASURED),
                 new InputToPhoton.Trial(ControlKey.THRUST, 0, Double.NaN, InputToPhoton.Outcome.DEAD_AT_T0)), 0, 0, 0);
             MotionMetrics.Result m = new MotionMetrics.Result(Stats.of(0.2, 1.0), Stats.of(9, 22), Stats.of(0.02, 5),
-                Stats.of(0.1), 0, Stats.of(), Double.NaN, 42, 2);
+                Stats.of(0.1), 0, Stats.of(), Double.NaN, 42, 2, 203.4, 4.25, Double.NaN);
             MetricTable.Row r = new MetricTable.Row(Course.WALLS, new Scenario(200, Scenario.Jitter.NONE,
                 Scenario.Loss.NONE), i, m);
+            MotionMetrics.Result noTeleport = new MotionMetrics.Result(Stats.of(0.2), Stats.of(), Stats.of(0.02),
+                Stats.of(), 1.5, Stats.of(3, 4), 97.5, 0, 0, 8, 4.1, 0);
+            String quiet = MetricTable.line(new MetricTable.Row(Course.GRAVITY_WELL, new Scenario(0, Scenario.Jitter.PARETO,
+                Scenario.Loss.BURSTY_5), i, noTeleport));
             String table = MetricTable.format(List.of(r));
             assertAll(
                 () -> assertEquals("| walls | 200/0/0 | 240 | 250 | 40 | 240 | 250 | 2/3 | 0.2/1.0 | 9.0/22.0 (42)"
-                    + " | 5.00/5.0 | 0.10 | 0.0 (2 tp) | n/a (1c) | n/a (1c) |", MetricTable.line(r), "the row"),
+                    + " | 5.00/5.0 | 0.10 | 0.0 (2 tp) | 203/4.3/- | n/a (1c) | n/a (1c) |", MetricTable.line(r), "the row"),
                 () -> assertEquals(MetricTable.HEADER + "\n" + MetricTable.RULE + "\n" + MetricTable.line(r) + "\n", table,
                     "header, rule, rows"),
                 () -> assertEquals(MetricTable.HEADER.split("\\|").length, MetricTable.RULE.split("\\|").length,
-                    "the rule has a cell per column"));
+                    "the rule has a cell per column"),
+                () -> assertTrue(quiet.startsWith("| gravity well | 0/spk/5%b |"), quiet),
+                () -> assertTrue(quiet.endsWith("| 1.5 | 8/4.1/0.0 | 4.0 | 97.5 |"),
+                    "no teleports: no '(tp)'; predictor figures once there are some: " + quiet),
+                () -> assertTrue(quiet.contains("| -/- (0) |"), "no robot seen: no aim error"));
         }
     }
 }

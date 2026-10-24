@@ -43,6 +43,8 @@ import java.util.Map;
  *   <li><b>Snaps</b>: own-ship step changes above {@link #SNAP_PX} (3 ship lengths, §4.2's snap threshold) while
  *   alive, per minute. A step change while the server's own position also jumped that far (wormhole, hyperjump)
  *   is a teleport: counted apart and left out of the smoothness and snap figures.</li>
+ *   <li><b>HUD figures</b>: the client's own RTT, jitter and loss readings at the end (what the net line shows),
+ *   to check them against the link.</li>
  *   <li><b>Correction size</b> and <b>prediction exactness</b> need the phase 1c predictor's reconciliations:
  *   reported as n/a until then ({@link Sink#correction}, {@link Sink#exact} are the hooks).</li>
  * </ul>
@@ -75,8 +77,14 @@ final class MotionMetrics {
         }
     }
 
+    /**
+     * @param hudRttMs  what the HUD's net line shows at the end: the client's smoothed PING RTT
+     * @param hudJitterMs and its snapshot jitter
+     * @param hudLossPercent and its snapshot loss
+     */
     record Result(Stats ownError, Stats aimError, Stats ownSmooth, Stats otherSmooth, double snapsPerMinute,
-                  Stats correction, double exactPercent, long otherFrames, long teleports) { }
+                  Stats correction, double exactPercent, long otherFrames, long teleports, double hudRttMs,
+                  double hudJitterMs, double hudLossPercent) { }
 
     private final double[] ownErr = new double[MAX_SAMPLES];
     private final double[] aimErr = new double[MAX_SAMPLES];
@@ -165,11 +173,12 @@ final class MotionMetrics {
         return w.hasSelf() ? w.selfDrawnTick() : w.serverTickNow();
     }
 
-    Result result(int frameHz) {
+    Result result(int frameHz, com.fulcrologic.jxpilot.client.net.NetDiagnostics hud) {
         double minutes = aliveFrames / (double) frameHz / 60.0;
         return new Result(new Stats(ownErr, nOwn), new Stats(aimErr, nAim), new Stats(ownSmooth, nOwnSmooth),
             new Stats(otherSmooth, nOtherSmooth), minutes == 0 ? Double.NaN : snaps / minutes,
-            new Stats(sink.correction, sink.corrections), sink.exactPercent(), nAim, teleports);
+            new Stats(sink.correction, sink.corrections), sink.exactPercent(), nAim, teleports, hud.rttMs(),
+            hud.jitterMs(), hud.lossPercent());
     }
 
     /** BEHAVIOR: the wrap-aware distance between two points. */
@@ -202,6 +211,6 @@ final class MotionMetrics {
         rig.onTick = (r, t) -> truth.record(r.server.world(), r.server.net.currentTick());
         rig.onFrame = (r, t) -> m.frame(r.world(), truth);
         rig.runUntil(spawn + seconds * LatencyRig.SEC);
-        return m.result(LatencyRig.FRAME_HZ);
+        return m.result(LatencyRig.FRAME_HZ, rig.client.connection().netDiagnostics());
     }
 }

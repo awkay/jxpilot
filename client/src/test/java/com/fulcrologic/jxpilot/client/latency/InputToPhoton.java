@@ -44,7 +44,7 @@ import java.util.List;
  * ({@link Result#invisible}).
  * <p>
  * Trials alternate turn and thrust and start {@link #SPACING_MS} apart, which walks t0 across the tick and
- * frame phases (263 ms is 3.68 ticks at 14 Hz and 31.6 frames at 120 Hz).
+ * frame phases (263 ms is 3.68 ticks at 14 Hz and 31.6 frames at 120 Hz), {@link #BLOCK} per baseline game.
  */
 final class InputToPhoton {
     static final long MS = 1_000_000L;
@@ -55,7 +55,11 @@ final class InputToPhoton {
     static final long WINDOW_MS = 2000;
     static final long SPAWN_LIMIT = 30 * LatencyRig.SEC;
 
-    enum Outcome { MEASURED, DEAD_AT_T0, NO_DEPARTURE }
+    /**
+     * MEASURED; DEAD_AT_T0: the baseline ship was not in play at t0; DIED: the ship died (crashed) after t0 before
+     * the key showed; NO_DEPARTURE: it lived but the key did not show within {@link #WINDOW_MS}.
+     */
+    enum Outcome { MEASURED, DEAD_AT_T0, DIED, NO_DEPARTURE }
 
     record Trial(ControlKey key, long t0, double ms, Outcome outcome) { }
 
@@ -128,8 +132,34 @@ final class InputToPhoton {
         return trial % 2 == 0 ? ControlKey.TURN_LEFT : ControlKey.THRUST;
     }
 
-    /** Run {@code trials} trials of {@code course} over {@code scenario}. */
+    /** Trials per baseline game (a block): the last starts 1.5 + 11 * 0.263 = 4.4 s after the spawn. */
+    static final int BLOCK = 12;
+
+    /**
+     * BEHAVIOR: the seed of block {@code b} of a measurement seeded {@code seed}: block 0 uses the seed itself, so
+     * a one-block measurement is the plain seeded game.
+     */
+    static long blockSeed(long seed, int b) {
+        return seed + 7919L * b;
+    }
+
+    /**
+     * Run {@code trials} trials of {@code course} over {@code scenario}, in blocks of {@link #BLOCK}: each block is
+     * its own baseline game (seed {@link #blockSeed}), so no trial waits long after the spawn (courses end in a
+     * crash sooner or later) and the blocks sample other tick phases and link draws.
+     */
     static Result measure(Course course, Scenario scenario, int trials, long seed) {
+        List<Trial> out = new ArrayList<>();
+        long[] counts = new long[3];
+        for (int b = 0; b * BLOCK < trials; b++) {
+            measureBlock(course, scenario, Math.min(BLOCK, trials - b * BLOCK), blockSeed(seed, b), out, counts);
+        }
+        return new Result(out, counts[0], (int) counts[1], (int) counts[2]);
+    }
+
+    /** One baseline game and its trials; adds the trials to {@code out} and the check counts to {@code counts}. */
+    private static void measureBlock(Course course, Scenario scenario, int trials, long seed, List<Trial> out,
+                                     long[] counts) {
         String[] args = course.serverArgs(0);
         LatencyRig base = new LatencyRig(args, scenario.direction(), scenario.direction(), seed, tickPhase(seed));
         long spawn = base.runUntilPlaying(LatencyRig.START + SPAWN_LIMIT);
@@ -144,10 +174,6 @@ final class InputToPhoton {
         base.onFrame = (r, t) -> trace.record((int) r.frames() - 1, r.world());
         base.runUntil(end);
 
-        List<Trial> out = new ArrayList<>();
-        long[] mismatches = {0};
-        int invisible = 0;
-        int spawnMismatches = 0;
         for (int i = 0; i < trials; i++) {
             ControlKey key = keyOf(i);
             long t0 = t0(spawn, i);
@@ -159,7 +185,7 @@ final class InputToPhoton {
             LatencyRig rig = new LatencyRig(args, scenario.direction(), scenario.direction(), seed, tickPhase(seed));
             long s = rig.runUntilPlaying(LatencyRig.START + SPAWN_LIMIT);
             if (s != spawn) {
-                spawnMismatches++;
+                counts[2]++;
             }
             ServerTruth truth = new ServerTruth(rig.client.connection().playerId());
             long mask = key.mask();
@@ -167,6 +193,7 @@ final class InputToPhoton {
             int[] changed = {-1};
             long[] found = {-1};
             boolean[] visible = {false};
+            boolean[] died = {false};
             rig.onTick = (r, t) -> {
                 int tick = r.server.net.currentTick();
                 truth.record(r.server.world(), tick);
@@ -183,11 +210,16 @@ final class InputToPhoton {
                 ClientWorld w = r.world();
                 if (t < t0) {
                     if (!trace.same(frame, w)) {
-                        mismatches[0]++;
+                        counts[0]++;
                     }
                     return;
                 }
-                if (changed[0] >= 0 && w.hasSelf() && w.newestSelfTick() - changed[0] >= 0) {
+                if (!(w.hasSelf() && w.selfPlaying())) {
+                    died[0] = true;
+                    r.stop();
+                    return;
+                }
+                if (changed[0] >= 0 && w.newestSelfTick() - changed[0] >= 0) {
                     found[0] = t;
                     visible[0] = frame < trace.n && (key == ControlKey.TURN_LEFT ? w.selfHeading() != trace.heading[frame]
                         : w.selfVx() != trace.vx[frame] || w.selfVy() != trace.vy[frame]);
@@ -195,16 +227,17 @@ final class InputToPhoton {
                 }
             };
             rig.runUntil(t0 + WINDOW_MS * MS);
-            if (found[0] < 0) {
+            if (died[0]) {
+                out.add(new Trial(key, t0, Double.NaN, Outcome.DIED));
+            } else if (found[0] < 0) {
                 out.add(new Trial(key, t0, Double.NaN, Outcome.NO_DEPARTURE));
             } else {
                 out.add(new Trial(key, t0, (found[0] - t0) / 1e6, Outcome.MEASURED));
                 if (!visible[0]) {
-                    invisible++;
+                    counts[1]++;
                 }
             }
         }
-        return new Result(out, mismatches[0], invisible, spawnMismatches);
     }
 
     /** The server tick grid's offset from the frame grid: varies with the seed, fixed per run. */

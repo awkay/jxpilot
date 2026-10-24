@@ -70,6 +70,16 @@ class NetDiagnosticsTest {
         }
 
         @Test
+        @DisplayName("a 0 ns sample (PONG read in the same frame) is a valid sample")
+        void zero() {
+            NetDiagnostics d = new NetDiagnostics();
+            d.rttSample(0);
+            assertAll(
+                () -> assertEquals(0, d.rttMs(), "smoothed 0"),
+                () -> assertEquals(0, d.lastRttMs(), "last sample 0, not unknown"));
+        }
+
+        @Test
         @DisplayName("a new game's reset keeps the RTT (same path)")
         void survivesReset() {
             NetDiagnostics d = new NetDiagnostics();
@@ -149,10 +159,14 @@ class NetDiagnosticsTest {
         void divisor() {
             NetDiagnostics d = tenHz(2);
             d.snapshot(0, 0);
-            for (int k = 2; k <= 56; k += 2) {
+            for (int k = 2; k <= 54; k += 2) {
                 d.snapshot(k, 0);
             }
-            assertEquals(0, d.lossPercent(), 1e-9, "28 snapshots every 2 ticks: none lost");
+            double before = d.lossPercent();
+            d.snapshot(56, 0);
+            assertAll(
+                () -> assertTrue(Double.isNaN(before), "the window is 28 intervals = 56 ticks: no reading at tick 54"),
+                () -> assertEquals(0, d.lossPercent(), 1e-9, "28 snapshots every 2 ticks: none lost"));
         }
 
         @Test
@@ -162,6 +176,9 @@ class NetDiagnosticsTest {
             d.snapshot(0, 0);
             d.snapshot(28, 0); // 1 received of 28 expected
             double big = d.lossPercent();
+            NetDiagnostics four = tenHz(1);
+            four.snapshot(0, 0);
+            four.snapshot(4 * 28, 0); // exactly 4 windows: still a reading
             NetDiagnostics j = tenHz(1);
             j.snapshot(0, 0);
             j.snapshot(10, 0);
@@ -172,9 +189,20 @@ class NetDiagnosticsTest {
             }
             assertAll(
                 () -> assertEquals(100 * (1 - 1 / 28.0), big, 1e-9, "1 of 28"),
+                () -> assertEquals(100 * (1 - 1 / 112.0), four.lossPercent(), 1e-9, "a jump of exactly 4 windows is read"),
                 () -> assertTrue(Double.isNaN(afterJump), "the jump gives no reading"),
                 () -> assertEquals(0, j.lossPercent(), 1e-9, "the window restarted at the jump"));
         }
+    }
+
+    @Test
+    @DisplayName("before any reset a tick is 1/14 s (XPilot's default frame rate)")
+    void defaultRate() {
+        NetDiagnostics d = new NetDiagnostics();
+        d.snapshot(1, 0);
+        d.snapshot(2, 1_000_000_000L / 14 + 5 * MS);
+        // tolerance: 1e9/14 is not a whole number of nanoseconds
+        assertEquals(5, d.jitterMs(), 1e-5, "one 14 Hz tick plus 5 ms");
     }
 
     @Test

@@ -37,7 +37,7 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
 | 6 | SNAPSHOT | S→C | world snapshot (below). |
 | 7 | DISCONNECT | both | `Msg.Disconnect`: u8 reason (0 quit, 1 timeout, 2 kicked, 3 shutdown), str8 text. Send 3 times; also timeout after 10 s of silence. The server never sends it to an unverified session. After a gameDuration game over the server stops 30 * FPS frames later and every peer gets reason 3 (C `End_game`). The server kicks (reason 2) a player paused longer than `maxPauseTime` ("auto-kicked: paused too long"), paused players when a newcomer needs room ("no pause with full game" / "no pause with full team", C `Kick_paused_players`), and a player READY finds no base for ("no free base"). |
 | 8 | ACK | both | empty. |
-| 9/10 | PING/PONG | both | `Msg.Ping`: u32 id, u64 nanos; PONG echoes exactly these 12 bytes (anything after them is ignored). |
+| 9/10 | PING/PONG | both | `Msg.Ping`: u32 id, u64 nanos; PONG echoes exactly these 12 bytes (anything after them is ignored). The JXPilot client sends a PING every second while playing (its send time in the nanos) and takes the PONG echoing its newest PING as an RTT sample (the HUD's net diagnostics line). |
 | 11 | LOBBY_HELLO | C→S | `LobbyMsg.Hello`: u32 nonce, zero padded so the whole datagram is at least 64 bytes. See "Lobby". |
 | 12 | LOBBY_INFO | S→C | `LobbyMsg.Info`: u32 nonce (of the HELLO), u64 cookie, str8 lobby name (at most 43 characters: the datagram is never larger than 64 bytes). |
 | 13 | LOBBY_LIST_REQUEST | C→S | `LobbyMsg.ListRequest`: u64 cookie, u32 version of the list the client holds (0 = none). |

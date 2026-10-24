@@ -81,6 +81,13 @@ class ProxyArgsTest {
                     ProxyArgs.address("--x", "[::1]:15345", false), "IPv6 in brackets"),
                 () -> assertEquals(InetSocketAddress.createUnresolved("0.0.0.0", 7), ProxyArgs.address("--x", "7", true),
                     "bare port allowed for --listen"),
+                () -> assertEquals(65535, ProxyArgs.address("--x", "h:65535", false).getPort(), "the largest port"),
+                () -> assertEquals("--x needs a host and a port in 1..65535, got h:0",
+                    assertThrows(IllegalArgumentException.class, () -> ProxyArgs.address("--x", "h:0", false)).getMessage(),
+                    "a server port range starts at 1"),
+                () -> assertEquals("--x needs a host and a port in 0..65535, got h:70000",
+                    assertThrows(IllegalArgumentException.class, () -> ProxyArgs.address("--x", "h:70000", true))
+                        .getMessage(), "a listen port range starts at 0"),
                 () -> assertThrows(IllegalArgumentException.class, () -> ProxyArgs.address("--x", "7", false),
                     "bare port not allowed for --server"),
                 () -> assertThrows(IllegalArgumentException.class, () -> ProxyArgs.address("--x", "h:0", false),
@@ -125,6 +132,18 @@ class ProxyArgsTest {
                 () -> assertEquals(15 * MS, a.down().jitterSigmaNanos, "down jitter from the shared flag"),
                 () -> assertEquals(0.01, a.up().lossGood, 1e-12, "1% is 0.01"),
                 () -> assertEquals(0.05, a.down().lossGood, 1e-12, "down loss overridden"));
+        }
+
+        @Test
+        @DisplayName("--rtt alone puts half on each direction; spikes with three values keep the default cap; burst length 1")
+        void edges() {
+            ProxyArgs a = parse("--rtt", "150", "--spikes", "0.1,30,2", "--bursty", "0.5,1");
+            assertAll(
+                () -> assertEquals(75 * MS, a.up().delayNanos, "75 ms up"),
+                () -> assertEquals(75 * MS, a.down().delayNanos, "75 ms down"),
+                () -> assertEquals(2.0, a.down().spikeShape, "third value is the shape"),
+                () -> assertEquals(0, a.down().spikeCapNanos, "no fourth value: no cap"),
+                () -> assertEquals(1.0, a.up().badToGood, 1e-12, "bursts of exactly 1 packet are allowed"));
         }
 
         @Test
@@ -184,8 +203,14 @@ class ProxyArgsTest {
             () -> assertEquals("unknown flag --up-wobble", error("--listen", "1", "--server", "h:1", "--up-wobble", "3"),
                 "unknown prefixed flag"),
             () -> assertEquals("unexpected argument stray", error("stray"), "not a flag"),
-            () -> assertTrue(error("--listen", "1", "--server", "h:1", "--spikes", "0.1").contains("2 to 4"),
-                "spikes needs 2-4 values"),
+            () -> assertEquals("--spikes takes 2 to 4 comma-separated values, got 0.1",
+                error("--listen", "1", "--server", "h:1", "--spikes", "0.1"), "spikes needs 2-4 values"),
+            () -> assertEquals("--spikes takes 2 to 4 comma-separated values, got 1,2,3,4,5",
+                error("--listen", "1", "--server", "h:1", "--spikes", "1,2,3,4,5"), "not 5"),
+            () -> assertEquals("--bursty takes 2 comma-separated values, got 0.1",
+                error("--listen", "1", "--server", "h:1", "--bursty", "0.1"), "bursty takes exactly 2"),
+            () -> assertEquals("--stats needs a non-negative integer, got 3000000000",
+                error("--listen", "1", "--server", "h:1", "--stats", "3000000000"), "beyond an int"),
             () -> assertTrue(error("--listen", "1", "--server", "h:1", "--bursty", "1,4").contains("share below 1"),
                 "bursty share 1 refused"),
             () -> assertTrue(error("--listen", "1", "--server", "h:1", "--bursty", "0.1,0.5").contains("burst length"),

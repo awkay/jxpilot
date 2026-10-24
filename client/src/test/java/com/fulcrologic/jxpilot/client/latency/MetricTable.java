@@ -41,8 +41,8 @@ final class MetricTable {
     static final String HEADER =
         "| course | RTT/jitter/loss | I2P p50 | I2P p95 | p50 - RTT | turn p50 | thrust p50 | trials"
             + " | own err p50/p95 | aim err p50/p95 (frames) | smooth own p95/max | smooth others p95"
-            + " | snaps/min (teleports) | correction p95 | exact % |";
-    static final String RULE = "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|";
+            + " | snaps/min (teleports) | HUD rtt/jitter/loss | correction p95 | exact % |";
+    static final String RULE = "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|";
 
     private MetricTable() {
     }
@@ -76,12 +76,13 @@ final class MetricTable {
             + " | " + num(m.ownSmooth().p95(), 2) + "/" + num(m.ownSmooth().max(), 1)
             + " | " + num(m.otherSmooth().p95(), 2)
             + " | " + num(m.snapsPerMinute(), 1) + (m.teleports() == 0 ? "" : " (" + m.teleports() + " tp)")
+            + " | " + num(m.hudRttMs(), 0) + "/" + num(m.hudJitterMs(), 1) + "/" + num(m.hudLossPercent(), 1)
             + " | " + (m.correction().count() == 0 ? NA_PREDICTOR : num(m.correction().p95(), 1))
             + " | " + (Double.isNaN(m.exactPercent()) ? NA_PREDICTOR : num(m.exactPercent(), 1))
             + " |";
     }
 
-    /** BEHAVIOR: {@code v} with {@code decimals} decimals (ROOT locale, half-even as Formatter rounds); "-" for NaN. */
+    /** BEHAVIOR: {@code v} with {@code decimals} decimals (ROOT locale; ties round half up, as Formatter does); "-" for NaN. */
     static String num(double v, int decimals) {
         if (Double.isNaN(v)) {
             return "-";

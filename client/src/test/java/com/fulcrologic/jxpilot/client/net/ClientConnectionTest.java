@@ -595,6 +595,52 @@ class ClientConnectionTest {
         }
 
         @Test
+        @DisplayName("late frames keep the PING schedule's phase; after a stall the schedule restarts without a burst")
+        void probeSchedule() {
+            playing(0);
+            c.flush(0);
+            c.flush(1004 * MS); // due at 1000, sent 4 ms late
+            c.flush(1999 * MS);
+            long beforePhase = pings();
+            c.flush(2000 * MS); // the next is still due at 2000, not 2004
+            long atPhase = pings();
+            c.flush(7300 * MS); // a long stall: one PING, then due 1 s later
+            long afterStall = pings();
+            c.flush(7310 * MS);
+            long noBurst = pings();
+            c.flush(8299 * MS);
+            long early = pings();
+            c.flush(8300 * MS);
+            assertAll(
+                () -> assertEquals(1, beforePhase, "one PING by 1999 ms"),
+                () -> assertEquals(2, atPhase, "the second at 2000 ms: the phase is kept"),
+                () -> assertEquals(3, afterStall, "one PING after the stall"),
+                () -> assertEquals(3, noBurst, "no catch-up burst"),
+                () -> assertEquals(3, early, "none before 8300 ms"),
+                () -> assertEquals(4, pings(), "the next 1 s after the stall's PING"));
+        }
+
+        @Test
+        @DisplayName("a flush exactly one interval late sends one PING and the next a full interval later")
+        void probeExactlyLate() {
+            playing(0);
+            c.flush(0);
+            c.flush(2000 * MS); // due at 1000, exactly one interval late
+            long one = pings();
+            c.flush(2008 * MS);
+            long stillOne = pings();
+            c.flush(3000 * MS);
+            assertAll(
+                () -> assertEquals(1, one, "one PING"),
+                () -> assertEquals(1, stillOne, "not again on the next frame"),
+                () -> assertEquals(2, pings(), "the next at 3000 ms"));
+        }
+
+        long pings() {
+            return t.types().stream().filter(x -> x == PacketType.PING).count();
+        }
+
+        @Test
         @DisplayName("a PONG of an older PING, a forged time or a short body is no RTT sample (short: malformed)")
         void stalePong() {
             playing(0);

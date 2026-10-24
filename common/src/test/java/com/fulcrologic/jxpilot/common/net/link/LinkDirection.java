@@ -219,9 +219,7 @@ public final class LinkDirection {
         }
         int s = heap[0];
         heap[0] = heap[--heapSize];
-        if (heapSize > 0) {
-            siftDown(0);
-        }
+        siftDown(0);
         int n = Math.min(length[s], dst.remaining());
         dst.put(data[s], 0, n);
         lastTag = tag[s];
