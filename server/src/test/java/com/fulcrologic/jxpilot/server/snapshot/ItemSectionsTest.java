@@ -294,8 +294,10 @@ class ItemSectionsTest {
             w.roundDelay = 0;
             w.roundTime = -1;
             String none = records(a, Section.TIMERS, false).get(0);
+            w.params.maxRoundTime = 10;
             w.roundTime = 120;
             w.roundDelay = 24;
+            w.roundDelaySend = 3;
             String limited = records(a, Section.TIMERS, false).get(0);
             assertAll(
                 () -> assertEquals("40 0 -1 d0 t0/0 s0/0 p0/0 x-1", none, "damaged 40, no delay, no limit"),

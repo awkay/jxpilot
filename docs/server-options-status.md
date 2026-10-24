@@ -68,7 +68,7 @@ follow C; the alias is the C command-line name.
 | `expand` |  | list | `` | CMD | implemented (Options.finishParsing; also expand: lines in files) |
 | `gravity` |  | real | `-0.14` | ANY+VIS | implemented (MapLoader) |
 | `shipMass` |  | real | `20.0` | ANY+VIS | implemented (Params) |
-| `ballMass` |  | real | `50.0` | ANY+VIS | server-modes (balls/treasures) |
+| `ballMass` |  | real | `50.0` | ANY+VIS | implemented (server-modes): treasure ball mass (Balls, shot.c Make_treasure_ball) |
 | `minItemMass` |  | real | `1.0` | ANY+VIS | implemented (server-items) |
 | `shotMass` |  | real | `0.1` | ANY+VIS | implemented (Params) |
 | `shotSpeed` |  | real | `21.0` | ANY+VIS | implemented (Params) |
@@ -122,15 +122,15 @@ follow C; the alias is the C command-line name.
 | `allowShields` | shields | bool | `yes` | ANY+VIS | implemented (Params) |
 | `playerStartsShielded` | playerStartShielded | bool | `yes` | ANY+VIS | implemented (Params) |
 | `shotsWallBounce` |  | bool | `no` | ANY+VIS | implemented (Params) |
-| `ballsWallBounce` |  | bool | `yes` | ANY+VIS | read (Params); the feature belongs to server-modes (balls) |
-| `ballCollisions` |  | bool | `no` | ANY+VIS | server-modes (balls/treasures) |
-| `ballSparkCollisions` |  | bool | `yes` | ANY+VIS | server-modes (balls/treasures) |
+| `ballsWallBounce` |  | bool | `yes` | ANY+VIS | implemented (server-modes): balls bounce or crash on walls (Params objBounceMask, walls.c:325) |
+| `ballCollisions` |  | bool | `no` | ANY+VIS | implemented (server-modes): balls bounce off each other and absorb shots, missiles, debris and wreckage (Balls.collide, collision.c BallCollision) |
+| `ballSparkCollisions` |  | bool | `yes` | ANY+VIS | implemented (server-modes): with ballCollisions, balls absorb sparks too (Balls.collide, collision.c BallCollision) |
 | `minesWallBounce` |  | bool | `no` | ANY+VIS | implemented (server-items) |
 | `itemsWallBounce` |  | bool | `yes` | ANY+VIS | implemented (server-items) |
 | `missilesWallBounce` |  | bool | `no` | ANY+VIS | implemented (server-items) |
 | `sparksWallBounce` |  | bool | `no` | ANY+VIS | implemented (Params) |
 | `debrisWallBounce` |  | bool | `no` | ANY+VIS | implemented (Params) |
-| `asteroidsWallBounce` |  | bool | `yes` | ANY+VIS | read (Params); the feature belongs to server-modes (asteroids) |
+| `asteroidsWallBounce` |  | bool | `yes` | ANY+VIS | implemented (server-modes): asteroids bounce or break on walls (Params objBounceMask, walls.c:328) |
 | `cloakedExhaust` |  | bool | `yes` | ANY+VIS | implemented (server-items) |
 | `cloakedShield` |  | bool | `yes` | ANY+VIS | implemented (server-items) |
 | `maxObjectWallBounceSpeed` | maxObjectBounceSpeed | real | `40` | ANY+VIS | implemented (Params) |
@@ -170,25 +170,25 @@ follow C; the alias is the C command-line name.
 | `teamShareScore` |  | bool | `no` | ANY+VIS | implemented (Params) |
 | `ecmsReprogramMines` |  | bool | `yes` | ANY+VIS | implemented (server-items) |
 | `ecmsReprogramRobots` |  | bool | `yes` | ANY+VIS | implemented (server-items) |
-| `targetKillTeam` |  | bool | `no` | ANY+VIS | implemented (Params) |
-| `targetTeamCollision` | targetCollision | bool | `yes` | ANY+VIS | implemented (Params) |
-| `targetSync` |  | bool | `no` | ANY+VIS | implemented (Params) |
-| `targetDeadTime` |  | sec | `60` | ANY+VIS | implemented (Params) |
-| `treasureKillTeam` |  | bool | `no` | ANY+VIS | server-modes (balls/treasures) |
-| `captureTheFlag` | ctf | bool | `no` | ANY+VIS | server-modes (balls/treasures) |
-| `treasureCollisionDestroys` | treasureCollisionDestroy | bool | `yes` | ANY+VIS | server-modes (balls/treasures) |
-| `ballConnectorSpringConstant` |  | real | `1500.0` | ANY+VIS | server-modes (balls/treasures) |
-| `ballConnectorDamping` |  | real | `2.0` | ANY+VIS | server-modes (balls/treasures) |
-| `maxBallConnectorRatio` |  | real | `0.30` | ANY+VIS | server-modes (balls/treasures) |
-| `ballConnectorLength` |  | real | `120` | ANY+VIS | read by the robot AI only; the feature belongs to server-modes |
-| `connectorIsString` |  | bool | `no` | ANY+VIS | server-modes (balls/treasures) |
-| `treasureCollisionMayKill` | treasureUnshieldedCollisionKills | bool | `no` | ANY+VIS | read by the robot AI only; the feature belongs to server-modes |
+| `targetKillTeam` |  | bool | `no` | ANY+VIS | implemented (server-modes): destroying a team's last target kills its live members and gives the killer a kill (Targets, walls.c Object_hits_target) |
+| `targetTeamCollision` | targetCollision | bool | `yes` | ANY+VIS | implemented (server-modes): with it off, a team's own shots and ships pass its targets (Segment, Targets; walls.c Move_segment) |
+| `targetSync` |  | bool | `no` | ANY+VIS | implemented (server-modes): a team's targets all come back together (Targets.update, update.c) |
+| `targetDeadTime` |  | sec | `60` | ANY+VIS | implemented (server-modes): seconds a destroyed target stays down (Targets.update, update.c) |
+| `treasureKillTeam` |  | bool | `no` | ANY+VIS | implemented (server-modes): a destroyed treasure kills its team (Balls.punishTeam, play.c Punish_team) |
+| `captureTheFlag` | ctf | bool | `no` | ANY+VIS | implemented (server-modes): a ball is cashed only while the home treasure holds its own ball (Balls.atTreasure, walls.c Move_segment) |
+| `treasureCollisionDestroys` | treasureCollisionDestroy | bool | `yes` | ANY+VIS | implemented (server-modes): a ball hit by a ship, an asteroid or an object dies and is recreated (Balls, Asteroids) |
+| `ballConnectorSpringConstant` |  | real | `1500.0` | ANY+VIS | implemented (server-modes): connector spring (Balls.move, shot.c Move_ball); golden-traced against C |
+| `ballConnectorDamping` |  | real | `2.0` | ANY+VIS | implemented (server-modes): connector damping (Balls.move, shot.c Move_ball); golden-traced against C |
+| `maxBallConnectorRatio` |  | real | `0.30` | ANY+VIS | implemented (server-modes): a connector stretched or squeezed beyond the ratio snaps (Balls.move) |
+| `ballConnectorLength` |  | real | `120` | ANY+VIS | implemented (server-modes): reach and connector length (Balls.connect/move, collision.c PlayerCollision); the robot AI reads it too |
+| `connectorIsString` |  | bool | `no` | ANY+VIS | implemented (server-modes): a slack string connector exerts no force (Balls.move) |
+| `treasureCollisionMayKill` | treasureUnshieldedCollisionKills | bool | `no` | ANY+VIS | implemented (server-modes): an unshielded ship without armor hit by a ball dies (Balls.playerHit, collision.c Player_collides_with_ball) |
 | `wreckageCollisionMayKill` | wreckageUnshieldedCollisionKills | bool | `no` | ANY+VIS | implemented (server-batch2): wreckage kills unshielded ships without armor, or takes one armor (collision.c:1099-1138); robots avoid it |
-| `asteroidCollisionMayKill` | asteroidUnshieldedCollisionKills | bool | `yes` | ANY+VIS | read by the robot AI only; the feature belongs to server-modes |
+| `asteroidCollisionMayKill` | asteroidUnshieldedCollisionKills | bool | `yes` | ANY+VIS | implemented (server-modes): an unshielded ship without armor or out of fuel hit by an asteroid dies (Asteroids.playerHit, collision.c Player_collides_with_asteroid) |
 | `ignore20MaxFPS` |  | bool | `true` | CMD+DEF+VIS | not applicable: the native protocol has no client maxFPS request; snapshots run at the map's framesPerSecond |
-| `timing` | race | bool | `no` | ANY+VIS | implemented (MapLoader) |
-| `ballrace` |  | bool | `false` | ANY+VIS | server-modes (race) |
-| `ballraceConnected` |  | bool | `false` | ANY+VIS | server-modes (race) |
+| `timing` | race | bool | `no` | ANY+VIS | implemented (server-modes): race mode: checkpoints, laps, lap times, race scoring and the TIMING message (Race, collision.c, player.c) |
+| `ballrace` |  | bool | `false` | ANY+VIS | implemented (server-modes): in race mode a ball passing a checkpoint advances its owner (Balls.collide, collision.c BallCollision) |
+| `ballraceConnected` |  | bool | `false` | ANY+VIS | implemented (server-modes): with ballrace, only a connected ball counts (Balls.collide) |
 | `edgeWrap` |  | bool | `no` | ANY+VIS | implemented (MapLoader) |
 | `edgeBounce` |  | bool | `yes` | ANY+VIS | implemented (Params) |
 | `extraBorder` |  | bool | `no` | ANY+VIS | implemented (MapLoader) |
@@ -221,8 +221,8 @@ follow C; the alias is the C command-line name.
 | `missilesOnRadar` | missilesRadar | bool | `True` | ANY+VIS | implemented (server-items) |
 | `minesOnRadar` | minesRadar | bool | `False` | ANY+VIS | implemented (server-items) |
 | `nukesOnRadar` | nukesRadar | bool | `True` | ANY+VIS | implemented (server-items) |
-| `treasuresOnRadar` | treasuresRadar | bool | `False` | ANY+VIS | server-modes (balls/treasures) |
-| `asteroidsOnRadar` | asteroidsRadar | bool | `False` | ANY+VIS | server-modes (asteroids) |
+| `treasuresOnRadar` | treasuresRadar | bool | `False` | ANY+VIS | implemented (server-modes): balls are radar blips (SnapshotBuilder, frame.c:1107) |
+| `asteroidsOnRadar` | asteroidsRadar | bool | `False` | ANY+VIS | implemented (server-modes): asteroids are radar blips (SnapshotBuilder, frame.c:1109) |
 | `distinguishMissiles` |  | bool | `True` | ANY+VIS | implemented (server-items) |
 | `maxMissilesPerPack` |  | int | `4` | ANY+VIS | implemented (server-items) |
 | `maxMinesPerPack` |  | int | `2` | ANY+VIS | implemented (server-items) |
@@ -247,7 +247,7 @@ follow C; the alias is the C command-line name.
 | `laserKillScoreMult` |  | real | `1.0` | ANY+VIS | implemented (server-items) |
 | `tankKillScoreMult` |  | real | `0.44` | ANY+VIS | implemented (server-items) |
 | `runoverKillScoreMult` |  | real | `0.33` | ANY+VIS | implemented (Params) |
-| `ballKillScoreMult` |  | real | `1.0` | ANY+VIS | server-modes (balls/treasures) |
+| `ballKillScoreMult` |  | real | `1.0` | ANY+VIS | implemented (server-modes): score multiplier when a ball kills a ship (Balls.playerHit) |
 | `explosionKillScoreMult` |  | real | `0.33` | ANY+VIS | implemented (Params) |
 | `shoveKillScoreMult` |  | real | `0.5` | ANY+VIS | implemented (Params) |
 | `crashScoreMult` |  | real | `0.33` | ANY+VIS | implemented (Params) |
@@ -255,26 +255,26 @@ follow C; the alias is the C command-line name.
 | `selfKillScoreMult` |  | real | `0.5` | ANY+VIS | implemented (Params) |
 | `selfDestructScoreMult` |  | real | `0` | ANY+VIS | implemented (Params) |
 | `unownedKillScoreMult` |  | real | `0.5` | ANY+VIS | implemented (Params) |
-| `asteroidPoints` |  | real | `1.0` | ANY+VIS | server-modes (asteroids) |
+| `asteroidPoints` |  | real | `1.0` | ANY+VIS | implemented (server-modes): points for breaking an asteroid (Asteroids.collide/playerHit, collision.c) |
 | `cannonPoints` |  | real | `1.0` | ANY+VIS | implemented (Params) |
-| `asteroidMaxScore` |  | real | `100.0` | ANY+VIS | server-modes (asteroids) |
+| `asteroidMaxScore` |  | real | `100.0` | ANY+VIS | implemented (server-modes): no asteroid points above this score (Asteroids) |
 | `cannonMaxScore` |  | real | `100.0` | ANY+VIS | implemented (Params) |
 | `movingItemProb` |  | real | `0.2` | ANY+VIS | implemented (server-items) |
 | `randomItemProb` |  | real | `0.0` | ANY+VIS | implemented (server-items) |
 | `dropItemOnKillProb` |  | real | `0.5` | ANY+VIS | implemented (server-items) |
 | `detonateItemOnKillProb` |  | real | `0.5` | ANY+VIS | implemented (server-items) |
 | `destroyItemInCollisionProb` |  | real | `0.0` | ANY+VIS | implemented (server-items) |
-| `asteroidItemProb` |  | real | `0.0` | ANY+VIS | server-modes (asteroids) |
-| `asteroidMaxItems` |  | int | `0` | ANY+VIS | server-modes (asteroids) |
+| `asteroidItemProb` |  | real | `0.0` | ANY+VIS | implemented (server-modes): chance a broken asteroid drops items (Asteroids.broken, asteroid.c Break_asteroid, with Items.make) |
+| `asteroidMaxItems` |  | int | `0` | ANY+VIS | implemented (server-modes): at most this many items per broken asteroid (Asteroids.broken) |
 | `itemProbMult` | itemProbFact | real | `1.0` | ANY+VIS | implemented (server-items) |
 | `cannonItemProbMult` |  | real | `1.0` | ANY+VIS | implemented (server-items) |
 | `maxItemDensity` |  | real | `0.00012` | ANY+VIS | implemented (server-items) |
-| `asteroidProb` |  | real | `5e-7` | ANY+VIS | server-modes (asteroids) |
-| `maxAsteroidDensity` |  | real | `0` | ANY+VIS | server-modes (asteroids) |
+| `asteroidProb` |  | real | `5e-7` | ANY+VIS | implemented (server-modes): asteroid spawn chance per space block, tuned from maxAsteroidDensity (ModeParams, asteroid.c Tune_asteroid_prob/Asteroid_update) |
+| `maxAsteroidDensity` |  | real | `0` | ANY+VIS | implemented (server-modes): caps the asteroid count and sets asteroidProb (ModeParams.tuneAsteroids, asteroid.c Tune_asteroid_prob) |
 | `itemConcentratorRadius` | itemConcentratorRange | int | `10` | ANY+VIS | implemented (server-items) |
 | `itemConcentratorProb` |  | real | `1.0` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
-| `asteroidConcentratorRadius` | asteroidConcentratorRange | int | `10` | ANY+VIS | server-modes (asteroids) |
-| `asteroidConcentratorProb` |  | real | `1.0` | ANY+VIS | server-modes (asteroids) |
+| `asteroidConcentratorRadius` | asteroidConcentratorRange | int | `10` | ANY+VIS | implemented (server-modes): asteroids spawn within this many blocks of a concentrator (Asteroids.place, asteroid.c Place_asteroid) |
+| `asteroidConcentratorProb` |  | real | `1.0` | ANY+VIS | implemented (server-modes): chance an asteroid spawns at a concentrator (Asteroids.place) |
 | `rogueHeatProb` |  | real | `1.0` | ANY+VIS | implemented (server-items) |
 | `rogueMineProb` |  | real | `1.0` | ANY+VIS | implemented (server-items) |
 | `itemEnergyPackProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
@@ -340,14 +340,14 @@ follow C; the alias is the C command-line name.
 | `maxTractorBeams` |  | int | `4` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
 | `maxAutopilots` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
 | `maxEmergencyShields` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
-| `gameDuration` | time | real | `0.0` | ANY+VIS | implemented (Params) |
+| `gameDuration` | time | real | `0.0` | ANY+VIS | implemented (server-modes): the game ends gameDuration wall-clock minutes after the first human entered, and the server stops 30 s of frames later (Rounds, SimGameHost, Server; server.c:248-268, frame.c:1256-1267) |
 | `allowViewing` |  | bool | `false` | ANY+VIS | implemented (server-items): a paused player with a lock sees through any locked player (Locks.viewOf); the lower snapshot rate for paused players is not ported |
 | `friction` |  | real | `0.0` | ANY+VIS | implemented (Params) |
 | `blockFriction` |  | real | `0.0` | ANY+VIS | implemented (Params) |
 | `blockFrictionVisible` |  | bool | `true` | ANY+VIS | implemented (server-batch2): friction is sent as filled decor, or blank when off |
 | `coriolis` |  | int | `0` | ANY+VIS | implemented (Params) |
-| `checkpointRadius` |  | real | `6.0` | ANY+VIS | server-modes (race) |
-| `raceLaps` |  | int | `3` | ANY+VIS | server-modes (race) |
+| `checkpointRadius` |  | real | `6.0` | ANY+VIS | implemented (server-modes): checkpoint pass distance in blocks (Race, collision.c PlayerCollision) |
+| `raceLaps` |  | int | `3` | ANY+VIS | implemented (server-modes): laps per race (Race.passCheckpoint, collision.c Player_pass_checkpoint) |
 | `lockOtherTeam` |  | bool | `true` | ANY+VIS | implemented (server-items): Locks.lockAllowed (C Player_lock_allowed) |
 | `loseItemDestroys` |  | bool | `false` | ANY+VIS | implemented (server-items) |
 | `useWreckage` |  | bool | `true` | ANY+VIS | implemented (server-batch2): ship and cannon explosions leave wreckage (ship.c Make_wreckage), golden-traced against C |

@@ -25,11 +25,9 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.SoundEvent;
-import com.fulcrologic.jxpilot.common.map.BlockType;
-import com.fulcrologic.jxpilot.common.map.Target;
-import com.fulcrologic.jxpilot.common.map.Treasure;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.server.world.ModeState;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
@@ -42,9 +40,8 @@ import com.fulcrologic.jxpilot.server.world.World;
  * {@code Give_individual_bonus}, {@code Count_rounds}, {@code Reset_all_players} ({@code src/server/player.c}),
  * {@code Game_Over} (server.c) and the round part of {@code Handle_login} (netserver.c).
  * <p>
- * Not ported: race mode (timing maps play without rounds) and treasure destruction (treasures are not
- * simulated in S1, so every team keeps its treasures: team rounds end when all but one team is out of
- * lives, or when maxRoundTime runs out).
+ * Race mode is judged by {@link Race}; balls, treasures and targets are reset by {@link Balls} and
+ * {@link Targets}.
  */
 public final class Rounds {
     /** C {@code MSG_LEN}: messages are split before they would reach it. */
@@ -57,7 +54,6 @@ public final class Rounds {
     private final int[] teamState = new int[Const.MAX_TEAMS];
     private final boolean[] teamWin = new boolean[Const.MAX_TEAMS];
     private final double[] teamScoreSum = new double[Const.MAX_TEAMS];
-    private final int[] treasuresLeft = new int[Const.MAX_TEAMS];
     private final int[] teamScoreInt = new int[Const.MAX_TEAMS];
     private final StringBuilder reason = new StringBuilder(Rounds.MSG_LEN);
     private final StringBuilder names = new StringBuilder(Rounds.MSG_LEN);
@@ -73,11 +69,6 @@ public final class Rounds {
         this.w = w;
         this.sim = sim;
         this.bestPlayers = new int[w.players.length];
-        for (Treasure t : w.map.treasures()) {
-            if (t.team() >= 0 && t.team() < Const.MAX_TEAMS && !t.empty()) {
-                treasuresLeft[t.team()]++;
-            }
-        }
     }
 
     /**
@@ -86,11 +77,14 @@ public final class Rounds {
      * <p>
      * BEHAVIOR: round_delay_send counts down; the round delay counts down and at 0 the round starts
      * ("Round starts now.", the round timer is set, every player counts as busy); the round timer counts down.
-     * BEHAVIOR: race mode is not ported (nothing else happens on timing maps).
+     * BEHAVIOR: ("Race starts now." on timing maps); race mode is judged by {@link Race#gameStatus}.
      * BEHAVIOR: team play: teams of non-paused players are alive if any member is not GAME_OVER, dead if all
-     * are; with two or more alive teams the round only ends when the timer expires ("Timer expired. Round
-     * ends now.", winner by saved treasures, then by summed score, else a draw); with dead teams and one
-     * alive team that team wins " by staying alive", with none it is a draw " as everyone died".
+     * are; with two or more alive teams the round goes on while more than one of them still has a treasure
+     * (or has only empty ones) or none destroyed any, unless the timer expired ("Timer expired. Round ends
+     * now."); then the winner is the team that destroyed most treasures, then saved most, then scored most,
+     * else a draw " between teams A, B"; with dead teams and one alive team that team wins " by staying
+     * alive", with none it is a draw " as everyone died"; with no dead team and at most one alive team the
+     * round ends " by staying in the game" once any treasure was destroyed.
      * BEHAVIOR: individual: among non-paused players, one alive of several wins; none alive is a draw; with
      * the timer expired it is a draw.
      */
@@ -101,7 +95,8 @@ public final class Rounds {
         }
         if (w.roundDelay > 0) {
             if (--w.roundDelay == 0) {
-                w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append("Round starts now.");
+                w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(w.modeParams.timing ? "Race" : "Round")
+                    .append(" starts now.");
                 w.roundTime = p.maxRoundTime * p.fps;
                 for (int k = 0; k < w.numPlayers; k++) {
                     w.playerAt(k).frameLastBusy = w.frames;
@@ -111,10 +106,9 @@ public final class Rounds {
         if (w.roundTime > 0) {
             w.roundTime--;
         }
-        if (w.map.timing()) {
-            return;
-        }
-        if (p.teamPlay) {
+        if (w.modeParams.timing) {
+            sim.race.gameStatus();
+        } else if (p.teamPlay) {
             teamStatus();
         } else {
             individualStatus();
@@ -185,38 +179,40 @@ public final class Rounds {
                 winning = pl.team;
             }
         }
+        ModeState m = w.modes;
         if (aliveTeams > 1) {
+            int teamsWithTreasure = 0;
+            int maxDestroyed = 0;
             int maxLeft = 0;
+            double maxScore = 0;
             for (int i = 0; i < Const.MAX_TEAMS; i++) {
-                teamWin[i] = teamState[i] == TEAM_ALIVE;
+                teamScoreSum[i] = 0;
+                if (teamState[i] != TEAM_ALIVE) {
+                    teamWin[i] = false;
+                    continue;
+                }
+                teamWin[i] = true;
+                if (m.teamTreasuresDestroyed[i] > maxDestroyed) {
+                    maxDestroyed = m.teamTreasuresDestroyed[i];
+                }
+                if (m.teamTreasuresLeft[i] > 0 || m.teamTreasures[i] == m.teamEmptyTreasures[i]) {
+                    teamsWithTreasure++;
+                }
             }
-            // No treasure is ever destroyed in S1 (max_destroyed = 0): the round only ends on the timer.
-            if (!timerExpired()) {
+            if ((teamsWithTreasure > 1 || maxDestroyed == 0) && !timerExpired()) {
                 return;
             }
-            message().append("Timer expired. Round ends now.");
-            // Every alive team destroyed 0 treasures (the most), so all of them are still candidates.
-            for (int i = 0; i < Const.MAX_TEAMS; i++) {
-                if (teamWin[i] && treasuresLeft[i] > maxLeft) {
-                    maxLeft = treasuresLeft[i];
-                }
-                teamScoreSum[i] = 0;
+            if (timerExpired()) {
+                message().append("Timer expired. Round ends now.");
             }
-            for (int k = 0; k < w.numPlayers; k++) {
-                Player pl = w.playerAt(k);
-                if ((pl.status & Obj.PAUSE) == 0 && !pl.tank && pl.team >= 0 && pl.team < Const.MAX_TEAMS) {
-                    teamScoreSum[pl.team] += pl.score;
-                }
-            }
-            double maxScore = 0;
             int winners = 0;
             for (int i = 0; i < Const.MAX_TEAMS; i++) {
                 if (!teamWin[i]) {
                     continue;
                 }
-                if (treasuresLeft[i] == maxLeft) {
-                    if (teamScoreSum[i] > maxScore) {
-                        maxScore = teamScoreSum[i];
+                if (m.teamTreasuresDestroyed[i] == maxDestroyed) {
+                    if (m.teamTreasuresLeft[i] > maxLeft) {
+                        maxLeft = m.teamTreasuresLeft[i];
                     }
                     winning = i;
                     winners++;
@@ -227,7 +223,34 @@ public final class Rounds {
             StringBuilder r = reason;
             r.setLength(0);
             if (winners == 1) {
-                r.append(" by destroying 0 treasures and successfully defending ").append(maxLeft);
+                r.append(" by destroying ").append(maxDestroyed).append(" treasures");
+                teamGameOver(winning, r);
+                return;
+            }
+            for (int k = 0; k < w.numPlayers; k++) {
+                Player pl = w.playerAt(k);
+                if ((pl.status & Obj.PAUSE) == 0 && !pl.tank && pl.team >= 0 && pl.team < Const.MAX_TEAMS) {
+                    teamScoreSum[pl.team] += pl.score;
+                }
+            }
+            winners = 0;
+            for (int i = 0; i < Const.MAX_TEAMS; i++) {
+                if (!teamWin[i]) {
+                    continue;
+                }
+                if (m.teamTreasuresLeft[i] == maxLeft) {
+                    if (teamScoreSum[i] > maxScore) {
+                        maxScore = teamScoreSum[i];
+                    }
+                    winning = i;
+                    winners++;
+                } else {
+                    teamWin[i] = false;
+                }
+            }
+            if (winners == 1) {
+                r.append(" by destroying ").append(maxDestroyed).append(" treasures and successfully defending ")
+                    .append(maxLeft);
                 teamGameOver(winning, r);
                 return;
             }
@@ -244,7 +267,8 @@ public final class Rounds {
                 }
             }
             if (winners == 1) {
-                r.append(" by destroying 0 treasures, saving ").append(maxLeft).append(", and scoring ");
+                r.append(" by destroying ").append(maxDestroyed).append(" treasures, saving ").append(maxLeft)
+                    .append(", and scoring ");
                 appendFixed2(r, maxScore);
                 r.append(" points");
                 teamGameOver(winning, r);
@@ -263,6 +287,14 @@ public final class Rounds {
                 teamGameOver(winning, " by staying alive");
             } else {
                 teamGameOver(-1, " as everyone died");
+            }
+        } else {
+            int destroyed = 0;
+            for (int i = 0; i < Const.MAX_TEAMS; i++) {
+                destroyed += m.teamTreasures[i] - m.teamEmptyTreasures[i] - m.teamTreasuresLeft[i];
+            }
+            if (destroyed != 0) {
+                teamGameOver(winning, " by staying in the game");
             }
         }
     }
@@ -450,6 +482,61 @@ public final class Rounds {
         countRounds();
     }
 
+    /**
+     * The gameDuration start in C {@code Main_loop} (server.c:261-268), each frame the game runs, before the
+     * objects move.
+     * <p>
+     * BEHAVIOR: the first frame with a human in the game starts the timer once: with gameDuration &gt; 0 the
+     * game ends at wall-clock second (time_t)(gameDuration * 60) + now ({@link World#gameOverTime}).
+     */
+    public void startGameDuration(boolean humans) {
+        if (w.noPlayersEnteredYet && humans) {
+            w.noPlayersEnteredYet = false;
+            if (w.gameDuration > 0) {
+                w.gameOverTime = (long) (w.gameDuration * 60) + w.wallSeconds.getAsLong();
+            }
+        }
+    }
+
+    /**
+     * The gameDuration part of C {@code Frame_update} (frame.c:1256-1267, 1357), after each frame.
+     * <p>
+     * BEHAVIOR: while gameDuration &gt; 0 and the game was not ended by it, the seconds left are
+     * {@link World#gameOverTime} minus the wall clock; when they change from last frame and are &lt;= 0 the
+     * game is over ({@link #gameOver}) and the server shuts down in 30 * FPS frames
+     * ({@link World#shutdownServer}). Otherwise the seconds left count as 0. As in C, a server running only
+     * robots (rawMode) before any human came has no end time yet and ends the game at once.
+     */
+    public void checkGameDuration() {
+        long newTimeLeft = 0;
+        if (w.gameDuration > 0 && !w.gameOverCalled
+            && w.oldTimeLeft != (newTimeLeft = w.gameOverTime - w.wallSeconds.getAsLong())) {
+            if (newTimeLeft <= 0) {
+                gameOver();
+                w.shutdownServer = 30 * w.params.fps;
+                w.gameOverCalled = true;
+            }
+        }
+        w.oldTimeLeft = newTimeLeft;
+    }
+
+    /**
+     * The shutdown countdown at the top of C {@code Main_loop} (server.c:248-255), every tick whether or not
+     * the game runs.
+     * <p>
+     * BEHAVIOR: with {@link World#shutdownServer} at 0 the server is to stop now (C {@code End_game}: true);
+     * above 0 it counts down by one; at -1 nothing happens.
+     */
+    public boolean shutdownTick() {
+        if (w.shutdownServer >= 0) {
+            if (w.shutdownServer == 0) {
+                return true;
+            }
+            w.shutdownServer--;
+        }
+        return false;
+    }
+
     /** C {@code Count_rounds}: with roundsToPlay, announce the round and end the game after the last one. */
     void countRounds() {
         Params p = w.params;
@@ -542,6 +629,8 @@ public final class Rounds {
      * robot that loses its last life this way may leave, and the loop goes on with the player moved into its place)
      * and every shot, mine, debris, spark, cannon shot, missile and item dies (explosives lose their mass, so
      * nothing explodes); targets are repaired in team play.
+     * BEHAVIOR: race progress starts over ({@link Race#resetPlayer}); in team play every ball is removed and
+     * each treasure gets a fresh one ({@link Balls#resetRound}).
      * BEHAVIOR: every player leaves GAME_OVER with kills and deaths 0; players that are not paused are busy
      * now, get full lives and mychar ' '.
      * BEHAVIOR: with roundDelay the next round waits roundDelay seconds ("Delaying N seconds until start of
@@ -571,18 +660,16 @@ public final class Rounds {
                 pl.frameLastBusy = w.frames;
                 pl.life = p.worldLives;
             }
+            sim.race.resetPlayer(pl);
             if (pl.tank) {
                 pl.mychar = 'T';
             }
             pl.scoreDirty = true;
         }
-        if (p.teamPlay && p.endOfRoundReset) {
-            for (int i = 0; i < w.targetDeadTime.length; i++) {
-                Target t = w.map.targets().get(i);
-                if (w.targetDeadTime[i] != 0) {
-                    w.map.setBlock(t.bx(), t.by(), BlockType.TARGET);
-                    w.targetDeadTime[i] = 0;
-                }
+        if (p.teamPlay) {
+            sim.balls.resetRound();
+            if (p.endOfRoundReset) {
+                sim.targets.resetRound();
             }
         }
         if (p.endOfRoundReset) {
@@ -606,7 +693,8 @@ public final class Rounds {
             w.roundDelay = p.roundDelaySeconds * p.fps;
             w.roundDelaySend = w.roundDelay + p.fps;
             w.roundTime = -1;
-            message().append("Delaying ").append(p.roundDelaySeconds).append(" seconds until start of next round.");
+            message().append("Delaying ").append(p.roundDelaySeconds).append(" seconds until start of next ")
+                .append(w.modeParams.timing ? "race" : "round").append('.');
         } else {
             w.roundTime = p.maxRoundTime * p.fps;
         }
@@ -616,15 +704,18 @@ public final class Rounds {
      * The round part of C {@code Handle_login}, after the player entered the game.
      * <p>
      * BEHAVIOR: with resetOnHuman = N &gt; 0, while at most N humans are in the game and no round delay runs,
-     * the round ends (team play: a draw; limitedLives: an individual draw) so the newcomer plays at once.
+     * the round ends (race: the race is over; team play: a draw; limitedLives: an individual draw) so the
+     * newcomer plays at once.
      * BEHAVIOR: during a round delay, or for the first player, the delay (re)starts at roundDelay seconds
      * (and the round timer at maxRoundTime when there is no delay) with "Player entered. Delaying N seconds
      * until next round.".
      */
     public void playerEntered(Player pl) {
         Params p = w.params;
-        if (p.resetOnHuman > 0 && sim.humans() <= p.resetOnHuman && w.roundDelay == 0 && !w.map.timing()) {
-            if (p.teamPlay) {
+        if (p.resetOnHuman > 0 && sim.humans() <= p.resetOnHuman && w.roundDelay == 0) {
+            if (w.modeParams.timing) {
+                sim.race.gameOver();
+            } else if (p.teamPlay) {
                 teamGameOver(-1, "");
             } else if (p.limitedLives) {
                 individualGameOver(-1);
@@ -634,7 +725,7 @@ public final class Rounds {
             w.roundDelay = p.roundDelaySeconds * p.fps;
             w.roundTime = p.maxRoundTime > 0 && p.roundDelaySeconds == 0 ? p.maxRoundTime * p.fps : -1;
             message().append("Player entered. Delaying ").append(p.roundDelaySeconds)
-                .append(" seconds until next round.");
+                .append(" seconds until next ").append(w.map.timing() ? "race" : "round").append('.');
         }
     }
 

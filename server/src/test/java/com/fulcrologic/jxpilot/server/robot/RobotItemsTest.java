@@ -86,11 +86,7 @@ class RobotItemsTest {
             () -> assertEquals(56, it.pulseDir(0), "pulse dir"),
             () -> assertEquals(q.id, it.pulseOwner(0), "pulse owner"),
             () -> assertTrue(it.pulseReflected(0), "reflected"),
-            () -> assertEquals(DefaultRobot.TARGET_DAMAGE, it.targetDamage(0), "targets intact"),
-            () -> assertFalse(it.treasureHasBall(0), "no balls here"),
-            () -> assertEquals(-1, it.towedBall(p), "no towed ball"),
-            () -> assertEquals(-1, it.ballOwner(0), "no ball owner"),
-            () -> assertEquals(1, it.asteroidSize(0), "asteroid size 1"));
+            () -> assertEquals(-1, it.towedBall(p), "no towed ball (balls, targets, asteroids: RobotModesTest)"));
     }
 
     @Test

@@ -84,6 +84,9 @@ public final class Devices {
             }
             pl.used |= Has.PHASING_DEVICE;
             pl.used &= ~(Has.REFUEL | Has.REPAIR | Has.TRACTOR_BEAM);
+            if ((pl.used & Has.CONNECTOR) != 0) {
+                pl.ball = -1; // update.c:131-132: no reaching for a ball while phased
+            }
             pl.status &= ~Obj.GRAVITY;
             Sounds.play(w, pl.px, pl.py, SoundEvent.PHASING_ON);
         } else {

@@ -269,6 +269,26 @@ class MessagesTest {
     @DisplayName("Msg codecs")
     class Codecs {
         @Test
+        @DisplayName("TIMING round trips id (u16), check (u8) and round (u16) in 5 bytes")
+        void timing() {
+            ByteBuffer b = buf();
+            Msg.Timing t = new Msg.Timing();
+            t.id = 40000;
+            t.check = 25;
+            t.round = 65535;
+            t.write(b);
+            int len = b.position();
+            b.flip();
+            Msg.Timing t2 = new Msg.Timing();
+            t2.read(b);
+            assertAll(
+                () -> assertEquals(5, len, "5 bytes"),
+                () -> assertEquals(40000, t2.id, "id"),
+                () -> assertEquals(25, t2.check, "check"),
+                () -> assertEquals(65535, t2.round, "round"));
+        }
+
+        @Test
         @DisplayName("control messages round trip")
         void control() {
             ByteBuffer b = buf();

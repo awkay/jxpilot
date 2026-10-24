@@ -54,6 +54,8 @@ public final class Players {
     private final int[] lives = new int[CAPACITY];
     private final int[] status = new int[CAPACITY];
     private final boolean[] scored = new boolean[CAPACITY];
+    private final int[] check = new int[CAPACITY];
+    private final int[] round = new int[CAPACITY];
     private final int[] order = new int[CAPACITY];
     private int count;
     private int selfId = Protocol.NO_ID;
@@ -141,6 +143,8 @@ public final class Players {
         score[s] = 0;
         lives[s] = -1;
         status[s] = 0;
+        check[s] = 0;
+        round[s] = 0;
         scored[s] = false;
         if ((j.flags & Msg.PlayerJoin.FLAG_SELF) != 0) {
             selfId = j.id;
@@ -211,6 +215,22 @@ public final class Players {
         version++;
         return delta;
     }
+
+    /** BEHAVIOR: TIMING (race progress) for a known id; unknown ids are ignored. */
+    public void setTiming(int id, int chk, int rnd) {
+        int s = slotOf(id);
+        if (s >= 0) {
+            check[s] = chk;
+            round[s] = rnd;
+            version++;
+        }
+    }
+
+    /** The next race checkpoint the player must pass (C {@code check}). */
+    public int check(int slot) { return check[slot]; }
+
+    /** Laps started (C {@code round}); 0 before the first checkpoint. */
+    public int round(int slot) { return round[slot]; }
 
     public int id(int slot) { return idOf[slot]; }
 

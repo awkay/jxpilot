@@ -126,6 +126,26 @@ public final class Player {
     /** Frame of the last key activity (C {@code frame_last_busy}): idle pause and maxPauseTime. */
     public long frameLastBusy;
 
+    // ---- game modes (server-modes): balls, targets, race
+    /** C {@code pl->ball}: handle of the ball the connector is reaching for, or -1. */
+    public int ball = -1;
+    /** C {@code repair_target}: the target being repaired. */
+    public int repairTarget;
+    /** C {@code check}: the next checkpoint to pass. */
+    public int check;
+    /** C {@code round}: laps started (0 before the first checkpoint). */
+    public int round;
+    /** C {@code time}: race frames since the first checkpoint. */
+    public int time;
+    /** C {@code best_lap}, {@code last_lap}, {@code last_lap_time} in frames. */
+    public int bestLap;
+    public int lastLap;
+    public int lastLapTime;
+    /** C {@code last_check_dir}: heading when the last checkpoint was passed. */
+    public int lastCheckDir;
+    /** Race progress changed this tick (C {@code prev_check}/{@code prev_round}: a TIMING event is due). */
+    public boolean timingDirty;
+
     /** Control keys as last handled ({@link com.fulcrologic.jxpilot.common.net.ControlKey} mask, C {@code prev_keyv}). */
     public long prevKeys;
     /** The key mask the client sent last (whether or not it was handled). */

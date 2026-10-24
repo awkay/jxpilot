@@ -179,6 +179,9 @@ public final class WorldMap {
      */
     public int itemId(int bx, int by) { return itemIds[by * width + bx]; }
 
+    /** Change a block's object index at runtime (temporary hyperjump wormholes, C {@code World.itemID}). */
+    public void setItemId(int bx, int by, int id) { itemIds[by * width + bx] = id; }
+
     /** Direct access to the block grid (row-major, index = by*width + bx). Do not modify unless intended. */
     public byte[] blocks() { return blocks; }
 

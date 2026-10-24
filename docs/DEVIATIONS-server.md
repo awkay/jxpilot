@@ -2,7 +2,8 @@
 
 The simulation runs one tick per C frame at the map's `framesPerSecond` and uses C's float (`DFLOAT`)
 arithmetic, so with the same map, options and inputs it matches the C server frame for frame. The golden
-traces in `server/src/test/resources/ctrace/` check that bit for bit (`CTraceTest`). The deviations below
+traces in `server/src/test/resources/ctrace/` check that bit for bit (`CTraceTest`; `ModeTraceTest` for the ball
+connector, race checkpoints and lap times, and asteroid motion). The deviations below
 are deliberate.
 
 | Area | C | JXPilot | Why |
@@ -16,7 +17,12 @@ are deliberate.
 | Score | `DFLOAT` | double | Not physics; scores agree to float display precision. |
 | `teamShareScore` when a player leaves | `TEAM_SCORE(team, -score)` runs after `NumPlayers--` but before the array swap, so the last player in the array misses the re-share | the leaver is removed first, then every remaining member gets the new share | C ordering bug. |
 | `Init_player` limited-lives "too late" check | uses the slot's stale `team` | runs after the team is chosen | Lead decision S10. |
-| Rounds | race mode (`Race_game_over`) and treasure destruction | not ported (S1 has no race scoring or treasures; hover pause and the autopilot are ported with the items); timing maps play without rounds | Scope. Team rounds end by lives or by `maxRoundTime`. |
+| Rounds: `gameDuration` | the server log says "Server will stop in N minutes." when the first human enters; each frame sends the seconds left only when they change (else the round time), and `End_game` kicks every player with "shutting down: ..." | the same wall-clock timer, game over and 30 * FPS shutdown (`Rounds`, `SimGameHost`, `Server`); no log line; TIMERS carries the seconds left in every snapshot while the timer runs, and the shutdown ends every connection with DISCONNECT (shutdown) | The native protocol sends HUD timers as state, not as one-off packets. |
+| Ball life | `LONG_MAX`, counted down every frame; "loose for N frames" is `LONG_MAX - life` | 2^52 (exact in a double), the same countdown and message | `Objects.life` is a double. |
+| Connector reach (`pl->ball`) | a plain pointer: after the ball is deleted the slot may hold another object, and C can then "connect" to it | the handle is checked to still be a live ball | C undefined behaviour. |
+| Temporary wormholes | unlimited (`realloc`); `remove_temp_wormhole` leaves the moved wormhole's `itemID` stale | at most 64 at a time; the moved wormhole's object index is updated | Fixed pool; C bug. |
+| Warp of a removed temporary wormhole | `break` leaves the whole player loop for this frame | only this ship's warp ends | C bug. |
+| Race respawn and asteroid placement | `rfrac()` draws (Mersenne Twister) | the world RNG (xorshift) | As "Random numbers" above. |
 | `Give_best_player_bonus` with nobody eligible | reads an unset array entry | announces nothing | C undefined behaviour. |
 | Login messages (`Handle_login`) | "Welcome to ...", "X (realname) has entered ..." | the network layer (`SimGameHost`) sets them in C's place (before the round-delay message), without the real name: "X has entered ..." / "X (team N) has entered ..." | Our CONNECT carries no real name. |
 | Login name check (`Check_names`) | nick must start with 'A'..'Z' (the C client capitalizes it), else E_INVAL | any non-empty name; duplicates are refused case-insensitively | Clients other than C's do not capitalize. |
@@ -37,7 +43,6 @@ are deliberate.
 | Random parts of the frame code (`Frame_shots`: random items, confused mines' friendliness) | world `rfrac()` per client per frame | a snapshot-local RNG seeded from the tick and viewer | Snapshots must not change the simulation's random sequence. |
 | Radar blinking of mines, missiles and nukes (`Frame_radar`) | shown or hidden by frame number | always shown | Our radar goes out every few snapshots, so frame-number blinking would alias. |
 | HUD lock visibility (`Frame_status` sets LOCK_VISIBLE) | per connected client when its frame is built, with the client's view size | for every human at the end of the sim tick, with a 1024x768 view for the `inview` test | Keeps the simulation independent of snapshot timing; only matters with playersOnRadar off. |
-| Hyperjump with wormTime | makes a pair of temporary wormholes (`add_temp_wormholes`) | no temporary wormholes; the jump itself is C's | Not ported yet. |
 | Visibility of a new player | stale `canSee` entries of the slot until the next visibility update | everyone sees and is seen at join until the first update | Avoids an invisible first frame. |
 | ECM reprogramming a robot | `Send_seek` tells every client | the robot goes to war; no message | Our protocol has no seek message. |
 | Snapshot rate of paused / game-over players (frame.c:1275-1294) | without allowViewing, paused players get every 4th frame and game-over players every 2nd | every snapshot | A bandwidth saving only; our snapshot rate is set by the network layer. |
