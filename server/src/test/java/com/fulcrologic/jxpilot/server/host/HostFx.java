@@ -202,6 +202,11 @@ final class HostFx {
                 m.read(p);
                 yield "SCORE " + m.id + " " + m.score + " lives=" + m.lives + " status=" + m.status;
             }
+            case ReliableType.PLAYER_ALLIANCE -> {
+                Msg.PlayerAlliance m = new Msg.PlayerAlliance();
+                m.read(p);
+                yield "ALLIANCE " + m.id + " '" + m.mark + "'";
+            }
             case ReliableType.TEAM_SCORE -> {
                 Msg.TeamScore m = new Msg.TeamScore();
                 m.read(p);
@@ -232,6 +237,18 @@ final class HostFx {
                 m.read(p);
                 yield "SCORE_OBJECT " + m.score + " " + m.bx + "," + m.by + " " + m.text;
             }
+            case ReliableType.MOTD -> {
+                int off = p.getInt();
+                int total = p.getInt();
+                byte[] b = new byte[p.remaining()];
+                p.get(b);
+                yield "MOTD " + off + "/" + total + " " + new String(b, java.nio.charset.StandardCharsets.ISO_8859_1);
+            }
+            case ReliableType.SEEK -> {
+                Msg.Seek m = new Msg.Seek();
+                m.read(p);
+                yield "SEEK " + m.programmerId + " " + m.robotId + " " + m.soughtId;
+            }
             default -> "type " + type;
         };
         if (p.hasRemaining()) {
@@ -257,6 +274,7 @@ final class HostFx {
                 case Events.GAME_EVENT -> "GAME_EVENT";
                 case Events.THRUST -> "THRUST";
                 case Events.SCORE_OBJECT -> "SCORE_OBJECT";
+                case Events.ALLIANCE -> "ALLIANCE";
                 default -> "?" + e.kind[i];
             };
             String line = k + " " + e.a[i] + " " + e.b[i] + " " + e.c[i];

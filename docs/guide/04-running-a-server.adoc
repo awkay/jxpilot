@@ -26,6 +26,10 @@ java -jar jxpilot-server-VERSION.jar --list-maps
 java -jar jxpilot-server-VERSION.jar -help | -version | -dump | -dumpMan | -dumpWindows | -dumpFlags
 ----
 
+Like the original XPilot server, the server quits when the last human player has left (or when nobody has
+joined after 5 minutes). Pass `-noQuit` (or put `noQuit: yes` in the config file) for a server that keeps
+running.
+
 `--map MAP`:: The map to serve (here or as `mapFileName` in the config file): the name of a map built
 into the jar, such as `default` or `tourmination`, or the path of an XPilot `.xp` file. Without it the
 server plays the built-in `default`, as the C server plays its `default.xp`. See <<map-selection>>.
@@ -295,7 +299,7 @@ These JXPilot options protect the server; all are in the
 [cols="2,1,5",options="header"]
 |===
 |Option |Default |Meaning
-|`maxClientsPerIP` (short `maxPerIP`) |4 |Players allowed from one IPv4 address or one IPv6 /64;
+|`maxClientsPerIP` (short `maxPerIP`) |2 |Players allowed from one IPv4 address or one IPv6 /64;
 0 or less is unlimited. (XPilot's default is 2.)
 |`ipPacketRate` |400 |Packets per second accepted from one address (IPv6: one /64) for connecting
 and for packets outside a session.
@@ -386,9 +390,11 @@ config value written with `\override:` beats the map.
 
 What `lib/defaults` changes, compared with the built-in defaults of the option reference:
 
-* `gravity -0.25` (built in: -0.14) and `framesPerSecond 14`;
-* `allowNukes` and `allowClusters` off, `allowModifiers` on;
-* item appearance: `maxItemDensity`, `movingItemProb 0.3` and the individual `item...Prob` values;
+* `gravity -0.25` (built in: -0.14);
+* `allowModifiers` on (built in: off); it also sets `allowNukes` and `allowClusters` off and
+  `framesPerSecond 14`, the same as the built-in values;
+* item appearance: `maxItemDensity`, `movingItemProb 0.3` and most of the individual `item...Prob`
+  values (not armor, mirror, deflector, hyperjump or phasing);
 * through `expand: SoftWalls`, wall bounce speeds and angles of 180 (`maxShieldedWallBounceSpeed`,
   `maxUnshieldedWallBounceSpeed`, `maxShieldedPlayerWallBounceAngle`,
   `maxUnshieldedPlayerWallBounceAngle`): softer walls.
@@ -533,7 +539,7 @@ A minimal setup on a fresh Linux VM:
 
 [source,shell]
 ----
-java -XX:+UseZGC -Xmx128m -jar jxpilot-server-VERSION.jar --map default -robots 4
+java -XX:+UseZGC -Xmx128m -jar jxpilot-server-VERSION.jar --map default -robots 4 -noQuit
 ----
 
 [[service]]
@@ -565,7 +571,7 @@ User=jxpilot
 Group=jxpilot
 WorkingDirectory=/opt/jxpilot
 ExecStart=/usr/bin/java -XX:+UseZGC -Xmx256m -jar /opt/jxpilot/jxpilot-server.jar \
-    --map default /etc/jxpilot/server.conf
+    --map default -noQuit /etc/jxpilot/server.conf
 # Java exits with 143 after SIGTERM (systemctl stop): that is a clean stop.
 SuccessExitStatus=143
 Restart=on-failure

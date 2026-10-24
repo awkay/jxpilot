@@ -38,6 +38,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -184,11 +185,34 @@ class DefaultRobotPlayTest {
             t.it.random = true;
             t.objects();
             assertAll(
-                () -> assertEquals(near, handy, "the nearer handy item (cells nearest first; ties go to the later one)"),
+                () -> assertEquals(far, handy,
+                    "the nearer item ranks best, but C turns item_i into the first unowned object (robotdef.c:2163)"),
                 () -> assertEquals(100, dist, "100 px"),
                 () -> assertEquals(-1, ignored, "autopilots are ignored"),
                 () -> assertEquals(1, t.r.itemImp, "random items are handy"),
-                () -> assertTrue(t.r.itemI == near || t.r.itemI == far, "one of them"));
+                () -> assertEquals(far, t.r.itemI, "and again the first unowned object"));
+        }
+
+        @Test
+        @DisplayName("C's index mix-ups: mine_i is a cell-list position read as Obj[], item_i is re-found by owner id")
+        void cIndexQuirks() {
+            W t = new W("");
+            int old = RobotFixture.obj(t.w, Obj.DEBRIS, Obj.NO_ID, 3000, 3000, 0, 0);
+            int sh = RobotFixture.obj(t.w, Obj.SHOT, t.h.id, 730, 700, -10, 0);
+            t.objects();
+            int mine = t.r.mineI;
+            int mineDist = t.r.mineDist;
+            W u = new W("");
+            int shot = RobotFixture.obj(u.w, Obj.SHOT, u.h.id, 3000, 3000, 0, 0);
+            int item = RobotFixture.obj(u.w, Obj.ITEM, u.h.id, 800, 700, 0, 0);
+            u.it.itemType = Item.SENSOR.ordinal();
+            u.objects();
+            assertAll(
+                () -> assertEquals(old, mine, "the danger is first in the cell list, so mine_i = 0 and Obj[0] is read"),
+                () -> assertNotEquals(sh, mine, "not the shot itself"),
+                () -> assertEquals(20, mineDist, "the distance is the shot's"),
+                () -> assertEquals(shot, u.r.itemI, "the first object owned by the item's owner"),
+                () -> assertEquals(100, u.r.itemDist, "the distance is the item's"));
         }
 
         @Test

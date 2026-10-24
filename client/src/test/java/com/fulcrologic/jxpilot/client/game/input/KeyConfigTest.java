@@ -182,6 +182,21 @@ class KeyConfigTest {
         }
 
         @Test
+        @DisplayName("shipShape and shipShapeFile are kept for the shape (the last line wins), null when absent")
+        void shipShape() {
+            KeyConfig c = KeyConfig.load("xpilot.shipShape: first\nshipShape: (SH: 15,0 -9,8 -9,-8)\n"
+                + "xpilot.shipShapeFile: /tmp/ships\n", "rc", null);
+            KeyConfig none = KeyConfig.load("power: 50\n", "rc", null);
+            assertAll(
+                () -> assertEquals("(SH: 15,0 -9,8 -9,-8)", c.shipShape(), "the last shipShape line"),
+                () -> assertEquals("/tmp/ships", c.shipShapeFile(), "shipShapeFile with the xpilot. prefix"),
+                () -> assertEquals(List.of(), c.problems(), "neither is reported as unused"),
+                () -> assertNull(none.shipShape(), "no shipShape line: null"),
+                () -> assertNull(none.shipShapeFile(), "no shipShapeFile line: null"),
+                () -> assertNull(KeyConfig.defaults(null).shipShape(), "the defaults have no shape"));
+        }
+
+        @Test
         @DisplayName("maxVolume (C default.c): an integer 0-255, clamped and reported outside, ignored when not a number")
         void maxVolume() {
             KeyConfig set = KeyConfig.load("xpilot.maxVolume: 40\n", "rc", null);
@@ -326,5 +341,34 @@ class KeyConfigTest {
             List<String> f = new java.util.ArrayList<>(List.of(p[1].split(" ")));
             return p[0] + ": " + String.join(" ", f);
         }).toList();
+    }
+
+    @Nested
+    @DisplayName("modifier banks (C modifierBank1..4)")
+    class ModifierBanks {
+        @Test
+        @DisplayName("modifierBank1..4 set the four texts as written; others stay empty; over 79 chars is cut and reported")
+        void banks() {
+            KeyConfig c = KeyConfig.load(String.join("\n",
+                "modifierBank1: FN C V2",
+                "xpilot.modifierBank3:",
+                "modifierBank4: X4 LS",
+                "modifierBank4: Z1",
+                "modifierBank5: N",
+                "modifierBank2: " + "B".repeat(85)), "rc", null);
+            String[] banks = c.modifierBanks();
+            banks[0] = "changed";
+            assertAll(
+                () -> assertEquals("FN C V2", c.modifierBanks()[0], "bank 1 as written"),
+                () -> assertEquals("B".repeat(79), c.modifierBanks()[1], "bank 2 cut to 79 chars (C MAX_CHARS buffer)"),
+                () -> assertEquals("", c.modifierBanks()[2], "an empty value is an empty bank"),
+                () -> assertEquals("Z1", c.modifierBanks()[3], "the last line for a bank wins"),
+                () -> assertEquals(List.of("rc:5: resource 'modifierBank5' is not used by JXPilot (ignored)",
+                    "rc:6: modifierBank2: longer than 79 chars, cut"), c.problems(),
+                    "only bank 5 (no such bank) and the long text are reported"),
+                () -> assertEquals(List.of("", "", "", ""), List.of(KeyConfig.defaults(null).modifierBanks()),
+                    "the defaults are four empty banks (C default \"\")"),
+                () -> assertEquals("FN C V2", c.modifierBanks()[0], "modifierBanks() returns a copy"));
+        }
     }
 }

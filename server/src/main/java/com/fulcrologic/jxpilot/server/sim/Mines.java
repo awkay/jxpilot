@@ -44,6 +44,25 @@ import com.fulcrologic.jxpilot.server.world.World;
  * {@code Player_collides_with_mine} ({@code src/server/collision.c}).
  */
 public final class Mines {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_AND_REPROGRAMMED_BY = Texts.of(" and reprogrammed by ");
+    private static final String T_BY = Texts.of(" by ");
+    private static final String T_DROP = Texts.of("drop");
+    private static final String T_DROPPED = Texts.of("dropped");
+    private static final String T_DROPPED_2 = Texts.of("dropped ");
+    private static final String T_FUEL_UNITS_TO = Texts.of(" fuel units to ");
+    private static final String T_HAS = Texts.of(" has ");
+    private static final String T_HIT = Texts.of(" hit ");
+    private static final String T_MINES_TO = Texts.of(" mines to ");
+    private static final String T_NO_BASE_MINING = Texts.of("No base mining!");
+    private static final String T_REPROGRAMMED_BY = Texts.of(" reprogrammed by ");
+    private static final String T_SOME_JERK = Texts.of("some jerk");
+    private static final String T_THROW = Texts.of("throw");
+    private static final String T_THROWN = Texts.of("thrown");
+    private static final String T_THROWN_2 = Texts.of("thrown ");
+    private static final String T_YOU_NEED_AT_LEAST = Texts.of("You need at least ");
+
     /** C {@code MINE_MASS}. */
     static final float MINE_MASS = 30.0f;
     /** C {@code MINE_RANGE}. */
@@ -156,9 +175,9 @@ public final class Mines {
         if (pl != null && (pl.status & Obj.KILLED) != 0) {
             life = (int) (w.rfrac() * w.params.fps);
         } else if ((status & Obj.FROMCANNON) != 0) {
-            life = CANNON_SHOT_LIFE_BASE + Integer.remainderUnsigned(w.rng.nextInt(), 24);
+            life = CANNON_SHOT_LIFE_BASE + Integer.remainderUnsigned(w.randomMT(), 24);
         } else {
-            life = ip.mineLife != 0 ? ip.mineLife : 5000 + (w.rng.nextInt() & 255);
+            life = ip.mineLife != 0 ? ip.mineLife : 5000 + (w.randomMT() & 255);
         }
         if (!Mods.isCluster(mods)) {
             mods = Mods.withVelocity(mods, 0);
@@ -176,8 +195,8 @@ public final class Mines {
                 used = Mods.isFullNuclear(mods) ? pl.items[Item.MINE.ordinal()] : ip.nukeMinMines;
                 if (pl.items[Item.MINE.ordinal()] < ip.nukeMinMines) {
                     StringBuilder m = w.events.playerMessage(Msg.Text.KIND_GAME, Obj.NO_ID, pl.id)
-                        .append("You need at least ").append(ip.nukeMinMines).append(" mines to ")
-                        .append((status & Obj.GRAVITY) != 0 ? "throw" : "drop").append(' ');
+                        .append(T_YOU_NEED_AT_LEAST).append(ip.nukeMinMines).append(T_MINES_TO)
+                        .append((status & Obj.GRAVITY) != 0 ? T_THROW : T_DROP).append(' ');
                     ShotNames.append(m, Obj.MINE, status, mods, false).append('!');
                     return;
                 }
@@ -196,20 +215,20 @@ public final class Mines {
             }
             if (pl.fuel < -drain) {
                 StringBuilder m = w.events.playerMessage(Msg.Text.KIND_GAME, Obj.NO_ID, pl.id)
-                    .append("You need at least ").append((-drain) >> 8).append(" fuel units to ")
-                    .append((status & Obj.GRAVITY) != 0 ? "throw" : "drop").append(' ');
+                    .append(T_YOU_NEED_AT_LEAST).append((-drain) >> 8).append(T_FUEL_UNITS_TO)
+                    .append((status & Obj.GRAVITY) != 0 ? T_THROW : T_DROP).append(' ');
                 ShotNames.append(m, Obj.MINE, status, mods, false).append('!');
                 return;
             }
             if (ip.baseMineRange != 0 && baseMined(pl, x, y)) {
-                w.events.playerMessage(Msg.Text.KIND_GAME, Obj.NO_ID, pl.id).append("No base mining!");
+                w.events.playerMessage(Msg.Text.KIND_GAME, Obj.NO_ID, pl.id).append(T_NO_BASE_MINING);
                 return;
             }
             pl.addFuel(drain);
             pl.items[Item.MINE.ordinal()] -= used;
             if (used > 1) {
-                StringBuilder m = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" has ")
-                    .append((status & Obj.GRAVITY) != 0 ? "thrown" : "dropped").append(' ');
+                StringBuilder m = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(T_HAS)
+                    .append((status & Obj.GRAVITY) != 0 ? T_THROWN : T_DROPPED).append(' ');
                 ShotNames.append(m, Obj.MINE, status, mods, false).append('!');
                 Sounds.playAll(w, SoundEvent.NUKE_LAUNCH);
             } else {
@@ -381,25 +400,25 @@ public final class Mines {
         int layer = o.mineOwner[h];
         Player killer = null;
         Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_MINE);
-        StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" hit ");
+        StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(T_HIT);
         ShotNames.append(msg, Obj.MINE, o.status[h], o.mods[h], true);
-        String how = (o.status[h] & Obj.GRAVITY) != 0 ? "thrown " : "dropped ";
+        String how = (o.status[h] & Obj.GRAVITY) != 0 ? T_THROWN_2 : T_DROPPED_2;
         if (id == Obj.NO_ID && layer == Obj.NO_ID) {
             msg.append('.');
         } else if (layer == id) {
             killer = w.byId(layer);
-            msg.append(' ').append(how).append(" by ").append(killer != null ? killer.name : "").append('.');
+            msg.append(' ').append(how).append(T_BY).append(killer != null ? killer.name : "").append('.');
         } else {
             Player rep = id != Obj.NO_ID ? w.byId(id) : null;
             killer = rep;
             if (layer == Obj.NO_ID) {
-                msg.append(" reprogrammed by ");
+                msg.append(T_REPROGRAMMED_BY);
             } else {
                 Player l = w.byId(layer);
-                msg.append(' ').append(how).append(" by ").append(l != null ? l.name : "")
-                    .append(" and reprogrammed by ");
+                msg.append(' ').append(how).append(T_BY).append(l != null ? l.name : "")
+                    .append(T_AND_REPROGRAMMED_BY);
             }
-            msg.append(rep != null ? rep.name : "some jerk").append('.');
+            msg.append(rep != null ? rep.name : T_SOME_JERK).append('.');
         }
         if (killer != null) {
             double sc = Scoring.rate(killer.score, pl.score) * w.items.mineScoreMult;

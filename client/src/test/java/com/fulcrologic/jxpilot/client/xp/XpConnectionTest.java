@@ -161,6 +161,44 @@ class XpConnectionTest {
         }
 
         @Test
+        @DisplayName("the modifier banks go with every play request after PKT_DISPLAY (C Client_power's Send_modifier_bank)")
+        void modifierBanks() {
+            conn.setModifierBanks(new String[] {"FN C", "", "X4 LS", "x".repeat(100)});
+            play();
+            int display = server.loginPackets.indexOf("display 1024x1024 colors=0 spark=64");
+            assertAll(
+                () -> assertEquals(List.of("modbank 0=FN C", "modbank 1=", "modbank 2=X4 LS", "modbank 3=" + "x".repeat(79)),
+                    server.loginPackets.subList(display + 1, display + 5),
+                    "banks 0..3 in order right after PKT_DISPLAY, a long text cut to MAX_CHARS - 1"),
+                () -> assertEquals("FN C", login.modifierBanks[0], "remembered in the login for later joins"),
+                () -> assertEquals(List.of(), server.violations, "nothing the C server would reject"));
+        }
+
+        @Test
+        @DisplayName("the shape is sent as C Send_shape: converted, canonical buf, then ext")
+        void shapeSentCanonically() {
+            String defaultWire = "(SH: 15,0 -9,8 -9,-8)(EN: -9,0)(MG: 15,0)(LL: -9,8)(RL: -9,-8)(MR: 15,0)";
+            play();
+            List<List<String>> empty = List.copyOf(server.shapes);
+            setUp();
+            login.shape = "(SH: 1,1 2,2 3,3)(LG: 7,7)";
+            play();
+            List<List<String>> tiny = List.copyOf(server.shapes);
+            setUp();
+            String g = " -2147483648,-2147483648".repeat(3) + ")";
+            login.shape = "(SH: 15,0 -9,8 -9,-8)(LG:" + g + "(RG:" + g + "(LR:" + g + "(RR:" + g;
+            play();
+            List<String> big = server.shapes.get(0);
+            assertAll(
+                () -> assertEquals(List.of(List.of(defaultWire, "")), empty, "no shape: the default ship's string"),
+                () -> assertEquals(List.of(List.of("(SH: 1,1 2,2 3,3)(EN: 1,0)(MG: 3,3)(LG: 7,7)(LL: 3,3)(RL: 1,1)(MR: 3,3)",
+                    "")), tiny, "converted without limits, written canonically"),
+                () -> assertEquals(List.of("(SH: 15,0 -9,8 -9,-8)(EN: -9,0)(MG: 15,0)(LG:" + g + "(RG:" + g
+                    + "(LL: -9,8)(RL: -9,-8)(MR: 15,0)", "(LR:" + g + "(RR:" + g), big,
+                    "groups that overflow the shape string travel in the extension"));
+        }
+
+        @Test
         void fullHandshakeReachesPlaying() {
             play();
             assertAll(
@@ -180,8 +218,9 @@ class XpConnectionTest {
                 () -> assertTrue(server.contact.closed, "contact socket closed after the verify"),
                 () -> assertEquals(0x1234ABCD, conn.magic(), "connection magic"),
                 () -> assertEquals(List.of("shape", "play", "power34=11520", "power35=8960", "power36=8960",
-                    "power37=6400", "power38=30", "power39=30", "display 1024x1024 colors=0 spark=64", "audio 0",
-                    "fps 12"), server.loginPackets, "C Net_start bundle: values * 256, display, audio off, fps"),
+                    "power37=6400", "power38=30", "power39=30", "display 1024x1024 colors=0 spark=64", "modbank 0=",
+                    "modbank 1=", "modbank 2=", "modbank 3=", "audio 0", "fps 12"), server.loginPackets,
+                    "C Net_start bundle: values * 256, display, the 4 (empty) modifier banks, audio off, fps"),
                 () -> assertEquals(1, server.plays, "one play request"),
                 () -> assertEquals(List.of(1), server.keyboardChanges, "keyboard announced once (Net_key_change)"),
                 () -> assertEquals(List.of(), server.violations, "nothing the C server would reject"),

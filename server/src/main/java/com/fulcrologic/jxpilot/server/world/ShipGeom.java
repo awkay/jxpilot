@@ -42,6 +42,11 @@ public final class ShipGeom {
     public final float[] engineY = new float[Const.RES];
     public final float[] gunX = new float[Const.RES];
     public final float[] gunY = new float[Const.RES];
+    /**
+     * server-commands: the shape as PLAYER_JOIN carries it (C {@code Convert_ship_2_string}); empty for the
+     * built-in default ship, which clients draw without it.
+     */
+    public final String wire;
     /** {@code lGunX[g][dir]}: left gun g rotated (C {@code l_gun}); likewise right, left rear, right rear guns. */
     public final float[][] lGunX;
     public final float[][] lGunY;
@@ -86,12 +91,23 @@ public final class ShipGeom {
             rackY = new float[1][Const.RES];
             rotate(shape.mainGunX, shape.mainGunY, rackX[0], rackY[0]);
         }
+        this.wire = shape == ShipShape.defaultShip() ? "" : shape.toWireString();
     }
 
     private static void rotateAll(int[] x, int[] y, float[][] outX, float[][] outY) {
         for (int i = 0; i < x.length; i++) {
             rotate(x[i], y[i], outX[i], outY[i]);
         }
+    }
+
+    /**
+     * server-commands: C {@code Parse_shape_str} (the shape limits apply) as rotated geometry.
+     * <p>
+     * BEHAVIOR: a valid shape string gives its geometry; an empty, missing or invalid one the default ship.
+     */
+    public static ShipGeom parse(CharSequence shape) {
+        ShipShape s = shape == null || shape.isEmpty() ? null : ShipShape.parse(shape.toString());
+        return s == null ? DEFAULT : new ShipGeom(s);
     }
 
     /**

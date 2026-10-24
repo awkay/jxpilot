@@ -310,7 +310,7 @@ class SimGameHostPlayTest {
         }
 
         @Test
-        @DisplayName("CHANGE_TEAM, SHAPE, unknown types and messages of ids no connection holds do nothing")
+        @DisplayName("SHAPE, unknown types and messages of ids no connection holds do nothing")
         void ignored() {
             Simulation s = sim("", THREE);
             World w = s.world;
@@ -318,7 +318,6 @@ class SimGameHostPlayTest {
             int ann = enter(h, "Ann", 0);
             int res = h.join("Res", 0, "");
             long from = w.events.seq();
-            h.clientMessage(ann, ReliableType.CHANGE_TEAM, ByteBuffer.wrap(new byte[] {2}));
             h.clientMessage(ann, ReliableType.SHAPE, ByteBuffer.wrap(new byte[] {0, 0}));
             h.clientMessage(ann, 200, empty());
             h.clientMessage(7, ReliableType.READY, empty());

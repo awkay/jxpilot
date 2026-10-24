@@ -52,6 +52,14 @@ public interface GameHost {
          * only, never while a client message is being delivered.
          */
         void kick(int playerId, CharSequence reason);
+
+        /**
+         * server-commands: an operator changed option {@code o} at run time ({@code /set}); the network layer
+         * re-reads what it keeps (denyHosts, maxClientsPerIP).
+         */
+        default void optionChanged(com.fulcrologic.jxpilot.common.config.Opt o,
+                                   com.fulcrologic.jxpilot.common.config.Options options) {
+        }
     }
 
     /** Called once by the network layer, before any other method, with its session control. */
@@ -74,6 +82,20 @@ public interface GameHost {
      *     to refuse. The player is not spawned until {@link #clientMessage} delivers READY.
      */
     int join(CharSequence name, int team, CharSequence shape);
+
+    /**
+     * server-commands: {@link #join(CharSequence, int, CharSequence)} knowing the request's source (an address
+     * key, see SourceKeys), for the login queue. A host may answer {@code -Msg.Reject.REASON_QUEUED}: the player
+     * waits at {@link #queuePosition} and asks again.
+     */
+    default int join(CharSequence name, int team, CharSequence shape, long source) {
+        return join(name, team, shape);
+    }
+
+    /** server-commands: the queue position of the last REASON_QUEUED answer of {@link #join}. */
+    default int queuePosition() {
+        return 0;
+    }
 
     /** The team assigned to a joined player ({@code Protocol.NO_TEAM} when there are no teams). */
     int team(int playerId);
@@ -139,6 +161,25 @@ public interface GameHost {
      * @return true if another part is needed
      */
     boolean fillSnapshot(int viewerId, int part, boolean radar, SnapshotWriter w);
+
+    /**
+     * Whether a human player has been in the game since the server started (C {@code NoPlayersEnteredYet}
+     * cleared). The server quits without -noQuit once such a game has no human left. Hosts that never report
+     * it (test stubs) keep the server running until the no-show timeout.
+     */
+    default boolean humanEntered() {
+        return false;
+    }
+
+    /**
+     * Whether this tick's snapshot goes to this viewer at all (C {@code Frame_update} skips some frames for
+     * paused and dead players). The network layer asks once per due snapshot, before {@link #fillSnapshot}.
+     * <p>
+     * BEHAVIOR: true unless the host says otherwise.
+     */
+    default boolean snapshotDue(int viewerId) {
+        return true;
+    }
 
     /**
      * Queue the full reliable game state for a client that has just received the map:

@@ -27,7 +27,6 @@ import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.map.Cannon;
 import com.fulcrologic.jxpilot.common.net.Records;
-import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
@@ -45,14 +44,19 @@ import java.util.function.DoubleSupplier;
  */
 public final class Wreckage {
     private final World w;
-    private final boolean useWreckage;
+    private boolean useWreckage;
     /** C {@code rfrac()}: the world RNG; the golden test replays C's draws through it. */
     DoubleSupplier rfrac;
 
     public Wreckage(World w) {
         this.w = w;
-        this.useWreckage = w.options.getBool(Opt.USE_WRECKAGE);
+        reloadOptions();
         this.rfrac = w::rfrac;
+    }
+
+    /** server-commands: (re)read the options this class keeps (at construction, and after {@code /set}). */
+    public void reloadOptions() {
+        this.useWreckage = w.options.getBool(Opt.USE_WRECKAGE);
     }
 
     /**
@@ -165,14 +169,16 @@ public final class Wreckage {
      * C {@code Explode_fighter}'s wreckage (ship.c:669-687), only for a KILLED ship.
      * <p>
      * BEHAVIOR: up to 10 white pieces of mass max(mass/8, 0.33)..mass totalling 2*mass, in every direction at
-     * 10 .. 10 + (int)mass/2 on top of the ship's velocity, life 5 .. 5 + 1.5*mass, owned by the ship.
+     * 10 .. 10 + (int)mass/2 on top of the ship's velocity, life 5 .. 5 + 1.5*mass, owned by the ship, made at the
+     * ship's whole pixel (C pl->pos).
      */
     public void ship(Player pl) {
         if ((pl.status & Obj.KILLED) == 0) {
             return;
         }
         float mass = pl.mass;
-        make(pl.cx * (1.0f / Click.CLICK), pl.cy * (1.0f / Click.CLICK), pl.vx, pl.vy, pl.id, pl.team,
+        // C passes pl->pos, the whole pixel of the ship's clicks (objpos.c:94 CLICK_TO_PIXEL)
+        make(pl.px, pl.py, pl.vx, pl.vy, pl.id, pl.team,
             (float) Math.max(mass / 8.0, 0.33), mass, (float) (2.0 * mass), Obj.GRAVITY, Records.ObjColor.WHITE, 10,
             0, Const.RES - 1, 10.0f, 10 + (((int) mass) >> 1), 5, (int) (5 + (mass * 1.5)));
     }

@@ -222,6 +222,14 @@ final class AppFixture {
         return this;
     }
 
+    /** SELF_ITEMS with a lose item (items-2). */
+    AppFixture loseItems(int loseItem, int... counts) {
+        w.beginSection(Section.SELF_ITEMS);
+        Records.SelfItems.put(w, counts, loseItem);
+        w.endSection();
+        return this;
+    }
+
     AppFixture cannon(int index, int flags) {
         w.beginSection(Section.CANNON);
         Records.CannonState.put(w, index, flags);

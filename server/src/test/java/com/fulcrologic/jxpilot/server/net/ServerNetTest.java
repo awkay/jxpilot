@@ -523,7 +523,9 @@ class ServerNetTest {
         @Test
         @DisplayName("a peer is (channel, address); replies use the channel it arrived on")
         void pinned() {
-            Harness h = new Harness();
+            ServerNetConfig cfg = new ServerNetConfig();
+            cfg.maxPerIp = 0; // three peers from one address (default 2)
+            Harness h = new Harness(cfg, "mapName: test\n");
             TestClient on0 = new TestClient(1);
             TestClient on4 = new TestClient(2);
             TestClient on20 = new TestClient(3);
@@ -665,6 +667,7 @@ class ServerNetTest {
             cfg.connectCost = 1;
             cfg.sessionRatePerSecond = 10;
             cfg.sessionRateBurst = 20;
+            cfg.maxPerIp = 0; // many players behind one NAT
             Harness h = new Harness(cfg, "x: 1\n");
             List<TestClient> nat = new ArrayList<>();
             for (int i = 0; i < 4; i++) {
@@ -870,6 +873,26 @@ class ServerNetTest {
                 () -> assertEquals(73, c.lastRadarCellX, "radar is quantized against the configured world size (1000/3500*256)"),
                 () -> assertEquals(1000f, c.lastSelfX, "the host's records arrive"),
                 () -> assertEquals(2000f, c.lastSelfY, "the host's records arrive (y)"));
+        }
+
+        @Test
+        @DisplayName("a viewer the host says is not due gets no snapshot that tick (C's paused/dead frame skipping)")
+        void notDue() {
+            Harness h = new Harness();
+            TestClient c = new TestClient(1);
+            h.in(0, A, c.connect("a", 255, ""));
+            h.deliver(c, A);
+            confirm(h, c, 0, A);
+            h.join(c, 0, A, "a");
+            c.snapshotTicks.clear();
+            h.host.evenTicksOnly = true;
+            for (int i = 0; i < 12; i++) {
+                h.step(c, 0, A, 0);
+            }
+            boolean allEven = c.snapshotTicks.stream().allMatch(t -> (t & 1) == 0);
+            assertAll(
+                () -> assertEquals(6, c.snapshotTicks.size(), "12 ticks, every other one due: 6 snapshots"),
+                () -> assertTrue(allEven, "only on the ticks the host called due"));
         }
 
         @Test

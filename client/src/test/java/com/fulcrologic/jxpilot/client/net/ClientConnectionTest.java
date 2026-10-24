@@ -338,10 +338,14 @@ class ClientConnectionTest {
         }
 
         @Test
-        @DisplayName("WELCOME and the config build the map, then SETTINGS and READY are sent and the state is PLAYING")
+        @DisplayName("WELCOME and the config build the map, then SETTINGS, DISPLAY, the 4 MODIFIER_BANKs and READY are sent and the state is PLAYING")
         void config() {
+            c.modifierBanks[0] = "FN C";
+            c.modifierBanks[3] = "X4 LS";
             c.settings.turnSpeed = 40f;
             c.settings.power = 50f;
+            c.display.viewWidth = 1100;
+            c.display.viewHeight = 700;
             playing(0);
             c.flush(MS);
             ByteBuffer p = t.last();
@@ -349,11 +353,19 @@ class ClientConnectionTest {
             h.read(p);
             List<Integer> types = new ArrayList<>();
             Msg.Settings sent = new Msg.Settings();
+            Msg.Display display = new Msg.Display();
+            Msg.ModifierBank bank = new Msg.ModifierBank();
+            List<String> banks = new ArrayList<>();
             ReliableChannel rx = new ReliableChannel();
             rx.read(p, (type, b) -> {
                 types.add(type);
                 if (type == ReliableType.SETTINGS) {
                     sent.read(b);
+                } else if (type == ReliableType.DISPLAY) {
+                    display.read(b);
+                } else if (type == ReliableType.MODIFIER_BANK) {
+                    bank.read(b);
+                    banks.add(bank.bank + ":" + bank.text);
                 }
             });
             assertAll(
@@ -364,8 +376,14 @@ class ClientConnectionTest {
                     "welcome before config"),
                 () -> assertEquals(PacketType.RELIABLE, h.type(), "a RELIABLE datagram"),
                 () -> assertEquals(SESSION, h.session(), "with the session"),
-                () -> assertEquals(List.of(ReliableType.SETTINGS, ReliableType.READY), types,
-                    "carrying the control settings, then READY (C sends them with PKT_PLAY)"),
+                () -> assertEquals(List.of(ReliableType.SETTINGS, ReliableType.DISPLAY, ReliableType.MODIFIER_BANK,
+                        ReliableType.MODIFIER_BANK, ReliableType.MODIFIER_BANK, ReliableType.MODIFIER_BANK, ReliableType.READY),
+                    types, "carrying the control settings, the view size and the modifier banks, then READY (C Net_start: "
+                        + "PKT_PLAY ... PKT_DISPLAY ... PKT_MODIFIERBANK x 4)"),
+                () -> assertEquals(List.of("0:FN C", "1:", "2:", "3:X4 LS"), banks,
+                    "banks 0..3 in order with the connection's texts, empty ones too (C sends all NUM_MODBANKS)"),
+                () -> assertEquals(1100, display.viewWidth, "the connection's view width"),
+                () -> assertEquals(700, display.viewHeight, "and view height"),
                 () -> assertEquals(40f, sent.turnSpeed, "the connection's turn speed"),
                 () -> assertEquals(50f, sent.power, "and power"),
                 () -> assertEquals("Playing on srv:1", c.status().toString(), "status"));
@@ -384,6 +402,47 @@ class ClientConnectionTest {
                 () -> assertEquals("Bad map/config from srv:1: config CRC mismatch", c.status().toString(), "reason"),
                 () -> assertEquals(3, t.types().stream().filter(x -> x == PacketType.DISCONNECT).count(),
                     "three DISCONNECTs"));
+        }
+
+        @Test
+        @DisplayName("server-commands: REJECT QUEUED keeps waiting (same nonce, CONNECT every second) and shows the position;"
+            + " the ACCEPT that follows ends the queue")
+        void queued() {
+            c.start(0);
+            int nonce = c.connect.nonce;
+            t.in.add(pkt(PacketType.REJECT, 0, 0, b -> {
+                Msg.Reject r = new Msg.Reject();
+                r.nonce = nonce;
+                r.reason = Msg.Reject.REASON_QUEUED;
+                r.position = 2;
+                r.text.append("queued at position 2");
+                r.write(b);
+            }));
+            c.update(MS);
+            int sent = t.out.size();
+            c.update(500 * MS);
+            int at500 = t.out.size();
+            c.update(1002 * MS);
+            int at1002 = t.out.size();
+            String status = c.status().toString();
+            int pos = c.queuePosition();
+            ConnectionState waiting = c.state();
+            t.in.add(pkt(PacketType.ACCEPT, 77, 0, b -> {
+                Msg.Accept a = new Msg.Accept();
+                a.nonce = nonce;
+                a.playerId = 4;
+                a.write(b);
+            }));
+            c.update(1100 * MS);
+            assertAll(
+                () -> assertEquals(ConnectionState.CONNECTING, waiting, "still connecting"),
+                () -> assertEquals("Waiting in queue on srv:1 (position 2)", status, "the position"),
+                () -> assertEquals(2, pos, "queuePosition"),
+                () -> assertEquals(sent, at500, "no CONNECT at the usual 250 ms while queued"),
+                () -> assertEquals(sent + 1, at1002, "one a second later"),
+                () -> assertEquals(nonce, c.connect.nonce, "the same nonce"),
+                () -> assertEquals(ConnectionState.JOINING, c.state(), "accepted"),
+                () -> assertEquals(0, c.queuePosition(), "no longer queued"));
         }
 
         @Test
@@ -627,12 +686,12 @@ class ClientConnectionTest {
             int s2 = c.sendInput(1, 0, MS + FRAME);
             c.flush(MS);
             int unackedBefore = c.channel().unacked();
-            t.in.add(pkt(PacketType.ACK, SESSION, 2, b -> { }));
+            t.in.add(pkt(PacketType.ACK, SESSION, 7, b -> { }));
             c.update(200 * MS);
             assertAll(
                 () -> assertEquals(1, s1, "first sequence"),
                 () -> assertEquals(2, s2, "second"),
-                () -> assertEquals(2, unackedBefore, "SETTINGS and READY in flight"),
+                () -> assertEquals(7, unackedBefore, "SETTINGS, DISPLAY, 4 MODIFIER_BANKs and READY in flight"),
                 () -> assertEquals(0, c.channel().unacked(), "acked by the header"));
         }
 

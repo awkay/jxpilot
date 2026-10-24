@@ -174,6 +174,8 @@ class RobotScenarioTest {
         p.used &= ~Has.SHIELD;
         p.fuel = 300 * 256;
         java.util.Arrays.fill(w.fuelLevel, Const.MAX_STATION_FUEL * 256);
+        // no cannon fire: a shot nearby makes the robot evade (towards C's Obj[mine_i]) away from the station
+        java.util.Arrays.fill(w.cannonDeadTime, Integer.MAX_VALUE);
         double before = p.fuel;
         boolean refuelSeen = false;
         long[] in = new long[w.players.length];

@@ -30,6 +30,7 @@ import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Cannon;
 import com.fulcrologic.jxpilot.server.net.DefaultsFile;
 import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
@@ -66,6 +67,9 @@ class WreckageGoldenTest {
     /** One Make_wreckage call. */
     record Make(int frame, String[] args, double[] draws) {}
 
+    /** One player in one C frame (patch 0002): position in pixels and clicks, velocity, status, id. */
+    record Ship(int id, int x, int y, int cx, int cy, double vx, double vy, long status) {}
+
     /** One wreckage object in one C frame. */
     record Piece(String ptr, int cx, int cy, float vx, float vy, long life, float mass, int size, int info,
                  int rotation, float turnSpeed) {}
@@ -79,6 +83,7 @@ class WreckageGoldenTest {
     void golden() throws IOException {
         List<Make> makes = new ArrayList<>();
         Map<Integer, List<Piece>> frames = new LinkedHashMap<>();
+        Map<Integer, List<Ship>> ships = new HashMap<>();
         try (InputStream in = getClass().getResourceAsStream("/ctrace/wreckage-default.txt")) {
             String text = new String(in.readAllBytes(), StandardCharsets.ISO_8859_1);
             List<Double> draws = null;
@@ -100,6 +105,10 @@ class WreckageGoldenTest {
                         .add(new Piece(t[3], Integer.parseInt(t[4]), Integer.parseInt(t[5]), f(t[6]), f(t[7]),
                             Long.parseLong(t[8]), f(t[9]), Integer.parseInt(t[10]), Integer.parseInt(t[11]),
                             Integer.parseInt(t[12]), f(t[13])));
+                    case "XPTRACE" -> ships.computeIfAbsent(Integer.parseInt(t[2]), k -> new ArrayList<>())
+                        .add(new Ship(Integer.parseInt(t[3]), Integer.parseInt(t[5]), Integer.parseInt(t[6]),
+                            Integer.parseInt(t[7]), Integer.parseInt(t[8]), Double.parseDouble(t[9]),
+                            Double.parseDouble(t[10]), Long.decode(t[21])));
                     default -> throw new AssertionError("unexpected line " + line);
                 }
             }
@@ -189,6 +198,13 @@ class WreckageGoldenTest {
                 Piece was = lastC.remove(ptr);
                 if (live(obj, h)) {
                     if (was != null && was.life() > 1) {
+                        double near = nearestShip(ships.getOrDefault(fr, List.of()), was);
+                        System.out.printf("[WreckageGoldenTest] frame %d: piece gone with life %d, nearest playing ship"
+                            + " %.1f px from its next position (reach %d)%n", fr, was.life(), near, reach(was));
+                        if (near > reach(was)) {
+                            problems.add("frame " + fr + " " + ptr + ": gone in C with life " + was.life()
+                                + " and no ship in reach (nearest " + near + " px)");
+                        }
                         hitInC++;
                         s.shots.delete(h);
                     } else {
@@ -241,6 +257,106 @@ class WreckageGoldenTest {
             () -> assertEquals(27, ended, "27 pieces end in the same frame (life or wall) in both"),
             () -> assertEquals(2, hit, "2 were hit by ships in the C game"),
             () -> assertTrue(rand.isEmpty(), "Java used every C draw"));
+    }
+
+    /**
+     * Distance from the piece's position after this frame's move (last position + velocity) to the nearest ship
+     * that is playing (PLAYING bit) in this frame's trace (where ships are after their own move).
+     */
+    static double nearestShip(List<Ship> ships, Piece p) {
+        double px = p.cx() / 64.0 + p.vx();
+        double py = p.cy() / 64.0 + p.vy();
+        double best = Double.MAX_VALUE;
+        for (Ship sh : ships) {
+            if ((sh.status() & 1) != 0) {
+                best = Math.min(best, Math.hypot(sh.cx() / 64.0 - px, sh.cy() / 64.0 - py));
+            }
+        }
+        return best;
+    }
+
+    /**
+     * How close a ship must come to hit a piece: SHIP_SZ + the piece's pl_range (size*16/256, at least 8), plus
+     * 8 px for C's in_range_acd sweeping both paths within the frame.
+     */
+    static int reach(Piece p) {
+        return 16 + Math.max(8, p.size() * 16 / 256) + 8;
+    }
+
+    @Test
+    @DisplayName("ship explosions: Wreckage.ship passes C's arguments, the whole-pixel position (cx >> 6) included")
+    void shipArguments() throws IOException {
+        List<String> lines;
+        try (InputStream in = getClass().getResourceAsStream("/ctrace/wreckage-default.txt")) {
+            lines = List.of(new String(in.readAllBytes(), StandardCharsets.ISO_8859_1).split("\n"));
+        }
+        Options o = new Options();
+        DefaultsFile.applyBundled(o);
+        ConfigParser.parseFile(Path.of("..", "maps", "default.xp"), OptionOrigin.MAP, o);
+        int checked = 0;
+        List<String> problems = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            String[] m = lines.get(i).split(" ");
+            if (!m[0].equals("XPWMAKE") || Integer.parseInt(m[6]) == Obj.NO_ID) {
+                continue;
+            }
+            int frame = Integer.parseInt(m[1]);
+            int id = Integer.parseInt(m[6]);
+            String[] ship = null;
+            for (String l : lines) {
+                String[] t = l.split(" ");
+                if (t[0].equals("XPTRACE") && Integer.parseInt(t[2]) == frame && Integer.parseInt(t[3]) == id) {
+                    ship = t;
+                }
+            }
+            assertTrue(ship != null, "frame " + frame + ": the dead ship is in the player trace");
+            List<Double> draws = new ArrayList<>();
+            for (int k = i + 1; k < lines.size() && lines.get(k).startsWith("XPWRAND"); k++) {
+                draws.add(Double.parseDouble(lines.get(k).split(" ")[1]));
+            }
+            // Java: a KILLED ship with the trace's click position and C's velocity and mass
+            World w = new World(o, 1);
+            Simulation s = new Simulation(w);
+            Player pl = s.ships.join("Dead", 0);
+            pl.setClicks(Integer.parseInt(ship[7]), Integer.parseInt(ship[8]));
+            pl.vx = f(m[4]);
+            pl.vy = f(m[5]);
+            pl.mass = f(m[9]);
+            pl.status |= Obj.KILLED;
+            Deque<Double> q = new ArrayDeque<>(draws);
+            s.wreckage.rfrac = q::poll;
+            int before = w.objects.count();
+            s.wreckage.ship(pl);
+            // C: the same call with the traced arguments
+            World cw = new World(o, 1);
+            Simulation cs = new Simulation(cw);
+            Deque<Double> cq = new ArrayDeque<>(draws);
+            cs.wreckage.rfrac = cq::poll;
+            int cBefore = cw.objects.count();
+            cs.wreckage.make(f(m[2]), f(m[3]), f(m[4]), f(m[5]), pl.id, pl.team, f(m[8]), f(m[9]), f(m[10]),
+                Integer.parseInt(m[11]), Integer.parseInt(m[12]), Integer.parseInt(m[13]), Integer.parseInt(m[14]),
+                Integer.parseInt(m[15]), f(m[16]), f(m[17]), Integer.parseInt(m[18]), Integer.parseInt(m[19]));
+            String j = pieces(w.objects, before);
+            String c = pieces(cw.objects, cBefore);
+            if (!j.equals(c) || pl.px != (int) f(m[2]) || pl.py != (int) f(m[3])) {
+                problems.add("frame " + frame + ": Java " + j + " C " + c);
+            }
+            checked++;
+        }
+        int n = checked;
+        assertAll(
+            () -> assertEquals(4, n, "the trace's 4 ship explosions"),
+            () -> assertEquals(List.of(), problems, "same pieces as C's own arguments make"));
+    }
+
+    private static String pieces(Objects o, int from) {
+        StringBuilder sb = new StringBuilder();
+        for (int k = from; k < o.count(); k++) {
+            int h = o.active[k];
+            sb.append(o.cx[h]).append(',').append(o.cy[h]).append(' ').append(o.vx[h]).append(',').append(o.vy[h])
+                .append(" m").append(o.mass[h]).append(" l").append((long) o.life[h]).append(';');
+        }
+        return sb.toString();
     }
 
     private static boolean live(Objects o, int h) {

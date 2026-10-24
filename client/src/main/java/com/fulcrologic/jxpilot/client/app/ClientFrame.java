@@ -67,6 +67,8 @@ public final class ClientFrame {
     private final HudFrame panelHud = new HudFrame();
     private final HudFrame helpHud = new HudFrame(4, 4, 320, 160);
     private final KeyHelp help;
+    /** The server's MOTD panel once it arrived (C's MOTD viewer), else null. */
+    private KeyHelp motd;
     private final String helpHint;
     private final ControlSettings settings;
     private final Msg.Settings settingsMsg = new Msg.Settings();
@@ -87,6 +89,9 @@ public final class ClientFrame {
     private boolean swapScale;
     private boolean toggleSound;
     private int talkWidthFor = -1;
+    /** World view size last given to {@link GameConnection#sendDisplay} (-1: never). */
+    private int displayW = -1;
+    private int displayH = -1;
 
     /** With the default key configuration and the given input (tests). */
     public ClientFrame(ClientGame game, GameConnection conn, InputState input, SceneData scene, RadarBlips radar) {
@@ -113,6 +118,7 @@ public final class ClientFrame {
         this.help = new KeyHelp("Keys (" + keys.source() + ")" + (helpHint != null ? " - " + helpKeys.get(0)
             + " closes" : ""), keys.helpLines());
         conn.sendSettings(settings.copyTo(settingsMsg), 0);
+        conn.setModifierBanks(keys.modifierBanks());
     }
 
     /**
@@ -121,13 +127,16 @@ public final class ClientFrame {
      * BEHAVIOR: elapsed time (0 on the first step) ages messages and HUD timers by {@code dt * gameFps}
      * original frames.
      * BEHAVIOR: order: receive, game frame, map check, shields ({@link InputState#setPlaying}: own ship
-     * present and not dead), INPUT with the current keys, flush.
+     * present and not dead), the view size in world pixels when it changed ({@code GameConnection.sendDisplay}),
+     * INPUT with the current keys, flush.
      * BEHAVIOR: a new map object bumps {@link #mapVersion()} and centres the view on the first base
      * (the map centre without bases); afterwards the own ship, whenever it exists, is the centre.
      * BEHAVIOR: while not playing the HUD's status line shows the connection's current status; on the first
      * PLAYING frame a message names the key help key ("F1: keys"), unless keyHelp is unbound.
-     * BEHAVIOR: lays out the key help overlay ({@link #helpHud()}).
-     * BEHAVIOR: fills the scene, radar, view HUD, HUD extras and the score list panel (at
+     * BEHAVIOR: lays out the key help overlay ({@link #helpHud()}), or the server MOTD panel while it is open (it opens
+     * once, when the whole MOTD has arrived).
+     * BEHAVIOR: fills the scene, radar, view HUD, HUD extras (with the lose-item outline of the
+     * {@link KeyRouter#loseSelection}, aged by dt) and the score list panel (at
      * {@code (0, scoreTop)}, {@code panelW} wide).
      */
     public void step(long nowNanos, int viewW, int viewH, double zoom, TextMetrics m, int panelW, int scoreTop) {
@@ -147,6 +156,7 @@ public final class ClientFrame {
         ClientWorld w = game.world();
         boolean inPlay = w.hasSelf() && (w.selfFlags() & Records.ShipFlags.DEAD) == 0;
         input.setPlaying(inPlay);
+        sendDisplayIfChanged(viewW, viewH, zoom, nowNanos);
         conn.sendInput(input.keys(), 0, nowNanos);
         conn.flush(nowNanos);
         if (w.hasSelf()) {
@@ -170,9 +180,45 @@ public final class ClientFrame {
         hud.zoom = zoom;
         hud.build(viewHud, game, talk, viewW, viewH, m, dt * game.gameFps());
         extras.fill(game, hud, viewW, viewH, zoom, centreX, centreY, scene.loops);
+        extras.loseItem(router.loseSelection(), dt);
         panelHud.clear();
         hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, m);
-        help.layout(helpHud, viewW, viewH, m);
+        String motdText = game.takeMotd();
+        if (motdText != null) {
+            motd = motdPanel(motdText);
+        }
+        if (motd != null && motd.visible()) {
+            motd.layout(helpHud, viewW, viewH, m);
+        } else {
+            help.layout(helpHud, viewW, viewH, m);
+        }
+    }
+
+    /** C's MOTD viewer ("XPilot motd from SERVER"), open until the help key closes it. */
+    private KeyHelp motdPanel(String text) {
+        java.util.List<String[]> lines = new java.util.ArrayList<>();
+        for (String line : text.replace("\t", "        ").split("\r?\n", -1)) {
+            lines.add(new String[] {"", line});
+        }
+        KeyHelp k = new KeyHelp("XPilot motd from " + game.serverName() + (helpHint != null
+            ? " - " + helpHint.substring(0, helpHint.indexOf(':')) + " closes" : ""), lines);
+        k.toggle();
+        return k;
+    }
+
+    /**
+     * C {@code Send_display}: the world area of the view, {@code (int) (size / zoom + 0.5)} per axis (C: draw size
+     * times scaleFactor, rounded), goes to {@link GameConnection#sendDisplay} on the first step and whenever it
+     * changes (window resize, scale swap); never again for an unchanged size.
+     */
+    private void sendDisplayIfChanged(int viewW, int viewH, double zoom, long nowNanos) {
+        int w = (int) (viewW / zoom + 0.5);
+        int h = (int) (viewH / zoom + 0.5);
+        if (w != displayW || h != displayH) {
+            displayW = w;
+            displayH = h;
+            conn.sendDisplay(w, h, nowNanos);
+        }
     }
 
     private void centreOnStart(WorldMap map) {
@@ -192,7 +238,7 @@ public final class ClientFrame {
      * BEHAVIOR: a finished chat line is sent with {@link GameConnection#sendChat}; QUIT sets
      * {@link #quitRequested()}; SWAP_SCALE sets {@link #takeSwapScale()}; TOGGLE_SOUND sets
      * {@link #takeToggleSound()}; SETTINGS sends the control settings ({@link GameConnection#sendSettings});
-     * SHOW_CONTROLS shows the power and turn speed meters; HELP toggles the key help.
+     * SHOW_CONTROLS shows the power and turn speed meters; HELP closes an open MOTD panel, else toggles the key help.
      */
     public void key(int key, int action, int mods, long nowNanos) {
         int ev = router.key(key, action, mods);
@@ -203,7 +249,11 @@ public final class ClientFrame {
             hud.showControls();
         }
         if ((ev & KeyRouter.HELP) != 0) {
-            help.toggle();
+            if (motd != null && motd.visible()) {
+                motd.toggle();
+            } else {
+                help.toggle();
+            }
         }
         if ((ev & KeyRouter.CHAT) != 0) {
             conn.sendChat(router.chat(), nowNanos);

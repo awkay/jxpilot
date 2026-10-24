@@ -142,22 +142,22 @@ public final class DefaultRobot {
     /** Our own object buckets (C {@code Cell_get_objects}), rebuilt each frame before the robots look. */
     private final Grid cells;
 
-    // ---- options the C globals hold that Params does not
-    final boolean cloakedShield;
-    final boolean wormholeVisible;
-    final boolean limitedVisibility;
-    final boolean allowSmartMissiles;
-    final boolean allowNukes;
-    final boolean allowClusters;
-    final boolean allowModifiers;
-    final boolean allowLaserModifiers;
-    final int nukeMinMines;
-    final int nukeMinSmarts;
-    final double ballConnectorLength;
-    final int maxOffensiveItems;
-    final int maxDefensiveItems;
+    // ---- options the C globals hold that Params does not (re-read by reloadOptions after /set)
+    boolean cloakedShield;
+    boolean wormholeVisible;
+    boolean limitedVisibility;
+    boolean allowSmartMissiles;
+    boolean allowNukes;
+    boolean allowClusters;
+    boolean allowModifiers;
+    boolean allowLaserModifiers;
+    int nukeMinMines;
+    int nukeMinSmarts;
+    double ballConnectorLength;
+    int maxOffensiveItems;
+    int maxDefensiveItems;
     /** C {@code KILLING_SHOTS} plus balls/wreckage/asteroids when their collisions may kill. */
-    final int killingShots;
+    int killingShots;
 
     /** C {@code Visibility_distance} (file static, set by {@link #roundTick}). */
     double visibilityDistance = VISIBILITY_DISTANCE;
@@ -169,6 +169,15 @@ public final class DefaultRobot {
         this.sim = sim;
         this.items = items;
         this.cells = new Grid(w.width, w.height, w.wrap, w.params.maxObjects);
+        reloadOptions();
+        maxEnemyDistance = w.params.hypotenuse;
+    }
+
+    /**
+     * server-commands: (re)read the options this class keeps (at construction, and after an operator's
+     * {@code /set} changed an option at run time).
+     */
+    public void reloadOptions() {
         Options o = w.options;
         cloakedShield = o.getBool(Opt.CLOAKED_SHIELD);
         wormholeVisible = o.getBool(Opt.WORMHOLE_VISIBLE);
@@ -194,7 +203,6 @@ public final class DefaultRobot {
             ks |= Obj.ASTEROID;
         }
         killingShots = ks;
-        maxEnemyDistance = w.params.hypotenuse;
     }
 
     // ================================================================ type methods
@@ -1398,12 +1406,26 @@ public final class DefaultRobot {
     int mineI;
     int mineDist;
 
+    /** {@link Objects#version} the buckets were built at. */
+    private int cellsVersion;
+
     /**
-     * Rebuild the robot's object buckets (call once per frame before any robot plays): C keeps its cells
-     * up to date as objects are created and deleted; ours are rebuilt from the live pool.
+     * Rebuild the robot's object buckets (once per frame before any robot plays): C keeps its cells up to date
+     * as objects are created and deleted; ours are rebuilt from the live pool.
      */
     void refreshCells() {
         cells.rebuild(w.objects);
+        cellsVersion = w.objects.version;
+    }
+
+    /**
+     * Rebuild the buckets when objects were made or deleted since the last build (an earlier robot's mine or
+     * shot this frame), as C's Cell_add_object/remove are immediate (shot.c:278, 1054; robotdef.c:1980).
+     */
+    void freshCells() {
+        if (w.objects.version != cellsVersion) {
+            refreshCells();
+        }
     }
 
     /**
@@ -1422,12 +1444,17 @@ public final class DefaultRobot {
      * or no shield then hyperjump if possible (and stop looking).
      * BEHAVIOR: smart missiles and mines near trigger ECM, heat seekers stop thrust (and detach a tank between
      * fuel levels 1 and 3), asteroids in front at 2-8 blocks make it shoot.
+     * BEHAVIOR: C's index mix-ups are kept (robotdef.c:2089, 2099, 2163-2170): mine_i is the position in the cell
+     * list but is read as Obj[mine_i], so {@link #mineI} is the object at that position of {@link Objects#active};
+     * item_i is converted by owner id, so {@link #itemI} is the first object in active order with the item's
+     * owner (for unowned items, the oldest unowned object), or -1 if none.
      * Results go to {@link #itemI}, {@link #itemDist}, {@link #itemImp}, {@link #mineI}, {@link #mineDist}.
      */
     void checkObjects(Player pl, RobotData d) {
         Objects o = w.objects;
         Params p = w.params;
         int ks = killingShots;
+        freshCells();
         cells.query(pl.bx, pl.by, (int) (visibilityDistance / BLOCK_SZ), MAX_OBJS);
         int n = cells.resultCount;
         for (int j = 0; j < n; j++) {
@@ -1471,7 +1498,7 @@ public final class DefaultRobot {
                 if (Math.abs(dx) < mineDist && Math.abs(dy) < mineDist) {
                     int distance = (int) Math.hypot(dx, dy);
                     if (distance < mineDist) {
-                        mineI = h;
+                        mineI = objAt(j);
                         mineDist = distance;
                     }
                 }
@@ -1480,7 +1507,7 @@ public final class DefaultRobot {
                 if (Math.abs(ax) < mineDist && Math.abs(ay) < mineDist) {
                     int distance = (int) Math.hypot(ax, ay);
                     if (distance < mineDist) {
-                        mineI = h;
+                        mineI = objAt(j);
                         mineDist = distance;
                     }
                 }
@@ -1527,6 +1554,27 @@ public final class DefaultRobot {
                 }
             }
         }
+        if (itemI >= 0) {
+            itemI = firstOwnedBy(o.owner[itemI]);
+        }
+    }
+
+    /** C {@code Obj[j]} for a cell-list position j: the j-th object in allocation order, or -1 past the end. */
+    private int objAt(int j) {
+        Objects o = w.objects;
+        return j < o.count() ? o.active[j] : -1;
+    }
+
+    /** C's item_i conversion loop: the first object in {@code Obj[]} order whose owner id is {@code owner}. */
+    private int firstOwnedBy(int owner) {
+        Objects o = w.objects;
+        int n = o.count();
+        for (int k = 0; k < n; k++) {
+            if (o.owner[o.active[k]] == owner) {
+                return o.active[k];
+            }
+        }
+        return -1;
     }
 
     /**

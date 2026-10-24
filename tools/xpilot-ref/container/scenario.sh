@@ -30,6 +30,8 @@ TRACE=0
 TRACE_NAME=""
 TRACE_OBJS=0
 TRACE_MODES=0
+TRACE_RAND=0
+NAME2=""
 SEED=""
 SERVER_OPTS=()
 CLIENT_OPTS=()
@@ -40,7 +42,9 @@ usage() {
     echo "options: --map M --robots N --after S --size WxH --keys 'ACTIONS' --frames N"
     echo "         --interval S --tile CxR --out DIR --name NAME --trace [--trace-name NAME] [--trace-objs] [--trace-modes] --seed N"
     echo "         --server-opt OPT (repeatable) --client-opt OPT (repeatable)"
+    echo "         --trace-rand --name2 NAME (a second client, joins after the first)"
     echo "ACTIONS: space separated: down:KEY up:KEY key:KEY sleep:SECS type:TEXT"
+    echo "         focus:1 focus:2 (send the following keys to that client)"
 }
 
 while [ $# -gt 0 ]; do
@@ -59,6 +63,8 @@ while [ $# -gt 0 ]; do
         --trace-name) TRACE_NAME="$2"; shift 2;;
         --trace-objs) TRACE_OBJS=1; shift;;
         --trace-modes) TRACE_MODES=1; shift;;
+        --trace-rand) TRACE_RAND=1; shift;;
+        --name2) NAME2="$2"; shift 2;;
         --seed) SEED="$2"; shift 2;;
         --server-opt) SERVER_OPTS+=("$2"); shift 2;;
         --client-opt) CLIENT_OPTS+=("$2"); shift 2;;
@@ -76,22 +82,23 @@ T0=$(date +%s.%N)
 XVFB_PID=""
 SERVER_PID=""
 CLIENT_PID=""
+CLIENT2_PID=""
 
 cleanup() {
-    for p in $CLIENT_PID $SERVER_PID $XVFB_PID; do
+    for p in $CLIENT2_PID $CLIENT_PID $SERVER_PID $XVFB_PID; do
         if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then
             kill -INT "$p" 2>/dev/null
         fi
     done
     sleep 0.5
-    for p in $CLIENT_PID $SERVER_PID $XVFB_PID; do
+    for p in $CLIENT2_PID $CLIENT_PID $SERVER_PID $XVFB_PID; do
         if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then
             kill -KILL "$p" 2>/dev/null
         fi
     done
     if [ -f "$OUT/server.raw" ]; then
-        grep -aE '^XP(TRACE|OBJ|PULSE|ECM|ITEMS|MOBJ|PL2|TRS|TGT|TEAM)' "$OUT/server.raw" > "$OUT/trace.txt" || true
-        grep -avE '^XP(TRACE|OBJ|PULSE|ECM|ITEMS|MOBJ|PL2|TRS|TGT|TEAM)' "$OUT/server.raw" > "$OUT/server.log" || true
+        grep -aE '^XP(TRACE|OBJ|PULSE|ECM|ITEMS|MOBJ|PL2|TRS|TGT|TEAM|RAND|DEBRIS|DEB|CANNON|KEYS)' "$OUT/server.raw" > "$OUT/trace.txt" || true
+        grep -avE '^XP(TRACE|OBJ|PULSE|ECM|ITEMS|MOBJ|PL2|TRS|TGT|TEAM|RAND|DEBRIS|DEB|CANNON|KEYS)' "$OUT/server.raw" > "$OUT/server.log" || true
         rm -f "$OUT/server.raw"
         [ "$TRACE" = 1 ] || rm -f "$OUT/trace.txt"
     fi
@@ -101,7 +108,10 @@ trap cleanup EXIT
 log() { echo "[scenario $(date +%H:%M:%S)] $*"; }
 
 # 1. X server.  Screen exactly the client size; client is placed at +0+0.
-Xvfb :99 -screen 0 "${W}x${H}x24" -nolisten tcp -noreset > "$OUT/xvfb.log" 2>&1 &
+# Key autorepeat starts after a minute only, so a held key is one press and
+# one release (autorepeat would send the server extra keyboard updates).
+Xvfb :99 -screen 0 "${W}x${H}x24" -nolisten tcp -noreset -ardelay 60000 -arinterval 60000 \
+     > "$OUT/xvfb.log" 2>&1 &
 XVFB_PID=$!
 for _ in $(seq 1 50); do
     xdpyinfo > /dev/null 2>&1 && break
@@ -116,12 +126,13 @@ if [ "$TRACE" = 1 ]; then
     export XPILOT_TRACE_NAME="$TRACE_NAME"
     [ "$TRACE_OBJS" = 1 ] && export XPILOT_TRACE_OBJS=1
     [ "$TRACE_MODES" = 1 ] && export XPILOT_TRACE_MODES=1
+    [ "$TRACE_RAND" = 1 ] && export XPILOT_TRACE_RAND=1
 fi
 [ -n "$SEED" ] && export XPILOT_SEED="$SEED"
 xpilots -map "$MAP" -robots "$ROBOTS" -minRobots "$ROBOTS" -noQuit \
         +reportToMetaServer "${SERVER_OPTS[@]}" > "$OUT/server.raw" 2>&1 &
 SERVER_PID=$!
-unset XPILOT_TRACE XPILOT_TRACE_NAME XPILOT_TRACE_OBJS XPILOT_TRACE_MODES XPILOT_SEED
+unset XPILOT_TRACE XPILOT_TRACE_NAME XPILOT_TRACE_OBJS XPILOT_TRACE_MODES XPILOT_TRACE_RAND XPILOT_SEED
 for _ in $(seq 1 100); do
     grep -aq "Server runs at" "$OUT/server.raw" 2>/dev/null && break
     kill -0 "$SERVER_PID" 2>/dev/null || break
@@ -157,6 +168,32 @@ done
 if [ "$joined" != 1 ]; then
     log "player never entered the game"; cat "$OUT/client.log"; exit 6
 fi
+# 3b. Optional second client, started once the first is in play (so the
+# first gets player id 1), with its own window.
+WID2=""
+if [ -n "$NAME2" ]; then
+    n_before=$(grep -a 'starts at startpos' "$OUT/server.raw" | grep -avc 'robot)')
+    xpilot -display :99 -name "$NAME2" -join -noLocalMotd \
+           -autoServerMotdPopup no -geometry "${W}x${H}+0+0" \
+           "${CLIENT_OPTS[@]}" localhost > "$OUT/client2.log" 2>&1 &
+    CLIENT2_PID=$!
+    joined=0
+    for _ in $(seq 1 200); do
+        n=$(grep -a 'starts at startpos' "$OUT/server.raw" | grep -avc 'robot)')
+        if [ "$n" -gt "$n_before" ]; then joined=1; break; fi
+        kill -0 "$CLIENT2_PID" 2>/dev/null || break
+        sleep 0.1
+    done
+    if [ "$joined" != 1 ]; then
+        log "second player never entered the game"; cat "$OUT/client2.log"; exit 7
+    fi
+    for _ in $(seq 1 50); do
+        WID2=$(xdotool search --onlyvisible --name 'Server at' 2>/dev/null | grep -vx "$WID" | head -1)
+        [ -n "$WID2" ] && break
+        sleep 0.1
+    done
+    log "second client window $WID2"
+fi
 T_JOIN=$(date +%s.%N)
 log "client window $WID; player in play; waiting ${AFTER}s"
 sleep "$AFTER"
@@ -178,6 +215,8 @@ if [ -n "$KEYS" ]; then
             key) xdotool key "$arg";;
             sleep) sleep "$arg";;
             type) xdotool type -- "$arg";;
+            focus) if [ "$arg" = 2 ]; then xdotool windowfocus "$WID2"; else xdotool windowfocus "$WID"; fi
+                   sleep 0.1;;
             *) log "unknown key action $act";;
         esac
     done

@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.client.app;
 
+import com.fulcrologic.jxpilot.client.game.hud.LoseItemSelection;
 import com.fulcrologic.jxpilot.client.game.hud.TalkLine;
 import com.fulcrologic.jxpilot.client.game.input.ClientAction;
 import com.fulcrologic.jxpilot.client.game.input.ControlSettings;
@@ -63,6 +64,7 @@ public final class KeyRouter {
     private final TalkLine talk;
     private final ControlSettings settings;
     private final StringBuilder chat = new StringBuilder(TalkLine.MAX_CHARS);
+    private final LoseItemSelection loseSelection = new LoseItemSelection();
     private boolean swallowChar;
 
     public KeyRouter(InputState input, TalkLine talk) {
@@ -93,6 +95,11 @@ public final class KeyRouter {
         return input;
     }
 
+    /** The lose-item outline state the SELECT_ITEM / LOSE_ITEM keys drive (C {@code lose_item_active}). */
+    public LoseItemSelection loseSelection() {
+        return loseSelection;
+    }
+
     /** The last chat line (valid after a {@link #CHAT} event). */
     public CharSequence chat() {
         return chat;
@@ -108,6 +115,9 @@ public final class KeyRouter {
      * BEHAVIOR (playing): increase/decrease power and turn speed change the {@link ControlSettings} as C's
      * key handlers do and are {@link #SETTINGS} | {@link #SHOW_CONTROLS}; swap settings swaps them and is
      * {@link #SHOW_CONTROLS} only (the key goes to the server, which swaps its copy, as in C).
+     * BEHAVIOR (playing): each SELECT_ITEM and LOSE_ITEM function bound to a pressed or released key is a
+     * {@link LoseItemSelection#press} / {@link LoseItemSelection#release} (C {@code Key_press_select_lose_item},
+     * {@code Key_release}); the keys still go to the server.
      * BEHAVIOR (talking): see {@link #talkKey}; releases are ignored.
      */
     public int key(int key, int action, int mods) {
@@ -118,6 +128,9 @@ public final class KeyRouter {
         swallowChar = false;
         if (action == GLFW_RELEASE) {
             input.release(key);
+            for (int i = loseKeys(key); i > 0; i--) {
+                loseSelection.release();
+            }
             return NONE;
         }
         if (action != GLFW_PRESS) {
@@ -125,6 +138,9 @@ public final class KeyRouter {
         }
         if (key == GLFW_KEY_ESCAPE) {
             return QUIT;
+        }
+        for (int i = loseKeys(key); i > 0; i--) {
+            loseSelection.press();
         }
         long acts = input.press(key);
         int ev = NONE;
@@ -143,6 +159,15 @@ public final class KeyRouter {
             ev |= HELP;
         }
         return ev | controls(input.bindings().gameMask(key));
+    }
+
+    /** How many of SELECT_ITEM and LOSE_ITEM the key is bound to (0..2); 0 for out-of-range codes. */
+    private int loseKeys(int key) {
+        if (key < 0 || key >= KeyBindings.SIZE) {
+            return 0;
+        }
+        long m = input.bindings().gameMask(key);
+        return ((m & ControlKey.SELECT_ITEM.mask()) != 0 ? 1 : 0) + ((m & ControlKey.LOSE_ITEM.mask()) != 0 ? 1 : 0);
     }
 
     private int controls(long m) {

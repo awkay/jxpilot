@@ -63,8 +63,11 @@ public final class Msg {
         }
     }
 
-    /** Ship shape strings are capped to this many chars on decode (C {@code MSG_LEN}). */
-    public static final int MAX_SHAPE_LEN = 256;
+    /**
+     * Ship shape strings are capped to this many chars on decode: C {@code 2 * MSG_LEN} (netserver.c
+     * Receive_shape's {@code str[2*MSG_LEN]}), room for a canonical shape's buf + ext.
+     */
+    public static final int MAX_SHAPE_LEN = 512;
     /** C {@code MSG_LEN}: initial capacity of the text builders, so normal messages never grow them. */
     public static final int MSG_LEN = 256;
 
@@ -140,21 +143,34 @@ public final class Msg {
         public static final int REASON_VERSION = 2;
         public static final int REASON_BAD_NAME = 3;
         public static final int REASON_OTHER = 4;
+        /** The game is locked by an operator ({@code /lock 1}, C {@code E_GAME_LOCKED}). */
+        public static final int REASON_LOCKED = 5;
+        /**
+         * server-commands: the game is full and the player waits in the login queue (C ENTER_QUEUE reply) at
+         * {@link #position}; the client keeps sending CONNECT to keep its place and is accepted when admitted.
+         */
+        public static final int REASON_QUEUED = 6;
 
         public int nonce;
         public int reason;
         public final StringBuilder text = new StringBuilder(MSG_LEN);
+        /** Queue position (1 = next), after the text for {@link #REASON_QUEUED} only. */
+        public int position;
 
         public void write(ByteBuffer b) {
             b.putInt(nonce);
             b.put((byte) reason);
             Wire.putString8(b, text);
+            if (reason == REASON_QUEUED) {
+                b.putShort((short) position);
+            }
         }
 
         public void read(ByteBuffer b) {
             nonce = b.getInt();
             reason = b.get() & 0xFF;
             Wire.getString8(b, text);
+            position = reason == REASON_QUEUED && b.remaining() >= 2 ? b.getShort() & 0xFFFF : 0;
         }
     }
 
@@ -252,6 +268,50 @@ public final class Msg {
     }
 
     /** {@link ReliableType#DATA_CHUNK}: {@code u32 offset} then raw bytes to the end of the message. */
+    /**
+     * The message of the day, in pieces: {@code u32 offset, u32 total size, bytes} (Latin-1 text, C's MOTD file,
+     * at most {@link #MAX_SIZE} bytes in all).
+     */
+    public static final class Motd {
+        /** C {@code MAX_MOTD_SIZE}. */
+        public static final int MAX_SIZE = 30 * 1024;
+
+        private Motd() {}
+
+        /**
+         * Queue the whole text as MOTD messages, each as large as a reliable slot allows.
+         * <p>
+         * BEHAVIOR: nothing for an empty text; texts over {@link #MAX_SIZE} are cut to it.
+         */
+        public static void sendAll(ReliableChannel ch, byte[] text) {
+            int total = Math.min(text.length, MAX_SIZE);
+            int off = 0;
+            while (off < total) {
+                ByteBuffer b = ch.begin(ReliableType.MOTD);
+                int len = Math.min(total - off, b.remaining() - 8);
+                b.putInt(off).putInt(total).put(text, off, len);
+                ch.end();
+                off += len;
+            }
+        }
+
+        /**
+         * Copy a received piece into {@code dest} (at least {@link #MAX_SIZE} bytes).
+         * <p>
+         * BEHAVIOR: returns the total size, or -1 for a piece that does not fit (then nothing is copied).
+         */
+        public static int read(ByteBuffer b, byte[] dest) {
+            int off = b.getInt();
+            int total = b.getInt();
+            int len = b.remaining();
+            if (off < 0 || total < 0 || total > dest.length || len > total - off || off > total) {
+                return -1;
+            }
+            b.get(dest, off, len);
+            return total;
+        }
+    }
+
     public static final class DataChunk {
         private DataChunk() {}
 
@@ -421,6 +481,34 @@ public final class Msg {
 
         public void send(ReliableChannel ch) {
             Msg.send(ch, this, ReliableType.PLAYER_TEAM);
+        }
+    }
+
+    /**
+     * {@link ReliableType#PLAYER_ALLIANCE}: the alliance mark of player {@code id} for the receiver (C
+     * {@code Send_score}'s alliance character): {@link #NONE} ' ' not in an alliance (or, when alliances are not
+     * announced, not in the receiver's), {@link #ALLY} '+' in the receiver's alliance, '0'..'9' the alliance
+     * number when alliances are announced.
+     */
+    public static final class PlayerAlliance implements Payload {
+        public static final char NONE = ' ';
+        public static final char ALLY = '+';
+
+        public int id;
+        public char mark = NONE;
+
+        public void write(ByteBuffer b) {
+            b.putShort((short) id);
+            b.put((byte) (mark > 0xFF ? '?' : mark));
+        }
+
+        public void read(ByteBuffer b) {
+            id = b.getShort() & 0xFFFF;
+            mark = (char) (b.get() & 0xFF);
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.PLAYER_ALLIANCE);
         }
     }
 
@@ -658,6 +746,91 @@ public final class Msg {
 
         public void send(ReliableChannel ch) {
             Msg.send(ch, this, ReliableType.SETTINGS);
+        }
+    }
+
+    /**
+     * {@link ReliableType#DISPLAY}: the world area the client shows, in world pixels (C {@code PKT_DISPLAY}'s
+     * {@code view_width}, {@code view_height}; the C client sends its draw size times its scale factor).
+     * The server limits each to [{@link #MIN_VIEW_SIZE}, {@link #MAX_VIEW_SIZE}] (C {@code Receive_display}).
+     */
+    public static final class Display implements Payload {
+        /** C {@code MIN_VIEW_SIZE}, {@code MAX_VIEW_SIZE}, {@code DEF_VIEW_SIZE} (common/draw.h). */
+        public static final int MIN_VIEW_SIZE = 384;
+        public static final int MAX_VIEW_SIZE = 1024;
+        public static final int DEF_VIEW_SIZE = 768;
+
+        public int viewWidth = DEF_VIEW_SIZE;
+        public int viewHeight = DEF_VIEW_SIZE;
+
+        /** BEHAVIOR: u16 width, u16 height; values outside 0..65535 are saturated, never wrapped. */
+        public void write(ByteBuffer b) {
+            b.putShort((short) u16(viewWidth));
+            b.putShort((short) u16(viewHeight));
+        }
+
+        public void read(ByteBuffer b) {
+            viewWidth = b.getShort() & 0xFFFF;
+            viewHeight = b.getShort() & 0xFFFF;
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.DISPLAY);
+        }
+
+        private static int u16(int v) {
+            return Math.max(0, Math.min(0xFFFF, v));
+        }
+    }
+
+    /**
+     * {@link ReliableType#MODIFIER_BANK}: u8 bank (0..3), str8 text (C {@code "%c%c%s"}, PKT_MODIFIERBANK, bank,
+     * {@code modBankStr[bank]}). The text is C's modifier string ("FN C V2 X4 LS"); the server parses it.
+     */
+    public static final class ModifierBank implements Payload {
+        /** C {@code NUM_MODBANKS}. */
+        public static final int BANKS = 4;
+
+        public int bank;
+        public final StringBuilder text = new StringBuilder(com.fulcrologic.jxpilot.common.Const.MAX_CHARS);
+
+        /** BEHAVIOR: u8 bank, then the text with a u8 length (at most 255 chars, see {@link Wire#putString8}). */
+        public void write(ByteBuffer b) {
+            b.put((byte) bank);
+            Wire.putString8(b, text);
+        }
+
+        /** BEHAVIOR: reads the bank (0..255, unchecked) and the whole text. */
+        public void read(ByteBuffer b) {
+            bank = b.get() & 0xFF;
+            Wire.getString8(b, text);
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.MODIFIER_BANK);
+        }
+    }
+
+    /** {@link ReliableType#SEEK}: u16 programmerId, u16 robotId, u16 soughtId (C {@code "%c%hd%hd%hd"}). */
+    public static final class Seek implements Payload {
+        public int programmerId;
+        public int robotId;
+        public int soughtId;
+
+        public void write(ByteBuffer b) {
+            b.putShort((short) programmerId);
+            b.putShort((short) robotId);
+            b.putShort((short) soughtId);
+        }
+
+        public void read(ByteBuffer b) {
+            programmerId = b.getShort() & 0xFFFF;
+            robotId = b.getShort() & 0xFFFF;
+            soughtId = b.getShort() & 0xFFFF;
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.SEEK);
         }
     }
 

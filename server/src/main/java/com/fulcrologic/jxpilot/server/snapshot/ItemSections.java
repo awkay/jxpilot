@@ -87,11 +87,12 @@ final class ItemSections {
     }
 
     /**
-     * BEHAVIOR: one SELF_ITEMS record with the viewer's item counts (tanks as its tank count).
+     * BEHAVIOR: one SELF_ITEMS record with the viewer's item counts (tanks as its tank count) and its lose item
+     * (C {@code Frame_lose_item_state} sends {@code pl->lose_item} as PKT_LOSEITEM while selecting; here always).
      */
     void writeSelfItems(Player v) {
         if (b.need(Section.SELF_ITEMS, 0)) {
-            Records.SelfItems.put(b.writer(), v.items);
+            Records.SelfItems.put(b.writer(), v.items, v.loseItem);
         }
     }
 
@@ -283,14 +284,18 @@ final class ItemSections {
     }
 
     /**
-     * BEHAVIOR: the identified controller's id ({@link Protocol#NO_ID} when unknown, unowned or confused; a
+     * BEHAVIOR: the identified controller's id ({@link Protocol#NO_ID} when not identified or confused; an
+     * identified mine nobody owns is {@code EXPIRED_MINE_ID}, C frame.c:873; a
      * confused mine of a paused controller still shows it, C frame.c:877-889 resets the id only outside the
      * paused branch).
      */
     int mineId(int h, Player v) {
         Objects o = w.objects;
-        if (!identified(h, v) || o.owner[h] == Obj.NO_ID) {
+        if (!identified(h, v)) {
             return Protocol.NO_ID;
+        }
+        if (o.owner[h] == Obj.NO_ID) {
+            return Records.Mine.EXPIRED_MINE_ID;
         }
         Player owner = w.byId(o.owner[h]);
         if ((o.status[h] & Obj.CONFUSED) != 0 && (owner == null || (owner.status & Obj.PAUSE) == 0)) {
@@ -449,13 +454,14 @@ final class ItemSections {
      * itself, a team mate or the viewer's own tank.
      */
     boolean shipShown(Player pl, Player v) {
-        return pl == v || v.canSee[pl.slot] || w.sameTeam(pl, v) || (pl.tank && pl.lockPlId == v.id);
+        return pl == v || v.canSee[pl.ind] || w.sameTeam(pl, v) || (pl.tank && pl.lockPlId == v.id)
+            || w.allied(pl, v);
     }
 
     /**
      * Whether ship {@code pl} is on {@code v}'s radar (C {@code Frame_radar} players): playing, and a team mate
-     * or own tank, or (with playersOnRadar) seen; within sensor range with limitedVisibility; the locked player
-     * blinks (hidden 2 of 5 frames).
+     * or own tank, or (with playersOnRadar) seen; within sensor range with limitedVisibility. (The locked player's
+     * blink is the client's, see {@link #radarLocked}.)
      */
     boolean onRadar(Player pl, Player v) {
         if (pl == v) {
@@ -464,14 +470,26 @@ final class ItemSections {
         if ((pl.status & (Obj.PLAYING | Obj.PAUSE | Obj.GAME_OVER)) != Obj.PLAYING) {
             return false;
         }
-        boolean friend = w.sameTeam(pl, v) || (pl.tank && pl.lockPlId == v.id);
-        if (!friend && (!w.items.playersOnRadar || !v.canSee[pl.slot])) {
+        boolean friend = w.sameTeam(pl, v) || (pl.tank && pl.lockPlId == v.id) || w.allied(v, pl);
+        if (!friend && (!w.items.playersOnRadar || !v.canSee[pl.ind])) {
             return false;
         }
         if (w.items.limitedVisibility && w.wrapLength(v.px - pl.px, v.py - pl.py) > v.sensorRange) {
             return false;
         }
-        return !((v.used & Has.COMPASS) != 0 && (v.lockTagged & Player.LOCK_PLAYER) != 0 && v.lockPlId == pl.id
-            && w.frames % 5 >= 3);
+        return true;
+    }
+
+    /**
+     * BEHAVIOR: whether {@code pl} is {@code v}'s compass lock (C frame.c:1180-1185): the radar record carries
+     * FLAG_LOCKED and the client hides it when {@code loops % 5 >= 3}, as C's server does per frame.
+     */
+    boolean radarLocked(Player pl, Player v) {
+        return (v.used & Has.COMPASS) != 0 && (v.lockTagged & Player.LOCK_PLAYER) != 0 && v.lockPlId == pl.id;
+    }
+
+    /** BEHAVIOR: C's radar 0x80 (friendly) for {@code pl} seen by {@code v}: a team mate, an ally or {@code v}'s own tank (frame.c:1187). */
+    boolean radarFriendly(Player pl, Player v) {
+        return w.sameTeam(pl, v) || w.allied(v, pl) || (pl.tank && pl.lockPlId == v.id);
     }
 }
