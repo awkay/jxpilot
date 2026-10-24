@@ -43,7 +43,8 @@ import static org.lwjgl.glfw.GLFW.*;
  * the last. {@code --scripted-server MAP} first starts a {@link ScriptedServer} for MAP on loopback UDP and
  * connects to it. Scripts: {@code fly} (from frame 60: thrust, turn left, fire in bursts), {@code talk} (opens the
  * talk line at frame 40 and types a line, leaves it open), {@code chat} (as talk, then sends it at frame
- * 160), {@code circle} (thrust from frame 60 with periodic left turns and fire), {@code none}.
+ * 160), {@code circle} (thrust from frame 60 with periodic left turns and fire), {@code play} (pointer control
+ * steering, F2 macro, ID mode, Print), {@code none}.
  * Frame numbers count from the first frame with the own ship; {@code --cap-fps N} (default 120) paces
  * frames when vsync does not (hidden windows). {@code --grab-from F --grab-count K} reads back K consecutive
  * frames (the view centre) without stalling and writes {@code DIR/grab-NN.png} at the end. {@code --trace FILE} writes per-frame timing and positions and snapshot arrivals ({@link FrameTrace}).
@@ -242,6 +243,25 @@ public final class DevRun {
                 }
             }
             case "help" -> tap(f, frame, 20, GLFW_KEY_F1, now);
+            case "play" -> {
+                // client-play H3: pointer control steers (KP_Enter, then the pointer moves right), F2 sends msg2,
+                // u shows real names, Print dumps the messages to stdout
+                var w = f.game().world();
+                tap(f, frame, 30, GLFW_KEY_KP_ENTER, now);
+                if (frame == 30) {
+                    System.out.printf("[play] frame=%d pointer=%s heading=%.3f%n", frame, f.play().pointer().on(),
+                        w.selfHeading());
+                }
+                if (frame > 30 && frame <= 60) {
+                    f.cursor(f.play().pointer().mouseX() + 4, f.play().pointer().mouseY());
+                }
+                if (frame == 61 || frame == 90) {
+                    System.out.printf("[play] frame=%d heading=%.3f%n", frame, w.selfHeading());
+                }
+                tap(f, frame, 70, GLFW_KEY_F2, now);
+                tap(f, frame, 100, GLFW_KEY_U, now);
+                tap(f, frame, 130, GLFW_KEY_PRINT_SCREEN, now);
+            }
             case "refuel" -> {
                 // U12: fly to the nearest fuel station, hold refuel (f) once within 80 px
                 var w = f.game().world();

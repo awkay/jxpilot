@@ -192,6 +192,9 @@ class AppAllocationTest {
         }
         Ring ring = new Ring(packets, due);
         sw.target = ring;
+        // client-play: pointer control on (keyPointerControl), so pointer movement and buttons run every frame
+        cf.key(GLFW_KEY_KP_ENTER, GLFW_PRESS, 0, now);
+        cf.key(GLFW_KEY_KP_ENTER, GLFW_RELEASE, 0, now);
         long[] t = {now};
         Runnable frame = () -> {
             t[0] += frameNs;
@@ -204,7 +207,15 @@ class AppAllocationTest {
                 cf.key(GLFW_KEY_RIGHT_SHIFT, GLFW_RELEASE, 0, t[0]);
                 cf.key(GLFW_KEY_A, GLFW_RELEASE, 0, t[0]);
                 cf.key(GLFW_KEY_ENTER, GLFW_RELEASE, 0, t[0]);
+            } else if (f % 40 == 5) {
+                cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, t[0]);
+                cf.key(GLFW_KEY_U, GLFW_PRESS, 0, t[0]); // keyIdMode: the score list rebuilds
+            } else if (f % 40 == 25) {
+                cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, t[0]);
+                cf.key(GLFW_KEY_U, GLFW_RELEASE, 0, t[0]);
+                cf.scroll(-1, t[0]);
             }
+            cf.cursor(600 + (f % 9) * 7, 400 + (f % 5)); // pointer steering every frame
             cf.step(t[0], 1200, 800, 1, m, 256, 200);
             ring.frame++;
         };
@@ -247,6 +258,7 @@ class AppAllocationTest {
             () -> assertTrue(game.world().particles().count() > 0, "particles alive"),
             () -> assertTrue(cf.radar().count() > 0, "radar blips"),
             () -> assertTrue(cf.extras().lock, "lock shown"),
+            () -> assertTrue(cf.play().pointer().on(), "pointer control was on while measured"),
             () -> assertTrue(cf.viewHud().textCount() > 3, "HUD built"),
             () -> assertTrue(cf.panelHud().textCount() >= 5, "score list built"),
             () -> assertTrue(lockSeen[0] && lockSeen[1], "R7: the lock target changed while measured"),
