@@ -236,7 +236,7 @@ public final class StaticMap {
      * {@link #dot(VertexBatch, int, int, int, double)} does.
      */
     public static void dot(VertexBatch b, int x, int y, int rgba) {
-        dot(b, x, y, POINT_SIZE, rgba);
+        sizedDot(b, x, y, POINT_SIZE, rgba);
     }
 
     /**
@@ -246,7 +246,7 @@ public final class StaticMap {
      * BEHAVIOR: a point of side {@code size} centred on world {@code (x + 17 - size/2 + size/2.0,
      * y + 18 + size/2 - size/2.0)} (integer halves as C's {@code >> 1}); size 2 is the default dot.
      */
-    public static void dot(VertexBatch b, int x, int y, int size, int rgba) {
+    public static void sizedDot(VertexBatch b, int x, int y, int size, int rgba) {
         b.point(x + HALF - (size >> 1) + size / 2f, y + HALF + 1 + (size >> 1) - size / 2f, size, rgba);
     }
 
@@ -256,18 +256,18 @@ public final class StaticMap {
      * right and down (in world units: divided by the zoom).
      */
     public static void dot(VertexBatch b, int x, int y, int rgba, double zoom) {
-        dot(b, x, y, POINT_SIZE, rgba, zoom);
+        sizedDot(b, x, y, POINT_SIZE, rgba, zoom);
     }
 
     /** {@link #dot(VertexBatch, int, int, int, double)} for a dot of C size {@code size}. */
-    public static void dot(VertexBatch b, int x, int y, int size, int rgba, double zoom) {
+    public static void sizedDot(VertexBatch b, int x, int y, int size, int rgba, double zoom) {
         float shift = (float) (WinScale.squareShift(size, zoom) / zoom);
         b.point(x + HALF - (size >> 1) + size / 2f + shift, y + HALF + 1 + (size >> 1) - size / 2f - shift,
             WinScale.of(size, zoom), rgba);
     }
 
     /**
-     * BEHAVIOR: a dot ({@link #dot(VertexBatch, int, int, int, int)}) on every {@link #dotPosition} block that is
+     * BEHAVIOR: a dot ({@link #sizedDot(VertexBatch, int, int, int, int)}) on every {@link #dotPosition} block that is
      * {@link #dotType}; none at all when {@code size} is 0 (C {@code map_point_size > 0}).
      */
     static void backgroundDots(WorldMap m, boolean showDecor, VertexBatch b, int rgba) {
@@ -281,7 +281,7 @@ public final class StaticMap {
         for (int by = 0; by < m.height(); by++) {
             for (int bx = 0; bx < m.width(); bx++) {
                 if (dotPosition(bx, by, m.edgeWrap(), dist) && dotType(m.block(bx, by), showDecor)) {
-                    dot(b, bx * S, by * S, size, rgba);
+                    sizedDot(b, bx * S, by * S, size, rgba);
                 }
             }
         }

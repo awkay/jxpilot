@@ -114,8 +114,14 @@ public final class AppLauncher {
             ShipShapeResource::readLatin1, System.err);
         GameConnection conn = GameConnector.open(target, o.bind(), game, name(o, keys), team(o, keys), shape,
             o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime(), GameConnector.debrisColors(keys.options()));
-        new GameApp(o, game, conn, target.toString(), null, keys).run();
+        new GameApp(o, game, conn, target.toString(), null, keys).saveTarget(rcFile(o,
+            Path.of(System.getProperty("user.home", "."))), name(o, keys)).run();
         return 0;
+    }
+
+    /** BEHAVIOR: the resource file of a launch: {@code --keys FILE}, else {@code HOME/.xpilotrc}. */
+    static Path rcFile(AppOptions o, Path home) {
+        return o.keysFile() != null ? Path.of(o.keysFile()) : home.resolve(".xpilotrc");
     }
 
     /**

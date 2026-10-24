@@ -64,7 +64,7 @@ public final class HudListPainter {
     /** X11's default dash list {4, 4} (a GC whose dashes were never set). */
     static final int X_DASH = 4;
 
-    private final TextWriter text;
+    private final TextWriter[] writers;
     private final Palette palette;
     private final int[] paletteOf;
     private final boolean[] shadowed;
@@ -75,7 +75,17 @@ public final class HudListPainter {
      * @param shadowed  per list colour index, whether its text is shadowed (copied; shorter arrays mean no shadow)
      */
     public HudListPainter(TextWriter text, Palette palette, int[] paletteOf, boolean[] shadowed) {
-        this.text = text;
+        this(new TextWriter[] {text}, palette, paletteOf, shadowed);
+    }
+
+    /**
+     * @param writers   text writer per list font index ({@link HudDrawList#textFont}; copied); an index past
+     *                  the end, or a null entry, draws with writer 0
+     * @param paletteOf palette index for each list colour index (copied)
+     * @param shadowed  per list colour index, whether its text is shadowed (copied; shorter arrays mean no shadow)
+     */
+    public HudListPainter(TextWriter[] writers, Palette palette, int[] paletteOf, boolean[] shadowed) {
+        this.writers = writers.clone();
         this.palette = palette;
         this.paletteOf = paletteOf.clone();
         this.shadowed = new boolean[paletteOf.length];
@@ -85,6 +95,17 @@ public final class HudListPainter {
     /** The painter for client-net's {@code HudColor} indices with the XPilot defaults. */
     public static HudListPainter xpilot(TextWriter text, Palette palette) {
         return new HudListPainter(text, palette, XPILOT_PALETTE, XPILOT_SHADOW);
+    }
+
+    /** The XPilot painter with a text writer per font index (the client HUD's {@code FontRole} ordinals). */
+    public static HudListPainter xpilot(TextWriter[] writers, Palette palette) {
+        return new HudListPainter(writers, palette, XPILOT_PALETTE, XPILOT_SHADOW);
+    }
+
+    /** BEHAVIOR: the writer for list font index {@code f}: writers[f], else writer 0 (out of range or null). */
+    TextWriter writer(int f) {
+        TextWriter w = f >= 0 && f < writers.length ? writers[f] : null;
+        return w != null ? w : writers[0];
     }
 
     /** The zoom used as C's {@code WINSCALE} factor for the dash lengths (1 = unscaled). */
@@ -114,7 +135,8 @@ public final class HudListPainter {
      * {@code WINSCALE(8)} on / {@code WINSCALE(4)} off from offset 0, in logical pixels; DASHED_X lines 4 on / 4
      * off, unscaled (X11's default dashes). Lines are 1 logical pixel wide.
      * BEHAVIOR: text draws {@code textLength} chars with its pen at {@code textX} and baseline at
-     * {@code textY}; shadowed colours draw black at (+1, +1) first and the colour at (-1, -1).
+     * {@code textY}, with the writer of its {@link HudDrawList#textFont} ({@link #writer}); shadowed colours
+     * draw black at (+1, +1) first and the colour at (-1, -1).
      */
     public void paint(VertexBatch b, ScreenSpace ss, HudDrawList list) {
         b.setLineWidth(VertexBatch.DEFAULT_LINE_WIDTH);
@@ -144,6 +166,7 @@ public final class HudListPainter {
             int n = list.textLength(i);
             float x = list.textX(i);
             float y = list.textY(i);
+            TextWriter text = writer(list.textFont(i));
             if (shadowed[col]) {
                 text.draw(b, s, 0, n, ss.edgeX(x + 1), ss.baseline(y + 1), black);
                 text.draw(b, s, 0, n, ss.edgeX(x - 1), ss.baseline(y - 1), rgba(col));

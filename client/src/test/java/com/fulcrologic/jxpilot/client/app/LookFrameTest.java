@@ -168,6 +168,8 @@ class LookFrameTest {
                 () -> assertEquals(256 - (35 + 3), f.textX(0), "text at width - (text width + 3)"),
                 () -> assertEquals(200 + 10 + 4, f.textY(0), "baseline y0 + ascent + 4"),
                 () -> assertEquals(HudColor.SCORE, f.textColor(0), "shadowed white"),
+                () -> assertEquals(com.fulcrologic.jxpilot.client.game.hud.FontRole.SCORE_LIST, f.textRole(0),
+                    "in the score list font"),
                 () -> assertEquals(256 - (35 + 6), f.rectX(0), "box from width - (text width + 6)"),
                 () -> assertEquals(200, f.rectY(0), "at the window top"),
                 () -> assertEquals(41, f.rectW(0), "text width + 6 wide"),

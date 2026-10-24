@@ -24,7 +24,9 @@
 package com.fulcrologic.jxpilot.client.app;
 
 import com.fulcrologic.jxpilot.client.game.ClientGame;
+import com.fulcrologic.jxpilot.client.game.hud.FontRole;
 import com.fulcrologic.jxpilot.client.game.input.KeyConfig;
+import com.fulcrologic.jxpilot.client.gl.FontBaker;
 import com.fulcrologic.jxpilot.client.gl.GlRenderer;
 import com.fulcrologic.jxpilot.client.gl.Screenshot;
 import com.fulcrologic.jxpilot.client.gl.UiAtlas;
@@ -38,6 +40,7 @@ import com.fulcrologic.jxpilot.client.paint.SceneData;
 import com.fulcrologic.jxpilot.client.paint.ScenePainter;
 import com.fulcrologic.jxpilot.client.paint.ScreenSpace;
 import com.fulcrologic.jxpilot.client.render.Camera;
+import com.fulcrologic.jxpilot.client.render.FontSpec;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.client.render.TextWriter;
 import com.fulcrologic.jxpilot.client.render.VertexBatch;
@@ -108,15 +111,23 @@ public final class GameApp {
     private final Camera cam = new Camera();
     private final ScreenSpace viewScreen = new ScreenSpace();
     private final ScreenSpace panelScreen = new ScreenSpace();
-    private final FontMetrics metrics = new FontMetrics();
+    /** The per-role fonts (C gameFont, messageFont, ...; RoleFonts), rebaked on a pixel ratio or font change. */
+    private final RoleFontSet fonts = new RoleFontSet();
+    private int fontOptionsVersion = -1;
+    private FontSpec[] wantedFonts;
+    private final java.util.Set<String> fontProblems = new java.util.HashSet<>();
     private final ScenePainter scenePainter;
     private final RadarPainter radarPainter;
     private final float[] xf = new float[4];
     private final HudFrameList viewList;
     private final HudFrameList panelList;
     private final HudFrameList helpList;
+    private final HudFrameList overlayList;
+    private final HudFrameList aboutList;
     private double zoom;
-    private double altScaleFactor;
+    private int zoomVersion = -1;
+    private double cursorX;
+    private double cursorY;
 
     private Window window;
     private SoundPlayer sound;
@@ -166,8 +177,16 @@ public final class GameApp {
         this.viewList = new HudFrameList(frame.viewHud());
         this.panelList = new HudFrameList(frame.panelHud());
         this.helpList = new HudFrameList(frame.helpHud());
-        this.zoom = WinScale.zoomOf(opts.scaleFactor());
-        this.altScaleFactor = opts.altScaleFactor();
+        this.overlayList = new HudFrameList(frame.ui().panelOverlay());
+        this.aboutList = new HudFrameList(frame.ui().aboutHud());
+        this.zoom = WinScale.zoomOf(frame.options().real(
+            com.fulcrologic.jxpilot.client.game.options.ClientOption.SCALE_FACTOR));
+    }
+
+    /** Where CONFIG's "Save Configuration" writes, and the name it saves (C {@code Get_xpilotrc_file}). */
+    public GameApp saveTarget(Path rcFile, String playerName) {
+        frame.setSaveTarget(rcFile, playerName);
+        return this;
     }
 
     public ClientFrame frame() {
@@ -179,10 +198,10 @@ public final class GameApp {
         normalTitle = "JXPilot - " + label;
         window = new Window(normalTitle, opts.width(), opts.height(), true, opts.vsync());
         try {
-            atlas = new UiAtlas(opts.fontFile() == null ? null : Path.of(opts.fontFile()), fontPixels());
+            atlas = new UiAtlas();
             gl = new GlRenderer(atlas.texture());
             mapLook = new MapLook(gl, palette, style, frame.options(), System.out);
-            makeText();
+            rebakeFontIfNeeded();
             dynTri = MemoryUtil.memAlloc(DYNAMIC_VERTICES * VertexBatch.STRIDE);
             dynSeg = MemoryUtil.memAlloc(Math.min(DYNAMIC_SEGMENTS, gl.maxSegments()) * VertexBatch.SEGMENT_STRIDE);
             dynPt = MemoryUtil.memAlloc(Math.min(DYNAMIC_POINTS, gl.maxPoints()) * VertexBatch.POINT_STRIDE);
@@ -198,20 +217,35 @@ public final class GameApp {
         }
     }
 
-    private float fontPixels() {
-        return (float) (opts.fontSize() * window.pixelRatio());
+    private void makeText() {
+        text = fonts.writer(FontRole.GAME);
+        hudList = HudListPainter.xpilot(fonts.writers(), palette);
+        hudPainter = new HudPainter(text, palette);
     }
 
-    private void makeText() {
-        text = new TextWriter(atlas.font());
-        hudList = HudListPainter.xpilot(text, palette);
-        hudPainter = new HudPainter(text, palette);
+    /** Every role's font from the font options (or --font/--font-size); new problems go to stderr, as C's. */
+    private FontSpec[] resolveFonts() {
+        RoleFonts.Resolution r = RoleFonts.resolve(frame.options(), opts.fontFile(), opts.fontSize(),
+            FontBaker::isFontFile);
+        for (String p : r.problems()) {
+            if (fontProblems.add(p)) {
+                System.err.println(p);
+            }
+        }
+        return r.specs();
     }
 
     private void installInput() {
         long h = window.handle();
         glfwSetKeyCallback(h, (w, key, sc, action, mods) -> frame.key(key, action, mods, System.nanoTime()));
         glfwSetCharCallback(h, (w, cp) -> frame.character(cp));
+        glfwSetCursorPosCallback(h, (w, x, y) -> {
+            cursorX = x;
+            cursorY = y;
+            frame.mouseMove(x, y, PANEL_W + PANEL_GAP);
+        });
+        glfwSetMouseButtonCallback(h, (w, button, action, mods) ->
+            frame.mouseButton(button, action, cursorX, cursorY, PANEL_W + PANEL_GAP));
         glfwSetWindowFocusCallback(h, (w, focused) -> {
             if (!focused) {
                 frame.focusLost();
@@ -243,10 +277,9 @@ public final class GameApp {
                 break;
             }
             if (frame.takeSwapScale()) {
-                double current = 1 / zoom;
-                zoom = WinScale.zoomOf(altScaleFactor);
-                altScaleFactor = current;
+                swapScaleFactors();
             }
+            followScaleFactor();
             window.refreshSize();
             rebakeFontIfNeeded();
             renderFrame(now);
@@ -280,10 +313,31 @@ public final class GameApp {
         }
     }
 
+    /** C {@code Key_press_swap_scalefactor}: scaleFactor and altScaleFactor change places. */
+    private void swapScaleFactors() {
+        com.fulcrologic.jxpilot.client.game.options.ClientOptions o = frame.options();
+        double sf = o.real(com.fulcrologic.jxpilot.client.game.options.ClientOption.SCALE_FACTOR);
+        o.setReal(com.fulcrologic.jxpilot.client.game.options.ClientOption.SCALE_FACTOR,
+            o.real(com.fulcrologic.jxpilot.client.game.options.ClientOption.ALT_SCALE_FACTOR));
+        o.setReal(com.fulcrologic.jxpilot.client.game.options.ClientOption.ALT_SCALE_FACTOR, sf);
+    }
+
+    /** The zoom follows the scaleFactor option (command line, file, CONFIG, swap key). */
+    private void followScaleFactor() {
+        com.fulcrologic.jxpilot.client.game.options.ClientOptions o = frame.options();
+        if (o.version() != zoomVersion) {
+            zoomVersion = o.version();
+            zoom = WinScale.zoomOf(o.real(com.fulcrologic.jxpilot.client.game.options.ClientOption.SCALE_FACTOR));
+        }
+    }
+
     /** The frame's sounds, and the sound toggle key with a HUD message as feedback. */
     private void sound(long now) {
         if (frame.takeToggleSound()) {
             frame.game().messages().add(Msg.Text.KIND_SERVER, sound.toggleMuted() ? "Sound off." : "Sound on.");
+        }
+        if (frame.ui().maxVolume() != sound.maxVolume()) {
+            sound.setMaxVolume(frame.ui().maxVolume());
         }
         sound.frame(frame.game().world().sounds(), frame.game().gameFps(),
             frame.game().world().arrivalIntervalSeconds(), now);
@@ -301,10 +355,16 @@ public final class GameApp {
         }
     }
 
+    /** Rebake the fonts when a font option changed (options version) or the window's pixel ratio did. */
     private void rebakeFontIfNeeded() throws IOException {
-        float px = fontPixels();
-        if (px != atlas.fontPixels()) {
-            atlas.bakeFont(px);
+        int v = frame.options().version();
+        if (v != fontOptionsVersion) {
+            fontOptionsVersion = v;
+            wantedFonts = resolveFonts();
+        }
+        double ratio = window.pixelRatio();
+        if (fonts.needs(wantedFonts, ratio)) {
+            fonts.set(wantedFonts, atlas.bakeFonts(wantedFonts, ratio), ratio);
             makeText();
         }
     }
@@ -317,8 +377,7 @@ public final class GameApp {
         int viewFbW = Math.max(1, fbW - panelFb);
         int viewW = (int) (viewFbW / ratio);
         int viewH = (int) (fbH / ratio);
-        metrics.set(atlas.font(), ratio);
-        frame.step(now, viewW, viewH, zoom, metrics, PANEL_W, radarHeight + ClientFrame.SCORE_GAP);
+        frame.step(now, viewW, viewH, zoom, fonts, PANEL_W, radarHeight);
         if (frame.mapVersion() != mapVersion) {
             mapVersion = frame.mapVersion();
             loadMap(frame.game().map());
@@ -365,6 +424,7 @@ public final class GameApp {
         }
         hudList.setScale(1);
         hudList.paint(dyn, panelScreen, panelList);
+        hudList.paint(dyn, panelScreen, overlayList);
         gl.flush(dyn);
         dyn.clear();
     }
@@ -395,9 +455,19 @@ public final class GameApp {
         hud(true);
         hudList.setScale(1);
         hudList.paint(dyn, viewScreen, helpList);
+        hudList.paint(dyn, viewScreen, aboutList);
+        aboutItems();
         gl.flush(dyn);
         dyn.clear();
 
+    }
+
+    /** The information window's item pictures (C {@code Paint_item} in the about window). */
+    private void aboutItems() {
+        com.fulcrologic.jxpilot.client.game.ui.AboutWindow a = frame.ui().about();
+        for (int i = 0; i < a.itemCount(); i++) {
+            hudPainter.paintItemIcon(dyn, viewScreen, a.item(i), a.itemX(i), a.itemY(i));
+        }
     }
 
     /** The view HUD: the draw list and the directly painted parts; {@code arcs}: only C's Arc_add parts. */

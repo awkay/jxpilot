@@ -63,7 +63,11 @@ class HudListPainterTest {
         }
 
         List_ text(String s, int len, float x, float y, int color) {
-            texts.add(new Object[] {s, len, x, y, color});
+            return text(s, len, x, y, color, 0);
+        }
+
+        List_ text(String s, int len, float x, float y, int color, int font) {
+            texts.add(new Object[] {s, len, x, y, color, font});
             return this;
         }
 
@@ -87,6 +91,62 @@ class HudListPainterTest {
         @Override public float textX(int i) { return (Float) texts.get(i)[2]; }
         @Override public float textY(int i) { return (Float) texts.get(i)[3]; }
         @Override public int textColor(int i) { return (Integer) texts.get(i)[4]; }
+        @Override public int textFont(int i) { return (Integer) texts.get(i)[5]; }
+    }
+
+    /** The fixture font with every glyph 3 px further right (xoff 4), so a run shows which font drew it. */
+    static com.fulcrologic.jxpilot.client.render.Font shifted() {
+        com.fulcrologic.jxpilot.client.render.Font f = new com.fulcrologic.jxpilot.client.render.Font(1000, 100, 10, 3);
+        for (char c = com.fulcrologic.jxpilot.client.render.Font.FIRST; c <= com.fulcrologic.jxpilot.client.render.Font.LAST; c++) {
+            float x0 = (c - 32) * 8;
+            f.setGlyph(c, x0, 0, x0 + 6, 9, 4, -8, 7);
+        }
+        return f;
+    }
+
+    @Nested
+    class Fonts {
+        @Test
+        void eachRunDrawsWithTheWriterOfItsFontIndex() {
+            TextWriter plain = new TextWriter(Fixtures.font());
+            TextWriter moved = new TextWriter(shifted());
+            HudListPainter byFont = HudListPainter.xpilot(new TextWriter[] {plain, moved, null}, P);
+            byFont.paint(b, ss, new List_().text("a", 1, 10, 20, WHITE, 0).text("b", 1, 10, 40, WHITE, 1)
+                .text("c", 1, 10, 60, WHITE, 2).text("d", 1, 10, 80, WHITE, 3).text("e", 1, 10, 100, WHITE, -1));
+            assertAll(
+                () -> assertEquals(List.of("'a'@10,580#" + hex(1), "'b'@13,560#" + hex(1), "'c'@10,540#" + hex(1),
+                    "'d'@10,520#" + hex(1), "'e'@10,500#" + hex(1)), Drawn.runStrings(b),
+                    "font 0 plain, font 1 shifted by 3; a null writer and indexes 3 (one past the end) and -1 fall back to writer 0"),
+                () -> assertSame(moved, byFont.writer(1), "writer 1 is the second"),
+                () -> assertSame(plain, byFont.writer(2), "a null entry is writer 0"));
+        }
+
+        @Test
+        void aDrawListWithoutFontsUsesWriterZero() {
+            HudDrawList noFonts = new HudDrawList() {
+                @Override public int lineCount() { return 0; }
+                @Override public float lineX0(int i) { return 0; }
+                @Override public float lineY0(int i) { return 0; }
+                @Override public float lineX1(int i) { return 0; }
+                @Override public float lineY1(int i) { return 0; }
+                @Override public int lineStyle(int i) { return 0; }
+                @Override public int lineColor(int i) { return 0; }
+                @Override public int rectCount() { return 0; }
+                @Override public float rectX(int i) { return 0; }
+                @Override public float rectY(int i) { return 0; }
+                @Override public float rectW(int i) { return 0; }
+                @Override public float rectH(int i) { return 0; }
+                @Override public boolean rectFilled(int i) { return false; }
+                @Override public int rectColor(int i) { return 0; }
+                @Override public int textCount() { return 1; }
+                @Override public CharSequence text(int i) { return "z"; }
+                @Override public int textLength(int i) { return 1; }
+                @Override public float textX(int i) { return 10; }
+                @Override public float textY(int i) { return 20; }
+                @Override public int textColor(int i) { return WHITE; }
+            };
+            assertEquals(0, noFonts.textFont(0), "the default font index is 0, the game font");
+        }
     }
 
     HudListPainter lp;

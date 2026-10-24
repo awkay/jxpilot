@@ -68,14 +68,14 @@ class PainterStyleTest {
         int last = 3 * 24 - 1;
         assertAll(
             () -> assertEquals(24 * 3, one.vertexCount(), "24 fan triangles"),
-            () -> assertEquals((768 + 10f) / 1024, one.u(0), UV, "centre: 10 texels right of the corner"),
-            () -> assertEquals((32 + 10f) / 1024, one.v(0), UV, "and 10 below"),
-            () -> assertEquals((768 + 20f) / 1024, one.u(1), UV, "the rim at angle 0: 20 texels right"),
+            () -> assertEquals((768 + 10f) / ObjectPainter.ATLAS_SIZE, one.u(0), UV, "centre: 10 texels right of the corner"),
+            () -> assertEquals((32 + 10f) / ObjectPainter.ATLAS_SIZE, one.v(0), UV, "and 10 below"),
+            () -> assertEquals((768 + 20f) / ObjectPainter.ATLAS_SIZE, one.u(1), UV, "the rim at angle 0: 20 texels right"),
             () -> assertEquals(110f, one.x(1), UV, "at x + radius"),
-            () -> assertEquals((32 + 0f) / 1024, one.v(17), UV, "the top of the disc (90 degrees) is texel row 0"),
+            () -> assertEquals((32 + 0f) / ObjectPainter.ATLAS_SIZE, one.v(17), UV, "the top of the disc (90 degrees) is texel row 0"),
             () -> assertEquals(110f, one.x(last), UV, "the fan closes at angle 360"),
-            () -> assertEquals((768 + 20f) / 1024, big.u(0), UV, "zoom 2: the centre is 20 texels in (unscaled tile)"),
-            () -> assertEquals((768 + 40f) / 1024, big.u(1), UV, "and the rim 40 texels in"),
+            () -> assertEquals((768 + 20f) / ObjectPainter.ATLAS_SIZE, big.u(0), UV, "zoom 2: the centre is 20 texels in (unscaled tile)"),
+            () -> assertEquals((768 + 40f) / ObjectPainter.ATLAS_SIZE, big.u(1), UV, "and the rim 40 texels in"),
             () -> assertEquals(P.color(Palette.WHITE), one.color(0), "untinted"));
     }
 

@@ -26,7 +26,10 @@ package com.fulcrologic.jxpilot.client.app;
 import com.fulcrologic.jxpilot.client.game.hud.HudFrame;
 import com.fulcrologic.jxpilot.client.paint.HudDrawList;
 
-/** {@link HudDrawList} view of client-net's {@link HudFrame} (pure delegation; the colour indices match). */
+/**
+ * {@link HudDrawList} view of client-net's {@link HudFrame} (pure delegation; the colour indices match, and a
+ * run's font index is its {@code FontRole} ordinal).
+ */
 public final class HudFrameList implements HudDrawList {
     private final HudFrame f;
 
@@ -56,4 +59,5 @@ public final class HudFrameList implements HudDrawList {
     @Override public float textX(int i) { return f.textX(i); }
     @Override public float textY(int i) { return f.textY(i); }
     @Override public int textColor(int i) { return f.textColor(i); }
+    @Override public int textFont(int i) { return f.textRole(i).ordinal(); }
 }

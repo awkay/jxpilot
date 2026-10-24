@@ -176,7 +176,7 @@ public final class MapSymbols {
             Cannon c = cannons.get(i);
             if (!st.cannonAlive(i) && StaticMap.dotPosition(c.bx(), c.by(), map.edgeWrap(), style.pointDist)
                 && visible(cam, c.bx(), c.by(), k)) {
-                StaticMap.dot(b, c.bx() * S, c.by() * S, size, blue, zoom);
+                StaticMap.sizedDot(b, c.bx() * S, c.by() * S, size, blue, zoom);
             }
         }
     }

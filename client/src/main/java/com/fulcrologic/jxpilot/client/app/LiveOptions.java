@@ -54,6 +54,12 @@ public final class LiveOptions {
      * maxLinesInHistory. Returns whether it applied.
      */
     public boolean apply(Hud hud, ClientGame game, HudExtras extras, TalkLine talk) {
+        return apply(hud, game, extras, talk, null);
+    }
+
+    /** {@link #apply(Hud, ClientGame, HudExtras, TalkLine)}, plus toggleShield and autoShield into {@code input}. */
+    public boolean apply(Hud hud, ClientGame game, HudExtras extras, TalkLine talk,
+                         com.fulcrologic.jxpilot.client.game.input.InputState input) {
         if (options.version() == applied) {
             return false;
         }
@@ -77,6 +83,10 @@ public final class LiveOptions {
         extras.showItems = options.flag(SHOW_ITEMS);
         extras.showItemsTime = options.real(SHOW_ITEMS_TIME);
         talk.setHistorySize(options.integer(MAX_LINES_IN_HISTORY));
+        if (input != null) {
+            input.toggleShield = options.flag(TOGGLE_SHIELD);
+            input.autoShield = options.flag(AUTO_SHIELD);
+        }
         return true;
     }
 }

@@ -345,14 +345,14 @@ class ObjectPainterTest {
         void symbolIsTheRedAtlasQuadEightLeftAndSAbove() {
             VertexBatch b = batch();
             OP.itemSymbol(b, Item.TANK.ordinal(), 0, 0, 1);
-            float u0 = (768 + 7 * 16) / 1024f;
+            float u0 = (768 + 7 * 16) / 2048f;
             assertAll(
                 () -> assertEquals(List.of("-8,-6 8,-6 8,10", "-8,-6 8,10 -8,10"), tris(b),
                     "16 px square, top-left at screen (x - 8, y - S + 2)"),
                 () -> assertEquals(u0, b.u(0), UV, "left edge at the tank's atlas column"),
-                () -> assertEquals(16 / 1024f, b.v(0), UV, "bottom samples the symbol's last row"),
+                () -> assertEquals(16 / 2048f, b.v(0), UV, "bottom samples the symbol's last row"),
                 () -> assertEquals(0f, b.v(2), UV, "top samples its first row"),
-                () -> assertEquals(u0 + 16 / 1024f, b.u(1), UV, "16 texels wide"),
+                () -> assertEquals(u0 + 16 / 2048f, b.u(1), UV, "16 texels wide"),
                 () -> assertEquals(RED, b.color(0), "red"));
         }
 
@@ -362,9 +362,9 @@ class ObjectPainterTest {
             ObjectPainter.symbol(b, Item.ARMOR.ordinal(), 10, 20, 32, WHITE);
             assertAll(
                 () -> assertEquals("10,-12 42,-12 42,20", tris(b).get(0), "side 32 hanging down from the top-left"),
-                () -> assertEquals((768 + 4 * 16) / 1024f, b.u(0), UV, "armor (20) is fifth in row 2"),
-                () -> assertEquals(32 / 1024f, b.v(0), UV, "rows 16..31"),
-                () -> assertEquals(16 / 1024f, b.v(2), UV, "top row 16"));
+                () -> assertEquals((768 + 4 * 16) / 2048f, b.u(0), UV, "armor (20) is fifth in row 2"),
+                () -> assertEquals(32 / 2048f, b.v(0), UV, "rows 16..31"),
+                () -> assertEquals(16 / 2048f, b.v(2), UV, "top row 16"));
         }
     }
 

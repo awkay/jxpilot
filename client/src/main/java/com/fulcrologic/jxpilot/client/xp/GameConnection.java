@@ -92,6 +92,16 @@ public interface GameConnection extends AutoCloseable {
      */
     default void setModifierBanks(String[] banks) { }
 
+    /**
+     * Ask the server for its message of the day again (C {@code Net_ask_for_motd} from the MOTD menu entry with
+     * {@code refreshMotd}, or when none arrived yet). Protocols without it ignore it.
+     *
+     * @return true when the request went out
+     */
+    default boolean requestMotd(long nowNanos) {
+        return false;
+    }
+
     /** Leave the game; the state becomes CLOSED. */
     void disconnect(long nowNanos);
 

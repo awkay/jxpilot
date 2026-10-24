@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.client.app;
 
 import com.fulcrologic.jxpilot.client.game.CharBuf;
+import com.fulcrologic.jxpilot.client.game.hud.FontRole;
 import com.fulcrologic.jxpilot.client.game.hud.Hud;
 import com.fulcrologic.jxpilot.client.game.hud.HudColor;
 import com.fulcrologic.jxpilot.client.game.hud.HudFrame;
@@ -113,7 +114,7 @@ public final class LookFrame {
      * C {@code Paint_clock} in the score window at ({@code x0}, {@code y0}), {@code width} wide.
      * <p>
      * BEHAVIOR: without {@code clock} nothing. Otherwise a WINDOW-coloured box of the text width plus 2 x 3 by
-     * ascent + descent + 3 at the window's top right, and the text in shadowed white (SCORE) at
+     * ascent + descent + 3 at the window's top right, and the text in shadowed white (SCORE, in the score list font, as C's {@code scoreListFont}) at
      * {@code x0 + width - (textWidth + 3)}, baseline {@code y0 + ascent + 4}.
      * BEHAVIOR: the text is recomputed ({@link #clockText}) on the first call, when the options changed, when
      * {@code loops} did not advance, or when {@code fps << 5} frames passed since the last time (C's half-minute
@@ -132,7 +133,7 @@ public final class LookFrame {
         int w = m.width(clock, clock.length());
         int height = m.ascent() + m.descent() + 3;
         out.rect(x0 + width - (w + 2 * CLOCK_BORDER), y0, w + 2 * CLOCK_BORDER, height, true, HudColor.WINDOW);
-        CharBuf t = out.text(x0 + width - (w + CLOCK_BORDER), y0 + m.ascent() + 4, HudColor.SCORE);
+        CharBuf t = out.text(x0 + width - (w + CLOCK_BORDER), y0 + m.ascent() + 4, FontRole.SCORE_LIST, HudColor.SCORE);
         if (t != null) {
             t.append(clock);
         }
