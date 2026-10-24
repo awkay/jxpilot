@@ -148,12 +148,16 @@ public final class Locks {
     /**
      * C {@code Player_lock_allowed}.
      * <p>
-     * BEHAVIOR: never on oneself or nobody; anyone outside team play, team mates, other teams with lockOtherTeam
-     * or when the own team is dead.
+     * BEHAVIOR: never on oneself or nobody; anyone while actively playing (event.c:139-141) or outside team play;
+     * otherwise (paused, waiting or game over) team mates, other teams with lockOtherTeam or when the own team is
+     * dead.
      */
     public boolean lockAllowed(Player pl, Player target) {
         if (target == null || target == pl) {
             return false;
+        }
+        if ((pl.status & (Obj.PLAYING | Obj.PAUSE | Obj.GAME_OVER)) == Obj.PLAYING) {
+            return true;
         }
         if (!w.params.teamPlay) {
             return true;
