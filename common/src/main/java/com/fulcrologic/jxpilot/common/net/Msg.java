@@ -467,12 +467,15 @@ public final class Msg {
         /** Remaining lives (limitedLives) or -1. */
         public int lives = -1;
         public int status;
+        /** C alliance char of the player (' ' none); appended, so a message without it reads as ' '. */
+        public int alliance = ' ';
 
         public void write(ByteBuffer b) {
             b.putShort((short) id);
             b.putFloat(score);
             b.putShort((short) lives);
             b.put((byte) status);
+            b.put((byte) alliance);
         }
 
         public void read(ByteBuffer b) {
@@ -480,6 +483,7 @@ public final class Msg {
             score = b.getFloat();
             lives = b.getShort();
             status = b.get() & 0xFF;
+            alliance = b.hasRemaining() ? b.get() & 0xFF : ' ';
         }
 
         public void send(ReliableChannel ch) {

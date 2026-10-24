@@ -54,6 +54,7 @@ public final class Players {
     private final int[] lives = new int[CAPACITY];
     private final int[] status = new int[CAPACITY];
     private final boolean[] scored = new boolean[CAPACITY];
+    private final char[] alliance = new char[CAPACITY];
     private final int[] check = new int[CAPACITY];
     private final int[] round = new int[CAPACITY];
     private final int[] timingTick = new int[CAPACITY];
@@ -148,6 +149,7 @@ public final class Players {
         check[s] = 0;
         round[s] = 0;
         timingTick[s] = 0;
+        alliance[s] = ' ';
         if ((j.flags & Msg.PlayerJoin.FLAG_SELF) != 0) {
             selfId = j.id;
         }
@@ -234,6 +236,22 @@ public final class Players {
         timingTick[s] = tick;
         version++;
     }
+
+    /** BEHAVIOR: C {@code Handle_score}'s alliance char for a known id (0 counts as ' '); unknown ids: nothing. */
+    public void setAlliance(int id, int a) {
+        int s = slotOf(id);
+        if (s < 0) {
+            return;
+        }
+        char c = a == 0 ? ' ' : (char) a;
+        if (alliance[s] != c) {
+            alliance[s] = c;
+            version++;
+        }
+    }
+
+    /** C {@code other->alliance}: ' ' when in no alliance. */
+    public char alliance(int slot) { return alliance[slot]; }
 
     /** Next race checkpoint. */
     public int check(int slot) { return check[slot]; }

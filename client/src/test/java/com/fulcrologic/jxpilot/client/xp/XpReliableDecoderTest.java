@@ -235,10 +235,10 @@ class XpReliableDecoderTest {
             decode(new CPackets().player(5, 0, ' ', "A", "r", "h", "", "").score(5, 12.34, 3, 'P', '+')
                 .score(5, -2.5, 0, 'W', ' ').score(5, 1, 0, 'D', ' ').score(5, 0, 0, ' ', ' '));
             assertEquals(List.of("join id=5 team=0 flags=0 name=A shape=",
-                "score id=5 score=12.34 lives=-1 status=" + Msg.Score.STATUS_PAUSED,
+                "score id=5 score=12.34 lives=-1 status=" + Msg.Score.STATUS_PAUSED + " alliance=+",
                 "score id=5 score=-2.5 lives=-1 status=" + Msg.Score.STATUS_WAITING,
                 "score id=5 score=1.0 lives=-1 status=" + Msg.Score.STATUS_OUT_OF_LIVES,
-                "score id=5 score=0.0 lives=-1 status=0"), rec.events, "score / 100, status chars, unlimited lives");
+                "score id=5 score=0.0 lives=-1 status=0"), rec.events, "score / 100, status chars, unlimited lives, the alliance char");
             prefixesIncomplete(new CPackets().score(5, 1, 1, ' ', ' '));
         }
 

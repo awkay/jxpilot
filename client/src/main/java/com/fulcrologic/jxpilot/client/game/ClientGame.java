@@ -166,6 +166,7 @@ public final class ClientGame implements ConnectionListener {
             case ReliableType.SCORE -> {
                 score.read(p);
                 players.setScore(score.id, score.score, score.lives, score.status);
+                players.setAlliance(score.id, score.alliance);
             }
             case ReliableType.SCORE_OBJECT -> {
                 scoreObject.read(p);

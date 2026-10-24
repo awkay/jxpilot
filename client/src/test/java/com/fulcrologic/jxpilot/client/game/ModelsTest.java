@@ -465,6 +465,27 @@ class ModelsTest {
         }
 
         @Test
+        @DisplayName("free for all: the team column shows the alliance char (C teamStr = other->alliance)")
+        void allianceColumn() {
+            Players p = new Players();
+            p.join(join(1, 0, 0, "Ann", ""));
+            p.setScore(1, 30, -1, 0);
+            p.setAlliance(1, 'a');
+            p.setAlliance(2, 'b');
+            int v = p.version();
+            p.setAlliance(1, 'a');
+            int after = p.version();
+            Scoreboard sb = new Scoreboard();
+            sb.configure(false, false, false, 1);
+            sb.update(p);
+            p.setAlliance(1, 0);
+            assertAll(
+                () -> assertEquals("  a   30.0  Ann", labels(sb).get(0), "alliance in the team column"),
+                () -> assertEquals(v, after, "an unchanged alliance changes nothing"),
+                () -> assertEquals(' ', p.alliance(p.slotOf(1)), "0 is no alliance"));
+        }
+
+        @Test
         @DisplayName("update rebuilds only on changes")
         void rebuildOnChange() {
             Players p = new Players();

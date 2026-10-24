@@ -163,7 +163,7 @@ public final class Scoreboard {
             rowLine[rows] = i;
             rowDim[rows] = c == 'D' || c == 'P' || c == 'W';
             format(labels[rows], c, teamPlay ? p.team(s) : -1, p.score(s), p.lives(s), p.name(s), p.round(s),
-                p.check(s));
+                p.check(s), p.alliance(s));
             rows++;
         }
         if (teamPlay && !timing) {
@@ -259,24 +259,23 @@ public final class Scoreboard {
     }
 
     /**
-     * C label {@code "%c %s%s%s%s  %s"}: status char, race column (3 blanks in timing mode), team
-     * column (digit and blank in team play, else the alliance blank), score, lives (limited lives only),
-     * name.
+     * C label {@code "%c %s%s%s%s  %s"}: status char, race column (timing mode), team column (digit and
+     * blank in team play, else the alliance char, ' ' for none), score, lives (limited lives only), name.
      */
     void format(CharBuf b, char statusChar, int team, float score, int lives, CharSequence name) {
-        format(b, statusChar, team, score, lives, name, 0, 0);
+        format(b, statusChar, team, score, lives, name, 0, 0, ' ');
     }
 
     /** As above with race progress for the race column ({@link #appendRace}). */
     void format(CharBuf b, char statusChar, int team, float score, int lives, CharSequence name, int round,
-                int check) {
+                int check, char alliance) {
         b.clear();
         b.append(statusChar).append(' ');
         appendRace(b, statusChar, round, check);
         if (team >= 0) {
             b.append((char) ('0' + (team % 10))).append(' ');
         } else {
-            b.append(' ');
+            b.append(alliance);
         }
         appendScoreAndLife(b, score, lives);
         b.append("  ").append(name);

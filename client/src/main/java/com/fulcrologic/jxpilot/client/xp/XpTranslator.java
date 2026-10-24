@@ -832,7 +832,13 @@ public final class XpTranslator {
      * 'W' waiting, 'D' out of lives.
      */
     public void score(int id, double value, int life, int mychar) {
+        score(id, value, life, mychar, ' ');
+    }
+
+    /** As above with C's alliance char (' ' none; 0x4500+ servers send it). */
+    public void score(int id, double value, int life, int mychar, int alliance) {
         score.id = id & 0xFFFF;
+        score.alliance = alliance;
         score.score = (float) value;
         score.lives = limitedLives ? life : -1;
         score.status = switch (mychar) {

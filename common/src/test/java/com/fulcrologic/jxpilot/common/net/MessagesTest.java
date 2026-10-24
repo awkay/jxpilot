@@ -371,6 +371,7 @@ class MessagesTest {
             s.score = -12.5f;
             s.lives = -1;
             s.status = Msg.Score.STATUS_DEAD;
+            s.alliance = 'x';
             s.send(tx);
             Msg.TeamScore ts = new Msg.TeamScore();
             ts.team = 2;
@@ -462,6 +463,9 @@ class MessagesTest {
                 () -> assertEquals(-12.5f, s2.score, "score keeps negative score"),
                 () -> assertEquals(-1, s2.lives, "score keeps lives sign"),
                 () -> assertEquals(Msg.Score.STATUS_DEAD, s2.status, "score keeps status"),
+                () -> assertEquals('x', s2.alliance, "score keeps the alliance char"),
+                () -> assertEquals(' ', allianceOf(new byte[] {0, 4, 0, 0, 0, 0, 0, 0, 0}),
+                    "a SCORE without the appended alliance reads as ' '"),
                 () -> assertEquals(4, s2.id, "score keeps id"),
                 () -> assertEquals(2, ts2.team, "team score keeps team"),
                 () -> assertEquals(99f, ts2.score, "team score keeps score"),
@@ -943,5 +947,11 @@ class MessagesTest {
             () -> assertTrue(new Msg.Reject().text.capacity() >= Msg.MSG_LEN, "REJECT text"),
             () -> assertTrue(new Msg.Disconnect().text.capacity() >= Msg.MSG_LEN, "DISCONNECT text"),
             () -> assertTrue(new Msg.ScoreObject().text.capacity() >= Msg.MSG_LEN, "SCORE_OBJECT label"));
+    }
+
+    static int allianceOf(byte[] body) {
+        Msg.Score s = new Msg.Score();
+        s.read(ByteBuffer.wrap(body));
+        return s.alliance;
     }
 }

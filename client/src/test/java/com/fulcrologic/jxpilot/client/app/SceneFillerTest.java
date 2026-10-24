@@ -394,6 +394,29 @@ class SceneFillerTest {
         }
 
         @Test
+        @DisplayName("friendly: the same alliance (not ' ') in any mode; never the own ship by team or alliance")
+        void alliance() {
+            AppFixture f = new AppFixture(true).players();
+            Players p = f.game.players();
+            boolean before = SceneFiller.friendly(0, p, p.slotOf(FOE), false);
+            p.setAlliance(AppFixture.SELF, 'a');
+            p.setAlliance(FOE, 'a');
+            p.setAlliance(MATE, 'b');
+            boolean allied = SceneFiller.friendly(0, p, p.slotOf(FOE), false);
+            boolean other = SceneFiller.friendly(0, p, p.slotOf(MATE), false);
+            boolean own = SceneFiller.friendly(0, p, p.slotOf(AppFixture.SELF), true);
+            p.setAlliance(AppFixture.SELF, ' ');
+            p.setAlliance(FOE, ' ');
+            boolean noneBoth = SceneFiller.friendly(0, p, p.slotOf(FOE), false);
+            assertAll(
+                () -> assertFalse(before, "no alliances: the foe is not friendly"),
+                () -> assertTrue(allied, "same alliance: friendly (C Gui_calculate_ship_color)"),
+                () -> assertFalse(other, "another alliance: not"),
+                () -> assertFalse(own, "the own ship is never friendly by team or alliance (C self->id != id)"),
+                () -> assertFalse(noneBoth, "both ' ' (no alliance) is not an alliance"));
+        }
+
+        @Test
         @DisplayName("friendly needs the own player to be known")
         void friendlyWithoutSelf() {
             AppFixture f = new AppFixture(true).join(MATE, 1, 0, "Mate", "");
