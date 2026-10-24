@@ -136,6 +136,15 @@ public interface GameHost {
     boolean fillSnapshot(int viewerId, int part, boolean radar, SnapshotWriter w);
 
     /**
+     * Whether a human player has been in the game since the server started (C {@code NoPlayersEnteredYet}
+     * cleared). The server quits without -noQuit once such a game has no human left. Hosts that never report
+     * it (test stubs) keep the server running until the no-show timeout.
+     */
+    default boolean humanEntered() {
+        return false;
+    }
+
+    /**
      * Queue the full reliable game state for a client that has just received the map:
      * PLAYER_JOIN for every player (FLAG_SELF for the viewer), BASE_OWNER, SCORE, TEAM_SCORE, and so
      * on, using {@code Msg.*.send(out)}. Called once per connection, after the config transfer is

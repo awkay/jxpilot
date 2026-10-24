@@ -157,10 +157,12 @@ and checked against `SHA256SUMS.txt`. The jars are not affected: they run in the
 
 [source,shell]
 ----
-java -jar jxpilot-server-VERSION.jar --map jxpilot-maps-VERSION/maps/default.xp
+java -jar jxpilot-server-VERSION.jar --map jxpilot-maps-VERSION/maps/default.xp -noQuit
 ----
 
-The server prints the addresses it listens on and runs until you press kbd:[Ctrl+C]. For example, with
+The server prints the addresses it listens on and runs until you press kbd:[Ctrl+C]. Without `-noQuit` it
+stops by itself when the last human player leaves (or when nobody joins within 5 minutes), as the original
+XPilot server does. For example, with
 `--bind loopback --port 15999`:
 
 ----

@@ -25,6 +25,10 @@ java [JVM options] -jar jxpilot-server-VERSION.jar --map MAPFILE [--port N] [--b
 java -jar jxpilot-server-VERSION.jar -help | -version | -dump | -dumpMan | -dumpWindows | -dumpFlags
 ----
 
+Like the original XPilot server, the server quits when the last human player has left (or when nobody has
+joined after 5 minutes). Pass `-noQuit` (or put `noQuit: yes` in the config file) for a server that keeps
+running.
+
 `--map MAPFILE`:: The map to serve, an XPilot `.xp` file (required, here or in the config file). A
 relative path is relative to the directory the server is started in.
 `--port N`:: The UDP port to listen on, default 15345 (option `contactPort`).
@@ -512,7 +516,7 @@ A minimal setup on a fresh Linux VM:
 
 [source,shell]
 ----
-java -XX:+UseZGC -Xmx128m -jar jxpilot-server-VERSION.jar --map maps/default.xp -robots 4
+java -XX:+UseZGC -Xmx128m -jar jxpilot-server-VERSION.jar --map maps/default.xp -robots 4 -noQuit
 ----
 
 [[service]]
@@ -545,7 +549,7 @@ User=jxpilot
 Group=jxpilot
 WorkingDirectory=/opt/jxpilot
 ExecStart=/usr/bin/java -XX:+UseZGC -Xmx256m -jar /opt/jxpilot/jxpilot-server.jar \
-    --map /opt/jxpilot/maps/default.xp /etc/jxpilot/server.conf
+    --map /opt/jxpilot/maps/default.xp -noQuit /etc/jxpilot/server.conf
 # Java exits with 143 after SIGTERM (systemctl stop): that is a clean stop.
 SuccessExitStatus=143
 Restart=on-failure

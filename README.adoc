@@ -42,7 +42,7 @@ link:docs/guide/02-quick-start.adoc[Quick start].
 [source,bash]
 ----
 java -jar jxpilot-client-VERSION.jar --local --map maps/default.xp    # a game against robots
-java -jar jxpilot-server-VERSION.jar --map maps/default.xp            # a server for others
+java -jar jxpilot-server-VERSION.jar --map maps/default.xp -noQuit    # a server for others
 java -jar jxpilot-client-VERSION.jar --connect HOST                   # join it
 ----
 

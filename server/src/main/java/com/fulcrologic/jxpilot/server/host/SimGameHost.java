@@ -77,6 +77,8 @@ public final class SimGameHost implements GameHost {
     private final SnapshotBuilder builder;
     private final Talk talk;
     private final boolean rawMode;
+    /** C {@code !NoPlayersEnteredYet}: a human has been in the game. */
+    private boolean humanEntered;
     private final String mapName;
     private final String mapAuthor;
 
@@ -154,6 +156,11 @@ public final class SimGameHost implements GameHost {
     @Override
     public void attach(Sessions s) {
         this.sessions = s;
+    }
+
+    @Override
+    public boolean humanEntered() {
+        return humanEntered;
     }
 
     /** The hosted simulation. */
@@ -331,6 +338,7 @@ public final class SimGameHost implements GameHost {
 
     /** The welcome message of C {@code Handle_login}, set when a human has entered (before the round part). */
     private void entered(Player pl) {
+        humanEntered = true;
         StringBuilder msg = w.events.message(Msg.Text.KIND_SERVER, Obj.NO_ID);
         if (w.numPlayers == 1) {
             msg.append("Welcome to \"").append(mapName).append("\", made by ").append(mapAuthor).append('.');

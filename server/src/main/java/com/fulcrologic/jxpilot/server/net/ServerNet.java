@@ -673,6 +673,9 @@ public final class ServerNet {
     /** Connected peers, verified or not. */
     public int connections() { return activeCount; }
 
+    /** {@link GameHost#humanEntered()} of the hosted game. */
+    public boolean humanEntered() { return host.humanEntered(); }
+
     /** Packets dropped as malformed (including client messages the host could not decode). */
     public long malformed() { return malformed; }
 

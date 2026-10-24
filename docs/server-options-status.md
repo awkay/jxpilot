@@ -93,12 +93,10 @@ follow C; the alias is the C command-line name.
 | `tankScoreDecrement` | tankDecrement | int | `500` | ANY+VIS | server-items (fuel tanks detached as pseudo-players); the real/host name part is unsupported like robotRealName/robotHostName |
 | `turnThrust` | turnFuel | bool | `false` | ANY+VIS | implemented (Params) |
 | `selfImmunity` |  | bool | `false` | ANY+VIS | implemented (Params) |
-| `defaultShipShape` |  | string | `(NM:Default)...` | ANY+VIS | not implemented: a player or robot without a valid shape gets the built-in standard ship, which is also this option's default |
-| `tankShipShape` |  | string | `(NM:fueltank)...` | ANY+VIS | server-items (fuel tanks detached as pseudo-players) |
 | `maxPlayerShots` | shots | int | `256` | ANY+VIS | implemented (Params) |
 | `shotsGravity` |  | bool | `true` | ANY+VIS | implemented (Params) |
 | `idleRun` | rawMode | bool | `false` | CMD+DEF+VIS | implemented (rawMode) |
-| `noQuit` |  | bool | `false` | CMD+DEF+VIS | deliberately unsupported: the server never quits when the last human leaves (C quits unless -noQuit). Lead decision wanted; see report |
+| `noQuit` |  | bool | `false` | CMD+DEF+VIS | implemented (server-batch2): without it the server quits when the last human has left, or after 5 minutes without any (server.c:278-291) |
 | `logRobots` |  | bool | `true` | CMD+DEF+VIS | implemented (server-batch2): "NAME (n, robotRealName) starts at startpos B." on the server log |
 | `mapWidth` |  | int | `100` | ANY+VIS | implemented (MapLoader) |
 | `mapHeight` |  | int | `100` | ANY+VIS | implemented (MapLoader) |
@@ -192,7 +190,6 @@ follow C; the alias is the C command-line name.
 | `edgeWrap` |  | bool | `no` | ANY+VIS | implemented (MapLoader) |
 | `edgeBounce` |  | bool | `yes` | ANY+VIS | implemented (Params) |
 | `extraBorder` |  | bool | `no` | ANY+VIS | implemented (MapLoader) |
-| `gravityPoint` |  | position | `0,0` | ANY+VIS | implemented (MapLoader) |
 | `gravityAngle` |  | real | `90` | ANY+VIS | implemented (MapLoader) |
 | `gravityPointSource` |  | bool | `false` | ANY+VIS | implemented (MapLoader) |
 | `gravityClockwise` |  | bool | `false` | ANY+VIS | implemented (MapLoader) |
