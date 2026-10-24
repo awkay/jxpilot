@@ -136,6 +136,24 @@ class SceneFillerTest {
         }
 
         @Test
+        @DisplayName("a paused ship without an id (C PKT_PAUSED) blinks with its pause count, carried in vx")
+        void pausedCount() {
+            AppFixture f = new AppFixture(true).players().twice(x -> {
+                x.self(0, 100, 100, 0, 0xFFFF);
+                x.w.beginSection(Section.SHIP);
+                Records.Ship.put(x.w, Protocol.NO_ID, PAUSED, 300, 200, 0, 7, 0);
+                Records.Ship.put(x.w, FOE, PAUSED, 400, 200, 0, 5, 0);
+                x.w.endSection();
+            });
+            fill(f);
+            assertAll(
+                () -> assertEquals(2, scene.pausedCount, "two markers"),
+                () -> assertEquals(7, scene.pausedCountdown[0], "the id-less one counts 7 (it blinks)"),
+                () -> assertEquals(300f, scene.pausedX[0], "drawn where sent: not extrapolated by its vx"),
+                () -> assertEquals(0, scene.pausedCountdown[1], "a paused ship with an id: steady (its vx is motion)"));
+        }
+
+        @Test
         @DisplayName("a paused own ship is a paused marker too")
         void pausedSelf() {
             AppFixture f = new AppFixture(true).players().twice(x -> x.self(PAUSED, 120, 110, 0, 0xFFFF));
@@ -326,6 +344,31 @@ class SceneFillerTest {
         }
 
         @Test
+        @DisplayName("F11: blips the server already blinked are never blinked again")
+        void radarUnblinked() {
+            AppFixture f = new AppFixture(true, "");
+            f.welcome.flags |= com.fulcrologic.jxpilot.common.net.Msg.Welcome.FLAG_RADAR_BLINKED;
+            f.game.onWelcome(f.welcome);
+            f.players().twice(x -> x.self(0, 100, 100, 0, 0xFFFF).radar(300, 300, Records.Radar.FLAG_MISSILE));
+            fill(f);
+            int missiles = radar.count();
+            assertAll(
+                () -> assertTrue(f.game.radarBlinked(), "the C server's flag is kept"),
+                () -> assertEquals(1, missiles, "the missile is shown whatever the loops"),
+                () -> assertEquals(SceneFiller.HIDDEN, SceneFiller.radarSizeUnblinked(Records.Radar.FLAG_SELF), "self"),
+                () -> assertEquals(0, SceneFiller.radarSizeUnblinked(Records.Radar.FLAG_MISSILE), "missile 0"),
+                () -> assertEquals(0, SceneFiller.radarSizeUnblinked(Records.Radar.FLAG_MINE), "mine 0"),
+                () -> assertEquals(SceneFiller.RADAR_BALL, SceneFiller.radarSizeUnblinked(Records.Radar.FLAG_BALL), "ball"),
+                () -> assertEquals(com.fulcrologic.jxpilot.client.paint.RadarPainter.asteroidSizeByte(
+                    SceneFiller.RADAR_ASTEROID_SIZE), SceneFiller.radarSizeUnblinked(Records.Radar.FLAG_ASTEROID),
+                    "asteroid"),
+                () -> assertEquals(SceneFiller.RADAR_PLAYER, SceneFiller.radarSizeUnblinked(Records.Radar.FLAG_LOCKED),
+                    "a locked player is not blinked either"),
+                () -> assertEquals(SceneFiller.RADAR_PLAYER | 0x80,
+                    SceneFiller.radarSizeUnblinked(Records.Radar.FLAG_FRIENDLY), "friend"));
+        }
+
+        @Test
         @DisplayName("radarSize: C Frame_radar sizes and per-frame blinks")
         void radarSize() {
             int nuke = Records.Radar.FLAG_NUKE;
@@ -363,6 +406,29 @@ class SceneFillerTest {
                 () -> assertFalse(SceneFiller.friendly(0, p, p.slotOf(FOE), true), "other team"),
                 () -> assertFalse(SceneFiller.friendly(0, p, -1, true), "unknown player"),
                 () -> assertFalse(SceneFiller.friendly(0, p, p.slotOf(20), true), "NO_TEAM player"));
+        }
+
+        @Test
+        @DisplayName("friendly: the same alliance (not ' ') in any mode; never the own ship by team or alliance")
+        void alliance() {
+            AppFixture f = new AppFixture(true).players();
+            Players p = f.game.players();
+            boolean before = SceneFiller.friendly(0, p, p.slotOf(FOE), false);
+            p.setAlliance(AppFixture.SELF, 'a');
+            p.setAlliance(FOE, 'a');
+            p.setAlliance(MATE, 'b');
+            boolean allied = SceneFiller.friendly(0, p, p.slotOf(FOE), false);
+            boolean other = SceneFiller.friendly(0, p, p.slotOf(MATE), false);
+            boolean own = SceneFiller.friendly(0, p, p.slotOf(AppFixture.SELF), true);
+            p.setAlliance(AppFixture.SELF, ' ');
+            p.setAlliance(FOE, ' ');
+            boolean noneBoth = SceneFiller.friendly(0, p, p.slotOf(FOE), false);
+            assertAll(
+                () -> assertFalse(before, "no alliances: the foe is not friendly"),
+                () -> assertTrue(allied, "same alliance: friendly (C Gui_calculate_ship_color)"),
+                () -> assertFalse(other, "another alliance: not"),
+                () -> assertFalse(own, "the own ship is never friendly by team or alliance (C self->id != id)"),
+                () -> assertFalse(noneBoth, "both ' ' (no alliance) is not an alliance"));
         }
 
         @Test
@@ -431,9 +497,11 @@ class SceneFillerTest {
                 w.endSection();
                 w.beginSection(Section.ASTEROID);
                 Records.Asteroid.put(w, 150, 50, 3, Math.PI / 2);
+                Records.Asteroid.put(w, 152, 50, 1 << 4 | 2, 0);
                 w.endSection();
                 w.beginSection(Section.WRECKAGE);
                 Records.Wreckage.put(w, 160, 50, 2, 8, Math.PI);
+                Records.Wreckage.put(w, 162, 50, 0x80 | 3, 8, 0);
                 w.endSection();
                 w.beginSection(Section.ECM);
                 Records.Ecm.put(w, 170, 50, 60);
@@ -465,6 +533,10 @@ class SceneFillerTest {
                 () -> assertEquals(32, scene.asteroidRot[0], "asteroid rotation RES"),
                 () -> assertEquals(3, scene.asteroidSize[0], "asteroid size"),
                 () -> assertFalse(scene.wreckDeadly[0], "wreck not deadly"),
+                () -> assertTrue(scene.wreckDeadly[1], "bit 7: deadly (C)"),
+                () -> assertEquals(3, scene.wreckType[1], "deadly wreck shape without bit 7"),
+                () -> assertEquals(1, scene.asteroidType[1], "asteroid shape type from the high nibble"),
+                () -> assertEquals(2, scene.asteroidSize[1], "asteroid size from the low nibble"),
                 () -> assertEquals(2, scene.wreckType[0], "wreck shape"),
                 () -> assertEquals(64, scene.wreckRot[0], "wreck rotation RES"),
                 () -> assertEquals(8, scene.wreckSize[0], "wreck size"),

@@ -159,7 +159,7 @@ class SnapshotBuilderTest {
                                 + self.vx() + "," + self.vy() + " h" + self.heading() + " f" + self.fuel() + "/"
                                 + self.fuelMax());
                             d.selfControls.add("p" + self.power() + " t" + self.turnSpeed() + " r"
-                                + self.turnResistance255() + " d" + self.lockDist() + " m" + self.mods());
+                                + self.turnResistance255() + " d" + self.lockDist() + " m" + self.mods() + " c" + self.check());
                         }
                         case Section.SHIP -> {
                             ship.wrap(r, i);
@@ -267,6 +267,7 @@ class SnapshotBuilderTest {
             w.tick = 44;
             sim.debris.make(1900, 110, 0, 0, Obj.NO_ID, 0, Obj.DEBRIS, 3.5f, Obj.GRAVITY, Records.ObjColor.RED,
                 Records.BurstKind.DEBRIS, 8, 10, 10, 0, 127, 20, 30, 5, 20);
+            a.check = 3;
             w.tick = 46;
             sim.crashes.cannonDies(0, Obj.NO_ID);
             w.fuelLevel[0] = 250 * 256;
@@ -289,8 +290,8 @@ class SnapshotBuilderTest {
                 () -> assertEquals(List.of(a.id + " " + (Records.ShipFlags.SHIELD | Records.ShipFlags.FRIENDLY) + " "
                     + ax + "," + ay + " v0.0,0.0 h" + (float) (10 * 2 * Math.PI / Const.RES) + " f500.5/2600.0"),
                     d.self, "SELF has full-precision position, heading dir*2pi/RES and fuel in units"),
-                () -> assertEquals(List.of("p50 t40 r31 d0 m0"), d.selfControls,
-                    "SELF carries the rounded power, turn speed and turn resistance * 255 (no lock or modifiers yet)"),
+                () -> assertEquals(List.of("p50 t40 r31 d0 m0 c3"), d.selfControls,
+                    "SELF carries the rounded power, turn speed, turn resistance * 255 and the next race checkpoint"),
                 () -> assertEquals(List.of(b.id + " 0 " + bx + "," + by + " v2.5,-1.0 h40"), d.ships,
                     "SHIP lists only the other ship in view (C is 1600 px away), without shield"),
                 () -> assertEquals(1, d.shots.get(own).size(), "the viewer's shot is OWN"),
@@ -406,12 +407,14 @@ class SnapshotBuilderTest {
             Decoded d = decode(n);
             b.status &= ~Obj.PAUSE;
             b.used &= ~Has.REFUEL;
-            a.used &= ~Has.REFUEL;
+            a.fs = w.map.fuels().size();
             c.used &= ~Has.REFUEL;
             for (ByteBuffer p : parts) {
                 p.clear();
             }
             Decoded none = decode(new SnapshotBuilder(w).build(a, 1, w.events.burstSeq(), false, parts));
+            a.used &= ~Has.REFUEL;
+            a.fs = -1;
             float[] k = d.connectors.isEmpty() ? new float[5] : d.connectors.get(0);
             assertAll(
                 () -> assertEquals(1, d.connectors.size(), "only A's beam (B is paused, C out of view)"),
@@ -420,7 +423,8 @@ class SnapshotBuilderTest {
                 () -> assertEquals(f.y(), k[1], 0.25, "from the station y"),
                 () -> assertEquals(200.5, k[2], 0.25, "to the ship x"),
                 () -> assertEquals(120.25, k[3], 0.25, "to the ship y"),
-                () -> assertEquals(0, none.connectors.size(), "no refuelling: no beams"));
+                () -> assertEquals(0, none.connectors.size(),
+                    "no refuelling, or a station index past the map's stations: no beams"));
         }
     }
 

@@ -133,7 +133,7 @@ class ClientWorldTrackingTest {
         }
 
         @Test
-        @DisplayName("an unlinked shot moves on with its estimated velocity; with only an earlier frame all do")
+        @DisplayName("F14: a tracked shot missing from the later frame stays where it died; then it is gone")
         void unlinked() {
             WorldFixture f = new WorldFixture(true);
             shots(f, 98, TEAM, 100, 50);
@@ -144,8 +144,8 @@ class ClientWorldTrackingTest {
             List<String> dying = drawn(f.world);
             f.world.update(at(106.2));
             assertAll(
-                () -> assertEquals(List.of("115.00,50.00"), dying,
-                    "render tick 101: gone in 102, so 110 + 20 px/frame * 0.25 frames"),
+                () -> assertEquals(List.of("110.00,50.00"), dying,
+                    "render tick 101: gone in 102: drawn where 100 has it (no 20 px/frame overshoot)"),
                 () -> assertEquals(0, f.world.shotCount(), "render tick 103: the frame without it is the base"));
         }
 
@@ -280,10 +280,13 @@ class ClientWorldTrackingTest {
             f.begin(100).self(7, 0, 100, 50, 4, 8, 1.5f).ingestAtTick(100);
             f.begin(102).self(7, 0, 104, 54, 6, 12, 1.5f).ingestAtTick(102);
             f.world.update(at(104.7));
+            // predicted 2.7 ticks = 0.675 frames past tick 102 with a = (6-4)/0.5 = 4 px/frame^2 in x and
+            // (12-8)/0.5 = 8, clamped to MAX_SELF_ACCEL = 4, in y
             assertAll(
-                () -> assertEquals(5.5f, f.world.selfVx(), 1e-5f, "three quarters of 4 -> 6"),
-                () -> assertEquals(11f, f.world.selfVy(), 1e-5f, "three quarters of 8 -> 12"),
-                () -> assertEquals(53f, f.world.selfY(), 1e-3f, "three quarters of 50 -> 54"));
+                () -> assertEquals(8.7f, f.world.selfVx(), 1e-5f, "6 + 4 * 0.675"),
+                () -> assertEquals(14.7f, f.world.selfVy(), 1e-5f, "12 + 4 (clamped) * 0.675"),
+                () -> assertEquals(54 + 12 * 0.675 + 2 * 0.675 * 0.675, f.world.selfY(), 1e-3,
+                    "54 + 12 * 0.675 + 4 * 0.675^2 / 2"));
         }
     }
 }

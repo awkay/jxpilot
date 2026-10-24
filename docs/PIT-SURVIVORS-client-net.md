@@ -68,3 +68,26 @@ progress, which the protocol does not carry yet. Documented in the `Scoreboard` 
 | ClientConnection:243, 496 | `text.setLength(0)` before "quit", `packetsReceived++` on REJECT | Cosmetic / counter. |
 | Hud:130, 307 (x2) | `lastFuel >= 0`; gauge blink boundaries at exact multiples | HUD timing cosmetics at exact integer phases. |
 | TalkLine:147 (x2) | `deleteAt` arraycopy length | An off-by-one length copies one stale char beyond the truncated end, which is never shown. |
+
+## client-fixes run (R9)
+
+`MAVEN_OPTS= mvn -o -pl client -am test-compile org.pitest:pitest-maven:mutationCoverage -Dthreads=8` (whole
+reactor; module configs): common 2434/2526 (96%), server 11233/12275 (92%), client 7422/7897 (94%, test strength
+94%, line coverage 99%). Killed afterwards with new tests, each break-checked by hand:
+
+- `Tracker` grid search (was 72%): `TrackerTest.matchesBruteForce` compares the grid search with a brute-force
+  search over all pairs on 3000 random worlds. It found two real misses, now fixed: a world that is not a whole
+  number of cells had a narrow last cell, so a candidate across the wrap seam could be outside the searched
+  cells; and without wrap a prediction outside the world wrapped to the far side's cell (now clamped to the edge
+  cell). Remaining `search` boundary mutants only widen or shift the span by a cell that holds nothing new.
+- `ObjectLists` lines and keys: `ObjectListsTest.Edges` (exact reach, sum over both ends in both orders, ties,
+  x reach, the shared `taken` reset between connectors and transporters, missile class keys vs ids, y
+  extrapolation).
+- `KeyBindings`: `InputTest.Bindings.setAndFunctionsOf`.
+- `ClientWorld.predictSelf` / `newestSelfTick`: `selfPredictedOutOfOrder`, `selfBlended2d`.
+- `Records.Self` / `Records.Timers` appended-field guards: `SnapshotTest.ShortRecords.cutField`; `ShipShape`
+  cache LRU: `MathTest.ShapeCache.lru`; `SnapshotBuilder.writeRefuel` station index bound: `Refuel.beams`.
+
+Equivalent survivors left: `SnapshotBuilder.writeSelf` `count > 0` → `>= 0` (0 either way); `KeyBindings`
+`glfwKey >= 0` → `> 0` (no GLFW key 0) and the `<init>`/`rebuild` loop bounds; `ObjectLists.key` `f >= 0`
+(id fields are 4 and 5).

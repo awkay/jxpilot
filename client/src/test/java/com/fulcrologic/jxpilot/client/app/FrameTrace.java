@@ -51,7 +51,7 @@ final class FrameTrace implements ConnectionListener {
     FrameTrace(ClientGame game) {
         this.game = game;
         frames.add("frame,t_ms,render_tick,server_tick,newest_tick,self,self_x,self_y,cam_x,cam_y,shots,shot0_x,shot0_y,"
-            + "ships,ship0_id,ship0_x,ship0_y,particles");
+            + "ships,ship0_id,ship0_x,ship0_y,particles,self_drawn_tick,newest_self_tick");
         snaps.add("t_ms,tick");
     }
 
@@ -62,7 +62,7 @@ final class FrameTrace implements ConnectionListener {
             + w.shotCount() + "," + (w.shotCount() > 0 ? w.shotX(0) : 0) + "," + (w.shotCount() > 0 ? w.shotY(0) : 0)
             + "," + w.shipCount() + "," + (w.shipCount() > 0 ? w.shipId(0) : -1) + ","
             + (w.shipCount() > 0 ? w.shipX(0) : 0) + "," + (w.shipCount() > 0 ? w.shipY(0) : 0) + ","
-            + f.scene().particleCount);
+            + f.scene().particleCount + "," + w.selfDrawnTick() + "," + w.newestSelfTick());
     }
 
     void write(Path file) throws IOException {

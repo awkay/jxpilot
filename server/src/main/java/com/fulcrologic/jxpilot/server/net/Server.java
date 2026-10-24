@@ -66,12 +66,17 @@ public final class Server implements AutoCloseable {
     private final Thread loop;
     private final Thread rescan;
     private volatile boolean running = true;
+    /** C {@code NoQuit}: keep running when the last human has left. */
+    private final boolean noQuit;
+    /** Loop start ({@link Settings#clock}), for the no-show timeout. */
+    private long startNanos;
     private final CompletableFuture<Void> terminated = new CompletableFuture<>();
     private final java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
 
     private Server(Settings s, UdpTransport transport, ServerNet net, int hz, List<BindSelector> selectors,
-                   boolean rescans) {
+                   boolean rescans, boolean noQuit) {
         this.s = s;
+        this.noQuit = noQuit;
         this.hz = hz;
         this.transport = transport;
         this.net = net;
@@ -132,7 +137,7 @@ public final class Server implements AutoCloseable {
         ServerNet net = new ServerNet(cfg, host, transport, s.log, blob);
         transport.setReceiver(net::onDatagram);
         boolean rescans = BindPlan.needsRescan(selectors, bindWait);
-        Server server = new Server(s, transport, net, cfg.simHz, selectors, rescans);
+        Server server = new Server(s, transport, net, cfg.simHz, selectors, rescans, opts.getBool(Opt.NO_QUIT));
         s.log.log("serving map '" + map.name() + "' (" + map.width() + "x" + map.height() + " blocks) at "
             + cfg.simHz + " frames/s");
         server.loop.start();
@@ -156,7 +161,7 @@ public final class Server implements AutoCloseable {
      * BEHAVIOR: unknown names in the password file are warned about without their values; an empty password is
      * warned about.
      *
-     * @throws IllegalArgumentException for an unknown option or two config files
+     * @throws IllegalArgumentException for two config files (unknown options are warnings)
      * @throws java.io.FileNotFoundException when the map is neither bundled nor a file (the message lists the
      *                                       bundled maps)
      * @throws IOException when a named password file cannot be read (as a named defaults file)
@@ -164,7 +169,7 @@ public final class Server implements AutoCloseable {
     public static Options readOptions(String[] args) throws IOException {
         Options opts = new Options();
         List<String> rest = opts.parseCommandLine(ServerArgs.joinRepeated(args, Opt.BIND));
-        Path config = ServerArgs.configFile(rest);
+        Path config = ServerArgs.configFile(rest, opts);
         DefaultsFile.apply(opts);
         if (config != null) {
             ConfigParser.parseFile(config, OptionOrigin.DEFAULTS, opts);
@@ -193,6 +198,29 @@ public final class Server implements AutoCloseable {
         return opts;
     }
 
+    /** C's no-show timeout (server.c:286): 5 minutes. */
+    static final long NO_SHOW_NANOS = 5L * 60 * 1_000_000_000L;
+
+    /**
+     * C {@code Main_loop}'s quit check (server.c:278-291).
+     * <p>
+     * BEHAVIOR: with noQuit, or while any client is connected (in the game or logging in): null (keep running).
+     * BEHAVIOR: otherwise, once a human has been in the game: quit ("No human players left; quitting.").
+     * BEHAVIOR: otherwise after 5 minutes without any human: quit with C's message.
+     */
+    static String quitReason(boolean noQuit, int connections, boolean humanEntered, long runningNanos) {
+        if (noQuit || connections > 0) {
+            return null;
+        }
+        if (humanEntered) {
+            return "No human players left; quitting (start the server with -noQuit to keep it running).";
+        }
+        if (runningNanos > NO_SHOW_NANOS) {
+            return "First player has yet to show his butt, I'm bored... Bye!";
+        }
+        return null;
+    }
+
     private static BindPlan.Choice waitForTargets(List<BindSelector> selectors, BindPlan.Choice choice, Settings s)
         throws IOException {
         s.log.log("bindWait: nothing matches " + choice.unmatched() + " yet; waiting for an interface");
@@ -211,6 +239,7 @@ public final class Server implements AutoCloseable {
     private void runLoop() {
         Throwable failure = null;
         TickScheduler sched = new TickScheduler(hz, TickScheduler.catchUpTicks(hz), s.clock.getAsLong());
+        startNanos = s.clock.getAsLong();
         try {
             while (running) {
                 List<BindTarget> d = desired.getAndSet(null);
@@ -226,6 +255,12 @@ public final class Server implements AutoCloseable {
                         s.log.log("game over: shutting down");
                         running = false;
                     }
+                }
+                String quit = quitReason(noQuit, net.connections(), net.humanEntered(),
+                    s.clock.getAsLong() - startNanos);
+                if (quit != null) {
+                    s.log.log(quit);
+                    running = false;
                 }
             }
         } catch (Throwable e) {
@@ -267,7 +302,8 @@ public final class Server implements AutoCloseable {
     }
 
     /**
-     * Completes when the loop thread has stopped: normally after {@link #close()}, exceptionally with
+     * Completes when the loop thread has stopped: normally after {@link #close()} or when the server quits (the
+     * last human left, or none came for 5 minutes, without -noQuit: {@link #quitReason}), exceptionally with
      * the cause when the loop died (the server then serves nothing; {@code ServerMain} exits non-zero).
      */
     public CompletableFuture<Void> termination() {

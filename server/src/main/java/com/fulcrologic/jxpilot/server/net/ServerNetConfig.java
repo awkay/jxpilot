@@ -43,7 +43,7 @@ public final class ServerNetConfig {
     /** Connection pool size (each preallocates a reliable channel, about 70 KB). */
     public int maxConnections = 32;
     /** Sessions per source (IPv4 address or IPv6 /64); 0 or less is unlimited. Beyond it: REJECT FULL. */
-    public int maxPerIp = 4;
+    public int maxPerIp = 2;
     /**
      * Drop a verified peer after this long without a packet, or when its oldest unacknowledged reliable
      * message has waited this long.
@@ -85,7 +85,7 @@ public final class ServerNetConfig {
     /** Reliable window slots kept free for game messages while the map streams. */
     public int configReserveSlots = 4;
     /** C {@code denyHosts}: CONNECTs from these networks are ignored ({@link DenyList}). */
-    public Cidr[] denyHosts = new Cidr[0];
+    public volatile DenyList denyHosts = DenyList.NONE;
 
     /** BEHAVIOR: reliable datagrams per peer per tick: reliablePacketsPerSecond / simHz rounded up, at least 1. */
     public int reliablePacketsPerTick() {

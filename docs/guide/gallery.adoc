@@ -249,7 +249,8 @@ blue) and objects such as asteroids.
 
 |image:gallery/score-list.png[Score list,width=270]
 |*Score list*: team, score and name; `*` marks you, `R` a robot, `D` a player out of lives, `P` a
-paused player and `W` one waiting for the next round.
+paused player and `W` one waiting for the next round. Outside team play the first column shows
+alliances: `+` for your allies, or each player's alliance number when the server announces alliances.
 
 |image:gallery/talk-line.png[Talk line,width=420]
 |*Talk line*, opened with kbd:[M].

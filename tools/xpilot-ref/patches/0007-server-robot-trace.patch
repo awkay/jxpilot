@@ -1,0 +1,89 @@
+xpilot-ref patch 0007: optional default-robot decision trace in the server.
+
+This patch modifies XPilot 4.5.5 (GPL-2.0-or-later, Copyright (C) 1991-2010
+by Bjoern Stabell, Ken Ronny Schouten, Bert Gijsbers, Dick Balaska et al.).
+It is a derivative work distributed under the same license.
+
+Why: to compare a reimplementation's default robot (robotdef.c) decisions
+against the original server, e.g. the robot mode while a robot is stuck at
+a wall.  Inert unless the environment variable XPILOT_TRACE_ROBOT is set;
+then every Robot_default_play() call is followed by one line "XPROBOT loop
+frame id mode longterm lock evaded turnacc power thrusting x y name" on
+stderr (evaded = 1 when the play returned through Check_robot_evade()).
+Game logic and the random sequence are unchanged.
+
+--- a/src/server/robotdef.c
++++ b/src/server/robotdef.c
+@@ -96,6 +96,7 @@
+ static void Robot_default_create(int ind, char *str);
+ static void Robot_default_go_home(int ind);
+ static void Robot_default_play(int ind);
++static void Robot_default_play_trace(int ind);
+ static void Robot_default_set_war(int ind, int victim_id);
+ static int Robot_default_war_on_player(int ind);
+ static void Robot_default_message(int ind, const char *str);
+@@ -109,6 +110,7 @@
+  */
+ static DFLOAT	Visibility_distance;
+ static DFLOAT	Max_enemy_distance;
++static int	xpref_evaded;	/* xpilot-ref robot trace */
+ 
+ 
+ /*
+@@ -119,7 +121,7 @@
+     Robot_default_round_tick,
+     Robot_default_create,
+     Robot_default_go_home,
+-    Robot_default_play,
++    Robot_default_play_trace,
+     Robot_default_set_war,
+     Robot_default_war_on_player,
+     Robot_default_message,
+@@ -2507,6 +2509,7 @@
+     }
+     if (!evade_checked) {
+ 	if (Check_robot_evade(ind, mine_i, ship_i)) {
++	    xpref_evaded = 1;	/* xpilot-ref robot trace */
+ 	    if (playerShielding == 0
+ 		&& playerStartsShielded != 0
+ 		&& BIT(pl->have, HAS_SHIELD)) {
+@@ -2698,4 +2701,39 @@
+ 		* (NUM_IDS - NumRobots)) / NUM_IDS);
+     }
+ }
++
++
++/*
++ * xpilot-ref robot trace (not part of upstream XPilot 4.5.5).
++ * When the environment variable XPILOT_TRACE_ROBOT is set, print the
++ * default robot's decision state after each Robot_default_play() call to
++ * stderr, one "XPROBOT ..." line per robot per play.  "evaded" is 1 when
++ * the play returned through Check_robot_evade().  Has no effect otherwise.
++ */
++static void Robot_default_play_trace(int ind)
++{
++    static int			trace_init = 0;
++    static int			trace_on = 0;
++    player			*pl = Players[ind];
++    robot_default_data_t	*my_data;
+ 
++    if (!trace_init) {
++	trace_init = 1;
++	trace_on = (getenv("XPILOT_TRACE_ROBOT") != NULL);
++	if (trace_on) {
++	    fprintf(stderr, "XPROBOT_HDR loop frame id mode longterm lock"
++		    " evaded turnacc power thrusting x y name\n");
++	}
++    }
++    xpref_evaded = 0;
++    Robot_default_play(ind);
++    if (!trace_on) {
++	return;
++    }
++    my_data = Robot_default_get_data(pl);
++    fprintf(stderr, "XPROBOT %ld %ld %d %d %d %d %d %.9g %.9g %d %d %d %s\n",
++	    main_loops, frame_loops, (int)pl->id, my_data->robot_mode,
++	    my_data->longterm_mode, my_data->robot_lock, xpref_evaded,
++	    (double)pl->turnacc, (double)pl->power,
++	    BIT(pl->status, THRUSTING) ? 1 : 0, pl->pos.x, pl->pos.y, pl->name);
++}

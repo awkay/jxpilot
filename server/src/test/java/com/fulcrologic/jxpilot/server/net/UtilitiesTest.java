@@ -221,18 +221,20 @@ class UtilitiesTest {
         }
 
         @Test
-        @DisplayName("configFile finds the single positional argument")
+        @DisplayName("configFile finds the single positional argument; unknown options only warn (parser.c:411-418)")
         void config() {
+            com.fulcrologic.jxpilot.common.config.Options o = new com.fulcrologic.jxpilot.common.config.Options();
+            Path withUnknown = ServerArgs.configFile(List.of("--nope", "server.cfg", "+nope"), o);
             assertAll(
-                () -> assertNull(ServerArgs.configFile(List.of()), "no positional argument, no config file"),
-                () -> assertEquals(Path.of("server.cfg"), ServerArgs.configFile(List.of("server.cfg")), "one positional is the file"),
-                () -> assertEquals(Path.of("-"), ServerArgs.configFile(List.of("-")), "a lone dash is a path"),
-                () -> assertThrows(IllegalArgumentException.class, () -> ServerArgs.configFile(List.of("--nope")),
-                    "an unconsumed option is unknown"),
-                () -> assertThrows(IllegalArgumentException.class, () -> ServerArgs.configFile(List.of("+nope")),
-                    "an unconsumed +option is unknown"),
-                () -> assertThrows(IllegalArgumentException.class, () -> ServerArgs.configFile(List.of("a", "b")),
-                    "two positionals are an error"));
+                () -> assertNull(ServerArgs.configFile(List.of(), o), "no positional argument, no config file"),
+                () -> assertEquals(Path.of("server.cfg"), ServerArgs.configFile(List.of("server.cfg"), o),
+                    "one positional is the file"),
+                () -> assertEquals(Path.of("-"), ServerArgs.configFile(List.of("-"), o), "a lone dash is a path"),
+                () -> assertEquals(Path.of("server.cfg"), withUnknown, "unknown options are skipped"),
+                () -> assertEquals(List.of("Unknown option '--nope'", "Unknown option '+nope'"), o.warnings(),
+                    "and warned about"),
+                () -> assertThrows(IllegalArgumentException.class,
+                    () -> ServerArgs.configFile(List.of("a", "b"), o), "two positionals are an error"));
         }
     }
 
@@ -276,7 +278,7 @@ class UtilitiesTest {
             () -> assertEquals(255, fastCfg.simHz, "the tick rate is capped at 255 (u8 in WELCOME)"),
             () -> assertEquals(1, p.snapshotDivisor, "a snapshot every tick by default"),
             () -> assertEquals(3, p.radarDivisor, "radar every 3rd snapshot by default"),
-            () -> assertEquals(4, p.maxPerIp, "4 sessions per source by default"),
+            () -> assertEquals(2, p.maxPerIp, "2 sessions per source by default (C cmdline.c:1122)"),
             () -> assertEquals(400.0, p.ratePerSecond, "per-source rate default"),
             () -> assertEquals(800.0, p.sessionRateBurst, "per-session burst default"),
             () -> assertEquals(14, r.snapshotDivisor, "snapshotDivisor is clamped to the tick rate"),

@@ -885,6 +885,49 @@ class SnapshotTest {
                 () -> assertEquals(0, t.shutdownDelay(), "no shutdown delay"));
         }
 
+        /** One record of {@code stride} bytes in a section of {@code type}, followed by 0xFF bytes in the buffer. */
+        SnapshotReader cutAt(int type, int stride) {
+            ByteBuffer b = ByteBuffer.allocate(256);
+            SnapshotWriter w = new SnapshotWriter();
+            w.setWorld(31500, 31500, false);
+            w.begin(b, 1, 0, 0, 1, SnapshotWriter.FLAG_LAST_PART, 1000, 2000);
+            b.put((byte) type).put((byte) stride).put((byte) 0).putShort((short) 1);
+            while (b.hasRemaining()) {
+                b.put((byte) 0xFF);
+            }
+            SnapshotReader r = readerFor(b);
+            r.setWorld(31500, 31500, false);
+            r.nextSection();
+            return r;
+        }
+
+        @Test
+        @DisplayName("a field cut off by the record's end reads 'none', even when the bytes after the record are set")
+        void cutField() {
+            Records.Self s = new Records.Self();
+            Records.Timers t = new Records.Timers();
+            List<String> got = new ArrayList<>();
+            got.add("power " + s.wrap(cutAt(Section.SELF, 38), 0).power());
+            got.add("turnSpeed " + s.wrap(cutAt(Section.SELF, 39), 0).turnSpeed());
+            got.add("turnRes " + s.wrap(cutAt(Section.SELF, 40), 0).turnResistance255());
+            got.add("lockDist " + s.wrap(cutAt(Section.SELF, 42), 0).lockDist());
+            got.add("lockDir " + s.wrap(cutAt(Section.SELF, 43), 0).lockDir());
+            got.add("check " + s.wrap(cutAt(Section.SELF, 44), 0).check());
+            got.add("mods " + s.wrap(cutAt(Section.SELF, 46), 0).mods());
+            got.add("destruct " + t.wrap(cutAt(Section.TIMERS, 9), 0).destruct());
+            got.add("thrustLeft " + t.wrap(cutAt(Section.TIMERS, 11), 0).thrustLeft());
+            got.add("thrustMax " + t.wrap(cutAt(Section.TIMERS, 13), 0).thrustMax());
+            got.add("shieldLeft " + t.wrap(cutAt(Section.TIMERS, 15), 0).shieldLeft());
+            got.add("shieldMax " + t.wrap(cutAt(Section.TIMERS, 17), 0).shieldMax());
+            got.add("phasingLeft " + t.wrap(cutAt(Section.TIMERS, 19), 0).phasingLeft());
+            got.add("phasingMax " + t.wrap(cutAt(Section.TIMERS, 21), 0).phasingMax());
+            got.add("shutdownCount " + t.wrap(cutAt(Section.TIMERS, 23), 0).shutdownCount());
+            got.add("shutdownDelay " + t.wrap(cutAt(Section.TIMERS, 25), 0).shutdownDelay());
+            assertEquals(List.of("power 0", "turnSpeed 0", "turnRes 0", "lockDist 0", "lockDir 0", "check 0", "mods 0",
+                "destruct 0", "thrustLeft 0", "thrustMax 0", "shieldLeft 0", "shieldMax 0", "phasingLeft 0",
+                "phasingMax 0", "shutdownCount -1", "shutdownDelay 0"), got);
+        }
+
         @Test
         @DisplayName("the short puts write the appended fields as their 'none' values")
         void shortPuts() {

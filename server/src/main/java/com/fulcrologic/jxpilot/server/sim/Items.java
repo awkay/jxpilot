@@ -85,7 +85,7 @@ public final class Items {
 
     /** C {@code ENERGY_PACK_FUEL}: (500 + (randomMT() &amp; 511)) fuel units in fixed point. */
     double energyPackFuel() {
-        return (500 + (w.rng.nextInt() & 511)) << 8;
+        return (500 + (w.randomMT() & 511)) << 8;
     }
 
     // ================================================================ spawning

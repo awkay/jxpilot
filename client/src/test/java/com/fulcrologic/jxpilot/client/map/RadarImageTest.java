@@ -136,6 +136,12 @@ class RadarImageTest {
             String wall = "x" + repeat('.', 511);
             String empty = repeat('.', 512);
             int[] dead = RadarImage.build(map(false, targetTop, wall, empty), P, true, i -> false);
+            int[] buffer = new int[RadarImage.WIDTH * 300];
+            java.util.Arrays.fill(buffer, 12345);
+            int[] into = RadarImage.build(map(false, targetTop, wall, empty), P, true, i -> false, buffer);
+            int n = RadarImage.WIDTH * RadarImage.height(map(false, targetTop, wall, empty));
+            assertSame(buffer, into, "R14: the given buffer is reused");
+            assertArrayEquals(dead, java.util.Arrays.copyOf(into, n), "and filled exactly like a fresh build");
             int[] alive = RadarImage.build(map(false, targetTop, wall, empty), P, true, i -> i == 0);
             assertAll(
                 () -> assertEquals(WALL, px(dead, 0, 0), "dead target: the walk's colour stays"),

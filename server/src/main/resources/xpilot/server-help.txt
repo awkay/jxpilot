@@ -1,0 +1,685 @@
+# Help texts of the XPilot 4.5.5 server options, extracted unchanged from the option table in
+# src/server/cmdline.c (GPL-2.0-or-later, see README.md next to this file). "@name" starts an option.
+@help
+Print out this help message.
+@version
+Print version information.
+@dump
+Print all options with their default values in defaultsfile format.
+@expand
+Expand a comma separated list of predefined settings.
+These settings can be defined in either the defaults file
+or in a map file using the "define:" operator.
+@gravity
+Gravity strength.
+@shipMass
+Mass of fighters.
+@ballMass
+Mass of balls.
+@minItemMass
+The minimum mass per item when carried by a ship.
+@shotMass
+Mass of bullets.
+@shotSpeed
+Maximum speed of bullets.
+@shotLife
+Life of bullets in ticks.
+@shotHitFuelDrainUsesKineticEnergy
+Does the fuel drain from shot hits depend on their mass and speed?
+This is a temporary option that will be removed in March 2002.
+@fireRepeatRate
+Number of frames per automatic fire (0=off).
+@maxRobots
+The maximum number of robots wanted.
+Adds robots if there are less than maxRobots players.
+@minRobots
+The minimum number of robots wanted.
+At least minRobots robots will be in the game, if there is room.
+@robotFile
+The file containing parameters for robot details.
+@robotsTalk
+Do robots talk when they kill, die etc.?
+@robotsLeave
+Do robots leave the game?
+@robotLeaveLife
+Max life per robot (0=off).
+@robotLeaveScore
+Min score for robot to play (0=off).
+@robotLeaveRatio
+Min ratio for robot to play (0=off).
+@robotTeam
+Team to use for robots.
+@restrictRobots
+Are robots restricted to their own team?
+@reserveRobotTeam
+Is the robot team only for robots?
+@robotRealName
+What is the robots' apparent real name?
+@robotHostName
+What is the robots' apparent host name?
+@tankRealName
+What is the tanks' apparent real name?
+@tankHostName
+What is the tanks' apparent host name?
+@tankScoreDecrement
+How much lower is the tank's score than the player's?
+@turnThrust
+Does turning use fuel and create sparks?
+@selfImmunity
+Are players immune to their own weapons?
+@defaultShipShape
+What is the default ship shape for people who do not have a ship
+shape defined?
+@tankShipShape
+What is the ship shape used for tanks?
+@maxPlayerShots
+Maximum allowed bullets per player.
+@shotsGravity
+Are bullets afflicted by gravity.
+@idleRun
+Do robots keep on playing even if all human players quit?
+@noQuit
+Does the server wait for new human players to show up
+after all players have left.
+@logRobots
+Log the comings and goings of robots.
+@mapWidth
+Width of the world in blocks.
+@mapHeight
+Height of the world in blocks.
+@mapFileName
+The filename of the map to use.
+Or "wild" if you want a map by The Wild Map Generator.
+The geometry of a "wild" map is given by the -mapWidth
+and the -mapHeight options.
+@mapName
+The title of the map.
+@mapAuthor
+The name of the map author.
+@contactPort
+The server contact port number.
+@serverHost
+The server's fully qualified domain name (for multihomed hosts).
+@mapData
+The map's topology.
+@allowPlayerCrashes
+Can players overrun other players?
+@allowPlayerBounces
+Can players bounce with other players?
+@allowPlayerKilling
+Should players be allowed to kill one other?
+@allowShields
+Are shields allowed?
+@playerStartsShielded
+Do players start with shields up?
+@shotsWallBounce
+Do shots bounce off walls?
+@ballsWallBounce
+Do balls bounce off walls?
+@ballCollisions
+Can balls collide with other objects?
+@ballSparkCollisions
+Can balls be blown around by exhaust? (Needs ballCollisions too)
+@minesWallBounce
+Do mines bounce off walls?
+@itemsWallBounce
+Do items bounce off walls?
+@missilesWallBounce
+Do missiles bounce off walls?
+@sparksWallBounce
+Do thrust spark particles bounce off walls to give reactive thrust?
+@debrisWallBounce
+Do explosion debris particles bounce off walls?
+@asteroidsWallBounce
+Do asteroids bounce off walls?
+@cloakedExhaust
+Do engines of cloaked ships generate exhaust?
+@cloakedShield
+Can players use shields when cloaked?
+@maxObjectWallBounceSpeed
+The maximum allowed speed for objects to bounce off walls.
+@maxShieldedWallBounceSpeed
+The maximum allowed speed for a shielded player to bounce off walls.
+@maxUnshieldedWallBounceSpeed
+Maximum allowed speed for an unshielded player to bounce off walls.
+@maxShieldedPlayerWallBounceAngle
+Maximum allowed angle for a shielded player to bounce off walls.
+@maxUnshieldedPlayerWallBounceAngle
+Maximum allowed angle for an unshielded player to bounce off walls.
+@playerWallBounceBrakeFactor
+Factor to slow down players when they hit the wall (between 0 and 1).
+@objectWallBounceBrakeFactor
+Factor to slow down objects when they hit the wall (between 0 and 1).
+@objectWallBounceLifeFactor
+Factor to reduce the life of objects after bouncing (between 0 and 1).
+@wallBounceFuelDrainMult
+Multiplication factor for player wall bounce fuel cost.
+@wallBounceDestroyItemProb
+The probability for each item a player owns to get destroyed
+when the player bounces against a wall.
+@reportToMetaServer
+Keep the meta server informed about our game?
+@searchDomainForXPilot
+Search the local domain for the existence of xpilot.domain?
+@denyHosts
+List of network addresses of computers which are denied service.
+Each address may optionally be followed by a slash and a network mask.
+@maxClientsPerIP
+Maximum number of clients per IP address that are allowed to connect.
+This prevents unfriendly players from occupying all the bases, effectively "kicking" paused players and denying other players to join.
+@limitedVisibility
+Should the players have a limited visibility?
+@minVisibilityDistance
+Minimum block distance for limited visibility, 0 for default.
+@maxVisibilityDistance
+Maximum block distance for limited visibility, 0 for default.
+@limitedLives
+Should players have limited lives?
+See also worldLives.
+@worldLives
+Number of lives each player has (no sense without limitedLives).
+@reset
+Does the world reset when the end of round is reached?
+When true all mines, missiles, shots and explosions will be
+removed from the world and all players including the winner(s)
+will be transported back to their homebases.
+This option is only effective when limitedLives is turned on.
+@resetOnHuman
+Normally, new players have to wait until a round is finished
+before they can start playing. With this option, the first N
+human players to enter will cause the round to be restarted.
+In other words, if this option is set to 0, nothing special
+happens and you have to wait as usual until the round ends (if
+there are rounds at all, otherwise this option doesn't do
+anything). If it is set to 1, the round is ended when the first
+human player enters. This is useful if the robots have already
+started a round and you don't want to wait for them to finish.
+If it is set to 2, this also happens for the second human player.
+This is useful when you got bored waiting for another player to
+show up and have started playing against the robots. When someone
+finally joins you, they won't have to wait for you to finish the
+round before they can play too. For higher numbers it works the
+same. So this option gives the last human player for whom the
+round is restarted. Anyone who enters after that does have to
+wait until the round is over.
+@allowAlliances
+Are alliances between players allowed?
+Alliances are like teams, except they can be formed and dissolved
+at any time. Notably, teamImmunity and teamShareScore work for
+alliances too. To manage alliances, use the '/ally' talk command:
+'/ally invite <player name>' to invite another player to join you.
+'/ally cancel' to cancel such an invitation.
+'/ally refuse <player name>' to decline an invitation from a player.
+'/ally refuse' to decline all the invitations you received.
+'/ally accept <player name>' to join the other player.
+'/ally accept' to accept all the invitations you received.
+'/ally leave' to leave the alliance you are currently in.
+'/ally list' lists the members of your current alliance.
+If members from different alliances join, all their allies do so.
+@announceAlliances
+Are changes in alliances made public?
+If this option is on, changes in alliances are sent to all players
+and all alliances are shown in the score list. Invitations for
+alliances are never sent to anyone but the invited players.
+@teamPlay
+Is the map a team play map?
+@teamFuel
+Are fuelstations only available to team members?
+@teamCannons
+Do cannons choose sides in teamPlay?
+@cannonSmartness
+0: dumb (straight ahead),
+1: default (random direction),
+2: good (small error),
+3: accurate (aims at predicted player position).
+Also influences use of weapons if cannonsUseItems is on.
+@cannonsUseItems
+Do cannons use items?
+@cannonsDefend
+Do cannons actively use defensive items like emergency shields and
+phasing devices?
+This only works if cannons are actually allowed to use items.
+@cannonFlak
+Do cannons fire flak or normal bullets?
+@cannonDeadTime
+How many seconds do cannons stay dead?
+@keepShots
+Do shots, mines and missiles remain after their owner leaves?
+@teamAssign
+If players have not specified which team they like to join
+should the server choose a team for them automatically?
+@teamImmunity
+Should other team members be immune to various shots thrust etc.?
+This works for alliances too.
+@teamShareScore
+Are points gained or lost divided equally over all team members?
+This works for alliances too.
+@ecmsReprogramMines
+Is it possible to reprogram mines with ECMs?
+@ecmsReprogramRobots
+Are robots reprogrammed by ECMs instead of blinded?
+@targetKillTeam
+Do team members die when their last target explodes?
+@targetTeamCollision
+Do team members collide with their own target or not.
+@targetSync
+Do all the targets of a team reappear/repair at the same time?
+@targetDeadTime
+How man seconds do targets stay destroyed?
+@treasureKillTeam
+Do team members die when their treasure is destroyed?
+@captureTheFlag
+Does a team's treasure have to be safe before enemy balls can be
+cashed?
+@treasureCollisionDestroys
+Are balls destroyed when a player touches it?
+@ballConnectorSpringConstant
+What is the spring constant for connectors?
+@ballConnectorDamping
+What is the damping force on connectors?
+@maxBallConnectorRatio
+How much longer or shorter can a connecter get before it breaks?
+@ballConnectorLength
+How long is a normal connector string?
+@connectorIsString
+Is the ball connector made of string?
+@treasureCollisionMayKill
+Does a ball kill a player when the player touches it unshielded?
+@wreckageCollisionMayKill
+Can ships be destroyed when hit by wreckage?
+@asteroidCollisionMayKill
+Can ships be destroyed when hit by an asteroid?
+@ignore20MaxFPS
+Ignore client maxFPS request if it is 20 (the default setting).
+@timing
+Is the map a race mode map?
+@ballrace
+Is timing done for balls (on) or players (off)?
+Only used if timing is on.
+@ballraceConnected
+Should a player be connected to a ball to pass a checkpoint?
+Only used if timing and ballrace are both on.
+@edgeWrap
+Wrap around edges.
+@edgeBounce
+Players and bullets bounce when they hit the (non-wrapping) edge.
+@extraBorder
+Give map an extra border of solid rock.
+@gravityPoint
+If the gravity is a point source where does that gravity originate?
+Specify the point int the form: x,y.
+@gravityAngle
+If gravity is along a uniform line, at what angle is that line?
+@gravityPointSource
+Is gravity originating from a single point?
+@gravityClockwise
+If the gravity is a point source, is it clockwise?
+@gravityAnticlockwise
+If the gravity is a point source, is it anticlockwise?
+@gravityVisible
+Are gravity mapsymbols visible to players?
+@wormholeVisible
+Are wormhole mapsymbols visible to players?
+@itemConcentratorVisible
+Are itemconcentrator mapsymbols visible to players?
+@asteroidConcentratorVisible
+Are asteroidconcentrator mapsymbols visible to players?
+@wormTime
+Number of seconds wormholes will remain stable.
+@defaultsFileName
+The filename of the defaults file to read on startup.
+@passwordFileName
+The filename of the password file to read on startup.
+@motdFileName
+The filename of the MOTD file to show to clients when they join.
+@scoreTableFileName
+The filename for the score table to be dumped to.
+This is a placeholder option which doesn't do anything.
+@adminMessageFileName
+The name of the file where player messages for the
+server administrator will be saved.  For the messages
+to be saved the file must already exist.  Players can
+send these messages by writing to god.
+@adminMessageFileSizeLimit
+The maximum size in bytes of the admin message file.
+@framesPerSecond
+The number of frames per second the server should strive for.
+@allowSmartMissiles
+Should smart missiles be allowed?
+@allowHeatSeekers
+Should heatseekers be allowed?
+@allowTorpedoes
+Should torpedoes be allowed?
+@allowNukes
+Should nuclear weapons be allowed?
+@allowClusters
+Should cluster weapons be allowed?
+@allowModifiers
+Should the weapon modifiers be allowed?
+@allowLaserModifiers
+Can lasers be modified to be a different weapon?
+@allowShipShapes
+Are players allowed to define their own ship shape?
+@playersOnRadar
+Are players visible on the radar.
+@missilesOnRadar
+Are missiles visible on the radar.
+@minesOnRadar
+Are mines visible on the radar.
+@nukesOnRadar
+Are nukes visible or highlighted on the radar.
+@treasuresOnRadar
+Are treasure balls visible or highlighted on the radar.
+@asteroidsOnRadar
+Are asteroids visible on the radar.
+@distinguishMissiles
+Are different types of missiles distinguished (by length).
+@maxMissilesPerPack
+The number of missiles gotten by picking up one missile item.
+@maxMinesPerPack
+The number of mines gotten by picking up one mine item.
+@identifyMines
+Are mine owner's names displayed.
+@shieldedItemPickup
+Can items be picked up while shields are up?
+@shieldedMining
+Can mines be thrown and placed while shields are up?
+@laserIsStunGun
+Is the laser weapon a stun gun weapon?
+@nukeMinSmarts
+The minimum number of missiles needed to fire one nuclear missile.
+@nukeMinMines
+The minimum number of mines needed to make a nuclear mine.
+@nukeClusterDamage
+How much each cluster debris does damage wise from a nuke mine.
+This helps to reduce the number of particles caused by nuclear mine
+explosions, which improves server response time for such explosions.
+@mineFuseTime
+Number of seconds after which owned mines become deadly, zero means never.
+@mineLife
+Life of mines in ticks, zero means use default.
+@minMineSpeed
+Minimum speed of mines.
+@missileLife
+Life of missiles in ticks, zero means use default.
+@baseMineRange
+Range within which mines/bombs are not allowed.
+@mineShotDetonateDistance
+How close must a shot be to detonate a mine?
+Set this to 0 to turn it off.
+@shotKillScoreMult
+Multiplication factor to scale score for shot kills.
+@torpedoKillScoreMult
+Multiplication factor to scale score for torpedo kills.
+@smartKillScoreMult
+Multiplication factor to scale score for smart missile kills.
+@heatKillScoreMult
+Multiplication factor to scale score for heatseeker kills.
+@clusterKillScoreMult
+Multiplication factor to scale score for cluster debris kills.
+@laserKillScoreMult
+Multiplication factor to scale score for laser kills.
+@tankKillScoreMult
+Multiplication factor to scale score for tank kills.
+@runoverKillScoreMult
+Multiplication factor to scale score for player runovers.
+@ballKillScoreMult
+Multiplication factor to scale score for ball kills.
+@explosionKillScoreMult
+Multiplication factor to scale score for explosion kills.
+@shoveKillScoreMult
+Multiplication factor to scale score for shove kills.
+@crashScoreMult
+Multiplication factor to scale score for player crashes.
+@mineScoreMult
+Multiplication factor to scale score for mine hits.
+@selfKillScoreMult
+Multiplication factor to scale score for killing yourself.
+@selfDestructScoreMult
+Multiplication factor to scale score for self-destructing.
+@unownedKillScoreMult
+Multiplication factor to scale score for being killed by asteroids
+or other objects without an owner.
+@asteroidPoints
+Points awarded for breaking an asteroid.
+@cannonPoints
+Points awarded for killing a cannon.
+@asteroidMaxScore
+Maximum score to receive points for breaking an asteroid.
+@cannonMaxScore
+Maximum score to receive points for killing a cannon.
+@movingItemProb
+Probability for an item to appear as moving.
+@randomItemProb
+Probability for an item to appear random.
+Random items change their appearance every frame, so players
+cannot tell what item they have until they get it.
+@dropItemOnKillProb
+Probability for dropping an item (each item) when you are killed.
+@detonateItemOnKillProb
+Probability for undropped items to detonate when you are killed.
+@destroyItemInCollisionProb
+Probability for items (some items) to be destroyed in a collision.
+@asteroidItemProb
+Probability for an asteroid to release items when it breaks.
+@asteroidMaxItems
+The maximum number of items a broken asteroid can release.
+@itemProbMult
+Item Probability Multiplication Factor scales all item probabilities.
+@cannonItemProbMult
+Average number of items a cannon gets per minute.
+@maxItemDensity
+Maximum density [0.0-1.0] for items (max items per block).
+@asteroidProb
+Probability for an asteroid to appear.
+@maxAsteroidDensity
+Maximum density [0.0-1.0] for asteroids (max asteroids per block.
+@itemConcentratorRadius
+The maximum distance from an item concentator for items to appear in.
+Sensible values are in the range 1 to 20.
+If no item concentators are defined in a map then items can popup anywhere.
+If any are any then items popup in the vicinity of an item concentrator
+with probability itemConcentratorProb and anywhere the remainder of the time.
+An item concentrator is drawn on screen as three rotating triangles.
+The map symbol is the percentage symbol '%'.
+@itemConcentratorProb
+The probability, if any item concentrators are present, that they will be
+used.  This proportion of items will be placed near item concentrators,
+within itemConcentratorRadius.
+@asteroidConcentratorRadius
+The maximum distance from an asteroid concentrator for asteroids to
+appear in.  Sensible values are in the range 1 to 20.
+If no asteroid concentrators are defined in a map then asteroids can
+popup anywhere.  If any are then asteroids popup in the vicinity of an
+asteroid concentrator with probability asteroidConcentratorProb and anywhere
+the remainder of the time.  An asteroid concentrator is drawn on the
+screen as three rotating squares.  The map symbol is the ampersand
+'&'.
+@asteroidConcentratorProb
+The probability, if any asteroid concentrators are present, that they will
+be used.  This proportion of asteroids will be placed near asteroid
+concentrators, within asteroidConcentratorRadius.
+@rogueHeatProb
+Probability that unclaimed missile packs will go rogue.
+@rogueMineProb
+Probability that unclaimed mine items will activate.
+@itemEnergyPackProb
+Probability for an energy pack to appear.
+@itemTankProb
+Probability for an extra tank to appear.
+@itemECMProb
+Probability for an ECM item to appear.
+@itemArmorProb
+Probability for an armor item to appear.
+@itemMineProb
+Probability for a mine item to appear.
+@itemMissileProb
+Probability for a missile item to appear.
+@itemCloakProb
+Probability for a cloak item to appear.
+@itemSensorProb
+Probability for a sensor item to appear.
+@itemWideangleProb
+Probability for a wideangle item to appear.
+@itemRearshotProb
+Probability for a rearshot item to appear.
+@itemAfterburnerProb
+Probability for an afterburner item to appear.
+@itemTransporterProb
+Probability for a transporter item to appear.
+@itemMirrorProb
+Probability for a mirror item to appear.
+@itemDeflectorProb
+Probability for a deflector item to appear.
+@itemHyperJumpProb
+Probability for a hyperjump item to appear.
+@itemPhasingProb
+Probability for a phasing item to appear.
+@itemLaserProb
+Probability for a Laser item to appear.
+@itemEmergencyThrustProb
+Probability for an Emergency Thrust item to appear.
+@itemTractorBeamProb
+Probability for a Tractor Beam item to appear.
+@itemAutopilotProb
+Probability for an Autopilot item to appear.
+@itemEmergencyShieldProb
+Probability for an Emergency Shield item to appear.
+@initialFuel
+How much fuel players start with, or the minimum after being killed.
+@initialTanks
+How many tanks players start with.
+@initialECMs
+How many ECMs players start with.
+@initialArmor
+How much armor players start with.
+@initialMines
+How many mines players start with.
+@initialMissiles
+How many missiles players start with.
+@initialCloaks
+How many cloaks players start with.
+@initialSensors
+How many sensors players start with.
+@initialWideangles
+How many wideangles players start with.
+@initialRearshots
+How many rearshots players start with.
+@initialAfterburners
+How many afterburners players start with.
+@initialTransporters
+How many transporters players start with.
+@initialMirrors
+How many mirrors players start with.
+@initialDeflectors
+How many deflectors players start with.
+@initialHyperJumps
+How many hyperjumps players start with.
+@initialPhasings
+How many phasing devices players start with.
+@initialLasers
+How many lasers players start with.
+@initialEmergencyThrusts
+How many emergency thrusts players start with.
+@initialTractorBeams
+How many tractor/pressor beams players start with.
+@initialAutopilots
+How many autopilots players start with.
+@initialEmergencyShields
+How many emergency shields players start with.
+@maxFuel
+Upper limit on the amount of fuel per player.
+@maxTanks
+Upper limit on the number of tanks per player.
+@maxECMs
+Upper limit on the number of ECMs per player.
+@maxMines
+Upper limit on the number of mines per player.
+@maxMissiles
+Upper limit on the number of missiles per player.
+@maxCloaks
+Upper limit on the number of cloaks per player.
+@maxSensors
+Upper limit on the number of sensors per player.
+@maxWideangles
+Upper limit on the number of wides per player.
+@maxRearshots
+Upper limit on the number of rearshots per player.
+@maxAfterburners
+Upper limit on the number of afterburners per player.
+@maxTransporters
+Upper limit on the number of transporters per player.
+@maxArmor
+Upper limit on the amount of armor per player.
+@maxMirrors
+Upper limit on the number of mirrors per player.
+@maxDeflectors
+Upper limit on the number of deflectors per player.
+@maxPhasings
+Upper limit on the number of phasing devices per players.
+@maxHyperJumps
+Upper limit on the number of hyperjumps per player.
+@maxEmergencyThrusts
+Upper limit on the number of emergency thrusts per player.
+@maxLasers
+Upper limit on the number of lasers per player.
+@maxTractorBeams
+Upper limit on the number of tractorbeams per player.
+@maxAutopilots
+Upper limit on the number of autopilots per player.
+@maxEmergencyShields
+Upper limit on the number of emergency shields per player.
+@gameDuration
+The duration of the game in minutes (aka. pizza mode).
+@allowViewing
+Are players allowed to watch any other player while paused, waiting or dead?
+@friction
+Fraction of velocity ship loses each frame.
+@blockFriction
+Fraction of velocity ship loses each frame when it is in friction blocks.
+@blockFrictionVisible
+Are friction blocks visible?
+If true, friction blocks show up as decor; if false, they don't show up at all.
+@coriolis
+The clockwise angle (in degrees) a ship's velocity turns each frame.
+@checkpointRadius
+How close you have to be to a checkpoint to register - in blocks.
+@raceLaps
+How many laps a race is run over.
+@lockOtherTeam
+Can you lock on players from other teams when you're dead.
+@loseItemDestroys
+Destroy item that player drops. Otherwise drop it.
+@useWreckage
+Do destroyed ships leave wreckage?
+@maxOffensiveItems
+How many offensive items a player can carry.
+@maxDefensiveItems
+How many defensive items a player can carry.
+@roundDelay
+Delay before start of each round, in seconds.
+@maxRoundTime
+The maximum duration of each round, in seconds.
+@roundsToPlay
+The number of rounds to play.  Unlimited if 0.
+@maxVisibleObject
+What is the maximum number of objects a player can see.
+@pLockServer
+Whether the server is prevented from being swapped out of memory.
+@timerResolution
+If set to nonzero xpilots will requests signals from the OS at
+1/timerResolution second intervals.  The server will then compute
+a new frame FPS times out of every timerResolution signals.
+@password
+The password needed to obtain operator privileges.
+If specified on the command line, on many systems other
+users will be able to see the password.  Therefore, using
+the password file instead is recommended.
+@clientPortStart
+Use UDP ports clientPortStart - clientPortEnd (for firewalls)
+@clientPortEnd
+Use UDP ports clientPortStart - clientPortEnd (for firewalls)
+@maxPauseTime
+The maximum time a player can stay paused for, in seconds.
+After being paused this long, the player will be kicked off.
+Setting this option to 0 disables the feature.

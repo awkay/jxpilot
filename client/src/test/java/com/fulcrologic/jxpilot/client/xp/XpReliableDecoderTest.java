@@ -286,11 +286,36 @@ class XpReliableDecoderTest {
             List<Integer> res = decode(new CPackets().timing(5, 3, 2).string(1, 2, 3).motd(0, "abc".getBytes(), 3));
             assertAll(
                 () -> assertEquals(List.of(5, 6, 14), res, "sizes"),
-                () -> assertEquals(3, dec.ignored(), "three ignored"),
-                () -> assertEquals(List.of(), rec.events, "nothing for the model"));
+                () -> assertEquals(1, dec.ignored(), "PKT_STRING ignored"),
+                () -> assertEquals(List.of("timing id=5 check=3 round=2", "message kind=" + Msg.Text.KIND_SERVER
+                    + " from=65535 abc"), rec.events,
+                    "PKT_TIMING becomes TIMING (round * 26 + check unpacked, C Receive_timing); a whole MOTD its lines"));
             prefixesIncomplete(new CPackets().timing(1, 2, 3));
             prefixesIncomplete(new CPackets().string(1, 2, 3));
             prefixesIncomplete(new CPackets().motd(0, "ab".getBytes(), 2));
+        }
+
+        @Test
+        @DisplayName("MOTD chunks are collected in order and shown once complete (first lines as server messages)")
+        void motd() {
+            byte[] text = "Welcome!\n\n  rules: be nice  \nline3\nline4\nline5\nline6\nline7\n".getBytes(
+                java.nio.charset.StandardCharsets.ISO_8859_1);
+            byte[] a = java.util.Arrays.copyOfRange(text, 0, 20);
+            byte[] b = java.util.Arrays.copyOfRange(text, 20, text.length);
+            decode(new CPackets().motd(0, a, text.length));
+            int afterFirst = rec.events.size();
+            decode(new CPackets().motd(5, b, text.length));
+            int afterStray = rec.events.size();
+            decode(new CPackets().motd(20, b, text.length));
+            List<String> lines = List.copyOf(rec.events);
+            decode(new CPackets().motd(0, a, text.length));
+            String k = "message kind=" + Msg.Text.KIND_SERVER + " from=65535 ";
+            assertAll(
+                () -> assertEquals(0, afterFirst, "nothing until the MOTD is complete"),
+                () -> assertEquals(0, afterStray, "a chunk at another offset is skipped"),
+                () -> assertEquals(List.of(k + "Welcome!", k + "  rules: be nice", k + "line3", k + "line4", k + "line5",
+                    k + "line6"), lines, "the first 6 non-blank lines, trailing blanks cut"),
+                () -> assertEquals(lines, rec.events, "shown once: a repeated MOTD adds nothing"));
         }
 
         @Test

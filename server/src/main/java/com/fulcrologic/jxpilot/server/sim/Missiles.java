@@ -184,7 +184,7 @@ public final class Missiles {
         int life = w.params.shotLife;
         int status = Obj.GRAVITY;
         if (cannon) {
-            life = 8 + Integer.remainderUnsigned(w.rng.nextInt(), 24);
+            life = 8 + Integer.remainderUnsigned(w.randomMT(), 24);
             status |= Obj.FROMCANNON;
         }
         if (type == Obj.SMART_SHOT || type == Obj.HEAT_SHOT) {
@@ -239,7 +239,7 @@ public final class Missiles {
             life = (int) (w.rfrac() * w.params.fps);
         } else if (!cannon) {
             life = ip.missileLife != 0 ? ip.missileLife
-                : Integer.remainderUnsigned(w.rng.nextInt(), 64 * w.params.fps - 1) + 128 * w.params.fps;
+                : Integer.remainderUnsigned(w.randomMT(), 64 * w.params.fps - 1) + 128 * w.params.fps;
         }
         int lock = 0;
         int fuse = 0;

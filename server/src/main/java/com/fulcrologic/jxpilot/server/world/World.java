@@ -57,6 +57,11 @@ public final class World {
 
     /** Simulation RNG (C {@code rfrac()}/{@code randomMT()}). */
     public final Rng rng;
+    /**
+     * Test seam for the golden C replays (as {@code Wreckage.rfrac}): when set, {@link #rfrac()} and
+     * {@link #randomMT()} return the C server's recorded draws instead of {@link #rng}. Null in play.
+     */
+    public Draws replay;
     /** Scratch RNG reseeded per burst expansion. */
     public final Rng burstRng = new Rng(0);
     /** Wall distance in half blocks, see {@link WallDist} (not recomputed when blocks change, as C). */
@@ -220,7 +225,21 @@ public final class World {
 
     /** C {@code rfrac()}: uniform in [0, 1). */
     public double rfrac() {
-        return rng.nextFloat();
+        return replay == null ? rng.nextFloat() : replay.rfrac();
+    }
+
+    /** C {@code randomMT()}: 32 random bits. */
+    public int randomMT() {
+        return replay == null ? rng.nextInt() : replay.randomMT();
+    }
+
+    /** A source of C's random draws (see {@link #replay}). */
+    public interface Draws {
+        /** The next C {@code rfrac()}. */
+        double rfrac();
+
+        /** The next C {@code randomMT()}. */
+        int randomMT();
     }
 
     /** Player in the k-th position of {@link #order}. */
