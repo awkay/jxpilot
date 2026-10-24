@@ -196,16 +196,18 @@ class ClientFrameTest {
         }
 
         @Test
-        @DisplayName("the score list goes into the panel at the given place; the HUD zoom is set")
+        @DisplayName("the score list goes into the panel under the radar and the button bar; the HUD zoom is set")
         void panel() {
             AppFixture f = new AppFixture(true).players().score(SELF, 5, 3);
             ClientFrame cf = frame(f);
             cf.step(T0, 800, 600, 2, M, 256, 100);
             HudFrame p = cf.panelHud();
+            int top = 100 + (M.ascent() + M.descent() + 8) + 2;
             assertAll(
+                () -> assertEquals(top, cf.ui().scoreTop(), "C: RadarHeight + ButtonHeight + 2"),
                 () -> assertTrue(p.textCount() >= 4, "heading and three rows"),
                 () -> assertEquals(6f, p.textX(0), "left at SCORE_BORDER"),
-                () -> assertEquals(100f + 6 + 10, p.textY(0), "heading baseline: top + border + ascent"),
+                () -> assertEquals(top + 6f + M.ascent(), p.textY(0), "heading baseline: top + border + ascent"),
                 () -> assertEquals(2.0, cf.hud().zoom, "HUD zoom from the step"));
         }
 

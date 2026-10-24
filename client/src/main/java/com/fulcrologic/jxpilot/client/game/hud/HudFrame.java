@@ -104,6 +104,12 @@ public final class HudFrame {
         texts = 0;
     }
 
+    /** BEHAVIOR: drops the rectangles and text runs added after the counts given (undoing a tentative layout). */
+    public void truncate(int rectCount, int textCount) {
+        rects = Math.min(rects, Math.max(0, rectCount));
+        texts = Math.min(texts, Math.max(0, textCount));
+    }
+
     /** BEHAVIOR: appends a segment; dropped when full. */
     public void line(float x0, float y0, float x1, float y1, int style, int color) {
         if (lines >= lineCap) {

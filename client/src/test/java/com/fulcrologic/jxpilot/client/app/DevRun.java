@@ -200,6 +200,34 @@ public final class DevRun {
                     f.key(GLFW_KEY_ENTER, GLFW_RELEASE, 0, now);
                 }
             }
+            case "ui" -> {
+                // client-ui: MENU held over CONFIG (shot at 35), CONFIG page 0 (45), NEXT (65), ABOUT (85)
+                int top = f.ui().bar().top();
+                int bh = f.ui().bar().buttonHeight();
+                double viewX = GameApp.PANEL_W + GameApp.PANEL_GAP;
+                if (frame == 30) {
+                    f.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 200, top + 5, (int) viewX);
+                }
+                if (frame == 32) {
+                    f.mouseMove(200, top + 1 + bh + (bh + 1) + 5, (int) viewX);
+                }
+                if (frame == 36) {
+                    f.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 200, top + 1 + bh + (bh + 1) + 5, (int) viewX);
+                }
+                double nextY = 800 - 6 - 4;
+                if (frame == 50) {
+                    f.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 128, nextY, (int) viewX);
+                }
+                if (frame == 51) {
+                    f.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 128, nextY, (int) viewX);
+                }
+                if (frame == 70) {
+                    f.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 128, top + 5, (int) viewX);
+                }
+                if (frame == 71) {
+                    f.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 128, top + 5, (int) viewX);
+                }
+            }
             case "talk", "chat" -> {
                 if (frame == 40) {
                     f.key(GLFW_KEY_M, GLFW_PRESS, 0, now);

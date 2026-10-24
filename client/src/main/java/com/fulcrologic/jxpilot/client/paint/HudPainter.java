@@ -273,6 +273,23 @@ public final class HudPainter {
     }
 
     /**
+     * C {@code Paint_item} in a window (the information window's item list), window coordinates y down.
+     * <p>
+     * BEHAVIOR: a BLUE triangle outline through (x - S, y - S), (x, y + S), (x + S, y - S) with
+     * S = {@link PaintConfig#ITEM_TRIANGLE_SIZE}, and the item's symbol in RED with its top-left corner at
+     * (x - ITEM_SIZE / 2, y - S + 2).
+     */
+    public void paintItemIcon(VertexBatch b, ScreenSpace ss, int item, int x, int y) {
+        b.setLineWidth(VertexBatch.DEFAULT_LINE_WIDTH);
+        int s = PaintConfig.ITEM_TRIANGLE_SIZE;
+        int blue = palette.color(Palette.BLUE);
+        seg(b, ss, x - s, y - s, x, y + s, blue);
+        seg(b, ss, x, y + s, x + s, y - s, blue);
+        seg(b, ss, x + s, y - s, x - s, y - s, blue);
+        itemSymbol(b, ss, item, x - PaintConfig.ITEM_SIZE / 2, y - s + 2, palette.color(Palette.RED));
+    }
+
+    /**
      * BEHAVIOR: iff {@code timeLeft > 0} (seconds), {@code "%3d:%02d"} (minutes, seconds) right-aligned
      * at {@code WINSCALE(hx - 73)}, baseline {@code WINSCALE(hy - 73) - descent}.
      */
