@@ -79,6 +79,18 @@ class DenyListTest {
     }
 
     @Test
+    @DisplayName("IPv6 prefixes that end inside a byte compare only the prefix bits; v4 and v6 networks mix")
+    void ipv6Prefixes() {
+        String list = "2001:db8::/33, 10.0.0.0/8, fe80::/10";
+        assertAll(
+            () -> assertTrue(denies(list, "2001:db8:7fff::1"), "bit 33 clear: inside the /33"),
+            () -> assertFalse(denies(list, "2001:db8:8000::1"), "bit 33 set: outside"),
+            () -> assertTrue(denies(list, "febf::1") && !denies(list, "fec0::1"), "the /10 ends two bits into byte 1"),
+            () -> assertFalse(denies(list, "2001:db9::1"), "outside the full bytes"),
+            () -> assertTrue(denies(list, "10.200.0.1"), "the IPv4 network still applies"));
+    }
+
+    @Test
     @DisplayName("an IPv4 check allocates nothing")
     void allocationFree() {
         DenyList list = DenyList.parse("10.1.0.0/16, 192.0.2.7, fd00::/8");

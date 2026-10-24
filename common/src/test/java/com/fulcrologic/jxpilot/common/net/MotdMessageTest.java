@@ -123,4 +123,19 @@ class MotdMessageTest {
             () -> assertEquals(5, Msg.Motd.read(ok, dest), "a fitting piece gives the total"),
             () -> assertEquals(7, dest[3], "and lands at its offset"));
     }
+
+    @Test
+    @DisplayName("read accepts pieces exactly at the limits: offset 0, a total as large as the buffer, an empty last piece")
+    void limitsAccepted() {
+        byte[] dest = new byte[10];
+        ByteBuffer whole = ByteBuffer.allocate(18).putInt(0).putInt(10).put(new byte[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
+            .flip();
+        ByteBuffer atEnd = ByteBuffer.allocate(8).putInt(10).putInt(10).flip();
+        ByteBuffer empty = ByteBuffer.allocate(8).putInt(0).putInt(0).flip();
+        assertAll(
+            () -> assertEquals(10, Msg.Motd.read(whole, dest), "offset 0 and a total equal to the buffer size"),
+            () -> assertEquals(10, dest[9], "copied to the last byte"),
+            () -> assertEquals(10, Msg.Motd.read(atEnd, dest), "an empty piece at offset == total"),
+            () -> assertEquals(0, Msg.Motd.read(empty, dest), "an empty text"));
+    }
 }

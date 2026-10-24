@@ -56,11 +56,14 @@ class MotdTest {
         Files.writeString(f, "Rules: none.\n", StandardCharsets.ISO_8859_1);
         Files.setLastModifiedTime(f, FileTime.fromMillis(Files.getLastModifiedTime(f).toMillis() + 5000));
         String changed = new String(m.text(), StandardCharsets.ISO_8859_1);
+        byte[] again = m.text();
+        boolean cached = again != null && again == m.text() && again.length == 13;
         Path big = Files.write(dir.resolve("big"), new byte[Msg.Motd.MAX_SIZE + 100]);
         Path empty = Files.write(dir.resolve("empty"), new byte[0]);
         assertAll(
             () -> assertEquals("Welcome!\n", first, "the text"),
             () -> assertEquals("Rules: none.\n", changed, "a changed file is read again"),
+            () -> assertTrue(cached, "an unchanged file is not read again (the same bytes come back)"),
             () -> assertEquals(Msg.Motd.MAX_SIZE, new MotdFile(big).text().length, "cut to 30 KB"),
             () -> assertEquals(0, new MotdFile(empty).text().length, "empty file"),
             () -> assertEquals(0, new MotdFile(dir.resolve("missing")).text().length, "missing file"),
