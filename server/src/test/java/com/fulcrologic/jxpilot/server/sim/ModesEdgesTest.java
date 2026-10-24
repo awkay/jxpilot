@@ -237,9 +237,11 @@ class ModesEdgesTest {
             s.targets.repair(p);
             int at90 = w.modes.targetDamage[1];
             p.fuel = Ships.REFUEL_RATE + 1;
+            p.tankFuel[0] = p.fuel; // the main tank holds it all (no extra tanks)
             s.targets.repair(p);
             int justAbove = w.modes.targetDamage[1];
             p.fuel = Ships.REFUEL_RATE;
+            p.tankFuel[0] = p.fuel;
             s.targets.repair(p);
             assertAll(
                 () -> assertEquals(100 + 457, at90, "90 px away: repaired"),
