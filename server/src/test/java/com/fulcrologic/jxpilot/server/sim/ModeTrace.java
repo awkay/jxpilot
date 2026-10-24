@@ -55,6 +55,7 @@ final class ModeTrace {
         final List<int[]> treasures = new ArrayList<>();
         final List<int[]> targets = new ArrayList<>();
         final List<String> teams = new ArrayList<>();
+        final List<Double> teamScores = new ArrayList<>();
         /** C's random draw count before (XPMTP) and after (XPMTN) the frame's update, -1 when not traced. */
         long drawsBefore = -1;
         /** The XPTRACE ship's status bits. */
@@ -105,7 +106,10 @@ final class ModeTrace {
                         Integer.parseInt(c[5])});
                     case "XPTGT" -> f.targets.add(new int[] {Integer.parseInt(c[3]), Integer.parseInt(c[4]),
                         Integer.parseInt(c[5])});
-                    case "XPTEAM" -> f.teams.add(c[3] + " " + c[4] + " " + c[5]);
+                    case "XPTEAM" -> {
+                        f.teams.add(c[3] + " " + c[4] + " " + c[5]);
+                        f.teamScores.add(Double.parseDouble(c[6]));
+                    }
                     case "XPMTP" -> f.drawsBefore = Long.parseLong(c[3]);
                     case "XPMTN" -> f.drawsAfter = Long.parseLong(c[3]);
                     case "XPMT" -> {

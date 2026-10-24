@@ -258,6 +258,9 @@ public final class Debris implements DebrisBurst.Sink {
      * THRUST_MASS*ALT_SPARK_MASS_FACT, owner immune, radius 8.
      */
     public void thrust(Player pl) {
+        if (w.rng.c() != null) {
+            cThrustDraws(pl);
+        }
         Sounds.play(w, pl.px, pl.py, SoundEvent.THRUST);
         Params p = w.params;
         int dir = pl.dir;
@@ -283,6 +286,39 @@ public final class Debris implements DebrisBurst.Sink {
             return true;
         }
         return d.x >= 0 && d.x < w.pixelWidth && d.y >= 0 && d.y < w.pixelHeight;
+    }
+
+    /** C {@code Thrust}'s static {@code keep_rand} (one for the whole server, as in C). */
+    private int cKeepRand;
+
+    /**
+     * Replaying a C server's random stream (tests): the draws C's {@code Thrust} (ship.c:57-115) makes, which
+     * Java's thrust sparks (their own client-replayable generator) do not: one {@code randomMT()} whenever the
+     * static {@code keep_rand} shifted down to 0 (a negative one never does: C's signed shift), then two
+     * {@code Make_debris} with {@code tot_sparks - alt_sparks} and {@code alt_sparks} sparks.
+     */
+    void cThrustDraws(Player pl) {
+        int thisRand = ((cKeepRand >>= 2) != 0 ? cKeepRand : (cKeepRand = w.rng.nextInt())) & 0x03;
+        int tot = (int) ((pl.power * 0.15) + thisRand + 1);
+        int ab = pl.afterburners();
+        int alt = ab != 0 ? (((tot - 1) * ab) >> 4) + 1 : 0;
+        double x = pl.px + pl.ship.engineX[pl.dir];
+        double y = pl.py + pl.ship.engineY[pl.dir];
+        cMakeDebrisDraws(x, y, tot - alt);
+        cMakeDebrisDraws(x, y, alt);
+    }
+
+    /** The draws of C {@code Make_debris} (play.c:145-245) for {@code num} particles at (x, y): none outside the world, else the count and 4 per particle. */
+    private void cMakeDebrisDraws(double x, double y, int num) {
+        if (w.wrap) {
+            x = x < 0 ? x + w.pixelWidth : (x >= w.pixelWidth ? x - w.pixelWidth : x);
+            y = y < 0 ? y + w.pixelHeight : (y >= w.pixelHeight ? y - w.pixelHeight : y);
+        }
+        if (x < 0 || x >= w.pixelWidth || y < 0 || y >= w.pixelHeight) {
+            return;
+        }
+        w.rfrac();
+        w.rng.skip(4 * Math.min(num, w.objects.capacity - w.objects.count()));
     }
 
     /**

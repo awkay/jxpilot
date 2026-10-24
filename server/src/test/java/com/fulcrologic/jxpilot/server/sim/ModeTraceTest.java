@@ -59,6 +59,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ModeTraceTest {
     /** The C server's random seed in every recording (trace.sh --seed 42). */
     static final int SEED = 42;
+    static final int FRAMES_TREASURE_CASH = 95;
 
     /** Simulation over a map file from the test resources. */
     static Simulation resourceMap(String name, int seed) throws Exception {
@@ -121,6 +122,11 @@ class ModeTraceTest {
      * turnresistance 30/256), per-frame keys from C's state.
      */
     static Result replay(Simulation s, ModeTrace t) {
+        return replayUntil(s, t, Long.MAX_VALUE);
+    }
+
+    /** {@link #replay} up to and including C frame {@code last} (debugging). */
+    static Result replayUntil(Simulation s, ModeTrace t, long last) {
         World w = s.world;
         Player p = s.ships.join("Refpilot", 0);
         CTraceTest.Frame first = t.frames.get(0).ship;
@@ -142,6 +148,9 @@ class ModeTraceTest {
         CRandom mt = t.frames.get(0).drawsBefore >= 0 ? new CRandom(SEED) : null;
         w.rng.useC(mt);
         for (ModeTrace.Frame f : t.frames) {
+            if (f.frame > last) {
+                break;
+            }
             if (mt != null) {
                 if (mt.draws() > f.drawsBefore && bad.size() < 6) {
                     bad.add("frame " + f.frame + ": Java drew " + (mt.draws() - f.drawsBefore) + " more than C before it");
@@ -155,12 +164,22 @@ class ModeTraceTest {
             if ((pl2.used() & Has.CONNECTOR) != 0) {
                 keys |= ControlKey.CONNECTOR.mask();
             }
+            if ((pl2.used() & Has.SHOT) != 0) {
+                keys |= ControlKey.FIRE_SHOT.mask();
+            }
+            if ((pl2.used() & Has.SHIELD) != 0) {
+                // C's client keeps the shield up and lowers it to fire (autoShield)
+                keys |= ControlKey.SHIELD.mask();
+            }
             boolean connected = false;
+            boolean recreated = false;
             for (ModeTrace.Obj o : f.objs) {
                 connected |= o.type() == Obj.BALL && o.id() == p.id;
+                // a ball C deleted and remade in its treasure starts its life count again
+                recreated |= o.type() == Obj.BALL && o.life() == Long.MAX_VALUE;
             }
-            if (wasConnected && !connected) {
-                // the ball came loose this frame: C's player pressed DROP_BALL ('d')
+            if (wasConnected && !connected && !recreated) {
+                // the ball came loose this frame and lives on: C's player pressed DROP_BALL ('d')
                 keys |= ControlKey.DROP_BALL.mask();
             }
             wasConnected = connected;
@@ -201,6 +220,32 @@ class ModeTraceTest {
             java.util.Collections.sort(jobj);
             if (!cobj.equals(jobj)) {
                 bad.add("frame " + c.frame() + " objects\n  C    " + cobj + "\n  Java " + jobj);
+            }
+            for (int[] tr : f.treasures) {
+                String ct = "treasure " + tr[0] + " have " + tr[1] + " destroyed " + tr[2];
+                String jt = "treasure " + tr[0] + " have " + (w.modes.treasureHave[tr[0]] ? 1 : 0) + " destroyed "
+                    + w.modes.treasureDestroyed[tr[0]];
+                if (!ct.equals(jt) && bad.size() < 6) {
+                    bad.add("frame " + c.frame() + "\n  C    " + ct + "\n  Java " + jt);
+                }
+            }
+            for (int i = 0; i < f.teams.size(); i++) {
+                String[] tc = f.teams.get(i).split(" ");
+                int team = Integer.parseInt(tc[0]);
+                String jt = team + " " + w.modes.teamTreasuresLeft[team] + " " + w.modes.teamTreasuresDestroyed[team];
+                double cs = f.teamScores.get(i);
+                if ((!f.teams.get(i).equals(jt) || Math.abs(cs - w.teamScore[team]) > 1e-6) && bad.size() < 6) {
+                    bad.add("frame " + c.frame() + " team (team left destroyed score)\n  C    " + f.teams.get(i) + " " + cs
+                        + "\n  Java " + jt + " " + w.teamScore[team]);
+                }
+            }
+            for (int[] tg : f.targets) {
+                String ct = "target " + tg[0] + " damage " + tg[1] + " dead " + tg[2];
+                String jt = "target " + tg[0] + " damage " + w.modes.targetDamage[tg[0]] + " dead "
+                    + w.targetDeadTime[tg[0]];
+                if (!ct.equals(jt) && bad.size() < 6) {
+                    bad.add("frame " + c.frame() + "\n  C    " + ct + "\n  Java " + jt);
+                }
             }
             String cr = pl2.check() + " " + pl2.round() + " " + pl2.time() + " " + pl2.bestLap() + " "
                 + pl2.reaching() + " " + ((pl2.have() & Has.BALL) != 0);
@@ -264,6 +309,33 @@ class ModeTraceTest {
         assertAll(
             () -> assertEquals(255, r.frames(), "255 C frames are compared"),
             () -> assertTrue(respawn > 0, "(C's respawn turned the ship: " + respawn + " frames)"),
+            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
+    }
+
+    @Test
+    @DisplayName("targets: shots wear a team 2 target down, it repairs between shots, is destroyed and revives: "
+        + "bit-identical with C's random stream")
+    void targetShoot() throws Exception {
+        ModeTrace t = ModeTrace.load("target-shoot.txt");
+        Simulation s = resourceMap("target-shoot.xp", 1);
+        Result r = replay(s, t);
+        assertAll(
+            () -> assertEquals(171, r.frames(), "171 C frames are compared"),
+            () -> assertTrue(t.frames.stream().anyMatch(f -> f.targets.get(0)[2] > 0), "(C destroyed it)"),
+            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
+    }
+
+    @Test
+    @DisplayName("treasure capture: connect to the team 2 ball, pull it into the own treasure; with nobody of team 2 "
+        + "in the game C only awards Rate/2 and the ball goes home: bit-identical with C's random stream")
+    void treasureCash() throws Exception {
+        ModeTrace t = ModeTrace.load("treasure-cash.txt");
+        Simulation s = resourceMap("treasure-cash.xp", 1);
+        Result r = replay(s, t);
+        double last = t.frames.get(t.frames.size() - 1).teamScores.get(0);
+        assertAll(
+            () -> assertEquals(FRAMES_TREASURE_CASH, r.frames(), "all C frames are compared"),
+            () -> assertTrue(last > 0, "(team 1 scored " + last + ")"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }
 

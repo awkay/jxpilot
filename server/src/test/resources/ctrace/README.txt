@@ -62,3 +62,17 @@ floor and the right wall (balls keep their life on bounces).
   XPREF_IMAGE=xpilot-ref:4.5.5 tools/xpilot-ref/trace.sh
     --map-file server/src/test/resources/ctrace/ball-tow.xp --seed 42 --after 1 --modes
     --keys "down:Control_L down:Shift_L sleep:0.6 up:Shift_L sleep:0.8 up:Control_L key:d sleep:5"
+
+target-shoot.txt (171 frames): team play; the team 1 ship fires up at a team 2 target (fire held; C's client
+lowers the shield to fire, autoShield): every shot wears it down, it repairs +7 a frame between shots, is
+destroyed (dead 3 s, targetDeadTime) and revives. C's random stream is replayed.
+  XPREF_IMAGE=xpilot-ref:4.5.5 tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/target-shoot.xp --seed 42 --after 1 --modes
+    --keys "sleep:3 down:Return sleep:3 up:Return sleep:5"
+
+treasure-cash.txt (95 frames): team play; the team 1 ship connects to the team 2 ball and pulls it sideways
+into its own treasure: with nobody of team 2 in the game C only awards Rate/2 (Punish_team) and the ball is
+remade at home. Thrust sparks' random draws are counted as C's Thrust makes them (Debris.cThrustDraws).
+  XPREF_IMAGE=xpilot-ref:4.5.5 tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/treasure-cash.xp --seed 42 --after 1 --modes
+    --keys "down:Control_L down:Shift_L sleep:0.5 up:Shift_L sleep:4 up:Control_L sleep:1"
