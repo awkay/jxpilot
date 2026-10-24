@@ -1277,4 +1277,98 @@ class ServerNetTest {
                     "its input sequencing starts fresh (seq 1 is applied after the previous peer's higher sequences)"));
         }
     }
+
+    @Nested
+    @DisplayName("kick (GameHost.Sessions) and the reconnect guard")
+    class Kick {
+        @Test
+        @DisplayName("a verified peer gets DISCONNECT (kicked, reason) 3 times; the host gets one leave; nothing follows")
+        void verified() {
+            Harness h = new Harness();
+            TestClient a = new TestClient(1);
+            TestClient b = new TestClient(2);
+            h.join(a, 0, A, "a");
+            h.join(b, 0, B, "b");
+            h.take(A);
+            h.take(B);
+            h.host.sessions.kick(0, "auto-kicked: paused too long");
+            List<Harness.Sent> toA = h.take(A);
+            for (Harness.Sent sent : toA) {
+                a.onPacket(sent.data().duplicate(), h.now);
+            }
+            List<String> leaves = h.host.callsStartingWith("leave");
+            h.tick();
+            assertAll(
+                () -> assertEquals(List.of(PacketType.DISCONNECT, PacketType.DISCONNECT, PacketType.DISCONNECT), h.types(toA),
+                    "three DISCONNECTs"),
+                () -> assertEquals(a.session, toA.get(0).session(), "on the kicked peer's session"),
+                () -> assertEquals(Msg.Disconnect.REASON_KICKED, a.disconnectReason, "reason KICKED"),
+                () -> assertEquals("auto-kicked: paused too long", a.disconnectText, "with the host's text"),
+                () -> assertEquals(List.of("leave 0"), leaves, "the host gets the leave before kick returns"),
+                () -> assertFalse(h.isConnected(0, A), "the peer is gone"),
+                () -> assertTrue(h.isConnected(0, B), "the other stays"),
+                () -> assertEquals(1, h.net.connections(), "one connection is left"),
+                () -> assertEquals(List.of(), h.take(A), "nothing more is sent to the kicked address"),
+                () -> assertEquals(List.of("leave 0"), h.host.callsStartingWith("leave"), "no second leave"),
+                () -> assertTrue(h.log.get(h.log.size() - 1).endsWith("(auto-kicked: paused too long)"),
+                    "the leave is logged with the reason: " + h.log));
+        }
+
+        @Test
+        @DisplayName("an unverified peer is dropped without DISCONNECT; an id no connection has is ignored")
+        void unverifiedAndUnknown() {
+            Harness h = new Harness();
+            TestClient a = new TestClient(1);
+            h.in(0, A, a.connect("a", 255, ""));
+            h.take(A);
+            h.host.sessions.kick(7, "nobody");
+            int afterUnknown = h.net.connections();
+            List<String> leavesAfterUnknown = h.host.callsStartingWith("leave");
+            h.host.sessions.kick(0, "no free base");
+            assertAll(
+                () -> assertEquals(1, afterUnknown, "kicking an unknown id changes nothing"),
+                () -> assertEquals(List.of(), leavesAfterUnknown, "and leaves nobody"),
+                () -> assertEquals(List.of(), h.take(A), "an unproven address gets no DISCONNECT"),
+                () -> assertEquals(List.of("leave 0"), h.host.callsStartingWith("leave"), "the host gets its leave"),
+                () -> assertEquals(0, h.net.connections(), "the connection is gone"));
+        }
+
+        @Test
+        @DisplayName("a reconnect whose join kicked the old session drops it once; the pool stays consistent")
+        void reconnectKickedByJoin() {
+            ServerNetConfig cfg = new ServerNetConfig();
+            cfg.maxConnections = 2;
+            Harness h = new Harness(cfg, "x: 1\n");
+            TestClient old = new TestClient(1);
+            h.join(old, 0, A, "Ann");
+            int oldSession = h.net.sessionOf(0, A);
+            h.take(A);
+            h.host.kickOnJoin = 0;
+            TestClient again = new TestClient(2);
+            h.in(0, A, again.connect("Ann", 255, ""));
+            List<Harness.Sent> toA = h.take(A);
+            for (Harness.Sent sent : toA) {
+                again.onPacket(sent.data().duplicate(), h.now);
+            }
+            TestClient b = new TestClient(3);
+            h.in(0, B, b.connect("Bob", 255, ""));
+            h.deliver(b, B);
+            InetSocketAddress c = addr("10.0.0.3", 4000);
+            TestClient third = new TestClient(4);
+            h.in(0, c, third.connect("Cid", 255, ""));
+            h.deliver(third, c);
+            assertAll(
+                () -> assertEquals(List.of("join Ann team=255 shape=", "join Ann team=255 shape=", "leave 0",
+                        "join Bob team=255 shape="), joinsAndLeaves(h.host.calls),
+                    "the old player leaves once, inside the new join"),
+                () -> assertEquals(List.of(PacketType.DISCONNECT, PacketType.DISCONNECT, PacketType.DISCONNECT,
+                    PacketType.ACCEPT), h.types(toA), "the old session is told it was kicked, then the new one is accepted"),
+                () -> assertEquals(oldSession, toA.get(0).session(), "the DISCONNECTs carry the old session"),
+                () -> assertTrue(again.accepted, "the reconnecting client is accepted"),
+                () -> assertNotEquals(oldSession, again.session, "with a new session"),
+                () -> assertTrue(b.accepted, "the second slot is free for Bob"),
+                () -> assertEquals(Msg.Reject.REASON_FULL, third.rejectReason, "a third client finds the pool of 2 full"),
+                () -> assertEquals(2, h.net.connections(), "two connections"));
+        }
+    }
 }

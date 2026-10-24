@@ -61,6 +61,29 @@ class EventsTest {
         }
 
         @Test
+        @DisplayName("message() is for everyone (c = 0); playerMessage() for one receiver (c = its id), text cleared")
+        void receivers() {
+            Events e = new Events();
+            for (int i = 0; i < Events.CAPACITY; i++) {
+                e.message(0, 0).append("stale");
+            }
+            StringBuilder all = e.message(3, 5);
+            all.append("all");
+            StringBuilder one = e.playerMessage(2, Obj.NO_ID, 7);
+            one.append("one");
+            int iAll = Events.index(Events.CAPACITY);
+            int iOne = Events.index(Events.CAPACITY + 1);
+            assertAll(
+                () -> assertEquals(0, e.c[iAll], "message(): c = 0, everyone"),
+                () -> assertEquals(Events.MESSAGE, e.kind[iOne], "playerMessage() adds a MESSAGE"),
+                () -> assertEquals(2, e.a[iOne], "its kind is in a"),
+                () -> assertEquals(Obj.NO_ID, e.b[iOne], "its sender in b"),
+                () -> assertEquals(7, e.c[iOne], "its receiver in c"),
+                () -> assertEquals("one", e.text[iOne].toString(), "the returned builder is the reused slot's text, cleared"),
+                () -> assertEquals("all", e.text[iAll].toString(), "message()'s text is cleared too"));
+        }
+
+        @Test
         @DisplayName("the ring overwrites the oldest event and clears reused text")
         void wraps() {
             Events e = new Events();
