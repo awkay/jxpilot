@@ -158,21 +158,28 @@ class XpCodecTest {
         @Test
         void statusTextsFollowTheCClient() {
             assertAll(
-                () -> assertEquals("success", XpProto.statusText(XpProto.SUCCESS), "success"),
-                () -> assertEquals("permission denied, not owner", XpProto.statusText(XpProto.E_NOT_OWNER), "owner"),
-                () -> assertEquals("game full", XpProto.statusText(XpProto.E_GAME_FULL), "full"),
-                () -> assertEquals("team full", XpProto.statusText(XpProto.E_TEAM_FULL), "team full"),
-                () -> assertEquals("team play selected and no team specified",
-                    XpProto.statusText(XpProto.E_TEAM_NOT_SET), "team not set"),
-                () -> assertEquals("game locked", XpProto.statusText(XpProto.E_GAME_LOCKED), "locked"),
-                () -> assertEquals("player not found", XpProto.statusText(XpProto.E_NOT_FOUND), "not found"),
-                () -> assertEquals("nick already in use", XpProto.statusText(XpProto.E_IN_USE), "in use"),
-                () -> assertEquals("server can't setup socket", XpProto.statusText(XpProto.E_SOCKET), "socket"),
-                () -> assertEquals("invalid input parameters", XpProto.statusText(XpProto.E_INVAL), "inval"),
-                () -> assertEquals("incompatible version", XpProto.statusText(XpProto.E_VERSION), "version"),
-                () -> assertEquals("no such variable", XpProto.statusText(XpProto.E_NOENT), "noent"),
-                () -> assertEquals("requested operation undefined", XpProto.statusText(XpProto.E_UNDEFINED), "undef"),
-                () -> assertEquals("unknown error status 99", XpProto.statusText(99), "unknown code"));
+                () -> assertEquals("Operation successful", XpProto.statusText(XpProto.SUCCESS, 0), "success"),
+                () -> assertEquals("Permission denied, not owner", XpProto.statusText(XpProto.E_NOT_OWNER, 0), "owner"),
+                () -> assertEquals("Sorry, game full", XpProto.statusText(XpProto.E_GAME_FULL, 0), "full"),
+                () -> assertEquals("Sorry, team 4 is full", XpProto.statusText(XpProto.E_TEAM_FULL, 4), "team full"),
+                () -> assertEquals("Sorry, team play selected and you haven't specified your team",
+                    XpProto.statusText(XpProto.E_TEAM_NOT_SET, 0), "team not set"),
+                () -> assertEquals("Sorry, game locked", XpProto.statusText(XpProto.E_GAME_LOCKED, 0), "locked"),
+                () -> assertEquals("That player is not logged on this server",
+                    XpProto.statusText(XpProto.E_NOT_FOUND, 0), "not found"),
+                () -> assertEquals("Your nick is already used", XpProto.statusText(XpProto.E_IN_USE, 0), "in use"),
+                () -> assertEquals("Server can't setup socket", XpProto.statusText(XpProto.E_SOCKET, 0), "socket"),
+                () -> assertEquals("Invalid input parameters says the server", XpProto.statusText(XpProto.E_INVAL, 0),
+                    "inval"),
+                () -> assertEquals("We have an incompatible version says the server",
+                    XpProto.statusText(XpProto.E_VERSION, 0), "version"),
+                () -> assertEquals("No such variable, says the server", XpProto.statusText(XpProto.E_NOENT, 0), "noent"),
+                () -> assertEquals("Requested operation is undefined, says the server",
+                    XpProto.statusText(XpProto.E_UNDEFINED, 0), "undefined"),
+                () -> assertEquals("Server answers with unknown error status '0b'", XpProto.statusText(0x0B, 0),
+                    "unknown, two hex digits"),
+                () -> assertEquals("Got quit packet: \"server exiting\"", XpProto.quitText("server exiting"),
+                    "C Receive_quit"));
         }
     }
 }

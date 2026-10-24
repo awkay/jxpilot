@@ -85,6 +85,26 @@ final class FakeConnection implements GameConnection {
     }
 
     /** Every sendDisplay call as "width x height" (not in {@link #calls}, so the step order stays as it was). */
+    /** setSparkProb / sendFps / requestMotd calls, in order. */
+    final List<String> requests = new ArrayList<>();
+
+    @Override
+    public void setSparkProb(double p) {
+        requests.add("spark " + p);
+    }
+
+    @Override
+    public boolean sendFps(int maxFps, long nowNanos) {
+        requests.add("fps " + maxFps);
+        return true;
+    }
+
+    @Override
+    public boolean requestMotd(long nowNanos) {
+        requests.add("motd");
+        return true;
+    }
+
     final List<String> displays = new ArrayList<>();
 
     @Override

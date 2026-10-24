@@ -287,8 +287,8 @@ class XpConnectionTest {
             start();
             run(3);
             assertAll(
-                () -> assertEquals("Server 127.0.0.1:15345 refused: incompatible version", a, "contact error"),
-                () -> assertEquals("Server 127.0.0.1:15345 refused: nick already in use", conn.status().toString(),
+                () -> assertEquals("We have an incompatible version says the server", a, "contact error"),
+                () -> assertEquals("Your nick is already used", conn.status().toString(),
                     "queue error"),
                 () -> assertEquals(ConnectionState.CLOSED, conn.state(), "closed"));
         }
@@ -473,6 +473,63 @@ class XpConnectionTest {
         }
 
         @Test
+        @DisplayName("PKT_DISPLAY on a resize while playing (M11, C Resize); before playing it goes with the join")
+        void displayResent() {
+            boolean early = conn.sendDisplay(800, 600, now);
+            conn.setSparkProb(0.25);
+            play();
+            List<String> join = server.loginPackets.stream().filter(x -> x.startsWith("display")).toList();
+            int before = server.loginPackets.size();
+            boolean sent = conn.sendDisplay(2000, 300, now);
+            server.step();
+            List<String> later = List.copyOf(server.loginPackets.subList(before, server.loginPackets.size()));
+            assertAll(
+                () -> assertFalse(early, "not sent before playing"),
+                () -> assertTrue(join.contains("display 800x600 colors=0 spark=32"),
+                    "the join carries the size and spark chance (0.25 * MAX_SPARK_RAND 128): " + join),
+                () -> assertTrue(sent, "sent while playing"),
+                () -> assertEquals(List.of("display 1024x384 colors=0 spark=32"), later,
+                    "one PKT_DISPLAY, limited to C's 384..1024"),
+                () -> assertEquals(List.of(), server.violations, "nothing the C server would reject"));
+        }
+
+        @Test
+        @DisplayName("MOTD refresh and frame-rate requests go out while playing only (C Net_ask_for_motd, Send_fps_request)")
+        void motdAndFps() {
+            boolean motdEarly = conn.requestMotd(now);
+            boolean fpsEarly = conn.sendFps(10, now);
+            play();
+            List<String> joinFps = server.loginPackets.stream().filter(x -> x.startsWith("fps")).toList();
+            int before = server.loginPackets.size();
+            boolean motd = conn.requestMotd(now);
+            boolean fps = conn.sendFps(0, now);
+            server.step();
+            List<String> later = List.copyOf(server.loginPackets.subList(before, server.loginPackets.size()));
+            assertAll(
+                () -> assertFalse(motdEarly, "no MOTD request before playing"),
+                () -> assertFalse(fpsEarly, "no fps request before playing"),
+                () -> assertFalse(joinFps.isEmpty(), "the join asks for a rate"),
+                () -> assertTrue(joinFps.stream().allMatch(x -> x.equals("fps "
+                    + XpConnection.requestedFps(10, (int) Math.round(game.gameFps())))),
+                    "the join carries maxFPS 10 limited to FPS/2..FPS: " + joinFps),
+                () -> assertTrue(motd, "MOTD request sent"),
+                () -> assertTrue(fps, "fps request sent"),
+                () -> assertEquals(List.of("motd 0 30720", "fps " + (int) Math.round(game.gameFps())), later,
+                    "the whole MOTD again, then the full server rate for maxFPS 0"));
+        }
+
+        @Test
+        @DisplayName("requestedFps: 0 is the server rate, else limited to FPS/2..FPS")
+        void requestedFps() {
+            assertAll(
+                () -> assertEquals(50, XpConnection.requestedFps(0, 50), "0: full rate"),
+                () -> assertEquals(25, XpConnection.requestedFps(10, 50), "at least FPS/2"),
+                () -> assertEquals(30, XpConnection.requestedFps(30, 50), "in range"),
+                () -> assertEquals(50, XpConnection.requestedFps(99, 50), "at most FPS"),
+                () -> assertEquals(50, XpConnection.requestedFps(-1, 50), "negative counts as 0"));
+        }
+
+        @Test
         void serverSeesTheKeyBits() {
             play();
             keys = ControlKey.THRUST.mask();
@@ -596,7 +653,7 @@ class XpConnectionTest {
             frame();
             assertAll(
                 () -> assertEquals(ConnectionState.CLOSED, conn.state(), "closed"),
-                () -> assertEquals("Server 127.0.0.1:15345 closed the connection: kicked by owner",
+                () -> assertEquals("Got quit packet: \"kicked by owner\"",
                     conn.status().toString(), "reason"));
         }
 
@@ -605,7 +662,7 @@ class XpConnectionTest {
             play();
             server.login.toClient.add(new byte[] {XpProto.PKT_QUIT, 'x'});
             frame();
-            assertEquals("Server 127.0.0.1:15345 closed the connection: unknown reason", conn.status().toString(),
+            assertEquals("Got quit packet: \"unknown reason\"", conn.status().toString(),
                 "missing NUL");
         }
 
@@ -614,7 +671,7 @@ class XpConnectionTest {
             play();
             server.stream.put(new CPackets().quit("shutdown").bytes());
             run(3);
-            assertEquals("Server 127.0.0.1:15345 closed the connection: shutdown", conn.status().toString(), "reason");
+            assertEquals("Got quit packet: \"shutdown\"", conn.status().toString(), "reason");
         }
 
         @Test

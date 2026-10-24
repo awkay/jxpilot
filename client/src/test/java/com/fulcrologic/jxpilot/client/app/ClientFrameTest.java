@@ -196,6 +196,63 @@ class ClientFrameTest {
         }
 
         @Test
+        @DisplayName("sparkProb and maxFPS reach the server on the first step and on each change; sparkProb resends the display")
+        void connectionOptions() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = frame(f);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            cf.step(T0 + 1000, 800, 600, 1, M, 256, 100);
+            List<String> first = List.copyOf(conn.requests);
+            int displays = conn.displays.size();
+            cf.options().setReal(com.fulcrologic.jxpilot.client.game.options.ClientOption.SPARK_PROB, 0.25);
+            cf.options().setInteger(com.fulcrologic.jxpilot.client.game.options.ClientOption.MAX_FPS, 30);
+            cf.step(T0 + 2000, 800, 600, 1, M, 256, 100);
+            assertAll(
+                () -> assertEquals(List.of("spark 0.5", "fps 0"), first, "the defaults once"),
+                () -> assertEquals(List.of("spark 0.5", "fps 0", "spark 0.25", "fps 30"), conn.requests, "then the changes"),
+                () -> assertEquals(displays + 1, conn.displays.size(), "a sparkProb change resends the display"));
+        }
+
+        @Test
+        @DisplayName("a server-side close prints C's text to stderr once and quits after CLOSE_LINGER (M10)")
+        void serverClose() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = frame(f);
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            cf.setErrorStream(new java.io.PrintStream(bytes, true, java.nio.charset.StandardCharsets.UTF_8));
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            boolean openBefore = cf.closedByServer();
+            conn.state = ConnectionState.CLOSED;
+            conn.status = "Your nick is already used";
+            cf.step(T0 + 1000, 800, 600, 1, M, 256, 100);
+            boolean quitAtOnce = cf.quitRequested();
+            cf.step(T0 + 1000 + ClientFrame.CLOSE_LINGER_NANOS - 1, 800, 600, 1, M, 256, 100);
+            boolean quitEarly = cf.quitRequested();
+            cf.step(T0 + 1000 + ClientFrame.CLOSE_LINGER_NANOS, 800, 600, 1, M, 256, 100);
+            assertAll(
+                () -> assertFalse(openBefore, "not closed while connected"),
+                () -> assertTrue(cf.closedByServer(), "closed by the server"),
+                () -> assertEquals("Your nick is already used" + System.lineSeparator(),
+                    bytes.toString(java.nio.charset.StandardCharsets.UTF_8), "printed once"),
+                () -> assertFalse(quitAtOnce, "the window shows the text first"),
+                () -> assertFalse(quitEarly, "for CLOSE_LINGER"),
+                () -> assertTrue(cf.quitRequested(), "then the client quits"),
+                () -> assertEquals("Your nick is already used", f.game.status().toString(), "the status line shows it"));
+        }
+
+        @Test
+        @DisplayName("MENU / MOTD: asks the server when refreshing or when no MOTD came yet, and reopens a closed panel")
+        void motdMenu() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = frame(f);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            conn.requests.clear();
+            cf.ui().act(com.fulcrologic.jxpilot.client.game.ui.UiAction.MOTD);
+            List<String> none = List.copyOf(conn.requests);
+            assertEquals(List.of("motd"), none, "no MOTD yet: ask for it");
+        }
+
+        @Test
         @DisplayName("the score list goes into the panel under the radar and the button bar; the HUD zoom is set")
         void panel() {
             AppFixture f = new AppFixture(true).players().score(SELF, 5, 3);

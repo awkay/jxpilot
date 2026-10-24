@@ -92,6 +92,19 @@ public interface GameConnection extends AutoCloseable {
      */
     default void setModifierBanks(String[] banks) { }
 
+    /** C {@code sparkProb}: the spark chance the next display report carries. Protocols without it ignore it. */
+    default void setSparkProb(double sparkProb) { }
+
+    /**
+     * C {@code maxFPS} changed (CONFIG): ask the server for that frame rate (0: its full rate). Protocols without a
+     * frame-rate request ignore it.
+     *
+     * @return true when the request went out
+     */
+    default boolean sendFps(int maxFps, long nowNanos) {
+        return false;
+    }
+
     /**
      * Ask the server for its message of the day again (C {@code Net_ask_for_motd} from the MOTD menu entry with
      * {@code refreshMotd}, or when none arrived yet). Protocols without it ignore it.

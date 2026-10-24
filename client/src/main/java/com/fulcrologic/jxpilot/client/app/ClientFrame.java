@@ -106,6 +106,14 @@ public final class ClientFrame {
     private FontRole.Metrics single;
     /** World view size last given to {@link GameConnection#sendDisplay} (-1: never). */
     private int displayW = -1;
+    private double sentSparkProb = Double.NaN;
+    /** When the server ended the session (refusal, quit packet, timeout), or -1. */
+    private long closedAt = -1;
+    /** Where C's error texts go (C {@code error()} prints to stderr). */
+    private java.io.PrintStream errors = System.err;
+    /** How long the window shows the server's last word before the client ends (C exits at once). */
+    public static final long CLOSE_LINGER_NANOS = 5_000_000_000L;
+    private int sentMaxFps = Integer.MIN_VALUE;
     private int displayH = -1;
 
     /** With the default key configuration and the given input (tests). */
@@ -172,6 +180,7 @@ public final class ClientFrame {
         liveOptions.apply(hud, game, extras, talk, filler, input);
         lastNow = nowNanos;
         conn.update(nowNanos);
+        serverClosed(nowNanos);
         game.frame(nowNanos, dt);
         WorldMap map = game.map();
         if (map != lastMap) {
@@ -184,6 +193,7 @@ public final class ClientFrame {
         ClientWorld w = game.world();
         boolean inPlay = w.selfPlaying();
         input.setPlaying(inPlay);
+        connectionOptions(nowNanos);
         sendDisplayIfChanged(viewW, viewH, zoom, nowNanos);
         conn.sendInput(input.takeKeys(), 0, nowNanos);
         conn.flush(nowNanos);
@@ -257,6 +267,47 @@ public final class ClientFrame {
      * times scaleFactor, rounded), goes to {@link GameConnection#sendDisplay} on the first step and whenever it
      * changes (window resize, scale swap); never again for an unchanged size.
      */
+    /**
+     * M10, C's error presentation: when the connection closes on the server's side (a refusal, a quit packet, a
+     * timeout) its status (C's text) is printed to stderr once, as C's {@code error()}; the window keeps showing it
+     * for {@link #CLOSE_LINGER_NANOS}, then the client quits (C exits at once).
+     */
+    private void serverClosed(long nowNanos) {
+        if (closedAt < 0 && conn.state() == ConnectionState.CLOSED) {
+            closedAt = nowNanos;
+            errors.println(conn.status());
+        }
+        if (closedAt >= 0 && nowNanos - closedAt >= CLOSE_LINGER_NANOS) {
+            quit = true;
+        }
+    }
+
+    /** True once the server ended the session (the launcher then exits with status 1, as C). */
+    public boolean closedByServer() { return closedAt >= 0; }
+
+    /** Where C's error texts are printed (tests). */
+    public void setErrorStream(java.io.PrintStream err) { errors = err; }
+
+    /**
+     * The options the server hears about: a sparkProb change goes to the connection and resends the display (C
+     * {@code Config_update_sparkProb}); a maxFPS change is a frame-rate request (C {@code Config_update_maxFPS}).
+     * Both are passed on the first step too.
+     */
+    private void connectionOptions(long nowNanos) {
+        com.fulcrologic.jxpilot.client.game.options.ClientOptions o = liveOptions.options();
+        double spark = o.real(ClientOption.SPARK_PROB);
+        if (spark != sentSparkProb) {
+            sentSparkProb = spark;
+            conn.setSparkProb(spark);
+            displayW = -1;
+        }
+        int fps = o.integer(ClientOption.MAX_FPS);
+        if (fps != sentMaxFps) {
+            sentMaxFps = fps;
+            conn.sendFps(fps, nowNanos);
+        }
+    }
+
     private void sendDisplayIfChanged(int viewW, int viewH, double zoom, long nowNanos) {
         int w = (int) (viewW / zoom + 0.5);
         int h = (int) (viewH / zoom + 0.5);

@@ -187,8 +187,12 @@ public final class GameApp {
         return frame;
     }
 
-    /** Open the window, connect and run until quit, window close or the screenshot frame count. */
-    public void run() throws IOException {
+    /**
+     * Open the window, connect and run until quit, window close or the screenshot frame count.
+     *
+     * @return the exit status: 1 when the server ended the session (C exits with an error then), else 0
+     */
+    public int run() throws IOException {
         window = new Window("JXPilot - " + label, opts.width(), opts.height(), true, opts.vsync());
         try {
             atlas = new UiAtlas();
@@ -202,6 +206,7 @@ public final class GameApp {
             sound = SoundSystem.open(opts.sound(), maxVolume, SoundSystem::openAl, System.out);
             conn.start(System.nanoTime());
             loop();
+            return frame.closedByServer() ? 1 : 0;
         } finally {
             frame.disconnect(System.nanoTime());
             conn.close();

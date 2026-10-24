@@ -81,27 +81,34 @@ public final class XpProto {
     public static final int E_UNDEFINED = 0x0E;
 
     /**
-     * Text of a contact status code, as the C client prints it ({@code textinterface.c}).
+     * Text of a contact status code, exactly as the C client prints it ({@code textinterface.c}
+     * {@code Connect_to_server}).
      * <p>
-     * BEHAVIOR: every known code has its C text; unknown codes say so.
+     * BEHAVIOR: every known code has C's text (E_TEAM_FULL names {@code team}); SUCCESS is "Operation successful";
+     * unknown codes give C's "Server answers with unknown error status 'XX'" (two hex digits).
      */
-    public static String statusText(int status) {
+    public static String statusText(int status, int team) {
         return switch (status) {
-            case SUCCESS -> "success";
-            case E_NOT_OWNER -> "permission denied, not owner";
-            case E_GAME_FULL -> "game full";
-            case E_TEAM_FULL -> "team full";
-            case E_TEAM_NOT_SET -> "team play selected and no team specified";
-            case E_GAME_LOCKED -> "game locked";
-            case E_NOT_FOUND -> "player not found";
-            case E_IN_USE -> "nick already in use";
-            case E_SOCKET -> "server can't setup socket";
-            case E_INVAL -> "invalid input parameters";
-            case E_VERSION -> "incompatible version";
-            case E_NOENT -> "no such variable";
-            case E_UNDEFINED -> "requested operation undefined";
-            default -> "unknown error status " + status;
+            case SUCCESS -> "Operation successful";
+            case E_NOT_OWNER -> "Permission denied, not owner";
+            case E_GAME_FULL -> "Sorry, game full";
+            case E_TEAM_FULL -> "Sorry, team " + team + " is full";
+            case E_TEAM_NOT_SET -> "Sorry, team play selected and you haven't specified your team";
+            case E_GAME_LOCKED -> "Sorry, game locked";
+            case E_NOT_FOUND -> "That player is not logged on this server";
+            case E_IN_USE -> "Your nick is already used";
+            case E_SOCKET -> "Server can't setup socket";
+            case E_INVAL -> "Invalid input parameters says the server";
+            case E_VERSION -> "We have an incompatible version says the server";
+            case E_NOENT -> "No such variable, says the server";
+            case E_UNDEFINED -> "Requested operation is undefined, says the server";
+            default -> String.format(java.util.Locale.ROOT, "Server answers with unknown error status '%02x'", status);
         };
+    }
+
+    /** C {@code Receive_quit}'s text: {@code Got quit packet: "REASON"}. */
+    public static String quitText(CharSequence reason) {
+        return "Got quit packet: \"" + reason + "\"";
     }
 
     // ---------------------------------------------------------------- packet.h
