@@ -81,6 +81,7 @@ final class MetricTable {
             + " | " + num(r.shot().stats(null).p95(), 0)
             + " | " + num(r.shot().drawDelayStats().p50(), 0)
             + " | " + r.shot().stats(null).count() + "/" + r.shot().trials().size()
+                + (r.shot().retries() == 0 ? "" : " (" + r.shot().retries() + " retried)")
             + " | " + num(m.ownError().p50(), 1) + "/" + num(m.ownError().p95(), 1)
             + " | " + num(m.aimError().p50(), 1) + "/" + num(m.aimError().p95(), 1) + " (" + m.otherFrames() + ")"
             + " | " + num(m.ownSmooth().p95(), 2) + "/" + num(m.ownSmooth().max(), 1)

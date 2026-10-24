@@ -89,6 +89,8 @@ class InputToPhotonCalibrationTest {
     @DisplayName("shots: per trial, shot I2P at RTT 100 minus RTT 0 is 100 ms within one frame; every press fires and"
         + " shows; the shot follows the own ship's SELF by the interpolation delay")
     void shotRttShiftsEveryTrial() {
+        // Shot I2P = the own-ship path (calibrated by rttShiftsEveryTrial above, also in this default-build class)
+        // + the interpolation delay. Its own mean bound below catches a regression in either part on its own.
         InputToPhoton.Result zero = InputToPhoton.measureShots(Course.FREE_FLIGHT,
             new Scenario(0, Scenario.Jitter.NONE, Scenario.Loss.NONE), TRIALS, 3);
         InputToPhoton.Result hundred = InputToPhoton.measureShots(Course.FREE_FLIGHT,
@@ -113,6 +115,8 @@ class InputToPhotonCalibrationTest {
             draw.percentile(0), draw.max());
         assertAll(
             () -> assertEquals(TRIALS, n, "every press fired a shot that was drawn, at both RTTs"),
+            // own-ship mean (40..48) + 11-12 frames (91.7..100): free flight measured 137.6
+            () -> assertTrue(zero.mean() >= 130 && zero.mean() <= 148, "mean shot I2P at RTT 0: " + zero.mean()),
             () -> assertEquals(0, zero.invisible() + hundred.invisible(), "no shot drawn before a snapshot of its tick"),
             () -> assertEquals(0, zero.preT0Mismatches() + hundred.preT0Mismatches(), "runs identical before t0"),
             () -> assertTrue(w <= FRAME_MS, "every shot is exactly 100 ms later, within a frame: worst " + w + " ms"),

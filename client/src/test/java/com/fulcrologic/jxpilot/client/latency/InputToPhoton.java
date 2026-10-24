@@ -79,20 +79,15 @@ final class InputToPhoton {
     static final long SPAWN_LIMIT = 30 * LatencyRig.SEC;
     /** The drawn-position threshold of {@link Trial#positionMs}. */
     static final double POSITION_PX = 1.0;
-    /**
-     * Shot trials: a drawn shot this close to the drawn own ship counts as "near the nose". A new shot starts at the
-     * nose (16 px out) and is first drawn at most a frame of flight (21 px/tick) later, while the own ship is drawn
-     * about 1.3 ticks further on at its own speed: 120 px covers both at the courses' speeds.
-     */
-    static final double SHOT_RADIUS_PX = 120;
 
     /**
      * MEASURED; DEAD_AT_T0: the baseline ship was not in play at t0; DIED: the ship died (crashed) after t0 before
      * the key showed; NO_DEPARTURE: it lived but the key did not show within {@link #WINDOW_MS} (fire: or the press
      * fired nothing on the server); SHOT_DIED (fire only): the press fired, but the shot died in the tick it was
-     * fired (into a wall next to the ship), so no snapshot ever had it.
+     * fired (into a wall next to the ship), so no snapshot ever had it; SHOT_UNSEEN (fire only): the press's shot
+     * reached snapshots but died before the client drew it (its snapshots were lost).
      */
-    enum Outcome { MEASURED, DEAD_AT_T0, DIED, NO_DEPARTURE, SHOT_DIED }
+    enum Outcome { MEASURED, DEAD_AT_T0, DIED, NO_DEPARTURE, SHOT_DIED, SHOT_UNSEEN }
 
     /**
      * @param phaseNanos the INPUT's planned arrival phase within a server tick
@@ -112,7 +107,14 @@ final class InputToPhoton {
         }
     }
 
-    record Result(List<Trial> trials, long preT0Mismatches, int invisible, int spawnMismatches) {
+    /**
+     * @param retries shot presses run again in their stratum after a lost attempt ({@link #MAX_SHOT_RETRIES})
+     */
+    record Result(List<Trial> trials, long preT0Mismatches, int invisible, int spawnMismatches, long retries) {
+        Result(List<Trial> trials, long preT0Mismatches, int invisible, int spawnMismatches) {
+            this(trials, preT0Mismatches, invisible, spawnMismatches, 0);
+        }
+
         /** I2P in ms of the measured trials of {@code key} (null: all keys). */
         Stats stats(ControlKey key) {
             double[] v = new double[trials.size()];
@@ -187,7 +189,6 @@ final class InputToPhoton {
         final float[] x;
         final float[] y;
         final int[] flags;
-        final int[] nearShots;
         final boolean[] playing;
         /** The ship was out of play (dead) at some frame up to this one, after first being in play. */
         final boolean[] diedBefore;
@@ -202,7 +203,6 @@ final class InputToPhoton {
             x = new float[cap];
             y = new float[cap];
             flags = new int[cap];
-            nearShots = new int[cap];
             playing = new boolean[cap];
             diedBefore = new boolean[cap];
         }
@@ -217,7 +217,6 @@ final class InputToPhoton {
             x[frame] = w.selfX();
             y[frame] = w.selfY();
             flags[frame] = w.selfFlags();
-            nearShots[frame] = nearShots(w);
             playing[frame] = w.hasSelf() && w.selfPlaying();
             died |= wasPlaying && !playing[frame];
             wasPlaying |= playing[frame];
@@ -236,23 +235,6 @@ final class InputToPhoton {
     private InputToPhoton() {
     }
 
-    /**
-     * BEHAVIOR: the shots the frame draws (the drawn-state list SceneFiller paints from) within
-     * {@link #SHOT_RADIUS_PX} of the drawn own ship, wrap-aware; 0 without an own ship.
-     */
-    static int nearShots(ClientWorld w) {
-        if (!w.hasSelf()) {
-            return 0;
-        }
-        int n = 0;
-        for (int i = 0; i < w.shotCount(); i++) {
-            if (MotionMetrics.distance(w.shotX(i), w.shotY(i), w.selfX(), w.selfY(), w.worldWidth(), w.worldHeight(),
-                w.wraps()) <= SHOT_RADIUS_PX) {
-                n++;
-            }
-        }
-        return n;
-    }
 
     /** BEHAVIOR: the earliest t0 of trial {@code i} of a block: the warm-up, then {@link #SPACING_MS} apart. */
     static long earliestT0(long spawn, int i) {
@@ -341,10 +323,14 @@ final class InputToPhoton {
      * ({@link ServerTruth#shotTimeDiffers}); a press that fires nothing within the window is
      * {@link Outcome#NO_DEPARTURE}, whatever was drawn, and one whose shot died in that same tick
      * ({@link ServerTruth#moreShots} false: fired into an adjacent wall) is {@link Outcome#SHOT_DIED};
-     * the I2P frame is the first that draws more shots within {@link #SHOT_RADIUS_PX} of the own ship than the
-     * baseline frame, from the drawn shot list ({@link #nearShots}). It must come after a snapshot of the fire tick
-     * arrived, else it counts in {@link Result#invisible}. Each trial is its own game that fires once (and autofires
-     * while the key stays down), so neither the shot limit nor fireRepeatRate can swallow the press.
+     * the keyed game follows the press's own server shot ({@link ServerTruth#startPressShot}), and the I2P frame is the
+     * first that draws a shot within {@link #SHOT_MATCH_PX} of where that shot is at the frame's render tick
+     * ({@link ServerTruth#pressShotAt}), from the drawn shot list ({@link #drawsShotAt}), while it lives. It must come
+     * after a snapshot of the fire tick arrived, else it counts in {@link Result#invisible}. A press whose shot died
+     * before the render tick reached a drawn snapshot of it is {@link Outcome#SHOT_UNSEEN}, never matched to a later
+     * autofire shot. Lost presses are retried in their stratum ({@link #MAX_SHOT_RETRIES}). Each trial is its own
+     * game that fires once (and autofires while the key stays down), so neither the shot limit nor fireRepeatRate can
+     * swallow the press.
      */
     static Result measureShots(Course course, Scenario scenario, int trials, long seed) {
         return measure(course, scenario, trials, seed, true);
@@ -352,12 +338,12 @@ final class InputToPhoton {
 
     private static Result measure(Course course, Scenario scenario, int trials, long seed, boolean shots) {
         List<Trial> out = new ArrayList<>();
-        long[] counts = new long[3];
+        long[] counts = new long[4];
         for (int b = 0; b * BLOCK < trials; b++) {
             measureBlock(course, scenario, b * BLOCK, Math.min(BLOCK, trials - b * BLOCK), trials, blockSeed(seed, b),
                 shots, out, counts);
         }
-        return new Result(out, counts[0], (int) counts[1], (int) counts[2]);
+        return new Result(out, counts[0], (int) counts[1], (int) counts[2], counts[3]);
     }
 
     /** One baseline game and its trials; adds the trials to {@code out} and the check counts to {@code counts}. */
@@ -380,115 +366,180 @@ final class InputToPhoton {
                 upDelay, period, first + i);
         }
         ServerTruth baseTruth = new ServerTruth(base.client.connection().playerId());
-        long end = t0s[trials - 1] + WINDOW_MS * MS;
+        long retrySpan = shots ? MAX_SHOT_RETRIES * period * Math.round(1e9 / hz) + MS : 0;
+        long end = t0s[trials - 1] + retrySpan + WINDOW_MS * MS;
         Trace trace = new Trace((int) ((end - LatencyRig.START) / (LatencyRig.SEC / LatencyRig.FRAME_HZ)) + 2);
         base.setKeys(t -> shots ? shotCourseKeys(course, t - spawn) : course.keys(t - spawn));
         base.onTick = (r, t) -> baseTruth.record(r.server.world(), r.server.net.currentTick());
         base.onFrame = (r, t) -> trace.record((int) r.frames() - 1, r.world());
         base.runUntil(end);
 
+        Setup su = new Setup(course, scenario, args, seed, spawn, baseTruth, trace, shots, counts);
         for (int i = 0; i < trials; i++) {
             ControlKey key = shots ? ControlKey.FIRE_SHOT : keyOf(first + i);
             long t0 = t0s[i];
-            long phase = phases[i];
-            int t0Frame = (int) Math.ceil((t0 - LatencyRig.START) * (double) LatencyRig.FRAME_HZ / LatencyRig.SEC);
-            // a ship that died and respawned before a shot trial is shielded again: it cannot fire
-            if (t0Frame >= trace.n || !trace.playing[t0Frame] || shots && trace.diedBefore[t0Frame]) {
-                out.add(new Trial(key, t0, Double.NaN, Outcome.DEAD_AT_T0, phase, Double.NaN));
-                continue;
+            Trial trial = runTrial(su, key, t0, phases[i]);
+            // S2: a press lost to a crash, a wall or a lost snapshot is retried in the same stratum, 7 ticks (one
+            // tick/frame period) later, so every arrival phase stays represented
+            for (int attempt = 1; shots && trial.outcome != Outcome.MEASURED && attempt <= MAX_SHOT_RETRIES; attempt++) {
+                counts[3]++;
+                t0 = scheduleT0(base::tickTime, t0 + 1, phases[i], upDelay, period, first + i);
+                trial = runTrial(su, key, t0, phases[i]);
             }
-            LatencyRig rig = new LatencyRig(args, scenario.direction(), scenario.direction(), seed, tickPhase(seed));
-            long s = rig.runUntilPlaying(LatencyRig.START + SPAWN_LIMIT);
-            if (s != spawn) {
-                counts[2]++;
-            }
-            ServerTruth truth = new ServerTruth(rig.client.connection().playerId());
-            long mask = key.mask();
-            boolean thrust = key == ControlKey.THRUST;
-            rig.setKeys(t -> (shots ? shotCourseKeys(course, t - spawn) : course.keys(t - spawn)) | (t >= t0 ? mask : 0));
-            int[] changed = {-1};
-            long[] found = {-1};
-            long[] moved = {-1};
-            long[] selfAt = {-1};
-            boolean[] shotAlive = {false};
-            boolean[] visible = {false};
-            boolean[] died = {false};
-            rig.onTick = (r, t) -> {
-                int tick = r.server.net.currentTick();
-                truth.record(r.server.world(), tick);
-                if (changed[0] < 0 && t >= t0 && tick <= baseTruth.lastTick()) {
-                    boolean differs = shots ? truth.shotTimeDiffers(baseTruth, tick)
-                        : thrust ? truth.velocityDiffers(baseTruth, tick) : truth.headingDiffers(baseTruth, tick);
-                    if (differs) {
-                        changed[0] = tick;
-                        shotAlive[0] = shots && truth.moreShots(baseTruth, tick);
-                    }
-                }
-            };
-            rig.onFrame = (r, t) -> {
-                int frame = (int) r.frames() - 1;
-                ClientWorld w = r.world();
-                if (t < t0) {
-                    if (!trace.same(frame, w)) {
-                        counts[0]++;
-                    }
-                    return;
-                }
-                if (!(w.hasSelf() && w.selfPlaying())) {
-                    if (found[0] < 0) {
-                        died[0] = true;
-                    }
-                    r.stop();
-                    return;
-                }
+            out.add(trial);
+        }
+    }
+
+    /** Shot presses lost to a crash, a wall or a lost snapshot are retried this many times, 7 ticks apart. */
+    static final int MAX_SHOT_RETRIES = 3;
+    /**
+     * A drawn shot this close (px) to where the press's server shot is at the render tick is that shot. Wire
+     * positions and the client's linear interpolation agree to well under a pixel; 8 px also covers a frame of
+     * extrapolation of a shot whose next snapshot is late.
+     */
+    static final double SHOT_MATCH_PX = 8;
+
+    /** What every trial of a block shares. */
+    private record Setup(Course course, Scenario scenario, String[] args, long seed, long spawn, ServerTruth baseTruth,
+                         Trace trace, boolean shots, long[] counts) { }
+
+    /** One keyed game: the key goes down at {@code t0}; its outcome. */
+    private static Trial runTrial(Setup su, ControlKey key, long t0, long phase) {
+        Trace trace = su.trace;
+        ServerTruth baseTruth = su.baseTruth;
+        long[] counts = su.counts;
+        boolean shots = su.shots;
+        Course course = su.course;
+        long spawn = su.spawn;
+        int t0Frame = (int) Math.ceil((t0 - LatencyRig.START) * (double) LatencyRig.FRAME_HZ / LatencyRig.SEC);
+        // a ship that died and respawned before a shot trial is shielded again: it cannot fire
+        if (t0Frame >= trace.n || !trace.playing[t0Frame] || shots && trace.diedBefore[t0Frame]) {
+            return new Trial(key, t0, Double.NaN, Outcome.DEAD_AT_T0, phase, Double.NaN);
+        }
+        LatencyRig rig = new LatencyRig(su.args, su.scenario.direction(), su.scenario.direction(), su.seed,
+            tickPhase(su.seed));
+        long s = rig.runUntilPlaying(LatencyRig.START + SPAWN_LIMIT);
+        if (s != spawn) {
+            counts[2]++;
+        }
+        ServerTruth truth = new ServerTruth(rig.client.connection().playerId());
+        long mask = key.mask();
+        boolean thrust = key == ControlKey.THRUST;
+        rig.setKeys(t -> (shots ? shotCourseKeys(course, t - spawn) : course.keys(t - spawn)) | (t >= t0 ? mask : 0));
+        int[] changed = {-1};
+        long[] found = {-1};
+        long[] moved = {-1};
+        long[] selfAt = {-1};
+        boolean[] shotAlive = {false};
+        boolean[] unseen = {false};
+        boolean[] visible = {false};
+        boolean[] died = {false};
+        double[] at = new double[2];
+        rig.onTick = (r, t) -> {
+            int tick = r.server.net.currentTick();
+            truth.record(r.server.world(), tick);
+            if (changed[0] >= 0) {
                 if (shots) {
-                    if (changed[0] >= 0 && !shotAlive[0]) {
-                        r.stop(); // the press's shot died in its first tick: nothing to see
+                    truth.followPressShot(r.server.world(), tick);
+                }
+            } else if (t >= t0 && tick <= baseTruth.lastTick()) {
+                boolean differs = shots ? truth.shotTimeDiffers(baseTruth, tick)
+                    : thrust ? truth.velocityDiffers(baseTruth, tick) : truth.headingDiffers(baseTruth, tick);
+                if (differs) {
+                    changed[0] = tick;
+                    if (shots) {
+                        shotAlive[0] = truth.moreShots(baseTruth, tick);
+                        truth.startPressShot(r.server.world(), tick);
+                    }
+                }
+            }
+        };
+        rig.onFrame = (r, t) -> {
+            int frame = (int) r.frames() - 1;
+            ClientWorld w = r.world();
+            if (t < t0) {
+                if (!trace.same(frame, w)) {
+                    counts[0]++;
+                }
+                return;
+            }
+            if (!(w.hasSelf() && w.selfPlaying())) {
+                if (found[0] < 0) {
+                    died[0] = true;
+                }
+                r.stop();
+                return;
+            }
+            if (shots) {
+                if (changed[0] >= 0 && !shotAlive[0]) {
+                    r.stop(); // the press's shot died in its first tick: nothing to see
+                    return;
+                }
+                if (selfAt[0] < 0 && changed[0] >= 0 && w.selfDrawnFromTick() - changed[0] >= 0) {
+                    selfAt[0] = t;
+                }
+                if (found[0] < 0 && changed[0] >= 0) {
+                    double rt = w.renderTick();
+                    if (truth.pressShotAt(rt, w.worldWidth(), w.worldHeight(), w.wraps(), at)) {
+                        if (drawsShotAt(w, at[0], at[1], SHOT_MATCH_PX)) {
+                            found[0] = t;
+                            visible[0] = w.newestTick() - changed[0] >= 0;
+                        }
+                    } else if (truth.pressDied() >= 0 && Math.floor(rt) >= truth.pressDied()) {
+                        unseen[0] = true; // the render tick passed the press's shot's life without drawing it
+                        r.stop();
                         return;
                     }
-                    if (selfAt[0] < 0 && changed[0] >= 0 && w.selfDrawnFromTick() - changed[0] >= 0) {
-                        selfAt[0] = t;
-                    }
-                    if (found[0] < 0 && frame < trace.n && nearShots(w) > trace.nearShots[frame]) {
-                        found[0] = t;
-                        visible[0] = changed[0] >= 0 && w.newestTick() - changed[0] >= 0;
-                    }
-                    if (found[0] >= 0 && selfAt[0] >= 0) {
-                        r.stop();
-                    }
-                    return;
                 }
-                if (thrust && moved[0] < 0 && frame < trace.n && MotionMetrics.distance(w.selfX(), w.selfY(),
-                    trace.x[frame], trace.y[frame], w.worldWidth(), w.worldHeight(), w.wraps()) > POSITION_PX) {
-                    moved[0] = t;
-                }
-                if (found[0] < 0 && changed[0] >= 0 && w.selfDrawnFromTick() - changed[0] >= 0) {
-                    found[0] = t;
-                    visible[0] = frame < trace.n && (thrust
-                        ? (w.selfFlags() & Records.ShipFlags.THRUSTING) != 0
-                            && (trace.flags[frame] & Records.ShipFlags.THRUSTING) == 0
-                        : w.selfHeading() != trace.heading[frame]);
-                }
-                if (found[0] >= 0 && (!thrust || moved[0] >= 0)) {
+                if (found[0] >= 0 && selfAt[0] >= 0) {
                     r.stop();
                 }
-            };
-            rig.runUntil(t0 + WINDOW_MS * MS);
-            if (shots && changed[0] >= 0 && !shotAlive[0]) {
-                out.add(new Trial(key, t0, Double.NaN, Outcome.SHOT_DIED, phase, Double.NaN));
-            } else if (died[0]) {
-                out.add(new Trial(key, t0, Double.NaN, Outcome.DIED, phase, Double.NaN));
-            } else if (found[0] < 0 || shots && changed[0] < 0) {
-                // nothing shown in the window, or (fire) the press never made a server shot
-                out.add(new Trial(key, t0, Double.NaN, Outcome.NO_DEPARTURE, phase, Double.NaN));
-            } else {
-                out.add(new Trial(key, t0, (found[0] - t0) / 1e6, Outcome.MEASURED, phase,
-                    moved[0] < 0 ? Double.NaN : (moved[0] - t0) / 1e6, selfAt[0] < 0 ? Double.NaN : (selfAt[0] - t0) / 1e6));
-                if (!visible[0]) {
-                    counts[1]++;
-                }
+                return;
+            }
+            if (thrust && moved[0] < 0 && frame < trace.n && MotionMetrics.distance(w.selfX(), w.selfY(),
+                trace.x[frame], trace.y[frame], w.worldWidth(), w.worldHeight(), w.wraps()) > POSITION_PX) {
+                moved[0] = t;
+            }
+            if (found[0] < 0 && changed[0] >= 0 && w.selfDrawnFromTick() - changed[0] >= 0) {
+                found[0] = t;
+                visible[0] = frame < trace.n && (thrust
+                    ? (w.selfFlags() & Records.ShipFlags.THRUSTING) != 0
+                        && (trace.flags[frame] & Records.ShipFlags.THRUSTING) == 0
+                    : w.selfHeading() != trace.heading[frame]);
+            }
+            if (found[0] >= 0 && (!thrust || moved[0] >= 0)) {
+                r.stop();
+            }
+        };
+        rig.runUntil(t0 + WINDOW_MS * MS);
+        if (shots && changed[0] >= 0 && !shotAlive[0]) {
+            return new Trial(key, t0, Double.NaN, Outcome.SHOT_DIED, phase, Double.NaN);
+        }
+        if (died[0]) {
+            return new Trial(key, t0, Double.NaN, Outcome.DIED, phase, Double.NaN);
+        }
+        if (unseen[0]) {
+            return new Trial(key, t0, Double.NaN, Outcome.SHOT_UNSEEN, phase, Double.NaN);
+        }
+        if (found[0] < 0 || shots && changed[0] < 0) {
+            // nothing shown in the window, or (fire) the press never made a server shot
+            return new Trial(key, t0, Double.NaN, Outcome.NO_DEPARTURE, phase, Double.NaN);
+        }
+        if (!visible[0]) {
+            counts[1]++;
+        }
+        return new Trial(key, t0, (found[0] - t0) / 1e6, Outcome.MEASURED, phase,
+            moved[0] < 0 ? Double.NaN : (moved[0] - t0) / 1e6, selfAt[0] < 0 ? Double.NaN : (selfAt[0] - t0) / 1e6);
+    }
+
+    /** BEHAVIOR: true when the frame draws a shot (the drawn list SceneFiller paints) within {@code px} of (x, y). */
+    static boolean drawsShotAt(ClientWorld w, double x, double y, double px) {
+        for (int i = 0; i < w.shotCount(); i++) {
+            if (MotionMetrics.distance(w.shotX(i), w.shotY(i), x, y, w.worldWidth(), w.worldHeight(), w.wraps()) <= px) {
+                return true;
             }
         }
+        return false;
     }
 
     /** The server tick grid's offset from the frame grid: varies with the seed, fixed per run. */

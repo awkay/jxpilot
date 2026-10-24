@@ -55,9 +55,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("latency baseline (phase 0)")
 class LatencyBaselineTest {
     static final int TRIALS = Integer.getInteger("jxpilot.latency.trials", 48);
-    /** Seeds 1-3 measured clean shot means RTT + 133.4..142.1 ms and p95 at most RTT + 171 ms. */
-    static final int SHOT_LO = 120;
-    static final int SHOT_HI = 150;
+    /** Seeds 1-3 measured clean shot means RTT + 137.6..138.2 ms and p95 at most RTT + 167 ms. */
+    static final int SHOT_LO = 130;
+    static final int SHOT_HI = 148;
     static final int SHOT_P95 = 190;
     static final int SHOT_TRIALS = Integer.getInteger("jxpilot.latency.shotTrials", 24);
     static final int MOTION_SECONDS = Integer.getInteger("jxpilot.latency.seconds", 60);
@@ -117,17 +117,16 @@ class LatencyBaselineTest {
             checks.add(() -> assertEquals(0, sh.count(InputToPhoton.Outcome.NO_DEPARTURE), cell
                 + "shots: every press fired a server shot that was drawn within 2 s"));
             long shotLost = sh.count(InputToPhoton.Outcome.DEAD_AT_T0) + sh.count(InputToPhoton.Outcome.DIED)
-                + sh.count(InputToPhoton.Outcome.SHOT_DIED);
-            // on the walls course a press often fires into the box's wall (the shot dies in its first tick), and the
-            // unshielded ship crashes now and then: seeds 1-3 lost up to 8 of 24 there
-            checks.add(() -> assertTrue(shotLost * 5 <= sh.trials().size() * 2, cell
-                + "shots: at most 40% of the presses lost to a crash or a shot into a wall: " + shotLost));
+                + sh.count(InputToPhoton.Outcome.SHOT_DIED) + sh.count(InputToPhoton.Outcome.SHOT_UNSEEN);
+            // lost presses are retried in their stratum (up to 3 times); seeds 1-3 lost none after the retries
+            checks.add(() -> assertTrue(shotLost * 24 <= sh.trials().size(), cell
+                + "shots: at most 1 in 24 presses still lost after the retries: " + shotLost));
         }
         assertAll(checks);
     }
 
     @Test
-    @DisplayName("shot I2P: on clean links mean RTT + 120..150 ms, p95 at most RTT + 190 ms, never under RTT + 91 ms;"
+    @DisplayName("shot I2P: on clean links mean RTT + 130..148 ms, p95 at most RTT + 190 ms, never under RTT + 91 ms;"
         + " each shot drawn 11-12 frames (the interpolation delay) after its own-ship SELF")
     void shotI2p() {
         List<Executable> checks = new ArrayList<>();

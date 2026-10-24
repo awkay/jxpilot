@@ -326,6 +326,42 @@ class HarnessPartsTest {
         }
 
         @Test
+        @DisplayName("the press's shot: interpolated while it lives at both ticks, held where its last tick had it,"
+            + " none before it is fired or after it died")
+        void pressShot() {
+            ServerTruth t = new ServerTruth(1);
+            int born0 = t.pressBorn();
+            t.putPress(10, 100, 50, true);
+            t.putPress(11, 120, 50, true);
+            t.putPress(12, 140, 60, true);
+            t.putPress(13, 0, 0, false);
+            double[] out = new double[2];
+            boolean mid = t.pressShotAt(10.25, 1000, 1000, false, out);
+            double mx = out[0];
+            boolean last = t.pressShotAt(12.5, 1000, 1000, false, out);
+            double lx = out[0];
+            double ly = out[1];
+            ServerTruth wrap = new ServerTruth(1);
+            wrap.putPress(5, 995, 0, true);
+            wrap.putPress(6, 15, 0, true);
+            boolean w = wrap.pressShotAt(5.5, 1000, 1000, true, out);
+            double wx = out[0];
+            assertAll(
+                () -> assertEquals(-1, born0, "not fired yet"),
+                () -> assertEquals(10, t.pressBorn(), "fired at 10"),
+                () -> assertEquals(13, t.pressDied(), "dead from 13"),
+                () -> assertTrue(mid, "alive at 10 and 11"),
+                () -> assertEquals(105, mx, 1e-12, "a quarter of the way from 100 to 120"),
+                () -> assertTrue(last, "alive at 12, dead at 13"),
+                () -> assertEquals(140, lx, 1e-12, "held where tick 12 had it (died before 13)"),
+                () -> assertEquals(60, ly, 1e-12, "y too"),
+                () -> assertFalse(t.pressShotAt(9.5, 1000, 1000, false, out), "none before it was fired"),
+                () -> assertFalse(t.pressShotAt(13.2, 1000, 1000, false, out), "none once dead"),
+                () -> assertTrue(w, "across the wrap"),
+                () -> assertEquals(1005, wx, 1e-12, "995 -> 15 across the edge: halfway is 1005 (= 5)"));
+        }
+
+        @Test
         @DisplayName("fire: the last fire frame differs, and live shots compare, for the own player")
         void fired() {
             ServerTruth a = new ServerTruth(1);
