@@ -409,5 +409,27 @@ class TuningTest {
                 () -> assertEquals(8, live.initialItems[2], "unchanged element"),
                 () -> assertSame(live.initialItems, live.initialItems, "the live array is kept"));
         }
+
+        @Test
+        @DisplayName("H1: robotTeam outside 0..9 becomes 0 (Robot_init's clamp); robots and Pick_team keep working")
+        void robotTeamClamp() {
+            Fx f = new Fx("teamPlay: yes\nmaxRobots: 2\n", HostFx.TEAMS);
+            int r = f.t.tune("robotTeam", "10");
+            String shown = f.get("robotTeam");
+            f.s.robots.setEnabled(true);
+            for (int i = 0; i < 200; i++) {
+                f.s.robots.update();
+            }
+            f.t.tune("robotTeam", "-1");
+            int neg = f.w.params.robotTeam;
+            f.t.tune("robotTeam", "2");
+            assertAll(
+                () -> assertEquals(Tuning.OK, r, "accepted"),
+                () -> assertEquals("0", shown, "shown as 0"),
+                () -> assertEquals(0, neg, "-1 too"),
+                () -> assertEquals(2, f.w.params.robotTeam, "a valid team is kept"),
+                () -> assertTrue(f.s.robots.numRobots() > 0, "robots joined"),
+                () -> assertTrue(f.s.ships.pickTeam(null) >= 0, "Pick_team works"));
+        }
     }
 }

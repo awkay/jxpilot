@@ -309,7 +309,8 @@ final class Tuning {
      * worldLives, wormTime, mineLife and missileLife below 0 become 0; cannonSmartness is limited to 0..3; the
      * item probabilities of {@code Set_misc_item_limits} to [0, 1], itemConcentratorRadius to [1, diagonal in
      * blocks] and asteroidMaxItems to at least 0; real names get C {@code Fix_real_name}, host names
-     * {@code Fix_host_name}.
+     * {@code Fix_host_name}; a robotTeam outside 0..9 becomes 0 (Robot_init's clamp; C's dummy tuner leaves it
+     * out of range and indexes past its team table).
      */
     void fixValues(Tuner t, Opt o) {
         switch (t) {
@@ -365,6 +366,12 @@ final class Tuning {
             case REAL_NAME -> opts.force(o, fixRealName(opts.getString(o)));
             case HOST_NAME -> opts.force(o, fixHostName(opts.getString(o)));
             default -> { }
+        }
+        if (o == Opt.ROBOT_TEAM) {
+            int team = opts.getInt(o);
+            if (team < 0 || team >= Const.MAX_TEAMS) {
+                writeBack(o, 0); // Robot_init's clamp (robot.c:601); C indexes World.teams out of range here
+            }
         }
     }
 
