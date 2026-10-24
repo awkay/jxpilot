@@ -581,6 +581,10 @@ public final class GameApp {
         }
     }
 
+    /** The view centre the sliding radar was last drawn at. */
+    private double slideX;
+    private double slideY;
+
     private void radar(double ratio, int fbH, long loops) {
         float left = 0;
         float top = fbH;
@@ -592,7 +596,11 @@ public final class GameApp {
         dyn.identity();
         radarPainter.begin(left, bottom, right, top, radarHeight, map.pixelWidth(), map.pixelHeight(), map.edgeWrap());
         if (frame.options().flag(com.fulcrologic.jxpilot.client.game.options.ClientOption.SLIDING_RADAR)) {
-            radarPainter.slide(frame.centreX(), frame.centreY());
+            if (frame.scene().damaged <= 0) { // damaged: the radar is frozen where it was last drawn (C Paint_radar)
+                slideX = frame.centreX();
+                slideY = frame.centreY();
+            }
+            radarPainter.slide(slideX, slideY);
         }
         radarPainter.picture(dyn, u0, 0, u1, v1, palette.color(Palette.WHITE));
         RadarBlips r = frame.radar();

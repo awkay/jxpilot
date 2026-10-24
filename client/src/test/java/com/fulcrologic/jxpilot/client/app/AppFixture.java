@@ -164,11 +164,27 @@ final class AppFixture {
         return this;
     }
 
+    /** A SELF record of player {@code id}: the ship we look through when it is not our own. */
+    AppFixture selfOf(int id, int flags, float x, float y, float heading) {
+        w.beginSection(Section.SELF);
+        Records.Self.put(w, id, flags, x, y, 0, 0, heading, 700, 1000, 0xFFFF, 0, 0, 0);
+        w.endSection();
+        return this;
+    }
+
     /** A SELF at (350, 175) with the appended fields: power, turn speed, lock distance/direction and modifiers. */
     AppFixture selfControls(int power, int turnSpeed, int lockId, int lockDist, int lockDir, int mods) {
         w.beginSection(Section.SELF);
         Records.Self.put(w, SELF, 0, 350, 175, 0, 0, 0, 700, 1000, lockId, 0, 0, 0, power, turnSpeed, 0.12,
             lockDist, lockDir, 0, mods);
+        w.endSection();
+        return this;
+    }
+
+    /** A TIMERS record with {@code frames} of ECM damage left and nothing else. */
+    AppFixture damaged(int frames) {
+        w.beginSection(Section.TIMERS);
+        Records.Timers.put(w, frames, 0, -1);
         w.endSection();
         return this;
     }

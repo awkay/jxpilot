@@ -417,7 +417,10 @@ public final class SnapshotBuilder {
             if (!visible(x, y, 0) || !need(Section.SHIP, 0)) {
                 continue;
             }
-            Records.Ship.put(wr, pl.id, shipFlags(pl, v), x, y, heading(pl), pl.vx, pl.vy);
+            boolean paused = (pl.status & Obj.PAUSE) != 0;
+            // a paused ship is still, so its vx carries C's pause count (Send_paused(.., pl->count)), as on the XP path
+            Records.Ship.put(wr, pl.id, shipFlags(pl, v), x, y, heading(pl), paused ? Math.max(0, pl.count) : pl.vx,
+                paused ? 0 : pl.vy);
         }
     }
 

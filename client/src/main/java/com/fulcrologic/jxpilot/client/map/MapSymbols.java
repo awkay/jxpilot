@@ -420,8 +420,11 @@ public final class MapSymbols {
         for (int i = 0; i < fuels.size(); i++) {
             FuelStation f = fuels.get(i);
             if (!style.texturedObjects && visible(cam, f.bx(), f.by(), k)) {
-                int c = fuelCoversCentre(st.fuel(i)) ? black : red;
-                centredChar(b, text, 'F', cam.screenX(f.bx() * S + HALF, k), cam.screenY(f.by() * S + HALF, k), c);
+                // C XORs the F over the bar: black where it overlaps it, red above (the bar is full width)
+                float barTop = cam.screenY(f.by() * S + fuelBarTop(st.fuel(i)), k);
+                float x = cam.screenX(f.bx() * S + HALF, k) - (int) text.width('F') / 2;
+                float base = cam.screenY(f.by() * S + HALF, k) - (int) text.font().ascent() / 2;
+                text.drawSplit(b, 'F', x, base, barTop, black, red);
             }
         }
         List<Base> bases = map.bases();
@@ -471,12 +474,9 @@ public final class MapSymbols {
         return (int) ((S - 2 * FUEL_BORDER) * fuel / Const.MAX_STATION_FUEL);
     }
 
-    /**
-     * True when the fuel bar reaches the block centre. The C client XORs the "F" over the bar, so it
-     * shows black on the bar and red above it; we pick one colour by the centre.
-     */
-    static boolean fuelCoversCentre(double fuel) {
-        return FUEL_BORDER + 1 + fuelHeight(fuel) >= S / 2f;
+    /** The bar's top edge above the block's bottom, in world pixels (see {@link #fuelBar}: it spans up to y + 3 + h). */
+    static int fuelBarTop(double fuel) {
+        return FUEL_BORDER + 1 + fuelHeight(fuel);
     }
 
     /**

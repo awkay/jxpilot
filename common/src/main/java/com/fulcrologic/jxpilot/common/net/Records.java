@@ -335,7 +335,9 @@ public final class Records {
 
     /**
      * Another ship. {@code 0 u16 id, 2 u16 flags, 4 rel x, 6 rel y, 8 u16 heading, 10 i16 vx, 12 i16 vy}
-     * (velocities in 1/16 px/frame). Team, name and shape come from {@link Msg.PlayerJoin}.
+     * (velocities in 1/16 px/frame). A PAUSED ship is still: its vx carries C's pause count
+     * ({@code Send_paused(.., pl->count)}, frames left; the client blinks the P while it is above 0) and its vy is 0.
+     * Team, name and shape come from {@link Msg.PlayerJoin}.
      */
     public static final class Ship extends Fly {
         public static final int SIZE = 14;

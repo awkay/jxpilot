@@ -201,6 +201,77 @@ class ClientWorldTest {
         }
 
         @Test
+        @DisplayName("watching another player: our own (paused) ship is in the ship list; the watched one (SELF) is not")
+        void ownShipListedWhileWatching() {
+            WorldFixture f = new WorldFixture(true);
+            f.world.setInterpolationDelayTicks(0);
+            f.players.setSelfId(7);
+            f.begin(100).self(9, 0, 100, 100, 0, 0, 0).ship(7, ShipFlags.PAUSED, 300, 100, 0, 5, 0)
+                .ship(9, 0, 100, 100, 0, 0, 0).ingestAtTick(100);
+            f.begin(101).self(9, 0, 100, 100, 0, 0, 0).ship(7, ShipFlags.PAUSED, 300, 100, 0, 4, 0).ingestAtTick(101);
+            f.world.update(at(100.5));
+            int n = f.world.shipCount();
+            int own = n > 0 && f.world.shipId(0) == 7 ? 0 : -1;
+            WorldFixture plain = new WorldFixture(true);
+            plain.world.setInterpolationDelayTicks(0);
+            plain.players.setSelfId(7);
+            plain.begin(100).self(7, 0, 100, 100, 0, 0, 0).ship(8, 0, 300, 100, 0, 0, 0).ingestAtTick(100);
+            plain.begin(101).self(7, 0, 100, 100, 0, 0, 0).ship(8, 0, 300, 100, 0, 0, 0).ingestAtTick(101);
+            plain.world.update(at(100.5));
+            assertAll(
+                () -> assertEquals(1, n, "one ship drawn from the list: ours (the watched id 9 is SELF)"),
+                () -> assertEquals(0, own, "it is our own id 7, paused, at its place"),
+                () -> assertEquals(300.0, f.world.shipX(0), CLOCK_EPS, "where it was sent"),
+                () -> assertEquals(1, plain.world.shipCount(), "not watching: the ships are the others"),
+                () -> assertEquals(8, plain.world.shipId(0), "not watching: our own id never appears in the list"));
+        }
+
+        @Test
+        @DisplayName("a new shot is seeded from the nearest ship's velocity, but a paused ship (vx = count) is still")
+        void seedIgnoresPauseCount() {
+            WorldFixture f = new WorldFixture(true);
+            SnapshotFrame pausedNear = new SnapshotFrame(4, 4);
+            SnapshotFrame flyingNear = new SnapshotFrame(4, 4);
+            for (SnapshotFrame a : new SnapshotFrame[] {pausedNear, flyingNear}) {
+                a.ships = 1;
+                a.shipId[0] = 9;
+                a.shipX[0] = 100;
+                a.shipY[0] = 100;
+                a.shipVx[0] = 8; // the pause count when paused, a velocity otherwise
+                a.shipVy[0] = 0;
+                a.shots = 1;
+                a.shotX[0] = 110;
+                a.shotY[0] = 100;
+                a.shotState[0] = Tracker.UNKNOWN;
+            }
+            pausedNear.shipFlags[0] = ShipFlags.PAUSED;
+            f.world.seedShots(pausedNear, 1);
+            f.world.seedShots(flyingNear, 1);
+            float shotSpeed = flyingNear.shotEstVx[0] - 8; // heading 0: ship vx + shotSpeed
+            assertAll(
+                () -> assertEquals(Tracker.GUESSED, flyingNear.shotState[0], "(the shot was seeded)"),
+                () -> assertTrue(shotSpeed > 0, "(a flying ship adds its velocity: " + shotSpeed + ")"),
+                () -> assertEquals(Tracker.GUESSED, pausedNear.shotState[0], "a paused ship seeds the shot too"),
+                () -> assertEquals(shotSpeed, pausedNear.shotEstVx[0], 1e-4f, "but adds no velocity: its vx is a count"),
+                () -> assertEquals(0f, pausedNear.shotEstVy[0], 1e-4f, "heading 0: no y speed"));
+        }
+
+        @Test
+        @DisplayName("a paused ship's vx is its pause count, not motion: it stays put and keeps the count")
+        void pausedShipStays() {
+            WorldFixture f = new WorldFixture(true);
+            f.world.setInterpolationDelayTicks(0);
+            f.begin(100).ship(9, ShipFlags.PAUSED, 100, 100, 0, 8, 0).ship(10, 0, 200, 100, 0, 8, 0).ingestAtTick(100);
+            f.world.update(at(110));
+            int paused = f.world.shipId(0) == 9 ? 0 : 1;
+            int flying = 1 - paused;
+            assertAll(
+                () -> assertEquals(100.0, f.world.shipX(paused), CLOCK_EPS, "the paused ship is not moved by its count"),
+                () -> assertEquals(8f, f.world.shipVx(paused), "the count survives to the scene"),
+                () -> assertEquals(208.0, f.world.shipX(flying), CLOCK_EPS, "a flying ship with the same vx does move"));
+        }
+
+        @Test
         @DisplayName("the own ship is drawn at the render tick: the later SELF as is, the latest extrapolated (capped)")
         void self() {
             WorldFixture f = new WorldFixture(true);
