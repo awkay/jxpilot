@@ -58,7 +58,7 @@ class SimGameHostEventsTest {
 
     static String join(Player p, int flags) {
         return "JOIN " + p.id + " team=" + (p.team < 0 ? 255 : p.team) + " flags=" + flags + " power=" + p.power
-            + " ab=0 name=" + p.name + " shape=";
+            + " ab=0 name=" + p.name + " shape=" + p.ship.wire;
     }
 
     @Nested
@@ -246,7 +246,8 @@ class SimGameHostEventsTest {
             assertAll(
                 () -> assertEquals(bob, res, "Res holds Bob's id but is not in the game"),
                 () -> assertEquals(List.of("LEAVE 2", "LEAVE 3", join(ann, Msg.PlayerJoin.FLAG_SELF), "BASE " + ann.homeBase + " 1",
-                    "SCORE 1 0.0 lives=-1 status=0"), got, "leaves for Bob and Cid, then the state; no lost event is replayed"),
+                    "SCORE 1 0.0 lives=-1 status=0", "ALLIANCE 1 ' '"), got,
+                    "leaves for Bob and Cid, then the state (every alliance mark); no lost event is replayed"),
                 () -> assertEquals(List.of(), after, "the cursor continues from the newest event"));
         }
 
@@ -267,7 +268,8 @@ class SimGameHostEventsTest {
                 w.events.add(Events.TEAM_SCORE, 1, 0, 0, i);
             }
             h.drainEvents(ann.id, a.out);
-            assertEquals(List.of(join(ann, Msg.PlayerJoin.FLAG_SELF), "BASE " + ann.homeBase + " 1", "SCORE 1 0.0 lives=-1 status=0"),
+            assertEquals(List.of(join(ann, Msg.PlayerJoin.FLAG_SELF), "BASE " + ann.homeBase + " 1", "SCORE 1 0.0 lives=-1 status=0",
+                    "ALLIANCE 1 ' '"),
                 a.take(), "only the state: Bob was already announced as gone");
         }
 
@@ -295,7 +297,8 @@ class SimGameHostEventsTest {
             assertAll(
                 () -> assertEquals(ann, cid, "Cid has Ann's old viewer id"),
                 () -> assertEquals(List.of(join(cp, Msg.PlayerJoin.FLAG_SELF), "BASE " + cp.homeBase + " " + cid,
-                    "SCORE " + cid + " 0.0 lives=-1 status=0"), c.take(), "no PLAYER_LEAVE for Bob, whom Cid never saw"));
+                    "SCORE " + cid + " 0.0 lives=-1 status=0", "ALLIANCE " + cid + " ' '"), c.take(),
+                    "no PLAYER_LEAVE for Bob, whom Cid never saw"));
         }
 
         @Test

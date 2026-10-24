@@ -124,7 +124,8 @@ public final class Locks {
 
     /** C {@code visibility[].canSee} with the team, alliance and own-tank exceptions of the frame code. */
     public boolean sees(Player viewer, Player target) {
-        return viewer.canSee[target.slot] || viewer == target || w.sameTeam(viewer, target) || ownsTank(viewer, target);
+        return viewer.canSee[target.slot] || viewer == target || w.sameTeam(viewer, target) || ownsTank(viewer, target)
+            || w.allied(viewer, target);
     }
 
     /** C {@code OWNS_TANK(i, j)}: {@code tank} is a tank released by {@code pl}. */
@@ -197,7 +198,7 @@ public final class Locks {
      * C {@code Player_lock_closest}: lock on the closest allowed playing player farther than the current lock
      * ({@code next}), or the closest at all.
      * <p>
-     * BEHAVIOR: own tanks and team mates are skipped. Returns false (the lock is cleared unless {@code next})
+     * BEHAVIOR: own tanks, team mates and allies are skipped. Returns false (the lock is cleared unless {@code next})
      * when nobody qualifies.
      */
     public boolean lockClosest(Player pl, boolean next) {
@@ -217,7 +218,7 @@ public final class Locks {
         for (int k = 0; k < w.numPlayers; k++) {
             Player p = w.playerAt(k);
             if (p == lock || (p.status & (Obj.PLAYING | Obj.PAUSE | Obj.GAME_OVER)) != Obj.PLAYING
-                || !lockAllowed(pl, p) || ownsTank(pl, p) || w.sameTeam(pl, p)) {
+                || !lockAllowed(pl, p) || ownsTank(pl, p) || w.sameTeam(pl, p) || w.allied(pl, p)) {
                 continue;
             }
             float l = w.wrapLength(p.px - pl.px, p.py - pl.py);
@@ -343,7 +344,7 @@ public final class Locks {
             return;
         }
         if ((!w.items.limitedVisibility || pl.lockDistance <= pl.sensorRange)
-            && (pl.canSee[t.slot] || ownsTank(pl, t) || w.sameTeam(pl, t))
+            && (pl.canSee[t.slot] || ownsTank(pl, t) || w.sameTeam(pl, t) || w.allied(pl, t))
             && (t.status & (Obj.PLAYING | Obj.GAME_OVER)) == Obj.PLAYING
             && (w.items.playersOnRadar || inView(pl, t))
             && pl.lockDistance != 0) {

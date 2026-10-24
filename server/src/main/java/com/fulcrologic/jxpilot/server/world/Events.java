@@ -83,6 +83,12 @@ public final class Events {
      * checkpoint to pass (C {@code check}), c = laps started (C {@code round}).
      */
     public static final int TIMING = 20;
+    /**
+     * server-commands: a player's alliance changed (C {@code Update_score_table} resends the score when
+     * {@code alliance != prev_alliance}): a = player id, b = the alliance id or {@code Player.ALLIANCE_NOT_SET}.
+     * The host turns it into the viewer's alliance mark (C {@code Send_score}'s alliance character).
+     */
+    public static final int ALLIANCE = 31;
 
     // ---- KILL causes (server-internal: {@link #cause}, never on the wire). They decide C's robot reaction.
     /**

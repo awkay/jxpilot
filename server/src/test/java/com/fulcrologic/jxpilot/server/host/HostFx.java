@@ -202,6 +202,11 @@ final class HostFx {
                 m.read(p);
                 yield "SCORE " + m.id + " " + m.score + " lives=" + m.lives + " status=" + m.status;
             }
+            case ReliableType.PLAYER_ALLIANCE -> {
+                Msg.PlayerAlliance m = new Msg.PlayerAlliance();
+                m.read(p);
+                yield "ALLIANCE " + m.id + " '" + m.mark + "'";
+            }
             case ReliableType.TEAM_SCORE -> {
                 Msg.TeamScore m = new Msg.TeamScore();
                 m.read(p);
@@ -257,6 +262,7 @@ final class HostFx {
                 case Events.GAME_EVENT -> "GAME_EVENT";
                 case Events.THRUST -> "THRUST";
                 case Events.SCORE_OBJECT -> "SCORE_OBJECT";
+                case Events.ALLIANCE -> "ALLIANCE";
                 default -> "?" + e.kind[i];
             };
             String line = k + " " + e.a[i] + " " + e.b[i] + " " + e.c[i];

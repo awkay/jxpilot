@@ -68,6 +68,7 @@ public final class XpTranslator {
     private final Msg.PlayerJoin join = new Msg.PlayerJoin();
     private final Msg.PlayerLeave leave = new Msg.PlayerLeave();
     private final Msg.Score score = new Msg.Score();
+    private final Msg.PlayerAlliance allianceMsg = new Msg.PlayerAlliance();
     private final Msg.TeamScore teamScore = new Msg.TeamScore();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
     private final Msg.Text text = new Msg.Text();
@@ -804,7 +805,7 @@ public final class XpTranslator {
         join.name.setLength(0);
         join.name.append(name);
         join.shape.setLength(0);
-        join.shape.append(shape, 0, Math.min(shape.length(), Msg.MAX_SHAPE_LEN * 2));
+        join.shape.append(shape, 0, Math.min(shape.length(), Msg.MAX_SHAPE_LEN));
         deliver(join, ReliableType.PLAYER_JOIN);
     }
 
@@ -838,6 +839,17 @@ public final class XpTranslator {
             nameChar[s] = (char) mychar;
         }
         deliver(score, ReliableType.SCORE);
+    }
+
+    /**
+     * server-commands: the alliance character of C {@code Handle_score} (blank before 0x4500) as PLAYER_ALLIANCE.
+     * <p>
+     * BEHAVIOR: delivers the id and the mark as received.
+     */
+    public void alliance(int id, char mark) {
+        allianceMsg.id = id & 0xFFFF;
+        allianceMsg.mark = mark;
+        deliver(allianceMsg, ReliableType.PLAYER_ALLIANCE);
     }
 
     /**

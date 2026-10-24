@@ -338,13 +338,7 @@ public final class Params {
         wallBounceExplosionMult = (float) StrictMath.sqrt(wallBounceFuelDrainMult);
 
         killingShots = playerKillings ? Obj.KILLING_SHOTS : 0;
-        objCannonMask = killingShots | Obj.MINE | Obj.SHOT | Obj.PULSE | Obj.SMART_SHOT | Obj.TORPEDO
-            | Obj.HEAT_SHOT | Obj.ASTEROID;
-        if (cannonsUseItems) {
-            objCannonMask |= Obj.ITEM;
-        }
-        objTargetMask = objCannonMask | Obj.BALL | Obj.SPARK;
-        objTreasureMask = objBounceMask | Obj.BALL | Obj.PULSE;
+        resolveMasks();
 
         int have = Has.DEF_HAVE;
         have = grant(have, Item.CLOAK, Has.CLOAKING_DEVICE);
@@ -368,6 +362,22 @@ public final class Params {
         if (minRobots == -1) {
             minRobots = maxRobots;
         }
+    }
+
+    /**
+     * The crash masks of C {@code Move_init} from {@link #killingShots}, {@link #cannonsUseItems} and
+     * {@link #objBounceMask} (also run on its own when an operator's {@code /set} runs Move_init).
+     * <p>
+     * BEHAVIOR: see {@link #resolve}.
+     */
+    public void resolveMasks() {
+        objCannonMask = killingShots | Obj.MINE | Obj.SHOT | Obj.PULSE | Obj.SMART_SHOT | Obj.TORPEDO
+            | Obj.HEAT_SHOT | Obj.ASTEROID;
+        if (cannonsUseItems) {
+            objCannonMask |= Obj.ITEM;
+        }
+        objTargetMask = objCannonMask | Obj.BALL | Obj.SPARK;
+        objTreasureMask = objBounceMask | Obj.BALL | Obj.PULSE;
     }
 
     private int grant(int have, Item item, int bit) {

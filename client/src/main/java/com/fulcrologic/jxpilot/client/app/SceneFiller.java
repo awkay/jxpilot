@@ -265,16 +265,23 @@ public final class SceneFiller {
      * C {@code Gui_calculate_ship_color}'s friend test.
      * <p>
      * BEHAVIOR: true when the server marked the ship FRIENDLY, or in team play when both the ship's player
-     * and the own player are known and on the same team (not {@link Protocol#NO_TEAM}).
+     * and the own player are known and on the same team (not {@link Protocol#NO_TEAM}), or when both have the
+     * same non-blank alliance mark (C guiobjects.c:680-684).
      */
     static boolean friendly(int flags, Players p, int slot, boolean teamPlay) {
         if ((flags & Records.ShipFlags.FRIENDLY) != 0) {
             return true;
         }
-        if (!teamPlay || slot < 0) {
+        if (slot < 0) {
             return false;
         }
         int self = p.slotOf(p.selfId());
+        if (self >= 0 && p.alliance(self) != ' ' && p.alliance(self) == p.alliance(slot)) {
+            return true;
+        }
+        if (!teamPlay) {
+            return false;
+        }
         return self >= 0 && p.team(slot) != Protocol.NO_TEAM && p.team(slot) == p.team(self);
     }
 

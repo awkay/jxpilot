@@ -233,22 +233,8 @@ public final class Tanks {
     /** C {@code TANK_THRUST_FACT} (a double: {@code power *= 0.7} rounds the double product to float). */
     static final double TANK_THRUST_FACT = 0.7;
 
-    /** The tank ship (C {@code tankShipShape}), parsed once. */
-    private com.fulcrologic.jxpilot.server.world.ShipGeom tankShip;
-
     /** Wired by the simulation (detaching a tank logs in a pseudo player). */
     Simulation sim;
-
-    private com.fulcrologic.jxpilot.server.world.ShipGeom tankShip() {
-        if (tankShip == null) {
-            String s = w.options.getString(com.fulcrologic.jxpilot.common.config.Opt.TANK_SHIP_SHAPE);
-            com.fulcrologic.jxpilot.common.math.ShipShape shape =
-                com.fulcrologic.jxpilot.common.math.ShipShape.parse(s == null ? "" : s);
-            tankShip = shape == null ? com.fulcrologic.jxpilot.server.world.ShipGeom.defaultShip()
-                : new com.fulcrologic.jxpilot.server.world.ShipGeom(shape);
-        }
-        return tankShip;
-    }
 
     /**
      * C {@code Tank_handle_detach} (KEY_TANK_DETACH; heat-seekers chase the tank instead of the ship).
@@ -256,7 +242,7 @@ public final class Tanks {
      * BEHAVIOR: nothing while phased, without tanks, or when no pseudo player slot or id is free.
      * BEHAVIOR: the current extra tank (the last one when the main tank is current) leaves as a pseudo player
      * "NAME's tank" ('T', the owner's team, home and pseudo team, score - tankScoreDecrement, no tanks of its own,
-     * the tank ship with allowShipShapes) at the ship's position, velocity and heading, with the tank's fuel
+     * the tank ship with allowShipShapes, else defaultShipShape; it joins the owner's alliance) at the ship's position, velocity and heading, with the tank's fuel
      * (its capacity as maximum), mass shipMass + fuel and power * 0.7; it thrusts and is shielded (with
      * shield time 30*FPS when shields are not allowed). Its owner is remembered in its lock id. TANK_DETACH
      * plays at the ship.
@@ -278,7 +264,7 @@ public final class Tanks {
         update(pl);
         sim.ships.initPlayer(dummy);
         dummy.tank = true;
-        dummy.ship = w.items.allowShipShapes ? tankShip() : com.fulcrologic.jxpilot.server.world.ShipGeom.defaultShip();
+        dummy.ship = sim.ships.tankShipShape; // C ship.c:416-418 (defaultShipShape without allowShipShapes)
         while (dummy.numTanks > 0) {
             remove(dummy, dummy.numTanks);
         }
@@ -322,6 +308,9 @@ public final class Tanks {
         dummy.lockPlId = pl.id;
         w.enter(dummy);
         dummy.pseudoTeam = pl.pseudoTeam;
+        if (pl.alliance != Player.ALLIANCE_NOT_SET) {
+            sim.alliances.join(dummy, pl); // server-commands: C ship.c:476-479 (no messages for a tank)
+        }
         sim.locks.resetVisibility(dummy);
         Sounds.play(w, pl.px, pl.py, SoundEvent.TANK_DETACH);
         dummy.status = com.fulcrologic.jxpilot.server.world.Obj.PLAYING | com.fulcrologic.jxpilot.server.world.Obj.GRAVITY

@@ -62,6 +62,7 @@ public final class ClientGame implements ConnectionListener {
     private final Msg.Timing timing = new Msg.Timing();
     private final Msg.GameEvent gameEvent = new Msg.GameEvent();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
+    private final Msg.PlayerAlliance alliance = new Msg.PlayerAlliance();
 
     private ConnectionState state = ConnectionState.IDLE;
     private WorldMap map;
@@ -134,7 +135,7 @@ public final class ClientGame implements ConnectionListener {
     /**
      * Apply one reliable server message.
      * <p>
-     * BEHAVIOR: PLAYER_JOIN/LEAVE/TEAM/THRUST and SCORE update {@link Players}; TEAM_SCORE the
+     * BEHAVIOR: PLAYER_JOIN/LEAVE/TEAM/THRUST/ALLIANCE and SCORE update {@link Players}; TEAM_SCORE the
      * scoreboard; MESSAGE the message log; BASE_OWNER the world; GAME_EVENT the event ring (sub-types in
      * {@code value} kept as sent). Unknown types are ignored.
      * BEHAVIOR: SCORE_OBJECT (C {@code Handle_score_object}; the server sends it only to the player whose
@@ -188,6 +189,10 @@ public final class ClientGame implements ConnectionListener {
             case ReliableType.GAME_EVENT -> {
                 gameEvent.read(p);
                 events.add(gameEvent);
+            }
+            case ReliableType.PLAYER_ALLIANCE -> {
+                alliance.read(p);
+                players.setAlliance(alliance.id, alliance.mark);
             }
             default -> { } // newer message types are ignored (PROTOCOL.md "Extending")
         }

@@ -449,7 +449,8 @@ final class ItemSections {
      * itself, a team mate or the viewer's own tank.
      */
     boolean shipShown(Player pl, Player v) {
-        return pl == v || v.canSee[pl.slot] || w.sameTeam(pl, v) || (pl.tank && pl.lockPlId == v.id);
+        return pl == v || v.canSee[pl.slot] || w.sameTeam(pl, v) || (pl.tank && pl.lockPlId == v.id)
+            || w.allied(pl, v);
     }
 
     /**
@@ -464,7 +465,7 @@ final class ItemSections {
         if ((pl.status & (Obj.PLAYING | Obj.PAUSE | Obj.GAME_OVER)) != Obj.PLAYING) {
             return false;
         }
-        boolean friend = w.sameTeam(pl, v) || (pl.tank && pl.lockPlId == v.id);
+        boolean friend = w.sameTeam(pl, v) || (pl.tank && pl.lockPlId == v.id) || w.allied(v, pl);
         if (!friend && (!w.items.playersOnRadar || !v.canSee[pl.slot])) {
             return false;
         }

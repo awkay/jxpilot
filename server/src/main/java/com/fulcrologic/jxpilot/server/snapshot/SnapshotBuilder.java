@@ -675,7 +675,7 @@ public final class SnapshotBuilder {
             if (pl == v) {
                 flags |= Records.Radar.FLAG_SELF;
             }
-            if (pl != v && w.sameTeam(pl, v)) {
+            if (pl != v && (w.sameTeam(pl, v) || w.allied(v, pl) || (pl.tank && pl.lockPlId == v.id))) { // frame.c:1187
                 flags |= Records.Radar.FLAG_FRIENDLY;
             }
             Records.Radar.put(wr, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK, flags);
