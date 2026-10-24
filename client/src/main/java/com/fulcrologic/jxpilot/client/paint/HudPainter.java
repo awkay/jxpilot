@@ -76,8 +76,8 @@ public final class HudPainter {
     public static final int MAX_SHIP_POINTS = 64;
     /** Chords/triangles per circle or disc. */
     public static final int CIRCLE_SEGMENTS = 16;
-    /** UI atlas side in texels (item symbols, see {@link ItemBitmaps}). */
-    public static final int ATLAS_SIZE = 1024;
+    /** UI atlas side in texels (item symbols, see {@link ItemBitmaps}; gl.UiAtlas.SIZE). */
+    public static final int ATLAS_SIZE = 2048;
 
     static final String AUTOPILOT = "Autopilot";
 

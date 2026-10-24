@@ -375,7 +375,7 @@ public final class AboutWindow {
         if (from < 0 || to <= from) {
             return;
         }
-        CharBuf t = out.text(ix + x, iy + y, HudColor.SCORE);
+        CharBuf t = out.text(ix + x, iy + y, FontRole.TEXT, HudColor.SCORE);
         if (t != null) {
             for (int k = from; k < to; k++) {
                 t.append(s.charAt(k));

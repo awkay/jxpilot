@@ -125,11 +125,11 @@ final class Drawn {
         List<String> out = new ArrayList<>();
         for (int i = 0; i < b.vertexCount(); ) {
             if (isIcon(b, i)) {
-                int ax = Math.round(b.u(i) * 1024);
-                int ay = Math.round(b.v(i + 2) * 1024);
+                int ax = Math.round(b.u(i) * HudPainter.ATLAS_SIZE);
+                int ay = Math.round(b.v(i + 2) * HudPainter.ATLAS_SIZE);
                 int item = (ax - ItemBitmaps.ATLAS_X) / 16 + ay / 16 * 16;
                 out.add("item " + item + " " + r(b.x(i)) + "," + r(b.y(i)) + "-" + r(b.x(i + 2)) + "," + r(b.y(i + 2))
-                    + " v" + Math.round(b.v(i) * 1024) + "#" + Integer.toHexString(b.color(i)));
+                    + " v" + Math.round(b.v(i) * HudPainter.ATLAS_SIZE) + "#" + Integer.toHexString(b.color(i)));
                 i += 6;
             } else {
                 i += isGlyph(b, i) ? 6 : 3;

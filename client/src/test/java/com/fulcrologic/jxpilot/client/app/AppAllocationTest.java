@@ -25,7 +25,7 @@ package com.fulcrologic.jxpilot.client.app;
 
 import com.fulcrologic.jxpilot.client.Fixtures;
 import com.fulcrologic.jxpilot.client.game.ClientGame;
-import com.fulcrologic.jxpilot.client.game.hud.TextMetrics;
+import com.fulcrologic.jxpilot.client.game.hud.FontRole;
 import com.fulcrologic.jxpilot.client.game.input.InputState;
 import com.fulcrologic.jxpilot.client.net.ClientConnection;
 import com.fulcrologic.jxpilot.client.net.ConnectionState;
@@ -96,12 +96,21 @@ class AppAllocationTest {
         @Override public void close() { }
     }
 
-    record Mono() implements TextMetrics {
-        public int ascent() { return 10; }
-
-        public int descent() { return 3; }
-
-        public int width(CharSequence s, int len) { return 7 * len; }
+    /** Per-role fonts as GameApp has them (two baked fonts shared by the roles), at pixel ratio 2. */
+    static RoleFontSet roleFonts() {
+        com.fulcrologic.jxpilot.client.render.Font serif = Fixtures.font();
+        com.fulcrologic.jxpilot.client.render.Font mono = Fixtures.font();
+        FontRole[] roles = FontRole.values();
+        com.fulcrologic.jxpilot.client.render.Font[] fonts = new com.fulcrologic.jxpilot.client.render.Font[roles.length];
+        com.fulcrologic.jxpilot.client.render.FontSpec[] specs = new com.fulcrologic.jxpilot.client.render.FontSpec[roles.length];
+        for (FontRole r : roles) {
+            specs[r.ordinal()] = RoleFonts.defaultSpec(r);
+            fonts[r.ordinal()] = specs[r.ordinal()].face().family
+                == com.fulcrologic.jxpilot.client.render.FontSpec.Family.MONO ? mono : serif;
+        }
+        RoleFontSet s = new RoleFontSet();
+        s.set(specs, fonts, 2);
+        return s;
     }
 
     @Test
@@ -142,7 +151,7 @@ class AppAllocationTest {
         NativeGameConnection conn = new NativeGameConnection(cc, sw);
         ClientFrame cf = new ClientFrame(game, conn, new InputState(KeyRouter.bindings(null)), new SceneData(),
             new RadarBlips(1024));
-        Mono m = new Mono();
+        RoleFontSet m = roleFonts();
         long serverPeriod = 1_000_000_000L / server.fps;
         long now = 1_000_000_000L;
         long nextTick = now;

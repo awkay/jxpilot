@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.client.app;
 
 import com.fulcrologic.jxpilot.client.game.ClientGame;
 import com.fulcrologic.jxpilot.client.game.ClientWorld;
+import com.fulcrologic.jxpilot.client.game.hud.FontRole;
 import com.fulcrologic.jxpilot.client.game.hud.Hud;
 import com.fulcrologic.jxpilot.client.game.hud.HudFrame;
 import com.fulcrologic.jxpilot.client.game.hud.KeyHelp;
@@ -99,6 +100,9 @@ public final class ClientFrame {
     private boolean swapScale;
     private boolean toggleSound;
     private int talkWidthFor = -1;
+    /** {@link #step(long, int, int, double, TextMetrics, int, int)}'s one-metrics adapter, made once per metrics. */
+    private TextMetrics singleFor;
+    private FontRole.Metrics single;
     /** World view size last given to {@link GameConnection#sendDisplay} (-1: never). */
     private int displayW = -1;
     private int displayH = -1;
@@ -154,8 +158,13 @@ public final class ClientFrame {
      * {@link KeyRouter#loseSelection}, aged by dt) and the panel under the radar ({@code radarHeight} tall,
      * {@code panelW} wide): the button bar, then the score list window (not while CONFIG covers it), CONFIG and
      * the windows' overlays ({@link ClientUi}).
+     * BEHAVIOR: each part uses its role's metrics from {@code fonts}: the HUD as {@link Hud#build}, the talk
+     * line's width limit {@link FontRole#TALK} (the line keeps that metrics object, which follows rebakes), the score
+     * list {@link FontRole#SCORE_LIST}, the key help {@link FontRole#KEY_LIST}, the MOTD panel {@link FontRole#MOTD},
+     * CONFIG's labels and values {@link FontRole#TEXT}, buttons {@link FontRole#BUTTON}.
      */
-    public void step(long nowNanos, int viewW, int viewH, double zoom, TextMetrics m, int panelW, int radarHeight) {
+    public void step(long nowNanos, int viewW, int viewH, double zoom, FontRole.Metrics fonts, int panelW,
+                     int radarHeight) {
         double dt = started ? (nowNanos - lastNow) / 1e9 : 0;
         started = true;
         liveOptions.apply(hud, game, extras, talk, input);
@@ -191,30 +200,42 @@ public final class ClientFrame {
             }
         }
         if (talkWidthFor != viewW) {
-            talk.limitWidth(m, Hud.talkWindowWidth(viewW));
+            talk.limitWidth(fonts.of(FontRole.TALK), Hud.talkWindowWidth(viewW));
             talkWidthFor = viewW;
         }
         hud.zoom = zoom;
-        hud.build(viewHud, game, talk, viewW, viewH, m, dt * game.gameFps());
+        hud.build(viewHud, game, talk, viewW, viewH, fonts, dt * game.gameFps());
         extras.step(dt * game.gameFps(), game.gameFps());
         extras.fill(game, hud, viewW, viewH, zoom, centreX, centreY, scene.loops);
         extras.loseItem(router.loseSelection(), dt);
         panelHud.clear();
-        ui.layout(radarHeight, viewH, viewW, viewH, map != null && map.edgeWrap(), m, m);
+        TextMetrics textFont = fonts.of(FontRole.TEXT);
+        TextMetrics buttonFont = fonts.of(FontRole.BUTTON);
+        ui.layout(radarHeight, viewH, viewW, viewH, map != null && map.edgeWrap(), textFont, buttonFont);
         int scoreTop = ui.scoreTop();
         if (!ui.coversScores()) {
-            hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, Math.max(0, viewH - scoreTop), m);
+            hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, Math.max(0, viewH - scoreTop),
+                fonts.of(FontRole.SCORE_LIST));
         }
-        ui.draw(panelHud, m, m, 0);
+        ui.draw(panelHud, textFont, buttonFont, 0);
         String motdText = game.takeMotd();
         if (motdText != null) {
             motd = motdPanel(motdText);
         }
         if (motd != null && motd.visible()) {
-            motd.layout(helpHud, viewW, viewH, m);
+            motd.layout(helpHud, viewW, viewH, fonts.of(motd.role()));
         } else {
-            help.layout(helpHud, viewW, viewH, m);
+            help.layout(helpHud, viewW, viewH, fonts.of(help.role()));
         }
+    }
+
+    /** {@link #step(long, int, int, double, FontRole.Metrics, int, int)} with one metrics for every role (tests). */
+    public void step(long nowNanos, int viewW, int viewH, double zoom, TextMetrics m, int panelW, int radarHeight) {
+        if (m != singleFor) {
+            singleFor = m;
+            single = role -> m;
+        }
+        step(nowNanos, viewW, viewH, zoom, single, panelW, radarHeight);
     }
 
     /** C's MOTD viewer ("XPilot motd from SERVER"), open until the help key closes it. */
@@ -224,7 +245,7 @@ public final class ClientFrame {
             lines.add(new String[] {"", line});
         }
         KeyHelp k = new KeyHelp("XPilot motd from " + game.serverName() + (helpHint != null
-            ? " - " + helpHint.substring(0, helpHint.indexOf(':')) + " closes" : ""), lines);
+            ? " - " + helpHint.substring(0, helpHint.indexOf(':')) + " closes" : ""), lines, FontRole.MOTD);
         k.toggle();
         return k;
     }

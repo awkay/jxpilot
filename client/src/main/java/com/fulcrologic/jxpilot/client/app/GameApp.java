@@ -24,7 +24,9 @@
 package com.fulcrologic.jxpilot.client.app;
 
 import com.fulcrologic.jxpilot.client.game.ClientGame;
+import com.fulcrologic.jxpilot.client.game.hud.FontRole;
 import com.fulcrologic.jxpilot.client.game.input.KeyConfig;
+import com.fulcrologic.jxpilot.client.gl.FontBaker;
 import com.fulcrologic.jxpilot.client.gl.GlRenderer;
 import com.fulcrologic.jxpilot.client.gl.Screenshot;
 import com.fulcrologic.jxpilot.client.gl.UiAtlas;
@@ -40,6 +42,7 @@ import com.fulcrologic.jxpilot.client.paint.SceneData;
 import com.fulcrologic.jxpilot.client.paint.ScenePainter;
 import com.fulcrologic.jxpilot.client.paint.ScreenSpace;
 import com.fulcrologic.jxpilot.client.render.Camera;
+import com.fulcrologic.jxpilot.client.render.FontSpec;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.client.render.TextWriter;
 import com.fulcrologic.jxpilot.client.render.VertexBatch;
@@ -109,7 +112,11 @@ public final class GameApp {
     private final Camera cam = new Camera();
     private final ScreenSpace viewScreen = new ScreenSpace();
     private final ScreenSpace panelScreen = new ScreenSpace();
-    private final FontMetrics metrics = new FontMetrics();
+    /** The per-role fonts (C gameFont, messageFont, ...; RoleFonts), rebaked on a pixel ratio or font change. */
+    private final RoleFontSet fonts = new RoleFontSet();
+    private int fontOptionsVersion = -1;
+    private FontSpec[] wantedFonts;
+    private final java.util.Set<String> fontProblems = new java.util.HashSet<>();
     private final ScenePainter scenePainter = new ScenePainter(palette);
     private final RadarPainter radarPainter = new RadarPainter(palette);
     private final float[] xf = new float[4];
@@ -184,9 +191,9 @@ public final class GameApp {
     public void run() throws IOException {
         window = new Window("JXPilot - " + label, opts.width(), opts.height(), true, opts.vsync());
         try {
-            atlas = new UiAtlas(opts.fontFile() == null ? null : Path.of(opts.fontFile()), fontPixels());
+            atlas = new UiAtlas();
             gl = new GlRenderer(atlas.texture());
-            makeText();
+            rebakeFontIfNeeded();
             dynTri = MemoryUtil.memAlloc(DYNAMIC_VERTICES * VertexBatch.STRIDE);
             dynSeg = MemoryUtil.memAlloc(Math.min(DYNAMIC_SEGMENTS, gl.maxSegments()) * VertexBatch.SEGMENT_STRIDE);
             dynPt = MemoryUtil.memAlloc(Math.min(DYNAMIC_POINTS, gl.maxPoints()) * VertexBatch.POINT_STRIDE);
@@ -202,14 +209,22 @@ public final class GameApp {
         }
     }
 
-    private float fontPixels() {
-        return (float) (opts.fontSize() * window.pixelRatio());
+    private void makeText() {
+        text = fonts.writer(FontRole.GAME);
+        hudList = HudListPainter.xpilot(fonts.writers(), palette);
+        hudPainter = new HudPainter(text, palette);
     }
 
-    private void makeText() {
-        text = new TextWriter(atlas.font());
-        hudList = HudListPainter.xpilot(text, palette);
-        hudPainter = new HudPainter(text, palette);
+    /** Every role's font from the font options (or --font/--font-size); new problems go to stderr, as C's. */
+    private FontSpec[] resolveFonts() {
+        RoleFonts.Resolution r = RoleFonts.resolve(frame.options(), opts.fontFile(), opts.fontSize(),
+            FontBaker::isFontFile);
+        for (String p : r.problems()) {
+            if (fontProblems.add(p)) {
+                System.err.println(p);
+            }
+        }
+        return r.specs();
     }
 
     private void installInput() {
@@ -332,10 +347,16 @@ public final class GameApp {
         }
     }
 
+    /** Rebake the fonts when a font option changed (options version) or the window's pixel ratio did. */
     private void rebakeFontIfNeeded() throws IOException {
-        float px = fontPixels();
-        if (px != atlas.fontPixels()) {
-            atlas.bakeFont(px);
+        int v = frame.options().version();
+        if (v != fontOptionsVersion) {
+            fontOptionsVersion = v;
+            wantedFonts = resolveFonts();
+        }
+        double ratio = window.pixelRatio();
+        if (fonts.needs(wantedFonts, ratio)) {
+            fonts.set(wantedFonts, atlas.bakeFonts(wantedFonts, ratio), ratio);
             makeText();
         }
     }
@@ -348,8 +369,7 @@ public final class GameApp {
         int viewFbW = Math.max(1, fbW - panelFb);
         int viewW = (int) (viewFbW / ratio);
         int viewH = (int) (fbH / ratio);
-        metrics.set(atlas.font(), ratio);
-        frame.step(now, viewW, viewH, zoom, metrics, PANEL_W, radarHeight);
+        frame.step(now, viewW, viewH, zoom, fonts, PANEL_W, radarHeight);
         if (frame.mapVersion() != mapVersion) {
             mapVersion = frame.mapVersion();
             loadMap(frame.game().map());

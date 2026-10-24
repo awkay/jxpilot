@@ -118,7 +118,7 @@ public final class UiDraw {
 
     /** BEHAVIOR: a text run (role {@code role}) holding {@code s}; nothing when the list is full. */
     static void text(HudFrame out, int x, int y, int color, FontRole role, CharSequence s) {
-        CharBuf t = out.text(x, y, color);
+        CharBuf t = out.text(x, y, role, color);
         if (t != null) {
             t.append(s);
         }

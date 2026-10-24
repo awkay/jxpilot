@@ -79,6 +79,7 @@ class HudAllocationTest {
         @Override public float textX(int i) { return textXY[i][0]; }
         @Override public float textY(int i) { return textXY[i][1]; }
         @Override public int textColor(int i) { return textColor[i]; }
+        @Override public int textFont(int i) { return i & 1; }
     }
 
     @Test
@@ -89,7 +90,7 @@ class HudAllocationTest {
         VertexBatch b = Fixtures.batch(256, 16, batch -> flushes[0]++);
         TextWriter text = new TextWriter(Fixtures.font());
         HudPainter hud = new HudPainter(text, p);
-        HudListPainter list = HudListPainter.xpilot(text, p);
+        HudListPainter list = HudListPainter.xpilot(new TextWriter[] {text, new TextWriter(Fixtures.font())}, p);
         ScreenSpace ss = new ScreenSpace();
         ss.set(1200, 2);
         FixedList fl = new FixedList();

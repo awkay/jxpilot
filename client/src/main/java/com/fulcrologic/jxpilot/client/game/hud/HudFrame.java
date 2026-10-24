@@ -28,7 +28,8 @@ import com.fulcrologic.jxpilot.client.game.CharBuf;
 /**
  * Plain draw list produced by {@link Hud} for one frame: line segments, rectangles and text runs in
  * window pixels (origin top-left, y down, unscaled, as X11 XPilot), each with a {@link HudColor}.
- * Text positions are the left end of the baseline. Preallocated; filling it allocates nothing.
+ * Text positions are the left end of the baseline; each run has the {@link FontRole} it is drawn and was
+ * measured with. Preallocated; filling it allocates nothing.
  * The renderer walks the three lists and draws them.
  */
 public final class HudFrame {
@@ -65,6 +66,7 @@ public final class HudFrame {
     private final float[] tx;
     private final float[] ty;
     private final int[] textColor;
+    private final FontRole[] textRole;
 
     public HudFrame(int lineCap, int rectCap, int textCap, int textLen) {
         this.lineCap = lineCap;
@@ -87,6 +89,7 @@ public final class HudFrame {
         tx = new float[textCap];
         ty = new float[textCap];
         textColor = new int[textCap];
+        textRole = new FontRole[textCap];
         for (int i = 0; i < textCap; i++) {
             text[i] = new CharBuf(textLen);
         }
@@ -138,11 +141,18 @@ public final class HudFrame {
         rectColor[i] = color;
     }
 
-    /**
-     * Append a text run and return its buffer for the caller to fill (or null when full).
-     * {@link #setTextLength} limits how many chars are drawn (typing effect); default all.
-     */
+    /** A {@link FontRole#GAME} text run ({@link #text(float, float, FontRole, int)}). */
     public CharBuf text(float x, float y, int color) {
+        return text(x, y, FontRole.GAME, color);
+    }
+
+    /**
+     * Append a text run in {@code role}'s font and return its buffer for the caller to fill (or null when full).
+     * {@link #setTextLength} limits how many chars are drawn (typing effect); default all.
+     * <p>
+     * BEHAVIOR: records position, colour and role; dropped (null) when full.
+     */
+    public CharBuf text(float x, float y, FontRole role, int color) {
         if (texts >= textCap) {
             return null;
         }
@@ -150,6 +160,7 @@ public final class HudFrame {
         tx[i] = x;
         ty[i] = y;
         textColor[i] = color;
+        textRole[i] = role;
         textLen[i] = -1;
         return text[i].clear();
     }
@@ -199,4 +210,7 @@ public final class HudFrame {
     public float textY(int i) { return ty[i]; }
 
     public int textColor(int i) { return textColor[i]; }
+
+    /** The font role of text i. */
+    public FontRole textRole(int i) { return textRole[i]; }
 }
