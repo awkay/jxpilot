@@ -117,6 +117,9 @@ class GameDurationHostTest {
             () -> assertEquals("1.23457e+06", SimGameHost.formatG(1234567)),
             () -> assertEquals("0.0001", SimGameHost.formatG(0.0001)),
             () -> assertEquals("1e-05", SimGameHost.formatG(0.00001)),
-            () -> assertEquals("100", SimGameHost.formatG(100)));
+            () -> assertEquals("100", SimGameHost.formatG(100)),
+            () -> assertEquals("1e+10", SimGameHost.formatG(1e10), "two exponent digits"),
+            () -> assertEquals("1.5e-10", SimGameHost.formatG(1.5e-10)),
+            () -> assertEquals("1e+09", SimGameHost.formatG(1e9), "one digit padded"));
     }
 }

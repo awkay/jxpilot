@@ -141,6 +141,52 @@ class WormholesTest {
         }
 
         @Test
+        @DisplayName("on a map of walls with a few space blocks every jump lands on one of them; with none it stays")
+        void landsOnSpace() {
+            String[] rows = new String[6];
+            java.util.Arrays.fill(rows, "xxxxxx");
+            rows[2] = "x  xxx";
+            rows[5] = "x_xxxx";
+            Simulation s = TestWorlds.sim(SimFixture.FPS14, rows);
+            World w = s.world;
+            Player p = ready(s, "P", 0, 1.5 * 35, 3.5 * 35);
+            boolean allSpace = true;
+            for (int i = 0; i < 30; i++) {
+                p.wormHoleHit = -1;
+                p.status |= Obj.WARPING;
+                s.ships.warp(p);
+                int t = w.map.block(p.px / 35, p.py / 35);
+                allSpace &= t == BlockType.SPACE || t == BlockType.BASE;
+            }
+            boolean ok = allSpace;
+            // only the base block (1, 0) is space-like: most jumps fail 20 tries and stay
+            String[] walls = new String[20];
+            java.util.Arrays.fill(walls, "x".repeat(20));
+            walls[19] = "x_" + "x".repeat(18);
+            Simulation n = TestWorlds.sim(SimFixture.FPS14, walls);
+            Player q = ready(n, "Q", 0, 1.5 * 35, 0.5 * 35);
+            int stays = 0;
+            boolean neverInWall = true;
+            for (int i = 0; i < 10; i++) {
+                int x = q.cx;
+                int y = q.cy;
+                q.wormHoleHit = -1;
+                q.status |= Obj.WARPING;
+                n.ships.warp(q);
+                if (q.cx == x && q.cy == y) {
+                    stays++;
+                }
+                neverInWall &= q.px / 35 == 1 && q.py / 35 == 0;
+            }
+            int st = stays;
+            boolean nw = neverInWall;
+            assertAll(
+                () -> assertTrue(ok, "never inside a wall"),
+                () -> assertTrue(st > 0, "20 failed tries: the ship stays (" + st + " of 10)"),
+                () -> assertTrue(nw, "and is never put into a wall"));
+        }
+
+        @Test
         @DisplayName("without wormTime no wormholes; the 10% and nearest choices skip temporaries")
         void noTemp() {
             Simulation s = sim("");
