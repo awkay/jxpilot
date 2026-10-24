@@ -48,7 +48,8 @@ import static org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT_SHIFT;
  * Client and {@link FakeServer} talk in a closed loop over allocation-free datagram queues, so acks flow
  * and reliable traffic never stalls. The server is stepped outside the measured region; each client frame
  * is measured on its own. After {@value #WARMUP} warm-up frames (with frequent server events, so even rarely
- * run paths are compiled), {@value #MEASURED} frames are measured:
+ * run paths are compiled) and then until the JIT is quiet ({@link com.fulcrologic.jxpilot.client.JitQuiet}),
+ * {@value #MEASURED} frames are measured:
  * at most {@value #MAX_NONZERO_FRAMES} frames may allocate (at most {@value #MAX_FRAME_BYTES} bytes each;
  * the JIT occasionally allocates on the running thread when it installs code), and none in the second
  * half, so a periodic leak (even one every 10k frames) fails. Runs in its own surefire execution with
@@ -149,37 +150,40 @@ class ClientNetAllocationTest {
             chat[i] = "chat line " + i + " [Robby]";
         }
         long frameNs = 1_000_000_000L / 60;
-        long now = 1_000_000_000L;
-        sim.start(now);
+        long[] now = {1_000_000_000L};
+        sim.start(now[0]);
 
-        int total = WARMUP + MEASURED;
-        int nonZero = 0;
-        long worst = 0;
-        int lastNonZero = -1;
-        long sum = 0;
-        for (int f = 0; f < total; f++) {
-            now += frameNs;
+        int[] frameNo = {0};
+        boolean[] measuring = {false};
+        long[] stats = {0, 0, 0, -1}; // allocating frames, bytes, worst, last allocating frame
+        Runnable frame = () -> {
+            int f = frameNo[0]++;
+            now[0] += frameNs;
             // ---- server, not measured: one 60 Hz tick per frame, events now and then
-            server.poll(now);
-            // events every 2 s; every 2nd frame during warm-up, so the rarely run paths (scoreboard rebuild,
-            // message log, score objects) pass the JIT's compile thresholds (~15k calls) before measuring:
-            // the JVM allocates a few bytes on this thread once when it compiles some of them
-            int period = f < WARMUP ? 2 : 120;
-            if (server.ready) {
-                if (f % 100 == 0) {
-                    server.burstAtSnapshot = server.snapshotsSent;
+            try {
+                server.poll(now[0]);
+                // events every 2 s; every 2nd frame during the first warm-up, so the rarely run paths (scoreboard
+                // rebuild, message log, score objects) pass the JIT's compile thresholds (~15k calls) before measuring:
+                // the JVM allocates a few bytes on this thread once when it compiles some of them
+                int period = f < WARMUP ? 2 : 120;
+                if (server.ready) {
+                    if (f % 100 == 0) {
+                        server.burstAtSnapshot = server.snapshotsSent;
+                    }
+                    if (f % period == 0) {
+                        server.message(Msg.Text.KIND_CHAT, chat[(f / period) & 63]);
+                        server.score(FakeServer.OTHER_ID, f / 10f);
+                    }
+                    if (f % (2 * period) == period / 2) {
+                        server.gameEvent(Msg.GameEvent.KILL, FakeServer.PLAYER_ID, FakeServer.OTHER_ID);
+                        server.scoreObject(1, 3, 4, "Robby");
+                        server.score(FakeServer.PLAYER_ID, (f / (2 * period)) % 7 + 1);
+                    }
                 }
-                if (f % period == 0) {
-                    server.message(Msg.Text.KIND_CHAT, chat[(f / period) & 63]);
-                    server.score(FakeServer.OTHER_ID, f / 10f);
-                }
-                if (f % (2 * period) == period / 2) {
-                    server.gameEvent(Msg.GameEvent.KILL, FakeServer.PLAYER_ID, FakeServer.OTHER_ID);
-                    server.scoreObject(1, 3, 4, "Robby");
-                    server.score(FakeServer.PLAYER_ID, (f / (2 * period)) % 7 + 1);
-                }
+                server.step(now[0]);
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
             }
-            server.step(now);
             // ---- client frame, measured
             long a = mx.getCurrentThreadAllocatedBytes();
             if (f % 30 == 0) {
@@ -191,17 +195,35 @@ class ClientNetAllocationTest {
                 input.release(GLFW_KEY_A);
                 input.release(GLFW_KEY_ENTER);
             }
-            sim.step(now);
+            sim.step(now[0]);
             hud.build(hudFrame, sim.game(), talk, 1280, 800, metrics, 14.0 / 60);
             hud.scoreboard(hudFrame, sim.game().scoreboard(), 0, 0, 300, metrics);
             long d = mx.getCurrentThreadAllocatedBytes() - a;
-            if (f >= WARMUP && d != 0) {
-                nonZero++;
-                sum += d;
-                worst = Math.max(worst, d);
-                lastNonZero = f;
+            if (measuring[0] && d != 0) {
+                stats[0]++;
+                stats[1] += d;
+                stats[2] = Math.max(stats[2], d);
+                stats[3] = f;
             }
+        };
+        for (int i = 0; i < WARMUP; i++) {
+            frame.run();
         }
+        // then warm the measured cadence until the JIT is done: no compilation (JFR jdk.Compilation) in 2 chunks of
+        // 1000 frames in a row (see JitQuiet: a late C2 request resolves its class's String constants on this thread)
+        try (com.fulcrologic.jxpilot.client.JitQuiet jit = new com.fulcrologic.jxpilot.client.JitQuiet()) {
+            jit.warm(frame, 1000, 2000, 40_000, 2);
+        }
+        int start = frameNo[0];
+        measuring[0] = true;
+        for (int i = 0; i < MEASURED; i++) {
+            frame.run();
+        }
+        int total = frameNo[0];
+        int nonZero = (int) stats[0];
+        long sum = stats[1];
+        long worst = stats[2];
+        int lastNonZero = (int) stats[3];
         int fNonZero = nonZero;
         long fWorst = worst;
         int fLast = lastNonZero;
@@ -217,6 +239,6 @@ class ClientNetAllocationTest {
             () -> assertTrue(sim.game().scoreObjects().text(0).length() > 0, "own score objects were made"),
             () -> assertTrue(fNonZero <= MAX_NONZERO_FRAMES, "at most 3 allocating frames: " + detail),
             () -> assertTrue(fWorst <= MAX_FRAME_BYTES, "each at most 1 KB: " + detail),
-            () -> assertTrue(fLast < WARMUP + MEASURED / 2, "none in the second half: " + detail));
+            () -> assertTrue(fLast < start + MEASURED / 2, "none in the second half: " + detail));
     }
 }
