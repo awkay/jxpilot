@@ -51,7 +51,9 @@ class RobotLogTest {
         s.robots.log = l -> log.add(l.toString());
         TestWorlds.join(s, "H", 0);
         Player r = s.robots.create();
-        assertEquals(List.of(r.name + " (2, droid) starts at startpos " + r.homeBase + "."), log, "one line");
+        Player r2 = s.robots.create();
+        assertEquals(List.of(r.name + " (2, droid) starts at startpos " + r.homeBase + ".",
+            r2.name + " (3, droid) starts at startpos " + r2.homeBase + "."), log, "one line per robot");
     }
 
     @Test

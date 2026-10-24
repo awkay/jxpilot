@@ -232,6 +232,90 @@ class WreckageTest {
     }
 
     @Nested
+    @DisplayName("make: boundaries")
+    class Boundaries {
+        private int one(Simulation s, float x, float y) {
+            script(s, 0.0, 0.0, 0.0, 0.0);
+            return s.wreckage.make(x, y, 0f, 0f, 0, 0, 4f, 10f, 4f, 0, 0, 10, 0, 64, 1f, 1f, 10, 20);
+        }
+
+        @Test
+        @DisplayName("the world edges: 0 is inside, the width/height is outside (or wraps to 0)")
+        void edges() {
+            Simulation wrap0 = sim(FRAME + "edgeWrap: yes\n", 40, 40, "_");
+            int at0 = one(wrap0, 0f, 0f);
+            int h0 = wrecks(wrap0.world).get(0);
+            Simulation wrapNeg = sim(FRAME + "edgeWrap: yes\n", 40, 40, "_");
+            one(wrapNeg, 5f, -5f);
+            int hn = wrecks(wrapNeg.world).get(0);
+            Simulation wrapW = sim(FRAME + "edgeWrap: yes\n", 40, 40, "_");
+            int atW = one(wrapW, 1400f, 1400f);
+            int hw = wrecks(wrapW.world).get(0);
+            assertAll(
+                () -> assertEquals(1, at0, "wrap: (0, 0) is inside"),
+                () -> assertEquals(0, wrap0.world.objects.cx[h0] + wrap0.world.objects.cy[h0], "and stays at 0"),
+                () -> assertEquals((1400 - 5) * 64, wrapNeg.world.objects.cy[hn], "wrap: y -5 becomes height - 5"),
+                () -> assertEquals(1, atW, "wrap: (width, height) wraps"),
+                () -> assertEquals(0, wrapW.world.objects.cx[hw] + wrapW.world.objects.cy[hw], "to (0, 0)"),
+                () -> assertEquals(1, one(sim(FRAME, 40, 40, "_"), 0f, 0f), "no wrap: (0, 0) is inside"),
+                () -> assertEquals(0, one(sim(FRAME, 40, 40, "_"), 1400f, 5f), "x = width is outside"),
+                () -> assertEquals(0, one(sim(FRAME, 40, 40, "_"), 5f, 1400f), "y = height is outside"),
+                () -> assertEquals(0, one(sim(FRAME, 40, 40, "_"), 5f, -0.5f), "y < 0 is outside"));
+        }
+
+        @Test
+        @DisplayName("shotLife equal to FPS still caps; a minimum life equal to shotLife does not")
+        void shotLifeEquality() {
+            Simulation s = sim("framesPerSecond: 12\ngravity: 0\nshotLife: 12\n", 40, 40, "_");
+            script(s, 0.0, 0.0, 0.0, 1.0);
+            s.wreckage.make(500, 300, 0f, 0f, 0, 0, 4f, 10f, 4f, 0, 0, 10, 0, 64, 1f, 1f, 20, 40);
+            Simulation t = sim("framesPerSecond: 12\ngravity: 0\nshotLife: 15\n", 40, 40, "_");
+            script(t, 0.0, 0.0, 0.0, 1.0);
+            t.wreckage.make(500, 300, 0f, 0f, 0, 0, 4f, 10f, 4f, 0, 0, 10, 0, 64, 1f, 1f, 15, 40);
+            assertAll(
+                () -> assertEquals(13.0, s.world.objects.life[wrecks(s.world).get(0)], "shotLife 12 = FPS: 12 (+1)"),
+                () -> assertEquals(41.0, t.world.objects.life[wrecks(t.world).get(0)], "min 15 = shotLife: 15..40"));
+        }
+
+        @Test
+        @DisplayName("speed limits apply only above the diagonal; at exactly the diagonal a non-integer speed stays")
+        void exactDiagonal() {
+            Simulation s = TestWorlds.sim(FRAME, "_   ", "    ");
+            script(s, 0.0, 0.0, 0.0, 0.0);
+            s.wreckage.make(50, 30, 0f, 0f, 0, 0, 4f, 10f, 4f, 0, 0, 10, 0, 64, 9.75f, 9.75f, 10, 16);
+            Simulation t = TestWorlds.sim(FRAME, "_   ", "    ");
+            script(t, 0.0, 0.0, 1.0, 0.0);
+            t.wreckage.make(50, 30, 0f, 0f, 0, 0, 4f, 10f, 4f, 0, 0, 10, 0, 64, 1f, 9.75f, 16, 16);
+            assertAll(
+                () -> assertEquals(9.75f, s.world.objects.vx[wrecks(s.world).get(0)], "9.75 * 16 = 156: min speed kept"),
+                () -> assertEquals(9.75f, t.world.objects.vx[wrecks(t.world).get(0)], "9.75 * 16 = 156: max speed kept"));
+        }
+
+        @Test
+        @DisplayName("the piece count: maxWreckage, the free pool slots, and no draws after the total mass is reached")
+        void counts() {
+            Simulation s = sim(FRAME, 40, 40, "_");
+            Deque<Double> q = script(s, 0.0, 0, 0, 0, 0, 0, 0, 0.0, 0, 0, 0, 0, 0, 0, 0.0, 0, 0, 0, 0, 0, 0, 0.25);
+            make(s, 0, 64, 1f, 1f);
+            Simulation one = sim(FRAME, 40, 40, "_");
+            script(one, 0.0);
+            int single = one.wreckage.make(500, 300, 0f, 0f, 0, 0, 1f, 1f, 100f, 0, 0, 1, 0, 64, 1f, 1f, 10, 20);
+            Simulation full = sim(FRAME, 40, 40, "_");
+            Objects o = full.world.objects;
+            while (o.count() < o.capacity - 2) {
+                o.alloc();
+            }
+            Deque<Double> fq = script(full, new double[15]);
+            fq.add(0.75);
+            full.wreckage.make(500, 300, 0f, 0f, 0, 0, 1f, 1f, 100f, 0, 0, 10, 0, 64, 1f, 1f, 10, 20);
+            assertAll(
+                () -> assertEquals(List.of(0.25), List.copyOf(q), "3 x 4 = 12 reaches the total: no 22nd draw"),
+                () -> assertEquals(1, single, "maxWreckage 1"),
+                () -> assertEquals(2, fq.size(), "2 free slots: 14 draws, no third mass draw"));
+        }
+    }
+
+    @Nested
     @DisplayName("callers and flight")
     class Callers {
         @Test
@@ -262,6 +346,45 @@ class WreckageTest {
                 () -> assertEquals(Obj.GRAVITY, o.status[h], "gravity"),
                 () -> assertEquals(6.0, o.life[h], "life 5 .. +1"),
                 () -> assertEquals(List.of(), wrecks(alive.world), "not KILLED: no wreckage"));
+        }
+
+        @Test
+        @DisplayName("ship: speed up to 10 + (int)mass/2 and life up to 5 + 1.5*mass (+1)")
+        void shipMaxima() {
+            Simulation s = sim(FRAME, 40, 40, "_");
+            Player p = ready(s, "A", 0, 500, 300);
+            p.status |= Obj.KILLED;
+            script(s, 0.0, 0.0, 1.0, 1.0);
+            s.wreckage.ship(p);
+            int h = wrecks(s.world).get(0);
+            float speed = 10 + (((int) p.mass) >> 1);
+            assertAll(
+                () -> assertEquals(speed, s.world.objects.vx[h], "max speed"),
+                () -> assertEquals((int) (5 + p.mass * 1.5) + 1.0, s.world.objects.life[h], "max life + 1"));
+        }
+
+        @Test
+        @DisplayName("cannon: from (dir - 0.2 RES) at the minimum speed (10, limited by this small world's diagonal)")
+        void cannonDirection() {
+            Simulation c = TestWorlds.sim(FRAME, "      ", "  r   ", "_     ");
+            Cannon cannon = c.world.map.cannons().get(0);
+            script(c, 0.0, 0.0, 0.0, 0.0);
+            c.wreckage.cannon(cannon, 100, 50);
+            int h = wrecks(c.world).get(0);
+            int dir = Trig.mod((int) (cannon.dir() - Const.RES * 0.2));
+            float speed = ((int) c.world.params.hypotenuse) / 68;
+            assertAll(
+                () -> assertEquals(3f, speed, "10 * 68 > 234: 234 / 68"),
+                () -> assertEquals(Trig.tcos(dir) * speed, c.world.objects.vx[h], "vx"),
+                () -> assertEquals(Trig.tsin(dir) * speed, c.world.objects.vy[h], "vy"),
+                () -> assertEquals(9.0, c.world.objects.life[h], "life 8 (+1)"));
+            Simulation d = TestWorlds.sim(FRAME, "      ", "  r   ", "_     ");
+            script(d, 0.0, 0.999, 0.0, 0.0);
+            d.wreckage.cannon(cannon, 100, 50);
+            int g = wrecks(d.world).get(0);
+            int span = Trig.mod((int) (cannon.dir() + Const.RES * 0.2) - (int) (cannon.dir() - Const.RES * 0.2));
+            int last = Trig.mod((int) (cannon.dir() - Const.RES * 0.2) + (int) (0.999 * span));
+            assertEquals(Trig.tcos(last) * 3f, d.world.objects.vx[g], "the far edge of the +-0.2 RES fan");
         }
 
         @Test

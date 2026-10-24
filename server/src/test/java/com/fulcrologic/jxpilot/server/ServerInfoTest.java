@@ -70,7 +70,9 @@ class ServerInfoTest {
             () -> assertTrue(d.contains("\nshotHitFuelDrainUsesKineticEnergy:" + " ".repeat(7) + "yes\n"),
                 "a name of 33 characters gets 7 spaces"),
             () -> assertFalse(d.contains("\nhelp:"), "void options are not dumped"),
-            () -> assertTrue(d.endsWith("\n\n"), "ends with an empty line"));
+            () -> assertTrue(d.endsWith("\n\n"), "ends with an empty line"),
+            () -> assertTrue(ServerInfo.dumpConfig().contains("# DEFAULTS_FILE_NAME = (bundled) xpilot/defaults\n"),
+                "the -dump header names the defaults file"));
     }
 
     @Test

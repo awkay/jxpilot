@@ -238,6 +238,8 @@ class RobotKillsTest {
             Player t = team.ships.join("T", 1, true);
             t.score = -50;
             boolean teamLeaves = team.robots.leaveOutOfLives(t);
+            t.score = -90;
+            boolean atLimit = team.robots.leaveOutOfLives(t);
             t.score = -91;
             boolean lowLeaves = team.robots.leaveOutOfLives(t);
 
@@ -252,6 +254,7 @@ class RobotKillsTest {
             boolean freeLeaves = free.robots.leaveOutOfLives(f);
             assertAll(
                 () -> assertFalse(teamLeaves, "team play, score -50 >= robotLeaveScore -90: stays"),
+                () -> assertFalse(atLimit, "score -90 = robotLeaveScore: stays"),
                 () -> assertTrue(lowLeaves, "team play, score -91 < -90 with robotsLeave: leaves"),
                 () -> assertTrue(isRace, "the race map is in race mode"),
                 () -> assertFalse(raceLeaves, "race without robotsLeave: stays whatever the score"),
