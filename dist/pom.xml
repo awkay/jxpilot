@@ -55,6 +55,10 @@
             <jxpilot.repoRoot>${project.basedir}/..</jxpilot.repoRoot>
             <jxpilot.regenerateDocs>${jxpilot.regenerateDocs}</jxpilot.regenerateDocs>
           </systemPropertyVariables>
+          <!-- Needs the release jars: runs in the release profile's release-jar-tests execution. -->
+          <excludes>
+            <exclude>**/ReleaseJarTest.java</exclude>
+          </excludes>
         </configuration>
       </plugin>
       <plugin>
@@ -109,6 +113,30 @@
       </dependencies>
       <build>
         <plugins>
+          <!-- After package: the built jars run from a directory without maps/ (ReleaseJarTest). -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>release-jar-tests</id>
+                <phase>integration-test</phase>
+                <goals>
+                  <goal>test</goal>
+                </goals>
+                <configuration>
+                  <excludes combine.self="override"/>
+                  <includes>
+                    <include>**/ReleaseJarTest.java</include>
+                  </includes>
+                  <systemPropertyVariables>
+                    <jxpilot.serverJar>${release.dir}/jxpilot-server-${project.version}.jar</jxpilot.serverJar>
+                    <jxpilot.clientJar>${release.dir}/jxpilot-client-${project.version}.jar</jxpilot.clientJar>
+                  </systemPropertyVariables>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-shade-plugin</artifactId>

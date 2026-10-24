@@ -325,15 +325,16 @@ class LoopbackIntegrationTest {
     }
 
     @Test
-    @DisplayName("startup: unmatched selectors fail, bindWait waits, a missing map fails")
+    @DisplayName("startup: unmatched selectors fail, bindWait waits, a map that is not found fails")
     void startup() throws Exception {
         List<String> log = Collections.synchronizedList(new ArrayList<>());
         MutableInterfaces lo = new MutableInterfaces(V4);
         IllegalArgumentException noMatch = assertThrows(IllegalArgumentException.class,
             () -> Server.start(new String[] {"--map", MAP, "--port", "0", "--bind", "10.99.0.0/16"}, settings(lo, log)),
             "a selector matching nothing is a startup error");
-        IllegalArgumentException noMap = assertThrows(IllegalArgumentException.class,
-            () -> Server.start(new String[] {"--port", "0"}, settings(lo, log)), "--map is required");
+        java.io.FileNotFoundException noMap = assertThrows(java.io.FileNotFoundException.class,
+            () -> Server.start(new String[] {"--port", "0", "--map", "no-such-map"}, settings(lo, log)),
+            "an unknown map is a startup error");
 
         MutableInterfaces later = new MutableInterfaces();
         int port = freePort(V4);
@@ -351,7 +352,7 @@ class LoopbackIntegrationTest {
         try (Server s = starting.get(10, TimeUnit.SECONDS)) {
             assertAll(
                 () -> assertTrue(noMatch.getMessage().contains("10.99.0.0/16"), "the error names the selector"),
-                () -> assertTrue(noMap.getMessage().contains("--map"), "the error names --map"),
+                () -> assertTrue(noMap.getMessage().startsWith("map 'no-such-map' not found"), "the error names the map"),
                 () -> assertTrue(waiting, "with bindWait, start blocks while nothing matches"),
                 () -> assertEquals(List.of(new BindTarget(V4, "lo0")), s.bound(), "and binds once the address appears"),
                 () -> assertTrue(log.stream().anyMatch(l -> l.startsWith("bindWait: nothing matches")), "waiting is logged"));

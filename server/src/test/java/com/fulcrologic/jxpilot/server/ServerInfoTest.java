@@ -57,7 +57,20 @@ class ServerInfoTest {
             () -> assertEquals(ServerInfo.dumpOptions(), ServerInfo.request(new String[] {"-dumpWindows"}, "1"),
                 "-dumpWindows"),
             () -> assertEquals(ServerInfo.dumpFlags(), ServerInfo.request(new String[] {"-dumpFlags"}, "1"), "-dumpFlags"),
+            () -> assertEquals(ServerInfo.listMaps(), ServerInfo.request(new String[] {"--list-maps"}, "1"), "--list-maps"),
+            () -> assertEquals(ServerInfo.listMaps(), ServerInfo.request(new String[] {"-list-maps"}, "1"), "-list-maps"),
             () -> assertEquals("dev", ServerInfo.version(), "no jar manifest in tests"));
+    }
+
+    @Test
+    @DisplayName("--list-maps: the bundled maps' listing")
+    void listMaps() throws java.io.IOException {
+        String l = ServerInfo.listMaps();
+        assertAll(
+            () -> assertEquals(com.fulcrologic.jxpilot.common.map.BundledMaps.listing(
+                com.fulcrologic.jxpilot.common.map.BundledMaps.standard().infos()), l, "BundledMaps.listing of every map"),
+            () -> assertTrue(l.lines().anyMatch(s -> s.matches("tourmination +80x80 +Tourmination +Bert Gijsbers")),
+                "a row with tourmination's name, size, title and author"));
     }
 
     @Test

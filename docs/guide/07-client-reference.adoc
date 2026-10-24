@@ -22,9 +22,10 @@ The client has three modes:
 [source,shell]
 ----
 java -jar jxpilot-client-VERSION.jar --connect HOST[:PORT] [GAME FLAGS]   # join a server
-java -jar jxpilot-client-VERSION.jar --local --map MAPFILE [GAME FLAGS]   # play on a server of your own
-java -jar jxpilot-client-VERSION.jar --view-map MAPFILE [VIEWER FLAGS]    # look at a map
-java -jar jxpilot-client-VERSION.jar --list-keys [--keys FILE]           # print the key bindings
+java -jar jxpilot-client-VERSION.jar --local --map MAP [GAME FLAGS]       # play on a server of your own
+java -jar jxpilot-client-VERSION.jar --view-map MAP [VIEWER FLAGS]        # look at a map
+java -jar jxpilot-client-VERSION.jar --list-keys [--keys FILE]            # print the key bindings
+java -jar jxpilot-client-VERSION.jar --list-maps                          # print the built-in maps
 ----
 
 The application downloads take the same flags (`JXPilot.app/Contents/MacOS/JXPilot ...` on macOS);
@@ -33,8 +34,23 @@ from source, `client/scripts/run-client.sh` (after a build) or
 
 Without arguments, the client prints its usage and exits with status 2, as it does for an unknown flag,
 a missing value or a malformed number (with a message naming the flag). It also exits with 2 when
-`--connect` and `--local` are both given, or `--map` without `--local`. A `--local` server that cannot
-start exits with status 3.
+`--connect` and `--local` are both given, or `--map` without `--local`, or for a `--view-map` map that
+is not found. A `--local` server that cannot start (for example an unknown map) exits with status 3.
+
+[[client-map-names]]
+=== Map names
+
+`--map` and `--view-map` read their value as the server's `--map` does
+(<<04-running-a-server.adoc#map-names,Choosing the map>>):
+
+* A plain name (no `/` or `\`, no drive letter) is one of the 19 maps built into the jar, in any case
+  and with or without `.xp`: `--map tourmination`, `--view-map PlanetX.xp`. `--list-maps` prints them
+  with their size, title and author.
+* A plain name that is not built in is a file in the current directory (`mymap`, then `mymap.xp`, then
+  `mymap.map`).
+* A value with a path in it is only a file: `./default.xp`, `maps/mymap.xp`, `C:\maps\mymap.xp`.
+
+An unknown map is an error that lists the built-in names.
 
 [[game-flags]]
 == Game flags (`--connect` and `--local`)
@@ -52,9 +68,13 @@ start exits with status 3.
 |Start a JXPilot server inside the client and join it. It listens on the loopback address only, on a
 free port, with the server's defaults (robots included), and stops when you quit.
 
-|`--map FILE`
+|`--map MAP`
 |required with `--local`
-|The map for `--local`.
+|The map for `--local`: a built-in map name or a map file (<<client-map-names>>).
+
+|`--list-maps`
+|-
+|Print the built-in maps (name, size, title, author) and exit. It wins over `--connect` and `--local`.
 
 |`--protocol xpilot\|jxpilot`
 |`jxpilot`
@@ -140,10 +160,11 @@ personalities>>). The server uses it if it allows ship shapes.
 |===
 |Flag |Default |Meaning
 
-|`--view-map FILE`
+|`--view-map MAP`
 |required
-|Open the free-flying map viewer on an XPilot `.xp` map. kbd:[Tab] cycles through the other maps in the
-same directory (<<03-playing.adoc#map-viewer-keys,Map viewer keys>>).
+|Open the free-flying map viewer on a built-in map or a map file (<<client-map-names>>). kbd:[Tab]
+cycles through the built-in maps, or for a file through the other `.xp` files in its directory
+(<<03-playing.adoc#map-viewer-keys,Map viewer keys>>).
 
 |`--demo`
 |off
@@ -282,7 +303,7 @@ on existing XPilot servers:
 
 [source,shell]
 ----
-java -jar jxpilot-client-VERSION.jar --connect xp://HOST            # or: --connect HOST --protocol xpilot
+java -jar jxpilot-client-VERSION.jar --connect xp://HOST                  # or: --connect HOST --protocol xpilot
 java -jar jxpilot-client-VERSION.jar --connect xp://HOST:15345 --name Ace --team 2
 ----
 
