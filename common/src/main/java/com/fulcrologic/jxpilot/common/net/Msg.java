@@ -145,21 +145,32 @@ public final class Msg {
         public static final int REASON_OTHER = 4;
         /** The game is locked by an operator ({@code /lock 1}, C {@code E_GAME_LOCKED}). */
         public static final int REASON_LOCKED = 5;
+        /**
+         * server-commands: the game is full and the player waits in the login queue (C ENTER_QUEUE reply) at
+         * {@link #position}; the client keeps sending CONNECT to keep its place and is accepted when admitted.
+         */
+        public static final int REASON_QUEUED = 6;
 
         public int nonce;
         public int reason;
         public final StringBuilder text = new StringBuilder(MSG_LEN);
+        /** Queue position (1 = next), after the text for {@link #REASON_QUEUED} only. */
+        public int position;
 
         public void write(ByteBuffer b) {
             b.putInt(nonce);
             b.put((byte) reason);
             Wire.putString8(b, text);
+            if (reason == REASON_QUEUED) {
+                b.putShort((short) position);
+            }
         }
 
         public void read(ByteBuffer b) {
             nonce = b.getInt();
             reason = b.get() & 0xFF;
             Wire.getString8(b, text);
+            position = reason == REASON_QUEUED && b.remaining() >= 2 ? b.getShort() & 0xFFFF : 0;
         }
     }
 

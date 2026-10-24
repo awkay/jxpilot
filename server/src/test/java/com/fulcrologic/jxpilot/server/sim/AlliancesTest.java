@@ -341,6 +341,31 @@ class AlliancesTest {
     }
 
     @Nested
+    @DisplayName("review fixes")
+    class ReviewFixes {
+        @Test
+        @DisplayName("H3: accepting a leftover invitation from an ally only drops it (C crashes)")
+        void staleInvitationFromAlly() {
+            Fx f = new Fx("");
+            Player ann = f.join("Ann");
+            Player bob = f.join("Bob");
+            Player cid = f.join("Cid");
+            f.ally(bob, cid);
+            f.a.invite(ann, bob);
+            f.a.invite(cid, ann);
+            f.a.accept(ann, cid);
+            long m = f.mark();
+            boolean accepted = f.a.accept(bob, ann);
+            assertAll(
+                () -> assertFalse(accepted, "nothing to accept"),
+                () -> assertEquals(Obj.NO_ID, ann.invite, "the invitation is dropped"),
+                () -> assertEquals(3, f.a.memberCount(0), "alliance 0 keeps its three members"),
+                () -> assertEquals(1, f.a.count(), "one alliance"),
+                () -> assertEquals(List.of(), since(f.w, m), "no messages, no changes"));
+        }
+    }
+
+    @Nested
     @DisplayName("return values and the alliance table")
     class Table {
         @Test

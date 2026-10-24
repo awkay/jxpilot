@@ -353,7 +353,13 @@ public final class ServerNet {
             sendReject(channel, from, connect.nonce, Msg.Reject.REASON_FULL, "too many players from your address", size);
             return;
         }
-        int id = host.join(connect.name, connect.team, connect.shape);
+        int id = host.join(connect.name, connect.team, connect.shape, source);
+        if (id == -Msg.Reject.REASON_QUEUED) {
+            int pos = host.queuePosition();
+            reject.position = pos;
+            sendReject(channel, from, connect.nonce, Msg.Reject.REASON_QUEUED, "queued at position " + pos, size);
+            return;
+        }
         if (id < 0) {
             sendReject(channel, from, connect.nonce, -id, rejectText(-id), size);
             return;
@@ -641,7 +647,7 @@ public final class ServerNet {
         reject.reason = reason;
         reject.text.setLength(0);
         reject.text.append(text);
-        Wire.cap(reject.text, maxBytes - REJECT_OVERHEAD);
+        Wire.cap(reject.text, maxBytes - REJECT_OVERHEAD - (reason == Msg.Reject.REASON_QUEUED ? 2 : 0));
         reject.write(outBuf);
         outBuf.flip();
         out.send(channel, to, outBuf);
@@ -661,6 +667,7 @@ public final class ServerNet {
             case Msg.Reject.REASON_VERSION -> "incompatible version";
             case Msg.Reject.REASON_BAD_NAME -> "name not accepted";
             case Msg.Reject.REASON_LOCKED -> "game locked";
+            case Msg.Reject.REASON_QUEUED -> "queued";
             default -> "join refused";
         };
     }

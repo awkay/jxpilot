@@ -170,7 +170,8 @@ public final class Alliances {
     /**
      * C {@code Accept_alliance}: {@code pl} accepts the invitation of {@code ally}.
      * <p>
-     * BEHAVIOR: false when {@code ally} has not invited {@code pl}; otherwise the invitation is dropped and: both
+     * BEHAVIOR: false when {@code ally} has not invited {@code pl}; otherwise the invitation is dropped, and an
+     * invitation left over from a player already in {@code pl}'s alliance ends there (false); otherwise: both
      * in alliances: {@code pl}'s alliance merges into {@code ally}'s; only {@code ally} in one: {@code pl} joins
      * it; only {@code pl}: {@code ally} joins {@code pl}'s; neither: a new alliance (false when none is left).
      */
@@ -179,6 +180,9 @@ public final class Alliances {
             return false;
         }
         ally.invite = Obj.NO_ID;
+        if (w.allied(pl, ally)) {
+            return false; // a leftover invitation from an ally: C merges the alliance into itself and crashes
+        }
         if (ally.alliance != Player.ALLIANCE_NOT_SET) {
             if (pl.alliance != Player.ALLIANCE_NOT_SET) {
                 merge(ally, pl.alliance);

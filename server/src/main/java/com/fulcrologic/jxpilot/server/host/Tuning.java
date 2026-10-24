@@ -309,7 +309,8 @@ final class Tuning {
      * worldLives, wormTime, mineLife and missileLife below 0 become 0; cannonSmartness is limited to 0..3; the
      * item probabilities of {@code Set_misc_item_limits} to [0, 1], itemConcentratorRadius to [1, diagonal in
      * blocks] and asteroidMaxItems to at least 0; real names get C {@code Fix_real_name}, host names
-     * {@code Fix_host_name}.
+     * {@code Fix_host_name}; a robotTeam outside 0..9 becomes 0 (Robot_init's clamp; C's dummy tuner leaves it
+     * out of range and indexes past its team table).
      */
     void fixValues(Tuner t, Opt o) {
         switch (t) {
@@ -356,9 +357,21 @@ final class Tuning {
                     writeBack(Opt.ASTEROID_MAX_ITEMS, 0);
                 }
             }
+            case ASTEROID_PROB -> {
+                int diagonal = (int) Math.hypot(w.width, w.height);
+                writeBack(Opt.ASTEROID_CONCENTRATOR_RADIUS,
+                    Math.clamp(opts.getInt(Opt.ASTEROID_CONCENTRATOR_RADIUS), 1, diagonal));
+                limit(Opt.ASTEROID_CONCENTRATOR_PROB, 0, 1);
+            }
             case REAL_NAME -> opts.force(o, fixRealName(opts.getString(o)));
             case HOST_NAME -> opts.force(o, fixHostName(opts.getString(o)));
             default -> { }
+        }
+        if (o == Opt.ROBOT_TEAM) {
+            int team = opts.getInt(o);
+            if (team < 0 || team >= Const.MAX_TEAMS) {
+                writeBack(o, 0); // Robot_init's clamp (robot.c:601); C indexes World.teams out of range here
+            }
         }
     }
 
@@ -508,7 +521,30 @@ final class Tuning {
                 }
             }
             case MAX_ROBOTS -> sim.robots.applyMaxRobots();
-            case WORLD_RULES, MODIFIERS -> setWorldRules();
+            case WORLD_RULES -> setWorldRules();
+            case MODIFIERS -> {
+                setWorldRules();
+                var ip = w.items;
+                for (int k = 0; k < w.numPlayers; k++) {
+                    Player pl = w.playerAt(k);
+                    pl.mods = com.fulcrologic.jxpilot.server.world.Mods.filter(pl.mods, ip.allowNukes,
+                        ip.allowClusters, ip.allowModifiers, ip.allowLaserModifiers);
+                }
+            }
+            case BALL_MASS -> {
+                var o = w.objects;
+                for (int k = 0; k < o.count(); k++) {
+                    int h = o.active[k];
+                    if (o.type[h] == com.fulcrologic.jxpilot.server.world.Obj.BALL) {
+                        o.mass[h] = w.modeParams.ballMass;
+                    }
+                }
+            }
+            case MINE_LIFE -> reLife(com.fulcrologic.jxpilot.server.world.Obj.MINE, true);
+            case MISSILE_LIFE -> reLife(com.fulcrologic.jxpilot.server.world.Obj.SMART_SHOT
+                | com.fulcrologic.jxpilot.server.world.Obj.HEAT_SHOT | com.fulcrologic.jxpilot.server.world.Obj.TORPEDO,
+                false);
+            case ITEM_PROBS -> deleteExcessItems();
             case PLAYER_SHIELDING -> {
                 setWorldRules();
                 for (int k = 0; k < w.numPlayers; k++) {
@@ -535,9 +571,28 @@ final class Tuning {
                     restartGame();
                 }
             }
-            case MOVE_INIT, CANNONS_USE_ITEMS -> {
+            case MOVE_INIT -> {
                 p.killingShots = killingShots;
                 p.resolveMasks();
+            }
+            case CANNONS_USE_ITEMS -> {
+                p.killingShots = killingShots;
+                p.resolveMasks();
+                for (int c = 0; c < w.map.cannons().size(); c++) {
+                    for (int j = 0; j < com.fulcrologic.jxpilot.common.Item.COUNT; j++) {
+                        w.cannonItems.set(c, j, 0);
+                        if (p.cannonsUseItems) {
+                            w.cannonItems.addItem(w.items, w.rng, c, j,
+                                (int) (w.rfrac() * (w.items.initial[j] + 1)));
+                        }
+                    }
+                }
+            }
+            case TEAM_CANNONS -> {
+                for (int c = 0; c < w.map.cannons().size(); c++) {
+                    var cn = w.map.cannons().get(c);
+                    w.map.setCannonTeam(c, p.teamCannons ? w.map.closestTeam(cn.bx(), cn.by()) : Const.TEAM_NOT_SET);
+                }
             }
             case ALLOW_ALLIANCES -> {
                 if (p.teamPlay) {
@@ -548,12 +603,70 @@ final class Tuning {
                 }
             }
             case WORM_TIME -> {
-                for (int i = 0; i < w.wormCountdown.length; i++) {
-                    w.wormCountdown[i] = p.wormTime != 0 ? p.wormTime : WORMCOUNT;
+                var worms = w.worms;
+                for (int i = 0; i < worms.count(); i++) {
+                    if (p.wormTime != 0) {
+                        worms.setCountdown(i, p.wormTime);
+                    } else if (worms.temporary(i)) {
+                        worms.removeTemp(i); // C's loop then skips the wormhole moved into i (tuner.c:228-232)
+                    } else {
+                        worms.setCountdown(i, WORMCOUNT);
+                    }
                 }
             }
-            case GAME_DURATION -> w.gameDuration = p.gameDuration;
+            case GAME_DURATION -> {
+                w.gameDuration = p.gameDuration;
+                long now = w.wallSeconds.getAsLong();
+                w.gameOverTime = p.gameDuration <= 0 ? now : (long) (p.gameDuration * 60) + now;
+            }
             default -> { }
+        }
+    }
+
+    /**
+     * C {@code tuner_minelife} / {@code tuner_missilelife}: every object of {@code types} not fired by a cannon
+     * gets life (int)(rfrac() * L), L = (mineLife or else the default lifetime) / (mini + 1). The default is
+     * MINE_LIFETIME (5000 + randomMT()&amp;255) for mines and MISSILE_LIFETIME for missiles, drawn per object;
+     * as in C the missile tuner also uses mineLife, not missileLife (tuner.c:264-267).
+     */
+    void reLife(int types, boolean mines) {
+        var o = w.objects;
+        int mineLife = w.items.mineLife;
+        int fps = w.params.fps;
+        for (int k = 0; k < o.count(); k++) {
+            int h = o.active[k];
+            if ((o.type[h] & types) == 0 || (o.status[h] & com.fulcrologic.jxpilot.server.world.Obj.FROMCANNON) != 0) {
+                continue;
+            }
+            int base = mineLife != 0 ? mineLife
+                : mines ? 5000 + (w.rng.nextInt() & 255)
+                : Integer.remainderUnsigned(w.rng.nextInt(), 64 * fps - 1) + 128 * fps;
+            int life = base / (com.fulcrologic.jxpilot.server.world.Mods.mini(o.mods[h]) + 1);
+            o.life[h] = (int) (w.rfrac() * life);
+        }
+    }
+
+    /**
+     * C {@code Tune_item_probs}: for each item kind, items in the world beyond the new maximum are deleted, first
+     * found first.
+     */
+    void deleteExcessItems() {
+        var o = w.objects;
+        for (int i = 0; i < com.fulcrologic.jxpilot.common.Item.COUNT; i++) {
+            int excess = w.itemCount[i] - w.items.max[i];
+            if (excess <= 0) {
+                continue;
+            }
+            for (int k = 0; k < o.count(); k++) {
+                int h = o.active[k];
+                if (o.type[h] == com.fulcrologic.jxpilot.server.world.Obj.ITEM && o.info[h] == i) {
+                    sim.items.delete(h);
+                    k--;
+                    if (--excess == 0) {
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -587,7 +700,7 @@ final class Tuning {
      * a value NO_VALUE; position, list and void options UNDEFINED (C's position case falls through to the
      * error).
      * BEHAVIOR: int "%d"; real "%g" of the float; bool "true"/"false"; string as is; seconds the frames
-     * (int)(s * fps) divided by fps (int); per second "%g" of the float per-frame value times fps.
+     * (int)(s * fps) divided by fps (int). (C's per-second case is unreachable: no option has that type.)
      */
     int get(String name, StringBuilder out) {
         Opt o = Opt.find(name);
@@ -610,10 +723,6 @@ final class Tuning {
                 out.append(v);
             }
             case SEC -> out.append(opts.getFrames(o) / fps);
-            case PER_SEC -> {
-                float perFrame = (float) opts.getDouble(o) / fps;
-                out.append(CFormat.g(perFrame * fps));
-            }
             default -> {
                 return UNDEFINED;
             }

@@ -83,6 +83,10 @@ public final class SimGameHost implements GameHost {
     private final Commands commands;
     /** C {@code game_lock}: an operator's {@code /lock 1} refuses new players. */
     boolean gameLock;
+    /** server-commands: the login queue (C contact.c), and C {@code main_loops} for its timing. */
+    final LoginQueue loginQueue = new LoginQueue();
+    private long mainLoops;
+    private int lastQueuePosition;
     /** C {@code RawMode} (idleRun; an operator may change it). */
     private boolean rawMode;
     private boolean shutdown;
@@ -215,19 +219,54 @@ public final class SimGameHost implements GameHost {
      */
     @Override
     public int join(CharSequence name, int team, CharSequence shape) {
+        return join(name, team, shape, 0);
+    }
+
+    /**
+     * {@link #join(CharSequence, int, CharSequence)} with the login queue (C contact.c {@code Queue_player}).
+     * <p>
+     * BEHAVIOR: a queued name asking again from its source refreshes its entry (team too): admitted, it gets its
+     * reserved slot and joins; still waiting, REASON_QUEUED with its position ({@link #queuePosition}). The same
+     * name from another source is refused with REASON_BAD_NAME (C E_IN_USE).
+     * BEHAVIOR: when players are waiting, or the game is full after kicking a robot and paused players, a
+     * newcomer joins the queue (REASON_QUEUED); with {@link LoginQueue#MAX_QUEUED} entries it is refused with
+     * REASON_FULL, and a third entry from one source with REASON_BAD_NAME (C E_IN_USE).
+     */
+    @Override
+    public int join(CharSequence name, int team, CharSequence shape, long source) {
+        clampName(name, nameBuf);
+        LoginQueue.Entry e = loginQueue.find(nameBuf);
+        if (e != null) {
+            if (e.source != source) {
+                return -Msg.Reject.REASON_BAD_NAME;
+            }
+            e.lastRequest = mainLoops;
+            e.team = team;
+            if (e.admitted != null) {
+                loginQueue.entries.remove(e);
+                return bind(e.admitted, e.team, shape);
+            }
+            lastQueuePosition = loginQueue.position(e);
+            return -Msg.Reject.REASON_QUEUED;
+        }
         if (gameLock) {
             return -Msg.Reject.REASON_LOCKED;
         }
-        if (!hasFreeSlot() && sim.robots.kickRobotPlayers(Const.TEAM_NOT_SET) == 0
-            && kickPausedPlayers(Const.TEAM_NOT_SET) == 0) {
-            return -Msg.Reject.REASON_FULL;
-        }
-        if (!hasFreeSlot()) {
-            return -Msg.Reject.REASON_FULL;
-        }
-        clampName(name, nameBuf);
         if (nameBuf.isEmpty() || nameTaken(nameBuf)) {
             return -Msg.Reject.REASON_BAD_NAME;
+        }
+        if (loginQueue.waiting() > 0 || (!hasFreeSlot() && sim.robots.kickRobotPlayers(Const.TEAM_NOT_SET) == 0
+            && kickPausedPlayers(Const.TEAM_NOT_SET) == 0) || !hasFreeSlot()) {
+            if (loginQueue.size() >= LoginQueue.MAX_QUEUED) {
+                return -Msg.Reject.REASON_FULL;
+            }
+            if (loginQueue.fromSource(source) > 1) {
+                return -Msg.Reject.REASON_BAD_NAME;
+            }
+            LoginQueue.Entry n = new LoginQueue.Entry(nameBuf.toString(), source, team, shape.toString(), mainLoops);
+            loginQueue.entries.add(n);
+            lastQueuePosition = loginQueue.position(n);
+            return -Msg.Reject.REASON_QUEUED;
         }
         int t = Const.TEAM_NOT_SET;
         if (w.params.teamPlay) {
@@ -243,6 +282,17 @@ public final class SimGameHost implements GameHost {
         if (pl == null) {
             return -Msg.Reject.REASON_FULL;
         }
+        return bind(pl, t, shape);
+    }
+
+    /** The queue position of the last REASON_QUEUED answer of {@link #join}. */
+    @Override
+    public int queuePosition() {
+        return lastQueuePosition;
+    }
+
+    /** A reserved player becomes this connection's: its login team, input, settings, ship and event cursors. */
+    private int bind(Player pl, int t, CharSequence shape) {
         int id = pl.id;
         bound[id] = pl;
         spawnTeam[id] = t;
@@ -595,6 +645,8 @@ public final class SimGameHost implements GameHost {
             return;
         }
         runKicks();
+        mainLoops++;
+        queueLoop();
         int humans = humans();
         boolean run = rawMode || humans > 0;
         if (sim.robots.enabled() != run) {
@@ -672,6 +724,86 @@ public final class SimGameHost implements GameHost {
                 }
             }
         }
+    }
+
+    /** C {@code 30 * FPS}: an entry nobody asked for this long is dropped. */
+    private long queueTimeout() {
+        return 30L * w.params.fps;
+    }
+
+    /**
+     * C {@code Queue_loop}, once per tick.
+     * <p>
+     * BEHAVIOR: an admitted entry not claimed within 30*FPS ticks gives its reserved slot back and goes.
+     * BEHAVIOR: the first waiting entry is dropped when stale; otherwise, at most once every 2 + FPS/4 ticks, it is
+     * admitted when a slot is free, or after a robot (else the paused players) was kicked for it: in team play its
+     * team is kept when it has room (a robot or the paused players of it may be kicked) and is not the reserved
+     * robot team, else C {@code Pick_team} chooses (kicking a robot when only the robots' teams have room); a
+     * slot is reserved for it. One admission per tick.
+     * BEHAVIOR: else the first stale waiting entry behind it is dropped (one per tick).
+     */
+    void queueLoop() {
+        var entries = loginQueue.entries;
+        if (entries.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < entries.size(); i++) {
+            LoginQueue.Entry e = entries.get(i);
+            if (e.admitted != null && e.lastRequest + queueTimeout() < mainLoops) {
+                sim.ships.leave(e.admitted);
+                entries.remove(i);
+                return;
+            }
+        }
+        LoginQueue.Entry head = loginQueue.head();
+        if (head == null) {
+            return;
+        }
+        if (head.lastRequest + queueTimeout() < mainLoops) {
+            entries.remove(head);
+            return;
+        }
+        if (loginQueue.lastUnqueued + 2 + (w.params.fps >> 2) < mainLoops) {
+            if (hasFreeSlot() || (sim.robots.kickRobotPlayers(Const.TEAM_NOT_SET) > 0 && hasFreeSlot())
+                || (kickPausedPlayers(Const.TEAM_NOT_SET) > 0 && hasFreeSlot())) {
+                head.team = queueTeam(head.team);
+                head.admitted = sim.ships.reserve(head.name);
+                loginQueue.lastUnqueued = mainLoops;
+                return;
+            }
+        }
+        for (int i = entries.indexOf(head) + 1; i < entries.size(); i++) {
+            LoginQueue.Entry e = entries.get(i);
+            if (e.admitted == null && e.lastRequest + queueTimeout() < mainLoops) {
+                entries.remove(i);
+                return;
+            }
+        }
+    }
+
+    /** The team choice of C {@code Queue_loop} for an admitted player (team play only). */
+    private int queueTeam(int team) {
+        var p = w.params;
+        if (!p.teamPlay) {
+            return Const.TEAM_NOT_SET;
+        }
+        if (team >= 0 && team < Const.MAX_TEAMS) {
+            if ((w.teamMembers[team] >= w.map.teamBaseCount(team) && sim.robots.kickRobotPlayers(team) == 0
+                && kickPausedPlayers(team) == 0) || (team == p.robotTeam && p.reserveRobotTeam)) {
+                team = Const.TEAM_NOT_SET;
+            }
+        } else {
+            team = Const.TEAM_NOT_SET;
+        }
+        if (team == Const.TEAM_NOT_SET) {
+            team = sim.ships.pickTeam(null);
+            if ((team == Const.TEAM_NOT_SET || (team == p.robotTeam && p.reserveRobotTeam))
+                && sim.robots.numRobots() > robotsOn(p.robotTeam)) {
+                sim.robots.kickRobotPlayers(Const.TEAM_NOT_SET);
+                team = sim.ships.pickTeam(null);
+            }
+        }
+        return team;
     }
 
     // ================================================================ snapshots

@@ -117,6 +117,10 @@ public final class ClientConnection {
     private int playerId = Protocol.NO_ID;
     private long lastReceive;
     private long lastConnectSend;
+    /** server-commands: waiting in the server's login queue (REJECT QUEUED); 0 when not queued. */
+    private int queuePosition;
+    /** CONNECT resend interval while queued (C re-requests a queue place; 1 s keeps the place and the position fresh). */
+    static final long QUEUE_RESEND_NANOS = 1_000_000_000L;
     private int attempts;
     private boolean sentThisFrame;
     private ConfigTransfer.Receiver config;
@@ -221,6 +225,7 @@ public final class ClientConnection {
 
     private void resetSession(long nowNanos) {
         connect.nonce = rng.nextInt();
+        queuePosition = 0;
         session = 0;
         playerId = Protocol.NO_ID;
         channel.reset();
@@ -328,7 +333,8 @@ public final class ClientConnection {
             onTimeout(nowNanos);
             return;
         }
-        if (state == ConnectionState.CONNECTING && nowNanos - lastConnectSend >= CONNECT_RESEND_NANOS) {
+        if (state == ConnectionState.CONNECTING
+            && nowNanos - lastConnectSend >= (queuePosition > 0 ? QUEUE_RESEND_NANOS : CONNECT_RESEND_NANOS)) {
             sendConnect(nowNanos);
         }
     }
@@ -495,6 +501,7 @@ public final class ClientConnection {
         if (accept.nonce != connect.nonce) {
             return;
         }
+        queuePosition = 0;
         packetsReceived++;
         lastReceive = now;
         session = header.session();
@@ -512,10 +519,25 @@ public final class ClientConnection {
             return;
         }
         packetsReceived++;
+        if (reject.reason == com.fulcrologic.jxpilot.common.net.Msg.Reject.REASON_QUEUED) {
+            // server-commands: C's "... queued at position N"; keep asking (same nonce) until admitted
+            queuePosition = Math.max(1, reject.position);
+            lastReceive = now;
+            status.setLength(0);
+            status.append("Waiting in queue on ").append(serverLabel).append(" (position ").append(queuePosition)
+                .append(')');
+            listener.onStateChange(state, status);
+            return;
+        }
         status.setLength(0);
         status.append("Rejected by ").append(serverLabel).append(": ");
         appendCapped(reject.text);
         setState(ConnectionState.CLOSED);
+    }
+
+    /** server-commands: the login queue position while waiting (REJECT QUEUED), else 0. */
+    public int queuePosition() {
+        return queuePosition;
     }
 
     private void onDisconnect(ByteBuffer in) {
@@ -651,8 +673,10 @@ public final class ClientConnection {
     private void sendConnect(long nowNanos) {
         lastConnectSend = nowNanos;
         attempts++;
-        status.setLength(0);
-        status.append("Connecting to ").append(serverLabel).append(" (attempt ").append(attempts).append(")...");
+        if (queuePosition == 0) {
+            status.setLength(0);
+            status.append("Connecting to ").append(serverLabel).append(" (attempt ").append(attempts).append(")...");
+        }
         begin(PacketType.CONNECT);
         connect.write(tx);
         transmit();
