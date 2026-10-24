@@ -279,13 +279,24 @@ class XpReliableDecoderTest {
         }
 
         @Test
-        void ignoredPacketsAreConsumedAndCounted() {
-            List<Integer> res = decode(new CPackets().timing(5, 3, 2).string(1, 2, 3).motd(0, "abc".getBytes(), 3));
+        @DisplayName("PKT_TIMING (%c%hd%hu) becomes TIMING with check = t % MAX_CHECKS, round = t / MAX_CHECKS (C Receive_timing)")
+        void timing() {
+            List<Integer> res = decode(new CPackets().timing(5, 3, 2).timing(7, 25, 120));
             assertAll(
-                () -> assertEquals(List.of(5, 6, 14), res, "sizes"),
-                () -> assertEquals(3, dec.ignored(), "three ignored"),
-                () -> assertEquals(List.of(), rec.events, "nothing for the model"));
+                () -> assertEquals(List.of(5, 5), res, "sizes"),
+                () -> assertEquals(List.of("timing id=5 check=3 round=2", "timing id=7 check=25 round=120"), rec.events,
+                    "decoded"),
+                () -> assertEquals(0, dec.ignored(), "not ignored any more"));
             prefixesIncomplete(new CPackets().timing(1, 2, 3));
+        }
+
+        @Test
+        void ignoredPacketsAreConsumedAndCounted() {
+            List<Integer> res = decode(new CPackets().string(1, 2, 3).motd(0, "abc".getBytes(), 3));
+            assertAll(
+                () -> assertEquals(List.of(6, 14), res, "sizes"),
+                () -> assertEquals(2, dec.ignored(), "two ignored"),
+                () -> assertEquals(List.of(), rec.events, "nothing for the model"));
             prefixesIncomplete(new CPackets().string(1, 2, 3));
             prefixesIncomplete(new CPackets().motd(0, "ab".getBytes(), 2));
         }

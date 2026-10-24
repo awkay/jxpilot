@@ -77,6 +77,8 @@ public final class SnapshotBuilder {
     /** {@link World#frames} when {@link #hash} was last rebuilt (-1: never). */
     private long hashFrames = -1;
     private final int[] shotList;
+    /** C {@code wormholeVisible}: temporary wormholes are sent. */
+    private final boolean wormholeVisible;
     private final int[] shotVariant;
     private double viewHalfX = DEFAULT_VIEW_HALF;
     private double viewHalfY = DEFAULT_VIEW_HALF;
@@ -103,6 +105,7 @@ public final class SnapshotBuilder {
         this.w = w;
         wr.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
         shotList = new int[w.objects.capacity];
+        wormholeVisible = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.WORMHOLE_VISIBLE);
         shotVariant = new int[w.objects.capacity];
         wrecks = new int[w.objects.capacity];
         hash = new ShotHash(w);
@@ -575,14 +578,25 @@ public final class SnapshotBuilder {
         }
     }
 
-    /** BEHAVIOR: every temporary wormhole (few, map-like): its block and type (Wormhole.Type ordinal). */
+    /**
+     * C {@code Frame_map} wormholes (frame.c:611-636): with wormholeVisible, the temporary IN ends in view
+     * (the OUT ends are never sent), as their block and type (Wormhole.Type ordinal).
+     */
     private void writeTempWormholes() {
+        if (!wormholeVisible) {
+            return;
+        }
         com.fulcrologic.jxpilot.server.world.WormTable worms = w.worms;
         for (int i = worms.mapCount; i < worms.count(); i++) {
+            int type = worms.type(i);
+            if (type == com.fulcrologic.jxpilot.server.world.WormTable.OUT
+                || !visible((worms.bx(i) + 0.5) * Const.BLOCK_SZ, (worms.by(i) + 0.5) * Const.BLOCK_SZ, 0)) {
+                continue;
+            }
             if (!need(Section.TEMP_WORMHOLE, 0)) {
                 return;
             }
-            Records.TempWormhole.put(wr, worms.bx(i), worms.by(i), worms.type(i));
+            Records.TempWormhole.put(wr, worms.bx(i), worms.by(i), type);
         }
     }
 

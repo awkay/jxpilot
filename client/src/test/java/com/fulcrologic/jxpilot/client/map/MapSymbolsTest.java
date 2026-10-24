@@ -33,6 +33,7 @@ import com.fulcrologic.jxpilot.common.map.Base;
 import com.fulcrologic.jxpilot.common.map.Dir;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -59,6 +60,7 @@ class MapSymbolsTest {
         int team = Const.TEAM_NOT_SET;
         int next;
         long loops;
+        int[] temps = {};
 
         @Override public double fuel(int i) { return fuel; }
         @Override public boolean cannonAlive(int i) { return cannons; }
@@ -67,6 +69,9 @@ class MapSymbolsTest {
         @Override public int selfTeam() { return team; }
         @Override public int nextCheckpoint() { return next; }
         @Override public long loops() { return loops; }
+        @Override public int tempWormholes() { return temps.length / 2; }
+        @Override public int tempWormholeBx(int i) { return temps[2 * i]; }
+        @Override public int tempWormholeBy(int i) { return temps[2 * i + 1]; }
     }
 
     static Camera cam(WorldMap m, double cx, double cy, int vw, int vh) {
@@ -313,6 +318,25 @@ class MapSymbolsTest {
                 () -> assertEquals(222f, b.x(b.commandFirst(2)), "F centred on screen x 224 (pen 221 + 1)"),
                 () -> assertEquals(137f, b.y(b.commandFirst(2) + 2), "F baseline 134 - 5, top + 8"),
                 () -> assertEquals(1f, b.scaleX(), "text pass resets the transform to identity"));
+        }
+
+        @Test
+        @DisplayName("temporary wormholes are drawn like map ones, half a block up and right (C draws the centre the server sends with the corner routine)")
+        void temporaryWormholes() {
+            WorldMap m = mapWith(false, "", ".....", "1....");
+            Camera c = cam(m, 52, 35, 400, 200);
+            State st = new State();
+            st.temps = new int[] {2, 1, 400, 400};
+            VertexBatch b = Segs.batch();
+            new MapSymbols(m, P).drawArcs(b, c, st);
+            VertexBatch none = Segs.batch();
+            new MapSymbols(m, P).drawArcs(none, c, new State());
+            List<String> l = worldLines(b, c);
+            assertAll(
+                () -> assertEquals(3 * MapSymbols.CIRCLE_SEGMENTS, b.segmentCount(), "one wormhole (the far one is culled)"),
+                () -> assertEquals("120,70.5", l.get(0).split("-")[0], "block (2,1) + 17 px: outer circle from 3 o'clock"),
+                () -> assertEquals(RED, b.segColor(0), "red"),
+                () -> assertEquals(0, none.segmentCount(), "none without temporary wormholes"));
         }
 
         @Test

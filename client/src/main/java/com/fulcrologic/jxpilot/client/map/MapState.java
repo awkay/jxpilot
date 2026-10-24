@@ -52,4 +52,19 @@ public interface MapState {
      * SPEC "Time model"); the same value as {@code SceneData.loops}.
      */
     long loops();
+
+    /** Temporary (hyperjump) wormholes to draw this frame; none by default. */
+    default int tempWormholes() {
+        return 0;
+    }
+
+    /** Block x of temporary wormhole {@code i}. */
+    default int tempWormholeBx(int i) {
+        return 0;
+    }
+
+    /** Block y of temporary wormhole {@code i}. */
+    default int tempWormholeBy(int i) {
+        return 0;
+    }
 }

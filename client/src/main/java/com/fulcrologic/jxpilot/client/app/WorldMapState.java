@@ -91,4 +91,20 @@ public final class WorldMapState implements MapState {
     public long loops() {
         return loops;
     }
+
+    /** BEHAVIOR: the temporary wormholes of the newest snapshot. */
+    @Override
+    public int tempWormholes() {
+        return game.world().tempWormholes();
+    }
+
+    @Override
+    public int tempWormholeBx(int i) {
+        return game.world().tempWormholeBx(i);
+    }
+
+    @Override
+    public int tempWormholeBy(int i) {
+        return game.world().tempWormholeBy(i);
+    }
 }

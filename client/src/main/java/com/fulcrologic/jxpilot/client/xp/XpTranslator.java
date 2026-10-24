@@ -68,6 +68,7 @@ public final class XpTranslator {
     private final Msg.PlayerJoin join = new Msg.PlayerJoin();
     private final Msg.PlayerLeave leave = new Msg.PlayerLeave();
     private final Msg.Score score = new Msg.Score();
+    private final Msg.Timing timingMsg = new Msg.Timing();
     private final Msg.TeamScore teamScore = new Msg.TeamScore();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
     private final Msg.Text text = new Msg.Text();
@@ -838,6 +839,14 @@ public final class XpTranslator {
             nameChar[s] = (char) mychar;
         }
         deliver(score, ReliableType.SCORE);
+    }
+
+    /** BEHAVIOR: C {@code Handle_timing}: delivered as TIMING (id, checkpoint, lap). */
+    public void timing(int id, int check, int round) {
+        timingMsg.id = id & 0xFFFF;
+        timingMsg.check = check;
+        timingMsg.round = round;
+        deliver(timingMsg, ReliableType.TIMING);
     }
 
     /**

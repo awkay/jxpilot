@@ -170,6 +170,26 @@ class ModelsTest {
     @DisplayName("Players")
     class PlayersTest {
         @Test
+        @DisplayName("TIMING: only a change of checkpoint or lap is taken, with the frame it happened (C Handle_timing)")
+        void timing() {
+            Players p = new Players();
+            p.join(join(1, 0, 0, "Ann", ""));
+            int s = p.slotOf(1);
+            int v0 = p.version();
+            p.setTiming(1, 2, 1, 40);
+            int v1 = p.version();
+            p.setTiming(1, 2, 1, 90);
+            int v2 = p.version();
+            p.setTiming(9, 1, 1, 1);
+            assertAll(
+                () -> assertEquals(1 * Players.MAX_CHECKS + 2, p.timing(s), "progress = round * MAX_CHECKS + check"),
+                () -> assertEquals(40, p.timingLoops(s), "the frame of the change; a repeat does not move it"),
+                () -> assertTrue(v1 != v0, "a change bumps the version"),
+                () -> assertEquals(v1, v2, "a repeat does not"),
+                () -> assertEquals(v1, p.version(), "unknown ids are ignored"));
+        }
+
+        @Test
         @DisplayName("joins, rejoins, leaves and updates by wire id")
         void lifecycle() {
             Players p = new Players();
@@ -359,6 +379,48 @@ class ModelsTest {
                 () -> assertEquals("          1  Ann", race.label(0).toString(), "timing adds the 3-char race column"),
                 () -> assertEquals(0, race.bestRow(), "timing: the first row is best"),
                 () -> assertEquals(2, race.rowCount(), "no team rows in timing mode"));
+        }
+
+        @Test
+        @DisplayName("timing: race order (progress, then who got there first; P/T/W last) and C's lap.check column")
+        void raceOrder() {
+            Players p = new Players();
+            p.join(join(1, 0, 0, "Ann", ""));
+            p.join(join(2, 0, 0, "Bob", ""));
+            p.join(join(3, 0, Msg.PlayerJoin.FLAG_ROBOT, "Cy", ""));
+            p.join(join(4, 0, 0, "Dee", ""));
+            p.join(join(5, 0, 0, "Eve", ""));
+            p.setScore(4, 0, -1, Msg.Score.STATUS_PAUSED);
+            p.setTiming(1, 1, 1, 10);
+            p.setTiming(2, 2, 1, 50);
+            p.setTiming(3, 1, 1, 8);
+            p.setTiming(4, 5, 3, 1);
+            Scoreboard sb = new Scoreboard();
+            sb.configure(false, true, false, 0);
+            sb.update(p);
+            assertAll(
+                () -> assertEquals(List.of("  1.c     0  Bob", "R 1.b     0  Cy", "  1.b     0  Ann", "    b     0  Eve",
+                    "P   b     0  Dee"), labels(sb),
+                    "Bob is furthest; Cy reached 1.b before Ann; Eve has no progress; paused Dee last. C's static "
+                        + "raceStr keeps the 'b' of the last lap.check for rows without one"),
+                () -> assertEquals(0, sb.bestRow(), "the leader is best"),
+                () -> assertEquals(" AL   SCORE   NAME", sb.heading().toString(), "C overwrites its LAP heading"));
+        }
+
+        @Test
+        @DisplayName("timing: laps above 99 print as %3d, two-digit laps leave '.x' behind in the static buffer")
+        void raceColumnWidths() {
+            Players p = new Players();
+            p.join(join(1, 0, 0, "Ann", ""));
+            p.join(join(2, 0, 0, "Bob", ""));
+            p.join(join(3, 0, 0, "Cy", ""));
+            p.setTiming(1, 0, 120, 1);
+            p.setTiming(2, 0, 12, 1);
+            Scoreboard sb = new Scoreboard();
+            sb.configure(false, true, false, 0);
+            sb.update(p);
+            assertEquals(List.of("  120     0  Ann", "  12.a     0  Bob", "    .a     0  Cy"), labels(sb),
+                "Ann lap 120, Bob 12.a (four characters), Cy none: blanks over '12' leave '.a'");
         }
 
         @Test

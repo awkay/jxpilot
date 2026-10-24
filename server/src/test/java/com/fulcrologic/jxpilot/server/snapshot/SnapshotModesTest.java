@@ -259,12 +259,25 @@ class SnapshotModesTest {
     }
 
     @Test
-    @DisplayName("every temporary wormhole is sent with its block and type")
+    @DisplayName("temporary wormholes (frame.c:611-636): only IN ends in view, and only with wormholeVisible")
     void tempWormholes() {
         Simulation s = TestWorlds.sim("teamPlay: yes\ngravity: 0\nwormTime: 5\n", ROWS);
         World w = s.world;
         Player v = TestWorlds.join(s, "V", 1);
-        w.worms.addTemp(20, 3, 50, 2);
+        v.initPixels(20 * 35, 3 * 35);
+        w.worms.addTemp(22, 3, 24, 3);
+        w.worms.addTemp(55, 3, 50, 2);
+        List<String> got = temps(w, v);
+        Simulation off = TestWorlds.sim("teamPlay: yes\ngravity: 0\nwormTime: 5\nwormholeVisible: no\n", ROWS);
+        Player q = TestWorlds.join(off, "Q", 1);
+        q.initPixels(20 * 35, 3 * 35);
+        off.world.worms.addTemp(22, 3, 24, 3);
+        assertAll(
+            () -> assertEquals(List.of("22,3:1"), got, "the near IN end; not its OUT end, not the far pair"),
+            () -> assertEquals(List.of(), temps(off.world, q), "wormholeVisible off: none"));
+    }
+
+    List<String> temps(World w, Player v) {
         for (int i = 0; i < parts.length; i++) {
             parts[i] = ByteBuffer.allocate(1200);
         }
@@ -286,6 +299,6 @@ class SnapshotModesTest {
                 }
             }
         }
-        assertEquals(List.of("20,3:1", "50,2:2"), got, "IN (type 1) and OUT (type 2), even out of view");
+        return got;
     }
 }

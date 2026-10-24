@@ -183,7 +183,7 @@ public final class ClientGame implements ConnectionListener {
             }
             case ReliableType.TIMING -> {
                 timing.read(p);
-                players.setTiming(timing.id, timing.check, timing.round);
+                players.setTiming(timing.id, timing.check, timing.round, world.newestTick());
             }
             case ReliableType.GAME_EVENT -> {
                 gameEvent.read(p);

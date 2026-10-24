@@ -56,6 +56,7 @@ public final class Players {
     private final boolean[] scored = new boolean[CAPACITY];
     private final int[] check = new int[CAPACITY];
     private final int[] round = new int[CAPACITY];
+    private final int[] timingLoops = new int[CAPACITY];
     private final int[] order = new int[CAPACITY];
     private int count;
     private int selfId = Protocol.NO_ID;
@@ -145,6 +146,7 @@ public final class Players {
         status[s] = 0;
         check[s] = 0;
         round[s] = 0;
+        timingLoops[s] = 0;
         scored[s] = false;
         if ((j.flags & Msg.PlayerJoin.FLAG_SELF) != 0) {
             selfId = j.id;
@@ -216,15 +218,30 @@ public final class Players {
         return delta;
     }
 
-    /** BEHAVIOR: TIMING (race progress) for a known id; unknown ids are ignored. */
-    public void setTiming(int id, int chk, int rnd) {
+    /**
+     * C {@code Handle_timing}: TIMING (race progress) for a known id at client frame {@code loops}.
+     * <p>
+     * BEHAVIOR: only a change of checkpoint or lap is taken; it also remembers {@code loops} (C
+     * {@code timing_loops}, the race order's tie-break). Unknown ids are ignored.
+     */
+    public void setTiming(int id, int chk, int rnd, int loops) {
         int s = slotOf(id);
-        if (s >= 0) {
+        if (s >= 0 && (check[s] != chk || round[s] != rnd)) {
             check[s] = chk;
             round[s] = rnd;
+            timingLoops[s] = loops;
             version++;
         }
     }
+
+    /** C {@code timing}: race progress {@code round * MAX_CHECKS + check}. */
+    public int timing(int slot) { return round[slot] * MAX_CHECKS + check[slot]; }
+
+    /** C {@code timing_loops}: the client frame when the race progress last changed. */
+    public int timingLoops(int slot) { return timingLoops[slot]; }
+
+    /** C {@code MAX_CHECKS}. */
+    public static final int MAX_CHECKS = 26;
 
     /** The next race checkpoint the player must pass (C {@code check}). */
     public int check(int slot) { return check[slot]; }
