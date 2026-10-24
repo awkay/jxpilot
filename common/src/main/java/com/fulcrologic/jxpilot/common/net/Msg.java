@@ -367,7 +367,12 @@ public final class Msg {
 
         /** Queue a chunk of {@code data[offset, offset+len)}. */
         public static void send(ReliableChannel ch, byte[] data, int offset, int len) {
-            ByteBuffer b = ch.begin(ReliableType.DATA_CHUNK);
+            send(ch, ReliableType.DATA_CHUNK, data, offset, len);
+        }
+
+        /** Queue a chunk as a message of {@code type} (DATA_CHUNK or KERNEL_CHUNK). */
+        public static void send(ReliableChannel ch, int type, byte[] data, int offset, int len) {
+            ByteBuffer b = ch.begin(type);
             if (b.remaining() < 4 + len) {
                 ch.abort();
                 throw new IllegalArgumentException("chunk of " + len + " bytes exceeds the reliable slot");
@@ -391,6 +396,115 @@ public final class Msg {
             b.get(dest, off, len);
             return off + len;
         }
+    }
+
+    /** {@link ReliableType#KERNEL_CONFIG}: {@code u32 version, u32 length, u32 compressedLength, u32 crc32}. */
+    public static final class KernelConfigBegin implements Payload {
+        public int version;
+        public int length;
+        public int compressedLength;
+        public int crc32;
+
+        @Override
+        public void write(ByteBuffer b) {
+            b.putInt(version).putInt(length).putInt(compressedLength).putInt(crc32);
+        }
+
+        public void read(ByteBuffer b) {
+            version = b.getInt();
+            length = b.getInt();
+            compressedLength = b.getInt();
+            crc32 = b.getInt();
+        }
+
+        /** Queue the announcement of {@code blob} as version {@code version}. */
+        public static void send(ReliableChannel ch, int version, ConfigTransfer.Blob blob) {
+            ByteBuffer b = ch.begin(ReliableType.KERNEL_CONFIG);
+            b.putInt(version).putInt(blob.length).putInt(blob.compressed.length).putInt(blob.crc32);
+            ch.end();
+        }
+    }
+
+    /**
+     * {@link ReliableType#KERNEL_STATE}: {@code u8 n}, then {@code n * (u8 kind, u16 a, u16 b, u16 c, i32 d)}:
+     * <ul>
+     *   <li>{@link #BLOCK}: a = bx, b = by, c = block type, d = item id;</li>
+     *   <li>{@link #CANNON}: a = cannon index, c = 1 phased, 0 not;</li>
+     *   <li>{@link #TARGET}: a = target index, d = team;</li>
+     *   <li>{@link #WORM}: a = wormhole index (a temporary one), b = bx, c = by, d = type;</li>
+     *   <li>{@link #WORM_COUNT}: d = the wormhole count (the map's plus the temporary ones);</li>
+     *   <li>{@link #RESET}: forget every earlier entry: the entries that follow are everything that differs from
+     *   the map as loaded.</li>
+     * </ul>
+     * Writing is through one preallocated instance per writer ({@link #begin}, {@link #add}, {@link #end}); reading
+     * through the static {@link #count}/{@link #kind}... on the payload.
+     */
+    public static final class KernelState {
+        public static final int BLOCK = 1;
+        public static final int CANNON = 2;
+        public static final int TARGET = 3;
+        public static final int WORM = 4;
+        public static final int WORM_COUNT = 5;
+        public static final int RESET = 6;
+        /** Bytes per entry. */
+        public static final int ENTRY = 11;
+        /** Entries per message. */
+        public static final int MAX_ENTRIES = (Protocol.MAX_RELIABLE_MESSAGE - 1) / ENTRY;
+
+        private ByteBuffer b;
+        private int countPos;
+        private int n;
+
+        /** Start a message; returns this writer. */
+        public KernelState begin(ReliableChannel ch) {
+            b = ch.begin(ReliableType.KERNEL_STATE);
+            countPos = b.position();
+            b.put((byte) 0);
+            n = 0;
+            return this;
+        }
+
+        public boolean room() {
+            return n < MAX_ENTRIES && b.remaining() >= ENTRY;
+        }
+
+        public void add(int kind, int a, int bb, int c, int d) {
+            b.put((byte) kind).putShort((short) a).putShort((short) bb).putShort((short) c).putInt(d);
+            n++;
+        }
+
+        /** BEHAVIOR: an empty message is not sent. */
+        public void end(ReliableChannel ch) {
+            if (n == 0) {
+                ch.abort();
+                return;
+            }
+            b.put(countPos, (byte) n);
+            ch.end();
+        }
+
+        /** Entries in a received payload (at its position), or -1 if it is truncated. */
+        public static int count(ByteBuffer p) {
+            if (p.remaining() < 1) {
+                return -1;
+            }
+            int n = p.get(p.position()) & 0xFF;
+            return p.remaining() < 1 + n * ENTRY ? -1 : n;
+        }
+
+        private static int at(ByteBuffer p, int i) {
+            return p.position() + 1 + i * ENTRY;
+        }
+
+        public static int kind(ByteBuffer p, int i) { return p.get(at(p, i)) & 0xFF; }
+
+        public static int a(ByteBuffer p, int i) { return p.getShort(at(p, i) + 1) & 0xFFFF; }
+
+        public static int b(ByteBuffer p, int i) { return p.getShort(at(p, i) + 3) & 0xFFFF; }
+
+        public static int c(ByteBuffer p, int i) { return p.getShort(at(p, i) + 5) & 0xFFFF; }
+
+        public static int d(ByteBuffer p, int i) { return p.getInt(at(p, i) + 7); }
     }
 
     /** {@link ReliableType#PLAYER_JOIN}. */

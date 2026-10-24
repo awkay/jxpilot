@@ -1,7 +1,7 @@
 # Server options: sources, precedence and status
 
 Every option of XPilot 4.5.5's `src/server/cmdline.c` table is known to the Java server
-(`common/.../config/Opt.java`), plus the JXPilot lobby options `lobby`, `lobbyConfig`, `lobbyMapsDir`, `lobbyBundled`, `lobbyExclude` and `lobbyName`
+(`common/.../config/Opt.java`), plus the JXPilot option `predictableBounces` (DEVIATIONS-server.md), the JXPilot lobby options `lobby`, `lobbyConfig`, `lobbyMapsDir`, `lobbyBundled`, `lobbyExclude` and `lobbyName`
 (docs/LOBBY-SPEC.md), and the JXPilot network options `bind`, `bindWait`, `snapshotDivisor`,
 `radarDivisor`, `ipPacketRate`, `ipPacketBurst`, `sessionPacketRate` and `sessionPacketBurst`. An option the simulation does not use yet is still parsed, kept, and sent to clients
 in the configuration text. It just has no effect.
@@ -388,4 +388,5 @@ follow C; the alias is the C command-line name.
 | `password` |  | string | `(none)` | CMD+DEF+PWD | implemented (server-commands): `/password` gives operator status; never sent to clients; `/get password` is refused; `/set password` changes it quietly |
 | `clientPortStart` |  | int | `0` | CMD+DEF+VIS | not applicable: one UDP socket per bound address serves every client |
 | `clientPortEnd` |  | int | `0` | CMD+DEF+VIS | not applicable: one UDP socket per bound address serves every client |
+| `predictableBounces` |  | bool | `false` | ANY+VIS | implemented (JXPilot: ship bounce tie-breaks seeded by tick and id, `SeededTieBreak`; not tunable at run time) |
 | `maxPauseTime` |  | sec | `3600` | ANY+VIS | implemented (Params) |

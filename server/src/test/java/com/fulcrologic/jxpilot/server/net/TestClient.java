@@ -66,6 +66,8 @@ final class TestClient implements ReliableHandler {
     final Msg.Welcome welcome = new Msg.Welcome();
     boolean welcomed;
     ConfigTransfer.Receiver receiver;
+    ConfigTransfer.Receiver kernelReceiver;
+    byte[] kernelBytes;
     String configText;
     final List<String> reliableLog = new ArrayList<>();
     final List<Integer> snapshotTicks = new ArrayList<>();
@@ -305,6 +307,18 @@ final class TestClient implements ReliableHandler {
                 Msg.Text t = new Msg.Text();
                 t.read(payload);
                 reliableLog.add("MESSAGE " + t.text);
+            }
+            case ReliableType.KERNEL_CONFIG -> {
+                Msg.KernelConfigBegin k = new Msg.KernelConfigBegin();
+                k.read(payload);
+                kernelReceiver = new ConfigTransfer.Receiver(k.length, k.compressedLength, k.crc32);
+                reliableLog.add("KERNEL " + k.version);
+            }
+            case ReliableType.KERNEL_CHUNK -> {
+                if (kernelReceiver.onChunk(payload)) {
+                    kernelBytes = kernelReceiver.bytes();
+                    reliableLog.add("KERNEL done");
+                }
             }
             default -> reliableLog.add("TYPE " + type);
         }

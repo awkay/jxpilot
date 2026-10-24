@@ -27,7 +27,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Every server option known to XPilot 4.5.5 (plus the JXPilot-only network options {@code bind},
+ * Every server option known to XPilot 4.5.5 (plus the JXPilot-only {@code predictableBounces}, the network options {@code bind},
  * {@code bindWait}, {@code snapshotDivisor}, {@code radarDivisor}, {@code ipPacketRate},
  * {@code ipPacketBurst}, {@code sessionPacketRate} and {@code sessionPacketBurst}, which are settable only
  * from the command line or the server config file, never from a map), generated from the option table in
@@ -650,6 +650,8 @@ public enum Opt {
         "Use UDP ports clientPortStart - clientPortEnd (for firewalls)"),
     CLIENT_PORT_END("clientPortEnd", "clientPortEnd", "0", OptionType.INT, F.CMD|F.DEF|F.VIS,
         "Use UDP ports clientPortStart - clientPortEnd (for firewalls)"),
+    PREDICTABLE_BOUNCES("predictableBounces", "predictableBounces", "false", OptionType.BOOL, F.ANY|F.VIS,
+        "JXPilot: draw a ship's wall-bounce tie-breaks from (tick, player id) instead of the game's random stream, so a client's own-ship prediction makes the same choices. Changes the random stream, so it is off for C-parity runs. Cannot change at run time."),
     MAX_PAUSE_TIME("maxPauseTime", "maxPauseTime", "3600", OptionType.SEC, F.ANY|F.VIS,
         "The maximum time a player can stay paused for, in seconds. After being paused this long, the player will be kicked off. Setting this option to 0 disables the feature.");
 

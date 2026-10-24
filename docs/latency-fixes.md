@@ -299,14 +299,26 @@ and static map data.
 - `MoveState`, `Click`, `Trig`, `WallDist`, and the parts of `World` and `Params` they read (click
   sizes, wrap, wall distance, the map, and target, cannon and treasure blocking state).
 
+**Correction (phase 1a/1b as built):** refuel fuel accounting did *not* move. Device drain and timers
+(phasing, cloak, emergency shield and thrust, deflector cost), refuel and tank moves stay in the server's
+upkeep (`Ships.update` outside `ShipKernel.step`), so the predictor mispredicts fuel, mass and the `used`
+bits they change until the next PREDICT corrects them. Phase 1c measures how much (§8); moving them into the
+kernel is a later decision. The kernel's world comes to the client as the KERNEL_CONFIG blob (the kernel
+options and the map blocks the client's map hides) and KERNEL_STATE (cannon phasing, target teams, changed
+blocks, temporary wormholes); the frame clock and roundDelay ride in PREDICT.
+
 In total that is roughly 2,000-2,500 lines moved and ~300 lines of new seams.
 
 **Seams:**
 
 - The kernel owns a `ShipBody` struct: clicks x/y, vx/vy, floatDir, dir, turnVel, oldTurnVel,
   turnAcc, mass, fuel, status and used bits, item counts that affect physics, and lastWallTouch.
-  `ShipBody` also owns its own wire codec (a new `PREDICT` snapshot section, ~70 bytes, sent only to its
-  owner). The wire therefore can never lag behind the kernel's state.
+  `ShipBody` also owns its own wire codec, so the wire can never lag behind the kernel's state. *(As built
+  in 1b: the PREDICT section is 77 bytes every snapshot, the frame clock, roundDelay and a 71-byte core;
+  PREDICT_RARE, 63 bytes, carries the engine settings, masses, team, wormhole destination and item counts
+  when they changed in the last 8 snapshots and every 14th; PREDICT_KEYS, 16 bytes, the key masks when they
+  differ from the applied input. The tanks are not sent: the kernel only adds to the current tank's fuel.
+  See PROTOCOL.md.)*
 - Side effects go out through a small `KernelEvents` interface: crashed (with type), bounced, fired
   (with shot parameters), fuel spent.
   - The server implementation calls `Crashes.playerCrashed`, `Shots.fire`, sparks and scoring as today.
@@ -576,6 +588,16 @@ The server stays fully authoritative. Clients send only keys.
   ~180 px more. XPilot has no line-of-sight occlusion, so there is little to leak. The whole-world radar
   already leaks more.
 - **What would weaken trust:** rewind (§4.9) and client-reported hit claims. Neither is recommended.
+- **Hidden map information (a trade-off taken in phase 1b).** The own-ship kernel needs the real gravity
+  field, wormholes and friction blocks, and the kernel options, to predict exactly. So every client gets the
+  kernel config blob (PROTOCOL.md KERNEL_CONFIG): the blocks `Packet_map` hides with gravityVisible,
+  wormholeVisible, itemConcentratorVisible, asteroidConcentratorVisible and blockFrictionVisible off, and
+  the kernel options (`KernelConfig.OPTIONS`), visible or not, with their live `/set` updates. The stock
+  client still draws the masked map and shows only the visible options; a modified client could show the
+  hidden ones. What leaks is map layout and physics, not other players' state, and an attentive player
+  learns most of it by flying anyway (gravity pulls the ship). Withholding it would make every gravity block
+  and hidden wormhole a visible correction under prediction. A server that wants the old secrecy has no
+  switch for it yet; adding one would mean sending a masked kernel world and accepting those corrections.
 
 For a friends server this is low priority, and the plan does not make it worse.
 

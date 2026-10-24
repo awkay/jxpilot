@@ -196,6 +196,20 @@ public final class SnapshotBuilder {
     }
 
     /**
+     * Widen the view by {@code px} pixels on each axis: the owner's input lead (protocol v2) means its predicted
+     * ship runs ahead of this snapshot by its speed times the lead, and what it will fly into must already be here.
+     * <p>
+     * BEHAVIOR: a positive margin is added to both half-sizes; zero or less changes nothing. Lasts until the next
+     * {@link #setView}/{@link #setViewSize}.
+     */
+    public void extendView(double px) {
+        if (px > 0) {
+            viewHalfX += px;
+            viewHalfY += px;
+        }
+    }
+
+    /**
      * Cull the next {@link #build}s for a client view of {@code width x height} world pixels (C
      * {@code Frame_parameters}: the receiving connection's {@code view_width/height}).
      * <p>

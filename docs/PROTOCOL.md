@@ -1,7 +1,12 @@
-# JXPilot wire protocol (version 1)
+# JXPilot wire protocol (version 2)
 
 Our own UDP protocol (no XPilot client compatibility). All code lives in
 `com.fulcrologic.jxpilot.common.net`; everything below has an allocation-free codec there.
+
+Version 2 (`Protocol.VERSION`, latency phase 1b, docs/latency-fixes.md §4.3/§4.4) tags every input with the
+tick it is for, adds the input slack and starvation to the snapshot header, the owner's PREDICT sections and
+the kernel world transfer (KERNEL_CONFIG, KERNEL_CHUNK, KERNEL_STATE). A version 1 peer's CONNECT gets
+REJECT VERSION ("incompatible version"). The C-server path (`client.xp`, the XPilot protocol) is untouched.
 
 - Byte order: big-endian (Java `ByteBuffer` default).
 - Max datagram payload: **1200 bytes** (`Protocol.MAX_PACKET`). Default port 15345.
@@ -65,8 +70,9 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
    it plays, so INPUT cannot be the proof.)
 3. On verification the server queues reliable `WELCOME`, then `DATA_CHUNK`s, then `PLAYER_JOIN`,
    `BASE_OWNER` and `SCORE` for every player already in the game, and `TEAM_SCORE` for every team with
-   members in team play. The client's own `PLAYER_JOIN` (with `FLAG_SELF`) comes when READY puts it in
-   the game.
+   members in team play, then the `KERNEL_STATE` differences (if any) and the `KERNEL_CONFIG` blob as
+   `KERNEL_CHUNK`s (protocol v2). The client's own `PLAYER_JOIN` (with `FLAG_SELF`) comes when READY puts it
+   in the game.
 4. The config blob is the server's **effective configuration as config-file text**
    (`Options.toConfigText()`: every visible map-settable option + unknown options + `mapData`),
    deflated (`ConfigTransfer.encode`). WELCOME gives the uncompressed length, compressed length and CRC32.
@@ -83,7 +89,9 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
    invisible to everyone; its view centre is a base of its team). The game runs (the simulation ticks,
    robots play) only while a human is in it or with `rawMode`, as C's main loop. Snapshots start once the client has
    acknowledged every reliable message up to and including the initial state (game events queued after
-   it do not hold snapshots back); the client ignores snapshots until it has the map.
+   it do not hold snapshots back); the client ignores snapshots until it has the map. The client's first
+   PLAYING flush sends a PING (the initial input lead needs the RTT); its inputs start with the first
+   snapshot.
 
 Liveness and limits (server side, all in time units, independent of the tick rate):
 - A verified peer is dropped (DISCONNECT timeout) after 10 s without any packet, **or** when its oldest
@@ -93,7 +101,7 @@ Liveness and limits (server side, all in time units, independent of the tick rat
   `sessionPacketBurst` 800), so many players behind one NAT do not share a budget. Everything else
   (CONNECT, strays, garbage) is limited per source (`ipPacketRate` 400/s, burst `ipPacketBurst` 800; a
   CONNECT that creates a session costs 100 more), keyed by a secret 64-bit hash of the IPv4 address or
-  IPv6 /64. Clients should send INPUT on every key change and otherwise at about the tick rate.
+  IPv6 /64. The JXPilot client sends about two INPUTs per tick plus one per key change (INPUT below).
 
 ## Lobby (lobby servers)
 
@@ -198,6 +206,9 @@ Server → client:
 | 20 | TIMING | race mode only (C `Send_timing`): u16 id, u8 check (the next checkpoint the player must pass, C `pl->check`), u16 round (laps started, 0 before the first checkpoint). Sent for every player in the initial state and whenever a player passes a checkpoint or race progress is reset. The last checkpoint passed is check - 1 (wrapping); the own player's check is the checkpoint the client highlights. Ids 20-26 are the game-mode block |
 | 28 | MOTD | u32 offset, u32 total size, bytes: a piece of the server's message of the day (C `motdFileName`, Latin-1, at most 30 KB). *(server-batch2 block 28-30.)* The server sends all pieces once, with the first event drain after the initial state, when it has a MOTD; the client shows it (C's MOTD viewer) once every piece is in. Old clients skip it |
 | 31 | PLAYER_ALLIANCE | u16 id, u8 mark (Latin-1): the alliance mark of player id as this receiver sees it, C `Send_score`'s alliance character (netserver.c:1670-1678): ' ' not in an alliance, '+' in the receiver's own alliance (when `announceAlliances` is off; other alliances then show ' '), '0'-'9' the alliance number (when `announceAlliances` is on). Sent when a player's alliance changes (C resends the score then); when the receiver's own alliance changes it gets every player's mark again (its '+' marks may all have changed), and after an operator changes `announceAlliances` every player's mark goes to everyone. Also in the initial state for players in alliances (every player after a resync). The client shows it in the score list's team column outside team play and treats equal non-blank marks as friends (blue ship, friendly lock). Ids 32-33 are reserved for server-commands |
+| 48 | KERNEL_CONFIG | u32 version, u32 length, u32 compressedLength, u32 crc32: a kernel config blob (`common.config.KernelConfig`) follows as KERNEL_CHUNKs, deflated like the config. Raw: `u32 textLength`, the config lines of every option the ship kernel's world depends on (`KernelConfig.OPTIONS`, visible or not), `u32 runs`, runs × (`u32 index, u16 length, chars`): the mapData characters the client's map hides (C `Packet_map`: gravity, wormholes, concentrators, friction), as a patch over the config's mapData. Sent to every connection after its initial state, and again (a new version) when an operator /sets a kernel option; a newer version abandons an unfinished older transfer. The client builds `KernelWorld.of` from it, exactly the server's kernel world (`KernelConfigParityTest`, all shipped maps). The owner thus learns hidden gravity and wormholes; see latency-fixes.md §4.15 |
+| 49 | KERNEL_CHUNK | as DATA_CHUNK, for the kernel config blob |
+| 50 | KERNEL_STATE | u8 n, n × (u8 kind, u16 a, u16 b, u16 c, i32 d): run-time state the kernel reads that the map does not give. kind 1 BLOCK (a bx, b by, c block type, d item id: cannons and targets destroyed and revived, temporary wormholes opened and closed), 2 CANNON (a index, c 1 phased), 3 TARGET (a index, d team), 4 WORM (a index of a temporary wormhole, b bx, c by, d type), 5 WORM_COUNT (d the map's plus the temporary wormholes), 6 RESET (forget earlier entries; what follows is everything that differs from the map as loaded). The server scans once per tick and sends the changes with the events; a newcomer gets the differences in its initial state, a connection the change log (4096 entries) ran past gets RESET and the differences. Wormholes' last destination and countdown are not sent (their destination is random) |
 | 40 | WAR | u16 robotId, u16 killerId: a robot's war target changed (C `Send_war`, the id is C's PKT_WAR); killerId NO_ID ends the war. The client keeps the target (C `war_id`, also set by SEEK, cleared when the target leaves), shows it in the score list as " (NAME)" after the robot's name and, for a new target, logs "ROBOT declares war on KILLER." (C `Handle_war`). Sent to everyone as C `Robot_war` does: when a robot declares war on its killer, and (NO_ID) when a robot kills the player it was at war with; the initial state sends it for every robot already at war |
 
 Client → server:
@@ -216,22 +227,44 @@ DISPLAY and MODIFIER_BANK are client → server messages although their ids are 
 
 ## INPUT — `InputHistory` (client) / `InputReader` (server)
 
-`u32 latestSeq, u32 ackTick, u8 count (≤ 8)`, then `count ×` (`u64 keys, i16 aimTurn`) newest first
-(entry i has sequence `latestSeq - i`).
+`u32 newestTick, u8 count (1..8)`, then `count ×` (`u64 keys, u64 taps, i16 aimTurn`) newest first: entry i
+is for tick `newestTick - i`.
 
-Send rate (`ClientConnection.sendInput`, called every render frame): an INPUT goes out at once when the key
-mask changes, otherwise every 1/simHz (about the tick rate), and never two closer than 1/120 s (a change
-inside that gap waits and goes out with the then-current mask; `aimTurn` of held frames is summed). A
-sequence number is used only per datagram sent. Each INPUT carries every entry newer than the snapshot
-header's `lastInputSeq` (the newest the server applied), at least 1 and at most 8. After a transport error
-(VPN drop, ICMP port unreachable) INPUT, reliable data and ACKs pause for 250 ms.
-`keys` is a `ControlKey` mask: bit = `keys_t` value − 1 (KEY_LOCK_NEXT … KEY_DEFLECTOR = 64 keys).
-The server applies entries newer than the last applied sequence, oldest first, and derives press/release
-edges by comparing consecutive masks. `aimTurn` is pointer control's horizontal mouse movement in window
-pixels (C `PKT_POINTER_MOVE`, 0 = none); held frames' movements are summed into the next INPUT. The server
-applies each entry when it reads it, as C `Receive_pointer_move`: ignored in hover pause, the autopilot switched off,
-`turnVel -= sign * clamp(|movement| * turnSpeed / 64)` with the clamp 4..64 under a turn resistance, else 0..5 * RES.
-`ackTick` is the newest snapshot tick received.
+- `keys` is a `ControlKey` mask: bit = `keys_t` value − 1 (KEY_LOCK_NEXT … KEY_DEFLECTOR = 64 keys).
+- `taps` are keys that went down and came up again within the tick, so a quick tap is not lost. The server
+  applies `keys | taps`, then `keys` (`Keys.apply` twice): the tap gives its press and its release edge.
+- `aimTurn` is pointer control's horizontal mouse movement in window pixels (C `PKT_POINTER_MOVE`, 0 = none),
+  summed over the tick. The server applies it when the tick's entry is applied, as C `Receive_pointer_move`:
+  ignored in hover pause, the autopilot switched off, `turnVel -= sign * clamp(|movement| * turnSpeed / 64)`
+  with the clamp 4..64 under a turn resistance, else 0..5 * RES.
+
+**Ticks** are the client's predicted ticks (`PredictedClock`), running ahead of the server by the input lead.
+The input collected while the predicted clock runs from N-1 to N is entry N, final when the clock reaches N.
+
+**Sending** (`ClientConnection.sendInput`, called every render frame, only while PLAYING and once a snapshot has
+started the clock):
+
+- when the predicted tick passes the last final one, the entry is set and sent at once (never held back);
+- a key change within the tick sends an early copy of the next entry, as collected so far, at most every
+  1/120 s after the previous send (a change inside that gap goes with the next send);
+- half a tick after the last send, the INPUT is repeated unchanged (a second copy before the deadline:
+  redundancy only helps while the tick is still ahead, so this halves the loss of a tick's entry to a lone
+  lost datagram);
+- every INPUT carries every entry newer than the newest snapshot's `inputTick`, at least 1 and at most 8;
+  ticks the clock skipped hold the previous keys;
+- after a transport error (VPN drop, ICMP port unreachable) INPUT, reliable data and ACKs pause for 250 ms.
+
+**Server** (`InputBuffer`, one per connection, a 32-entry ring by tick): every tick T, before the sim runs,
+the host gets entry T (`GameHost.input(id, T, keys, taps, aim)`). A missing entry repeats the last applied
+keys without taps or aim and counts a *starvation* (not before the first entry is applied). An entry for a
+tick already run is dropped (counted *late* when that tick starved); one more than simHz ticks ahead is
+dropped. A copy of an entry from an older datagram than the one that wrote it is ignored (reordering); a
+copy from the same or a newer one replaces it (an early copy revised by the final send).
+
+The **input slack** is the smallest margin, in 1/16 tick, by which entries arrived before their tick over the
+last second: the margin of the copies that delivered what the server applies (an entry's first copy, a later
+copy that changes it, and the first late copy of a starved tick, negative). Repeats of what is stored do not
+count: they arrive later by design.
 
 ## SNAPSHOT — `SnapshotWriter` / `SnapshotReader` / `Records`
 
@@ -239,12 +272,20 @@ Default rate: every simulation tick, i.e. the map's framesPerSecond (default 14 
 (`Protocol.DEFAULT_SNAPSHOT_DIVISOR` = 1, server option `snapshotDivisor`; WELCOME.simHz and
 WELCOME.snapshotHz tell the client).
 
-Header (15 bytes): `u32 tick, u32 lastInputSeq, u8 part, u8 partCount, u8 flags (1 = last part),
-u16 viewX, u16 viewY` — the receiver's view centre in half pixels. `tick` T is the number of the sim tick,
+Header (16 bytes): `u32 tick, u32 inputTick, i8 inputSlack, u8 part, u8 partCount, u8 flags, u16 viewX,
+u16 viewY`.
+
+- `inputTick`: the tick whose input entry the server applied in this tick: T itself, or on a starvation the
+  tick of the held entry.
+- `inputSlack`: the input slack (above) in 1/16 tick, clamped to -127..127; -128 = no arrival in the last
+  second.
+- `flags`: 1 = last part; 2 = input starved: at least one of this receiver's ticks since the previous
+  snapshot to it ran without its entry (the client's lead is too short).
+- `viewX`, `viewY`: the receiver's view centre in half pixels. `tick` T is the number of the sim tick,
 one C frame, whose result the snapshot shows: the number the network layer passed to `GameHost.tick(T)`
 and on to the simulation, so bursts' `age` and thrust-spark seeds use the same numbers. Parts are numbered
 0..63; the client treats a higher part as malformed. If a tick does not fit one datagram it is split into
-self-contained parts. Sections are written SELF, SOUND, SHIP, CANNON, FUEL, TARGET, TREASURE, TEMP_WORMHOLE, RADAR, the item sections (TIMERS first), BURST, WRECKAGE, BALL/ASTEROID/CONNECTOR, then SHOT, which fills
+self-contained parts. Sections are written SELF, PREDICT, PREDICT_RARE, PREDICT_KEYS, SOUND, SHIP, CANNON, FUEL, TARGET, TREASURE, TEMP_WORMHOLE, RADAR, the item sections (TIMERS first), BURST, WRECKAGE, BALL/ASTEROID/CONNECTOR, then SHOT, which fills
 the remaining room nearest first; a record that does not fit drops only itself, smaller records of later
 sections are still sent.
 
@@ -396,14 +437,44 @@ simulating every particle**; on the wire:
 
 `Rng` is a fixed xorshift32 and the cos/sin tables use `StrictMath`, so every JVM expands identically.
 
+### PREDICT, PREDICT_RARE, PREDICT_KEYS (sections 23-25, owner only)
+
+The receiving player's own ship as the ship kernel (`common.sim`) sees it, for the own-ship predictor, in part
+0 of every snapshot whose view is the receiver's own ship (none while it watches another player).
+`ShipBody` owns the codec, so the wire cannot lag behind what the kernel reads.
+
+- **PREDICT** (77 bytes, every snapshot): `u32 frames` (C `frame_loops`, the kernel's frame clock, not the net
+  tick), `u16 roundDelay`, then the 71-byte core block: `i24 cx, i24 cy` (clicks), `f32 vx, vy, velocity,
+  mass, floatDir, turnVel, oldTurnVel, turnAcc` (raw IEEE bits), `u8 dir`, `i32 status, have, used`,
+  `f64 fuel`, `u16 shotAge` (`frames - shotTime`, saturating at 65535: the fire check only needs "long
+  ago"), `u16 shieldTime, stunned, shots, mods` (clamped to 0..65535), `u8 flags` (1 prevKeys equals the
+  applied input's keys, 2 lastReceivedKeys does, 4 keysCleared), `u8 rareVersion`. The key flags compare with
+  the entry the server applied this tick, which the client has in its own input history under the header's
+  `inputTick`.
+- **PREDICT_RARE** (63 bytes): `u8 version`, then the 62-byte rare block: `f32 emptyMass, f64 fuelMax,
+  f32 power, turnSpeed, turnResistance, powerS, turnSpeedS, turnResistanceS, u16 shotMax, i8 team,
+  i16 wormHoleDest, u8 items[21]`. The version (mod 256) changes when the block's bytes change; the block is
+  sent in the 8 snapshots after a change (and after the join) and in every 14th. The client uses the core
+  only with the rare block of the version it names.
+- **PREDICT_KEYS** (16 bytes): `u64 prevKeys, u64 lastReceivedKeys`, only when a key flag is clear.
+
+Not sent: the tanks (the kernel only adds to the current tank's fuel, never reads a tank), pixels and blocks
+(derived from the clicks), the previous position, the acceleration, the busy frame, the last wall touch and
+the hull (it comes with PLAYER_JOIN). The canonical encoding (core + rare + keys) backs `ShipBody.sameState`
+(`ByteBuffer.mismatch`); a round trip through the real net path is bit-equal every tick
+(`PredictRoundTripTest`).
+
 ### Size budget (asserted in `SnapshotTest.WireSize`, sizes include the 8-byte packet header)
 
 | scene | bytes | datagrams |
 |---|---|---|
-| Fight: 15 thrusting ships, 150 shots (3 colour groups), 400 debris as 5 explosion bursts, 15 radar blips | **1386** (1336 without radar) | 2 |
-| Typical: 4 ships, 30 shots, 2 bursts, 8 blips | **410** | 1 |
-| Radar-heavy: 32 players + 300 objects on radar (332 blips), 8 ships in view | **1184** | 1 |
-| Radar-heavy with all 31 other ships in view | **1506** | 2 |
+| Fight: 15 thrusting ships, 150 shots (3 colour groups), 400 debris as 5 explosion bursts, 15 radar blips | **1396** (1346 without radar) | 2 |
+| Typical: 4 ships, 30 shots, 2 bursts, 8 blips | **420** | 1 |
+| Radar-heavy: 32 players + 300 objects on radar (332 blips), 8 ships in view | **1194** | 1 |
+| Radar-heavy with all 31 other ships in view | **1516** | 2 |
+
+The owner's snapshot adds PREDICT (5 + 77 = 82 bytes): typical **502**, fight **1478**; PREDICT_RARE adds
+68 bytes in the snapshots that carry it (typical 570) and PREDICT_KEYS 21 when the key masks differ.
 
 At 30 Hz the fight is ≈ 330 kbit/s per client (at the default 14 Hz tick rate ≈ 155 kbit/s). The original per-particle layout needed ~4.7 KB per snapshot.
 
@@ -412,4 +483,5 @@ At 30 Hz the fight is ≈ 330 kbit/s per client (at the default 14 Hz tick rate 
 - New fields: append to a record and bump its `SIZE`; old readers keep working (stride).
 - New sections: new type id; old readers skip it.
 - New reliable messages: new `ReliableType` id; receivers ignore unknown types.
-- Incompatible changes: bump `Protocol.VERSION` (header check rejects mismatches).
+- Incompatible changes: bump `Protocol.VERSION` (header check rejects mismatches; version 2 is the current
+  one).

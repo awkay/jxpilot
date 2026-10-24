@@ -653,6 +653,32 @@ class SimGameHostPlayTest {
         }
 
         @Test
+        @DisplayName("the owner's view is widened by its speed times its input lead")
+        void leadMargin() {
+            Simulation s = sim("", THREE);
+            World w = s.world;
+            SimGameHost h = new SimGameHost(s);
+            int ann = enter(h, "Ann", 0);
+            int bob = enter(h, "Bob", 0);
+            h.tick(1);
+            Player a = w.byId(ann);
+            Player b = w.byId(bob);
+            double edge = a.viewWidth / 2.0 + SnapshotBuilder.VIEW_MARGIN;
+            b.setClicks((int) ((a.cx / 64.0 + edge + 60) * 64), a.cy);
+            a.vx = 20;
+            a.vy = 0;
+            boolean without = types(h, ann).contains(com.fulcrologic.jxpilot.common.net.Section.SHIP);
+            h.inputLead(ann, 4);
+            boolean with = types(h, ann).contains(com.fulcrologic.jxpilot.common.net.Section.SHIP);
+            h.inputLead(ann, -3);
+            boolean negative = types(h, ann).contains(com.fulcrologic.jxpilot.common.net.Section.SHIP);
+            assertAll(
+                () -> assertFalse(without, "60 px beyond the view: Bob is culled"),
+                () -> assertTrue(with, "4 ticks of lead at 20 px/tick widen it by 80 px: Bob is in"),
+                () -> assertFalse(negative, "a negative lead counts as 0"));
+        }
+
+        @Test
         @DisplayName("one part: the builder's sections byte for byte after the header; radar as asked")
         void onePart() {
             Simulation s = sim("", THREE);

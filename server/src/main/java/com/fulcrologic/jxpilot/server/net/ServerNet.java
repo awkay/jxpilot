@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.net;
 
+import com.fulcrologic.jxpilot.common.config.KernelConfig;
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.net.ConfigTransfer;
@@ -33,6 +34,7 @@ import com.fulcrologic.jxpilot.common.net.PacketType;
 import com.fulcrologic.jxpilot.common.net.Protocol;
 import com.fulcrologic.jxpilot.common.net.ReliableChannel;
 import com.fulcrologic.jxpilot.common.net.ReliableHandler;
+import com.fulcrologic.jxpilot.common.net.ReliableType;
 import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
 import com.fulcrologic.jxpilot.common.net.Wire;
 
@@ -84,6 +86,9 @@ public final class ServerNet {
     private final Datagrams out;
     private final NetLog log;
     private final ConfigTransfer.Blob blob;
+    private ConfigTransfer.Blob kernelBlob;
+    private String kernelClientMap;
+    private int kernelVersion;
     private final RateLimiter limiter;
     private final SourceKeys keys;
     private final SplittableRandom sessions;
@@ -146,6 +151,9 @@ public final class ServerNet {
         InputBuffer inputs;
         /** {@code inputs.starvations()} when the last snapshot went out (for FLAG_INPUT_STARVED). */
         long starvationsReported;
+        /** The kernel config version announced to this connection (0: none yet), and its chunks still to send. */
+        int kernelVersion;
+        ConfigTransfer.Sender kernelSender;
 
         /** A host that throws on a message must not wedge the channel: the message counts as malformed. */
         @Override
@@ -218,12 +226,56 @@ public final class ServerNet {
     }
 
     /**
+     * The kernel config every connection gets after its initial state (protocol v2, {@link KernelConfig}): the
+     * kernel options of {@code o} and the map characters {@code clientMapData} (the map the config blob carries)
+     * hides. Not a hot path: encoding deflates.
+     * <p>
+     * BEHAVIOR: a new version replaces the blob; every connection past its initial state gets it next (an
+     * unfinished transfer of an older version is abandoned).
+     */
+    public void setKernel(Options o, String clientMapData) {
+        kernelClientMap = clientMapData;
+        kernelBlob = ConfigTransfer.encode(KernelConfig.encode(o, clientMapData));
+        kernelVersion++;
+    }
+
+    /** The current kernel config version (0 before {@link #setKernel}). */
+    public int kernelVersion() {
+        return kernelVersion;
+    }
+
+    /**
+     * BEHAVIOR: a connection behind the current kernel version gets KERNEL_CONFIG (version, sizes, CRC) and then
+     * KERNEL_CHUNKs as the reliable window allows, keeping {@code configReserveSlots} free.
+     */
+    private void pumpKernel(Connection c) {
+        if (kernelBlob == null) {
+            return;
+        }
+        if (c.kernelVersion != kernelVersion) {
+            if (c.ch.freeSlots() <= cfg.configReserveSlots) {
+                return;
+            }
+            c.kernelVersion = kernelVersion;
+            Msg.KernelConfigBegin.send(c.ch, kernelVersion, kernelBlob);
+            c.kernelSender = new ConfigTransfer.Sender(kernelBlob, ReliableType.KERNEL_CHUNK);
+        }
+        if (c.kernelSender != null && c.kernelSender.pump(c.ch, cfg.configReserveSlots)) {
+            c.kernelSender = null;
+        }
+    }
+
+    /**
      * server-commands: an operator changed an option at run time ({@link GameHost.Sessions#optionChanged}).
      * <p>
+     * BEHAVIOR: a kernel option ({@link KernelConfig#OPTIONS}) re-encodes the kernel config as a new version.
      * BEHAVIOR: denyHosts (C tuner {@code Set_deny_hosts}) and maxClientsPerIP take their new values for the
      * next CONNECTs; other options are not the network layer's.
      */
     void optionChanged(Opt o, Options options) {
+        if (kernelClientMap != null && KernelConfig.affects(o)) {
+            setKernel(options, kernelClientMap);
+        }
         if (o == Opt.DENY_HOSTS) {
             cfg.denyHosts = DenyList.parse(options.getString(Opt.DENY_HOSTS));
         } else if (o == Opt.MAX_CLIENTS_PER_IP) {
@@ -403,6 +455,8 @@ public final class ServerNet {
         }
         c.inputs.reset();
         c.starvationsReported = 0;
+        c.kernelVersion = 0;
+        c.kernelSender = null;
         active[activeCount++] = c;
         peers(channel).put(from, c);
         sendAccept(c);
@@ -580,6 +634,7 @@ public final class ServerNet {
                 c.syncSequence = c.ch.nextSequence();
             }
         } else {
+            pumpKernel(c);
             host.drainEvents(c.playerId, c.ch);
             if (!c.snapshotsOn && c.ch.allAckedBefore(c.syncSequence)) {
                 c.snapshotsOn = true;

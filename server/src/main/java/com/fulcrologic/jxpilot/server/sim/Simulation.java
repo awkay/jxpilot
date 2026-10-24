@@ -104,9 +104,16 @@ public final class Simulation {
     public final Locks locks;
     public final CannonWeapons cannonWeapons;
 
+    /** predictableBounces (a JXPilot deviation): ship bounce tie-breaks from (tick, id), reseeded per move. */
+    public final boolean predictableBounces;
+    /** The reseedable tie-break source predictableBounces uses (one instance). */
+    public final com.fulcrologic.jxpilot.common.sim.SeededTieBreak tieBreak =
+        new com.fulcrologic.jxpilot.common.sim.SeededTieBreak();
+
     public Simulation(World world) {
         this.world = world;
-        this.kernel = new ShipKernel(world, world::rfrac);
+        this.predictableBounces = world.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.PREDICTABLE_BOUNCES);
+        this.kernel = new ShipKernel(world, predictableBounces ? tieBreak : world::rfrac);
         this.effects = new ShipEffects(world, this);
         this.scoring = new Scoring(world);
         this.debris = new Debris(world);

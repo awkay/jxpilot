@@ -110,6 +110,9 @@ public final class SimGameHost implements GameHost {
     private final boolean[] queued = new boolean[IDS];
     /** The client's input lead in ticks ({@link #inputLead}), for the owner's view cull. */
     private final int[] leadOf = new int[IDS];
+    /** Kernel state changes (KERNEL_STATE) and each viewer's cursor into them. */
+    private final KernelState kernelState;
+    private final long[] kernelCursor = new long[IDS];
     /** The keys applied to the player at the last tick (the PREDICT key flags compare with them). */
     private final long[] applied = new long[IDS];
     // ---- PREDICT rare block per viewer: its last bytes, version, the snapshot it changed at, snapshots sent
@@ -202,6 +205,7 @@ public final class SimGameHost implements GameHost {
         sim.robots.applyMaxRobots();
         sim.ships.enterListener = this::entered;
         this.tuning = new Tuning(sim, this::optionChanged);
+        this.kernelState = new KernelState(w);
         this.commands = new Commands(this, sim, tuning);
     }
 
@@ -742,6 +746,7 @@ public final class SimGameHost implements GameHost {
         }
         long from = w.events.seq();
         sim.tick(tick, keysBySlot);
+        kernelState.scan();
         kickRemoved(from);
     }
 
@@ -997,6 +1002,9 @@ public final class SimGameHost implements GameHost {
             }
             Player view = sim.locks.viewOf(p);
             builder.setViewSize(p.viewWidth, p.viewHeight);
+            if (view == p) {
+                builder.extendView(Math.hypot(p.vx, p.vy) * leadOf[viewerId]);
+            }
             predictFor(viewerId, p, view == p);
             sim.locks.hudLock(view, p.viewWidth, p.viewHeight);
             scratchParts = builder.build(view, 0, burstCursor[viewerId], radar, scratch);
@@ -1063,6 +1071,8 @@ public final class SimGameHost implements GameHost {
         fullState(viewerId, out, false);
         cursor[viewerId] = w.events.seq();
         burstCursor[viewerId] = w.events.burstSeq();
+        kernelState.initial(out, false);
+        kernelCursor[viewerId] = kernelState.seq();
     }
 
     /** @param allMarks PLAYER_ALLIANCE for every player (a resync), else only for marked ones (a newcomer). */
@@ -1154,6 +1164,12 @@ public final class SimGameHost implements GameHost {
         if (motdPending[viewerId]) {
             motdPending[viewerId] = false;
             Msg.Motd.sendAll(out, motd.text()); // C sends it when the client asks, right after login
+        }
+        if (kernelState.behind(kernelCursor[viewerId])) {
+            kernelState.initial(out, true);
+            kernelCursor[viewerId] = kernelState.seq();
+        } else {
+            kernelCursor[viewerId] = kernelState.drain(out, kernelCursor[viewerId]);
         }
         Events e = w.events;
         long from = cursor[viewerId];

@@ -798,7 +798,14 @@ public final class ClientConnection {
                         }
                     }
                 }
-                default -> listener.onReliable(type, payload);
+                case ReliableType.KERNEL_CONFIG, ReliableType.KERNEL_CHUNK, ReliableType.KERNEL_STATE ->
+                    kernel.onReliable(type, payload, playerId);
+                default -> {
+                    if (type == ReliableType.PLAYER_JOIN) {
+                        kernel.onReliable(type, payload, playerId);
+                    }
+                    listener.onReliable(type, payload);
+                }
             }
         } catch (RuntimeException e) {
             malformed++;
@@ -838,6 +845,7 @@ public final class ClientConnection {
             return;
         }
         config = null;
+        kernel.onConfig(opts);
         listener.onConfig(welcome, opts, map);
         settings.send(channel);
         display.send(channel);

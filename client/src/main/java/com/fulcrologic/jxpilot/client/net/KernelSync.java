@@ -23,18 +23,37 @@
  */
 package com.fulcrologic.jxpilot.client.net;
 
+import com.fulcrologic.jxpilot.common.config.KernelConfig;
+import com.fulcrologic.jxpilot.common.config.Options;
+import com.fulcrologic.jxpilot.common.net.ConfigTransfer;
 import com.fulcrologic.jxpilot.common.net.InputHistory;
+import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.net.Records;
+import com.fulcrologic.jxpilot.common.net.ReliableType;
 import com.fulcrologic.jxpilot.common.net.Section;
 import com.fulcrologic.jxpilot.common.net.SnapshotReader;
+import com.fulcrologic.jxpilot.common.sim.KernelWorld;
 import com.fulcrologic.jxpilot.common.sim.ShipBody;
+import com.fulcrologic.jxpilot.common.sim.ShipGeom;
+import com.fulcrologic.jxpilot.common.sim.ShipParams;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 /**
- * What the own-ship predictor (phase 1c) starts from, as the server sends it to the owner (protocol v2): the
- * {@link ShipBody} from the PREDICT sections of the newest snapshot, with the C frame clock and roundDelay it was
- * taken at. Fed by {@link ClientConnection}, which owns the input history the key flags refer to. Allocation free.
+ * What the own-ship predictor (phase 1c) starts from, as the server sends it to the owner (protocol v2):
+ * <ul>
+ *   <li>the {@link ShipBody} from the PREDICT sections of the newest snapshot, with the C frame clock and
+ *   roundDelay it was taken at (the key flags refer to the client's own input history);</li>
+ *   <li>the {@link KernelWorld} and {@link ShipParams} built exactly as the server has them, from the KERNEL_CONFIG
+ *   blob (the kernel options and the map blocks the client's map hides, {@link KernelConfig}) over the client's
+ *   map; rebuilt when an operator changes a kernel option;</li>
+ *   <li>the run-time kernel state from KERNEL_STATE (cannon phasing, target teams, temporary wormholes, changed
+ *   blocks), kept as a mirror and applied to the world (again after each rebuild);</li>
+ *   <li>the own ship's hull, from the PLAYER_JOIN of its own id.</li>
+ * </ul>
+ * Fed by {@link ClientConnection}. The snapshot path is allocation free; the reliable messages are rare and may
+ * allocate (a world rebuild does).
  */
 public final class KernelSync {
     private final SnapshotReader reader = new SnapshotReader();
@@ -51,13 +70,284 @@ public final class KernelSync {
     private boolean keysKnown;
     private long predicts;
 
-    /** Forget the ship (a new session). */
+    // ---- kernel world
+    private String clientMap;
+    private ConfigTransfer.Receiver kernelRx;
+    private int kernelRxVersion;
+    private int kernelVersion;
+    private Options kernelOptions;
+    private KernelWorld world;
+    private long rebuilds;
+    private long badKernel;
+    // ---- the KERNEL_STATE mirror
+    private boolean[] phased = new boolean[0];
+    private boolean[] phasedSet = new boolean[0];
+    private int[] team = new int[0];
+    private boolean[] teamSet = new boolean[0];
+    private int wormCount = -1;
+    private int[] wormIndex = new int[16];
+    private int[] wormBx = new int[16];
+    private int[] wormBy = new int[16];
+    private int[] wormType = new int[16];
+    private int worms;
+    private int[] blockAt = new int[16];
+    private int[] blockType = new int[16];
+    private int[] blockItem = new int[16];
+    private int blocks;
+    private ShipGeom hull = ShipGeom.defaultShip();
+    private final Msg.PlayerJoin join = new Msg.PlayerJoin();
+
+    /** Forget the ship, the kernel world and its state (a new session). */
     public void reset() {
         have = false;
         rareVersion = -1;
         keysKnown = false;
         predicts = 0;
+        clientMap = null;
+        kernelRx = null;
+        kernelVersion = 0;
+        kernelOptions = null;
+        world = null;
+        clearState();
+        hull = ShipGeom.defaultShip();
+        body.ship = hull;
     }
+
+    private void clearState() {
+        Arrays.fill(phasedSet, false);
+        Arrays.fill(teamSet, false);
+        wormCount = -1;
+        worms = 0;
+        blocks = 0;
+    }
+
+    /** The client's map text (the config's mapData, with the blocks the server hides): the base of the kernel map. */
+    public void onConfig(Options clientOptions) {
+        clientMap = clientOptions.mapData();
+    }
+
+    /**
+     * A reliable message for the kernel.
+     * <p>
+     * BEHAVIOR: KERNEL_CONFIG starts receiving a blob of its version (an older unfinished one is dropped); its
+     * KERNEL_CHUNKs complete it, and the world is rebuilt from it ({@link KernelConfig#decode}, then
+     * {@code KernelWorld.of}) with the mirrored state applied. KERNEL_STATE updates the mirror and the world.
+     * PLAYER_JOIN of {@code ownId} sets the hull (its shape, or the default ship); the payload's position is left
+     * where it was (the game reads it too). Other types are ignored; a
+     * malformed blob or message counts in {@link #badKernel()} and changes nothing.
+     */
+    public void onReliable(int type, ByteBuffer payload, int ownId) {
+        try {
+            switch (type) {
+                case ReliableType.KERNEL_CONFIG -> {
+                    Msg.KernelConfigBegin m = new Msg.KernelConfigBegin();
+                    m.read(payload);
+                    kernelRx = new ConfigTransfer.Receiver(m.length, m.compressedLength, m.crc32);
+                    kernelRxVersion = m.version;
+                    if (kernelRx.complete()) {
+                        finishKernel();
+                    }
+                }
+                case ReliableType.KERNEL_CHUNK -> {
+                    if (kernelRx != null && kernelRx.onChunk(payload)) {
+                        finishKernel();
+                    }
+                }
+                case ReliableType.KERNEL_STATE -> onState(payload);
+                case ReliableType.PLAYER_JOIN -> {
+                    Msg.PlayerJoin j = join;
+                    int at = payload.position();
+                    j.read(payload);
+                    payload.position(at);
+                    if (j.id == ownId) {
+                        hull = j.shape.length() == 0 ? ShipGeom.defaultShip() : ShipGeom.parse(j.shape);
+                        body.ship = hull;
+                    }
+                }
+                default -> { }
+            }
+        } catch (RuntimeException e) {
+            badKernel++;
+            if (type == ReliableType.KERNEL_CONFIG || type == ReliableType.KERNEL_CHUNK) {
+                kernelRx = null;
+            }
+        }
+    }
+
+    private void finishKernel() {
+        byte[] raw = kernelRx.bytes();
+        kernelRx = null;
+        kernelOptions = KernelConfig.decode(raw, clientMap);
+        world = KernelWorld.of(kernelOptions);
+        kernelVersion = kernelRxVersion;
+        rebuilds++;
+        applyState();
+    }
+
+    private void onState(ByteBuffer p) {
+        int n = Msg.KernelState.count(p);
+        if (n < 0) {
+            badKernel++;
+            return;
+        }
+        for (int i = 0; i < n; i++) {
+            int k = Msg.KernelState.kind(p, i);
+            int a = Msg.KernelState.a(p, i);
+            int b = Msg.KernelState.b(p, i);
+            int c = Msg.KernelState.c(p, i);
+            int d = Msg.KernelState.d(p, i);
+            switch (k) {
+                case Msg.KernelState.RESET -> {
+                    clearState();
+                    if (kernelOptions != null) {
+                        world = KernelWorld.of(kernelOptions);
+                        rebuilds++;
+                    }
+                }
+                case Msg.KernelState.CANNON -> {
+                    ensureCannons(a + 1);
+                    phased[a] = c != 0;
+                    phasedSet[a] = true;
+                    if (world != null && a < world.cannonPhased.length) {
+                        world.cannonPhased[a] = c != 0;
+                    }
+                }
+                case Msg.KernelState.TARGET -> {
+                    ensureTargets(a + 1);
+                    team[a] = d;
+                    teamSet[a] = true;
+                    if (world != null && a < world.targetTeam.length) {
+                        world.targetTeam[a] = d;
+                    }
+                }
+                case Msg.KernelState.WORM_COUNT -> {
+                    wormCount = d;
+                    if (world != null) {
+                        world.setWormholeCount(d);
+                    }
+                }
+                case Msg.KernelState.WORM -> {
+                    putWorm(a, b, c, d);
+                    if (world != null) {
+                        world.setTempWormhole(a, b, c, d);
+                    }
+                }
+                case Msg.KernelState.BLOCK -> {
+                    putBlock(a, b, c, d);
+                    if (world != null) {
+                        setBlock(a, b, c, d);
+                    }
+                }
+                default -> { }
+            }
+        }
+    }
+
+    private void ensureCannons(int n) {
+        if (n > phased.length) {
+            phased = Arrays.copyOf(phased, Math.max(n, 2 * phased.length));
+            phasedSet = Arrays.copyOf(phasedSet, phased.length);
+        }
+    }
+
+    private void ensureTargets(int n) {
+        if (n > team.length) {
+            team = Arrays.copyOf(team, Math.max(n, 2 * team.length));
+            teamSet = Arrays.copyOf(teamSet, team.length);
+        }
+    }
+
+    private void putWorm(int i, int bx, int by, int type) {
+        int k = 0;
+        while (k < worms && wormIndex[k] != i) {
+            k++;
+        }
+        if (k == worms) {
+            if (worms == wormIndex.length) {
+                int cap = 2 * worms;
+                wormIndex = Arrays.copyOf(wormIndex, cap);
+                wormBx = Arrays.copyOf(wormBx, cap);
+                wormBy = Arrays.copyOf(wormBy, cap);
+                wormType = Arrays.copyOf(wormType, cap);
+            }
+            worms++;
+        }
+        wormIndex[k] = i;
+        wormBx[k] = bx;
+        wormBy[k] = by;
+        wormType[k] = type;
+    }
+
+    private void putBlock(int bx, int by, int type, int item) {
+        int at = by << 16 | bx;
+        int k = 0;
+        while (k < blocks && blockAt[k] != at) {
+            k++;
+        }
+        if (k == blocks) {
+            if (blocks == blockAt.length) {
+                int cap = 2 * blocks;
+                blockAt = Arrays.copyOf(blockAt, cap);
+                blockType = Arrays.copyOf(blockType, cap);
+                blockItem = Arrays.copyOf(blockItem, cap);
+            }
+            blocks++;
+        }
+        blockAt[k] = at;
+        blockType[k] = type;
+        blockItem[k] = item;
+    }
+
+    private void setBlock(int bx, int by, int type, int item) {
+        if (bx < world.map().width() && by < world.map().height()) {
+            world.map().setBlock(bx, by, (byte) type);
+            world.map().setItemId(bx, by, item);
+        }
+    }
+
+    /** The mirror onto a freshly built world. */
+    private void applyState() {
+        for (int i = 0; i < Math.min(phased.length, world.cannonPhased.length); i++) {
+            if (phasedSet[i]) {
+                world.cannonPhased[i] = phased[i];
+            }
+        }
+        for (int i = 0; i < Math.min(team.length, world.targetTeam.length); i++) {
+            if (teamSet[i]) {
+                world.targetTeam[i] = team[i];
+            }
+        }
+        if (wormCount >= 0) {
+            world.setWormholeCount(wormCount);
+        }
+        for (int k = 0; k < worms; k++) {
+            world.setTempWormhole(wormIndex[k], wormBx[k], wormBy[k], wormType[k]);
+        }
+        for (int k = 0; k < blocks; k++) {
+            setBlock(blockAt[k] & 0xFFFF, blockAt[k] >>> 16, blockType[k], blockItem[k]);
+        }
+    }
+
+    /** The kernel world as the server has it (null until the first KERNEL_CONFIG blob completes). */
+    public KernelWorld world() { return world; }
+
+    /** The kernel parameters (null with no world). */
+    public ShipParams params() { return world == null ? null : world.shipParams(); }
+
+    /** The kernel options the world was built from (null with no world). */
+    public Options kernelOptions() { return kernelOptions; }
+
+    /** The version of the kernel config the world was built from (0: none). */
+    public int kernelVersion() { return kernelVersion; }
+
+    /** Worlds built since the reset (the first, each KERNEL_CONFIG after it, each RESET). */
+    public long rebuilds() { return rebuilds; }
+
+    /** Malformed kernel blobs and messages. */
+    public long badKernel() { return badKernel; }
+
+    /** The own ship's hull. */
+    public ShipGeom hull() { return hull; }
 
     /**
      * Read the PREDICT sections of a snapshot (part 0 of a tick newer than every one before), the packet body at the

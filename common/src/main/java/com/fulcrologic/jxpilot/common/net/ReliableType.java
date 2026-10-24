@@ -94,6 +94,19 @@ public final class ReliableType {
     public static final int WAR = 40;
 
     // ---- client -> server
+    /**
+     * {@link Msg.KernelConfigBegin}: a new kernel config blob ({@link com.fulcrologic.jxpilot.common.config.KernelConfig},
+     * protocol v2) follows as KERNEL_CHUNKs: its version, length, compressed length and CRC32.
+     */
+    public static final int KERNEL_CONFIG = 48;
+    /** A piece of the deflated kernel config (the {@link Msg.DataChunk} layout). */
+    public static final int KERNEL_CHUNK = 49;
+    /**
+     * {@link Msg.KernelState}: run-time state the kernel reads that the map does not give: cannon phasing, target
+     * teams, changed blocks, temporary wormholes (protocol v2, sent on change).
+     */
+    public static final int KERNEL_STATE = 50;
+
     /** Empty body: client has the config/map and is ready to play. */
     public static final int READY = 64;
     /** {@link Msg.Text} (kind/from ignored): talk line, XPilot conventions ("name:text", "team:text"). */

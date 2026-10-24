@@ -3,7 +3,7 @@
 // by dist/src/test/java/com/fulcrologic/jxpilot/dist/docs/GuideTables.java. Do not edit:
 // run `make -C docs/guide generate` instead. The build fails when this file is stale.
 
-The server knows *307* options: 298 implemented, 2 not supported, 2 no effect, 5 not applicable. In these groups:
+The server knows *308* options: 299 implemented, 2 not supported, 2 no effect, 5 not applicable. In these groups:
 
 * <<opts-files,Command line and server files>> (11)
 * <<opts-network,Server and network>> (23)
@@ -11,7 +11,7 @@ The server knows *307* options: 298 implemented, 2 not supported, 2 no effect, 5
 * <<opts-radar,Radar>> (6)
 * <<opts-scoring,Scoring>> (20)
 * <<opts-items,Items and fuel>> (81)
-* <<opts-walls,Walls, crashes and bouncing>> (20)
+* <<opts-walls,Walls, crashes and bouncing>> (21)
 * <<opts-map,Map and world>> (11)
 * <<opts-physics,Physics and gravity>> (16)
 * <<opts-teams,Teams and alliances>> (8)
@@ -1309,6 +1309,13 @@ lib/defaults: `+180+`
 |`+yes+`
 |command line, map, config file
 |*Implemented.* Players and bullets bounce when they hit the (non-wrapping) edge.
+
+|[[opt-predictableBounces]]`+predictableBounces+`
+|
+|boolean
+|`+false+`
+|command line, map, config file
+|*Implemented.* JXPilot: draw a ship's wall-bounce tie-breaks from (tick, player id) instead of the game's random stream, so a client's own-ship prediction makes the same choices. Changes the random stream, so it is off for C-parity runs. Cannot change at run time.
 
 |===
 
@@ -2619,6 +2626,7 @@ Options not in any category above.
 <<opt-playerStartsShielded,playerStartsShielded>> ·
 <<opt-playerWallBounceBrakeFactor,playerWallBounceBrakeFactor>> ·
 <<opt-pLockServer,pLockServer>> ·
+<<opt-predictableBounces,predictableBounces>> ·
 <<opt-raceLaps,raceLaps>> ·
 <<opt-radarDivisor,radarDivisor>> ·
 <<opt-randomItemProb,randomItemProb>> ·

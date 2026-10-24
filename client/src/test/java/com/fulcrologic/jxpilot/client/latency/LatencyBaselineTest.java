@@ -49,7 +49,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * says how to rerun it.
  * <p>
  * The assertions are loose regression guards around today's design (the own ship dead-reckoned from the
- * newest SELF, inputs applied at the next server tick), so a change that adds own-ship latency fails here.
+ * newest SELF; since phase 1b inputs tagged with the predicted tick and applied at that tick, sent ahead by the
+ * input lead), so a change that adds own-ship latency fails here. Phase 1b restated them: the input lead's
+ * slack (0.5 tick + 2 jitter) now comes on top of the wait for the tick (docs/latency-measurements.md).
  * Phase 1c (prediction) is expected to break the lower bounds on purpose and must restate them.
  */
 @DisplayName("latency baseline (phase 0)")
@@ -108,7 +110,7 @@ class LatencyBaselineTest {
     }
 
     @Test
-    @DisplayName("own-ship I2P on clean links: mean RTT + 40..48 ms, p50 RTT + 30..55 ms, p95 at most RTT + 90 ms")
+    @DisplayName("own-ship I2P on clean links: mean RTT + 75..100 ms, p50 RTT + 70..100 ms, p95 at most RTT + 135 ms")
     void cleanI2p() {
         List<Executable> checks = new ArrayList<>();
         for (MetricTable.Row r : ROWS) {
@@ -118,25 +120,26 @@ class LatencyBaselineTest {
             int rtt = r.scenario().rttMs();
             Stats s = r.i2p().stats(null);
             String cell = r.course() + " " + r.scenario().label() + ": ";
-            // RTT + T/2 (36 ms, the wait for the next 14 Hz tick over stratified phases) + about half a frame each for
-            // the key poll and the draw: about 44 ms. Seeds 1-3 measured mean RTT + 43.3..45.8, p50 RTT + 41..46, p95
-            // RTT + 75..77
+            // phase 0: RTT + T/2 (36 ms, the wait for the next 14 Hz tick) + about half a frame each for the key poll
+            // and the draw, about 44 ms (seeds 1-3: mean RTT + 43.3..45.8). Phase 1b: the wait for the predicted
+            // tick (T/2) + the input slack the lead controller holds (0.5 tick + half its 0.125 deadband, ~40 ms)
+            // + the frames: seed 1 measured mean RTT + 80..93, p50 RTT + 80..92, p95 at most RTT + 124
             double mean = r.i2p().mean();
-            checks.add(() -> assertTrue(mean >= rtt + 40 && mean <= rtt + 48, cell + "mean " + mean));
-            checks.add(() -> assertTrue(s.p50() >= rtt + 30 && s.p50() <= rtt + 55, cell + "p50 " + s.p50()));
-            checks.add(() -> assertTrue(s.p95() <= rtt + 90, cell + "p95 " + s.p95()));
+            checks.add(() -> assertTrue(mean >= rtt + 75 && mean <= rtt + 100, cell + "mean " + mean));
+            checks.add(() -> assertTrue(s.p50() >= rtt + 70 && s.p50() <= rtt + 100, cell + "p50 " + s.p50()));
+            checks.add(() -> assertTrue(s.p95() <= rtt + 135, cell + "p95 " + s.p95()));
             checks.add(() -> assertTrue(s.percentile(0) >= rtt, cell + "no key shows sooner than one round trip: "
                 + s.percentile(0)));
             for (ControlKey k : new ControlKey[] {ControlKey.TURN_LEFT, ControlKey.THRUST}) {
                 Stats ks = r.i2p().stats(k);
-                checks.add(() -> assertTrue(ks.p50() <= rtt + 80, cell + k + " p50 " + ks.p50()));
+                checks.add(() -> assertTrue(ks.p50() <= rtt + 100, cell + k + " p50 " + ks.p50()));
             }
         }
         assertAll(checks);
     }
 
     @Test
-    @DisplayName("own-ship I2P with jitter and loss: p50 at most RTT + 90 ms; p95 at most RTT + 250 ms, + 600 ms"
+    @DisplayName("own-ship I2P with jitter and loss: p50 at most RTT + 180 ms; p95 at most RTT + 400 ms, + 600 ms"
         + " with bursty loss")
     void impairedI2p() {
         List<Executable> checks = new ArrayList<>();
@@ -144,10 +147,12 @@ class LatencyBaselineTest {
             int rtt = r.scenario().rttMs();
             Stats s = r.i2p().stats(null);
             String cell = r.course() + " " + r.scenario().label() + ": ";
-            // seeds 1-3 measured p50 up to RTT + 69 ms, p95 up to RTT + 196 ms without bursty loss and RTT + 467 ms with
-            // it (a burst can eat an INPUT and its redundant copy, and the SELF after it)
-            int tail = r.scenario().loss() == Scenario.Loss.BURSTY_5 ? 600 : 250;
-            checks.add(() -> assertTrue(s.p50() <= rtt + 90, cell + "p50 " + s.p50()));
+            // phase 0 (seeds 1-3): p50 up to RTT + 69 ms, p95 up to RTT + 196 ms without bursty loss and RTT + 467 ms
+            // with it. Phase 1b (seed 1): p50 up to RTT + 168 ms (jitter raises the slack target by 2 x jitter), p95 up
+            // to RTT + 353 ms without bursty loss (Pareto spikes) and RTT + 380 ms with it (the lead jumps on a
+            // starvation, and the mid-tick repeat doubles the copies sent before the deadline)
+            int tail = r.scenario().loss() == Scenario.Loss.BURSTY_5 ? 600 : 400;
+            checks.add(() -> assertTrue(s.p50() <= rtt + 180, cell + "p50 " + s.p50()));
             checks.add(() -> assertTrue(s.p95() <= rtt + tail, cell + "p95 " + s.p95()));
         }
         assertAll(checks);

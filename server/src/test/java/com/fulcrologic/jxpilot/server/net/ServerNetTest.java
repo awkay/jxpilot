@@ -905,6 +905,48 @@ class ServerNetTest {
     }
 
     @Nested
+    @DisplayName("kernel config")
+    class Kernel {
+        @Test
+        @DisplayName("after the initial state every peer gets the kernel blob; a kernel option /set sends a new version,"
+            + " another option does not")
+        void kernel() {
+            Harness h = new Harness();
+            com.fulcrologic.jxpilot.common.config.Options o = new com.fulcrologic.jxpilot.common.config.Options();
+            com.fulcrologic.jxpilot.common.config.ConfigParser.parse("mapWidth: 10\nmapHeight: 10\nmapData: \\multiline: E\n"
+                + "xxxxxxxxxx\nx  ++    x\nx        x\nxxxxxxxxxx\nE\n", "t",
+                com.fulcrologic.jxpilot.common.config.OptionOrigin.MAP, o);
+            String clientMap = o.mapData().replace('+', ' ');
+            h.net.setKernel(o, clientMap);
+            TestClient c = new TestClient(1);
+            h.join(c, 0, A, "a");
+            for (int i = 0; i < 5; i++) {
+                h.step(c, 0, A, 0);
+            }
+            List<String> first = new ArrayList<>(c.reliableLog);
+            com.fulcrologic.jxpilot.common.config.Options decoded =
+                com.fulcrologic.jxpilot.common.config.KernelConfig.decode(c.kernelBytes, clientMap);
+            o.force(com.fulcrologic.jxpilot.common.config.Opt.GRAVITY, "-0.9");
+            h.net.optionChanged(com.fulcrologic.jxpilot.common.config.Opt.GRAVITY, o);
+            h.net.optionChanged(com.fulcrologic.jxpilot.common.config.Opt.MAX_ROBOTS, o);
+            for (int i = 0; i < 5; i++) {
+                h.step(c, 0, A, 0);
+            }
+            com.fulcrologic.jxpilot.common.config.Options after =
+                com.fulcrologic.jxpilot.common.config.KernelConfig.decode(c.kernelBytes, clientMap);
+            int initialAt = first.indexOf("JOIN 0 self");
+            assertAll(
+                () -> assertTrue(first.indexOf("KERNEL 1") > initialAt, "KERNEL_CONFIG version 1 after the initial state: " + first),
+                () -> assertTrue(first.contains("KERNEL done"), "and its chunks"),
+                () -> assertEquals(o.mapData(), decoded.mapData(), "the blob restores the hidden blocks"),
+                () -> assertEquals(2, h.net.kernelVersion(), "the gravity /set made version 2, maxRobots nothing"),
+                () -> assertEquals(1, c.reliableLog.stream().filter(x -> x.equals("KERNEL 2")).count(), "sent once"),
+                () -> assertEquals(-0.9, after.getDouble(com.fulcrologic.jxpilot.common.config.Opt.GRAVITY), 1e-12,
+                    "with the new gravity"));
+        }
+    }
+
+    @Nested
     @DisplayName("snapshots")
     class Snapshots {
         @Test
