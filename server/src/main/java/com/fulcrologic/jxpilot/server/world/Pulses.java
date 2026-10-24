@@ -23,6 +23,8 @@
  */
 package com.fulcrologic.jxpilot.server.world;
 
+import com.fulcrologic.jxpilot.common.sim.Mods;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 /**
  * Laser pulses in flight (C {@code Pulses[]} of {@code pulse_t}), a fixed-capacity struct of arrays kept dense
  * in C order: removing pulse {@code i} moves the last one into its place, like C {@code Laser_pulse_destroy_one}.

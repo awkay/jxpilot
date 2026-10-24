@@ -21,41 +21,53 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
  */
-package com.fulcrologic.jxpilot.server.sim;
+package com.fulcrologic.jxpilot.common.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Dir;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
-import com.fulcrologic.jxpilot.server.world.Click;
-import com.fulcrologic.jxpilot.server.world.Obj;
-import com.fulcrologic.jxpilot.server.world.Objects;
-import com.fulcrologic.jxpilot.server.world.World;
-import com.fulcrologic.jxpilot.server.world.WormTable;
 
-import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
+import java.util.function.DoubleSupplier;
+
+import static com.fulcrologic.jxpilot.common.sim.MoveState.*;
 
 /**
  * Port of {@code Move_segment}, {@code Bounce_edge} and {@code Bounce_wall} ({@code src/server/walls.c}):
  * move one point through at most one block, detecting wall crashes and bounces exactly in click
- * coordinates. Stateless apart from the world it reads.
+ * coordinates. Stateless apart from the world it reads and two scratch results of the cannon case.
+ * <p>
+ * The only randomness, the choice among equally feasible bounces at a corner, comes from the injected
+ * {@code tieBreak} source (C {@code rfrac()}): the server passes its world RNG, so C's random stream is kept.
  */
 public final class Segment {
     private static final int BC = Click.BLOCK_CLICKS;
-    private final World world;
+    private final ShipWorld world;
     private final WorldMap map;
+    /** C {@code rfrac()} for corner bounce tie-breaks: uniform in [0, 1). */
+    private DoubleSupplier tieBreak;
     /** Ball reactions to treasures (C handles balls inside Move_segment); null: balls crash like objects. */
-    TreasureHook treasureHook;
+    public TreasureHook treasureHook;
 
-    /** The ball part of the TREASURE case of C {@code Move_segment} ({@link Balls#atTreasure}). */
+    /** The ball part of the TREASURE case of C {@code Move_segment} (the server's {@code Balls.atTreasure}). */
     public interface TreasureHook {
         /** @return true when the move continues through the treasure block, false when it ends */
         boolean atTreasure(MoveState ms);
     }
 
-    public Segment(World world) {
+    /**
+     * @param world    the world being moved through
+     * @param tieBreak C {@code rfrac()}: uniform draws in [0, 1) that break ties between feasible bounces
+     */
+    public Segment(ShipWorld world, DoubleSupplier tieBreak) {
         this.world = world;
-        this.map = world.map;
+        this.map = world.map();
+        this.tieBreak = tieBreak;
+    }
+
+    /** Replace the tie-break source (e.g. a per-(tick, player) one for predictable bounces). */
+    public void tieBreak(DoubleSupplier source) {
+        this.tieBreak = source;
     }
 
     /** C {@code Bounce_edge}: reflect (edgeBounce) or stop the motion at the world edge. */
@@ -165,10 +177,10 @@ public final class Segment {
         ms.bounce = NOT_A_BOUNCE;
         ms.doneX = 0;
         ms.doneY = 0;
-        final int cw = world.clickWidth;
-        final int ch = world.clickHeight;
-        final int wx = world.width;
-        final int wy = world.height;
+        final int cw = world.clickWidth();
+        final int ch = world.clickHeight();
+        final int wx = world.width();
+        final int wy = world.height();
 
         int enterX = ms.posX;
         int enterY = ms.posY;
@@ -331,8 +343,7 @@ public final class Segment {
                         break;
                     }
                     int hole = map.itemId(blockX, blockY);
-                    WormTable worms = world.worms;
-                    if (worms.type(hole) == WormTable.OUT) {
+                    if (world.wormholeType(hole) == ShipWorld.WORM_OUT) {
                         break;
                     }
                     if (ms.pl != null) {
@@ -341,7 +352,7 @@ public final class Segment {
                         if ((ms.pl.status & Obj.WARPED) != 0) {
                             if (inMap(b2x, b2y) && map.block(b2x, b2y) == BlockType.WORMHOLE) {
                                 int oldhole = map.itemId(b2x, b2y);
-                                if (worms.type(oldhole) == WormTable.NORMAL
+                                if (world.wormholeType(oldhole) == ShipWorld.WORM_NORMAL
                                     && ms.pl.wormHoleDest == oldhole) {
                                     break;
                                 }
@@ -354,18 +365,17 @@ public final class Segment {
                             return;
                         }
                     } else {
-                        int last = worms.lastDest(hole);
-                        Objects o = world.objects;
-                        int obx = Math.floorDiv(o.px[ms.obj], Const.BLOCK_SZ);
-                        int oby = Math.floorDiv(o.py[ms.obj], Const.BLOCK_SZ);
+                        int last = world.wormholeLastDest(hole);
+                        int obx = Math.floorDiv(world.objectPx(ms.obj), Const.BLOCK_SZ);
+                        int oby = Math.floorDiv(world.objectPy(ms.obj), Const.BLOCK_SZ);
                         if (last >= 0
-                            && (worms.countdown(hole) > 0 || world.params.wormTime == 0)
-                            && last < worms.count()
-                            && worms.type(last) != WormTable.IN
+                            && (world.wormholeCountdown(hole) > 0 || world.shipParams().wormTime == 0)
+                            && last < world.wormholeCount()
+                            && world.wormholeType(last) != ShipWorld.WORM_IN
                             && last != hole
                             && (obx != blockX || oby != blockY)) {
-                            ms.doneX += (worms.bx(last) - worms.bx(hole)) * BC;
-                            ms.doneY += (worms.by(last) - worms.by(hole)) * BC;
+                            ms.doneX += (world.wormholeBx(last) - world.wormholeBx(hole)) * BC;
+                            ms.doneY += (world.wormholeBy(last) - world.wormholeBy(hole)) * BC;
                         }
                     }
                     break;
@@ -374,16 +384,16 @@ public final class Segment {
                     if (!ms.cannonCrashes) {
                         break;
                     }
-                    boolean teamPlay = world.params.teamPlay;
+                    boolean teamPlay = world.shipParams().teamPlay;
                     if ((ms.status & Obj.FROMCANNON) != 0 && !teamPlay) {
                         break;
                     }
                     int i = map.itemId(blockX, blockY);
                     ms.cannon = i;
-                    if ((world.cannonItems.used[i] & com.fulcrologic.jxpilot.server.world.Has.PHASING_DEVICE) != 0) {
+                    if (world.cannonPhased(i)) {
                         break;
                     }
-                    if (teamPlay && (world.params.teamImmunity || (ms.status & Obj.FROMCANNON) != 0)
+                    if (teamPlay && (world.shipParams().teamImmunity || (ms.status & Obj.FROMCANNON) != 0)
                         && ms.team == map.cannons().get(i).team()) {
                         break;
                     }
@@ -429,9 +439,9 @@ public final class Segment {
                         int i = map.itemId(blockX, blockY);
                         ms.target = i;
                         boolean skip = false;
-                        if (!world.params.targetTeamCollision) {
+                        if (!world.shipParams().targetTeamCollision) {
                             int team = ms.pl != null ? ms.pl.team : ms.targetTeam;
-                            if (team == world.modes.targetTeam[i]) {
+                            if (team == world.targetTeam(i)) {
                                 skip = true;
                             }
                         }
@@ -719,7 +729,7 @@ public final class Segment {
     }
 
     private boolean inMap(int bx, int by) {
-        return bx >= 0 && bx < world.width && by >= 0 && by < world.height;
+        return bx >= 0 && bx < world.width() && by >= 0 && by < world.height();
     }
 
     private static double sqr(double v) {
@@ -733,7 +743,7 @@ public final class Segment {
      * targets/treasures that do not crash this object, matching diagonals); infeasible ones are dropped.
      * BEHAVIOR: with none feasible a two-side corner becomes the diagonal bounce; a lone diagonal-block
      * corner case may be cleared; anything else crashes (CRASH_WALL).
-     * BEHAVIOR: with several feasible, one is picked with rfrac().
+     * BEHAVIOR: with several feasible, one is picked with the tie-break source (C rfrac()).
      */
     int resolveBounce(MoveState ms, int wallBounce, int blockType, int blockX, int blockY, int offsetX,
                       int offsetY) {
@@ -758,7 +768,7 @@ public final class Segment {
                         if (!ms.edgeWrap) {
                             continue;
                         }
-                        b2x += world.width;
+                        b2x += world.width();
                     }
                     if (covers(b2x, blockY, blockMask | BlockType.bit(BlockType.REC_RU)
                         | BlockType.bit(BlockType.REC_RD))) {
@@ -767,11 +777,11 @@ public final class Segment {
                 }
                 case BOUNCE_HOR_HI -> {
                     int b2x = blockX + 1;
-                    if (b2x >= world.width) {
+                    if (b2x >= world.width()) {
                         if (!ms.edgeWrap) {
                             continue;
                         }
-                        b2x -= world.width;
+                        b2x -= world.width();
                     }
                     if (covers(b2x, blockY, blockMask | BlockType.bit(BlockType.REC_LU)
                         | BlockType.bit(BlockType.REC_LD))) {
@@ -784,7 +794,7 @@ public final class Segment {
                         if (!ms.edgeWrap) {
                             continue;
                         }
-                        b2y += world.height;
+                        b2y += world.height();
                     }
                     if (covers(blockX, b2y, blockMask | BlockType.bit(BlockType.REC_RU)
                         | BlockType.bit(BlockType.REC_LU))) {
@@ -793,11 +803,11 @@ public final class Segment {
                 }
                 case BOUNCE_VER_HI -> {
                     int b2y = blockY + 1;
-                    if (b2y >= world.height) {
+                    if (b2y >= world.height()) {
                         if (!ms.edgeWrap) {
                             continue;
                         }
-                        b2y -= world.height;
+                        b2y -= world.height();
                     }
                     if (covers(blockX, b2y, blockMask | BlockType.bit(BlockType.REC_RD)
                         | BlockType.bit(BlockType.REC_LD))) {
@@ -853,7 +863,7 @@ public final class Segment {
                 }
             }
         } else if (count > 1) {
-            count = (int) (world.rfrac() * count);
+            count = (int) (tieBreak.getAsDouble() * count);
             for (int bit = 1; bit <= wallBounce; bit <<= 1) {
                 if ((wallBounce & bit) != 0) {
                     if (count == 0) {

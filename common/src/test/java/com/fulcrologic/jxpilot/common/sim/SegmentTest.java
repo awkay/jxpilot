@@ -21,14 +21,9 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
  */
-package com.fulcrologic.jxpilot.server.sim;
+package com.fulcrologic.jxpilot.common.sim;
 
 import com.fulcrologic.jxpilot.common.math.Rng;
-import com.fulcrologic.jxpilot.server.TestWorlds;
-import com.fulcrologic.jxpilot.server.world.Click;
-import com.fulcrologic.jxpilot.server.world.Obj;
-import com.fulcrologic.jxpilot.server.world.Player;
-import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -36,7 +31,7 @@ import org.junit.jupiter.api.Test;
 import java.util.HashSet;
 import java.util.Set;
 
-import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
+import static com.fulcrologic.jxpilot.common.sim.MoveState.*;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -49,14 +44,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SegmentTest {
     static final int BC = Click.BLOCK_CLICKS;
 
-    static World world(String extra, String... rows) {
-        return new World(TestWorlds.options(extra, rows), 1);
+    static KernelFx.TestWorld world(String extra, String... rows) {
+        return new KernelFx.TestWorld(KernelFx.options(extra, rows), 1);
     }
 
     /** A pool-object move state with every crash/bounce rule on. */
-    static MoveState obj(World w, int x, int y, double vx, double vy, int tx, int ty) {
+    static MoveState obj(KernelFx.TestWorld w, int x, int y, double vx, double vy, int tx, int ty) {
         MoveState ms = new MoveState();
-        ms.edgeWrap = w.wrap;
+        ms.edgeWrap = w.wrap();
         ms.edgeBounce = true;
         ms.wallBounce = true;
         ms.cannonCrashes = true;
@@ -68,8 +63,8 @@ class SegmentTest {
         return ms;
     }
 
-    static void move(World w, MoveState ms) {
-        new Segment(w).move(ms);
+    static void move(KernelFx.TestWorld w, MoveState ms) {
+        new Segment(w, w::rfrac).move(ms);
     }
 
     // ---------------------------------------------------------------------------------------------------------
@@ -78,7 +73,7 @@ class SegmentTest {
     @DisplayName("filled blocks")
     class Filled {
         /** 5x3, wall at block (2,1). */
-        final World w = world("", "     ", "  x  ", "     ");
+        final KernelFx.TestWorld w = world("", "     ", "  x  ", "     ");
 
         @Test
         @DisplayName("open space: the move stops at the block boundary and keeps the rest as todo")
@@ -114,7 +109,7 @@ class SegmentTest {
         @DisplayName("a player's heading is not changed by a bounce")
         void playerHeadingKept() {
             MoveState ms = obj(w, 2 * BC, BC + 1000, 4.6875, 0, 300, 0);
-            ms.pl = new Player(0);
+            ms.pl = new ShipBody();
             ms.dir = 10;
             move(w, ms);
             assertAll(
@@ -195,10 +190,10 @@ class SegmentTest {
         @Test
         @DisplayName("fuel and (non-crashing) targets are solid squares too")
         void fuelAndTargetSolid() {
-            World f = world("", "     ", "  #  ", "     ");
+            KernelFx.TestWorld f = world("", "     ", "  #  ", "     ");
             MoveState fuel = obj(f, 2 * BC, BC + 1000, 2, 0, 300, 0);
             move(f, fuel);
-            World t = world("", "     ", "  !  ", "     ");
+            KernelFx.TestWorld t = world("", "     ", "  !  ", "     ");
             MoveState target = obj(t, 2 * BC, BC + 1000, 2, 0, 300, 0);
             target.targetCrashes = false;
             move(t, target);
@@ -221,7 +216,7 @@ class SegmentTest {
         @Test
         @DisplayName("a face covered by the neighbouring block is not bounceable: CRASH_WALL")
         void coveredFaceCrashes() {
-            World w = world("", "     ", " xx  ", "     ");
+            KernelFx.TestWorld w = world("", "     ", " xx  ", "     ");
             MoveState ms = obj(w, 2 * BC, BC + 1000, 2, 0, 300, 0);
             move(w, ms);
             assertEquals(CRASH_WALL, ms.crash, "the low-x face of (2,1) is covered by the wall at (1,1)");
@@ -235,31 +230,31 @@ class SegmentTest {
             int[] crash = new int[2];
             int[] bounce = new int[2];
             for (int i = 0; i < 2; i++) {
-                World w = world("", "     ", " " + covering[i] + "x  ", "     ");
+                KernelFx.TestWorld w = world("", "     ", " " + covering[i] + "x  ", "     ");
                 MoveState ms = obj(w, 2 * BC, BC + 1000, 2, 0, 300, 0);
                 move(w, ms);
                 crash[i] = ms.crash;
-                World w2 = world("", "     ", " " + open[i] + "x  ", "     ");
+                KernelFx.TestWorld w2 = world("", "     ", " " + open[i] + "x  ", "     ");
                 MoveState ms2 = obj(w2, 2 * BC, BC + 1000, 2, 0, 300, 0);
                 move(w2, ms2);
                 bounce[i] = ms2.bounce;
             }
-            World up = world("", "  a  ", "  x  ", "     ");
+            KernelFx.TestWorld up = world("", "  a  ", "  x  ", "     ");
             MoveState fromTop = obj(up, 2 * BC + 1000, 2 * BC, 0, -2, 0, -300);
             move(up, fromTop);
-            World up2 = world("", "  q  ", "  x  ", "     ");
+            KernelFx.TestWorld up2 = world("", "  q  ", "  x  ", "     ");
             MoveState fromTop2 = obj(up2, 2 * BC + 1000, 2 * BC, 0, -2, 0, -300);
             move(up2, fromTop2);
-            World right = world("", "     ", "  xs ", "     ");
+            KernelFx.TestWorld right = world("", "     ", "  xs ", "     ");
             MoveState fromRight = obj(right, 3 * BC, BC + 1000, -2, 0, -300, 0);
             move(right, fromRight);
-            World right2 = world("", "     ", "  xa ", "     ");
+            KernelFx.TestWorld right2 = world("", "     ", "  xa ", "     ");
             MoveState fromRight2 = obj(right2, 3 * BC, BC + 1000, -2, 0, -300, 0);
             move(right2, fromRight2);
-            World below = world("", "     ", "  x  ", "  s  ");
+            KernelFx.TestWorld below = world("", "     ", "  x  ", "  s  ");
             MoveState fromBelow = obj(below, 2 * BC + 1000, BC, 0, 2, 0, 300);
             move(below, fromBelow);
-            World below2 = world("", "     ", "  x  ", "  w  ");
+            KernelFx.TestWorld below2 = world("", "     ", "  x  ", "  w  ");
             MoveState fromBelow2 = obj(below2, 2 * BC + 1000, BC, 0, 2, 0, 300);
             move(below2, fromBelow2);
             assertAll(
@@ -278,13 +273,13 @@ class SegmentTest {
         @Test
         @DisplayName("targets and treasures cover a face only for objects they do not crash")
         void targetTreasureNeighbours() {
-            World t = world("", "     ", " !x  ", "     ");
+            KernelFx.TestWorld t = world("", "     ", " !x  ", "     ");
             MoveState crashes = obj(t, 2 * BC, BC + 1000, 2, 0, 300, 0);
             move(t, crashes);
             MoveState noCrash = obj(t, 2 * BC, BC + 1000, 2, 0, 300, 0);
             noCrash.targetCrashes = false;
             move(t, noCrash);
-            World r = world("", "     ", " *x  ", "     ");
+            KernelFx.TestWorld r = world("", "     ", " *x  ", "     ");
             MoveState tCrashes = obj(r, 2 * BC, BC + 1000, 2, 0, 300, 0);
             move(r, tCrashes);
             MoveState tNoCrash = obj(r, 2 * BC, BC + 1000, 2, 0, 300, 0);
@@ -300,30 +295,30 @@ class SegmentTest {
         @Test
         @DisplayName("at the world edge a face is bounceable only when the map wraps (neighbour across the edge)")
         void edgeNeighbour() {
-            World flat = world("", "     ", "x    ", "     ");
+            KernelFx.TestWorld flat = world("", "     ", "x    ", "     ");
             MoveState f = obj(flat, 0, BC + 1000, 2, 0, 300, 0);
             move(flat, f);
-            World wrap = world("edgeWrap: yes", "     ", "x    ", "     ");
+            KernelFx.TestWorld wrap = world("edgeWrap: yes", "     ", "x    ", "     ");
             MoveState g = obj(wrap, 0, BC + 1000, 2, 0, 300, 0);
             move(wrap, g);
-            World wrapCovered = world("edgeWrap: yes", "     ", "x   x", "     ");
+            KernelFx.TestWorld wrapCovered = world("edgeWrap: yes", "     ", "x   x", "     ");
             MoveState c = obj(wrapCovered, 0, BC + 1000, 2, 0, 300, 0);
             move(wrapCovered, c);
-            World wrapHi = world("edgeWrap: yes", "     ", "    x", "     ");
+            KernelFx.TestWorld wrapHi = world("edgeWrap: yes", "     ", "    x", "     ");
             MoveState hi = obj(wrapHi, 0, BC + 1000, -2, 0, -300, 0);
             move(wrapHi, hi);
-            World flatTop = world("", "  x  ", "     ", "     ");
+            KernelFx.TestWorld flatTop = world("", "  x  ", "     ", "     ");
             MoveState top = obj(flatTop, 2 * BC + 1000, 2 * BC, 0, 2, 0, 300);
             move(flatTop, top);
-            World wrapTop = world("edgeWrap: yes", "  x  ", "     ", "     ");
+            KernelFx.TestWorld wrapTop = world("edgeWrap: yes", "  x  ", "     ", "     ");
             MoveState wtop = obj(wrapTop, 2 * BC + 1000, 2 * BC, 0, 2, 0, 300);
             move(wrapTop, wtop);
             MoveState wbot = obj(wrapTop, 2 * BC + 1000, 0, 0, -2, 0, -300);
             move(wrapTop, wbot);
-            World wrapTopCovered = world("edgeWrap: yes", "  x  ", "     ", "  x  ");
+            KernelFx.TestWorld wrapTopCovered = world("edgeWrap: yes", "  x  ", "     ", "  x  ");
             MoveState wbotc = obj(wrapTopCovered, 2 * BC + 1000, 0, 0, -2, 0, -300);
             move(wrapTopCovered, wbotc);
-            World flatBottom = world("", "     ", "     ", "  x  ");
+            KernelFx.TestWorld flatBottom = world("", "     ", "     ", "  x  ");
             MoveState fbot = obj(flatBottom, 2 * BC + 1000, BC, 0, -2, 0, -300);
             move(flatBottom, fbot);
             MoveState fbotUp = obj(flatBottom, 2 * BC + 1000, 0, 0, 2, 0, 300);
@@ -346,7 +341,7 @@ class SegmentTest {
         @DisplayName("a corner whose two faces are both covered becomes the diagonal bounce")
         void cornerToDiagonal() {
             // plus-shaped walls around block (2,2); diagonal blocks are open
-            World w = world("", "     ", "  x  ", " xxx ", "  x  ", "     ");
+            KernelFx.TestWorld w = world("", "     ", "  x  ", " xxx ", "  x  ", "     ");
             MoveState ld = obj(w, 2 * BC, 2 * BC, 1, 1, 64, 32);
             ld.dir = 16;
             move(w, ld);
@@ -385,7 +380,7 @@ class SegmentTest {
         void randomChoice() {
             Set<Integer> seen = new HashSet<>();
             for (int seed = 1; seed <= 16; seed++) {
-                World w = new World(TestWorlds.options("", "     ", "     ", "  x  ", "     ", "     "), seed);
+                KernelFx.TestWorld w = new KernelFx.TestWorld(KernelFx.options("", "     ", "     ", "  x  ", "     ", "     "), seed);
                 MoveState ms = obj(w, 2 * BC, 2 * BC, 1, 1, 64, 64);
                 move(w, ms);
                 int pick = (int) (new Rng(seed).nextFloat() * 2);
@@ -402,15 +397,15 @@ class SegmentTest {
     @Nested
     @DisplayName("world edges")
     class Edges {
-        final World flat = world("", "   ", "   ", "   ");
+        final KernelFx.TestWorld flat = world("", "   ", "   ", "   ");
         /** A wall in the middle keeps every other block at walldist 2 so moves are traced. */
-        final World wrap = world("edgeWrap: yes", "   ", " x ", "   ");
+        final KernelFx.TestWorld wrap = world("edgeWrap: yes", "   ", " x ", "   ");
 
         @Test
         @DisplayName("with edgeBounce the point is reflected off each edge (BounceEdge)")
         void edgeBounce() {
-            int cw = flat.clickWidth;
-            int ch = flat.clickHeight;
+            int cw = flat.clickWidth();
+            int ch = flat.clickHeight();
             MoveState left = obj(flat, 0, BC + 1000, -1, 0.5, -64, 32);
             left.dir = 60;
             move(flat, left);
@@ -445,8 +440,8 @@ class SegmentTest {
         @Test
         @DisplayName("without edgeBounce the motion across the edge stops and an object heads along the edge")
         void edgeStop() {
-            int cw = flat.clickWidth;
-            int ch = flat.clickHeight;
+            int cw = flat.clickWidth();
+            int ch = flat.clickHeight();
             MoveState left = obj(flat, 0, BC + 1000, -1, 0.5, -64, 32);
             left.edgeBounce = false;
             move(flat, left);
@@ -462,7 +457,7 @@ class SegmentTest {
             move(flat, top);
             MoveState player = obj(flat, 0, BC + 1000, -1, 0.5, -64, 32);
             player.edgeBounce = false;
-            player.pl = new Player(0);
+            player.pl = new ShipBody();
             player.dir = 50;
             move(flat, player);
             assertAll(
@@ -483,8 +478,8 @@ class SegmentTest {
         @Test
         @DisplayName("moving right onto the last click column: leave.x is pulled back one click")
         void lastClick() {
-            int cw = flat.clickWidth;
-            int ch = flat.clickHeight;
+            int cw = flat.clickWidth();
+            int ch = flat.clickHeight();
             MoveState ms = obj(flat, cw - 240, BC + 1000, 1, 0, 240, 0);
             move(flat, ms);
             MoveState up = obj(flat, 1000, ch - 240, 0, 1, 0, 240);
@@ -502,8 +497,8 @@ class SegmentTest {
         @Test
         @DisplayName("with wrap a point at x=0 moving left continues in the last column; positions outside are wrapped")
         void wrapping() {
-            int cw = wrap.clickWidth;
-            int ch = wrap.clickHeight;
+            int cw = wrap.clickWidth();
+            int ch = wrap.clickHeight();
             MoveState ms = obj(wrap, 0, BC + 1000, -1, 0, -64, 0);
             move(wrap, ms);
             MoveState down = obj(wrap, 1000, 0, 0, -1, 0, -64);
@@ -528,11 +523,11 @@ class SegmentTest {
         @Test
         @DisplayName("CRASH_UNIVERSE outside the world without wrap, or more than one world away with wrap")
         void universe() {
-            int cw = wrap.clickWidth;
-            int ch = wrap.clickHeight;
+            int cw = wrap.clickWidth();
+            int ch = wrap.clickHeight();
             MoveState a = obj(flat, -1, 100, 1, 0, 64, 0);
             move(flat, a);
-            MoveState b = obj(flat, 100, flat.clickHeight, 1, 0, 64, 0);
+            MoveState b = obj(flat, 100, flat.clickHeight(), 1, 0, 64, 0);
             move(flat, b);
             MoveState c = obj(wrap, -cw - 1, 100, 1, 0, 64, 0);
             move(wrap, c);
@@ -542,7 +537,7 @@ class SegmentTest {
             move(wrap, e);
             MoveState f = obj(wrap, 100, 2 * ch, 1, 0, 64, 0);
             move(wrap, f);
-            MoveState g = obj(flat, flat.clickWidth, 100, 1, 0, 64, 0);
+            MoveState g = obj(flat, flat.clickWidth(), 100, 1, 0, 64, 0);
             move(flat, g);
             MoveState h = obj(flat, 100, -1, 1, 0, 64, 0);
             move(flat, h);
@@ -564,7 +559,7 @@ class SegmentTest {
     @Nested
     @DisplayName("block boundary arithmetic")
     class Boundary {
-        final World w = world("", "x    ", "     ", "     ");
+        final KernelFx.TestWorld w = world("", "x    ", "     ", "     ");
 
         @Test
         @DisplayName("a diagonal move leaving the block is cut where the first coordinate leaves, rounded half away")
@@ -595,7 +590,7 @@ class SegmentTest {
         @DisplayName("far from walls (walldist > 2) the move goes up to (walldist-2)*BC/2 clicks in one step")
         void wallDistFastPath() {
             String e = "         ";
-            World open = world("", e, e, e, e, e, e, e, e, e);
+            KernelFx.TestWorld open = world("", e, e, e, e, e, e, e, e, e);
             int cx = 4 * BC + 1000;
             int cy = 4 * BC + 1000;
             MoveState whole = obj(open, cx, cy, 1, 1, 100, 50);
@@ -625,7 +620,7 @@ class SegmentTest {
         @DisplayName("walldist 4 allows one block in one step; walldist 2 is traced block by block")
         void wallDistSmall() {
             String e = "     ";
-            World small = world("", e, e, e, e, e);
+            KernelFx.TestWorld small = world("", e, e, e, e, e);
             MoveState fast = obj(small, BC + 1000, BC + 1000, 1, 0, 2000, 0);
             move(small, fast);
             MoveState traced = obj(small, 1000, 1000, 1, 0, 2000, 0);
@@ -642,8 +637,8 @@ class SegmentTest {
     @Nested
     @DisplayName("boundary cases")
     class Boundaries {
-        final World flat = world("", "     ", "  x  ", "     ");
-        final World wrap = world("edgeWrap: yes", "   ", " x ", "   ");
+        final KernelFx.TestWorld flat = world("", "     ", "  x  ", "     ");
+        final KernelFx.TestWorld wrap = world("edgeWrap: yes", "   ", " x ", "   ");
 
         @Test
         @DisplayName("edge stop with zero velocity along the edge heads RES/4 (left edge) or 0 (bottom edge)")
@@ -662,8 +657,8 @@ class SegmentTest {
         @Test
         @DisplayName("wrapping exactly one world: x 0 stays, -width and width become 0, same for y")
         void exactWrap() {
-            int cw = wrap.clickWidth;
-            int ch = wrap.clickHeight;
+            int cw = wrap.clickWidth();
+            int ch = wrap.clickHeight();
             MoveState a = obj(wrap, 0, -10, 1, 1, 10, 10);
             move(wrap, a);
             MoveState b = obj(wrap, -cw, 100, 1, 1, 10, 10);
@@ -691,8 +686,8 @@ class SegmentTest {
         @Test
         @DisplayName("block boundaries: leaving block 1 into block 0 is free; zero velocity at the last click is no edge")
         void blockZeroAndLastClick() {
-            int cw = flat.clickWidth;
-            int ch = flat.clickHeight;
+            int cw = flat.clickWidth();
+            int ch = flat.clickHeight();
             MoveState left = obj(flat, BC, BC + 1000, -1, 0, -64, 0);
             move(flat, left);
             MoveState down = obj(flat, 1000, BC, 0, -1, 0, -64);
@@ -725,19 +720,19 @@ class SegmentTest {
         @Test
         @DisplayName("resolve: the face of block 1 toward block 0 is checked against block 0 (not the edge)")
         void neighbourZero() {
-            World w = world("", "     ", " x   ", "     ");
+            KernelFx.TestWorld w = world("", "     ", " x   ", "     ");
             MoveState ms = obj(w, BC, BC + 1000, 1, 0, 64, 0);
             move(w, ms);
-            World t = world("", "     ", "     ", " x   ");
+            KernelFx.TestWorld t = world("", "     ", "     ", " x   ");
             MoveState up = obj(t, BC + 1000, 0, 0, 1, 0, 64);
             move(t, up);
-            World wv = world("edgeWrap: yes", "x    ", "     ", "  x  ");
+            KernelFx.TestWorld wv = world("edgeWrap: yes", "x    ", "     ", "  x  ");
             MoveState wup = obj(wv, 2 * BC + 1000, 0, 0, 1, 0, 64);
             move(wv, wup);
-            World wv2 = world("edgeWrap: yes", "  x  ", "     ", "  x  ");
+            KernelFx.TestWorld wv2 = world("edgeWrap: yes", "  x  ", "     ", "  x  ");
             MoveState wup2 = obj(wv2, 2 * BC + 1000, 0, 0, 1, 0, 64);
             move(wv2, wup2);
-            World hi = world("edgeWrap: yes", "x    ", "    x", "     ");
+            KernelFx.TestWorld hi = world("edgeWrap: yes", "x    ", "    x", "     ");
             MoveState fromLeft = obj(hi, 0, BC + 1000, -2, 0, -300, 0);
             move(hi, fromLeft);
             assertAll(
@@ -752,7 +747,7 @@ class SegmentTest {
         @Test
         @DisplayName("C quirk: sliding along a column of walls with zero velocity across it crashes at the block joint")
         void slideJoint() {
-            World w = world("", "     ", "  x  ", "  x  ", "     ");
+            KernelFx.TestWorld w = world("", "     ", "  x  ", "  x  ", "     ");
             MoveState ms = obj(w, 2 * BC, 2 * BC - 7, 0, 37, 0, 37);
             move(w, ms);
             int[] first = {ms.doneX, ms.doneY, ms.crash};
@@ -768,7 +763,7 @@ class SegmentTest {
         @Test
         @DisplayName("a single feasible bounce consumes no rfrac()")
         void singleBounceNoRandom() {
-            World w = world("", "     ", "  x  ", "     ");
+            KernelFx.TestWorld w = world("", "     ", "  x  ", "     ");
             move(w, obj(w, 2 * BC, BC + 1000, 1, 0, 64, 0));
             assertEquals(new com.fulcrologic.jxpilot.common.math.Rng(1).nextFloat(), w.rfrac(),
                 "the world RNG is untouched");

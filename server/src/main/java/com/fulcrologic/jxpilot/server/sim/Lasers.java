@@ -27,15 +27,15 @@ import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.net.Msg;
-import com.fulcrologic.jxpilot.server.world.Click;
+import com.fulcrologic.jxpilot.common.sim.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
-import com.fulcrologic.jxpilot.server.world.Has;
-import com.fulcrologic.jxpilot.server.world.Mods;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Has;
+import com.fulcrologic.jxpilot.common.sim.Mods;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.Pulses;
-import com.fulcrologic.jxpilot.server.world.Trig;
+import com.fulcrologic.jxpilot.common.sim.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
 
 /**

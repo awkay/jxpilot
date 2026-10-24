@@ -30,11 +30,11 @@ import com.fulcrologic.jxpilot.common.math.XMath;
 import com.fulcrologic.jxpilot.common.net.ControlKey;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.world.Ecms;
-import com.fulcrologic.jxpilot.server.world.Has;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Has;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
-import com.fulcrologic.jxpilot.server.world.Trig;
+import com.fulcrologic.jxpilot.common.sim.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
 
 /**
@@ -346,8 +346,8 @@ public final class Devices {
         if (vel < 0.5f) {
             pl.vx = pl.vy = 0;
             vel = 0;
-            pl.setClicks(com.fulcrologic.jxpilot.server.world.Click.fromPixels(pl.prevX),
-                com.fulcrologic.jxpilot.server.world.Click.fromPixels(pl.prevY));
+            pl.setClicks(com.fulcrologic.jxpilot.common.sim.Click.fromPixels(pl.prevX),
+                com.fulcrologic.jxpilot.common.sim.Click.fromPixels(pl.prevY));
         }
         // C: acc = LENGTH(gx, gy) + vel adds in double, then stores the DFLOAT (update.c:387).
         float acc = (float) (StrictMath.hypot(gx, gy) + vel);

@@ -23,6 +23,9 @@
  */
 package com.fulcrologic.jxpilot.server.world;
 
+import com.fulcrologic.jxpilot.common.sim.Mods;
+import com.fulcrologic.jxpilot.common.sim.Obj;
+import com.fulcrologic.jxpilot.common.sim.Click;
 /**
  * Preallocated struct-of-arrays pool of moving objects (shots, sparks, debris; C {@code Obj[]} of
  * {@code object}). Objects are addressed by an int handle that stays valid until {@link #free}. Live

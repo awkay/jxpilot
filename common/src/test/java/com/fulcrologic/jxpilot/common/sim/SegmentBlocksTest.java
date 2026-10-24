@@ -21,19 +21,16 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
  */
-package com.fulcrologic.jxpilot.server.sim;
+package com.fulcrologic.jxpilot.common.sim;
 
-import com.fulcrologic.jxpilot.server.world.Obj;
-import com.fulcrologic.jxpilot.server.world.Player;
-import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
-import static com.fulcrologic.jxpilot.server.sim.SegmentTest.BC;
-import static com.fulcrologic.jxpilot.server.sim.SegmentTest.obj;
-import static com.fulcrologic.jxpilot.server.sim.SegmentTest.world;
+import static com.fulcrologic.jxpilot.common.sim.MoveState.*;
+import static com.fulcrologic.jxpilot.common.sim.SegmentTest.BC;
+import static com.fulcrologic.jxpilot.common.sim.SegmentTest.obj;
+import static com.fulcrologic.jxpilot.common.sim.SegmentTest.world;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -43,17 +40,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * point at offset (ox, oy) inside it is at clicks (2*BC + ox, BC + oy).
  */
 class SegmentBlocksTest {
-    static World row(String middle) {
+    static KernelFx.TestWorld row(String middle) {
         return world("", "     ", middle, "     ");
     }
 
     /** Move state for a point at offset (ox, oy) of block (2,1) with velocity = todo (only signs/ratios matter). */
-    static MoveState at(World w, int ox, int oy, int tx, int ty) {
+    static MoveState at(KernelFx.TestWorld w, int ox, int oy, int tx, int ty) {
         return obj(w, 2 * BC + ox, BC + oy, tx, ty, tx, ty);
     }
 
-    static MoveState run(World w, MoveState ms) {
-        new Segment(w).move(ms);
+    static MoveState run(KernelFx.TestWorld w, MoveState ms) {
+        new Segment(w, w::rfrac).move(ms);
         return ms;
     }
 
@@ -71,7 +68,7 @@ class SegmentBlocksTest {
     @Nested
     @DisplayName("diagonal REC_LD ('w', solid lower-left, x+y < S)")
     class RecLD {
-        final World w = row("  w  ");
+        final KernelFx.TestWorld w = row("  w  ");
 
         @Test
         @DisplayName("approaching the hypotenuse: stop on it, then bounce BounceLeftDown")
@@ -123,8 +120,8 @@ class SegmentBlocksTest {
         @Test
         @DisplayName("apexes: a diagonal bounce when moving into the hypotenuse, else cleared or crash")
         void apexes() {
-            World cov = row(" xw  ");
-            World below = world("", "     ", "  w  ", "  x  ");
+            KernelFx.TestWorld cov = row(" xw  ");
+            KernelFx.TestWorld below = world("", "     ", "  w  ", "  x  ");
             MoveState apex = run(cov, obj(cov, 2 * BC, 2 * BC, 0, -1, 0, -64));
             MoveState apexBottom = run(below, obj(below, 3 * BC, BC, -1, 0.5, -64, 32));
             MoveState cleared = run(cov, obj(cov, 2 * BC, 2 * BC, 1, -0.5, 64, -32));
@@ -146,13 +143,13 @@ class SegmentBlocksTest {
     @Nested
     @DisplayName("diagonal REC_LU ('s', solid upper-left, x < y)")
     class RecLU {
-        final World w = row("  s  ");
+        final KernelFx.TestWorld w = row("  s  ");
 
         @Test
         @DisplayName("hits, bounces, sides and the apex")
         void all() {
-            World cov = row(" xs  ");
-            World above = world("", "  x  ", "  s  ", "     ");
+            KernelFx.TestWorld cov = row(" xs  ");
+            KernelFx.TestWorld above = world("", "  x  ", "  s  ", "     ");
             assertAll(
                 () -> same(new int[] {-726, 227, -622, 196, 0, 0}, run(w, at(w, 2103, 1148, -1348, 423)),
                     "x-major: delta.x = (int)((oy-ox)/(1-w))"),
@@ -185,13 +182,13 @@ class SegmentBlocksTest {
     @Nested
     @DisplayName("diagonal REC_RD ('q', solid lower-right, x > y)")
     class RecRD {
-        final World w = row("  q  ");
+        final KernelFx.TestWorld w = row("  q  ");
 
         @Test
         @DisplayName("hits, bounces, sides and the apex")
         void all() {
-            World below = world("", "     ", "  q  ", "  x  ");
-            World right = row("  qx ");
+            KernelFx.TestWorld below = world("", "     ", "  q  ", "  x  ");
+            KernelFx.TestWorld right = row("  qx ");
             assertAll(
                 () -> same(new int[] {1133, -175, 233, -37, 0, 0}, run(w, at(w, 467, 1776, 1366, -212)),
                     "x-major: delta.x = (int)((oy-ox)/(1-w))"),
@@ -222,13 +219,13 @@ class SegmentBlocksTest {
     @Nested
     @DisplayName("diagonal REC_RU ('a', solid upper-right, x+y > S)")
     class RecRU {
-        final World w = row("  a  ");
+        final KernelFx.TestWorld w = row("  a  ");
 
         @Test
         @DisplayName("hits, bounces, sides and the apex")
         void all() {
-            World above = world("", "  x  ", "  a  ", "     ");
-            World right = row("  ax ");
+            KernelFx.TestWorld above = world("", "  x  ", "  a  ", "     ");
+            KernelFx.TestWorld right = row("  ax ");
             assertAll(
                 () -> same(new int[] {1149, 701, 250, 153, 0, 0}, run(w, at(w, 40, 349, 1399, 854)),
                     "x-major: delta.x = (int)((S-ox-oy)/(1+w))"),
@@ -266,7 +263,7 @@ class SegmentBlocksTest {
         @Test
         @DisplayName("an up cannon is the triangle (0,0) (S,0) (S/2,S/3): crash inside, clear outside, stop at the edge")
         void upCannon() {
-            World w = row("  r  ");
+            KernelFx.TestWorld w = row("  r  ");
             MoveState partial = run(w, at(w, 100, 700, 1000, 0));
             int[] first = out(partial);
             partial.posX += partial.doneX;
@@ -299,7 +296,7 @@ class SegmentBlocksTest {
         @Test
         @DisplayName("a move ending exactly on an edge line is allowed in full (C accepts a hit only strictly before the end)")
         void endOnEdge() {
-            World w = row("  r  ");
+            KernelFx.TestWorld w = row("  r  ");
             // ends on (300, 200) [3y = 2x] or its mirror (1940, 200) [3y = 2(S-x)]; the edge hit there is at the end
             // of the move and (int)(a.x * w) truncates one click short, so only C's strict < keeps the full move
             assertAll(
@@ -318,9 +315,9 @@ class SegmentBlocksTest {
         @Test
         @DisplayName("the other three facings are the up case rotated")
         void rotated() {
-            World down = row("  c  ");
-            World right = row("  f  ");
-            World left = row("  d  ");
+            KernelFx.TestWorld down = row("  c  ");
+            KernelFx.TestWorld right = row("  f  ");
+            KernelFx.TestWorld left = row("  d  ");
             assertAll(
                 () -> assertEquals(CRASH_CANNON, run(down, at(down, 1120, 2140, 10, 0)).crash, "down cannon: top centre is solid"),
                 () -> same(new int[] {-10, 0, 0, 0, 0, 0}, run(down, at(down, 1120, 100, -10, 0)), "down cannon: bottom is clear"),
@@ -335,14 +332,14 @@ class SegmentBlocksTest {
         @Test
         @DisplayName("cannon rules: no cannon crash, own cannon shots, team immunity")
         void rules() {
-            World w = row("  r  ");
+            KernelFx.TestWorld w = row("  r  ");
             MoveState noCrash = at(w, 1120, 100, 64, 0);
             noCrash.cannonCrashes = false;
             run(w, noCrash);
             MoveState fromCannon = at(w, 1120, 100, 64, 0);
             fromCannon.status = Obj.FROMCANNON;
             run(w, fromCannon);
-            World t = row("  r  ");
+            KernelFx.TestWorld t = row("  r  ");
             t.params.teamPlay = true;
             t.params.teamImmunity = false;
             int team = t.map.cannons().get(0).team();
@@ -357,7 +354,7 @@ class SegmentBlocksTest {
             MoveState sameTeamNoImm = at(t, 1120, 100, 64, 0);
             sameTeamNoImm.team = team;
             run(t, sameTeamNoImm);
-            World ti = row("  r  ");
+            KernelFx.TestWorld ti = row("  r  ");
             ti.params.teamPlay = true;
             ti.params.teamImmunity = true;
             MoveState immune = at(ti, 1120, 100, 64, 0);
@@ -382,15 +379,15 @@ class SegmentBlocksTest {
         @Test
         @DisplayName("objects crash on targets; players bounce off them recording the target; team mates pass")
         void targets() {
-            World w = row("  !  ");
-            w.params.targetTeamCollision = true;
+            KernelFx.TestWorld w = row("  !  ");
+            w.shipParams().targetTeamCollision = true;
             MoveState o = run(w, obj(w, 2 * BC, BC + 1000, 1, 0, 64, 0));
             MoveState p = obj(w, 2 * BC, BC + 1000, 1, 0, 64, 0);
-            p.pl = new Player(0);
+            p.pl = new ShipBody();
             run(w, p);
-            World nt = row("  !  ");
+            KernelFx.TestWorld nt = row("  !  ");
             nt.params.targetTeamCollision = false;
-            int team = nt.modes.targetTeam[0];
+            int team = nt.targetTeam[0];
             MoveState mate = obj(nt, 2 * BC, BC + 1000, 1, 0, 64, 0);
             mate.targetTeam = team;
             run(nt, mate);
@@ -398,7 +395,7 @@ class SegmentBlocksTest {
             foe.targetTeam = team + 1;
             run(nt, foe);
             MoveState matePl = obj(nt, 2 * BC, BC + 1000, 1, 0, 64, 0);
-            matePl.pl = new Player(0);
+            matePl.pl = new ShipBody();
             matePl.pl.team = team;
             matePl.team = team + 1;
             run(nt, matePl);
@@ -419,7 +416,7 @@ class SegmentBlocksTest {
         @Test
         @DisplayName("solid lower half plus a ball of radius S/2; start, middle and end must all be clear")
         void treasure() {
-            World w = row("  *  ");
+            KernelFx.TestWorld w = row("  *  ");
             MoveState solid = at(w, 100, 2100, 100, 0);
             solid.treasureCrashes = false;
             run(w, solid);
@@ -436,6 +433,40 @@ class SegmentBlocksTest {
                     "start and midpoint outside but the end inside the ball: crash"),
                 () -> assertEquals(CRASH_WALL, solid.crash, "for objects it does not crash it is a solid block"));
         }
+
+        @Test
+        @DisplayName("a ball reaching a treasure asks the treasure hook: true continues through the block, false ends")
+        void ballHook() {
+            KernelFx.TestWorld w = row("  *  ");
+            int[] asked = new int[1];
+            Segment through = new Segment(w, w::rfrac);
+            through.treasureHook = ms -> {
+                asked[0]++;
+                return true;
+            };
+            MoveState a = at(w, 100, 500, 100, 0);
+            a.type = Obj.BALL;
+            through.move(a);
+            Segment stop = new Segment(w, w::rfrac);
+            stop.treasureHook = ms -> false;
+            MoveState b = at(w, 100, 500, 100, 0);
+            b.type = Obj.BALL;
+            stop.move(b);
+            MoveState c = at(w, 100, 500, 100, 0);
+            c.type = Obj.SHOT;
+            through.move(c);
+            MoveState d = at(w, 100, 500, 100, 0);
+            d.type = Obj.BALL;
+            new Segment(w, w::rfrac).move(d);
+            assertAll(
+                () -> assertEquals(1, asked[0], "the hook is asked once, for the ball only"),
+                () -> assertEquals(100, a.doneX, "true: the ball moves on through the block"),
+                () -> assertEquals(CRASH_TREASURE, a.crash, "with the treasure crash recorded"),
+                () -> assertEquals(0, b.doneX, "false: the move ends at the treasure"),
+                () -> assertEquals(CRASH_TREASURE, b.crash, "as a treasure crash"),
+                () -> assertEquals(CRASH_TREASURE, c.crash, "other objects just crash"),
+                () -> assertEquals(0, d.doneX, "without a hook a ball crashes like any object"));
+        }
     }
 
     // ---------------------------------------------------------------------------------------------------------
@@ -444,10 +475,10 @@ class SegmentBlocksTest {
     @DisplayName("wormholes")
     class Wormholes {
         /** Normal wormholes at blocks (1,1) [index 0] and (3,1) [index 1]. */
-        final World w = world("", "     ", " @ @ ", "     ");
+        final KernelFx.TestWorld w = world("", "     ", " @ @ ", "     ");
 
-        Player playerIn(int bx, int by) {
-            Player p = new Player(0);
+        ShipBody playerIn(int bx, int by) {
+            ShipBody p = new ShipBody();
             p.setClicks(bx * BC + 1000, by * BC + 1000);
             return p;
         }
@@ -507,7 +538,7 @@ class SegmentBlocksTest {
         @Test
         @DisplayName("OUT wormholes never warp; IN wormholes do")
         void outHoles() {
-            World io = world("", "     ", " ( ) ", "     ");
+            KernelFx.TestWorld io = world("", "     ", " ( ) ", "     ");
             MoveState out = obj(io, 3 * BC, BC + 1000, 1, 0, 64, 0);
             out.pl = playerIn(3, 1);
             run(io, out);
@@ -524,7 +555,7 @@ class SegmentBlocksTest {
         void objects() {
             int[][] cases = new int[6][];
             for (int c = 0; c < 6; c++) {
-                World x = world("", "     ", " @ @ ", "     ");
+                KernelFx.TestWorld x = world("", "     ", " @ @ ", "     ");
                 int h = x.objects.alloc();
                 x.objects.setClicks(h, BC - 500, BC + 1000);
                 x.params.wormTime = 0;
@@ -548,14 +579,14 @@ class SegmentBlocksTest {
                 run(x, ms);
                 cases[c] = out(ms);
             }
-            World inDest = world("", "     ", " @(@ ", "     ");
+            KernelFx.TestWorld inDest = world("", "     ", " @(@ ", "     ");
             int h = inDest.objects.alloc();
             inDest.objects.setClicks(h, BC - 500, BC + 1000);
             inDest.wormLastDest[0] = 1;
             MoveState toIn = obj(inDest, BC, BC + 1000, 1, 0, 64, 0);
             toIn.obj = h;
             run(inDest, toIn);
-            World first = world("", "     ", " @ @ ", "     ");
+            KernelFx.TestWorld first = world("", "     ", " @ @ ", "     ");
             int hf = first.objects.alloc();
             first.objects.setClicks(hf, 3 * BC - 500, BC + 1000);
             first.params.wormTime = 0;
@@ -563,7 +594,7 @@ class SegmentBlocksTest {
             MoveState toFirst = obj(first, 3 * BC, BC + 1000, 1, 0, 64, 0);
             toFirst.obj = hf;
             run(first, toFirst);
-            World diag = world("", " @   ", "     ", "   @ ");
+            KernelFx.TestWorld diag = world("", " @   ", "     ", "   @ ");
             int hd = diag.objects.alloc();
             diag.objects.setClicks(hd, 3 * BC - 500, 1000);
             diag.params.wormTime = 0;
@@ -593,9 +624,9 @@ class SegmentBlocksTest {
         @Test
         @DisplayName("moving along a solid side of a diagonal (zero velocity across it) is a crash")
         void alongSolidSide() {
-            World ld = row("  w  ");
-            World lu = row("  s  ");
-            World rd = row("  q  ");
+            KernelFx.TestWorld ld = row("  w  ");
+            KernelFx.TestWorld lu = row("  s  ");
+            KernelFx.TestWorld rd = row("  q  ");
             assertAll(
                 () -> assertEquals(CRASH_WALL, run(ld, at(ld, 0, 1000, 0, 64)).crash, "REC_LD left side"),
                 () -> assertEquals(CRASH_WALL, run(ld, at(ld, 1000, 0, 64, 0)).crash, "REC_LD bottom side"),
@@ -606,10 +637,10 @@ class SegmentBlocksTest {
         @Test
         @DisplayName("apexes with velocity exactly along the diagonal test are cleared (C >= / <=)")
         void apexEquality() {
-            World ldBelow = world("", "     ", "  w  ", "  x  ");
-            World luAbove = world("", "  x  ", "  s  ", "     ");
-            World rdRight = row("  qx ");
-            World ruRight = row("  ax ");
+            KernelFx.TestWorld ldBelow = world("", "     ", "  w  ", "  x  ");
+            KernelFx.TestWorld luAbove = world("", "  x  ", "  s  ", "     ");
+            KernelFx.TestWorld rdRight = row("  qx ");
+            KernelFx.TestWorld ruRight = row("  ax ");
             assertAll(
                 () -> same(new int[] {-64, 64, 0, 0, 0, 0}, run(ldBelow, obj(ldBelow, 3 * BC, BC, -1, 1, -64, 64)),
                     "REC_LD bottom-right apex, vel.x + vel.y = 0: cleared"),
@@ -628,7 +659,7 @@ class SegmentBlocksTest {
         @Test
         @DisplayName("a phased point ignores every block")
         void phased() {
-            World w = row("  x  ");
+            KernelFx.TestWorld w = row("  x  ");
             MoveState ms = at(w, 100, 100, 64, 0);
             ms.phased = true;
             run(w, ms);

@@ -33,12 +33,13 @@ import com.fulcrologic.jxpilot.common.map.FuelStation;
 import com.fulcrologic.jxpilot.common.map.Wormhole;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.world.Events;
-import com.fulcrologic.jxpilot.server.world.Has;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Has;
+import com.fulcrologic.jxpilot.common.sim.Obj;
+import com.fulcrologic.jxpilot.common.sim.ShipKernel;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
-import com.fulcrologic.jxpilot.server.world.Trig;
+import com.fulcrologic.jxpilot.common.sim.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
 import com.fulcrologic.jxpilot.server.world.WormTable;
 
@@ -56,16 +57,16 @@ public final class Ships {
     private static final String T_HAS_COMMITTED_SUICIDE = Texts.of(" has committed suicide.");
     private static final String T_SELF_DESTRUCT = Texts.of("Self-Destruct");
 
-    /** C {@code ED_SHIELD} after the {@code (long)} cast in update.c: fuel per frame with shields up. */
-    static final long ED_SHIELD = (long) (-0.20 * 256);
-    /** C {@code REFUEL_RATE} (fixed point). */
-    static final int REFUEL_RATE = 5 * 256;
+    /** C {@code ED_SHIELD} ({@link ShipKernel#ED_SHIELD}). */
+    static final long ED_SHIELD = ShipKernel.ED_SHIELD;
+    /** C {@code REFUEL_RATE} ({@link ShipKernel#REFUEL_RATE}). */
+    static final int REFUEL_RATE = ShipKernel.REFUEL_RATE;
     /** C {@code MAX_PLAYER_FUEL} = TANK_CAP(0) (fixed point). */
     static final double MAX_PLAYER_FUEL = 2600 * 256;
     /** C {@code WORMCOUNT}. */
     static final int WORMCOUNT = 64;
-    /** C {@code TURN_FUEL} factor: 0.005 * FUEL_SCALE_FACT. */
-    static final double TURN_FUEL = 0.005 * 256;
+    /** C {@code TURN_FUEL} factor ({@link ShipKernel#TURN_FUEL}). */
+    static final double TURN_FUEL = ShipKernel.TURN_FUEL;
     /** C {@code DIR_UP}. */
     static final int DIR_UP = Const.RES / 4;
     /** Client default settings (C client default.c), used until the client sends SETTINGS. */
@@ -98,23 +99,23 @@ public final class Ships {
      * server-commands: C {@code Parse_shape_str(defaultShipShape)} (the built-in ship when it is invalid): the
      * ship of every player and robot without allowShipShapes (C {@code Init_player}).
      */
-    public final com.fulcrologic.jxpilot.server.world.ShipGeom defaultShipShape;
+    public final com.fulcrologic.jxpilot.common.sim.ShipGeom defaultShipShape;
     /**
      * server-commands: the ship of a detached fuel tank (C ship.c:416-418: {@code Parse_shape_str(tankShipShape)}
      * with allowShipShapes, else Init_player's {@link #defaultShipShape}); for the tank code (server-items).
      */
-    public final com.fulcrologic.jxpilot.server.world.ShipGeom tankShipShape;
+    public final com.fulcrologic.jxpilot.common.sim.ShipGeom tankShipShape;
     private final boolean allowShipShapes;
 
     public Ships(World w, Simulation sim) {
         this.w = w;
         this.sim = sim;
         this.baseOrder = w.map.baseOrder();
-        this.defaultShipShape = com.fulcrologic.jxpilot.server.world.ShipGeom.parse(
+        this.defaultShipShape = com.fulcrologic.jxpilot.common.sim.ShipGeom.parse(
             w.options.getString(com.fulcrologic.jxpilot.common.config.Opt.DEFAULT_SHIP_SHAPE));
         this.allowShipShapes = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.ALLOW_SHIP_SHAPES);
         this.tankShipShape = allowShipShapes
-            ? com.fulcrologic.jxpilot.server.world.ShipGeom.parse(
+            ? com.fulcrologic.jxpilot.common.sim.ShipGeom.parse(
                 w.options.getString(com.fulcrologic.jxpilot.common.config.Opt.TANK_SHIP_SHAPE))
             : defaultShipShape;
     }
@@ -510,7 +511,7 @@ public final class Ships {
         pl.homeBase = -1;
         // server-commands: C Init_player with a client's (empty) shape: the built-in ship with allowShipShapes, else
         // defaultShipShape; the host puts the CONNECT shape, the robot manager the robot's, after the spawn
-        pl.ship = allowShipShapes ? com.fulcrologic.jxpilot.server.world.ShipGeom.defaultShip() : defaultShipShape;
+        pl.ship = allowShipShapes ? com.fulcrologic.jxpilot.common.sim.ShipGeom.defaultShip() : defaultShipShape;
         pl.vx = pl.vy = 0;
         pl.accX = pl.accY = 0;
         pl.dir = DIR_UP;
@@ -801,7 +802,7 @@ public final class Ships {
     /**
      * The per-player body of the C player loop for one frame.
      * <p>
-     * BEHAVIOR: power/turnspeed/turnresistance are limited to their C ranges.
+     * BEHAVIOR: power/turnspeed/turnresistance are limited to their C ranges ({@link ShipKernel#limits}).
      * BEHAVIOR: a counting-down ship that is not playing (dead, or paused) is carried toward home
      * (Transport_to_home) and moved (paused ships do not move), nothing else.
      * BEHAVIOR: when the count reaches 0 a not-playing ship gets PLAYING and goes home (a paused one stays
@@ -809,7 +810,8 @@ public final class Ships {
      * selfDestructScoreMult).
      * BEHAVIOR: paused ships lose 0.01 points per frame (scored every 64th frame); paused, game-over or dead
      * ships stop here; during the round delay every ship stops here.
-     * BEHAVIOR: then stuns and shields time out, the ship turns, shields drain fuel, refuelling transfers fuel,
+     * BEHAVIOR: then the kernel flies the ship ({@link ShipKernel#fly}, with {@link ShipEffects}): stuns and
+     * shields time out, the ship turns, shields drain fuel, refuelling transfers fuel,
      * fuel exhaustion drops shields and thrust, thrust sets the acceleration and uses fuel, mass is updated,
      * a warping ship goes through its wormhole, gravity and acceleration change the velocity, the ship
      * moves and thrust/turn sparks are made.
@@ -818,11 +820,8 @@ public final class Ships {
      * ships after it are skipped.
      */
     public boolean update(Player pl) {
-        Params p = w.params;
-        pl.power = clamp(pl.power, Const.MIN_PLAYER_POWER, Const.MAX_PLAYER_POWER);
-        pl.turnSpeed = clamp(pl.turnSpeed, Const.MIN_PLAYER_TURNSPEED, Const.MAX_PLAYER_TURNSPEED);
-        pl.turnResistance = clamp(pl.turnResistance, Const.MIN_PLAYER_TURNRESISTANCE,
-            Const.MAX_PLAYER_TURNRESISTANCE);
+        ShipKernel k = sim.kernel;
+        k.limits(pl);
         if (pl.damaged > 0) {
             pl.damaged--;
         }
@@ -830,7 +829,7 @@ public final class Ships {
             pl.count--;
             if ((pl.status & Obj.PLAYING) == 0) {
                 transportToHome(pl);
-                sim.mover.movePlayer(pl);
+                k.mover.movePlayer(pl, sim.effects);
                 return false;
             }
         }
@@ -845,7 +844,7 @@ public final class Ships {
                 selfDestruct(pl);
             }
         }
-        if ((pl.status & (Obj.PLAYING | Obj.GAME_OVER | Obj.PAUSE)) != Obj.PLAYING) {
+        if (!ShipKernel.playing(pl)) {
             if ((pl.status & Obj.PAUSE) != 0) {
                 pl.score -= 0.01;
                 if ((w.frames & 63) == 0) {
@@ -857,117 +856,12 @@ public final class Ships {
         if (w.roundDelay > 0) {
             return false;
         }
-        if (pl.stunned > 0) {
-            pl.stunned--;
-            pl.used &= ~(Has.SHIELD | Has.LASER | Has.SHOT);
-            pl.status &= ~Obj.THRUSTING;
-        }
-        updateShieldTime(pl);
-        sim.devices.timers(pl);
-        sim.devices.use(pl);
-        long tf = turn(pl, p);
-        sim.mover.turnPlayer(pl);
-
-        if ((pl.used & Has.SHIELD) != 0) {
-            pl.addFuel(ED_SHIELD);
-        }
-        sim.devices.drain(pl);
-        sim.locks.updateVisibility(pl);
-        refuel(pl);
-        sim.targets.repair(pl);
-        if (pl.fuel <= 0) {
-            pl.used &= ~(Has.SHIELD | Has.CLOAKING_DEVICE | Has.DEFLECTOR);
-            pl.status &= ~Obj.THRUSTING;
-        }
-        if (pl.fuel > pl.fuelMax - REFUEL_RATE) {
-            pl.used &= ~Has.REFUEL;
-        }
-        thrustAcceleration(pl);
-        setMass(pl);
-        if ((pl.status & Obj.WARPING) != 0 && warp(pl)) {
-            return true;
-        }
-        if ((pl.status & Obj.PAUSE) == 0) {
-            if ((pl.status & Obj.GRAVITY) != 0) {
-                pl.vx += pl.accX + w.gravityX(pl.bx, pl.by);
-                pl.vy += pl.accY + w.gravityY(pl.bx, pl.by);
-            } else {
-                pl.vx += pl.accX;
-                pl.vy += pl.accY;
-            }
-            sim.mover.movePlayer(pl);
-        }
-        if (((pl.used & Has.CLOAKING_DEVICE) == 0 || p.cloakedExhaust) && (pl.used & Has.PHASING_DEVICE) == 0) {
-            if ((pl.status & Obj.THRUSTING) != 0) {
-                sim.debris.thrust(pl);
-            }
-            if (tf != 0 && p.turnThrust) {
-                sim.debris.turnThrust(pl, (int) (5 + (tf >> 2)));
-            }
-        }
-        sim.locks.sensorRange(pl);
-        pl.used &= pl.have;
-        return false;
+        return k.fly(pl, sim.effects);
     }
 
-    /** C {@code LIMIT} of a float field against double bounds. */
-    private static float clamp(float v, double lo, double hi) {
-        return v > hi ? (float) hi : (v < lo ? (float) lo : v);
-    }
-
-    /** Shield timer (update.c:793-805). */
-    private void updateShieldTime(Player pl) {
-        if (pl.shieldTime > 0) {
-            if (--pl.shieldTime == 0 && (pl.used & Has.EMERGENCY_SHIELD) == 0) {
-                pl.used &= ~Has.SHIELD;
-            }
-            if ((pl.used & Has.SHIELD) == 0) {
-                if ((pl.used & Has.EMERGENCY_SHIELD) == 0) {
-                    pl.have &= ~Has.SHIELD;
-                }
-                pl.shieldTime = 0;
-            }
-        }
-    }
-
-    /**
-     * Turning (update.c:860-905), in float like C.
-     * <p>
-     * BEHAVIOR: turnVel += turnAcc, then *= turnResistance unless it is 0 (pointer control).
-     * BEHAVIOR: with turnThrust, turning costs C's double truncation (long)(1.28 * |(long)(oldTurnVel - turnVel)|)
-     * fuel (C TURN_FUEL on a long); without enough fuel (fuel &lt;= cost) the turn is cancelled (turnAcc = 0,
-     * turnVel restored) and costs nothing. Returns the cost (C {@code tf}, for turn sparks).
-     * BEHAVIOR: floatDir += turnVel, wrapped into [0, RES); with resistance 0 turnVel then becomes 0.
-     */
+    /** Turning ({@link ShipKernel#turn}); returns the turn fuel cost. */
     long turn(Player pl, Params p) {
-        pl.turnVel += pl.turnAcc;
-        if (pl.turnResistance != 0) {
-            pl.turnVel *= pl.turnResistance;
-        }
-        long tf = 0;
-        if (p.turnThrust) {
-            tf = (long) (pl.oldTurnVel - pl.turnVel);
-            tf = (long) (TURN_FUEL * Math.abs(tf));
-            if (pl.fuel <= tf) {
-                tf = 0;
-                pl.turnAcc = 0;
-                pl.turnVel = pl.oldTurnVel;
-            } else {
-                pl.addFuel(-tf);
-                pl.oldTurnVel = pl.turnVel;
-            }
-        }
-        pl.floatDir += pl.turnVel;
-        while (pl.floatDir < 0) {
-            pl.floatDir += Const.RES;
-        }
-        while (pl.floatDir >= Const.RES) {
-            pl.floatDir -= Const.RES;
-        }
-        if (pl.turnResistance == 0) {
-            pl.turnVel = 0;
-        }
-        return tf;
+        return sim.kernel.turn(pl);
     }
 
     /**
@@ -1038,57 +932,19 @@ public final class Ships {
         }
     }
 
-    /**
-     * Thrust (update.c:1018-1037), C float arithmetic.
-     * <p>
-     * BEHAVIOR: acc = power * (tcos, tsin)(dir) / mass, with afterburners power *= 1 + n*(3.2/16); fuel use per
-     * frame (long)(-f * 256) with f = (float)(power*0.0008), ((f*(16+2n))/16 with afterburners).
-     * BEHAVIOR: without thrust the acceleration is zero.
-     */
+    /** Thrust ({@link ShipKernel#thrustAcceleration}). */
     void thrustAcceleration(Player pl) {
-        if ((pl.status & Obj.THRUSTING) == 0) {
-            pl.accX = pl.accY = 0;
-            return;
-        }
-        float power = pl.power;
-        float f = (float) (pl.power * 0.0008);
-        int a = pl.afterburners();
-        float inert = pl.mass;
-        if (a != 0) {
-            power = (float) (power * (1.0 + a * ((4.2 - 1.0) / (15 + 1.0))));
-            f = (float) ((f * ((15 + 1) + a * (3 - 1))) / (15 + 1.0));
-        }
-        pl.accX = power * Trig.tcos(pl.dir) / inert;
-        pl.accY = power * Trig.tsin(pl.dir) / inert;
-        pl.addFuel((long) (-f * 256));
+        sim.kernel.thrustAcceleration(pl);
     }
 
-    /**
-     * C {@code Player_set_mass}.
-     * <p>
-     * BEHAVIOR: mass = (float)(emptyMass + fuel*0.005/256 + sum), sum in float of armor*(shipMass/14) and
-     * minItemMass per other item.
-     */
+    /** C {@code Player_set_mass} ({@link ShipKernel#setMass}). */
     void setMass(Player pl) {
-        float items = 0;
-        for (int i = 0; i < Item.COUNT; i++) {
-            if (i == Item.FUEL.ordinal() || i == Item.TANK.ordinal()) {
-                continue;
-            }
-            if (i == Item.ARMOR.ordinal()) {
-                items += pl.items[i] * (w.params.shipMass / 14);
-            } else {
-                items += pl.items[i] * w.params.minItemMass;
-            }
-        }
-        pl.mass = (float) (pl.emptyMass + pl.fuel * 0.005 / 256 + items);
+        sim.kernel.setMass(pl);
     }
 
-    /** C {@code Player_hit_armor}: one armor is used up; the last one removes HAS_ARMOR. */
+    /** C {@code Player_hit_armor} ({@link com.fulcrologic.jxpilot.common.sim.ShipBody#hitArmor}). */
     public void hitArmor(Player pl) {
-        if (--pl.items[Item.ARMOR.ordinal()] <= 0) {
-            pl.have &= ~Has.ARMOR;
-        }
+        pl.hitArmor();
     }
 
     /**

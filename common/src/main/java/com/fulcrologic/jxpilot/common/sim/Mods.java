@@ -21,7 +21,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
  */
-package com.fulcrologic.jxpilot.server.world;
+package com.fulcrologic.jxpilot.common.sim;
 
 /**
  * Weapon modifiers: C's {@code modifiers} bit-field struct ({@code src/server/object.h}) packed into one int,

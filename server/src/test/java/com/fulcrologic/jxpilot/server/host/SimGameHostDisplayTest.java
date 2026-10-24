@@ -33,7 +33,7 @@ import com.fulcrologic.jxpilot.common.net.Section;
 import com.fulcrologic.jxpilot.common.net.SnapshotReader;
 import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
@@ -216,7 +216,7 @@ class SimGameHostDisplayTest {
             int bob = enter(h, "Bob", 0);
             h.tick(1);
             Player a = w.byId(ann);
-            a.used |= com.fulcrologic.jxpilot.server.world.Has.COMPASS;
+            a.used |= com.fulcrologic.jxpilot.common.sim.Has.COMPASS;
             a.lockTagged |= Player.LOCK_PLAYER;
             a.lockPlId = bob;
             h.tick(1);

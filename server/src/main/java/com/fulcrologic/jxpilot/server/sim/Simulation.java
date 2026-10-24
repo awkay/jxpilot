@@ -27,8 +27,9 @@ import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.robot.RobotManager;
 import com.fulcrologic.jxpilot.server.world.Events;
-import com.fulcrologic.jxpilot.server.world.Has;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.KernelEvents;
+import com.fulcrologic.jxpilot.common.sim.Obj;
+import com.fulcrologic.jxpilot.common.sim.ShipKernel;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -62,6 +63,13 @@ public final class Simulation {
     static final double MAX_STATION_FUEL = Const.MAX_STATION_FUEL * 256;
 
     public final World world;
+    /** The ship kernel (common.sim): turning, thrust, mass, movement, wall bounces, key edges, bullet math. */
+    public final ShipKernel kernel;
+    /**
+     * What the kernel reports and asks the server ({@link ShipEffects}); every kernel call passes this field, so a
+     * test can wrap it (the differential kernel test does).
+     */
+    public KernelEvents effects;
     public final Scoring scoring;
     public final Debris debris;
     /** C {@code Make_wreckage} (ship.c). */
@@ -98,6 +106,8 @@ public final class Simulation {
 
     public Simulation(World world) {
         this.world = world;
+        this.kernel = new ShipKernel(world, world::rfrac);
+        this.effects = new ShipEffects(world, this);
         this.scoring = new Scoring(world);
         this.debris = new Debris(world);
         this.wreckage = new Wreckage(world);
@@ -199,16 +209,10 @@ public final class Simulation {
         w.frames++;
     }
 
-    /** Autorepeat fire for players holding fire (update.c:507-514). */
+    /** Autorepeat fire for players holding fire (update.c:507-514, {@link ShipKernel#shooter}). */
     void autofire() {
-        if (world.params.fireRepeatRate <= 0) {
-            return;
-        }
         for (int k = 0; k < world.numPlayers; k++) {
-            Player pl = world.playerAt(k);
-            if ((pl.used & Has.SHOT) != 0) {
-                shots.fireNormalShots(pl);
-            }
+            kernel.shooter.autofire(world.playerAt(k), effects);
         }
     }
 

@@ -23,24 +23,26 @@
  */
 package com.fulcrologic.jxpilot.server.sim;
 
+import com.fulcrologic.jxpilot.common.sim.ShipMover;
+import com.fulcrologic.jxpilot.common.sim.MoveState;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.math.Rng;
 import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.server.TestWorlds;
 import com.fulcrologic.jxpilot.server.world.Events;
-import com.fulcrologic.jxpilot.server.world.Has;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Has;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
-import com.fulcrologic.jxpilot.server.world.Trig;
+import com.fulcrologic.jxpilot.common.sim.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
-import static com.fulcrologic.jxpilot.server.sim.SegmentTest.BC;
+import static com.fulcrologic.jxpilot.common.sim.MoveState.*;
+import static com.fulcrologic.jxpilot.common.sim.Click.BLOCK_CLICKS;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -51,6 +53,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * (-9,-8) px = (960,0), (-576,512), (-576,-512) clicks from its centre.
  */
 class MoverPlayerTest {
+    static final int BC = BLOCK_CLICKS;
     static final String FPS60 = "framesPerSecond: 60";
 
     /** Walls at blocks (5,1)-(5,3): their left face is x = 175 px = 11200 clicks. Base at (1,2). */
@@ -748,30 +751,30 @@ class MoverPlayerTest {
         @DisplayName("the wall normal of each bounce")
         void wallDir() {
             assertAll(
-                () -> assertEquals(64, Mover.wallDir(BOUNCE_HOR_LO), "low-x face points left"),
-                () -> assertEquals(0, Mover.wallDir(BOUNCE_HOR_HI), "high-x face points right"),
-                () -> assertEquals(96, Mover.wallDir(BOUNCE_VER_LO), "low-y face points down"),
-                () -> assertEquals(32, Mover.wallDir(BOUNCE_VER_HI), "high-y face points up"),
-                () -> assertEquals(16, Mover.wallDir(BOUNCE_LEFT_DOWN), "LeftDown: RES/8"),
-                () -> assertEquals(112, Mover.wallDir(BOUNCE_LEFT_UP), "LeftUp: 7RES/8"),
-                () -> assertEquals(48, Mover.wallDir(BOUNCE_RIGHT_DOWN), "RightDown: 3RES/8"),
-                () -> assertEquals(80, Mover.wallDir(BOUNCE_RIGHT_UP), "RightUp: 5RES/8"),
-                () -> assertEquals(32, Mover.wallDir(BOUNCE_EDGE), "anything else: the VerHi default"));
+                () -> assertEquals(64, ShipMover.wallDir(BOUNCE_HOR_LO), "low-x face points left"),
+                () -> assertEquals(0, ShipMover.wallDir(BOUNCE_HOR_HI), "high-x face points right"),
+                () -> assertEquals(96, ShipMover.wallDir(BOUNCE_VER_LO), "low-y face points down"),
+                () -> assertEquals(32, ShipMover.wallDir(BOUNCE_VER_HI), "high-y face points up"),
+                () -> assertEquals(16, ShipMover.wallDir(BOUNCE_LEFT_DOWN), "LeftDown: RES/8"),
+                () -> assertEquals(112, ShipMover.wallDir(BOUNCE_LEFT_UP), "LeftUp: 7RES/8"),
+                () -> assertEquals(48, ShipMover.wallDir(BOUNCE_RIGHT_DOWN), "RightDown: 3RES/8"),
+                () -> assertEquals(80, ShipMover.wallDir(BOUNCE_RIGHT_UP), "RightUp: 5RES/8"),
+                () -> assertEquals(32, ShipMover.wallDir(BOUNCE_EDGE), "anything else: the VerHi default"));
         }
 
         @Test
         @DisplayName("deltaDir is the signed shortest turn from dir to the wall normal, +-RES/2 at most")
         void deltaDir() {
             assertAll(
-                () -> assertEquals(0, Mover.deltaDir(5, 5), "same heading: 0"),
-                () -> assertEquals(-10, Mover.deltaDir(42, 32), "dir above: negative"),
-                () -> assertEquals(10, Mover.deltaDir(22, 32), "dir below: positive"),
-                () -> assertEquals(-64, Mover.deltaDir(64, 0), "exactly opposite from above: -RES/2"),
-                () -> assertEquals(64, Mover.deltaDir(0, 64), "exactly opposite from below: +RES/2"),
-                () -> assertEquals(28, Mover.deltaDir(100, 0), "dir above by more than RES/2 wraps: +28"),
-                () -> assertEquals(-28, Mover.deltaDir(0, 100), "dir below by more than RES/2 wraps: -28"),
-                () -> assertEquals(1, Mover.deltaDir(127, 0), "127 to 0 is +1"),
-                () -> assertEquals(-1, Mover.deltaDir(0, 127), "0 to 127 is -1"));
+                () -> assertEquals(0, ShipMover.deltaDir(5, 5), "same heading: 0"),
+                () -> assertEquals(-10, ShipMover.deltaDir(42, 32), "dir above: negative"),
+                () -> assertEquals(10, ShipMover.deltaDir(22, 32), "dir below: positive"),
+                () -> assertEquals(-64, ShipMover.deltaDir(64, 0), "exactly opposite from above: -RES/2"),
+                () -> assertEquals(64, ShipMover.deltaDir(0, 64), "exactly opposite from below: +RES/2"),
+                () -> assertEquals(28, ShipMover.deltaDir(100, 0), "dir above by more than RES/2 wraps: +28"),
+                () -> assertEquals(-28, ShipMover.deltaDir(0, 100), "dir below by more than RES/2 wraps: -28"),
+                () -> assertEquals(1, ShipMover.deltaDir(127, 0), "127 to 0 is +1"),
+                () -> assertEquals(-1, ShipMover.deltaDir(0, 127), "0 to 127 is -1"));
         }
     }
 

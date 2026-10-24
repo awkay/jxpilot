@@ -25,8 +25,8 @@ package com.fulcrologic.jxpilot.server.host;
 
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
-import com.fulcrologic.jxpilot.server.world.Has;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Has;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -401,9 +401,13 @@ class TuningTest {
             live.fps = 5;
             after.initialItems[3] = 4;
             live.initialItems[2] = 8;
+            after.friction = 0.5f;
+            live.coriolis = 7;
             Tuning.copyChanges(before, after, live);
             assertAll(
                 () -> assertEquals(9, live.shotLife, "changed field"),
+                () -> assertEquals(0.5f, live.friction, "a changed field declared by ShipParams (the superclass)"),
+                () -> assertEquals(7, live.coriolis, "an unchanged superclass field keeps the live value"),
                 () -> assertEquals(5, live.fps, "unchanged field keeps the live value"),
                 () -> assertEquals(4, live.initialItems[3], "changed element"),
                 () -> assertEquals(8, live.initialItems[2], "unchanged element"),

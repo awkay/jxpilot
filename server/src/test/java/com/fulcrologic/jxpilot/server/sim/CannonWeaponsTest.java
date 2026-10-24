@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.sim;
 
+import com.fulcrologic.jxpilot.common.sim.MoveState;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.map.BlockType;
@@ -31,12 +32,12 @@ import com.fulcrologic.jxpilot.common.math.Rng;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.server.world.CannonItems;
-import com.fulcrologic.jxpilot.server.world.Has;
-import com.fulcrologic.jxpilot.server.world.Mods;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Has;
+import com.fulcrologic.jxpilot.common.sim.Mods;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
-import com.fulcrologic.jxpilot.server.world.Trig;
+import com.fulcrologic.jxpilot.common.sim.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -49,7 +50,7 @@ import java.util.function.Predicate;
 
 import static com.fulcrologic.jxpilot.server.sim.CannonsTest.CX;
 import static com.fulcrologic.jxpilot.server.sim.CannonsTest.CY;
-import static com.fulcrologic.jxpilot.server.sim.MoveState.CRASH_CANNON;
+import static com.fulcrologic.jxpilot.common.sim.MoveState.CRASH_CANNON;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.FRAME;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.ready;
 import static org.junit.jupiter.api.Assertions.assertAll;

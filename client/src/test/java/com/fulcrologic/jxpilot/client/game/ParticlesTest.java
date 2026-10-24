@@ -161,7 +161,7 @@ class ParticlesTest {
         @Test
         @DisplayName("the engine offset is bit for bit the server's ShipGeom engine point at every RES heading")
         void engineOffsetMatchesServerGeometry() {
-            com.fulcrologic.jxpilot.server.world.ShipGeom g = com.fulcrologic.jxpilot.server.world.ShipGeom.defaultShip();
+            com.fulcrologic.jxpilot.common.sim.ShipGeom g = com.fulcrologic.jxpilot.common.sim.ShipGeom.defaultShip();
             int ex = com.fulcrologic.jxpilot.common.math.ShipShape.defaultShip().engineX;
             int ey = com.fulcrologic.jxpilot.common.math.ShipShape.defaultShip().engineY;
             List<Float> serverX = new ArrayList<>();

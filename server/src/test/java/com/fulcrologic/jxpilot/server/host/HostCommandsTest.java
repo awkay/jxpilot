@@ -29,9 +29,9 @@ import com.fulcrologic.jxpilot.common.math.ShipShape;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.net.ReliableType;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
-import com.fulcrologic.jxpilot.server.world.Click;
+import com.fulcrologic.jxpilot.common.sim.Click;
 import com.fulcrologic.jxpilot.server.world.Player;
-import com.fulcrologic.jxpilot.server.world.ShipGeom;
+import com.fulcrologic.jxpilot.common.sim.ShipGeom;
 import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -204,7 +204,7 @@ class HostCommandsTest {
                 p.floatDir = 0;
                 p.turnVel = 0;
                 p.used = 0;
-                p.status &= ~com.fulcrologic.jxpilot.server.world.Obj.GRAVITY;
+                p.status &= ~com.fulcrologic.jxpilot.common.sim.Obj.GRAVITY;
             }
             wide.setClicks((int) (1.5 * Const.BLOCK_SZ) * Click.CLICK, (wallFace - 18) * Click.CLICK);
             plain.setClicks((int) (7.5 * Const.BLOCK_SZ) * Click.CLICK, (wallFace - 18) * Click.CLICK);

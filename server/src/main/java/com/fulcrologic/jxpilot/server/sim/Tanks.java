@@ -25,7 +25,7 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.SoundEvent;
-import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.common.sim.Has;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 
@@ -254,7 +254,7 @@ public final class Tanks {
      * index where it means an id; kept); the ship loses the tank (Player_remove_tank). JOIN and SCORE go out.
      */
     public void detach(Player pl) {
-        if ((pl.used & com.fulcrologic.jxpilot.server.world.Has.PHASING_DEVICE) != 0 || pl.numTanks == 0) {
+        if ((pl.used & com.fulcrologic.jxpilot.common.sim.Has.PHASING_DEVICE) != 0 || pl.numTanks == 0) {
             return;
         }
         int ct = pl.currentTank;
@@ -322,8 +322,8 @@ public final class Tanks {
         }
         sim.locks.resetVisibility(dummy);
         Sounds.play(w, pl.px, pl.py, SoundEvent.TANK_DETACH);
-        dummy.status = com.fulcrologic.jxpilot.server.world.Obj.PLAYING | com.fulcrologic.jxpilot.server.world.Obj.GRAVITY
-            | com.fulcrologic.jxpilot.server.world.Obj.THRUSTING;
+        dummy.status = com.fulcrologic.jxpilot.common.sim.Obj.PLAYING | com.fulcrologic.jxpilot.common.sim.Obj.GRAVITY
+            | com.fulcrologic.jxpilot.common.sim.Obj.THRUSTING;
         dummy.have = w.params.defHave;
         dummy.used = (Has.DEF_USED & w.params.defHave & ~Has.USED_KILL & pl.have) | Has.SHIELD;
         if (!w.params.playerShielding) {
@@ -334,7 +334,7 @@ public final class Tanks {
         int tankIndex = w.numPlayers - 1;
         for (int k = 0; k < o.count(); k++) {
             int h = o.active[k];
-            if (o.type[h] == com.fulcrologic.jxpilot.server.world.Obj.HEAT_SHOT && o.info[h] > 0
+            if (o.type[h] == com.fulcrologic.jxpilot.common.sim.Obj.HEAT_SHOT && o.info[h] > 0
                 && w.byId(o.info[h]) == pl) {
                 o.info[h] = tankIndex;
             }
@@ -359,9 +359,9 @@ public final class Tanks {
                 continue;
             }
             if (t == 0) {
-                p.status |= com.fulcrologic.jxpilot.server.world.Obj.THRUSTING;
+                p.status |= com.fulcrologic.jxpilot.common.sim.Obj.THRUSTING;
             } else if (t == thrust) {
-                p.status &= ~com.fulcrologic.jxpilot.server.world.Obj.THRUSTING;
+                p.status &= ~com.fulcrologic.jxpilot.common.sim.Obj.THRUSTING;
             }
         }
     }

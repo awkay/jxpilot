@@ -21,7 +21,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
  */
-package com.fulcrologic.jxpilot.server.world;
+package com.fulcrologic.jxpilot.common.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
@@ -188,6 +188,40 @@ class GeometryHelpersTest {
                 () -> assertEquals(-10.0, g.engineX[0], EPS, "the engine at heading 0 is unrotated"),
                 () -> assertEquals(10.0, g.gunX[0], EPS, "the main gun at heading 0 is unrotated"),
                 () -> assertEquals(10.0, g.gunY[32], EPS, "the main gun at heading up is at y 10"));
+        }
+
+        @Test
+        @DisplayName("side, rear guns and missile racks are rotated; without racks the main gun is the rack")
+        void gunsAndRacks() {
+            ShipGeom g = new ShipGeom(ShipShape.parse(
+                "(SH: 15,0 -9,8 -9,-8)(MG: 15,0)(EN: -9,0)(LG: 0,3)(RG: 0,-3 0,-1)(LR: -8,3)(RR: -8,-3 -8,-1)(MR: 5,4)"));
+            ShipGeom d = new ShipGeom(ShipShape.defaultShip());
+            assertAll(
+                () -> assertEquals(-3.0, g.lGunX[0][32], EPS, "left gun (0,3) at 90 degrees is (-3, 0)"),
+                () -> assertEquals(3.0, g.rGunX[0][32], EPS, "right gun (0,-3) at 90 degrees is (3, 0)"),
+                () -> assertEquals(1.0, g.rGunX[1][32], EPS, "right gun 1 (0,-1) is (1, 0)"),
+                () -> assertEquals(-8.0, g.lrGunY[0][32], EPS, "left rear (-8,3) at 90 degrees has y -8"),
+                () -> assertEquals(-8.0, g.rrGunY[1][32], EPS, "right rear 1 (-8,-1) has y -8"),
+                () -> assertEquals(1.0, g.rrGunX[1][32], EPS, "and x 1"),
+                () -> assertEquals(1, g.rackX.length, "one rack"),
+                () -> assertEquals(-4.0, g.rackX[0][32], EPS, "the rack (5,4) at 90 degrees is (-4, 5)"),
+                () -> assertEquals(5.0, g.rackY[0][32], EPS, "y 5"),
+                () -> assertEquals(1, d.rackX.length, "without racks there is one"),
+                () -> assertEquals(d.gunX[32], d.rackX[0][32], EPS, "at the main gun: x"),
+                () -> assertEquals(d.gunY[32], d.rackY[0][32], EPS, "and y"),
+                () -> assertEquals("", d.wire, "the default ship has an empty wire form"),
+                () -> assertEquals(g.shape.toWireString(), g.wire, "a custom ship's wire form is its shape string"));
+        }
+
+        @Test
+        @DisplayName("parse: a valid shape string gives its geometry; empty, missing or invalid ones the default ship")
+        void parse() {
+            ShipGeom v = ShipGeom.parse("(SH: 10,0 0,10 -10,0 0,-10)(EN: -10,0)(MG: 10,0)");
+            assertAll(
+                () -> assertEquals(4, v.numPoints, "the parsed shape"),
+                () -> assertTrue(ShipGeom.parse(null) == ShipGeom.defaultShip(), "null: the default"),
+                () -> assertTrue(ShipGeom.parse("") == ShipGeom.defaultShip(), "empty: the default"),
+                () -> assertTrue(ShipGeom.parse("(SH: 1,1)") == ShipGeom.defaultShip(), "invalid: the default"));
         }
     }
 }

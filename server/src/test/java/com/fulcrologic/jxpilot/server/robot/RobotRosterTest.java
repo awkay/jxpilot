@@ -24,7 +24,7 @@
 package com.fulcrologic.jxpilot.server.robot;
 
 import com.fulcrologic.jxpilot.common.math.ShipShape;
-import com.fulcrologic.jxpilot.server.world.ShipGeom;
+import com.fulcrologic.jxpilot.common.sim.ShipGeom;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

@@ -32,12 +32,12 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
 import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.common.net.Section;
 import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
-import com.fulcrologic.jxpilot.server.world.Click;
+import com.fulcrologic.jxpilot.common.sim.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.Grid;
-import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.common.sim.Has;
 import com.fulcrologic.jxpilot.server.world.ModeState;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -433,7 +433,7 @@ public final class SnapshotBuilder {
     int shotVariant(int h, Player v) {
         Objects o = w.objects;
         int kind;
-        if (com.fulcrologic.jxpilot.server.world.Mods.isNuclear(o.mods[h])) {
+        if (com.fulcrologic.jxpilot.common.sim.Mods.isNuclear(o.mods[h])) {
             kind = Records.ShotKind.NUCLEAR;
         } else if (o.type[h] == Obj.CANNON_SHOT) {
             kind = Records.ShotKind.CANNON_SHOT;

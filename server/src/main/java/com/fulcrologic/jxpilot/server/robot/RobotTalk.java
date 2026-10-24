@@ -24,7 +24,7 @@
 package com.fulcrologic.jxpilot.server.robot;
 
 import com.fulcrologic.jxpilot.common.net.Msg;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.World;
 
 /**
