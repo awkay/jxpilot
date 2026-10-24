@@ -304,6 +304,28 @@ class SceneFillerTest {
         }
 
         @Test
+        @DisplayName("L4: watching another player, their ship is drawn as any other ship relative to us, selfId stays ours")
+        void watchedShipStyling() {
+            // we are Me (team 1); we look through Foe (team 2). The server's FRIENDLY flags are relative to Foe.
+            AppFixture f = new AppFixture(true).players().twice(x -> x
+                .selfOf(FOE, Records.ShipFlags.FRIENDLY, 100f, 100f, 0.5f)
+                .ship(MATE, 0, 200f, 100f, 0));
+            fill(f);
+            assertAll(
+                () -> assertEquals(SELF, scene.selfId, "scene.selfId is our own id, not the watched player's"),
+                () -> assertEquals(2, scene.shipCount, "the watched ship and the mate"),
+                () -> assertEquals(FOE, scene.shipId[0], "the watched ship comes first"),
+                () -> assertEquals(Palette.WHITE, scene.shipColor[0],
+                    "the other team's ship stays white despite its FRIENDLY flag"),
+                () -> assertEquals("Foe", scene.shipName[0].toString(), "its name is kept, so the painter shows it"),
+                () -> assertEquals(Palette.BLUE, scene.shipColor[1], "our team mate is blue though the server sent no FRIENDLY"));
+            AppFixture mate = new AppFixture(true).players().twice(x -> x
+                .selfOf(MATE, Records.ShipFlags.FRIENDLY, 100f, 100f, 0.5f));
+            fill(mate);
+            assertEquals(Palette.BLUE, scene.shipColor[0], "watching our team mate: his ship is blue (not our own)");
+        }
+
+        @Test
         @DisplayName("L11: ECM-damaged, the radar keeps the blips, own ship and checkpoint last drawn (C Paint_radar skipped)")
         void radarFrozenWhileDamaged() {
             AppFixture before = new AppFixture(true).players().twice(x -> x

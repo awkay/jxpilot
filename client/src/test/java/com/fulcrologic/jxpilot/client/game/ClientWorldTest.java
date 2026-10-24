@@ -201,6 +201,36 @@ class ClientWorldTest {
         }
 
         @Test
+        @DisplayName("a new shot is seeded from the nearest ship's velocity, but a paused ship (vx = count) is still")
+        void seedIgnoresPauseCount() {
+            WorldFixture f = new WorldFixture(true);
+            SnapshotFrame pausedNear = new SnapshotFrame(4, 4);
+            SnapshotFrame flyingNear = new SnapshotFrame(4, 4);
+            for (SnapshotFrame a : new SnapshotFrame[] {pausedNear, flyingNear}) {
+                a.ships = 1;
+                a.shipId[0] = 9;
+                a.shipX[0] = 100;
+                a.shipY[0] = 100;
+                a.shipVx[0] = 8; // the pause count when paused, a velocity otherwise
+                a.shipVy[0] = 0;
+                a.shots = 1;
+                a.shotX[0] = 110;
+                a.shotY[0] = 100;
+                a.shotState[0] = Tracker.UNKNOWN;
+            }
+            pausedNear.shipFlags[0] = ShipFlags.PAUSED;
+            f.world.seedShots(pausedNear, 1);
+            f.world.seedShots(flyingNear, 1);
+            float shotSpeed = flyingNear.shotEstVx[0] - 8; // heading 0: ship vx + shotSpeed
+            assertAll(
+                () -> assertEquals(Tracker.GUESSED, flyingNear.shotState[0], "(the shot was seeded)"),
+                () -> assertTrue(shotSpeed > 0, "(a flying ship adds its velocity: " + shotSpeed + ")"),
+                () -> assertEquals(Tracker.GUESSED, pausedNear.shotState[0], "a paused ship seeds the shot too"),
+                () -> assertEquals(shotSpeed, pausedNear.shotEstVx[0], 1e-4f, "but adds no velocity: its vx is a count"),
+                () -> assertEquals(0f, pausedNear.shotEstVy[0], 1e-4f, "heading 0: no y speed"));
+        }
+
+        @Test
         @DisplayName("a paused ship's vx is its pause count, not motion: it stays put and keeps the count")
         void pausedShipStays() {
             WorldFixture f = new WorldFixture(true);

@@ -88,6 +88,9 @@ public final class SceneFiller {
      * BEHAVIOR: clears both (but not {@code radar} while the own ship is ECM-damaged: C's {@code Paint_radar}
      * only runs undamaged, so the radar keeps the blips, own ship and checkpoint last drawn); sets the frame scalars: loops ({@link #loops}), fps (rounded game fps),
      * selfId (the own ship's id, else the player id, -1 when none), damaged and roundDelay from the world.
+     * BEHAVIOR: watching another player (the SELF record is not ours): selfId stays our own id, the watched
+     * ship is drawn like any other ship (name, friend colour by the player table; C Gui_paint_ship tests
+     * {@code self->id != id}) and no ship's FRIENDLY flag (relative to the watched player) is used.
      * BEHAVIOR: adds the own ship first (unless absent or dead), then every interpolated ship that is not
      * dead; paused ones become paused markers (countdown 0) instead (see {@link #addShip}).
      * BEHAVIOR: adds every shot ({@link #shotColor}, {@link #teamShot}), every visible particle
@@ -109,8 +112,12 @@ public final class SceneFiller {
         long loops = loops(w);
         out.loops = loops;
         out.fps = Math.max(1, Math.round(g.gameFps()));
-        int selfId = w.hasSelf() ? w.selfId() : p.selfId();
+        // watching: the SELF record is another player's (the one whose eyes we look through, C eyesId != self->id)
+        boolean watching = w.hasSelf() && p.selfId() != Protocol.NO_ID && w.selfId() != p.selfId();
+        int selfId = watching ? p.selfId() : w.hasSelf() ? w.selfId() : p.selfId();
         out.selfId = selfId == Protocol.NO_ID ? -1 : selfId;
+        // FRIENDLY is relative to the watched player; C colours every ship relative to the real self (friendly())
+        int flagMask = watching ? ~Records.ShipFlags.FRIENDLY : ~0;
         out.damaged = w.damaged();
         out.roundDelay = w.roundDelay();
         boolean teamPlay = g.teamPlay();
@@ -120,10 +127,11 @@ public final class SceneFiller {
         boolean selfAlive = w.hasSelf() && (w.selfFlags() & Records.ShipFlags.DEAD) == 0;
         if (selfAlive) {
             pauseCount = 0;
-            addShip(out, p, w.selfId(), w.selfFlags(), w.selfX(), w.selfY(), w.selfHeading(), true, teamPlay, false);
+            addShip(out, p, w.selfId(), w.selfFlags() & flagMask, w.selfX(), w.selfY(), w.selfHeading(), !watching,
+                teamPlay, false);
         }
         for (int i = 0; i < w.shipCount(); i++) {
-            int flags = w.shipFlags(i);
+            int flags = w.shipFlags(i) & flagMask;
             if ((flags & Records.ShipFlags.DEAD) == 0) {
                 pauseCount = w.shipVx(i);
                 addShip(out, p, w.shipId(i), flags, w.shipX(i), w.shipY(i), w.shipHeading(i), false, teamPlay,
@@ -154,7 +162,7 @@ public final class SceneFiller {
             }
         }
         radarCheckpoint(radar, g.timing(), map, w.selfCheck());
-        if (selfAlive && (p.selfId() == Protocol.NO_ID || w.selfId() == p.selfId())) {
+        if (selfAlive && !watching) {
             radar.selfVisible = true;
             radar.selfX = w.selfX();
             radar.selfY = w.selfY();
