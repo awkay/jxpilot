@@ -341,6 +341,36 @@ class AlliancesTest {
     }
 
     @Nested
+    @DisplayName("return values and the alliance table")
+    class Table {
+        @Test
+        @DisplayName("accept and leave report success; dissolving a middle alliance keeps the others findable")
+        void returns() {
+            Fx f = new Fx("");
+            Player[] p = new Player[6];
+            for (int i = 0; i < 6; i++) {
+                p[i] = f.join("P" + i);
+            }
+            f.a.invite(p[0], p[1]);
+            boolean created = f.a.accept(p[1], p[0]);
+            f.ally(p[2], p[3]);
+            f.ally(p[4], p[5]);
+            f.a.invite(p[0], p[2]);
+            boolean merged = f.a.accept(p[2], p[0]);
+            boolean left = f.a.leave(p[1]);
+            int id5 = p[5].alliance;
+            assertAll(
+                () -> assertTrue(created, "created"),
+                () -> assertTrue(merged, "merged"),
+                () -> assertTrue(left, "left"),
+                () -> assertEquals(2, id5, "the third alliance is 2"),
+                () -> assertEquals(2, f.a.memberCount(id5), "still found after alliance 1 was dissolved and 2 moved"),
+                () -> assertEquals(3, f.a.memberCount(p[0].alliance), "P0, P2, P3"),
+                () -> assertEquals(2, f.a.count(), "two alliances"));
+        }
+    }
+
+    @Nested
     @DisplayName("leaving and dissolving")
     class Leaving {
         @Test

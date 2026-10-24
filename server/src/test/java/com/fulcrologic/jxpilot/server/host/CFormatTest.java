@@ -47,6 +47,8 @@ class CFormatTest {
             () -> assertEquals("1e-05", CFormat.g(0.00001), "exponent -5 is not"),
             () -> assertEquals("2.40292e-09", CFormat.g(2.40292e-09), "a tiny probability"),
             () -> assertEquals("1.5e+100", CFormat.g(1.5e100), "three exponent digits"),
+            () -> assertEquals("1e+10", CFormat.g(1e10), "a two-digit exponent is not padded"),
+            () -> assertEquals("100", CFormat.g(100.0000001), "rounding to 100.000 drops the zeros and the point"),
             () -> assertEquals("0.125", CFormat.g(0.125), "exact"),
             () -> assertEquals("2.5", CFormat.g(2.5), "a tie keeps its digits"),
             () -> assertEquals("inf", CFormat.g(Double.POSITIVE_INFINITY), "inf"),
