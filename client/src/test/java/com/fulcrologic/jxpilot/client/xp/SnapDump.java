@@ -59,6 +59,17 @@ final class SnapDump {
             int n = r.count();
             for (int i = 0; i < n; i++) {
                 out.add(record(r, i));
+                if (r.type() == Section.SELF) {
+                    Records.Self x = new Records.Self().wrap(r, i);
+                    out.add("SELFCTL power=" + x.power() + " turn=" + x.turnSpeed() + " res=" + x.turnResistance255()
+                        + " lockDist=" + x.lockDist() + " lockDir=" + x.lockDir() + " check=" + x.check()
+                        + " mods=" + x.mods());
+                } else if (r.type() == Section.TIMERS) {
+                    Records.Timers x = new Records.Timers().wrap(r, i);
+                    out.add("METERS destruct=" + x.destruct() + " thrust=" + x.thrustLeft() + "/" + x.thrustMax()
+                        + " shield=" + x.shieldLeft() + "/" + x.shieldMax() + " phasing=" + x.phasingLeft() + "/"
+                        + x.phasingMax() + " shutdown=" + x.shutdownCount() + "/" + x.shutdownDelay());
+                }
             }
         }
         if (r.malformed()) {

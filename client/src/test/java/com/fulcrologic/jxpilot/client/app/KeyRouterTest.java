@@ -244,4 +244,55 @@ class KeyRouterTest {
             assertEquals("m", talk.text().toString(), "after another key event the next char is typed");
         }
     }
+
+    @Nested
+    @DisplayName("control settings keys (C xevent.c)")
+    class Controls {
+        @Test
+        @DisplayName("power and turn speed keys change the settings client-side and are never sent; swap is sent")
+        void keys() {
+            com.fulcrologic.jxpilot.client.game.input.ControlSettings st = r.settings();
+            int up = press(GLFW_KEY_KP_ADD);
+            double t1 = st.turnSpeed;
+            int down = press(GLFW_KEY_KP_SUBTRACT);
+            double t2 = st.turnSpeed;
+            int pUp = press(GLFW_KEY_KP_MULTIPLY);
+            double p1 = st.power;
+            int pDown = press(GLFW_KEY_KP_DIVIDE);
+            double p2 = st.power;
+            long sent = input.keys();
+            KeyRouter withSwap = new KeyRouter(new InputState(KeyRouter.bindings(null)), new TalkLine());
+            withSwap.input().bindings().bind(ControlKey.SWAP_SETTINGS, "F8");
+            int swap = withSwap.key(GLFW_KEY_F8, GLFW_PRESS, 0);
+            int plain = press(GLFW_KEY_A);
+            assertAll(
+                () -> assertEquals(KeyRouter.SETTINGS | KeyRouter.SHOW_CONTROLS, up, "turn speed up: send and show"),
+                () -> assertEquals(40 * 1.05, t1, 1e-12, "turn speed * 1.05"),
+                () -> assertEquals(KeyRouter.SETTINGS | KeyRouter.SHOW_CONTROLS, down, "turn speed down"),
+                () -> assertEquals(40 * 1.05 * 0.95, t2, 1e-12, "turn speed * 0.95"),
+                () -> assertEquals(KeyRouter.SETTINGS | KeyRouter.SHOW_CONTROLS, pUp, "power up"),
+                () -> assertEquals(45 * 1.10, p1, 1e-12, "power * 1.10"),
+                () -> assertEquals(KeyRouter.SETTINGS | KeyRouter.SHOW_CONTROLS, pDown, "power down"),
+                () -> assertEquals(45 * 1.10 * 0.90, p2, 1e-12, "power * 0.90"),
+                () -> assertEquals(0L, sent & InputState.CLIENT_SIDE_KEYS, "none of them is in the sent keys"),
+                () -> assertEquals(KeyRouter.SHOW_CONTROLS, swap, "swap only shows the meters"),
+                () -> assertEquals(25.0, withSwap.settings().turnSpeed, "swap exchanged the settings"),
+                () -> assertEquals(ControlKey.SWAP_SETTINGS.mask(), withSwap.input().keys() & ControlKey.SWAP_SETTINGS.mask(),
+                    "and the swap key is sent"),
+                () -> assertEquals(KeyRouter.NONE, plain, "a plain game key is no event"));
+        }
+
+        @Test
+        @DisplayName("F1 is HELP; while talking the control keys do nothing")
+        void helpAndTalking() {
+            int help = press(GLFW_KEY_F1);
+            open();
+            double before = r.settings().turnSpeed;
+            int talking = press(GLFW_KEY_KP_ADD);
+            assertAll(
+                () -> assertEquals(KeyRouter.HELP, help, "F1 toggles the help"),
+                () -> assertEquals(KeyRouter.NONE, talking, "no event while talking"),
+                () -> assertEquals(before, r.settings().turnSpeed, "settings unchanged while talking"));
+        }
+    }
 }

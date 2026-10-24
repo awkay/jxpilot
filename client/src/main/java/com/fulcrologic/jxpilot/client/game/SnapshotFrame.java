@@ -50,6 +50,13 @@ final class SnapshotFrame {
     int selfNumTanks;
     int selfCurrentTank;
     int selfRespawnFrames;
+    int selfPower;
+    int selfTurnSpeed;
+    int selfTurnRes255;
+    int selfLockDist;
+    int selfLockDir;
+    int selfCheck;
+    int selfMods;
 
     final int shipCap;
     int ships;

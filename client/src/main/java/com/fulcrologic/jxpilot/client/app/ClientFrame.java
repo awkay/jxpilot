@@ -27,14 +27,20 @@ import com.fulcrologic.jxpilot.client.game.ClientGame;
 import com.fulcrologic.jxpilot.client.game.ClientWorld;
 import com.fulcrologic.jxpilot.client.game.hud.Hud;
 import com.fulcrologic.jxpilot.client.game.hud.HudFrame;
+import com.fulcrologic.jxpilot.client.game.hud.KeyHelp;
 import com.fulcrologic.jxpilot.client.game.hud.TalkLine;
 import com.fulcrologic.jxpilot.client.game.hud.TextMetrics;
+import com.fulcrologic.jxpilot.client.game.input.ControlSettings;
 import com.fulcrologic.jxpilot.client.game.input.InputState;
+import com.fulcrologic.jxpilot.client.game.input.KeyConfig;
+import com.fulcrologic.jxpilot.client.game.input.KeyFunctions;
+import com.fulcrologic.jxpilot.client.game.input.ClientAction;
 import com.fulcrologic.jxpilot.client.net.ConnectionState;
 import com.fulcrologic.jxpilot.client.paint.SceneData;
 import com.fulcrologic.jxpilot.client.xp.GameConnection;
 import com.fulcrologic.jxpilot.common.map.Base;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
+import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.net.Records;
 
 /**
@@ -59,6 +65,12 @@ public final class ClientFrame {
     private final Hud hud = new Hud();
     private final HudFrame viewHud = new HudFrame();
     private final HudFrame panelHud = new HudFrame();
+    private final HudFrame helpHud = new HudFrame(4, 4, 320, 160);
+    private final KeyHelp help;
+    private final String helpHint;
+    private final ControlSettings settings;
+    private final Msg.Settings settingsMsg = new Msg.Settings();
+    private boolean joinedOnce;
     private final SceneData scene;
     private final RadarBlips radar;
     private final SceneFiller filler = new SceneFiller();
@@ -75,14 +87,31 @@ public final class ClientFrame {
     private boolean swapScale;
     private int talkWidthFor = -1;
 
+    /** With the default key configuration and the given input (tests). */
     public ClientFrame(ClientGame game, GameConnection conn, InputState input, SceneData scene, RadarBlips radar) {
+        this(game, conn, input, KeyConfig.defaults(null), scene, radar);
+    }
+
+    /** With a loaded key configuration (bindings, control settings, key help). */
+    public ClientFrame(ClientGame game, GameConnection conn, KeyConfig keys, SceneData scene, RadarBlips radar) {
+        this(game, conn, new InputState(keys.bindings()), keys, scene, radar);
+    }
+
+    private ClientFrame(ClientGame game, GameConnection conn, InputState input, KeyConfig keys, SceneData scene,
+                        RadarBlips radar) {
         this.game = game;
         this.conn = conn;
         this.input = input;
         this.scene = scene;
         this.radar = radar;
-        this.router = new KeyRouter(input, talk);
+        this.settings = keys.settings();
+        this.router = new KeyRouter(input, talk, settings);
         this.mapState = new WorldMapState(game);
+        java.util.List<String> helpKeys = input.bindings().keysyms(KeyFunctions.of(ClientAction.HELP));
+        this.helpHint = helpKeys.isEmpty() ? null : helpKeys.get(0) + ": keys";
+        this.help = new KeyHelp("Keys (" + keys.source() + ")" + (helpHint != null ? " - " + helpKeys.get(0)
+            + " closes" : ""), keys.helpLines());
+        conn.sendSettings(settings.copyTo(settingsMsg), 0);
     }
 
     /**
@@ -94,7 +123,9 @@ public final class ClientFrame {
      * present and not dead), INPUT with the current keys, flush.
      * BEHAVIOR: a new map object bumps {@link #mapVersion()} and centres the view on the first base
      * (the map centre without bases); afterwards the own ship, whenever it exists, is the centre.
-     * BEHAVIOR: while not playing the HUD's status line shows the connection's current status.
+     * BEHAVIOR: while not playing the HUD's status line shows the connection's current status; on the first
+     * PLAYING frame a message names the key help key ("F1: keys"), unless keyHelp is unbound.
+     * BEHAVIOR: lays out the key help overlay ({@link #helpHud()}).
      * BEHAVIOR: fills the scene, radar, view HUD, HUD extras and the score list panel (at
      * {@code (0, scoreTop)}, {@code panelW} wide).
      */
@@ -125,6 +156,11 @@ public final class ClientFrame {
         mapState.setLoops(scene.loops);
         if (game.state() != ConnectionState.PLAYING) {
             game.status().clear().append(conn.status());
+        } else if (!joinedOnce) {
+            joinedOnce = true;
+            if (helpHint != null) {
+                game.messages().add(Msg.Text.KIND_SERVER, helpHint);
+            }
         }
         if (talkWidthFor != viewW) {
             talk.limitWidth(m, Hud.talkWindowWidth(viewW));
@@ -135,6 +171,7 @@ public final class ClientFrame {
         extras.fill(game, hud, viewW, viewH, zoom, centreX, centreY, scene.loops);
         panelHud.clear();
         hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, m);
+        help.layout(helpHud, viewW, viewH, m);
     }
 
     private void centreOnStart(WorldMap map) {
@@ -152,10 +189,21 @@ public final class ClientFrame {
      * A GLFW key event ({@link KeyRouter#key}).
      * <p>
      * BEHAVIOR: a finished chat line is sent with {@link GameConnection#sendChat}; QUIT sets
-     * {@link #quitRequested()}; SWAP_SCALE sets {@link #takeSwapScale()}.
+     * {@link #quitRequested()}; SWAP_SCALE sets {@link #takeSwapScale()}; SETTINGS sends the control settings
+     * ({@link GameConnection#sendSettings}); SHOW_CONTROLS shows the power and turn speed meters; HELP
+     * toggles the key help.
      */
     public void key(int key, int action, int mods, long nowNanos) {
         int ev = router.key(key, action, mods);
+        if ((ev & KeyRouter.SETTINGS) != 0) {
+            conn.sendSettings(settings.copyTo(settingsMsg), nowNanos);
+        }
+        if ((ev & KeyRouter.SHOW_CONTROLS) != 0) {
+            hud.showControls();
+        }
+        if ((ev & KeyRouter.HELP) != 0) {
+            help.toggle();
+        }
         if ((ev & KeyRouter.CHAT) != 0) {
             conn.sendChat(router.chat(), nowNanos);
         }
@@ -214,6 +262,13 @@ public final class ClientFrame {
 
     /** The game view's HUD draw list (unscaled window pixels of the view). */
     public HudFrame viewHud() { return viewHud; }
+
+    /** The key help overlay's draw list (empty while hidden; view pixels, unscaled). */
+    public HudFrame helpHud() { return helpHud; }
+
+    public KeyHelp keyHelp() { return help; }
+
+    public ControlSettings settings() { return settings; }
 
     /** The panel's draw list (score list). */
     public HudFrame panelHud() { return panelHud; }

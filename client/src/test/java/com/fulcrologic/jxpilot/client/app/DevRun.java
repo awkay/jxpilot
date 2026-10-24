@@ -71,6 +71,8 @@ public final class DevRun {
         java.util.List<byte[]> grabs = new java.util.ArrayList<>();
         int[] grabSize = new int[2];
         AppOptions o = AppOptions.parse(rest.toArray(new String[0]), System.getProperty("user.name"));
+        com.fulcrologic.jxpilot.client.game.input.KeyConfig keys = AppLauncher.keyConfig(o,
+            Path.of(System.getProperty("user.home", ".")), System.err);
         ClientGame game = new ClientGame();
         FrameTrace trace = traceFile == null ? null : new FrameTrace(game);
         GameConnection conn = GameConnector.open(o.target(), o.bind(), trace != null ? trace : game, o.name(),
@@ -136,7 +138,7 @@ public final class DevRun {
                 return base[0] >= 0 && frame - base[0] >= Math.max(last, grabFrom + grabCount);
             }
         };
-        new GameApp(o, game, conn, o.target().toString(), s).run();
+        new GameApp(o, game, conn, o.target().toString(), s, keys).run();
         if (trace != null) {
             trace.write(Path.of(traceFile));
         }
@@ -208,7 +210,45 @@ public final class DevRun {
                     f.key(GLFW_KEY_ENTER, GLFW_PRESS, 0, now);
                 }
             }
+            case "turnspeed" -> {
+                // U13: F10/F9 (turn speed) and F12/F11 (power) from the user's ~/.xpilotrc; the SELF values are the
+                // server's (C displayedTurnspeed), so they show what the C server now uses.
+                if (frame % 20 == 0 && frame <= 200) {
+                    var w = f.game().world();
+                    System.out.printf("[turnspeed] frame=%d server turnspeed=%d power=%d client turnSpeed=%.2f power=%.2f%n",
+                        frame, w.selfTurnSpeed(), w.selfPower(), f.settings().turnSpeed, f.settings().power);
+                }
+                tap(f, frame, 40, GLFW_KEY_F10, now);
+                tap(f, frame, 50, GLFW_KEY_F10, now);
+                tap(f, frame, 60, GLFW_KEY_F10, now);
+                tap(f, frame, 100, GLFW_KEY_F12, now);
+                tap(f, frame, 140, GLFW_KEY_F9, now);
+                tap(f, frame, 160, GLFW_KEY_F11, now);
+            }
+            case "mods" -> {
+                // U11: toggle n c i v x z b l, one every 20 frames from frame 40; shots 10 frames after each
+                int[] keys = {GLFW_KEY_N, GLFW_KEY_C, GLFW_KEY_I, GLFW_KEY_V, GLFW_KEY_X, GLFW_KEY_Z, GLFW_KEY_B, GLFW_KEY_L};
+                for (int k = 0; k < keys.length; k++) {
+                    tap(f, frame, 40 + 20 * k, keys[k], now);
+                }
+                if (frame >= 50 && (frame - 50) % 20 == 0) {
+                    com.fulcrologic.jxpilot.client.game.CharBuf m = new com.fulcrologic.jxpilot.client.game.CharBuf(64);
+                    com.fulcrologic.jxpilot.client.game.Modifiers.format(f.game().world().selfMods(), m);
+                    System.out.println("[mods] frame=" + frame + " modifiers='" + m + "'");
+                }
+            }
+            case "help" -> tap(f, frame, 20, GLFW_KEY_F1, now);
             default -> { }
+        }
+    }
+
+    /** Press at {@code at}, release 3 frames later. */
+    static void tap(ClientFrame f, int frame, int at, int key, long now) {
+        if (frame == at) {
+            f.key(key, GLFW_PRESS, 0, now);
+        }
+        if (frame == at + 3) {
+            f.key(key, GLFW_RELEASE, 0, now);
         }
     }
 

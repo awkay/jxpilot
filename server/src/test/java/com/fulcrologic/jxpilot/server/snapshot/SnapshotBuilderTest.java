@@ -100,6 +100,7 @@ class SnapshotBuilderTest {
         int partCount;
         final List<int[]> headers = new ArrayList<>();
         final List<String> self = new ArrayList<>();
+        final List<String> selfControls = new ArrayList<>();
         final List<String> ships = new ArrayList<>();
         final Map<Integer, List<String>> shots = new TreeMap<>();
         final List<String> bursts = new ArrayList<>();
@@ -134,6 +135,8 @@ class SnapshotBuilderTest {
                             d.self.add(self.id() + " " + self.flags() + " " + self.x() + "," + self.y() + " v"
                                 + self.vx() + "," + self.vy() + " h" + self.heading() + " f" + self.fuel() + "/"
                                 + self.fuelMax());
+                            d.selfControls.add("p" + self.power() + " t" + self.turnSpeed() + " r"
+                                + self.turnResistance255() + " d" + self.lockDist() + " m" + self.mods());
                         }
                         case Section.SHIP -> {
                             ship.wrap(r, i);
@@ -184,6 +187,9 @@ class SnapshotBuilderTest {
             int farShot = sim.shots.fire(c, c.team, false, 1800, 140, Obj.SHOT, 0, 0);
             a.vx = 0;
             a.fuel = 500.5 * 256;
+            a.power = 50.4f;
+            a.turnSpeed = 40f;
+            a.turnResistance = 0.12f;
             b.vx = 2.5f;
             b.vy = -1.0f;
             long burstFrom = w.events.burstSeq();
@@ -214,6 +220,8 @@ class SnapshotBuilderTest {
                 () -> assertEquals(List.of(a.id + " " + (Records.ShipFlags.SHIELD | Records.ShipFlags.FRIENDLY) + " "
                     + ax + "," + ay + " v0.0,0.0 h" + (float) (10 * 2 * Math.PI / Const.RES) + " f500.5/2600.0"),
                     d.self, "SELF has full-precision position, heading dir*2pi/RES and fuel in units"),
+                () -> assertEquals(List.of("p50 t40 r31 d0 m0"), d.selfControls,
+                    "SELF carries the rounded power, turn speed and turn resistance * 255 (no lock or modifiers yet)"),
                 () -> assertEquals(List.of(b.id + " 0 " + bx + "," + by + " v2.5,-1.0 h40"), d.ships,
                     "SHIP lists only the other ship in view (C is 1600 px away), without shield"),
                 () -> assertEquals(1, d.shots.get(own).size(), "the viewer's shot is OWN"),

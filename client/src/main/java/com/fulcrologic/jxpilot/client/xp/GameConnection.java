@@ -65,6 +65,14 @@ public interface GameConnection extends AutoCloseable {
      */
     boolean sendChat(CharSequence text, long nowNanos);
 
+    /**
+     * The player's control settings changed (C {@code Send_power}, {@code Send_turnspeed} ... after a
+     * power/turn-speed key). They are also what the next (re)join sends.
+     *
+     * @return true when they were sent now (else they go with the next join)
+     */
+    boolean sendSettings(com.fulcrologic.jxpilot.common.net.Msg.Settings settings, long nowNanos);
+
     /** Leave the game; the state becomes CLOSED. */
     void disconnect(long nowNanos);
 

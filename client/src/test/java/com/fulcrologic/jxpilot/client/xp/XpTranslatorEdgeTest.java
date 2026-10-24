@@ -111,6 +111,28 @@ class XpTranslatorEdgeTest {
     }
 
     @Test
+    void meterTimersAndSelfControlsAreCarried() {
+        List<String> with = frame(c(1).self(1000, 1000, 0, 0, 32, 44, 37, 31, 5, 420, 96, 2, 0, 1000, 2600, 768, 768,
+                0, XpProto.STATUS_PLAYING, 0).modifiers("N V2 LB").destruct(77)
+            .countMax(XpProto.PKT_THRUSTTIME, 80, 60).countMax(XpProto.PKT_SHIELDTIME, 10, 50)
+            .countMax(XpProto.PKT_PHASINGTIME, 4, 0).countMax(XpProto.PKT_SHUTDOWN, 30, 120).end(1));
+        List<String> without = frame(c(2).self(1000, 1000).countMax(XpProto.PKT_THRUSTTIME, -1, 60).end(2));
+        int mods = Records.Self.MOD_NUCLEAR | 2 << Records.Self.MOD_VELOCITY_SHIFT | Records.Self.MOD_LASER_BLIND;
+        assertAll(
+            () -> assertEquals(List.of("SELFCTL power=44 turn=37 res=31 lockDist=420 lockDir=96 check=2 mods=" + mods),
+                SnapDump.only(with, "SELFCTL"), "power, turn speed and resistance, lock, checkpoint and modifiers"),
+            () -> assertEquals(List.of("METERS destruct=77 thrust=60/60 shield=10/50 phasing=0/0 shutdown=30/120"),
+                SnapDump.only(with, "METERS"),
+                "thrust capped at its max; a meter with max 0 is none; destruct and shutdown as sent"),
+            () -> assertEquals(List.of("METERS destruct=0 thrust=0/0 shield=0/0 phasing=0/0 shutdown=-1/0"),
+                SnapDump.only(without, "METERS"), "time -1 is no meter; no shutdown is -1"),
+            () -> assertEquals(0, XpTranslator.meterLeft(0, 0), "max 0: no value"),
+            () -> assertEquals(0, XpTranslator.meterLeft(0, 5), "time 0 of 5"),
+            () -> assertEquals(5, XpTranslator.meterMax(0, 5), "a meter at time 0 is still shown"),
+            () -> assertEquals(0, XpTranslator.meterMax(-1, 5), "time -1: none"));
+    }
+
+    @Test
     void exactlyTeleportDistanceStillHasVelocity() {
         frame(c(1).self(1000, 1000).ship(1000, 1000, 4, 0).end(1));
         List<String> s = frame(c(2).self(1000, 1000).ship(1000 + XpTranslator.TELEPORT_PX, 1000, 4, 0).end(2));

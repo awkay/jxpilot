@@ -125,6 +125,15 @@ public final class ClientWorld {
     private final Records.Timers timersRec = new Records.Timers();
     private int damaged;
     private int roundDelay;
+    private int destruct;
+    private int thrustLeft;
+    private int thrustMax;
+    private int shieldLeft;
+    private int shieldMax;
+    private int phasingLeft;
+    private int phasingMax;
+    private int shutdownCount = -1;
+    private int shutdownDelay;
     private boolean haveTimeLeft;
     private int timeLeftValue;
     private int timeLeftTick;
@@ -190,6 +199,13 @@ public final class ClientWorld {
     private int outSelfTanks;
     private int outSelfCurrentTank;
     private int outSelfRespawn;
+    private int outSelfPower;
+    private int outSelfTurnSpeed;
+    private int outSelfTurnRes255;
+    private int outSelfLockDist;
+    private int outSelfLockDir;
+    private int outSelfCheck;
+    private int outSelfMods;
     private final int shipCap;
     private int outShips;
     private final int[] outShipId;
@@ -306,6 +322,11 @@ public final class ClientWorld {
         Arrays.fill(selfItems, 0);
         damaged = 0;
         roundDelay = 0;
+        destruct = 0;
+        thrustMax = 0;
+        shieldMax = 0;
+        phasingMax = 0;
+        shutdownCount = -1;
         haveTimeLeft = false;
         clock.reset(clock.simHz());
         outShips = 0;
@@ -606,6 +627,15 @@ public final class ClientWorld {
                     timersRec.wrap(reader, 0);
                     damaged = timersRec.damaged();
                     roundDelay = timersRec.roundDelay();
+                    destruct = timersRec.destruct();
+                    thrustLeft = timersRec.thrustLeft();
+                    thrustMax = timersRec.thrustMax();
+                    shieldLeft = timersRec.shieldLeft();
+                    shieldMax = timersRec.shieldMax();
+                    phasingLeft = timersRec.phasingLeft();
+                    phasingMax = timersRec.phasingMax();
+                    shutdownCount = timersRec.shutdownCount();
+                    shutdownDelay = timersRec.shutdownDelay();
                     if (timersRec.timeLeft() >= 0) {
                         haveTimeLeft = true;
                         timeLeftValue = timersRec.timeLeft();
@@ -633,6 +663,13 @@ public final class ClientWorld {
         f.selfNumTanks = selfRec.numTanks();
         f.selfCurrentTank = selfRec.currentTank();
         f.selfRespawnFrames = selfRec.respawnFrames();
+        f.selfPower = selfRec.power();
+        f.selfTurnSpeed = selfRec.turnSpeed();
+        f.selfTurnRes255 = selfRec.turnResistance255();
+        f.selfLockDist = selfRec.lockDist();
+        f.selfLockDir = selfRec.lockDir();
+        f.selfCheck = selfRec.check();
+        f.selfMods = selfRec.mods();
     }
 
     private void readRadar(int tick, int n) {
@@ -1110,6 +1147,13 @@ public final class ClientWorld {
         outSelfTanks = s.selfNumTanks;
         outSelfCurrentTank = s.selfCurrentTank;
         outSelfRespawn = s.selfRespawnFrames;
+        outSelfPower = s.selfPower;
+        outSelfTurnSpeed = s.selfTurnSpeed;
+        outSelfTurnRes255 = s.selfTurnRes255;
+        outSelfLockDist = s.selfLockDist;
+        outSelfLockDir = s.selfLockDir;
+        outSelfCheck = s.selfCheck;
+        outSelfMods = s.selfMods;
     }
 
     // ================================================================ reliable-event state
@@ -1198,6 +1242,27 @@ public final class ClientWorld {
 
     public int selfRespawnFrames() { return outSelfRespawn; }
 
+    /** Engine power the server uses (SELF; C {@code displayedPower}). */
+    public int selfPower() { return outSelfPower; }
+
+    /** Turn speed the server uses (SELF; C {@code displayedTurnspeed}). */
+    public int selfTurnSpeed() { return outSelfTurnSpeed; }
+
+    /** Turn resistance * 255 (SELF). */
+    public int selfTurnResistance255() { return outSelfTurnRes255; }
+
+    /** Distance to the locked player in px; 0 when the server does not show the lock (C lock_dist). */
+    public int selfLockDist() { return outSelfLockDist; }
+
+    /** Direction to the locked player in RES units (C lock_dir). */
+    public int selfLockDir() { return outSelfLockDir; }
+
+    /** Next race checkpoint (C {@code nextCheckPoint}). */
+    public int selfCheck() { return outSelfCheck; }
+
+    /** Weapon modifiers, {@link Records.Self} MOD_* bits. */
+    public int selfMods() { return outSelfMods; }
+
     /** Count of a carried {@link Item} (by ordinal). */
     public int selfItem(int item) { return selfItems[item]; }
 
@@ -1237,6 +1302,30 @@ public final class ClientWorld {
 
     /** Frames until the round starts, 0 when none (newest TIMERS). */
     public int roundDelay() { return roundDelay; }
+
+    /** Self-destruct frames left, 0 when not self-destructing (newest TIMERS; C {@code destruct}). */
+    public int destruct() { return destruct; }
+
+    /** Emergency thrust left (frames) of the meter; see {@link #thrustMax()}. */
+    public int thrustLeft() { return thrustLeft; }
+
+    /** Emergency thrust meter maximum, 0 when no meter (C thrusttimemax). */
+    public int thrustMax() { return thrustMax; }
+
+    public int shieldLeft() { return shieldLeft; }
+
+    /** Emergency shield meter maximum, 0 when no meter. */
+    public int shieldMax() { return shieldMax; }
+
+    public int phasingLeft() { return phasingLeft; }
+
+    /** Phasing meter maximum, 0 when no meter. */
+    public int phasingMax() { return phasingMax; }
+
+    /** Seconds until the server shuts down, -1 when none (C shutdown_count). */
+    public int shutdownCount() { return shutdownCount; }
+
+    public int shutdownDelay() { return shutdownDelay; }
 
     /**
      * Seconds of game time left (C {@code Paint_HUD} time left), counted down from the last report by the

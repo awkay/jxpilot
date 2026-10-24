@@ -49,6 +49,8 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  *   --font FILE, --font-size PX text font (default: bundled, 13)
  *   --screenshot FILE.png      save a PNG after --frames N frames (default 300) and exit
  *   --no-vsync                 render as fast as possible
+ *   --keys FILE                key bindings and control settings in ~/.xpilotrc format (default: ~/.xpilotrc)
+ *   --list-keys                print the effective key bindings and exit
  * </pre>
  *
  * @param viewer     the viewer's options in {@link Mode#VIEW_MAP}, else null
@@ -60,11 +62,12 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  * @param screenshot PNG path, or null
  * @param swapScaleKey X11 keysym bound to the scale-factor swap, or null
  * @param fontFile   TrueType file, or null for the bundled font
+ * @param keysFile   key file given with {@code --keys}, or null for {@code ~/.xpilotrc}
  */
 public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, Endpoint bind, String name, int team,
                          String shape, String localMap, String screenshot, int frames, int width, int height,
                          boolean vsync, double scaleFactor, double altScaleFactor, String swapScaleKey,
-                         String fontFile, double fontSize) {
+                         String fontFile, double fontSize, String keysFile) {
     /** Launch modes. */
     public enum Mode {
         /** No mode chosen: print usage. */
@@ -74,7 +77,9 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         /** Play on a remote server ({@code --connect}). */
         CONNECT,
         /** Play on an embedded server ({@code --local --map}). */
-        LOCAL
+        LOCAL,
+        /** Print the effective key bindings ({@code --list-keys}). */
+        LIST_KEYS
     }
 
     /** Longest player name accepted (the client keeps {@link Players#MAX_NAME} characters). */
@@ -88,8 +93,9 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         usage: ClientMain --connect HOST[:PORT] [--protocol xpilot|jxpilot] [--bind ADDR[:PORT]] [--name NAME]
                           [--team T] [--shape SHAPE] [--size WxH] [--scale-factor F] [--alt-scale-factor F]
                           [--swap-scale-key KEYSYM] [--font FILE] [--font-size PX] [--screenshot FILE.png]
-                          [--frames N] [--no-vsync]
+                          [--frames N] [--no-vsync] [--keys FILE]
                ClientMain --local --map FILE [same options as --connect, except --protocol and --bind]
+               ClientMain --list-keys [--keys FILE] [--swap-scale-key KEYSYM]
                ClientMain --view-map FILE [--demo] [viewer options: --screenshot --frames --size --zoom ...]""";
 
     /**
@@ -104,18 +110,20 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
      * BEHAVIOR: the name defaults to {@link #defaultName(String)}; a given name must have 1..{@link #MAX_NAME}
      * characters; the team is 0..9; the shape must parse ({@link ShipShape#parse}); the swap key must be
      * a known keysym; frames, sizes, scale factors and the font size must be positive.
+     * BEHAVIOR: {@code --keys FILE} names the key file; {@code --list-keys} selects {@link Mode#LIST_KEYS}
+     * (keeping {@code --keys} and {@code --swap-scale-key}, ignoring the launch mode).
      * BEHAVIOR: unknown options and missing values throw IllegalArgumentException naming the option.
      */
     public static AppOptions parse(String[] args, String userName) {
         for (String a : args) {
             if (a.equals("--view-map")) {
                 return new AppOptions(Mode.VIEW_MAP, LaunchOptions.parse(args), null, null, null, Protocol.NO_TEAM,
-                    "", null, null, DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE);
+                    "", null, null, DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, null);
             }
         }
         if (args.length == 0) {
             return new AppOptions(Mode.HELP, null, null, null, null, Protocol.NO_TEAM, "", null, null,
-                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE);
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, null);
         }
         String connect = null;
         String protocol = null;
@@ -135,6 +143,8 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         String swapKey = null;
         String font = null;
         double fontSize = DEFAULT_FONT_SIZE;
+        String keys = null;
+        boolean listKeys = false;
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
             switch (a) {
@@ -183,11 +193,17 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                 }
                 case "--font" -> font = value(args, ++i, a);
                 case "--font-size" -> fontSize = positive(value(args, ++i, a), a);
+                case "--keys" -> keys = value(args, ++i, a);
+                case "--list-keys" -> listKeys = true;
                 default -> throw new IllegalArgumentException("Unknown option: " + a);
             }
         }
         Mode mode;
         ConnectTarget target = null;
+        if (listKeys) {
+            return new AppOptions(Mode.LIST_KEYS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, swapKey, null, DEFAULT_FONT_SIZE, keys);
+        }
         if (connect != null && local) {
             throw new IllegalArgumentException("--connect and --local exclude each other");
         }
@@ -209,7 +225,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
             throw new IllegalArgumentException("nothing to do: give --connect, --local or --view-map");
         }
         return new AppOptions(mode, null, target, bind, name != null ? name : defaultName(userName), team, shape,
-            map, screenshot, frames, width, height, vsync, scale, alt, swapKey, font, fontSize);
+            map, screenshot, frames, width, height, vsync, scale, alt, swapKey, font, fontSize, keys);
     }
 
     /**

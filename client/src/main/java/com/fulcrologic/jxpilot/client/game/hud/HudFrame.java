@@ -92,7 +92,7 @@ public final class HudFrame {
 
     /** Capacities that fit the full HUD, messages, talk line and a full scoreboard. */
     public HudFrame() {
-        this(64, 32, 320, 256);
+        this(128, 64, 320, 256);
     }
 
     /** BEHAVIOR: empties all three lists. */

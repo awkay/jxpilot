@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.client.xp;
 
+import com.fulcrologic.jxpilot.client.game.Modifiers;
 import com.fulcrologic.jxpilot.client.net.ConnectionListener;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 import com.fulcrologic.jxpilot.common.math.XMath;
@@ -202,13 +203,27 @@ public final class XpTranslator {
         }
         writeObjects(f);
         if (f.hasSelf && w.beginSection(Section.TIMERS)) {
-            Records.Timers.put(w, Math.max(0, f.damaged), Math.max(0, f.roundDelay), f.timeLeft);
+            Records.Timers.put(w, Math.max(0, f.damaged), Math.max(0, f.roundDelay), f.timeLeft, Math.max(0, f.destruct),
+                meterLeft(f.thrustTime, f.thrustMax), meterMax(f.thrustTime, f.thrustMax),
+                meterLeft(f.shieldTime, f.shieldMax), meterMax(f.shieldTime, f.shieldMax),
+                meterLeft(f.phasingTime, f.phasingMax), meterMax(f.phasingTime, f.phasingMax),
+                f.shutdownCount, f.shutdownDelay);
             w.endSection();
         }
         rememberShips(f);
         snap.flip();
         snapshots++;
         listener.onSnapshot(snap, nowNanos);
+    }
+
+    /** C {@code Paint_meters}: BEHAVIOR: a meter is shown iff time &gt;= 0 and max &gt; 0; its value is min(time, max). */
+    static int meterLeft(int time, int max) {
+        return time >= 0 && max > 0 ? Math.min(time, max) : 0;
+    }
+
+    /** BEHAVIOR: the meter's max when shown, else 0 (TIMERS: max 0 = no meter). */
+    static int meterMax(int time, int max) {
+        return time >= 0 && max > 0 ? max : 0;
     }
 
     private double wrapX(double x) {
@@ -229,7 +244,9 @@ public final class XpTranslator {
 
     /**
      * BEHAVIOR: flags from the own PKT_SHIP (shield, cloak...), DEAD when the own ship is not in the
-     * frame (C {@code selfVisible}), PAUSED / SELF_DESTRUCT from the status byte; fuel in C units.
+     * frame (C {@code selfVisible}), PAUSED / SELF_DESTRUCT from the status byte; fuel in C units; power,
+     * turn speed, turn resistance, lock distance/direction and checkpoint as sent; the PKT_MODIFIERS string
+     * as {@link Modifiers#parse} bits.
      */
     private void writeSelf(XpFrame f, int selfShip) {
         if (!w.beginSection(Section.SELF)) {
@@ -247,7 +264,9 @@ public final class XpTranslator {
         }
         Records.Self.put(w, selfId & 0xFFFF, flags, (float) viewX, (float) viewY, f.selfVx, f.selfVy,
             (float) (f.selfDir * RAD_PER_DIR), f.selfFuelSum, f.selfFuelMax,
-            f.selfLockId < 0 ? Protocol.NO_ID : f.selfLockId, f.items[XpProto.ITEM_TANK], f.selfCurrentTank, 0);
+            f.selfLockId < 0 ? Protocol.NO_ID : f.selfLockId, f.items[XpProto.ITEM_TANK], f.selfCurrentTank, 0,
+            f.selfPower, f.selfTurnspeed, f.selfTurnresistance / 255.0, Math.max(0, f.selfLockDist), f.selfLockDir,
+            f.selfCheck, Modifiers.parse(f.modifiers));
         w.endSection();
     }
 

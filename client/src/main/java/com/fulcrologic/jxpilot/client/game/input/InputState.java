@@ -45,6 +45,12 @@ public final class InputState {
         | ControlKey.FIRE_MISSILE.mask() | ControlKey.FIRE_TORPEDO.mask() | ControlKey.FIRE_HEAT.mask()
         | ControlKey.DROP_MINE.mask() | ControlKey.DETACH_MINE.mask();
     private static final long SHIELD = ControlKey.SHIELD.mask();
+    /**
+     * Keys the client handles itself and never sends (C {@code Key_press_increase_power} ... return false,
+     * "server doesn't see these keypresses anymore"): the client changes its settings and sends those.
+     */
+    public static final long CLIENT_SIDE_KEYS = ControlKey.INCREASE_POWER.mask() | ControlKey.DECREASE_POWER.mask()
+        | ControlKey.INCREASE_TURNSPEED.mask() | ControlKey.DECREASE_TURNSPEED.mask();
 
     /** C {@code autoShield} (default on): shields drop for fire. */
     public boolean autoShield = true;
@@ -68,7 +74,8 @@ public final class InputState {
     /**
      * A key went down.
      * <p>
-     * BEHAVIOR: while not talking, every game function bound to the key is set; a fire function with
+     * BEHAVIOR: while not talking, every game function bound to the key is set, except the
+     * {@link #CLIENT_SIDE_KEYS} (never sent); a fire function with
      * autoShield first clears SHIELD; the shield key with toggleShield toggles SHIELD (and the shields
      * state), with autoShield marks the shields as up.
      * BEHAVIOR: returns the key's {@link ClientAction} mask; while talking only the talk-cursor actions
@@ -97,7 +104,7 @@ public final class InputState {
                 shields = true;
             }
         }
-        keys |= m;
+        keys |= m & ~CLIENT_SIDE_KEYS;
         return acts & ~cursor;
     }
 

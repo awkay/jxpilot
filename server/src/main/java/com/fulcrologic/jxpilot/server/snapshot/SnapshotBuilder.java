@@ -264,7 +264,8 @@ public final class SnapshotBuilder {
         }
         Records.Self.put(wr, v.id, shipFlags(v, v), (float) cx, (float) cy, (float) v.vx, (float) v.vy,
             (float) heading(v), (float) (v.fuel / 256), (float) (v.fuelMax / 256), Protocol.NO_ID, 0, 0,
-            (v.status & Obj.PLAYING) == 0 && v.count > 0 ? v.count : 0);
+            (v.status & Obj.PLAYING) == 0 && v.count > 0 ? v.count : 0, v.power, v.turnSpeed, v.turnResistance,
+            0, 0, 0, 0);
     }
 
     /**

@@ -90,7 +90,24 @@ class AppOptionsTest {
                 () -> assertEquals(2.0, o.altScaleFactor(), "altScaleFactor 2"),
                 () -> assertNull(o.swapScaleKey(), "swap key unbound"),
                 () -> assertNull(o.fontFile(), "bundled font"),
-                () -> assertEquals(13.0, o.fontSize(), "font size 13"));
+                () -> assertEquals(13.0, o.fontSize(), "font size 13"),
+                () -> assertNull(o.keysFile(), "keys from ~/.xpilotrc"));
+        }
+
+        @Test
+        @DisplayName("--keys names the key file; --list-keys selects LIST_KEYS whatever else is given")
+        void keys() {
+            AppOptions c = parse("--connect", "h", "--keys", "my.rc");
+            AppOptions l = parse("--list-keys", "--keys", "k.rc", "--swap-scale-key", "F12");
+            AppOptions both = parse("--connect", "h", "--list-keys");
+            assertAll(
+                () -> assertEquals("my.rc", c.keysFile(), "--keys"),
+                () -> assertEquals(AppOptions.Mode.CONNECT, c.mode(), "still connecting"),
+                () -> assertEquals(AppOptions.Mode.LIST_KEYS, l.mode(), "--list-keys alone"),
+                () -> assertEquals("k.rc", l.keysFile(), "keeps --keys"),
+                () -> assertEquals("F12", l.swapScaleKey(), "keeps the swap key"),
+                () -> assertEquals(AppOptions.Mode.LIST_KEYS, both.mode(), "--list-keys wins over --connect"),
+                () -> assertTrue(error("--keys").contains("--keys needs a value"), "--keys needs a file"));
         }
 
         @Test
