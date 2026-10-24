@@ -130,6 +130,7 @@ Server → client:
 | 10 | GAME_EVENT | u8 kind (kill, crash, spawn, round end, target/treasure destroyed, checkpoint), u16 a, u16 b, f32 value. CRASH: a = the player who crashed, b = the other ship in a two-ship crash or NO_ID, value = crash sub-type `Msg.GameEvent.CRASH_*`: 1 wall, 2 target, 3 treasure, 4 cannon, 5 universe, 6 ships, 7 unknown. A shove into a wall is a KILL by the last pusher with the sub-type in value. SPAWN: a = player, b = base index. A KILL or CRASH is always sent before the SCORE_OBJECT / SCORE it causes, in the same tick |
 | 11 | PLAYER_THRUST | u16 id, f32 power, u8 afterburners — sent when they change (thrust sparks are generated client-side). `afterburners` is the effective value (C forces MAX_AFTERBURNER for emergency thrust, ship.c:75-77); the server seeds with the f32 power the client receives |
 | 12 | SCORE_OBJECT | f32 score (points gained, negative when lost), u16 bx, u16 by (block where they were made), str8 label (C `Send_score_object`: a player name, "[Wall]", "[Shove]", "Cannon", "[Deadliest]"...). Sent only to the player whose score changed; drives the HUD score popups (the client's ScoreObjects stack) |
+| 28 | MOTD | u32 offset, u32 total size, bytes: a piece of the server's message of the day (C `motdFileName`, Latin-1, at most 30 KB). *(server-batch2 block 28-30.)* The server sends all pieces once, with the first event drain after the initial state, when it has a MOTD; the client shows it (C's MOTD viewer) once every piece is in. Old clients skip it |
 
 Client → server:
 

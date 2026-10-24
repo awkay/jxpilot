@@ -55,6 +55,11 @@ public final class ReliableType {
     public static final int PLAYER_THRUST = 11;
     /** {@link Msg.ScoreObject}: a score popup for the receiver's HUD (C score objects). */
     public static final int SCORE_OBJECT = 12;
+    /**
+     * {@link Msg.Motd}: a piece of the server's message of the day (C motdFileName). Sent once after the initial
+     * state when the server has one; older clients skip it.
+     */
+    public static final int MOTD = 28;
 
     // ---- client -> server
     /** Empty body: client has the config/map and is ready to play. */

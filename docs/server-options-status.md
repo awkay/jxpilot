@@ -202,7 +202,7 @@ follow C; the alias is the C command-line name.
 | `wormTime` |  | sec | `0` | ANY+VIS | implemented (Params) |
 | `defaultsFileName` | defaults | string | `(none)` | CMD | implemented (server-batch2): --defaults FILE|none; default is the bundled lib/defaults |
 | `passwordFileName` |  | string | `(none)` | CMD+DEF | unsupported: no operator commands yet (C command.c) |
-| `motdFileName` | motd | string | `(none)` | CMD+DEF | not implemented: the native protocol has no MOTD request; needs a protocol and client change |
+| `motdFileName` | motd | string | `(none)` | CMD+DEF | implemented (server-batch2): sent to each client after login (reliable MOTD message) and shown like C's MOTD viewer; re-read when the file changes, at most 30 KB |
 | `scoreTableFileName` | scoretable | string | `(none)` | CMD+DEF | accepted, no effect: C 4.5.5 declares it but never reads it |
 | `adminMessageFileName` | adminMessage | string | `(none)` | CMD+DEF | implemented (server-batch2): "god:" chat appended to the file (no default file: C uses LIBDIR/log) |
 | `adminMessageFileSizeLimit` | adminMessageLimit | int | `20202` | CMD+DEF | implemented (server-batch2) |

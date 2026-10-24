@@ -232,6 +232,13 @@ final class HostFx {
                 m.read(p);
                 yield "SCORE_OBJECT " + m.score + " " + m.bx + "," + m.by + " " + m.text;
             }
+            case ReliableType.MOTD -> {
+                int off = p.getInt();
+                int total = p.getInt();
+                byte[] b = new byte[p.remaining()];
+                p.get(b);
+                yield "MOTD " + off + "/" + total + " " + new String(b, java.nio.charset.StandardCharsets.ISO_8859_1);
+            }
             default -> "type " + type;
         };
         if (p.hasRemaining()) {
