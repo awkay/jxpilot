@@ -20,7 +20,7 @@
   </profiles>
 
   <properties>
-    <client.args>--view-map ${project.basedir}/../maps/default.xp</client.args>
+    <client.args>--view-map default</client.args>
   </properties>
 
   <dependencies>

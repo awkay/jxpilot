@@ -23,9 +23,8 @@
  */
 package com.fulcrologic.jxpilot.server;
 
-import com.fulcrologic.jxpilot.common.config.ConfigParser;
-import com.fulcrologic.jxpilot.common.config.OptionOrigin;
 import com.fulcrologic.jxpilot.common.config.Options;
+import com.fulcrologic.jxpilot.common.map.MapLocator;
 import com.fulcrologic.jxpilot.server.net.DefaultsFile;
 import com.fulcrologic.jxpilot.server.sim.Digest;
 import com.fulcrologic.jxpilot.server.sim.RandomPilot;
@@ -35,12 +34,11 @@ import com.fulcrologic.jxpilot.server.world.World;
 
 import java.io.IOException;
 import java.io.PrintStream;
-import java.nio.file.Path;
 import java.util.Locale;
 
 /**
  * Headless simulation runner for determinism checks and profiling:
- * {@code ServerSim --map maps/X.xp [--ticks N] [--seed S] [--players P] [--every K]}.
+ * {@code ServerSim --map NAME|FILE [--ticks N] [--seed S] [--players P] [--every K]}.
  * Players fly with {@link RandomPilot} inputs (seeded from S). Prints the state digest every K ticks (if
  * given) and at the end, plus a few counters. Same arguments, same output.
  */
@@ -48,7 +46,7 @@ public final class ServerSim {
     private ServerSim() {}
 
     /** The usage line printed for bad arguments. */
-    static final String USAGE = "usage: ServerSim --map FILE [--ticks N] [--seed S] [--players P] [--every K]";
+    static final String USAGE = "usage: ServerSim --map NAME|FILE [--ticks N] [--seed S] [--players P] [--every K]";
 
     /** Parsed command line. */
     record Args(String map, int ticks, int seed, int players, int every) {
@@ -112,7 +110,7 @@ public final class ServerSim {
         }
         Options o = new Options();
         DefaultsFile.applyBundled(o); // as the server does (lib/defaults before the map)
-        ConfigParser.parseFile(Path.of(a.map()), OptionOrigin.MAP, o);
+        MapLocator.resolve(a.map()).parseInto(o); // a bundled name or a file, as the server
         long t0 = System.nanoTime();
         run(o, a, System.out);
         System.err.printf(Locale.ROOT, "%.1f us/tick%n", (System.nanoTime() - t0) / 1000.0 / Math.max(1, a.ticks()));

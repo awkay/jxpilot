@@ -114,6 +114,19 @@ class AppOptionsTest {
         }
 
         @Test
+        @DisplayName("--list-maps selects LIST_MAPS whatever launch mode is given; --list-keys wins over it")
+        void listMaps() {
+            assertAll(
+                () -> assertEquals(AppOptions.Mode.LIST_MAPS, parse("--list-maps").mode(), "--list-maps alone"),
+                () -> assertEquals(AppOptions.Mode.LIST_MAPS, parse("--local", "--map", "doggy", "--list-maps").mode(),
+                    "--list-maps wins over --local"),
+                () -> assertEquals(AppOptions.Mode.LIST_MAPS, parse("--list-maps", "--connect", "h").mode(),
+                    "--list-maps wins over --connect"),
+                () -> assertEquals(AppOptions.Mode.LIST_KEYS, parse("--list-maps", "--list-keys").mode(),
+                    "--list-keys wins over --list-maps"));
+        }
+
+        @Test
         @DisplayName("sound: --no-sound / --sound (the last wins) and --volume 0..255")
         void sound() {
             AppOptions off = parse("--connect", "h", "--no-sound", "--volume", "0");
@@ -184,7 +197,8 @@ class AppOptionsTest {
             AppOptions o = parse("--local", "--map", "maps/default.xp", "--name", "Bo");
             assertAll(
                 () -> assertEquals(AppOptions.Mode.LOCAL, o.mode(), "local mode"),
-                () -> assertEquals("maps/default.xp", o.localMap(), "map"),
+                () -> assertEquals("maps/default.xp", o.localMap(), "map, as given (the server resolves it)"),
+                () -> assertEquals("doggy", parse("--local", "--map", "doggy").localMap(), "a bundled name, as given"),
                 () -> assertNull(o.target(), "no target"),
                 () -> assertEquals("Bo", o.name(), "name"));
         }

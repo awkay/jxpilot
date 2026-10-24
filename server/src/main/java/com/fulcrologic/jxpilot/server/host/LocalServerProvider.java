@@ -30,7 +30,6 @@ import com.fulcrologic.jxpilot.server.net.Server;
 import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.InetSocketAddress;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,12 +39,12 @@ import java.util.List;
  */
 public final class LocalServerProvider implements LocalServer.Provider {
     /**
-     * BEHAVIOR: serves {@code mapFile} on loopback only; the address is the bound IPv4 loopback socket when there
+     * BEHAVIOR: serves {@code map} (a bundled name or a file, as {@code --map}) on loopback only; the address is the bound IPv4 loopback socket when there
      * is one, else the first bound socket; the extra options are passed as on the command line.
      */
     @Override
-    public LocalServer start(Path mapFile, String... options) throws IOException {
-        List<String> args = new ArrayList<>(List.of("--map", mapFile.toString(), "--port", "0", "--bind", "loopback"));
+    public LocalServer start(String map, String... options) throws IOException {
+        List<String> args = new ArrayList<>(List.of("--map", map, "--port", "0", "--bind", "loopback"));
         args.addAll(List.of(options));
         Server server = Server.start(args.toArray(String[]::new), new Server.Settings());
         InetSocketAddress address = pick(server);

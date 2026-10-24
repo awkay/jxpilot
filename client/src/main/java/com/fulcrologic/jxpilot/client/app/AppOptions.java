@@ -35,10 +35,11 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
 /**
  * Parsed command line of {@code ClientMain}: which launch mode, and its settings.
  * <pre>
- *   --view-map FILE ...        the map viewer (all other arguments go to {@link LaunchOptions})
+ *   --view-map MAP ...         the map viewer (all other arguments go to {@link LaunchOptions})
  *   --connect TARGET           play on a server: host[:port], [v6addr]:port, xp://host:port, jx://host:port
  *   --protocol P               xpilot or jxpilot (default jxpilot; a TARGET scheme wins)
- *   --local --map FILE         play on an embedded server for FILE (loopback only)
+ *   --local --map MAP          play on an embedded server for MAP (loopback only); MAP is a bundled map name,
+ *                              or a file when it has a path in it (see MapLocator)
  *   --bind ADDR[:PORT]         local source address for --connect
  *   --name NAME                player name (default: the user name)
  *   --team T                   team 0..9 (default: none, the server picks)
@@ -57,6 +58,7 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  *                              the key file's maxVolume, else 100
  *   --keys FILE                key bindings and control settings in ~/.xpilotrc format (default: ~/.xpilotrc)
  *   --list-keys                print the effective key bindings and exit
+ *   --list-maps                print the bundled maps and exit
  * </pre>
  *
  * @param viewer     the viewer's options in {@link Mode#VIEW_MAP}, else null
@@ -64,7 +66,7 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  * @param bind       local address, or null for any
  * @param team       0..9 or {@link Protocol#NO_TEAM}
  * @param shape      ship shape string or shape name from the command line, or null when not given
- * @param localMap   map file for {@link Mode#LOCAL}, else null
+ * @param localMap   map name or file for {@link Mode#LOCAL}, else null
  * @param screenshot PNG path, or null
  * @param swapScaleKey X11 keysym bound to the scale-factor swap, or null
  * @param fontFile   TrueType file, or null for the bundled font
@@ -89,7 +91,9 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         /** Play on an embedded server ({@code --local --map}). */
         LOCAL,
         /** Print the effective key bindings ({@code --list-keys}). */
-        LIST_KEYS
+        LIST_KEYS,
+        /** Print the bundled maps ({@code --list-maps}). */
+        LIST_MAPS
     }
 
     /** Longest player name accepted (the client keeps {@link Players#MAX_NAME} characters). */
@@ -107,9 +111,11 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                           [--size WxH] [--scale-factor F] [--alt-scale-factor F]
                           [--swap-scale-key KEYSYM] [--font FILE] [--font-size PX] [--screenshot FILE.png]
                           [--frames N] [--no-vsync] [--sound | --no-sound] [--volume 0..255] [--keys FILE]
-               ClientMain --local --map FILE [same options as --connect, except --protocol and --bind]
+               ClientMain --local --map MAP [same options as --connect, except --protocol and --bind]
                ClientMain --list-keys [--keys FILE] [--swap-scale-key KEYSYM]
-               ClientMain --view-map FILE [--demo] [viewer options: --screenshot --frames --size --zoom ...]""";
+               ClientMain --list-maps
+               ClientMain --view-map MAP [--demo] [viewer options: --screenshot --frames --size --zoom ...]
+        MAP is a bundled map name (see --list-maps), or a map file when it contains a path (maps/my.xp, ./my.xp).""";
 
     /**
      * Parse arguments; {@code userName} supplies the default player name.
@@ -127,6 +133,8 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
      * a known keysym; frames, sizes, scale factors and the font size must be positive.
      * BEHAVIOR: {@code --keys FILE} names the key file; {@code --list-keys} selects {@link Mode#LIST_KEYS}
      * (keeping {@code --keys} and {@code --swap-scale-key}, ignoring the launch mode).
+     * BEHAVIOR: {@code --list-maps} selects {@link Mode#LIST_MAPS}, ignoring the launch mode ({@code --list-keys}
+     * wins when both are given).
      * BEHAVIOR: sound is on unless {@code --no-sound} (the last of --sound/--no-sound wins); {@code --volume}
      * is an integer 0..{@value SoundPlayer#MAX_MAX_VOLUME}, {@link #VOLUME_UNSET} when not given.
      * BEHAVIOR: unknown options and missing values throw IllegalArgumentException naming the option.
@@ -167,6 +175,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         int maxVolume = VOLUME_UNSET;
         String keys = null;
         boolean listKeys = false;
+        boolean listMaps = false;
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
             switch (a) {
@@ -226,6 +235,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                 }
                 case "--keys" -> keys = value(args, ++i, a);
                 case "--list-keys" -> listKeys = true;
+                case "--list-maps" -> listMaps = true;
                 default -> throw new IllegalArgumentException("Unknown option: " + a);
             }
         }
@@ -234,6 +244,11 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         if (listKeys) {
             return new AppOptions(Mode.LIST_KEYS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
                 DEFAULT_FRAMES, 1280, 800, true, 1, 2, swapKey, null, DEFAULT_FONT_SIZE, sound, maxVolume, keys, null);
+        }
+        if (listMaps) {
+            return new AppOptions(Mode.LIST_MAPS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, SoundPlayer.DEFAULT_MAX_VOLUME,
+                null, null);
         }
         if (connect != null && local) {
             throw new IllegalArgumentException("--connect and --local exclude each other");
@@ -247,7 +262,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         } else if (local) {
             mode = Mode.LOCAL;
             if (map == null) {
-                throw new IllegalArgumentException("--local needs --map FILE");
+                throw new IllegalArgumentException("--local needs --map MAP (a bundled name from --list-maps, or a file)");
             }
             if (protocol != null || bind != null) {
                 throw new IllegalArgumentException("--protocol and --bind are only used with --connect");

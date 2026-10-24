@@ -31,7 +31,6 @@ import org.junit.jupiter.api.Timeout;
 
 import java.net.Inet4Address;
 import java.net.InetSocketAddress;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ServiceLoader;
@@ -47,7 +46,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 class LocalServerProviderTest {
     @Test
-    @DisplayName("is registered for ServiceLoader; serves a map on IPv4 loopback on a free port; a client is accepted")
+    @DisplayName("is registered for ServiceLoader; serves a bundled map by name on IPv4 loopback on a free port; a client"
+        + " is accepted")
     void serves() throws Exception {
         List<String> found = new ArrayList<>();
         for (LocalServer.Provider p : ServiceLoader.load(LocalServer.Provider.class)) {
@@ -55,7 +55,7 @@ class LocalServerProviderTest {
         }
         boolean accepted;
         InetSocketAddress address;
-        try (LocalServer s = new LocalServerProvider().start(Path.of("..", "maps", "doggy.xp"), "-maxRobots", "0")) {
+        try (LocalServer s = new LocalServerProvider().start("doggy", "-maxRobots", "0")) {
             address = s.address();
             try (LoopbackIntegrationTest.UdpClient u = new LoopbackIntegrationTest.UdpClient(41, address)) {
                 u.connect("local");
@@ -73,9 +73,11 @@ class LocalServerProviderTest {
     }
 
     @Test
-    @DisplayName("a map that cannot be read fails the start")
+    @DisplayName("a map that is neither bundled nor a file fails the start, listing the bundled maps")
     void missingMap() {
-        assertThrows(Exception.class, () -> new LocalServerProvider().start(Path.of("no-such-map.xp")),
-            "a missing map is an error, not a running server");
+        String msg = assertThrows(java.io.FileNotFoundException.class,
+            () -> new LocalServerProvider().start("no-such-map.xp"), "a missing map is an error, not a running server")
+            .getMessage();
+        assertTrue(msg.contains("Bundled maps: blood-music2, CAMD,"), "the error lists the bundled maps: " + msg);
     }
 }

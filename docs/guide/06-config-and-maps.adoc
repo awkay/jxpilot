@@ -209,36 +209,41 @@ block, as do the cannon directions `r d f c`.
 [[shipped-maps]]
 == Shipped maps
 
-The release's `jxpilot-maps-VERSION.zip` (and the `maps/` directory of the source) has the 19 maps of
-the XPilot 4.5.5 distribution, unmodified. Each map's author is named in its `mapAuthor` field; the
-authors were not involved in JXPilot.
+The server and client jars (and the applications) have the 19 maps of the XPilot 4.5.5 distribution
+built in, unmodified, so `--map NAME` and `--view-map NAME` work with nothing else on disk
+(<<04-running-a-server.adoc#map-names,how names are read>>). `--list-maps` prints this table. The same
+files are in the source's `maps/` directory and in the release's `jxpilot-maps-VERSION.zip`, for
+editing or for other XPilot programs. Each map's author is named in its `mapAuthor` field; the authors
+were not involved in JXPilot.
 
 [cols="2,4,1,4",options="header"]
 |===
-|File |Map name |Size |Author
-|`blood-music2.xp` |Blood's Music II |100 x 100 |Blood, TIMID, DR.DEATH
-|`CAMD.xp` |The Computer Aided Map Designer's first real test... |150 x 150 |Tom Grydeland
-|`cloudscape.xp` |CloudScape |179 x 176 |Boerge 'Lynx' Berg-Olsen
-|`default.xp` |The Newbie Globe |170 x 170 |Bjørn Stabell (newbie mods by Bucko)
-|`doggy.xp` |DoggyStyle |49 x 50 |Kjell Irgens
-|`fireball.xp` |Fireball |200 x 200 |Olaf Brandt
-|`fuzz.xp` |Fuzz EW |178 x 198 |Ronny H. Arild (+BG)
-|`fuzz2.xp` |Fuzz II: The Search for a Better Name |141 x 161 |Ronny "Snowball" Arild
-|`globe.xp` |The Globe |170 x 170 |Bjørn Stabell
-|`grandprix.xp` |Grand Prix II |200 x 200 |Steven Singer (+BG&MB)
-|`newdarkhell.xp` |New Dark Hell |200 x 200 |PeaceMaker
-|`newdarkhell2.xp` |New Dark Hell II |200 x 200 |PeaceMaker
-|`pad.xp` |Padded Room |100 x 100 |Dave Lemke
-|`pit.xp` |The Pit! |156 x 200 |Ronny H. Arild
-|`planetx.xp` |Planet X |310 x 267 |Børge Berg-Olsen
-|`teamball.xp` |TEAMBALL 2.4 - 2 teams, 6 balls, 3 shots |57 x 83 |DR.DEATH mods by Toast
-|`tourmination.xp` |Tourmination |80 x 80 |Bert Gijsbers
-|`tournament.xp` |Tournament |80 x 80 |Ken Ronny Schouten
-|`war.xp` |Team Warfare |120 x 80 |Andy Skinner
+|Name |Map name |Size |Author
+|`blood-music2` |Blood's Music II |100 x 100 |Blood, TIMID, DR.DEATH
+|`CAMD` |The Computer Aided Map Designer's first real test... |150 x 150 |Tom Grydeland
+|`cloudscape` |CloudScape |179 x 176 |Boerge 'Lynx' Berg-Olsen
+|`default` |The Newbie Globe |170 x 170 |Bjørn Stabell (newbie mods by Bucko)
+|`doggy` |DoggyStyle |49 x 50 |Kjell Irgens
+|`fireball` |Fireball |200 x 200 |Olaf Brandt
+|`fuzz` |Fuzz EW |178 x 198 |Ronny H. Arild (+BG)
+|`fuzz2` |Fuzz II: The Search for a Better Name |141 x 161 |Ronny "Snowball" Arild
+|`globe` |The Globe |170 x 170 |Bjørn Stabell
+|`grandprix` |Grand Prix II |200 x 200 |Steven Singer (+BG&MB)
+|`newdarkhell` |New Dark Hell |200 x 200 |PeaceMaker
+|`newdarkhell2` |New Dark Hell II |200 x 200 |PeaceMaker
+|`pad` |Padded Room |100 x 100 |Dave Lemke
+|`pit` |The Pit! |156 x 200 |Ronny H. Arild
+|`planetx` |Planet X |310 x 267 |Børge Berg-Olsen
+|`teamball` |TEAMBALL 2.4 - 2 teams, 6 balls, 3 shots |57 x 83 |DR.DEATH mods by Toast
+|`tourmination` |Tourmination |80 x 80 |Bert Gijsbers
+|`tournament` |Tournament |80 x 80 |Ken Ronny Schouten
+|`war` |Team Warfare |120 x 80 |Andy Skinner
 |===
 
 Other XPilot 4.5.5 block-based maps should load too. To try one, open it in the map viewer:
-`java -jar jxpilot-client-VERSION.jar --view-map mymap.xp`. The server reports problems in a map's
+`java -jar jxpilot-client-VERSION.jar --view-map ./mymap.xp`. To change a built-in map, copy it out of
+`maps/` (or the maps zip), edit the copy and give its path: a plain name such as `default` always means
+the built-in map. The server reports problems in a map's
 option lines as `option warning:` lines when it loads it.
 
 TIP: The map files are Latin-1 text. If you edit one, save it as Latin-1 (or plain ASCII), not UTF-8,

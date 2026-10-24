@@ -4,7 +4,7 @@
 # from the repository root). All arguments go to ClientMain, e.g.
 #   client/scripts/run-client.sh --connect xp://127.0.0.1:15345 --name Pilot
 #   client/scripts/run-client.sh --connect 127.0.0.1:15345
-#   client/scripts/run-client.sh --view-map maps/default.xp --demo
+#   client/scripts/run-client.sh --view-map default --demo
 # MAIN=com.fulcrologic.jxpilot.client.app.DevRun selects the scripted-screenshot dev harness instead.
 set -eu
 ROOT="$(cd "$(dirname "$0")/../.." > /dev/null && pwd)"
