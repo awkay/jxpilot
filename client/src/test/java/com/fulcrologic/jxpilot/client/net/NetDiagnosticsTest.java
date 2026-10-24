@@ -209,6 +209,7 @@ class NetDiagnosticsTest {
                 }
             }
             d.lateSnapshot(110); // 110 arrives after 112..127
+            d.lateSnapshot(110); // its second part, or a duplicate: not counted again
             d.lateSnapshot(99); // before the window: ignored
             d.lateSnapshot(100); // the window's first tick belongs to the window before: ignored
             d.lateSnapshot(127); // not older than the newest: ignored

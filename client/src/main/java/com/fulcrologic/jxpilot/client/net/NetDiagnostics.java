@@ -53,6 +53,11 @@ public final class NetDiagnostics {
     private int windowStart;
     private int windowReceived;
     private int windowLate;
+    /** Ticks counted late in this window (a late tick's further parts must not count again). */
+    private final int[] lateTicks = new int[LOSS_WINDOW_LATE_CAP];
+    private int lateCount;
+    /** Late ticks remembered per window; beyond this, further late ticks of the window are not counted. */
+    public static final int LOSS_WINDOW_LATE_CAP = 64;
     private double lossPercent = Double.NaN;
     private double latePercent = Double.NaN;
 
@@ -114,6 +119,7 @@ public final class NetDiagnostics {
             windowStart = tick;
             windowReceived = 0;
             windowLate = 0;
+            lateCount = 0;
             return;
         }
         int ticks = tick - lastTick;
@@ -130,6 +136,7 @@ public final class NetDiagnostics {
             windowStart = tick;
             windowReceived = 0;
             windowLate = 0;
+            lateCount = 0;
             return;
         }
         windowReceived++;
@@ -140,20 +147,30 @@ public final class NetDiagnostics {
             windowStart = tick;
             windowReceived = 0;
             windowLate = 0;
+            lateCount = 0;
         }
     }
 
     /**
      * A snapshot for {@code tick}, older than the newest one, arrived (reordered or delayed behind a newer one).
      * <p>
-     * BEHAVIOR: one inside the current loss window counts as received (so not as lost) and as late; an older one
-     * (from a window already read) changes nothing. Jitter is not affected.
+     * BEHAVIOR: one inside the current loss window counts as received (so not as lost) and as late, once per tick
+     * (further parts or duplicates of the same late tick are not counted again; at most
+     * {@link #LOSS_WINDOW_LATE_CAP} late ticks per window); an older one (from a window already read) changes nothing.
+     * Jitter is not affected.
      */
     public void lateSnapshot(int tick) {
-        if (haveSnapshot && tick - windowStart > 0 && tick - lastTick < 0) {
-            windowReceived++;
-            windowLate++;
+        if (!haveSnapshot || tick - windowStart <= 0 || tick - lastTick >= 0 || lateCount == LOSS_WINDOW_LATE_CAP) {
+            return;
         }
+        for (int i = 0; i < lateCount; i++) {
+            if (lateTicks[i] == tick) {
+                return; // another part (or a duplicate) of a late tick already counted
+            }
+        }
+        lateTicks[lateCount++] = tick;
+        windowReceived++;
+        windowLate++;
     }
 
     /** Smoothed round trip time in milliseconds, NaN before the first PONG. */

@@ -628,6 +628,7 @@ class ClientConnectionTest {
             }
             t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(56))); // another part of 56
             t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(20))); // late
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(20))); // its second part: one late tick
             t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(58))); // closes the window
             c.update(MS);
             assertAll(

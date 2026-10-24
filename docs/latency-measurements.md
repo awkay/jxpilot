@@ -77,13 +77,16 @@ The figures below are seeds 1-3 on the walls course, against the clean link at t
 - **`InputToPhoton`**: a baseline game without the key, and per trial the same game with the key held
   from t0.
   - **Detection.** The first server tick whose sent heading (turn) or velocity (thrust) differs from the
-    baseline is where the key landed. The I2P frame is the first render frame that draws a SELF of that
-    tick or later. Comparing server state, not drawn pixels, keeps the link's timing out of it: the
+    baseline is where the key landed. The I2P frame is the first render frame whose drawn own ship comes
+    from a SELF of that tick or later (`ClientWorld.selfDrawnFromTick`, the SELF actually drawn, not merely
+    received). Comparing server state, not drawn pixels, keeps the link's timing out of it: the
     trial's extra INPUT shifts the emulator's random stream for the packets behind it.
   - **Checks.** Every frame before t0 must be bit-identical to the baseline. The I2P frame must draw what
     the baseline frame does not: another heading (turn), or the THRUSTING flag (thrust).
-  - **Phase sampling.** Trial j of N is placed so that its INPUT reaches the server (after the uplink's
-    base delay) at phase (j + ½)·T/N of a server tick. The phases are stratified exactly over [0, T).
+  - **Phase sampling.** Trial j of N puts the key down at a t0 such that t0 plus the uplink's base delay
+    falls at phase (j + ½)·T/N of a server tick; these phases are stratified exactly over [0, T). The INPUT
+    leaves at the next render frame that polls the key, so it reaches the server 0-8.3 ms after that
+    phase. That key-poll wait is part of the measured I2P.
   - **Frame alignment.** 7 ticks at 14 Hz are exactly 60 render frames, and the tick index is fixed modulo 7
     by j, so a trial's position relative to the render frames depends only on j, not on when the ship
     spawned.

@@ -63,7 +63,7 @@ public final class NetStatsLine {
         field("  interp ", interpMs, 0, " ms");
         field("  jitter ", d == null ? Double.NaN : d.jitterMs(), 1, " ms");
         field("  loss ", d == null ? Double.NaN : d.lossPercent(), 1, "%");
-        field(" late ", d == null ? Double.NaN : d.latePercent(), 1, "%");
+        field("  late ", d == null ? Double.NaN : d.latePercent(), 1, "%");
         field("  lead ", d == null ? Double.NaN : d.leadTicks, 1, "");
         field("  slack ", d == null ? Double.NaN : d.inputSlackTicks, 2, "");
         field("  corr ", d == null ? Double.NaN : d.correctionsPerSecond, 1, "/s");

@@ -37,16 +37,19 @@ import java.util.List;
  * <p>
  * Method: a baseline game without the key, and for each trial the same game (same seeds, so identical up to
  * t0) with the key. The first server tick after t0 whose sent heading (turn) or velocity (thrust) differs from
- * the baseline's is the tick the key reached; the I2P frame is the first frame drawing a SELF of that tick or
- * later. This uses the server's exact state for "changed", so it does not mistake the link's timing for an
+ * the baseline's is the tick the key reached; the I2P frame is the first frame whose drawn own ship comes from
+ * a SELF of that tick or later ({@link ClientWorld#selfDrawnFromTick}, the SELF the frame actually drew, not merely
+ * one already received). This uses the server's exact state for "changed", so it does not mistake the link's timing for an
  * effect of the key: an extra INPUT packet shifts the emulator's random stream for the packets behind it. As
  * checks, every frame before t0 must be bit-identical to the baseline ({@link Result#preT0Mismatches}) and the
  * I2P frame must draw what the baseline frame does not: another heading (turn), the THRUSTING flag (thrust)
  * ({@link Result#invisible}).
  * <p>
  * <b>Phase sampling.</b> I2P depends on when the key goes down relative to the server's tick grid. Trial j of N
- * is placed so that the INPUT, after the uplink's base delay, reaches the server at phase (j + 1/2) T / N of a
- * tick ({@link #arrivalPhase}): the phases are stratified exactly over [0, T). The tick k chosen has
+ * puts the key down at t0 such that t0 plus the uplink's base delay falls at phase (j + 1/2) T / N of a tick
+ * ({@link #arrivalPhase}): these phases are stratified exactly over [0, T). The INPUT itself leaves at the next
+ * render frame that polls the key, so it reaches the server 0-8.3 ms after that phase (the key-poll wait, part of
+ * the I2P being measured). The tick k chosen has
  * k mod P = j mod P, P = {@link #phasePeriodTicks} (7 at 14 Hz: 7 ticks are exactly 60 render frames), so the
  * trial's position relative to the render frames depends only on j, not on when the ship happened to spawn, and
  * the trials cycle through the P positions of the tick grid against the frame grid (the frame phase at which the
@@ -327,7 +330,7 @@ final class InputToPhoton {
                     trace.x[frame], trace.y[frame], w.worldWidth(), w.worldHeight(), w.wraps()) > POSITION_PX) {
                     moved[0] = t;
                 }
-                if (found[0] < 0 && changed[0] >= 0 && w.newestSelfTick() - changed[0] >= 0) {
+                if (found[0] < 0 && changed[0] >= 0 && w.selfDrawnFromTick() - changed[0] >= 0) {
                     found[0] = t;
                     visible[0] = frame < trace.n && (thrust
                         ? (w.selfFlags() & Records.ShipFlags.THRUSTING) != 0

@@ -63,11 +63,11 @@ class NetStatsLineTest {
         p.lastCorrectionPx = 3.4;
         String predicted = l.format(p, 91.4).toString();
         assertAll(
-            () -> assertEquals("rtt 203 ms  interp 91 ms  jitter 4.2 ms  loss - late -  lead -  slack -  corr -", measured,
+            () -> assertEquals("rtt 203 ms  interp 91 ms  jitter 4.2 ms  loss -  late -  lead -  slack -  corr -", measured,
                 "RTT and interpolation in whole ms, jitter one decimal; loss unknown before a full window"),
-            () -> assertEquals("rtt -  interp -  jitter -  loss - late -  lead -  slack -  corr -", none,
+            () -> assertEquals("rtt -  interp -  jitter -  loss -  late -  lead -  slack -  corr -", none,
                 "no diagnostics: everything unknown"),
-            () -> assertEquals("rtt 203 ms  interp 91 ms  jitter 4.2 ms  loss - late -  lead 3.2  slack 0.50  corr 1.2/s 3 px",
+            () -> assertEquals("rtt 203 ms  interp 91 ms  jitter 4.2 ms  loss -  late -  lead 3.2  slack 0.50  corr 1.2/s 3 px",
                 predicted, "lead one decimal, slack two, corrections per second and the last one in px"));
     }
 

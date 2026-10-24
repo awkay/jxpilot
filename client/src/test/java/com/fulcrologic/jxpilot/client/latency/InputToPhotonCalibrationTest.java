@@ -75,6 +75,9 @@ class InputToPhotonCalibrationTest {
             + " at RTT 100 %.2f ms%n", worst, mean, hundred.mean());
         assertAll(
             () -> assertEquals(TRIALS, n, "every trial measured at both RTTs"),
+            () -> assertEquals(0, zero.invisible(), "at RTT 0 every I2P frame draws what the baseline does not"),
+            () -> assertEquals(0, hundred.invisible(), "at RTT 100 too"),
+            () -> assertEquals(0, zero.preT0Mismatches() + hundred.preT0Mismatches(), "runs identical before t0"),
             () -> assertTrue(st, "trial j arrives at phase (j + 1/2) / N of a tick"),
             () -> assertTrue(pm, "the same phases at both RTTs"),
             () -> assertTrue(w <= FRAME_MS, "every trial is exactly 100 ms later, within a frame: worst " + w + " ms"),
