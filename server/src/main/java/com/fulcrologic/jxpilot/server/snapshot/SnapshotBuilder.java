@@ -349,14 +349,17 @@ public final class SnapshotBuilder {
     }
 
     /**
-     * BEHAVIOR: the SHOT section variant of a shot relative to the viewer: kind, colour, and
+     * BEHAVIOR: the SHOT section variant of a shot relative to the viewer: kind (NUCLEAR for any shot with
+     * nuclear modifiers, C frame.c:830, the client blinks it), colour, and
      * {@code FLAG_HARMLESS} when C frame.c would draw it as harmless to the viewer (team immune owner, paused
      * owner, an unowned shot of the viewer's team in team play, or the viewer's own shot with selfImmunity).
      */
     int shotVariant(int h, Player v) {
         Objects o = w.objects;
         int kind;
-        if (o.type[h] == Obj.CANNON_SHOT) {
+        if (com.fulcrologic.jxpilot.server.world.Mods.isNuclear(o.mods[h])) {
+            kind = Records.ShotKind.NUCLEAR;
+        } else if (o.type[h] == Obj.CANNON_SHOT) {
             kind = Records.ShotKind.CANNON_SHOT;
         } else if ((o.mods[h] & Obj.MOD_CLUSTER) != 0) {
             kind = Records.ShotKind.CLUSTER;
