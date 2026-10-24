@@ -60,6 +60,16 @@ class NoQuitTest {
                 Server.quitReason(false, 0, false, 5 * MIN + 1), "C's no-show message after 5 minutes"));
     }
 
+    @Test
+    @DisplayName("a lobby-hosted game says the lobby stops the map instead of pointing at -noQuit")
+    void hostedQuitMessage() {
+        assertAll(
+            () -> assertEquals("No human players left; the lobby stops this map.",
+                Server.hostedQuitMessage(Server.quitReason(false, 0, true, 0)), "last human left"),
+            () -> assertEquals(Server.quitReason(false, 0, false, 5 * MIN + 1),
+                Server.hostedQuitMessage(Server.quitReason(false, 0, false, 5 * MIN + 1)), "no-show message unchanged"));
+    }
+
     /** Join a real game on loopback, play until snapshots flow, leave; return the server log. */
     private static Server playAndLeave(InetAddress lo, int port, List<String> log, String... extra) throws Exception {
         Server.Settings s = LoopbackIntegrationTest.settings(new LoopbackIntegrationTest.MutableInterfaces(lo), log);

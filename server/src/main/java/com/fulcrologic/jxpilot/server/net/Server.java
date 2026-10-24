@@ -243,6 +243,17 @@ public final class Server implements AutoCloseable {
         return null;
     }
 
+    /**
+     * The quit message of a game a lobby hosts.
+     * <p>
+     * BEHAVIOR: the last human leaving says the lobby stops the map (noQuit does not apply inside a lobby).
+     * BEHAVIOR: any other reason (C's no-show message) is unchanged.
+     */
+    static String hostedQuitMessage(String quit) {
+        return quit.startsWith("No human players left")
+            ? "No human players left; the lobby stops this map." : quit;
+    }
+
     private void runLoop() {
         Throwable failure = null;
         TickScheduler sched = new TickScheduler(hz, TickScheduler.catchUpTicks(hz), s.clock.getAsLong());
@@ -267,7 +278,7 @@ public final class Server implements AutoCloseable {
                 String quit = quitReason(noQuit, net.connections(), net.humanEntered(),
                     s.clock.getAsLong() - startNanos);
                 if (quit != null) {
-                    s.log.log(quit);
+                    s.log.log(udp == null ? hostedQuitMessage(quit) : quit);
                     running = false;
                 }
             }
