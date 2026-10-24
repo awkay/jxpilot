@@ -920,12 +920,21 @@ public final class ClientWorld {
         particles.step(renderTick, outSelf ? drawnTick : renderTick, frameFraction, worldW, worldH, wrap);
     }
 
+    /**
+     * The ship id the SELF record of {@code f} stands for (drawn from SELF, so not from the ship list), else the
+     * player id. While watching another player's ship that is the watched player, so our own ship (usually
+     * paused) stays in the ship list and is drawn, as in C.
+     */
+    private int selfShipId(SnapshotFrame f) {
+        return f.hasSelf ? f.selfId : players.selfId();
+    }
+
     private void interpolateShips(SnapshotFrame a, SnapshotFrame b) {
-        int selfId = players.selfId();
         if (b == null) {
-            extrapolateShips(a, selfId, false);
+            extrapolateShips(a, selfShipId(a), false);
             return;
         }
+        int selfId = selfShipId(b);
         if (a != null) {
             shipIndex.clear();
             for (int j = 0; j < a.ships; j++) {
@@ -960,7 +969,7 @@ public final class ClientWorld {
                 (float) XMath.normalizeAngle(h), t < 0.5 ? a.shipFlags[j] : b.shipFlags[i]);
         }
         if (a != null) {
-            extrapolateShips(a, selfId, true);
+            extrapolateShips(a, selfShipId(a), true);
         }
     }
 

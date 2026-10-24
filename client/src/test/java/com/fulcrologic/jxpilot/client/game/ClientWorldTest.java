@@ -201,6 +201,32 @@ class ClientWorldTest {
         }
 
         @Test
+        @DisplayName("watching another player: our own (paused) ship is in the ship list; the watched one (SELF) is not")
+        void ownShipListedWhileWatching() {
+            WorldFixture f = new WorldFixture(true);
+            f.world.setInterpolationDelayTicks(0);
+            f.players.setSelfId(7);
+            f.begin(100).self(9, 0, 100, 100, 0, 0, 0).ship(7, ShipFlags.PAUSED, 300, 100, 0, 5, 0)
+                .ship(9, 0, 100, 100, 0, 0, 0).ingestAtTick(100);
+            f.begin(101).self(9, 0, 100, 100, 0, 0, 0).ship(7, ShipFlags.PAUSED, 300, 100, 0, 4, 0).ingestAtTick(101);
+            f.world.update(at(100.5));
+            int n = f.world.shipCount();
+            int own = n > 0 && f.world.shipId(0) == 7 ? 0 : -1;
+            WorldFixture plain = new WorldFixture(true);
+            plain.world.setInterpolationDelayTicks(0);
+            plain.players.setSelfId(7);
+            plain.begin(100).self(7, 0, 100, 100, 0, 0, 0).ship(8, 0, 300, 100, 0, 0, 0).ingestAtTick(100);
+            plain.begin(101).self(7, 0, 100, 100, 0, 0, 0).ship(8, 0, 300, 100, 0, 0, 0).ingestAtTick(101);
+            plain.world.update(at(100.5));
+            assertAll(
+                () -> assertEquals(1, n, "one ship drawn from the list: ours (the watched id 9 is SELF)"),
+                () -> assertEquals(0, own, "it is our own id 7, paused, at its place"),
+                () -> assertEquals(300.0, f.world.shipX(0), CLOCK_EPS, "where it was sent"),
+                () -> assertEquals(1, plain.world.shipCount(), "not watching: the ships are the others"),
+                () -> assertEquals(8, plain.world.shipId(0), "not watching: our own id never appears in the list"));
+        }
+
+        @Test
         @DisplayName("a new shot is seeded from the nearest ship's velocity, but a paused ship (vx = count) is still")
         void seedIgnoresPauseCount() {
             WorldFixture f = new WorldFixture(true);
