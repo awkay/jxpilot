@@ -130,12 +130,18 @@ class CommandsTest {
             int ann = enter(f.h, "Ann", 0);
             int res = f.h.join("Res", 0, "");
             String longArg = "x".repeat(300);
-            List<String> got = f.say(ann, "/help " + longArg);
+            long seq = f.w.events.seq();
+            f.h.commands.handle(f.p(ann), "help " + longArg);
+            List<String> got = events(f.w, seq);
+            List<String> chat = f.say(ann, "/help " + longArg);
+            String prefix = "MESSAGE " + SERVER + " -1 " + ann + " ";
             assertAll(
                 () -> assertEquals(List.of(), f.say(res, "/version"), "a reserved player's command is ignored"),
                 () -> assertEquals(1, got.size(), "one reply"),
-                () -> assertEquals(("MESSAGE " + SERVER + " -1 " + ann + " ").length() + 255, got.get(0).length(),
-                    "cut to 255 characters (C strlcat into msg[MSG_LEN])"));
+                () -> assertEquals(prefix.length() + 255, got.get(0).length(),
+                    "cut to 255 characters (C strlcat into msg[MSG_LEN])"),
+                () -> assertEquals(List.of(reply(ann, "No help for nonexistent command '" + "x".repeat(79 - 6) + "'.")),
+                    chat, "a CHAT line is cut to 79 characters before the command sees it (C Receive_talk)"));
         }
     }
 
@@ -496,8 +502,9 @@ class CommandsTest {
             f.h.tick(1);
             HostFx.Wire wire = new HostFx.Wire();
             assertAll(
-                () -> assertEquals(List.of(all("Ann has swapped to team 1."), "TEAM " + ann + " 1 0",
-                    "BASE_OWNER " + a.homeBase + " " + ann + " 0"), got, "notice, team, base (no reply)"),
+                () -> assertEquals(List.of(all("Ann has swapped to team 1."), "BASE_OWNER " + a.homeBase + " " + ann + " 0",
+                    "TEAM " + ann + " 1 0", "BASE_OWNER " + a.homeBase + " " + ann + " 0"), got,
+                    "notice, the new base (Pick_startpos), then team and base again (Send_info_about_player); no reply"),
                 () -> assertEquals(1, a.team, "on team 1"),
                 () -> assertEquals(0, f.w.teamMembers[2], "team 2 lost a member"),
                 () -> assertEquals(1, f.w.teamMembers[1], "team 1 gained one"),

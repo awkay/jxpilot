@@ -18,5 +18,7 @@ jobs:
           cache: maven
       # Runs the license-header check (validate phase) and all unit tests.
       # The opt-in GL smoke test needs a display and stays skipped here.
+      # -Prelease also builds the runnable jars and runs ReleaseJarTest against them, so a change that
+      # breaks the shipped jars fails on every push, not first at a release tag.
       - name: Build and test
-        run: mvn -B -ntp install
+        run: mvn -B -ntp -Prelease install

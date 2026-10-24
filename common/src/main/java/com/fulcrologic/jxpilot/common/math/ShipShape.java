@@ -760,12 +760,15 @@ public final class ShipShape {
     }
 
     /**
-     * BEHAVIOR: true if (x,y) is off the grid or marked outside the hull.
+     * BEHAVIOR: true if (x,y) is marked outside the hull.
+     * BEHAVIOR: a coordinate of exactly 16 (the other within [-15, 16]) is inside: C's grid is
+     * {@code pt[32][32]} indexed +15 and never marks row or column 31 (shipshape.c:176).
+     * BEHAVIOR: any coordinate below -15 or above 16 is outside (C reads outside its grid there: undefined).
      */
     static boolean outside(byte[][] g, int x, int y) {
-        if (x < -15 || x > 15 || y < -15 || y > 15) {
+        if (x < -15 || x > 16 || y < -15 || y > 16) {
             return true;
         }
-        return g[x + 15][y + 15] == 2;
+        return x <= 15 && y <= 15 && g[x + 15][y + 15] == 2;
     }
 }
