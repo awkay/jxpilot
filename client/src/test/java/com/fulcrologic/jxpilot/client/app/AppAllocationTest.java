@@ -211,23 +211,19 @@ class AppAllocationTest {
                 cf.key(GLFW_KEY_A, GLFW_RELEASE, 0, t[0]);
                 cf.key(GLFW_KEY_ENTER, GLFW_RELEASE, 0, t[0]);
             }
+            ui(cf, f);
             cf.step(t[0], 1200, 800, 1, m, 256, 200);
             ring.frame++;
         };
-        // R7: warm up until the JIT is done (no compile time added over 1000 frames), at most 20000 frames
-        java.lang.management.CompilationMXBean jit = ManagementFactory.getCompilationMXBean();
-        long lastCompile = -1;
+        // R7: warm up for 20000 frames
         int warm = 0;
+        // The whole warm-up always runs: stopping as soon as the JIT settles left stream events (joins, leaves,
+        // first lock changes) unplayed, and their call sites then linked (allocating) inside the measured window.
         while (warm < 20_000) {
             for (int i = 0; i < 1000; i++) {
                 frame.run();
             }
             warm += 1000;
-            long ct = jit.isCompilationTimeMonitoringSupported() ? jit.getTotalCompilationTime() : 0;
-            if (ct == lastCompile && warm >= 4000) {
-                break;
-            }
-            lastCompile = ct;
         }
         long reliableBefore = game.reliableCount();
         long snapshotsBefore = conn.snapshotsReceived();
@@ -284,5 +280,44 @@ class AppAllocationTest {
         }
         into.put(a);
         return a.length;
+    }
+
+    /**
+     * client-ui: the C windows every 400 frames: MENU held and moved onto CONFIG, released (CONFIG opens), NEXT and
+     * PREV, ABOUT opened, paged (NEXT) and closed (CLOSE), CONFIG closed, a selection dragged over the messages and
+     * cleared.
+     */
+    static void ui(ClientFrame cf, int f) {
+        int top = cf.ui().bar().top();
+        int bh = cf.ui().bar().buttonHeight();
+        int vx = GameApp.PANEL_W + GameApp.PANEL_GAP;
+        int entry = top + 1 + bh + (bh + 1) + 5;
+        int next = 800 - 6 - 4;
+        int about = (1200 - (com.fulcrologic.jxpilot.client.game.ui.AboutWindow.WIDTH + 4)) / 2 + 2;
+        int aboutButtons = (800 - (com.fulcrologic.jxpilot.client.game.ui.AboutWindow.HEIGHT + 4)) / 2 + 2 + 665 + 5;
+        switch (f % 400) {
+            case 0 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 200, top + 5, vx);
+            case 5 -> cf.mouseMove(200, entry, vx);
+            case 10 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 200, entry, vx);
+            case 20 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 128, next, vx);
+            case 21 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 128, next, vx);
+            case 25 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 230, next, vx);
+            case 26 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 230, next, vx);
+            case 30 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 128, top + 5, vx);
+            case 31 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 128, top + 5, vx);
+            case 40 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, vx + about + 282 + 5, aboutButtons, vx);
+            case 41 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, vx + about + 282 + 5, aboutButtons, vx);
+            case 60 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, vx + about + 10 + 5, aboutButtons, vx);
+            case 61 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, vx + about + 10 + 5, aboutButtons, vx);
+            case 100 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 10, next, vx);
+            case 101 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 10, next, vx);
+            case 150 -> cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 12, 800 - 20);
+            case 200 -> cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 600, 400);
+            default -> {
+                if (f % 400 > 150 && f % 400 < 200) {
+                    cf.viewMouseMove(12 + (f % 400 - 150), 800 - 20);
+                }
+            }
+        }
     }
 }
