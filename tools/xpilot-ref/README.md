@@ -38,6 +38,7 @@ untested.
 | `patches/0003-server-wreckage-trace.patch` | Opt-in wreckage trace (`XPILOT_TRACE_WRECK`). Inert unless set. |
 | `patches/0004-server-object-trace.patch` | Opt-in object, laser pulse, ECM and player item trace. Inert unless `XPILOT_TRACE_OBJS` is set. |
 | `patches/0005-server-mode-trace.patch` | Opt-in trace of balls, asteroids, wreckage, race progress, treasures and targets. Inert unless `XPILOT_TRACE_MODES` is set. |
+| `patches/0006-server-robot-trace.patch` | Opt-in default-robot decision trace (`XPILOT_TRACE_ROBOT`): mode, long-term mode, war lock, whether the play returned through the evade check. Inert unless set. |
 | `build.sh` | Builds image `xpilot-ref:4.5.5`. |
 | `server.sh` | Runs a headless server and prints its log. |
 | `screenshot.sh` | Runs server and client on Xvfb and saves one PNG. |
@@ -310,6 +311,27 @@ GPL-2.0-or-later, and why.
    0004: adds `Trace_modes()`, called right after `Trace_objects()`, which prints the
    XPMOBJ/XPPL2/XPTRS/XPTGT/XPTEAM lines when `XPILOT_TRACE_MODES` is set
    (`trace.sh --modes`). Inert otherwise.
+6. `0006-server-robot-trace.patch`, in `src/server/robotdef.c` only: the default
+   robot's `play` hook becomes `Robot_default_play_trace()`, which calls
+   `Robot_default_play()` and then, when `XPILOT_TRACE_ROBOT` is set, prints one
+   line per robot per play:
+
+   ```
+   XPROBOT loop frame id mode longterm lock evaded turnacc power thrusting x y name
+   ```
+
+   `mode` is `robot_mode` (RM_* bits: 4 idle, 8/16 evade left/right, 32 climb,
+   64 harvest, 128 attack, 256 take-off, 512 cannon kill, 1024 refuel, 2048
+   navigate), `longterm` is `longterm_mode`, `lock` is `robot_lock` (bit 0 = war),
+   and `evaded` is 1 when the play returned through `Check_robot_evade()`. It draws
+   no random numbers, so the XPTRACE lines are unchanged. Used for the stuck-robot
+   comparison in `server/src/test/resources/robots/README.md`:
+
+   ```sh
+   docker run --rm --network none -e XPILOT_TRACE=1 -e XPILOT_TRACE_ROBOT=1 -e XPILOT_SEED=2 \
+       xpilot-ref:4.5.5 timeout -s INT -k 5 600 xpilots -map default -robots 4 -minRobots 4 \
+       -noQuit +reportToMetaServer -rawMode -defaults /usr/local/lib/xpilot/defaults 2> c4s2.trace
+   ```
 
 ## Known quirks
 

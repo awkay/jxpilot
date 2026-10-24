@@ -36,6 +36,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.stream.IntStream;
@@ -47,20 +48,25 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Statistical regression against the C reference server: Java robots on {@code default.xp} behave like the
  * original robots in aggregate (frame-by-frame comparison is impossible: the RNGs differ).
  * <p>
- * Both sides read XPilot's lib/defaults (gravity -0.25 on default.xp): the C reference
+ * Both sides read XPilot's lib/defaults (gravity -0.25 on default.xp, random items): the C reference
  * (src/test/resources/robots/README.md) runs with {@code -defaults}, Java applies the bundled copy as the
- * server does. Java pools {@link #SEEDS} seeds x {@link #MINUTES} minutes (12 FPS, one tick per frame, seeds run
- * in parallel) per robot count; the C numbers pool 4-robot runs of about 230 robot-minutes and 8-robot runs of
- * about 380. Tolerances come from the spread between single C runs of the same setup plus Poisson noise of the
- * counts: rates of common events within 40%, rare wall deaths within a factor 2, means within 20-25%.
+ * server does. Each setup is compared twice: as is (items on both sides), and with {@code -itemProbMult 0}
+ * (no items), which isolates the robot AI and the physics from the item world. Java pools {@link #SEEDS} seeds
+ * x {@link #MINUTES} minutes (12 FPS, one tick per frame, seeds run in parallel); C pools 3 to 6 runs of 10 or
+ * 20 minutes.
  * <p>
- * Thrust is compared on moving frames only: stuck runs (a robot pinned in place for 10 s or more, see
- * {@link RobotStats}) are rare and long, so a single one swings a run's overall thrust share. Their share of
- * the alive frames is printed for both sides and bounded loosely.
+ * Every compared statistic ({@link RobotStats#COMPARED}) must agree within {@link #Z} standard errors of the
+ * difference: |Java - C| &lt;= Z * sqrt(sdJ^2/nJ + sdC^2/nC), with sd the run-to-run standard deviation of
+ * single runs ({@link RobotStats#spread}) and n the number of runs. C has few runs, so its sd is taken as at
+ * least Java's (the same process should not vary less). Stuck runs (a robot pinned in place for 10 s or more)
+ * are rare and long, which is what the spread of stuckShare and stuckThrustFraction reflects; both are bounded
+ * from above and below.
  */
 class RobotStatsRegressionTest {
     static final int SEEDS = 16;
     static final int MINUTES = 10;
+    /** Allowed difference in standard errors. */
+    static final double Z = 3.0;
 
     private static Properties c(String file) throws Exception {
         Properties p = new Properties();
@@ -71,12 +77,13 @@ class RobotStatsRegressionTest {
     }
 
     /** One seed of Java robots on default.xp with lib/defaults (as {@code Server.readOptions} sets it up). */
-    private static RobotStats run(int robots, int seed) {
+    private static RobotStats run(int robots, int seed, String extra) {
         try {
             Options o = new Options();
             DefaultsFile.applyBundled(o);
             ConfigParser.parseFile(Path.of("..", "maps", "default.xp"), OptionOrigin.MAP, o);
-            ConfigParser.parse("maxRobots: " + robots + "\nminRobots: " + robots + "\n", "test", OptionOrigin.COMMAND, o);
+            ConfigParser.parse("maxRobots: " + robots + "\nminRobots: " + robots + "\n" + extra, "test",
+                OptionOrigin.COMMAND, o);
             World w = new World(o, seed * 7919);
             Simulation s = new Simulation(w);
             s.robots.setEnabled(true);
@@ -92,61 +99,69 @@ class RobotStatsRegressionTest {
         }
     }
 
-    /** Pooled statistics of Java robots on default.xp. */
-    private static Properties java(int robots) {
-        List<RobotStats> runs = IntStream.rangeClosed(1, SEEDS).parallel().mapToObj(seed -> run(robots, seed)).toList();
+    /** Pooled statistics of Java robots on default.xp, with the {@link RobotStats#spread} of the seeds. */
+    static Properties java(int robots, String extra) {
+        List<RobotStats> runs = IntStream.rangeClosed(1, SEEDS).parallel().mapToObj(seed -> run(robots, seed, extra))
+            .toList();
+        List<Properties> single = new ArrayList<>();
+        for (RobotStats r : runs) {
+            single.add(r.summary());
+        }
         RobotStats pooled = runs.get(0);
         for (int i = 1; i < runs.size(); i++) {
             pooled.add(runs.get(i));
         }
-        return pooled.summary();
+        Properties p = pooled.summary();
+        p.putAll(RobotStats.spread(single));
+        return p;
     }
 
     private static double v(Properties p, String k) {
         return Double.parseDouble(p.getProperty(k));
     }
 
-    private static void within(Properties j, Properties c, String key, double factor) {
-        double jv = v(j, key);
-        double cv = v(c, key);
-        assertTrue(jv <= cv * factor && jv >= cv / factor,
-            key + ": Java " + jv + " is within a factor " + factor + " of C " + cv);
+    /** BEHAVIOR: the allowed difference of {@code key}: Z * sqrt(sdJ^2/nJ + max(sdC, sdJ)^2/nC). */
+    static double tolerance(Properties j, Properties c, String key) {
+        double sdJ = v(j, key + ".sd");
+        double sdC = Math.max(v(c, key + ".sd"), sdJ);
+        return Z * Math.sqrt(sdJ * sdJ / v(j, key + ".runs") + sdC * sdC / v(c, key + ".runs"));
     }
 
-    private static void close(Properties j, Properties c, String key, double rel) {
+    private static void matches(Properties j, Properties c, String key) {
         double jv = v(j, key);
         double cv = v(c, key);
-        assertTrue(Math.abs(jv - cv) <= rel * cv, key + ": Java " + jv + " is within " + rel * 100 + "% of C " + cv);
+        double tol = tolerance(j, c, key);
+        assertTrue(Math.abs(jv - cv) <= tol,
+            key + ": Java " + jv + " is within " + String.format(java.util.Locale.ROOT, "%.4f", tol) + " of C " + cv);
     }
 
-    private static void compare(Properties j, Properties c) {
+    static void compare(Properties j, Properties c) {
         System.out.println("[RobotStatsRegressionTest] Java " + new java.util.TreeMap<>(j));
         System.out.println("[RobotStatsRegressionTest] C    " + new java.util.TreeMap<>(c));
-        assertAll(
-            () -> close(j, c, "deathsPerRobotMinute", 0.40),
-            () -> close(j, c, "otherDeathsPerRobotMinute", 0.40),
-            () -> within(j, c, "wallDeathsPerRobotMinute", 2.0),
-            () -> close(j, c, "meanSpeed", 0.20),
-            () -> close(j, c, "speedP50", 0.25),
-            () -> close(j, c, "speedP90", 0.25),
-            () -> close(j, c, "movingThrustFraction", 0.25),
-            () -> assertTrue(v(j, "stuckShare") <= Math.max(0.05, 3 * v(c, "stuckShare")),
-                "stuckShare: Java " + v(j, "stuckShare") + " is at most max(5%, 3x C " + v(c, "stuckShare") + ")"),
-            () -> within(j, c, "refuelFraction", 2.0),
-            () -> within(j, c, "shieldOrShotFraction", 1.6),
-            () -> within(j, c, "hitFraction", 1.6),
-            () -> close(j, c, "meanFuel", 0.25));
+        assertAll(RobotStats.COMPARED.stream().map(k -> () -> matches(j, c, k)));
     }
 
     @Test
-    @DisplayName("4 robots on default.xp: deaths, wall deaths, speed, thrust, refuelling, shields and fuel match C")
+    @DisplayName("4 robots on default.xp: deaths, speed, thrust (moving and stuck), stuck share, refuelling, shields and fuel match C")
     void fourRobots() throws Exception {
-        compare(java(4), c("c-default-4robots.properties"));
+        compare(java(4, ""), c("c-default-4robots.properties"));
     }
 
     @Test
     @DisplayName("8 robots on default.xp: the same statistics match C")
     void eightRobots() throws Exception {
-        compare(java(8), c("c-default-8robots.properties"));
+        compare(java(8, ""), c("c-default-8robots.properties"));
+    }
+
+    @Test
+    @DisplayName("4 robots without items (itemProbMult 0): the same statistics match C")
+    void fourRobotsNoItems() throws Exception {
+        compare(java(4, "itemProbMult: 0\n"), c("c-default-4robots-noitems.properties"));
+    }
+
+    @Test
+    @DisplayName("8 robots without items (itemProbMult 0): the same statistics match C")
+    void eightRobotsNoItems() throws Exception {
+        compare(java(8, "itemProbMult: 0\n"), c("c-default-8robots-noitems.properties"));
     }
 }

@@ -1422,6 +1422,10 @@ public final class DefaultRobot {
      * or no shield then hyperjump if possible (and stop looking).
      * BEHAVIOR: smart missiles and mines near trigger ECM, heat seekers stop thrust (and detach a tank between
      * fuel levels 1 and 3), asteroids in front at 2-8 blocks make it shoot.
+     * BEHAVIOR: C's index mix-ups are kept (robotdef.c:2089, 2099, 2163-2170): mine_i is the position in the cell
+     * list but is read as Obj[mine_i], so {@link #mineI} is the object at that position of {@link Objects#active};
+     * item_i is converted by owner id, so {@link #itemI} is the first object in active order with the item's
+     * owner (for unowned items, the oldest unowned object), or -1 if none.
      * Results go to {@link #itemI}, {@link #itemDist}, {@link #itemImp}, {@link #mineI}, {@link #mineDist}.
      */
     void checkObjects(Player pl, RobotData d) {
@@ -1471,7 +1475,7 @@ public final class DefaultRobot {
                 if (Math.abs(dx) < mineDist && Math.abs(dy) < mineDist) {
                     int distance = (int) Math.hypot(dx, dy);
                     if (distance < mineDist) {
-                        mineI = h;
+                        mineI = objAt(j);
                         mineDist = distance;
                     }
                 }
@@ -1480,7 +1484,7 @@ public final class DefaultRobot {
                 if (Math.abs(ax) < mineDist && Math.abs(ay) < mineDist) {
                     int distance = (int) Math.hypot(ax, ay);
                     if (distance < mineDist) {
-                        mineI = h;
+                        mineI = objAt(j);
                         mineDist = distance;
                     }
                 }
@@ -1527,6 +1531,27 @@ public final class DefaultRobot {
                 }
             }
         }
+        if (itemI >= 0) {
+            itemI = firstOwnedBy(o.owner[itemI]);
+        }
+    }
+
+    /** C {@code Obj[j]} for a cell-list position j: the j-th object in allocation order, or -1 past the end. */
+    private int objAt(int j) {
+        Objects o = w.objects;
+        return j < o.count() ? o.active[j] : -1;
+    }
+
+    /** C's item_i conversion loop: the first object in {@code Obj[]} order whose owner id is {@code owner}. */
+    private int firstOwnedBy(int owner) {
+        Objects o = w.objects;
+        int n = o.count();
+        for (int k = 0; k < n; k++) {
+            if (o.owner[o.active[k]] == owner) {
+                return o.active[k];
+            }
+        }
+        return -1;
     }
 
     /**

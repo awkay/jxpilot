@@ -34,7 +34,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
@@ -286,6 +288,40 @@ final class RobotStats {
         return p;
     }
 
+    /** The keys of {@link #summary} that are compared between C and Java. */
+    static final List<String> COMPARED = List.of("deathsPerRobotMinute", "otherDeathsPerRobotMinute",
+        "wallDeathsPerRobotMinute", "meanSpeed", "speedP50", "speedP90", "movingThrustFraction", "thrustFraction",
+        "stuckShare", "stuckThrustFraction", "refuelFraction", "shieldOrShotFraction", "hitFraction", "meanFuel");
+
+    /**
+     * The run-to-run spread of single-run summaries: for every {@link #COMPARED} key, {@code KEY.runs} (the
+     * number of runs) and {@code KEY.sd} (their sample standard deviation, 0 for fewer than 2 runs).
+     * <p>
+     * BEHAVIOR: stuckThrustFraction only counts runs that had stuck frames (it is undefined for the others).
+     */
+    static Properties spread(List<Properties> runs) {
+        Properties p = new Properties();
+        for (String k : COMPARED) {
+            List<Double> xs = new ArrayList<>();
+            for (Properties r : runs) {
+                if (!k.equals("stuckThrustFraction") || Double.parseDouble(r.getProperty("stuckShare")) > 0) {
+                    xs.add(Double.parseDouble(r.getProperty(k)));
+                }
+            }
+            double mean = 0;
+            for (double x : xs) {
+                mean += x / xs.size();
+            }
+            double ss = 0;
+            for (double x : xs) {
+                ss += (x - mean) * (x - mean);
+            }
+            p.setProperty(k + ".runs", Integer.toString(xs.size()));
+            p.setProperty(k + ".sd", fmt(xs.size() < 2 ? 0 : Math.sqrt(ss / (xs.size() - 1))));
+        }
+        return p;
+    }
+
     static String fmt(double v) {
         return String.format(Locale.ROOT, "%.4f", v);
     }
@@ -317,13 +353,23 @@ final class RobotStats {
         }
     }
 
-    /** {@code RobotStats MAP.xp FPS TRACE...}: print the summary of C traces (to commit as a resource). */
+    /**
+     * {@code RobotStats MAP.xp FPS TRACE...}: print the pooled summary of C traces plus the {@link #spread} of
+     * the single traces (to commit as a resource).
+     */
     public static void main(String[] args) throws IOException {
         WorldMap m = WorldMap.load(Path.of(args[0]));
-        RobotStats s = new RobotStats(m, Integer.parseInt(args[1]));
+        int fps = Integer.parseInt(args[1]);
+        RobotStats pooled = new RobotStats(m, fps);
+        List<Properties> runs = new ArrayList<>();
         for (int i = 2; i < args.length; i++) {
-            s.readTrace(Path.of(args[i]));
+            RobotStats one = new RobotStats(m, fps);
+            one.readTrace(Path.of(args[i]));
+            runs.add(one.summary());
+            pooled.add(one);
         }
-        s.summary().store(System.out, "C XPilot 4.5.5 robot statistics");
+        Properties out = pooled.summary();
+        out.putAll(spread(runs));
+        out.store(System.out, "C XPilot 4.5.5 robot statistics");
     }
 }

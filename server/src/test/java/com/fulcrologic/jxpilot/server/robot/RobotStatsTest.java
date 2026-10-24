@@ -28,12 +28,13 @@ import com.fulcrologic.jxpilot.server.TestWorlds;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/** The stuck-run split of {@link RobotStats} (the regression test's thrust comparison relies on it). */
+/** The stuck-run split and run spread of {@link RobotStats} (the regression test's comparison relies on them). */
 class RobotStatsTest {
     private static final int ALIVE = RobotStats.PLAYING;
     private static final int THRUST = RobotStats.PLAYING | RobotStats.THRUSTING;
@@ -92,5 +93,31 @@ class RobotStatsTest {
             () -> assertEquals(130, s.stuckThrustFrames, "with their thrust"),
             () -> assertEquals(400, s.movingFrames, "four broken runs of 100"),
             () -> assertEquals(530, s.aliveFrames, "pooled alive frames"));
+    }
+
+    private static Properties run(double stuckShare, double stuckThrust, double speed) {
+        Properties p = new Properties();
+        for (String k : RobotStats.COMPARED) {
+            p.setProperty(k, "0");
+        }
+        p.setProperty("stuckShare", Double.toString(stuckShare));
+        p.setProperty("stuckThrustFraction", Double.toString(stuckThrust));
+        p.setProperty("meanSpeed", Double.toString(speed));
+        return p;
+    }
+
+    @Test
+    @DisplayName("spread: the sample standard deviation and run count of every compared key")
+    void spread() {
+        Properties sp = RobotStats.spread(List.of(run(0.1, 0.9, 6), run(0, 0, 8), run(0.2, 0.5, 10)));
+        Properties one = RobotStats.spread(List.of(run(0.1, 0.9, 6)));
+        assertAll(
+            () -> assertEquals("3", sp.getProperty("meanSpeed.runs"), "three runs"),
+            () -> assertEquals("2.0000", sp.getProperty("meanSpeed.sd"), "sd of 6, 8, 10 (n - 1)"),
+            () -> assertEquals("2", sp.getProperty("stuckThrustFraction.runs"), "only runs with stuck frames"),
+            () -> assertEquals(RobotStats.fmt(Math.sqrt(0.08)), sp.getProperty("stuckThrustFraction.sd"),
+                "sd of 0.9 and 0.5"),
+            () -> assertEquals("0.0000", sp.getProperty("deathsPerRobotMinute.sd"), "equal runs"),
+            () -> assertEquals("0.0000", one.getProperty("meanSpeed.sd"), "a single run has no spread"));
     }
 }
