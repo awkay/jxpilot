@@ -10,7 +10,9 @@ client(s) --> lagproxy (listen port) --[uplink impairments]--> server
 client(s) <-- lagproxy <--[downlink impairments]-------------- server
 ```
 
-Every client gets its own upstream socket, so the server sees one peer per client. They all come
+Every client gets its own upstream socket, so the server sees one peer per client, and its own emulated
+path both ways: its own queue, bandwidth cap and random stream, as each friend has their own internet
+path. One client's queue never holds back another's. They all come
 from the proxy's address, though, and the server allows only 2 clients per address by default.
 **Run the server with `-maxClientsPerIP 0`** (no limit) when more than two players go through one
 proxy.
@@ -50,14 +52,20 @@ ones. Probabilities are fractions (`0.02`) or percentages (`2%`).
 | `--bursty P,LEN` | Gilbert bursty loss: long-run share P, in bursts of mean length LEN packets. |
 | `--reorder P,MS` | A share P of packets is held back by MS, so later ones overtake it. |
 | `--dup P` | A share P of packets is delivered twice. |
-| `--rate BYTES[,QUEUE_MS]` | Bottleneck rate in bytes per second (28 bytes of IP+UDP header counted per packet); with QUEUE_MS, packets that would queue longer are dropped. |
+| `--rate BYTES[,QUEUE_MS]` | Bottleneck rate in bytes per second (28 bytes of IP+UDP header counted per packet), per client; packets that would queue longer than QUEUE_MS (default 500) are dropped. |
 | `--no-fifo` | Let jitter reorder packets. By default a late packet holds back the ones behind it, as on a real path. |
 | `--seed N` | Seed of both directions' random streams (default 1). |
 | `--stats S` | Print counters every S seconds (default 10, 0 = never). |
 | `--idle S` | Forget a client silent for S seconds (default 60). |
+| `--spin-ms MS` | Poll instead of sleeping for the last MS before each delivery (default 2.5; 0 = always sleep). |
 
-Delays are timed with 1 ms resolution (the proxy sleeps in `select`), so expect up to about 1 ms of
-extra delay per direction, plus whatever the OS scheduler adds.
+Timing: `select` wakes on whole milliseconds and the OS adds timer slack (on macOS about a millisecond),
+so the proxy sleeps until `--spin-ms` before each delivery and then polls. Measured on a Mac through a
+loopback echo server with `--delay 25` (a round trip, so two deliveries, plus the echo and the client),
+after warm-up: +0.4 ms at the median and +0.5 to +5 ms at p99 (two runs) over the 50 ms, with occasional
+outliers of several ms when the OS deschedules a thread; with `--spin-ms 0` +2.4 ms at the median. The polling keeps
+part of a core busy while packets are in flight; use `--spin-ms 0` when ±2 ms does not matter.
+Up to 64 clients at once.
 
 ## Alternatives
 

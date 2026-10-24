@@ -38,12 +38,18 @@ import java.net.InetSocketAddress;
  * @param seed          seeds both directions' random streams
  * @param statsSeconds  how often counters are printed (0: never)
  * @param idleSeconds   a client silent this long loses its upstream socket
+ * @param spinMs        the proxy polls instead of sleeping this long before each delivery (0: always sleep)
  */
 public record ProxyArgs(InetSocketAddress listen, InetSocketAddress server, LinkProfile up, LinkProfile down,
-                        long seed, int statsSeconds, int idleSeconds) {
+                        long seed, int statsSeconds, int idleSeconds, double spinMs) {
+    /** Default --spin-ms: covers select's millisecond rounding and macOS timer slack. */
+    public static final double DEFAULT_SPIN_MS = 2.5;
+    /** Queue limit of a --rate given without one: a cap must not silently fill every slot. */
+    public static final double DEFAULT_QUEUE_MS = 500;
 
     public static final String USAGE = String.join("\n",
-        "usage: LagProxy --listen [HOST:]PORT --server HOST:PORT [impairments] [--seed N] [--stats S] [--idle S]",
+        "usage: LagProxy --listen [HOST:]PORT --server HOST:PORT [impairments] [--seed N] [--stats S] [--idle S]"
+            + " [--spin-ms MS]",
         "impairments (prefix up- or down- for one direction, e.g. --down-loss 2%):",
         "  --rtt MS                 one-way delay MS/2 each way (no prefix)",
         "  --delay MS               one-way delay",
@@ -53,14 +59,15 @@ public record ProxyArgs(InetSocketAddress listen, InetSocketAddress server, Link
         "  --bursty P,LEN           Gilbert loss: long-run share P in bursts of mean LEN packets",
         "  --reorder P,MS           hold a share P of packets back by MS",
         "  --dup P                  duplicate a share P of packets",
-        "  --rate BYTES[,QUEUE_MS]  bottleneck in bytes/s, drop-tail after QUEUE_MS of queue",
+        "  --rate BYTES[,QUEUE_MS]  bottleneck in bytes/s, drop-tail after QUEUE_MS of queue (default 500)",
         "  --no-fifo                let jitter reorder packets");
 
     /**
      * Parse {@code args}.
      * <p>
      * BEHAVIOR: --listen and --server are required; defaults are a perfect link, seed 1, stats every 10 s, idle
-     * timeout 60 s.
+     * timeout 60 s, spin {@link #DEFAULT_SPIN_MS} ms.
+     * BEHAVIOR: a direction with a rate but no queue limit gets {@link #DEFAULT_QUEUE_MS}.
      * BEHAVIOR: every impairment flag sets both directions, or one with an {@code up-}/{@code down-} prefix; later
      * flags override earlier ones; --rtt sets each direction's delay to half its value.
      * BEHAVIOR: probabilities are fractions (0.05) or percentages (5%) and must lie in [0, 1].
@@ -75,6 +82,7 @@ public record ProxyArgs(InetSocketAddress listen, InetSocketAddress server, Link
         long seed = 1;
         int stats = 10;
         int idle = 60;
+        double spin = DEFAULT_SPIN_MS;
         for (int i = 0; i < args.length; i++) {
             String flag = args[i];
             if (!flag.startsWith("--")) {
@@ -97,6 +105,7 @@ public record ProxyArgs(InetSocketAddress listen, InetSocketAddress server, Link
                 case "seed" -> seed = longValue(flag, v);
                 case "stats" -> stats = nonNegative(flag, v);
                 case "idle" -> idle = nonNegative(flag, v);
+                case "spin-ms" -> spin = number(flag, v);
                 case "rtt" -> {
                     double ms = number(flag, v);
                     up.delayMs(ms / 2);
@@ -118,7 +127,12 @@ public record ProxyArgs(InetSocketAddress listen, InetSocketAddress server, Link
         if (server == null) {
             throw new IllegalArgumentException("missing --server");
         }
-        return new ProxyArgs(listen, server, up, down, seed, stats, idle);
+        for (LinkProfile p : new LinkProfile[] {up, down}) {
+            if (p.bandwidthBytesPerSecond > 0 && p.queueLimitNanos == 0) {
+                p.queueLimitNanos = Math.round(DEFAULT_QUEUE_MS * 1_000_000);
+            }
+        }
+        return new ProxyArgs(listen, server, up, down, seed, stats, idle, spin);
     }
 
     private static LinkProfile[] targets(String name, LinkProfile up, LinkProfile down) {

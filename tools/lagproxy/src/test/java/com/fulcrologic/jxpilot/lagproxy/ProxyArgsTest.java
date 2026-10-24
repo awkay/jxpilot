@@ -68,7 +68,9 @@ class ProxyArgsTest {
                 () -> assertTrue(a.up().fifo && a.down().fifo, "FIFO both ways"),
                 () -> assertEquals(1, a.seed(), "seed 1"),
                 () -> assertEquals(10, a.statsSeconds(), "stats every 10 s"),
-                () -> assertEquals(60, a.idleSeconds(), "idle 60 s"));
+                () -> assertEquals(60, a.idleSeconds(), "idle 60 s"),
+                () -> assertEquals(2.5, a.spinMs(), "spin 2.5 ms before each delivery"),
+                () -> assertEquals(0, a.up().queueLimitNanos, "no rate: no queue limit"));
         }
 
         @Test
@@ -109,11 +111,12 @@ class ProxyArgsTest {
         @Test
         @DisplayName("seed, stats and idle are read")
         void misc() {
-            ProxyArgs a = parse("--seed", "-42", "--stats", "0", "--idle", "5");
+            ProxyArgs a = parse("--seed", "-42", "--stats", "0", "--idle", "5", "--spin-ms", "0");
             assertAll(
                 () -> assertEquals(-42, a.seed(), "seed"),
                 () -> assertEquals(0, a.statsSeconds(), "stats off"),
-                () -> assertEquals(5, a.idleSeconds(), "idle"));
+                () -> assertEquals(5, a.idleSeconds(), "idle"),
+                () -> assertEquals(0, a.spinMs(), "spin off"));
         }
     }
 
@@ -166,7 +169,7 @@ class ProxyArgsTest {
                 () -> assertEquals(64_000, a.down().bandwidthBytesPerSecond, "down rate"),
                 () -> assertEquals(200 * MS, a.down().queueLimitNanos, "queue limit"),
                 () -> assertEquals(1000, a.up().bandwidthBytesPerSecond, "up rate"),
-                () -> assertEquals(0, a.up().queueLimitNanos, "no queue limit given"),
+                () -> assertEquals(500 * MS, a.up().queueLimitNanos, "a rate without a queue limit gets 500 ms"),
                 () -> assertTrue(a.up().fifo, "up still FIFO"),
                 () -> assertFalse(a.down().fifo, "down not FIFO"));
         }

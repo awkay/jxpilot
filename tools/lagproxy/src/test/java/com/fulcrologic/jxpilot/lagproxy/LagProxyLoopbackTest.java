@@ -168,8 +168,8 @@ class LagProxyLoopbackTest {
             int sessions = p.proxy.sessions();
             assertAll(
                 () -> assertTrue(min >= 100_000_000L, "never faster than the emulated RTT: " + min / 1e6 + " ms"),
-                // tolerance: 1 ms select granularity each way plus scheduling on a busy machine
-                () -> assertTrue(median < 140_000_000L, "about 100 ms: " + median / 1e6 + " ms"),
+                // tolerance: the proxy spins the last 2.5 ms, so only scheduling on a busy machine adds to 100 ms
+                () -> assertTrue(median < 110_000_000L, "about 100 ms: " + median / 1e6 + " ms"),
                 () -> assertEquals(1, sessions, "one client, one upstream socket"));
         }
         try (Echo echo = new Echo(); Running p = new Running(echo.port(), "--loss", "1");
@@ -178,7 +178,7 @@ class LagProxyLoopbackTest {
             int n = await(c, ByteBuffer.allocate(8), 300);
             assertAll(
                 () -> assertEquals(-1, n, "a fully lossy link returns nothing"),
-                () -> assertEquals(1, p.proxy.link().up().lost(), "the uplink lost it"));
+                () -> assertEquals(1, p.proxy.session(0).link.up().lost(), "the uplink lost it"));
         }
     }
 
@@ -202,6 +202,46 @@ class LagProxyLoopbackTest {
                 () -> assertEquals(2, echo.sources.size(), "the server saw two source ports"),
                 () -> assertEquals(2, p.proxy.sessions(), "two sessions"));
         }
+    }
+
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    @DisplayName("each client has its own path: one client's queue behind a rate cap does not hold back another's")
+    void ownPaths() throws Exception {
+        try (Echo echo = new Echo(); Running p = new Running(echo.port(), "--rate", "2000,5000");
+             DatagramChannel a = client(); DatagramChannel b = client()) {
+            a.send(ByteBuffer.wrap(new byte[1]), p.address()); // open a's session first
+            await(a, ByteBuffer.allocate(8), 2000);
+            for (int i = 0; i < 10; i++) {
+                a.send(ByteBuffer.wrap(new byte[172]), p.address()); // 10 x 200 B with headers: 1 s of a's uplink
+            }
+            Thread.sleep(20);
+            long t0 = System.nanoTime();
+            b.send(ByteBuffer.wrap(new byte[] {'b'}), p.address());
+            int n = await(b, ByteBuffer.allocate(8), 3000);
+            long rtt = System.nanoTime() - t0;
+            assertAll(
+                () -> assertEquals(1, n, "b's echo came back"),
+                // b's own path: 29 B at 2000 B/s each way = 29 ms; behind a's queue it would be about 1 s
+                () -> assertTrue(rtt < 300_000_000L, "b did not wait behind a's 1 s queue: " + rtt / 1e6 + " ms"),
+                () -> assertTrue(p.proxy.session(0).link != p.proxy.session(1).link, "two paths"));
+        }
+    }
+
+    @Test
+    @DisplayName("sleep rule: poll within the spin window, sleep until it otherwise (whole ms, at least 1); seeds")
+    void sleepRule() {
+        long ms = 1_000_000L;
+        assertAll(
+            () -> assertEquals(100, LagProxy.sleepMillis(Long.MAX_VALUE, 2_500_000), "nothing in flight: 100 ms"),
+            () -> assertEquals(0, LagProxy.sleepMillis(2_500_000, 2_500_000), "at the spin window's edge: poll"),
+            () -> assertEquals(0, LagProxy.sleepMillis(-5, 2_500_000), "overdue: poll"),
+            () -> assertEquals(1, LagProxy.sleepMillis(2_500_001, 2_500_000), "just outside: at least 1 ms"),
+            () -> assertEquals(7, LagProxy.sleepMillis(10 * ms, 2_500_000), "10 ms away: sleep 7 (rounded down)"),
+            () -> assertEquals(10, LagProxy.sleepMillis(10 * ms, 0), "no spin: sleep the whole wait"),
+            () -> assertEquals(1, LagProxy.sleepMillis(1, 0), "no spin, under 1 ms: 1 ms"),
+            () -> assertEquals(5, LagProxy.sessionSeed(5, 0), "first client: the seed"),
+            () -> assertEquals(5 + 3 * 7919, LagProxy.sessionSeed(5, 3), "fourth client"));
     }
 
     @Test
