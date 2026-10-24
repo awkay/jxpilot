@@ -118,15 +118,16 @@ class KeyConfigTest {
                 () -> assertEquals(ControlKey.PAUSE.mask(), game(c, GLFW_KEY_9), "9 pauses"),
                 () -> assertEquals(ControlKey.LOSE_ITEM.mask(), game(c, GLFW_KEY_Y), "y loses the item"),
                 () -> assertEquals(ControlKey.LOSE_ITEM.mask(), game(c, GLFW_KEY_KP_DECIMAL), "KP_Delete is keypad ."),
-                () -> assertEquals(ControlKey.SELECT_ITEM.mask() | ControlKey.REPROGRAM.mask(),
-                    game(c, GLFW_KEY_GRAVE_ACCENT), "grave selects the item (and reprograms, C's quoteleft)"),
+                () -> assertEquals(ControlKey.SELECT_ITEM.mask(), game(c, GLFW_KEY_GRAVE_ACCENT),
+                    "grave only selects the item (reprogram moved off C's quoteleft)"),
+                () -> assertEquals(ControlKey.REPROGRAM.mask(), game(c, GLFW_KEY_F8), "F8 reprograms"),
+                () -> assertFalse(KeyBindings.has(acts(c, GLFW_KEY_F8), ClientAction.MSG_8), "F8 is no longer talk macro 8"),
                 () -> assertEquals(ControlKey.DETONATE_MINES.mask(), game(c, GLFW_KEY_U), "u detonates mines"),
-                () -> assertTrue(KeyBindings.has(acts(c, GLFW_KEY_U), ClientAction.ID_MODE), "u is still ID mode"),
+                () -> assertFalse(KeyBindings.has(acts(c, GLFW_KEY_U), ClientAction.ID_MODE), "ID mode is unbound"),
                 () -> assertEquals(0L, game(c, GLFW_KEY_EQUAL), "= no longer detonates"),
                 () -> assertEquals(ControlKey.FIRE_LASER.mask(), game(c, GLFW_KEY_SLASH), "slash fires the laser"),
                 () -> assertTrue(KeyBindings.has(acts(c, GLFW_KEY_F2), ClientAction.MSG_2), "F2 keeps its macro"),
-                () -> assertEquals(List.of("grave/quoteleft: keyReprogram keySelectItem", "u: keyDetonateMines keyIdMode"),
-                    c.conflicts(), "the two keys it binds twice are reported"),
+                () -> assertEquals(List.of(), c.conflicts(), "no key is bound twice"),
                 () -> assertEquals(40.0, c.settings().turnSpeed, "settings keep the defaults"));
         }
     }
