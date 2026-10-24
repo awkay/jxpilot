@@ -40,7 +40,8 @@ import com.fulcrologic.jxpilot.server.world.World;
 /**
  * Bullets: ports of {@code Fire_normal_shots}, {@code Fire_main_shot}, {@code Fire_general_shot} (shot
  * and cannon-shot cases), {@code Recoil} and {@code Delete_shot} (shots, cannon shots, sparks, debris)
- * from {@code src/server/shot.c} and {@code ship.c}. Missiles, mines, wide-angle and rear shots are M2.
+ * from {@code src/server/shot.c} and {@code ship.c}, with wide-angle and rear shots; missiles and mines are
+ * fired by {@link Missiles} and {@link Mines} and explode here.
  */
 public final class Shots {
     /** C {@code ED_SHOT} after the {@code (long)} cast: fuel per shot (fixed point). */
@@ -263,8 +264,8 @@ public final class Shots {
     }
 
     /**
-     * The cluster/debris explosion of Delete_shot (shot.c:1217-1320) with mini = power = velocity = 0, so C's
-     * speed_modv (1 / (1 &lt;&lt; velocity), or 1 for debris) is always 1 (C float factors).
+     * The cluster/debris explosion of Delete_shot (shot.c:1217-1320) for shots, cannon shots, mines and missiles,
+     * with C's modifier factors (mini, power, velocity, nuclear) in float.
      * <p>
      * BEHAVIOR: cluster (flak) fragments are OBJ_SHOT cluster shots, which reach clients as SHOT records, so
      * they are not also recorded as a burst; debris is recorded as a DEBRIS burst.
