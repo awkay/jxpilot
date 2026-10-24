@@ -111,6 +111,11 @@ firewalls on both sides; the server answers only from the address you contacted
 |Your keys take a round trip to the server plus about 135 ms. Play on a server closer to you, or host it
 half way between the players (<<04-running-a-server.adoc#hosting,Hosting for friends far away>>).
 
+|Client: `jxpilot keys: ...` lines at startup
+|Your `~/.xpilotrc` (or `--keys` file) has a line JXPilot cannot use, or a key bound to more than one
+function. The message names the file and line; the rest of the file still applies. Check with
+`--list-keys`.
+
 |Client: `no sound: ...` at startup
 |No audio device was found or the audio library could not load; the game plays without sound. Check
 the system's sound output, or use `--no-sound` to skip the attempt.
@@ -147,7 +152,8 @@ precedence rules, so existing files load. Many options take effect only as the f
 implemented.
 
 Can I use my `.xpilotrc` key bindings?::
-Not yet. The default XPilot keys are built in; a keys file is planned.
+Yes. JXPilot reads the key bindings and the six control settings from `~/.xpilotrc` in XPilot's format;
+other resources are ignored with a note (<<03-playing.adoc#key-bindings,Changing the keys>>).
 
 Is JXPilot related to the XPilot developers?::
 No. It is an independent port; they were not involved and do not endorse it

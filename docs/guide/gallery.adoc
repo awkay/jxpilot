@@ -184,7 +184,8 @@ your own with `selfImmunity`) are blue crosses; nuclear shots blink red.
 |*Transporter beam*: crawling dashes while a player steals an item.
 
 |image:gallery/refuel-beam.gif[Refuel beam,width=100]
-|*Refuel beam*: crawling dashes from a refuelling ship to the fuel station.
+|*Refuel beam*: crawling dashes from a refuelling ship to the fuel station. A ship repairing a target
+draws the same beam to the target.
 
 |image:gallery/ball-tether.png[Ball on its tether,width=120]
 image:gallery/ball-connecting.png[Ball being picked up,width=120]

@@ -96,9 +96,10 @@ designed (`docs/latency-fixes.md` in the source) but not built.
 |Works
 |XPilot's sound events, played with free (CC0) sound effects (<<03-playing.adoc#sound,Sound>>).
 
-|Configurable keys
-|Planned
-|XPilot's default keys are built in (<<03-playing.adoc#controls,Controls>>).
+|Key bindings
+|Works
+|XPilot's default keys, changeable with an XPilot-format `~/.xpilotrc`, and a key help overlay on
+kbd:[F1] (<<03-playing.adoc#key-bindings,Changing the keys>>).
 |===
 
 The development plan has three milestones:
@@ -106,7 +107,7 @@ The development plan has three milestones:
 M1, playable core:: map rendering, ship movement, gravity and walls, shields, fuel, shots, cannons,
 wormholes, death and respawn, scores, chat, robots, radar, HUD, basic team play. Done.
 M2:: items, balls and treasures, targets, checkpoints and races, asteroids. In progress.
-M3:: polish: a configurable keys file; sound (done).
+M3:: polish: a configurable keys file and sound. Done.
 
 Out of scope: the XPilot map editor, replay recording, the metaserver and server browser, and the
 X11-specific parts of the C client.

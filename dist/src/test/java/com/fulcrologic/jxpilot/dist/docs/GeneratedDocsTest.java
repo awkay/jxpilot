@@ -160,6 +160,35 @@ class GeneratedDocsTest {
     }
 
     @Nested
+    @DisplayName("keys.adoc content")
+    class KeysContent {
+        @Test
+        void effectiveDefaultsAndDifferences() {
+            String doc = GuideTables.keysAdoc();
+            assertAll(
+                () -> assertTrue(doc.contains("|`+keyTurnLeft+`\n|`+a+`\n|Turn left (anti-clockwise).\n"),
+                    "a game key lists its resource, keys and help, with no note when it matches XPilot"),
+                () -> assertTrue(doc.contains("|`+keyToggleSound+`\n|`+minus+` (pass:c[-])\n"),
+                    "the JXPilot mute key is listed with its default"),
+                () -> assertTrue(doc.contains("_XPilot's default: `+Escape+` (pass:c[Esc])._"),
+                    "swap settings notes XPilot's Escape, which JXPilot keeps for quitting"),
+                () -> assertTrue(doc.contains("|`+keySwapSettings+`\n|-\n"), "swap settings has no JXPilot default"),
+                () -> assertTrue(doc.contains("_Not in JXPilot._"), "unimplemented client functions are marked"),
+                () -> assertTrue(doc.contains("Default control settings: power 45, turnSpeed 40, turnResistance 0.12"),
+                    "the control settings follow the table"));
+        }
+
+        @Test
+        void helpers() {
+            assertAll(
+                () -> assertTrue(GuideTables.sameKeys("a  b", "b a"), "key sets ignore order and spacing"),
+                () -> assertTrue(!GuideTables.sameKeys("a", "a b"), "different sets differ"),
+                () -> assertEquals("40", GuideTables.num(40.0), "whole numbers have no decimals"),
+                () -> assertEquals("0.12", GuideTables.num(0.12), "fractions keep their decimals"));
+        }
+    }
+
+    @Nested
     @DisplayName("item pictures and table")
     class ItemPictures {
         private final int red = ItemTable.argb(com.fulcrologic.jxpilot.client.render.Palette.RED);

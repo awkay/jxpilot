@@ -25,6 +25,9 @@ package com.fulcrologic.jxpilot.dist.docs;
 
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.OptionType;
+import com.fulcrologic.jxpilot.client.game.input.ControlSettings;
+import com.fulcrologic.jxpilot.client.game.input.KeyConfig;
+import com.fulcrologic.jxpilot.client.game.input.KeyFunctions;
 import com.fulcrologic.jxpilot.common.net.ControlKey;
 
 import java.util.ArrayList;
@@ -292,7 +295,10 @@ public final class GuideTables {
         Map.entry("KP_Subtract", "Keypad -"), Map.entry("KP_7", "Keypad 7"), Map.entry("KP_0", "Keypad 0"),
         Map.entry("KP_Insert", "Keypad Insert"), Map.entry("Shift_L", "Left Shift"),
         Map.entry("Shift_R", "Right Shift"), Map.entry("Control_L", "Left Ctrl"), Map.entry("Control_R", "Right Ctrl"),
-        Map.entry("Caps_Lock", "Caps Lock"), Map.entry("Escape", "Esc"), Map.entry("BackSpace", "Backspace"));
+        Map.entry("Caps_Lock", "Caps Lock"), Map.entry("Escape", "Esc"), Map.entry("BackSpace", "Backspace"),
+        Map.entry("minus", "-"), Map.entry("grave", "` backtick"), Map.entry("Alt_L", "Left Alt / Option"),
+        Map.entry("Alt_R", "Right Alt / Option"), Map.entry("KP_Enter", "Keypad Enter"), Map.entry("KP_8", "Keypad 8"),
+        Map.entry("KP_9", "Keypad 9"), Map.entry("KP_5", "Keypad 5"));
 
     /** BEHAVIOR: "LOCK_NEXT_CLOSE" reads "Lock next close"; ECM stays upper case. */
     static String functionName(ControlKey k) {
@@ -315,19 +321,67 @@ public final class GuideTables {
         return String.join(", ", parts);
     }
 
-    /** The complete {@code keys.adoc}: every {@link ControlKey} with its default keys. */
+    /**
+     * The complete {@code keys.adoc}: every bindable key function ({@link KeyFunctions}, C's {@code keyXxx}
+     * resources) with JXPilot's effective default keys ({@link KeyConfig#defaults}), what it does, and
+     * where JXPilot's default differs from XPilot's; then the default control settings.
+     */
     public static String keysAdoc() {
+        KeyConfig cfg = KeyConfig.defaults(null);
         StringBuilder sb = new StringBuilder();
-        sb.append("// GENERATED from common/src/main/java/com/fulcrologic/jxpilot/common/net/ControlKey.java\n")
-            .append("// by dist/src/test/java/com/fulcrologic/jxpilot/dist/docs/GuideTables.java. Do not edit:\n")
-            .append("// run `make -C docs/guide generate` instead. The build fails when this file is stale.\n\n")
-            .append("[cols=\"1,3,4\",options=\"header\"]\n|===\n|Id |Function |Default keys (X11 keysym)\n\n");
-        for (ControlKey k : ControlKey.values()) {
-            sb.append('|').append(k.xpilotId).append('\n')
-                .append('|').append(functionName(k)).append('\n')
-                .append('|').append(keysText(k.defaultKeys)).append("\n\n");
+        sb.append("// GENERATED from client/src/main/java/com/fulcrologic/jxpilot/client/game/input/KeyFunctions.java\n")
+            .append("// and KeyConfig.java by dist/src/test/java/com/fulcrologic/jxpilot/dist/docs/GuideTables.java.\n")
+            .append("// Do not edit: run `make -C docs/guide generate` instead. The build fails when this file is stale.\n\n")
+            .append("[cols=\"3,3,5\",options=\"header\"]\n|===\n|Resource |Default keys (X11 keysym) |What it does\n\n");
+        for (KeyFunctions.Fn f : KeyFunctions.all()) {
+            String effective = String.join(" ", cfg.bindings().keysyms(f));
+            String xpilot = xpilotDefault(f);
+            StringBuilder what = new StringBuilder(cell(f.help()));
+            if (f.action() != null && !f.action().implemented()) {
+                what.append(" _Not in JXPilot._");
+            }
+            if (!sameKeys(effective, xpilot)) {
+                what.append(" _XPilot's default: ").append(xpilot.isBlank() ? "none" : keysText(xpilot)).append("._");
+            }
+            sb.append('|').append(literal(f.resource())).append('\n')
+                .append('|').append(keysText(effective)).append('\n')
+                .append('|').append(what).append("\n\n");
         }
-        sb.append("|===\n");
+        sb.append("|===\n\n");
+        ControlSettings c = cfg.settings();
+        sb.append("Default control settings: power ").append(num(c.power)).append(", turnSpeed ")
+            .append(num(c.turnSpeed)).append(", turnResistance ").append(num(c.turnResistance)).append("; alternates altPower ")
+            .append(num(c.altPower)).append(", altTurnSpeed ").append(num(c.altTurnSpeed)).append(", altTurnResistance ")
+            .append(num(c.altTurnResistance)).append(".\n");
         return sb.toString();
+    }
+
+    /**
+     * BEHAVIOR: XPilot's own default keys of a function (C default.c): the ControlKey default for game keys;
+     * for client actions JXPilot's table, except the two JXPilot-only functions (none in XPilot) and
+     * keySendMsg1 (F1 in XPilot, which JXPilot gives to the key help).
+     */
+    static String xpilotDefault(KeyFunctions.Fn f) {
+        if (f.key() != null) {
+            return f.key().defaultKeys;
+        }
+        return switch (f.action()) {
+            case HELP, TOGGLE_SOUND -> "";
+            case MSG_1 -> "F1";
+            default -> f.action().defaultKeys;
+        };
+    }
+
+    /** BEHAVIOR: the same set of keysyms, ignoring order and spacing. */
+    static boolean sameKeys(String a, String b) {
+        java.util.Set<String> x = new java.util.TreeSet<>(java.util.Arrays.asList(a.trim().split("\\s+")));
+        java.util.Set<String> y = new java.util.TreeSet<>(java.util.Arrays.asList(b.trim().split("\\s+")));
+        x.remove("");
+        y.remove("");
+        return x.equals(y);
+    }
+
+    static String num(double v) {
+        return v == Math.rint(v) ? String.valueOf((long) v) : String.valueOf(v);
     }
 }
