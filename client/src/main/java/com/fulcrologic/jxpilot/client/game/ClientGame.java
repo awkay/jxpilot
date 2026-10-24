@@ -140,6 +140,7 @@ public final class ClientGame implements ConnectionListener {
      * BEHAVIOR: SCORE_OBJECT (C {@code Handle_score_object}; the server sends it only to the player whose
      * score changed) becomes a {@link ScoreObjects} entry with its points, label and block; an empty label
      * makes no HUD text. SCORE itself never makes one.
+     * BEHAVIOR: a SPAWN GAME_EVENT of the own player marks the own ship as teleported (R15).
      * BEHAVIOR: TIMING (C {@code Handle_timing}) sets the player's race check/round, stamped with the newest
      * tick (C {@code timing_loops}) when they change.
      */
@@ -191,6 +192,9 @@ public final class ClientGame implements ConnectionListener {
             case ReliableType.GAME_EVENT -> {
                 gameEvent.read(p);
                 events.add(gameEvent);
+                if (gameEvent.kind == Msg.GameEvent.SPAWN && gameEvent.a == players.selfId()) {
+                    world.markSelfTeleport(world.newestTick()); // R15: the next SELF is a new place
+                }
             }
             default -> { } // newer message types are ignored (PROTOCOL.md "Extending")
         }

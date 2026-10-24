@@ -212,6 +212,8 @@ public final class ClientWorld {
     private double errX;
     private double errY;
     private long lastPredictNanos;
+    private boolean teleportPending;
+    private int teleportTick;
     private double drawnTick;
     private double serverTickNow;
     private boolean outSelf;
@@ -374,7 +376,20 @@ public final class ClientWorld {
         havePrediction = false;
         haveSelfState = false;
         selfPlaying = false;
+        teleportPending = false;
     }
+
+    /**
+     * R15: the own ship teleported (wormhole, hyperjump, respawn) at or before {@code tick}: the first SELF
+     * from that tick on is snapped to, never blended in.
+     */
+    public void markSelfTeleport(int tick) {
+        teleportPending = true;
+        teleportTick = tick;
+    }
+
+    /** True while a teleport mark waits for its SELF ({@link #markSelfTeleport}). */
+    public boolean selfTeleportPending() { return teleportPending; }
 
     /** Forget every frame's association (tests: time a fresh association in {@link #update}). */
     void invalidateAssociations() {
@@ -715,6 +730,10 @@ public final class ClientWorld {
                     for (int i = 0; i < n; i++) {
                         soundRec.wrap(reader, i);
                         sounds.add(soundRec.event(), soundRec.volume());
+                        if (soundRec.event() == com.fulcrologic.jxpilot.common.SoundEvent.WORM_HOLE.ordinal()
+                            || soundRec.event() == com.fulcrologic.jxpilot.common.SoundEvent.HYPERJUMP.ordinal()) {
+                            markSelfTeleport(f.tick); // R15: C plays these where the own ship warped
+                        }
                     }
                 }
             }
@@ -1171,8 +1190,9 @@ public final class ClientWorld {
      * BEHAVIOR: acceleration = (newest velocity - previous velocity) / frames between them, when the previous
      * SELF is at most 3 ticks older, alive and within {@link #TELEPORT_PX}; else 0; clamped to
      * {@link #MAX_SELF_ACCEL} per axis.
-     * BEHAVIOR: while dead, after a teleport (prediction error beyond {@link #TELEPORT_PX}) or on the first
-     * SELF the ship is drawn at the newest SELF's position without error offset.
+     * BEHAVIOR: while dead, after a teleport (prediction error beyond {@link #TELEPORT_PX}, or the server's
+     * signal: {@link #markSelfTeleport}, R15) or on the first SELF the ship is drawn at the newest SELF's
+     * position without error offset.
      */
     private void predictSelf(long nowNanos) {
         SnapshotFrame n = null;
@@ -1230,7 +1250,11 @@ public final class ClientWorld {
             double oy = predY + predVy * odt + 0.5 * predAy * odt * odt + errY;
             errX = XMath.wrapDelta(ox - px, worldW, wrap);
             errY = XMath.wrapDelta(oy - py, worldH, wrap);
-            if (errX * errX + errY * errY > TELEPORT_PX * TELEPORT_PX) {
+            boolean warped = teleportPending && n.tick - teleportTick >= 0;
+            if (warped) {
+                teleportPending = false;
+            }
+            if (warped || errX * errX + errY * errY > TELEPORT_PX * TELEPORT_PX) {
                 errX = 0;
                 errY = 0;
             }

@@ -165,6 +165,21 @@ class ClientGameTest {
     }
 
     @Test
+    @DisplayName("R15: the own player's SPAWN event marks the own ship as teleported; others' do not")
+    void spawnMarksTeleport() {
+        ClientGame g = configured();
+        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(7, 0, "me")));
+        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(9, 0, "Robby")));
+        g.players().setSelfId(7);
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.SPAWN, 9, 0)));
+        boolean other = g.world().selfTeleportPending();
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.SPAWN, 7, 0)));
+        assertAll(
+            () -> assertFalse(other, "another player's spawn: nothing"),
+            () -> assertTrue(g.world().selfTeleportPending(), "own spawn: the next SELF snaps"));
+    }
+
+    @Test
     @DisplayName("F4: TIMING sets the player's race progress; unknown players are ignored")
     void timing() {
         ClientGame g = configured();

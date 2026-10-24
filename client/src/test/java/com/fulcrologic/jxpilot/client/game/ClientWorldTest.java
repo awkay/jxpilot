@@ -309,6 +309,39 @@ class ClientWorldTest {
         }
 
         @Test
+        @DisplayName("R15: a server teleport signal (wormhole/hyperjump sound, own respawn) snaps even a short jump")
+        void selfTeleportSignal() {
+            WorldFixture blended = new WorldFixture(true);
+            blended.begin(100).self(7, 0, 100, 50, 0, 0, 0).ingestAtTick(100);
+            blended.world.update(at(101.0));
+            blended.begin(102).self(7, 0, 150, 50, 0, 0, 0).ingestAtTick(102);
+            blended.world.update(at(101.2));
+            WorldFixture worm = new WorldFixture(true);
+            worm.begin(100).self(7, 0, 100, 50, 0, 0, 0).ingestAtTick(100);
+            worm.world.update(at(101.0));
+            worm.begin(102).self(7, 0, 150, 50, 0, 0, 0).sound(
+                com.fulcrologic.jxpilot.common.SoundEvent.WORM_HOLE.ordinal(), 50).ingestAtTick(102);
+            worm.world.update(at(101.2));
+            WorldFixture marked = new WorldFixture(true);
+            marked.begin(100).self(7, 0, 100, 50, 0, 0, 0).ingestAtTick(100);
+            marked.world.update(at(101.0));
+            marked.world.markSelfTeleport(102);
+            marked.begin(102).self(7, 0, 150, 50, 0, 0, 0).ingestAtTick(102);
+            marked.world.update(at(101.2));
+            float b = blended.world.selfX();
+            float wx = worm.world.selfX();
+            float mx = marked.world.selfX();
+            marked.begin(104).self(7, 0, 160, 50, 0, 0, 0).ingestAtTick(104);
+            marked.world.update(at(103.2));
+            assertAll(
+                () -> assertEquals(100.0, b, CLOCK_EPS, "a 50 px jump without a signal is blended (no jump yet)"),
+                () -> assertEquals(150.0, wx, CLOCK_EPS, "with the wormhole sound: snapped"),
+                () -> assertEquals(150.0, mx, CLOCK_EPS, "marked (own respawn): snapped"),
+                () -> assertEquals(150.0, marked.world.selfX(), CLOCK_EPS,
+                    "the mark is used once: the next jump (to 160) is blended again, no jump yet"));
+        }
+
+        @Test
         @DisplayName("nothing is output before the first snapshot")
         void empty() {
             WorldFixture f = new WorldFixture(true);
