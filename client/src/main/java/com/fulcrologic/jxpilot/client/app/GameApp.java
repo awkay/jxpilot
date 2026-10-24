@@ -443,6 +443,11 @@ public final class GameApp {
         dyn.identity();
         dyn.texRect(left, bottom, right, top, u0, v1, u1, 0, palette.color(Palette.WHITE));
         radarPainter.begin(left, bottom, right, top, radarHeight, map.pixelWidth(), map.pixelHeight(), map.edgeWrap());
+        // server-modes: the next race checkpoint before the own ship (C Paint_checkpoint_radar, paintradar.c:133, 287)
+        int next = frame.mapState().nextCheckpoint();
+        if (frame.game().timing() && next >= 0 && next < map.checkpoints().size()) {
+            radarPainter.checkpoint(dyn, map.checkpoints().get(next).bx(), map.checkpoints().get(next).by());
+        }
         RadarBlips r = frame.radar();
         if (r.selfVisible) {
             radarPainter.self(dyn, r.selfX, r.selfY, r.selfHeading, loops);

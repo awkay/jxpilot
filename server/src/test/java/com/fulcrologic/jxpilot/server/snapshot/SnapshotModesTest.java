@@ -178,6 +178,7 @@ class SnapshotModesTest {
         v.ball = ball;
         int ast = s.asteroids.make(15 * 35, 3 * 35, 3, 0, 0f);
         w.objects.rotation[ast] = 32;
+        w.objects.info[ast] = 0x35;
         s.wreckage.make(9 * 35, 3 * 35, 0f, 0f, -1, 0, 5f, 5f, 5f, 0, 6, 1, 0, 0, 0f, 0f, 5, 5);
         Out o = build(s, v, false);
         int bx = (int) Math.round(4.5 * 35);
@@ -186,7 +187,8 @@ class SnapshotModesTest {
                 "the treasure ball: handle, team of its treasure (1), connected to H"),
             () -> assertEquals(List.of(bx + ",80-350,105:" + Records.Connector.KIND_BALL), o.connectors(),
                 "V reaches for it: a connector from the ball to V"),
-            () -> assertEquals(List.of("525,105:3:32"), o.asteroids(), "asteroid with size and rotation"),
+            () -> assertEquals(List.of("525,105:" + (5 << 4 | 3) + ":32"), o.asteroids(),
+                "asteroid with C's type_size (outline type info & 15 above size 3) and rotation"),
             () -> assertEquals(1, o.wrecks().size(), "one wreckage piece"),
             () -> assertTrue(o.wrecks().get(0).startsWith("315,105:"), "at its place"),
             () -> assertEquals(List.of(Records.ShipFlags.HAS_BALL | Records.ShipFlags.REPAIRING), o.shipFlags(),

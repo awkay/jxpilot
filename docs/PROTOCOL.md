@@ -214,7 +214,7 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 | 11 | MISSILE | 10 | u16 id, rel x, rel y, ang heading, u8 kind (smart/heat/torpedo, 0x80 nuclear), u8 length |
 | 12 | BALL | 9 | u16 id, rel x, rel y, u8 team, u16 holder |
 | 13 | LASER | 9 | rel x, rel y, ang heading, u16 length, u8 colour |
-| 14 | ASTEROID | 7 | rel x, rel y, u8 size, ang rotation |
+| 14 | ASTEROID | 7 | rel x, rel y, u8 type_size (C `Send_asteroid`: outline type << 4 \| size), ang rotation |
 | 15 | WRECKAGE | 8 | rel x, rel y, u8 shape, u8 size, ang rotation *(server-batch2: the Java server sends wreckage in view every snapshot; shape is C's `info & 0x7F`, size C's 0..255, rotation C's RES rotation in radians)* |
 | 16 | ECM | 6 | rel x, rel y, u16 radius |
 | 17 | CONNECTOR | 9 | rel x0, y0, x1, y1, u8 kind (0 ball, 1 tractor, 2 pressor, 3 refuel: station to ship, 4 repair: ship to target) |
