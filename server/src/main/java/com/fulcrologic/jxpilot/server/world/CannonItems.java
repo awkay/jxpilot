@@ -80,7 +80,8 @@ public final class CannonItems {
      * C {@code Cannon_add_item}: fuel (in units) is stored as energy packs, a tank counts as one tank plus its fuel.
      * <p>
      * BEHAVIOR: a tank adds one tank (within the tank limit) and then its fuel as packs: (int)(amount / pack + 0.5)
-     * within the fuel limit in packs, where each use of C's ENERGY_PACK_FUEL draws 500 + (randomMT() &amp; 511);
+     * within the fuel limit in packs, where each use of C's ENERGY_PACK_FUEL draws 500 + (randomMT() &amp; 511) (the
+     * limit is drawn a second time when it applies, as C's LIMIT macro evaluates it twice);
      * other items add {@code amount} within their limit.
      */
     public void addItem(ItemParams ip, com.fulcrologic.jxpilot.common.math.Rng rng, int c, int item, int amount) {
@@ -90,7 +91,14 @@ public final class CannonItems {
                 set(c, item, limit(item(c, item) + 1, ip.limit[item]));
             }
             int v = item(c, fuel) + (int) (amount / (500 + (rng.nextInt() & 511)) + 0.5);
-            set(c, fuel, limit(v, (int) (ip.limit[fuel] / (500 + (rng.nextInt() & 511)) + 0.5)));
+            // C LIMIT(val, lo, hi) is val = val > hi ? hi : ...: the limit (a new ENERGY_PACK_FUEL draw) is
+            // evaluated again when it applies (cannon.c:85-87, const.h LIMIT).
+            if (v > (int) (ip.limit[fuel] / (500 + (rng.nextInt() & 511)) + 0.5)) {
+                v = (int) (ip.limit[fuel] / (500 + (rng.nextInt() & 511)) + 0.5);
+            } else if (v < 0) {
+                v = 0;
+            }
+            set(c, fuel, v);
         } else {
             set(c, item, limit(item(c, item) + amount, ip.limit[item]));
         }

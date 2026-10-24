@@ -358,7 +358,8 @@ public final class Keys {
             }
             float gx = w.gravityX(pl.bx, pl.by);
             float gy = w.gravityY(pl.bx, pl.by);
-            minv += (float) StrictMath.hypot(gx, gy);
+            // C: minv += VECTOR_LENGTH(gravity) adds the double length, then stores the DFLOAT (event.c:816).
+            minv = (float) (minv + StrictMath.hypot(gx, gy));
             if (pl.velocity > minv) {
                 return false;
             }

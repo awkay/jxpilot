@@ -315,7 +315,8 @@ public final class Devices {
             pl.setClicks(com.fulcrologic.jxpilot.server.world.Click.fromPixels(pl.prevX),
                 com.fulcrologic.jxpilot.server.world.Click.fromPixels(pl.prevY));
         }
-        float acc = (float) StrictMath.hypot(gx, gy) + vel;
+        // C: acc = LENGTH(gx, gy) + vel adds in double, then stores the DFLOAT (update.c:387).
+        float acc = (float) (StrictMath.hypot(gx, gy) + vel);
         float power = acc * pl.mass;
         if (afterburners != 0) {
             power = (float) (power / (1.0 + afterburners * ((4.2 - 1.0) / (MAX_AFTERBURNER + 1.0))));
@@ -808,9 +809,10 @@ public final class Devices {
                 sim.tanks.remove(victim, ti);
             }
             case FUEL -> {
-                float pr = (float) w.rfrac();
-                float percent = 10.0f + 40.0f * pr;
-                amount = (long) (victim.fuel * percent / 100);
+                // C: DFLOAT percent = 10.0f + 40.0f * rfrac() (double, then float); the long fuel sum times the
+                // float percent is float arithmetic (item.c:831-832).
+                float percent = (float) (10.0f + 40.0f * w.rfrac());
+                amount = (long) ((float) victim.fuel * percent / 100);
                 msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID);
                 msg.append(thief).append(" stole ").append(amount >> 8).append(" units (")
                     .append((int) (percent + 0.5)).append("%) of fuel from ").append(victim.name).append('.');
