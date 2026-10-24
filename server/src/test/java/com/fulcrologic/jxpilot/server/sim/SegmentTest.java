@@ -23,6 +23,8 @@
  */
 package com.fulcrologic.jxpilot.server.sim;
 
+import com.fulcrologic.jxpilot.common.sim.Segment;
+import com.fulcrologic.jxpilot.common.sim.MoveState;
 import com.fulcrologic.jxpilot.common.math.Rng;
 import com.fulcrologic.jxpilot.server.TestWorlds;
 import com.fulcrologic.jxpilot.common.sim.Click;
@@ -36,7 +38,7 @@ import org.junit.jupiter.api.Test;
 import java.util.HashSet;
 import java.util.Set;
 
-import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
+import static com.fulcrologic.jxpilot.common.sim.MoveState.*;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -69,7 +71,7 @@ class SegmentTest {
     }
 
     static void move(World w, MoveState ms) {
-        new Segment(w).move(ms);
+        new Segment(w, w::rfrac).move(ms);
     }
 
     // ---------------------------------------------------------------------------------------------------------

@@ -21,9 +21,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
  */
-package com.fulcrologic.jxpilot.server.world;
+package com.fulcrologic.jxpilot.common.sim;
 
-import com.fulcrologic.jxpilot.common.sim.Obj;
 /**
  * Weapon modifiers: C's {@code modifiers} bit-field struct ({@code src/server/object.h}) packed into one int,
  * so objects and players store them in a plain int field. Layout: warhead bits 0-1 ({@link Obj#MOD_CLUSTER},

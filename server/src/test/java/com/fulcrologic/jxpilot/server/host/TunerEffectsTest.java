@@ -26,7 +26,7 @@ package com.fulcrologic.jxpilot.server.host;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.math.Rng;
-import com.fulcrologic.jxpilot.server.world.Mods;
+import com.fulcrologic.jxpilot.common.sim.Mods;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;

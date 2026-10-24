@@ -37,7 +37,7 @@ import com.fulcrologic.jxpilot.server.sim.CTraceItems.CPulse;
 import com.fulcrologic.jxpilot.server.world.CannonItems;
 import com.fulcrologic.jxpilot.server.world.Ecms;
 import com.fulcrologic.jxpilot.server.world.Events;
-import com.fulcrologic.jxpilot.server.world.Mods;
+import com.fulcrologic.jxpilot.common.sim.Mods;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;

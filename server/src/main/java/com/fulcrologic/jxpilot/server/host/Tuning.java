@@ -490,43 +490,50 @@ final class Tuning {
      */
     static void copyChanges(Object before, Object after, Object live) {
         try {
-            for (Field f : live.getClass().getDeclaredFields()) {
-                if (Modifier.isStatic(f.getModifiers())) {
-                    continue;
-                }
-                f.setAccessible(true);
-                Object b = f.get(before);
-                Object a = f.get(after);
-                if (a instanceof int[] ai) {
-                    int[] bi = (int[]) b;
-                    int[] li = (int[]) f.get(live);
-                    for (int i = 0; i < ai.length; i++) {
-                        if (ai[i] != bi[i]) {
-                            li[i] = ai[i];
-                        }
-                    }
-                } else if (a instanceof float[] af) {
-                    float[] bf = (float[]) b;
-                    float[] lf = (float[]) f.get(live);
-                    for (int i = 0; i < af.length; i++) {
-                        if (Float.compare(af[i], bf[i]) != 0) {
-                            lf[i] = af[i];
-                        }
-                    }
-                } else if (a instanceof double[] ad) {
-                    double[] bd = (double[]) b;
-                    double[] ld = (double[]) f.get(live);
-                    for (int i = 0; i < ad.length; i++) {
-                        if (Double.compare(ad[i], bd[i]) != 0) {
-                            ld[i] = ad[i];
-                        }
-                    }
-                } else if (!java.util.Objects.equals(a, b) && !Modifier.isFinal(f.getModifiers())) {
-                    f.set(live, a);
-                }
+            for (Class<?> c = live.getClass(); c != Object.class; c = c.getSuperclass()) {
+                copyChanges(c, before, after, live);
             }
         } catch (IllegalAccessException e) {
             throw new IllegalStateException(e);
+        }
+    }
+
+    /** {@link #copyChanges(Object, Object, Object)} for the fields declared by {@code c} (Params' include ShipParams'). */
+    private static void copyChanges(Class<?> c, Object before, Object after, Object live) throws IllegalAccessException {
+        for (Field f : c.getDeclaredFields()) {
+            if (Modifier.isStatic(f.getModifiers())) {
+                continue;
+            }
+            f.setAccessible(true);
+            Object b = f.get(before);
+            Object a = f.get(after);
+            if (a instanceof int[] ai) {
+                int[] bi = (int[]) b;
+                int[] li = (int[]) f.get(live);
+                for (int i = 0; i < ai.length; i++) {
+                    if (ai[i] != bi[i]) {
+                        li[i] = ai[i];
+                    }
+                }
+            } else if (a instanceof float[] af) {
+                float[] bf = (float[]) b;
+                float[] lf = (float[]) f.get(live);
+                for (int i = 0; i < af.length; i++) {
+                    if (Float.compare(af[i], bf[i]) != 0) {
+                        lf[i] = af[i];
+                    }
+                }
+            } else if (a instanceof double[] ad) {
+                double[] bd = (double[]) b;
+                double[] ld = (double[]) f.get(live);
+                for (int i = 0; i < ad.length; i++) {
+                    if (Double.compare(ad[i], bd[i]) != 0) {
+                        ld[i] = ad[i];
+                    }
+                }
+            } else if (!java.util.Objects.equals(a, b) && !Modifier.isFinal(f.getModifiers())) {
+                f.set(live, a);
+            }
         }
     }
 
@@ -570,7 +577,7 @@ final class Tuning {
                 var ip = w.items;
                 for (int k = 0; k < w.numPlayers; k++) {
                     Player pl = w.playerAt(k);
-                    pl.mods = com.fulcrologic.jxpilot.server.world.Mods.filter(pl.mods, ip.allowNukes,
+                    pl.mods = com.fulcrologic.jxpilot.common.sim.Mods.filter(pl.mods, ip.allowNukes,
                         ip.allowClusters, ip.allowModifiers, ip.allowLaserModifiers);
                 }
             }
@@ -693,7 +700,7 @@ final class Tuning {
             int base = mineLife != 0 ? mineLife
                 : mines ? 5000 + (w.randomMT() & 255)
                 : Integer.remainderUnsigned(w.randomMT(), 64 * fps - 1) + 128 * fps;
-            int life = base / (com.fulcrologic.jxpilot.server.world.Mods.mini(o.mods[h]) + 1);
+            int life = base / (com.fulcrologic.jxpilot.common.sim.Mods.mini(o.mods[h]) + 1);
             o.life[h] = (int) (w.rfrac() * life);
         }
     }

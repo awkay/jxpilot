@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.sim;
 
+import com.fulcrologic.jxpilot.common.sim.MoveState;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Target;
 import com.fulcrologic.jxpilot.server.TestWorlds;

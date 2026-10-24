@@ -433,7 +433,7 @@ public final class SnapshotBuilder {
     int shotVariant(int h, Player v) {
         Objects o = w.objects;
         int kind;
-        if (com.fulcrologic.jxpilot.server.world.Mods.isNuclear(o.mods[h])) {
+        if (com.fulcrologic.jxpilot.common.sim.Mods.isNuclear(o.mods[h])) {
             kind = Records.ShotKind.NUCLEAR;
         } else if (o.type[h] == Obj.CANNON_SHOT) {
             kind = Records.ShotKind.CANNON_SHOT;

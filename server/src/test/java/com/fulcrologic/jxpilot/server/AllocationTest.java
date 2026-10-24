@@ -32,7 +32,7 @@ import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.common.sim.Has;
-import com.fulcrologic.jxpilot.server.world.Mods;
+import com.fulcrologic.jxpilot.common.sim.Mods;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;

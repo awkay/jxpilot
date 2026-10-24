@@ -36,7 +36,7 @@ import com.fulcrologic.jxpilot.common.math.XMath;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.world.Grid;
 import com.fulcrologic.jxpilot.common.sim.Has;
-import com.fulcrologic.jxpilot.server.world.Mods;
+import com.fulcrologic.jxpilot.common.sim.Mods;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;

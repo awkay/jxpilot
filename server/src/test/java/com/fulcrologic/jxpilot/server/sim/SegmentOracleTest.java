@@ -30,7 +30,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.SplittableRandom;
 
-import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
+import static com.fulcrologic.jxpilot.common.sim.MoveState.*;
 import static com.fulcrologic.jxpilot.server.sim.SegmentBlocksTest.at;
 import static com.fulcrologic.jxpilot.server.sim.SegmentBlocksTest.out;
 import static com.fulcrologic.jxpilot.server.sim.SegmentBlocksTest.row;

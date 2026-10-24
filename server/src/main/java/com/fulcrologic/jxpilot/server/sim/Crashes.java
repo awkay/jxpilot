@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.sim;
 
+import com.fulcrologic.jxpilot.common.sim.MoveState;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.BlockType;
@@ -35,7 +36,7 @@ import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 
-import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
+import static com.fulcrologic.jxpilot.common.sim.MoveState.*;
 
 /**
  * Consequences of wall crashes: ports of {@code Object_crash}, {@code Player_crash} and

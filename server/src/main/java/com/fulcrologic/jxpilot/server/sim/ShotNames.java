@@ -24,7 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
-import com.fulcrologic.jxpilot.server.world.Mods;
+import com.fulcrologic.jxpilot.common.sim.Mods;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 
 /** C {@code Describe_shot} ({@code src/server/shot.c}), appending to a message buffer without allocating. */

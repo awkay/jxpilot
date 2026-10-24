@@ -156,7 +156,7 @@ class RobotManagerEdgesTest {
             Simulation s = sim("", "__");
             Player p = TestWorlds.join(s, "H", 0);
             p.lockTagged = 3;
-            p.mods = com.fulcrologic.jxpilot.server.world.Mods.withMini(0, 2);
+            p.mods = com.fulcrologic.jxpilot.common.sim.Mods.withMini(0, 2);
             s.ships.leave(p);
             Player r = s.robots.create();
             assertAll(

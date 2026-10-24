@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.world;
 
+import com.fulcrologic.jxpilot.common.sim.Mods;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.common.sim.Click;
 /**

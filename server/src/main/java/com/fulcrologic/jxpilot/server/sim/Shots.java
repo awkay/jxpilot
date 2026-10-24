@@ -28,26 +28,28 @@ import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.sim.Has;
-import com.fulcrologic.jxpilot.server.world.Mods;
+import com.fulcrologic.jxpilot.common.sim.Mods;
 import com.fulcrologic.jxpilot.common.sim.ShipGeom;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
+import com.fulcrologic.jxpilot.common.sim.ShipShooter;
 import com.fulcrologic.jxpilot.common.sim.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
 
 /**
- * Bullets: ports of {@code Fire_normal_shots}, {@code Fire_main_shot}, {@code Fire_general_shot} (shot
- * and cannon-shot cases), {@code Recoil} and {@code Delete_shot} (shots, cannon shots, sparks, debris)
- * from {@code src/server/shot.c} and {@code ship.c}, with wide-angle and rear shots; missiles and mines are
+ * Bullets: ports of {@code Fire_general_shot} (the cannon-shot case and the bullet objects) and
+ * {@code Delete_shot} (shots, cannon shots, sparks, debris) from {@code src/server/shot.c}; a ship's bullets
+ * ({@code Fire_normal_shots}, {@code Fire_main_shot}, wide-angle and rear shots, {@code Recoil}) are the ship
+ * kernel's {@link ShipShooter}; missiles and mines are
  * fired by {@link Missiles} and {@link Mines} and explode here.
  */
 public final class Shots {
-    /** C {@code ED_SHOT} after the {@code (long)} cast: fuel per shot (fixed point). */
-    static final long ED_SHOT = (long) (-0.2 * 256);
-    /** C {@code -ED_SHOT} uncast (51.2): the fuel a player needs to fire ({@code fuel.sum < -ED_SHOT}). */
-    static final double SHOT_FUEL_NEEDED = 0.2 * 256;
+    /** C {@code ED_SHOT} after the {@code (long)} cast ({@link ShipShooter#ED_SHOT}). */
+    static final long ED_SHOT = ShipShooter.ED_SHOT;
+    /** C {@code -ED_SHOT} uncast ({@link ShipShooter#SHOT_FUEL_NEEDED}). */
+    static final double SHOT_FUEL_NEEDED = ShipShooter.SHOT_FUEL_NEEDED;
     /** C {@code ED_SHOT} uncast (-51.2), as C's cluster drain formulas use it. */
     static final double ED_SHOT_F = -0.2 * 256;
     /** C {@code CANNON_SHOT_MASS} (assigned to a float). */
@@ -63,112 +65,25 @@ public final class Shots {
         this.sim = sim;
     }
 
-    /**
-     * C {@code Fire_normal_shots}.
-     * <p>
-     * BEHAVIOR: fires iff at least fireRepeatRate original frames passed since the last shot; then
-     * remembers the time and fires the main gun along the heading.
-     * BEHAVIOR: each wideangle adds a shot to each side, (i+1) * (3 - spread) RES units off the heading, from the
-     * side guns in turn (the main gun without side guns); rear shots fan around the tail by (3 - spread)/2 per
-     * shot, from the rear guns (the ship's centre without them), the middle one from the centre.
-     */
+    /** C {@code Fire_normal_shots} ({@link ShipShooter#fireNormalShots}). */
     public void fireNormalShots(Player pl) {
-        if (w.frames < pl.shotTime + w.params.fireRepeatRate) {
-            return;
-        }
-        pl.shotTime = w.frames;
-        int shotAngle = Mods.SPREAD_MAX - Mods.spread(pl.mods);
-        fireMainShot(pl, pl.dir);
-        int wide = pl.items[Item.WIDEANGLE.ordinal()];
-        ShipGeom s = pl.ship;
-        for (int i = 0; i < wide; i++) {
-            int left = Trig.mod(pl.dir + (1 + i) * shotAngle);
-            int right = Trig.mod(pl.dir - (1 + i) * shotAngle);
-            if (s.lGunX.length > 0) {
-                fireGun(pl, left, s.lGunX[i % s.lGunX.length], s.lGunY[i % s.lGunX.length]);
-            } else {
-                fireMainShot(pl, left);
-            }
-            if (s.rGunX.length > 0) {
-                fireGun(pl, right, s.rGunX[i % s.rGunX.length], s.rGunY[i % s.rGunX.length]);
-            } else {
-                fireMainShot(pl, right);
-            }
-        }
-        int rear = pl.items[Item.REARSHOT.ordinal()];
-        for (int i = 0; i < rear; i++) {
-            int k = rear - 1 - 2 * i;
-            int dir = Trig.mod(pl.dir + Const.RES / 2 + (k * shotAngle) / 2);
-            if (k < 0) {
-                if (s.lrGunX.length > 0) {
-                    int g = (i - (rear + 1) / 2) % s.lrGunX.length;
-                    fireGun(pl, dir, s.lrGunX[g], s.lrGunY[g]);
-                } else {
-                    fireShot(pl, dir);
-                }
-            }
-            if (k > 0) {
-                if (s.rrGunX.length > 0) {
-                    int g = (rear / 2 - i - 1) % s.rrGunX.length;
-                    fireGun(pl, dir, s.rrGunX[g], s.rrGunY[g]);
-                } else {
-                    fireShot(pl, dir);
-                }
-            }
-            if (k == 0) {
-                fireShot(pl, dir);
-            }
-        }
+        sim.kernel.shooter.fireNormalShots(pl, sim.effects);
     }
 
-    /**
-     * C {@code Fire_left_shot}/{@code Fire_right_shot}/{@code Fire_left_rshot}/{@code Fire_right_rshot}: a shot from
-     * a side or rear gun (rotated offsets {@code gx}/{@code gy}).
-     * <p>
-     * BEHAVIOR: nothing at the shot limit or shielded/phased.
-     */
-    void fireGun(Player pl, int dir, float[] gx, float[] gy) {
-        if (pl.shots >= pl.shotMax || (pl.used & (Has.SHIELD | Has.PHASING_DEVICE)) != 0) {
-            return;
-        }
-        fire(pl, pl.team, false, pl.px + gx[pl.dir], pl.py + gy[pl.dir], Obj.SHOT, dir, 0);
-    }
-
-    /** C {@code Fire_shot} for a bullet: from the ship's centre; nothing at the shot limit or shielded/phased. */
-    void fireShot(Player pl, int dir) {
-        if (pl.shots >= pl.shotMax || (pl.used & (Has.SHIELD | Has.PHASING_DEVICE)) != 0) {
-            return;
-        }
-        fire(pl, pl.team, false, pl.px, pl.py, Obj.SHOT, dir, 0);
-    }
-
-    /**
-     * C {@code Fire_main_shot}.
-     * <p>
-     * BEHAVIOR: nothing when the player has shotMax shots in the air or has shields/phasing up; otherwise a
-     * shot from the main gun position (C float: pixel position + rotated gun offset).
-     */
+    /** C {@code Fire_main_shot} ({@link ShipShooter#fireMainShot}). */
     public void fireMainShot(Player pl, int dir) {
-        if (pl.shots >= pl.shotMax || (pl.used & (Has.SHIELD | Has.PHASING_DEVICE)) != 0) {
-            return;
-        }
-        float x = pl.px + pl.ship.gunX[pl.dir];
-        float y = pl.py + pl.ship.gunY[pl.dir];
-        fire(pl, pl.team, false, x, y, Obj.SHOT, dir, 0);
+        sim.kernel.shooter.fireMainShot(pl, dir, sim.effects);
     }
 
     /**
      * C {@code Fire_general_shot} for OBJ_SHOT / OBJ_CANNON_SHOT.
      * <p>
-     * BEHAVIOR: nothing when the pool is full; a (wrapped) start outside a flat world makes C's unpositioned object (the
-     * last freed one with the life, mass, type, owner and team set: it expires and gives the shot back) and returns -1.
-     * BEHAVIOR: a player's shot needs 0.2 fuel (51.2 fixed, C compares with the uncast ED_SHOT) and costs
-     * (long)ED_SHOT = 51; the shot count goes up.
-     * BEHAVIOR: shots have mass shotMass, life shotLife and speed shotSpeed; cannon shots mass 0.4,
-     * life 8 + random%24 and FROMCANNON. Without shotsGravity they ignore gravity.
-     * BEHAVIOR: fuse life = life - (int)(2*SHIP_SZ/shotSpeed + 1): the owner is immune while life &gt; fuse life.
-     * BEHAVIOR: velocity = (float)(shooter velocity + (float)(tcos(dir) * shotSpeed)); the shooter recoils by
-     * (shot.v - ship.v) * shot.mass / ship.mass (C Recoil, float).
+     * BEHAVIOR: a player's bullet is the ship kernel's ({@link ShipShooter#fire}: fuel, shot count, start, velocity,
+     * recoil), which makes its object through {@link #playerShot}; {@code team}, {@code cannon}, {@code type} and
+     * {@code mods} then do not apply (a player fires OBJ_SHOTs of its own team).
+     * BEHAVIOR: a cannon shot: nothing when the pool is full; mass 0.4, life 8 + random%24, FROMCANNON (and
+     * GRAVITY with shotsGravity); velocity (float)(tcos(dir) * shotSpeed); a (wrapped) start outside a flat world
+     * makes C's unpositioned object ({@link #spawn}) and returns -1.
      *
      * @param pl   shooter, or null for cannons
      * @param x    start x in pixels (a C float)
@@ -177,6 +92,9 @@ public final class Shots {
      * @return the shot handle or -1
      */
     public int fire(Player pl, int team, boolean cannon, float x, float y, int type, int dir, int mods) {
+        if (pl != null) {
+            return sim.kernel.shooter.fire(pl, x, y, dir, sim.effects);
+        }
         Objects o = w.objects;
         Params p = w.params;
         if (o.count() >= o.capacity) {
@@ -193,25 +111,42 @@ public final class Shots {
         if (type == Obj.SHOT) {
             mods = 0;
         }
-        if (pl != null) {
-            if (pl.fuel < SHOT_FUEL_NEEDED) {
-                return -1;
-            }
-            pl.addFuel(ED_SHOT);
-            if (type == Obj.SHOT || type == Obj.CANNON_SHOT) {
-                Sounds.play(w, pl.px, pl.py, SoundEvent.FIRE_SHOT);
-            }
-            pl.shots++;
-        }
         if (!p.shotsGravity) {
             status &= ~Obj.GRAVITY;
         }
-        int fuse = (int) ((2.0 * (float) Const.SHIP_SZ) / p.shotSpeed + 1.0);
         x = (float) w.wrapXPixel(x);
         y = (float) w.wrapYPixel(y);
         boolean outside = x < 0 || x >= w.pixelWidth || y < 0 || y >= w.pixelHeight;
-        // C allocates and fills these first; off a flat world it continues with the object allocated and the
-        // rest left as its previous use left it (shot.c:950-994); Delete_shot later gives the shot back
+        float vx = (float) (0.0 + Trig.tcos(dir) * p.shotSpeed);
+        float vy = (float) (0.0 + Trig.tsin(dir) * p.shotSpeed);
+        return spawn(Obj.NO_ID, team, x, y, type, dir, mods, life, mass, status, outside, vx, vy);
+    }
+
+    /**
+     * The object of a player's bullet (the ship kernel's {@link ShipEffects#shot}): the shot sound, then the object
+     * with mass shotMass, life shotLife, GRAVITY with shotsGravity, the player's id and team.
+     * <p>
+     * BEHAVIOR: as {@link #spawn}; returns the handle, or -1 outside a flat world.
+     */
+    int playerShot(Player pl, float x, float y, int dir, float vx, float vy, boolean outside) {
+        Params p = w.params;
+        Sounds.play(w, pl.px, pl.py, SoundEvent.FIRE_SHOT);
+        int status = p.shotsGravity ? Obj.GRAVITY : 0;
+        return spawn(pl.id, pl.team, x, y, Obj.SHOT, dir, 0, p.shotLife, p.shotMass, status, outside, vx, vy);
+    }
+
+    /**
+     * Allocate and fill a bullet object (the object part of C {@code Fire_general_shot}).
+     * <p>
+     * BEHAVIOR: fuse life = life - (int)(2*SHIP_SZ/shotSpeed + 1): the owner is immune while life &gt; fuse life.
+     * BEHAVIOR: {@code outside} a flat world makes C's unpositioned object (the last freed one with the life, mass,
+     * type, owner and team set: it expires and gives the shot back, shot.c:950-994) and returns -1; otherwise the
+     * object is positioned at (x, y) with the velocity, status, heading and mods, and its handle returned.
+     */
+    private int spawn(int owner, int team, float x, float y, int type, int dir, int mods, int life, float mass,
+                      int status, boolean outside, float vx, float vy) {
+        Objects o = w.objects;
+        int fuse = (int) ((2.0 * (float) Const.SHIP_SZ) / w.params.shotSpeed + 1.0);
         int h = outside ? o.allocStale() : o.alloc();
         o.life[h] = life;
         o.fuseLife[h] = life - fuse;
@@ -219,22 +154,18 @@ public final class Shots {
         o.counter[h] = 0;
         o.info[h] = 0;
         o.type[h] = type;
-        o.owner[h] = pl != null ? pl.id : Obj.NO_ID;
+        o.owner[h] = owner;
         o.team[h] = team;
         o.color[h] = Records.ObjColor.WHITE;
         if (outside) {
             return -1;
         }
         o.initPixels(h, x, y);
-        o.vx[h] = (float) ((pl != null ? pl.vx : 0.0) + Trig.tcos(dir) * p.shotSpeed);
-        o.vy[h] = (float) ((pl != null ? pl.vy : 0.0) + Trig.tsin(dir) * p.shotSpeed);
+        o.vx[h] = vx;
+        o.vy[h] = vy;
         o.status[h] = status;
         o.missileDir[h] = dir;
         o.mods[h] = mods;
-        if (pl != null) {
-            pl.vx -= ((o.vx[h] - pl.vx) * mass) / pl.mass;
-            pl.vy -= ((o.vy[h] - pl.vy) * mass) / pl.mass;
-        }
         return h;
     }
 

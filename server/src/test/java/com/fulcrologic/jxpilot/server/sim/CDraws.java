@@ -64,7 +64,7 @@ final class CDraws implements World.Draws {
         Map.entry("Ecm.fireGeneral", func("Fire_general_ecm")),
         Map.entry("Lasers.hitPlayer", func("Laser_pulse_hits_player")),
         Map.entry("Locks.updateVisibility", at("Update_objects", "update.c:948", "update.c:953", "update.c:954")),
-        Map.entry("Mover.traceShip", func("Move_player")),
+        Map.entry("ShipMover.traceShip", func("Move_player")),
         Map.entry("Segment.resolveBounce", func("Move_segment")),
         Map.entry("Crashes.playerCrashed", func("Player_crash")),
         Map.entry("Collisions.killingShot", func("Player_collides_with_killing_shot")),
@@ -146,10 +146,11 @@ final class CDraws implements World.Draws {
         return false;
     }
 
-    /** The Java method that drew: the first frame outside World whose method is ported, or the first frame. */
+    /** The Java method that drew: the first server or kernel frame outside World whose method is ported. */
     private static String site() {
         Optional<String> s = WALKER.walk(st -> st
-            .filter(f -> f.getClassName().startsWith("com.fulcrologic.jxpilot.server.")
+            .filter(f -> (f.getClassName().startsWith("com.fulcrologic.jxpilot.server.")
+                || f.getClassName().startsWith("com.fulcrologic.jxpilot.common.sim."))
                 && !f.getClassName().endsWith(".World"))
             .map(f -> f.getClassName().substring(f.getClassName().lastIndexOf('.') + 1) + "." + f.getMethodName())
             .filter(SITES::containsKey)

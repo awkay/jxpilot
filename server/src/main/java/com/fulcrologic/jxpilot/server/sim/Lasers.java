@@ -30,7 +30,7 @@ import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.sim.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.common.sim.Has;
-import com.fulcrologic.jxpilot.server.world.Mods;
+import com.fulcrologic.jxpilot.common.sim.Mods;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;

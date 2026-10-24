@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.sim;
 
+import com.fulcrologic.jxpilot.common.sim.MoveState;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.map.BlockType;
@@ -43,7 +44,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
+import static com.fulcrologic.jxpilot.common.sim.MoveState.*;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.FPS14;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.FRAME;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.gameEvents;

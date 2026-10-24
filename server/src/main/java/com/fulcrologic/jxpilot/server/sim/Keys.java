@@ -32,15 +32,16 @@ import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.sim.Has;
-import com.fulcrologic.jxpilot.server.world.Mods;
+import com.fulcrologic.jxpilot.common.sim.Mods;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
+import com.fulcrologic.jxpilot.common.sim.ShipKeys;
 
 /**
- * Control input: C {@code Handle_keyboard} ({@code src/server/event.c}) for the S1 keys. The client sends
- * the full key state every tick; press and release edges are found by comparing with the last handled
- * mask, in key order, exactly like C's {@code last_keyv}/{@code prev_keyv}.
+ * Control input: C {@code Handle_keyboard} ({@code src/server/event.c}). The key-edge loop and the flight keys
+ * are the ship kernel's ({@link ShipKeys}); this class handles every other key when the kernel passes it on
+ * ({@link ShipEffects#keyPressed}, {@link ShipEffects#keyReleased}).
  */
 public final class Keys {
 
@@ -49,55 +50,8 @@ public final class Keys {
     private static final String T_HAS_TAKEN_OVER = Texts.of(" has taken over ");
     private static final String T_S_HOME_BASE = Texts.of("'s home base.");
 
-    private static final long DEAD_KEYS = ControlKey.PAUSE.mask() | ControlKey.LOCK_NEXT.mask()
-        | ControlKey.LOCK_PREV.mask() | ControlKey.LOCK_CLOSE.mask() | ControlKey.LOCK_NEXT_CLOSE.mask()
-        | ControlKey.TOGGLE_NUCLEAR.mask() | ControlKey.TOGGLE_CLUSTER.mask() | ControlKey.TOGGLE_IMPLOSION.mask()
-        | ControlKey.TOGGLE_VELOCITY.mask() | ControlKey.TOGGLE_MINI.mask() | ControlKey.TOGGLE_SPREAD.mask()
-        | ControlKey.TOGGLE_POWER.mask() | ControlKey.TOGGLE_LASER.mask() | ControlKey.TOGGLE_COMPASS.mask()
-        | ControlKey.CLEAR_MODIFIERS.mask() | ControlKey.LOAD_MODIFIERS_1.mask() | ControlKey.LOAD_MODIFIERS_2.mask()
-        | ControlKey.LOAD_MODIFIERS_3.mask() | ControlKey.LOAD_MODIFIERS_4.mask() | ControlKey.LOAD_LOCK_1.mask()
-        | ControlKey.LOAD_LOCK_2.mask() | ControlKey.LOAD_LOCK_3.mask() | ControlKey.LOAD_LOCK_4.mask()
-        | ControlKey.REPROGRAM.mask() | ControlKey.SWAP_SETTINGS.mask() | ControlKey.INCREASE_POWER.mask()
-        | ControlKey.DECREASE_POWER.mask() | ControlKey.INCREASE_TURNSPEED.mask()
-        | ControlKey.DECREASE_TURNSPEED.mask() | ControlKey.TANK_NEXT.mask() | ControlKey.TANK_PREV.mask()
-        | ControlKey.TURN_LEFT.mask() | ControlKey.TURN_RIGHT.mask();
-
-    /** Keys whose press is handled during the round delay (event.c:318-356). */
-    private static final long ROUND_DELAY_KEYS = ControlKey.LOCK_NEXT.mask() | ControlKey.LOCK_PREV.mask()
-        | ControlKey.LOCK_CLOSE.mask() | ControlKey.TOGGLE_NUCLEAR.mask() | ControlKey.PAUSE.mask()
-        | ControlKey.TANK_NEXT.mask() | ControlKey.TANK_PREV.mask() | ControlKey.TOGGLE_VELOCITY.mask()
-        | ControlKey.TOGGLE_CLUSTER.mask() | ControlKey.SWAP_SETTINGS.mask() | ControlKey.INCREASE_POWER.mask()
-        | ControlKey.DECREASE_POWER.mask() | ControlKey.INCREASE_TURNSPEED.mask()
-        | ControlKey.DECREASE_TURNSPEED.mask() | ControlKey.LOCK_NEXT_CLOSE.mask() | ControlKey.TOGGLE_COMPASS.mask()
-        | ControlKey.TOGGLE_MINI.mask() | ControlKey.TOGGLE_SPREAD.mask() | ControlKey.TOGGLE_POWER.mask()
-        | ControlKey.TOGGLE_LASER.mask() | ControlKey.CLEAR_MODIFIERS.mask() | ControlKey.LOAD_MODIFIERS_1.mask()
-        | ControlKey.LOAD_MODIFIERS_2.mask() | ControlKey.LOAD_MODIFIERS_3.mask() | ControlKey.LOAD_MODIFIERS_4.mask()
-        | ControlKey.SELECT_ITEM.mask() | ControlKey.TOGGLE_IMPLOSION.mask() | ControlKey.REPROGRAM.mask()
-        | ControlKey.LOAD_LOCK_1.mask() | ControlKey.LOAD_LOCK_2.mask() | ControlKey.LOAD_LOCK_3.mask()
-        | ControlKey.LOAD_LOCK_4.mask();
-
-    /** Keys whose press is handled while phased (event.c:403-453). */
-    private static final long PHASED_KEYS = ControlKey.LOCK_NEXT.mask() | ControlKey.LOCK_PREV.mask()
-        | ControlKey.LOCK_CLOSE.mask() | ControlKey.SHIELD.mask() | ControlKey.TOGGLE_NUCLEAR.mask()
-        | ControlKey.TURN_LEFT.mask() | ControlKey.TURN_RIGHT.mask() | ControlKey.SELF_DESTRUCT.mask()
-        | ControlKey.LOSE_ITEM.mask() | ControlKey.PAUSE.mask() | ControlKey.TANK_NEXT.mask()
-        | ControlKey.TANK_PREV.mask() | ControlKey.TOGGLE_VELOCITY.mask() | ControlKey.TOGGLE_CLUSTER.mask()
-        | ControlKey.SWAP_SETTINGS.mask() | ControlKey.INCREASE_POWER.mask() | ControlKey.DECREASE_POWER.mask()
-        | ControlKey.INCREASE_TURNSPEED.mask() | ControlKey.DECREASE_TURNSPEED.mask() | ControlKey.THRUST.mask()
-        | ControlKey.CLOAK.mask() | ControlKey.DROP_BALL.mask() | ControlKey.TALK.mask()
-        | ControlKey.LOCK_NEXT_CLOSE.mask() | ControlKey.TOGGLE_COMPASS.mask() | ControlKey.TOGGLE_MINI.mask()
-        | ControlKey.TOGGLE_SPREAD.mask() | ControlKey.TOGGLE_POWER.mask() | ControlKey.TOGGLE_LASER.mask()
-        | ControlKey.EMERGENCY_THRUST.mask() | ControlKey.CLEAR_MODIFIERS.mask()
-        | ControlKey.LOAD_MODIFIERS_1.mask() | ControlKey.LOAD_MODIFIERS_2.mask()
-        | ControlKey.LOAD_MODIFIERS_3.mask() | ControlKey.LOAD_MODIFIERS_4.mask() | ControlKey.SELECT_ITEM.mask()
-        | ControlKey.PHASING.mask() | ControlKey.TOGGLE_IMPLOSION.mask() | ControlKey.REPROGRAM.mask()
-        | ControlKey.LOAD_LOCK_1.mask() | ControlKey.LOAD_LOCK_2.mask() | ControlKey.LOAD_LOCK_3.mask()
-        | ControlKey.LOAD_LOCK_4.mask() | ControlKey.EMERGENCY_SHIELD.mask() | ControlKey.TOGGLE_AUTOPILOT.mask();
-
     private final World w;
     private final Simulation sim;
-    /** The mask being applied (C {@code last_keyv}). */
-    private long current;
 
     public Keys(World w, Simulation sim) {
         this.w = w;
@@ -105,98 +59,34 @@ public final class Keys {
     }
 
     /**
-     * Handle the key changes between the last handled mask and {@code keys}, then remember {@code keys}.
-     * <p>
-     * BEHAVIOR: only changed keys act, in ascending key order; any change except SHIELD marks the player busy
-     * (C {@code frame_last_busy}, for idle pause).
-     * BEHAVIOR: after Go_home the held keys are ignored until the client's mask changes; then every held key
-     * counts as newly pressed (C clears its key vectors in Go_home and gets the full state with the next
-     * key packet).
-     * BEHAVIOR: during the round delay only the presses C allows then act (pause, settings, locks...);
-     * releases always act.
-     * BEHAVIOR: a dead or paused ship only handles the keys C allows while dead (turning, power settings,
-     * pause, locks...), and the others are consumed without effect.
-     * BEHAVIOR: a PAUSE press that unpauses ends key handling for this tick (C returns early): the handled
-     * mask is just PAUSE and, as after any Go_home, held keys wait for the next change of the client's mask.
+     * Handle the key changes between the last handled mask and {@code keys} ({@link ShipKeys#apply}: the kernel
+     * handles the flight keys, {@link #pressedOther}/{@link #releasedOther} the rest), then remember {@code keys}.
      */
     public void apply(Player pl, long keys) {
-        if (pl.keysCleared) {
-            if (keys == pl.lastReceivedKeys) {
-                return;
-            }
-            pl.keysCleared = false;
-        }
-        pl.lastReceivedKeys = keys;
-        current = keys;
-        long changed = keys ^ pl.prevKeys;
-        while (changed != 0) {
-            int bit = Long.numberOfTrailingZeros(changed);
-            long m = 1L << bit;
-            changed &= ~m;
-            boolean pressed = (keys & m) != 0;
-            if (m != ControlKey.SHIELD.mask()) {
-                pl.frameLastBusy = w.frames;
-            }
-            if (w.roundDelay > 0 && pressed && (ROUND_DELAY_KEYS & m) == 0) {
-                continue;
-            }
-            boolean alive = (pl.status & (Obj.PLAYING | Obj.GAME_OVER | Obj.PAUSE | Obj.HOVERPAUSE)) == Obj.PLAYING;
-            if (!alive && (DEAD_KEYS & m) == 0) {
-                continue;
-            }
-            if (pressed && (pl.used & Has.PHASING_DEVICE) != 0 && (PHASED_KEYS & m) == 0) {
-                continue;
-            }
-            ControlKey k = ControlKey.ofBit(bit);
-            if (pressed) {
-                float power = pl.power;
-                if (pressed(pl, k)) {
-                    pl.prevKeys = m;
-                    return;
-                }
-                if (pl.power != power) {
-                    w.events.add(Events.THRUST, pl.id, pl.afterburners(), 0, pl.power);
-                }
-            } else {
-                released(pl, k);
-            }
-        }
-        pl.prevKeys = keys;
+        sim.kernel.keys.apply(pl, keys, sim.effects);
+    }
+
+    /** A key press ({@link ShipKeys#pressed}); returns true when C stops handling keys for this frame. */
+    boolean pressed(Player pl, ControlKey k) {
+        return sim.kernel.keys.pressed(pl, k, sim.effects);
+    }
+
+    /** A key release ({@link ShipKeys#released}). */
+    void released(Player pl, ControlKey k) {
+        sim.kernel.keys.released(pl, k, sim.effects);
     }
 
     /**
-     * Key press actions; returns true when C stops handling keys for this frame (an unpause).
+     * Press actions of the keys the kernel does not handle (its {@link ShipKeys#pressed} handles shield, fire, turn,
+     * thrust and the power and turn settings); returns true when C stops handling keys for this frame (an unpause).
      * <p>
-     * BEHAVIOR: SHIELD raises shields (if allowed); FIRE_SHOT, when neither shielded nor already firing,
-     * fires and starts autofire; TURN keys set turnAcc = (left - right) * turnspeed; THRUST starts thrusting;
-     * REFUEL picks the nearest station; SELF_DESTRUCT toggles a 150-frame countdown; SWAP_SETTINGS swaps
-     * power/turn settings when not turning; power +-10% and turnspeed +-5% (when not turning) within limits;
+     * BEHAVIOR: REFUEL picks the nearest station; SELF_DESTRUCT toggles a 150-frame countdown;
      * CHANGE_HOME takes over the base the ship is on; PAUSE toggles pause ({@link #pauseKey}); DROP_BALL drops
      * every ball; REPAIR picks the nearest own target ({@link Targets#startRepair}); CONNECTOR uses the
      * connector (if the ship has one).
      */
-    boolean pressed(Player pl, ControlKey k) {
+    boolean pressedOther(Player pl, ControlKey k) {
         switch (k) {
-            case SHIELD -> {
-                if ((pl.have & Has.SHIELD) != 0) {
-                    pl.used |= Has.SHIELD;
-                    pl.used &= ~Has.LASER;
-                }
-            }
-            case FIRE_SHOT -> {
-                if ((pl.used & (Has.SHIELD | Has.SHOT)) == 0 && (pl.have & Has.SHOT) != 0) {
-                    pl.used |= Has.SHOT;
-                    sim.shots.fireNormalShots(pl);
-                }
-            }
-            case TURN_LEFT, TURN_RIGHT -> {
-                autopilotOff(pl);
-                turnKeys(pl);
-            }
-            case THRUST -> {
-                autopilotOff(pl);
-                pl.status |= Obj.THRUSTING;
-            }
             case REFUEL -> sim.ships.startRefuel(pl);
             case TANK_NEXT -> sim.tanks.select(pl, true);
             case TANK_PREV -> sim.tanks.select(pl, false);
@@ -270,54 +160,6 @@ public final class Keys {
                 if ((pl.status & Obj.SELF_DESTRUCT) != 0) {
                     pl.count = 150;
                 }
-            }
-            case SWAP_SETTINGS -> {
-                if (hoverOrAutopilot(pl)) {
-                    return false;
-                }
-                if (pl.turnAcc == 0.0) {
-                    float t = pl.power;
-                    pl.power = pl.powerS;
-                    pl.powerS = t;
-                    t = pl.turnSpeed;
-                    pl.turnSpeed = pl.turnSpeedS;
-                    pl.turnSpeedS = t;
-                    t = pl.turnResistance;
-                    pl.turnResistance = pl.turnResistanceS;
-                    pl.turnResistanceS = t;
-                }
-            }
-            case INCREASE_POWER -> {
-                if (hoverOrAutopilot(pl)) {
-                    return false;
-                }
-                pl.power *= 1.10;
-                pl.power = (float) Math.min(pl.power, Const.MAX_PLAYER_POWER);
-            }
-            case DECREASE_POWER -> {
-                if (hoverOrAutopilot(pl)) {
-                    return false;
-                }
-                pl.power *= 0.90;
-                pl.power = (float) Math.max(pl.power, Const.MIN_PLAYER_POWER);
-            }
-            case INCREASE_TURNSPEED -> {
-                if (hoverOrAutopilot(pl)) {
-                    return false;
-                }
-                if (pl.turnAcc == 0.0) {
-                    pl.turnSpeed *= 1.05;
-                }
-                pl.turnSpeed = (float) Math.min(pl.turnSpeed, Const.MAX_PLAYER_TURNSPEED);
-            }
-            case DECREASE_TURNSPEED -> {
-                if (hoverOrAutopilot(pl)) {
-                    return false;
-                }
-                if (pl.turnAcc == 0.0) {
-                    pl.turnSpeed *= 0.95;
-                }
-                pl.turnSpeed = (float) Math.max(pl.turnSpeed, Const.MIN_PLAYER_TURNSPEED);
             }
             case CHANGE_HOME -> changeHome(pl);
             case DROP_BALL -> sim.balls.detach(pl, -1);
@@ -424,18 +266,14 @@ public final class Keys {
     }
 
     /**
-     * Key release actions.
+     * Release actions of the keys the kernel does not handle (its {@link ShipKeys#released} handles turn, shield,
+     * fire and thrust).
      * <p>
-     * BEHAVIOR: TURN keys recompute turnAcc; REFUEL stops refuelling; SHIELD (outside the round delay) lowers
-     * shields and restarts the fire-repeat timer (no instant shot after dropping shields); FIRE_SHOT stops
-     * autofire; THRUST stops; REPAIR and CONNECTOR stop.
+     * BEHAVIOR: REFUEL stops refuelling; REPAIR and CONNECTOR stop; tractor/pressor beams and the laser stop;
+     * REPROGRAM ends; SELECT_ITEM marks the key up.
      */
-    void released(Player pl, ControlKey k) {
+    void releasedOther(Player pl, ControlKey k) {
         switch (k) {
-            case TURN_LEFT, TURN_RIGHT -> {
-                autopilotOff(pl);
-                turnKeys(pl);
-            }
             case REFUEL -> pl.used &= ~Has.REFUEL;
             case REPAIR -> pl.used &= ~Has.REPAIR;
             case CONNECTOR -> pl.used &= ~Has.CONNECTOR;
@@ -443,17 +281,6 @@ public final class Keys {
             case FIRE_LASER -> pl.used &= ~Has.LASER;
             case REPROGRAM -> pl.status &= ~Obj.REPROGRAM;
             case SELECT_ITEM -> pl.loseItemState = 1;
-            case SHIELD -> {
-                if ((pl.used & Has.SHIELD) != 0 && w.roundDelay == 0) {
-                    pl.used &= ~(Has.SHIELD | Has.LASER);
-                    pl.shotTime = w.frames;
-                }
-            }
-            case FIRE_SHOT -> pl.used &= ~Has.SHOT;
-            case THRUST -> {
-                autopilotOff(pl);
-                pl.status &= ~Obj.THRUSTING;
-            }
             default -> { }
         }
     }
@@ -464,38 +291,14 @@ public final class Keys {
         }
     }
 
-    /** BEHAVIOR: true while hover-paused or on autopilot (the power and turn settings keys do nothing then). */
-    /**
-     * C {@code Receive_pointer_move} (netserver.c:3140): pointer control turned the ship by {@code movement} (the
-     * client's horizontal mouse movement in window pixels).
-     * <p>
-     * BEHAVIOR: ignored in HOVERPAUSE; an engaged autopilot is switched off first; the turn speed is
-     * {@code movement * turnSpeed / MAX_PLAYER_TURNSPEED}, its size limited to MIN..MAX_PLAYER_TURNSPEED with a
-     * turn resistance, else to 0..5 * RES; {@code turnVel -= direction * size}.
-     */
+    /** C {@code Receive_pointer_move}: pointer control turned the ship ({@link ShipKeys#pointerMove}). */
     public void pointerMove(Player pl, int movement) {
-        if ((pl.status & Obj.HOVERPAUSE) != 0) {
-            return;
-        }
-        if ((pl.used & Has.AUTOPILOT) != 0) {
-            sim.devices.autopilot(pl, false);
-        }
-        float turnspeed = (float) (movement * pl.turnSpeed / Const.MAX_PLAYER_TURNSPEED);
-        float turndir = 1.0f;
-        if (turnspeed < 0) {
-            turndir = -1.0f;
-            turnspeed = -turnspeed;
-        }
-        if (pl.turnResistance != 0) {
-            turnspeed = (float) Math.max(Const.MIN_PLAYER_TURNSPEED, Math.min(Const.MAX_PLAYER_TURNSPEED, turnspeed));
-        } else {
-            turnspeed = Math.max(0, Math.min(5 * Const.RES, turnspeed));
-        }
-        pl.turnVel -= turndir * turnspeed;
+        sim.kernel.keys.pointerMove(pl, movement, sim.effects);
     }
 
+    /** BEHAVIOR: true while hover-paused or on autopilot ({@link ShipKeys#hoverOrAutopilot}). */
     static boolean hoverOrAutopilot(Player pl) {
-        return (pl.status & Obj.HOVERPAUSE) != 0 || (pl.used & Has.AUTOPILOT) != 0;
+        return ShipKeys.hoverOrAutopilot(pl);
     }
 
     /**
@@ -569,16 +372,6 @@ public final class Keys {
             com.fulcrologic.jxpilot.server.world.ItemParams ip = w.items;
             pl.mods = Mods.filter(pl.modBank[bank], ip.allowNukes, ip.allowClusters, ip.allowModifiers,
                 ip.allowLaserModifiers);
-        }
-    }
-
-    private void turnKeys(Player pl) {
-        pl.turnAcc = 0;
-        if ((current & ControlKey.TURN_LEFT.mask()) != 0) {
-            pl.turnAcc += pl.turnSpeed;
-        }
-        if ((current & ControlKey.TURN_RIGHT.mask()) != 0) {
-            pl.turnAcc -= pl.turnSpeed;
         }
     }
 

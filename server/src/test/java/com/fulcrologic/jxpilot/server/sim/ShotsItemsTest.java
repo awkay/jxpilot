@@ -32,7 +32,7 @@ import com.fulcrologic.jxpilot.server.TestWorlds;
 import com.fulcrologic.jxpilot.common.sim.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.common.sim.Has;
-import com.fulcrologic.jxpilot.server.world.Mods;
+import com.fulcrologic.jxpilot.common.sim.Mods;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
@@ -249,23 +249,23 @@ class ShotsItemsTest {
             float[] gx = p.ship.lGunX[0];
             float[] gy = p.ship.lGunY[0];
             p.shots = p.shotMax;
-            s.shots.fireGun(p, 0, gx, gy);
-            s.shots.fireShot(p, 0);
+            s.kernel.shooter.fireGun(p, 0, gx, gy, s.effects);
+            s.kernel.shooter.fireShot(p, 0, s.effects);
             int atMax = o.count();
             p.shots = 0;
             p.used |= Has.SHIELD;
-            s.shots.fireGun(p, 0, gx, gy);
-            s.shots.fireShot(p, 0);
+            s.kernel.shooter.fireGun(p, 0, gx, gy, s.effects);
+            s.kernel.shooter.fireShot(p, 0, s.effects);
             int shielded = o.count();
             p.used = Has.PHASING_DEVICE;
-            s.shots.fireGun(p, 0, gx, gy);
-            s.shots.fireShot(p, 0);
+            s.kernel.shooter.fireGun(p, 0, gx, gy, s.effects);
+            s.kernel.shooter.fireShot(p, 0, s.effects);
             int phased = o.count();
             p.used = 0;
             p.shots = p.shotMax - 1;
-            s.shots.fireGun(p, 7, gx, gy);
+            s.kernel.shooter.fireGun(p, 7, gx, gy, s.effects);
             p.shots = p.shotMax - 1;
-            s.shots.fireShot(p, 9);
+            s.kernel.shooter.fireShot(p, 9, s.effects);
             assertAll(
                 () -> assertEquals(0, atMax, "at shotMax: nothing"),
                 () -> assertEquals(0, shielded, "shielded: nothing"),

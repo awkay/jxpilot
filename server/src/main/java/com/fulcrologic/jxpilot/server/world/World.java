@@ -23,7 +23,10 @@
  */
 package com.fulcrologic.jxpilot.server.world;
 
+import com.fulcrologic.jxpilot.common.sim.ShipParams;
+import com.fulcrologic.jxpilot.common.sim.ShipWorld;
 import com.fulcrologic.jxpilot.common.sim.WallDist;
+import com.fulcrologic.jxpilot.common.sim.Has;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.common.sim.Click;
 import com.fulcrologic.jxpilot.common.Const;
@@ -41,7 +44,7 @@ import java.util.function.LongSupplier;
  * dynamic state of map features. Pure data plus small helpers; the rules live in {@code server.sim}.
  * No clock: time is {@link #tick} and the original-frame clock {@link #frames}.
  */
-public final class World {
+public final class World implements ShipWorld {
     /** C {@code NUM_IDS}: wire ids are 1..MAX_IDS-1 (0 is never used, as C {@code peek_ID}). */
     public static final int MAX_IDS = 256;
     /** C {@code MAX_PSEUDO_PLAYERS}: extra player slots for detached tanks. */
@@ -386,6 +389,7 @@ public final class World {
     }
 
     /** Wall distance (half blocks) at an in-range block. */
+    @Override
     public int wallDist(int bx, int by) {
         return wallDist[by * width + bx] & 0xFF;
     }
@@ -419,54 +423,111 @@ public final class World {
         return (float) StrictMath.hypot(x, y);
     }
 
-    /** C {@code WRAP_XCLICK}. BEHAVIOR: with edgeWrap a position outside [0, width) moves by one width; else unchanged. */
-    public int wrapXClick(int x) {
-        if (!wrap) {
-            return x;
-        }
-        return x < 0 ? x + clickWidth : (x >= clickWidth ? x - clickWidth : x);
+    // ================================================================ ShipWorld (the ship kernel's view)
+
+    @Override
+    public WorldMap map() {
+        return map;
     }
 
-    /** C {@code WRAP_YCLICK}. */
-    public int wrapYClick(int y) {
-        if (!wrap) {
-            return y;
-        }
-        return y < 0 ? y + clickHeight : (y >= clickHeight ? y - clickHeight : y);
+    @Override
+    public ShipParams shipParams() {
+        return params;
     }
 
-    /** C {@code WRAP_XPIXEL}. */
-    public double wrapXPixel(double x) {
-        if (!wrap) {
-            return x;
-        }
-        return x < 0 ? x + pixelWidth : (x >= pixelWidth ? x - pixelWidth : x);
+    @Override
+    public int width() {
+        return width;
     }
 
-    /** C {@code WRAP_YPIXEL}. */
-    public double wrapYPixel(double y) {
-        if (!wrap) {
-            return y;
-        }
-        return y < 0 ? y + pixelHeight : (y >= pixelHeight ? y - pixelHeight : y);
+    @Override
+    public int height() {
+        return height;
     }
 
-    /**
-     * Gravity x at a block (C {@code World.gravity[bx][by]}, a float).
-     * <p>
-     * BEHAVIOR: out-of-map blocks are clamped to the edge.
-     */
-    public float gravityX(int bx, int by) {
-        return (float) map.gravityX(clamp(bx, width), clamp(by, height));
+    @Override
+    public int pixelWidth() {
+        return pixelWidth;
     }
 
-    /** Gravity y at a block (a float), clamped into the map. */
-    public float gravityY(int bx, int by) {
-        return (float) map.gravityY(clamp(bx, width), clamp(by, height));
+    @Override
+    public int pixelHeight() {
+        return pixelHeight;
     }
 
-    private static int clamp(int b, int n) {
-        return b < 0 ? 0 : (b >= n ? n - 1 : b);
+    @Override
+    public int clickWidth() {
+        return clickWidth;
+    }
+
+    @Override
+    public int clickHeight() {
+        return clickHeight;
+    }
+
+    @Override
+    public boolean wrap() {
+        return wrap;
+    }
+
+    @Override
+    public long frames() {
+        return frames;
+    }
+
+    @Override
+    public int roundDelay() {
+        return roundDelay;
+    }
+
+    @Override
+    public boolean cannonPhased(int i) {
+        return (cannonItems.used[i] & Has.PHASING_DEVICE) != 0;
+    }
+
+    @Override
+    public int targetTeam(int i) {
+        return modes.targetTeam[i];
+    }
+
+    @Override
+    public int wormholeCount() {
+        return worms.count();
+    }
+
+    @Override
+    public int wormholeType(int i) {
+        return worms.type(i);
+    }
+
+    @Override
+    public int wormholeBx(int i) {
+        return worms.bx(i);
+    }
+
+    @Override
+    public int wormholeBy(int i) {
+        return worms.by(i);
+    }
+
+    @Override
+    public int wormholeLastDest(int i) {
+        return worms.lastDest(i);
+    }
+
+    @Override
+    public int wormholeCountdown(int i) {
+        return worms.countdown(i);
+    }
+
+    @Override
+    public int objectPx(int h) {
+        return objects.px[h];
+    }
+
+    @Override
+    public int objectPy(int h) {
+        return objects.py[h];
     }
 
     /** C {@code TEAM(i, j)}: team play and the same team. */

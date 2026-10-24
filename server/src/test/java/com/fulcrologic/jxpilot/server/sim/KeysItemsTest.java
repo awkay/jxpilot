@@ -28,7 +28,7 @@ import com.fulcrologic.jxpilot.common.map.Base;
 import com.fulcrologic.jxpilot.common.net.ControlKey;
 import com.fulcrologic.jxpilot.common.sim.Has;
 import com.fulcrologic.jxpilot.server.world.ItemParams;
-import com.fulcrologic.jxpilot.server.world.Mods;
+import com.fulcrologic.jxpilot.common.sim.Mods;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;

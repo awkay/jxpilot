@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.world;
 
+import com.fulcrologic.jxpilot.common.sim.Mods;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 /**
  * Laser pulses in flight (C {@code Pulses[]} of {@code pulse_t}), a fixed-capacity struct of arrays kept dense

@@ -29,7 +29,7 @@ import com.fulcrologic.jxpilot.server.robot.DefaultRobotPlayTest.W;
 import com.fulcrologic.jxpilot.server.robot.RobotFixture.SpyItems;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.common.sim.Has;
-import com.fulcrologic.jxpilot.server.world.Mods;
+import com.fulcrologic.jxpilot.common.sim.Mods;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.common.sim.Trig;

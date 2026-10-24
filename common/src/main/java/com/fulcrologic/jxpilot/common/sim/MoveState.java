@@ -21,9 +21,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
  */
-package com.fulcrologic.jxpilot.server.sim;
-
-import com.fulcrologic.jxpilot.server.world.Player;
+package com.fulcrologic.jxpilot.common.sim;
 
 /**
  * State of one point being moved through the map (C {@code move_state_t} plus its {@code move_info_t},
@@ -65,8 +63,8 @@ public final class MoveState {
     public boolean treasureCrashes;
     public boolean wormholeWarps;
     public boolean phased;
-    /** The player being moved, or null for a pool object. */
-    public Player pl;
+    /** The ship being moved, or null for a pool object. */
+    public ShipBody pl;
     /** The pool object being moved (-1 for players). */
     public int obj = -1;
     /** Owner team of the object (players: their team). */

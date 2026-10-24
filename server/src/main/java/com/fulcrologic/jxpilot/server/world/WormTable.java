@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.world;
 
+import com.fulcrologic.jxpilot.common.sim.ShipWorld;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Wormhole;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
@@ -38,9 +39,9 @@ public final class WormTable {
     /** Temporary wormholes the table holds before it grows (C reallocs without a limit; so does this table). */
     public static final int TEMP_CAPACITY = 64;
     /** {@link Wormhole.Type} ordinals as ints. */
-    public static final int NORMAL = 0;
-    public static final int IN = 1;
-    public static final int OUT = 2;
+    public static final int NORMAL = ShipWorld.WORM_NORMAL;
+    public static final int IN = ShipWorld.WORM_IN;
+    public static final int OUT = ShipWorld.WORM_OUT;
 
     private final World w;
     private final WorldMap map;

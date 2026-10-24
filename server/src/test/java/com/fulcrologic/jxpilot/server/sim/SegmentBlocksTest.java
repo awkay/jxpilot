@@ -23,6 +23,8 @@
  */
 package com.fulcrologic.jxpilot.server.sim;
 
+import com.fulcrologic.jxpilot.common.sim.Segment;
+import com.fulcrologic.jxpilot.common.sim.MoveState;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -30,7 +32,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
+import static com.fulcrologic.jxpilot.common.sim.MoveState.*;
 import static com.fulcrologic.jxpilot.server.sim.SegmentTest.BC;
 import static com.fulcrologic.jxpilot.server.sim.SegmentTest.obj;
 import static com.fulcrologic.jxpilot.server.sim.SegmentTest.world;
@@ -53,7 +55,7 @@ class SegmentBlocksTest {
     }
 
     static MoveState run(World w, MoveState ms) {
-        new Segment(w).move(ms);
+        new Segment(w, w::rfrac).move(ms);
         return ms;
     }
 

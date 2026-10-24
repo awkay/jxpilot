@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.world;
 
+import com.fulcrologic.jxpilot.common.sim.Mods;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 /**
  * C {@code Receive_modifier_bank} (netserver.c:2844): a client's modifier bank text ({@code modifierBank1..4},
