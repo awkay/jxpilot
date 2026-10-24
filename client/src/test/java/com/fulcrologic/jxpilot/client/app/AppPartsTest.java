@@ -293,6 +293,39 @@ class AppPartsTest {
         }
 
         @Test
+        @DisplayName("command-line resources win over ~/.xpilotrc; name and team come from the resources, else the flags' defaults")
+        void resources(@org.junit.jupiter.api.io.TempDir Path home) throws Exception {
+            java.io.PrintStream err = new java.io.PrintStream(java.io.OutputStream.nullOutputStream());
+            java.nio.file.Files.writeString(home.resolve(".xpilotrc"), "xpilot.clock: yes\nxpilot.name: Filer\n"
+                + "xpilot.team: 3\n");
+            AppOptions cli = AppOptions.parse(new String[] {"--connect", "h", "--clock", "no"}, "u");
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig k = AppLauncher.keyConfig(cli, home, err);
+            AppOptions named = AppOptions.parse(new String[] {"--connect", "h", "--name", "Cli", "--team", "5"}, "u");
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig kn = AppLauncher.keyConfig(named, home, err);
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig long32 =
+                com.fulcrologic.jxpilot.client.game.input.KeyConfig.load("name: " + "x".repeat(40) + "\nteam: 12\n",
+                    "rc", null);
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig blank =
+                com.fulcrologic.jxpilot.client.game.input.KeyConfig.load("name:   \n", "rc", null);
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig none =
+                com.fulcrologic.jxpilot.client.game.input.KeyConfig.defaults(null);
+            assertAll(
+                () -> assertFalse(k.options().flag(com.fulcrologic.jxpilot.client.game.options.ClientOption.CLOCK),
+                    "--clock no wins over the file's yes"),
+                () -> assertEquals("Filer", AppLauncher.name(cli, k), "the file's name"),
+                () -> assertEquals(3, AppLauncher.team(cli, k), "the file's team"),
+                () -> assertEquals("Cli", AppLauncher.name(named, kn), "--name wins over the file"),
+                () -> assertEquals(5, AppLauncher.team(named, kn), "--team wins over the file"),
+                () -> assertEquals("x".repeat(AppOptions.MAX_NAME), AppLauncher.name(cli, long32),
+                    "a long resource name is cut"),
+                () -> assertEquals(cli.team(), AppLauncher.team(cli, long32), "a team outside 0..9 is ignored"),
+                () -> assertEquals("U", AppLauncher.name(cli, blank), "a blank name falls back to the login name"),
+                () -> assertEquals("U", AppLauncher.name(cli, none), "no name resource: the login name"),
+                () -> assertEquals(com.fulcrologic.jxpilot.common.net.Protocol.NO_TEAM, AppLauncher.team(cli, none),
+                    "no team resource: no team"));
+        }
+
+        @Test
         @DisplayName("maxVolume: --volume wins, else the key file's maxVolume (~/.xpilotrc), else C's 100")
         void maxVolume() {
             com.fulcrologic.jxpilot.client.game.input.KeyConfig rc =

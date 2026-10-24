@@ -231,7 +231,7 @@ class KeyConfigTest {
             String rc = String.join("\n",
                 "keyThrust: end Shift_L",
                 "keyThurst: a",
-                "xpilot.name: Tony",
+                "xpilot.nickName: Tony",
                 "keyShield: Super_L space",
                 "keyFireShot: Escape Return",
                 "keyDropBall Linefeed",
@@ -251,7 +251,7 @@ class KeyConfigTest {
                     "rc:13: '#' directives are not supported: #include \"x\"",
                     "rc:1: keyThrust: unknown keysym 'end' (did you mean 'End'?), skipped",
                     "rc:2: unknown key function 'keyThurst'",
-                    "rc:3: resource 'name' is not used by JXPilot (ignored)",
+                    "rc:3: resource 'nickName' is not used by JXPilot (ignored)",
                     "rc:4: keyShield: Super_L (Command/Super) cannot be bound, skipped",
                     "rc:5: keyFireShot: Escape always quits JXPilot, skipped",
                     "rc:7: power: not a number: 'lots'",
@@ -369,6 +369,58 @@ class KeyConfigTest {
                 () -> assertEquals(List.of("", "", "", ""), List.of(KeyConfig.defaults(null).modifierBanks()),
                     "the defaults are four empty banks (C default \"\")"),
                 () -> assertEquals("FN C V2", c.modifierBanks()[0], "modifierBanks() returns a copy"));
+        }
+    }
+
+    @Nested
+    @DisplayName("client options and command-line resources")
+    class Options {
+        @Test
+        @DisplayName("other C resources go to the options; the command line wins over the file and reports its own problems")
+        void options() {
+            KeyConfig c = KeyConfig.load("""
+                xpilot.showHUDRadar: yes
+                xpilot.shotSize: 20
+                xpilot.sparkSize: big
+                xpilot.msg1: hello world
+                """, "rc", null, List.of(new XpilotRc.Entry("showHUDRadar", "no", 2),
+                new XpilotRc.Entry("keyThrust", "w", 4), new XpilotRc.Entry("charsPerSecond", "x", 6)));
+            KeyConfig d = KeyConfig.defaults(null, List.of(new XpilotRc.Entry("clock", "on", 1)));
+            assertAll(
+                () -> assertFalse(c.options().flag(com.fulcrologic.jxpilot.client.game.options.ClientOption.SHOW_HUD_RADAR),
+                    "the command line's 'no' wins over the file's 'yes'"),
+                () -> assertEquals(8, c.options().integer(com.fulcrologic.jxpilot.client.game.options.ClientOption.SHOT_SIZE),
+                    "file values apply (clamped)"),
+                () -> assertEquals("hello world", c.options().text(com.fulcrologic.jxpilot.client.game.options.ClientOption.MSG1),
+                    "talk macro text kept"),
+                () -> assertEquals(ControlKey.THRUST.mask(), game(c, GLFW_KEY_W) & ControlKey.THRUST.mask(),
+                    "command-line key binding applies"),
+                () -> assertEquals(List.of("rc:2: shotSize: 20 is outside 1-8, using 8",
+                    "rc:3: sparkSize: not a number: 'big'",
+                    "command line:6: charsPerSecond: not a number: 'x'"), c.problems(),
+                    "option problems carry their source and line"),
+                () -> assertEquals("defaults + rc + command line", c.source(), "source names the command line"),
+                () -> assertTrue(d.options().flag(com.fulcrologic.jxpilot.client.game.options.ClientOption.CLOCK),
+                    "defaults plus command line"),
+                () -> assertEquals("defaults + command line", d.source(), "defaults source names the command line"),
+                () -> assertEquals("defaults", KeyConfig.defaults(null, List.of()).source(), "plain defaults"));
+        }
+
+        @Test
+        @DisplayName("knownResource covers keys, settings, KeyConfig's own resources and client options")
+        void known() {
+            assertAll(
+                () -> assertTrue(KeyConfig.knownResource("keyThrust"), "key function"),
+                () -> assertTrue(KeyConfig.knownResource("power"), "power"),
+                () -> assertTrue(KeyConfig.knownResource("altTurnResistance"), "alternate setting"),
+                () -> assertTrue(KeyConfig.knownResource("maxVolume"), "maxVolume"),
+                () -> assertTrue(KeyConfig.knownResource("modifierBank4"), "modifier bank 4"),
+                () -> assertFalse(KeyConfig.knownResource("modifierBank5"), "no bank 5"),
+                () -> assertTrue(KeyConfig.knownResource("shipShape"), "shipShape"),
+                () -> assertTrue(KeyConfig.knownResource("shipShapeFile"), "shipShapeFile"),
+                () -> assertTrue(KeyConfig.knownResource("showHUDRadar"), "client option"),
+                () -> assertFalse(KeyConfig.knownResource("frobnicate"), "unknown"),
+                () -> assertFalse(KeyConfig.knownResource("powerful"), "a prefix of a setting is not one"));
         }
     }
 }
