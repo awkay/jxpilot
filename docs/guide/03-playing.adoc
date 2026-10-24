@@ -98,6 +98,7 @@ These keys act in the client and are never sent to the server.
 |Key |Function
 |kbd:[M] |Open the talk line
 |kbd:[Esc] |Quit (or, in the talk line, cancel the message)
+|kbd:[0] |Sound off and on (<<sound>>). This default may change.
 |Any key you choose with `--swap-scale-key` |Swap between the normal and the alternative zoom
 (`--scale-factor`, `--alt-scale-factor`; <<07-client-reference.adoc#game-flags,Game flags>>). Unbound by
 default, as in XPilot.
@@ -145,6 +146,35 @@ The map viewer (`--view-map`, available now) has its own keys:
 swap-scale-factor key
 |kbd:[Esc] or kbd:[Q] |Quit
 |===
+
+[[sound]]
+== Sound
+
+The client plays sound effects, on by default. Which sounds play, and when, is decided as in XPilot:
+the server sends XPilot's sound events (shots, explosions, hits, pickups, wormholes, wins and so on),
+already made quieter with distance, and the client plays a clip for each. This works the same on a
+JXPilot server and on an original XPilot server.
+
+[cols="2,4",options="header"]
+|===
+|Control |Effect
+|`--no-sound` (or `--sound`) |Turn sound off (on) for this run. XPilot's `sound` resource.
+|`--volume N` |XPilot's `maxVolume`: the loudest a sound may play, 0 to 255 (default 100). `0` means no
+sound; values above 100 play like 100.
+|kbd:[0] |Mute and unmute while playing; the message log shows `Sound off.` / `Sound on.`
+|===
+
+Details:
+
+* XPilot's 82 sound events map to 22 clips (`sounds/sounds.map` in the client jar): for example every
+  pickup shares one clip and every large explosion another. Refuelling is silent, as no XPilot server
+  plays its sound.
+* Two things differ from XPilot: the engine sound is a loop that keeps playing while you thrust (XPilot
+  replays a short sound every frame), and XPilot has no mute key.
+* If there is no audio device, or the audio library cannot load, the client prints
+  `no sound: REASON` and plays on silently.
+* The sound effects are public domain (CC0), by Juhani Junkala and Kenney
+  (<<09-appendices.adoc#third-party,Third-party components>>).
 
 [[hud]]
 == The screen and the HUD

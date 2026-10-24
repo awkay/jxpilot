@@ -38,9 +38,16 @@ https://github.com/awkay/jxpilot.
 |XPilot 4.5.5 maps |`maps/*.xp`, the maps zip, the application downloads |GPL v2 or later; authors in
 <<06-config-and-maps.adoc#shipped-maps,Shipped maps>>
 |Fira Code font |Client jar (`fonts/`) |SIL Open Font License 1.1 (`fonts/FiraCode-LICENSE.txt`)
+|Sound effects: Juhani Junkala, "The Essential Retro Video Game Sound Effects Collection [512
+sounds]" (21 clips), and Kenney, "Sci-Fi Sounds" `thrusterFire_004` (the engine loop) |Client jar
+(`sounds/`) |CC0 1.0 (public domain). Sources, checksums, the clip each came from and how it was
+processed: `sounds/LICENSE-sounds.txt` in the client jar.
 |LWJGL 3 |Client jar |BSD 3-Clause
 |GLFW, stb, libffi, liburing (in LWJGL's native libraries); Khronos OpenGL headers |Client jar |zlib;
 MIT or public domain; MIT; MIT; Khronos (MIT-style). Texts in `META-INF/licenses/lwjgl/` in the client jar.
+|OpenAL Soft (in LWJGL's OpenAL native libraries) |Client jar |GNU LGPL 2.0 or later
+(`META-INF/licenses/lwjgl/openal_soft_license.txt`). Source: https://github.com/kcat/openal-soft at
+commit `90191edd20bb877c5cbddfdac7ec0fe49ad93727`.
 |Java runtime (OpenJDK, Eclipse Temurin build) |Application downloads only (`runtime/`) |GPL v2 with
 the Classpath Exception; texts in the runtime's `legal/` directory
 |JUnit 5, PIT |Build and tests only, not distributed |EPL 2.0 / Apache 2.0
@@ -104,6 +111,10 @@ firewalls on both sides; the server answers only from the address you contacted
 |Your keys take a round trip to the server plus about 135 ms. Play on a server closer to you, or host it
 half way between the players (<<04-running-a-server.adoc#hosting,Hosting for friends far away>>).
 
+|Client: `no sound: ...` at startup
+|No audio device was found or the audio library could not load; the game plays without sound. Check
+the system's sound output, or use `--no-sound` to skip the attempt.
+
 |`--local`: `cannot start the local server: ...`
 |The map file could not be read or has a bad option; the message says which.
 |===
@@ -142,9 +153,9 @@ Is JXPilot related to the XPilot developers?::
 No. It is an independent port; they were not involved and do not endorse it
 (<<01-introduction.adoc#disclaimer,Relationship to XPilot>>).
 
-Why is the client jar about 5 MB?::
-It carries the native libraries for every supported system, so one file runs on Windows, macOS and
-Linux. The application downloads are larger (about 20 MB zipped) because they include a Java runtime.
+Why is the client jar about 10 MB?::
+It carries the native libraries (graphics and sound) for every supported system, so one file runs on
+Windows, macOS and Linux, and the sound effects. The application downloads are larger because they include a Java runtime.
 
 Does it run on Intel Macs, Linux on ARM, Windows on ARM?::
 The jar includes native libraries for macOS on Intel and Apple Silicon, Linux on x64 and arm64, and

@@ -64,7 +64,7 @@ headlessly, for screenshots and physics traces to compare against.
 
 `jxpilot-client-VERSION.jar`:: The client and all its dependencies, with LWJGL's native libraries
 for macOS (arm64, x64), Linux (x64, arm64) and Windows (x64). LWJGL picks the right one at run time.
-About 5.8 MB. Its main class is the launcher (<<07-client-reference.adoc#launcher,The jar launcher>>).
+It also has the sound effects and the OpenAL natives. About 10 MB. Its main class is the launcher (<<07-client-reference.adoc#launcher,The jar launcher>>).
 `jxpilot-server-VERSION.jar`:: The server with `common`; no LWJGL. About 0.4 MB. Main class
 `com.fulcrologic.jxpilot.server.ServerMain`.
 
