@@ -75,6 +75,20 @@ public final class Ecm {
     /** Ball detaching hook (null until balls exist). */
     public BallDetacher ballDetacher;
 
+    /** {@code StrictMath.pow(0.75, n)} for item counts 0..255 (StrictMath.pow allocates until it is compiled). */
+    private static final double[] POW_075 = new double[256];
+
+    static {
+        for (int n = 0; n < POW_075.length; n++) {
+            POW_075[n] = StrictMath.pow(0.75, n);
+        }
+    }
+
+    /** BEHAVIOR: exactly {@code StrictMath.pow(0.75, n)}, from the table for 0..255. */
+    static double pow075(int n) {
+        return n >= 0 && n < POW_075.length ? POW_075[n] : StrictMath.pow(0.75, n);
+    }
+
     public Ecm(World w, Simulation sim) {
         this.w = w;
         this.sim = sim;
@@ -209,7 +223,7 @@ public final class Ecm {
                 if (lasers != 0) {
                     ci.add(i, Item.LASER, -(int) (damage * lasers + 0.5));
                 }
-                ci.damaged[i] += (int) (24 * range * StrictMath.pow(0.75, ci.item(i, Item.SENSOR)));
+                ci.damaged[i] += (int) (24 * range * pow075(ci.item(i, Item.SENSOR)));
             }
         }
         for (int k = 0; k < w.numPlayers; k++) {
@@ -239,7 +253,7 @@ public final class Ecm {
             if (cloaks <= 1) {
                 p.forceVisible += (int) damage;
             } else {
-                p.forceVisible += (int) (damage * StrictMath.pow(0.75, cloaks - 1));
+                p.forceVisible += (int) (damage * pow075(cloaks - 1));
             }
             if ((p.have & Has.BALL) != 0 && ballDetacher != null) {
                 ballDetacher.ecmDetach(p, range);
@@ -248,7 +262,7 @@ public final class Ecm {
                 p.items[Item.LASER.ordinal()] -= (int) (range * p.items[Item.LASER.ordinal()] + 0.5);
             }
             if (!p.robot || !w.items.ecmsReprogramRobots || pl == null) {
-                long duration = (int) (damage * StrictMath.pow(0.75, p.items[Item.SENSOR.ordinal()]));
+                long duration = (int) (damage * pow075(p.items[Item.SENSOR.ordinal()]));
                 p.damaged += (int) duration;
                 if (pl != null) {
                     sim.ships.recordShove(p, pl, w.frames + duration);

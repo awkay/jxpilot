@@ -124,6 +124,11 @@ public interface GameHost {
      */
     void tick(int tick);
 
+    /** True when the game wants the server to stop (C {@code End_game} after the gameDuration shutdown delay). */
+    default boolean shutdownDue() {
+        return false;
+    }
+
     /** X of the viewer's view centre (world pixels), used for the snapshot header. */
     double viewX(int viewerId);
 

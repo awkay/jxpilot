@@ -390,12 +390,12 @@ class SegmentBlocksTest {
             run(w, p);
             World nt = row("  !  ");
             nt.params.targetTeamCollision = false;
-            int team = nt.map.targets().get(0).team();
+            int team = nt.modes.targetTeam[0];
             MoveState mate = obj(nt, 2 * BC, BC + 1000, 1, 0, 64, 0);
-            mate.team = team;
+            mate.targetTeam = team;
             run(nt, mate);
             MoveState foe = obj(nt, 2 * BC, BC + 1000, 1, 0, 64, 0);
-            foe.team = team + 1;
+            foe.targetTeam = team + 1;
             run(nt, foe);
             MoveState matePl = obj(nt, 2 * BC, BC + 1000, 1, 0, 64, 0);
             matePl.pl = new Player(0);

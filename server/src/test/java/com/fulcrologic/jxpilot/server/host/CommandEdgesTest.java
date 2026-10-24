@@ -165,6 +165,27 @@ class CommandEdgesTest {
         }
 
         @Test
+        @DisplayName("a swapping ship holding a ball drops it first (C Detach_ball(ind, -1))")
+        void ball() {
+            CommandsTest.Fx f = new CommandsTest.Fx("teamPlay: yes\nreserveRobotTeam: no\n", TEAMS);
+            int ann = enter(f.h, "Ann", 1);
+            Player a = f.p(ann);
+            com.fulcrologic.jxpilot.server.world.Objects o = f.w.objects;
+            int h = o.alloc();
+            o.type[h] = Obj.BALL;
+            o.owner[h] = ann;
+            a.have |= Has.BALL;
+            a.ball = h;
+            a.used |= Has.CONNECTOR;
+            f.say(ann, "/team 2");
+            assertAll(
+                () -> assertEquals(2, a.team, "swapped"),
+                () -> assertEquals(Obj.NO_ID, o.owner[h], "the ball is loose"),
+                () -> assertEquals(0, a.have & Has.BALL, "no ball any more"),
+                () -> assertEquals(-1, a.ball, "not reaching for it"));
+        }
+
+        @Test
         @DisplayName("a swap in limited lives clears self-destruct; a paused opponent does not make the swapper wait")
         void swapEdges() {
             CommandsTest.Fx f = new CommandsTest.Fx("teamPlay: yes\nreserveRobotTeam: no\nlimitedLives: yes\n", TEAMS);

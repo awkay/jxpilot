@@ -3,7 +3,7 @@
 // by dist/src/test/java/com/fulcrologic/jxpilot/dist/docs/GuideTables.java. Do not edit:
 // run `make -C docs/guide generate` instead. The build fails when this file is stale.
 
-The server knows *301* options: 258 implemented, 30 in progress, 2 not yet, 4 not supported, 2 no effect, 5 not applicable. In these groups:
+The server knows *301* options: 288 implemented, 2 not yet, 4 not supported, 2 no effect, 5 not applicable. In these groups:
 
 * <<opts-files,Command line and server files>> (11)
 * <<opts-network,Server and network>> (23)
@@ -303,14 +303,14 @@ Race mode (checkpoints), ball races, rounds and time limits.
 |boolean
 |`+false+`
 |command line, map, config file
-|*In progress (M2).* Is timing done for balls (on) or players (off)? Only used if timing is on.
+|*Implemented.* Is timing done for balls (on) or players (off)? Only used if timing is on.
 
 |[[opt-ballraceConnected]]`+ballraceConnected+`
 |
 |boolean
 |`+false+`
 |command line, map, config file
-|*In progress (M2).* Should a player be connected to a ball to pass a checkpoint? Only used if timing and ballrace are both on.
+|*Implemented.* Should a player be connected to a ball to pass a checkpoint? Only used if timing and ballrace are both on.
 
 |[[opt-gameDuration]]`+gameDuration+`
 |`+time+`
@@ -324,14 +324,14 @@ Race mode (checkpoints), ball races, rounds and time limits.
 |real
 |`+6.0+`
 |command line, map, config file
-|*In progress (M2).* How close you have to be to a checkpoint to register - in blocks.
+|*Implemented.* How close you have to be to a checkpoint to register - in blocks.
 
 |[[opt-raceLaps]]`+raceLaps+`
 |
 |integer
 |`+3+`
 |command line, map, config file
-|*In progress (M2).* How many laps a race is run over.
+|*Implemented.* How many laps a race is run over.
 
 |[[opt-roundDelay]]`+roundDelay+`
 |`+roundDelaySeconds+`
@@ -398,14 +398,14 @@ What the radar shows.
 |boolean
 |`+False+`
 |command line, map, config file
-|*In progress (M2).* Are treasure balls visible or highlighted on the radar.
+|*Implemented.* Are treasure balls visible or highlighted on the radar.
 
 |[[opt-asteroidsOnRadar]]`+asteroidsOnRadar+`
 |`+asteroidsRadar+`
 |boolean
 |`+False+`
 |command line, map, config file
-|*In progress (M2).* Are asteroids visible on the radar.
+|*Implemented.* Are asteroids visible on the radar.
 
 |===
 
@@ -479,7 +479,7 @@ Points for kills, deaths and destroying things.
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* Multiplication factor to scale score for ball kills.
+|*Implemented.* Multiplication factor to scale score for ball kills.
 
 |[[opt-explosionKillScoreMult]]`+explosionKillScoreMult+`
 |
@@ -535,7 +535,7 @@ Points for kills, deaths and destroying things.
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* Points awarded for breaking an asteroid.
+|*Implemented.* Points awarded for breaking an asteroid.
 
 |[[opt-cannonPoints]]`+cannonPoints+`
 |
@@ -549,7 +549,7 @@ Points for kills, deaths and destroying things.
 |real
 |`+100.0+`
 |command line, map, config file
-|*In progress (M2).* Maximum score to receive points for breaking an asteroid.
+|*Implemented.* Maximum score to receive points for breaking an asteroid.
 
 |[[opt-cannonMaxScore]]`+cannonMaxScore+`
 |
@@ -631,14 +631,14 @@ lib/defaults: `+0.3+`
 |real
 |`+0.0+`
 |command line, map, config file
-|*In progress (M2).* Probability for an asteroid to release items when it breaks.
+|*Implemented.* Probability for an asteroid to release items when it breaks.
 
 |[[opt-asteroidMaxItems]]`+asteroidMaxItems+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* The maximum number of items a broken asteroid can release.
+|*Implemented.* The maximum number of items a broken asteroid can release.
 
 |[[opt-itemProbMult]]`+itemProbMult+`
 |`+itemProbFact+`
@@ -1191,7 +1191,7 @@ What happens when ships and objects hit walls, the world edge or each other.
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Do balls bounce off walls?
+|*Implemented.* Do balls bounce off walls?
 
 |[[opt-minesWallBounce]]`+minesWallBounce+`
 |
@@ -1226,7 +1226,7 @@ What happens when ships and objects hit walls, the world edge or each other.
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Do asteroids bounce off walls?
+|*Implemented.* Do asteroids bounce off walls?
 
 |[[opt-maxObjectWallBounceSpeed]]`+maxObjectWallBounceSpeed+`
 |`+maxObjectBounceSpeed+`
@@ -1428,7 +1428,7 @@ lib/defaults: `+-0.25+`
 |real
 |`+50.0+`
 |command line, map, config file
-|*In progress (M2).* Mass of balls.
+|*Implemented.* Mass of balls.
 
 |[[opt-minItemMass]]`+minItemMass+`
 |
@@ -1780,14 +1780,14 @@ Capture-the-ball play, ball connectors and destroyable targets.
 |boolean
 |`+no+`
 |command line, map, config file
-|*In progress (M2).* Can balls collide with other objects?
+|*Implemented.* Can balls collide with other objects?
 
 |[[opt-ballSparkCollisions]]`+ballSparkCollisions+`
 |
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Can balls be blown around by exhaust? (Needs ballCollisions too)
+|*Implemented.* Can balls be blown around by exhaust? (Needs ballCollisions too)
 
 |[[opt-targetKillTeam]]`+targetKillTeam+`
 |
@@ -1822,63 +1822,63 @@ Capture-the-ball play, ball connectors and destroyable targets.
 |boolean
 |`+no+`
 |command line, map, config file
-|*In progress (M2).* Do team members die when their treasure is destroyed?
+|*Implemented.* Do team members die when their treasure is destroyed?
 
 |[[opt-captureTheFlag]]`+captureTheFlag+`
 |`+ctf+`
 |boolean
 |`+no+`
 |command line, map, config file
-|*In progress (M2).* Does a team's treasure have to be safe before enemy balls can be cashed?
+|*Implemented.* Does a team's treasure have to be safe before enemy balls can be cashed?
 
 |[[opt-treasureCollisionDestroys]]`+treasureCollisionDestroys+`
 |`+treasureCollisionDestroy+`
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Are balls destroyed when a player touches it?
+|*Implemented.* Are balls destroyed when a player touches it?
 
 |[[opt-ballConnectorSpringConstant]]`+ballConnectorSpringConstant+`
 |
 |real
 |`+1500.0+`
 |command line, map, config file
-|*In progress (M2).* What is the spring constant for connectors?
+|*Implemented.* What is the spring constant for connectors?
 
 |[[opt-ballConnectorDamping]]`+ballConnectorDamping+`
 |
 |real
 |`+2.0+`
 |command line, map, config file
-|*In progress (M2).* What is the damping force on connectors?
+|*Implemented.* What is the damping force on connectors?
 
 |[[opt-maxBallConnectorRatio]]`+maxBallConnectorRatio+`
 |
 |real
 |`+0.30+`
 |command line, map, config file
-|*In progress (M2).* How much longer or shorter can a connecter get before it breaks?
+|*Implemented.* How much longer or shorter can a connecter get before it breaks?
 
 |[[opt-ballConnectorLength]]`+ballConnectorLength+`
 |
 |real
 |`+120+`
 |command line, map, config file
-|*In progress (M2).* How long is a normal connector string?
+|*Implemented.* How long is a normal connector string?
 
 |[[opt-connectorIsString]]`+connectorIsString+`
 |
 |boolean
 |`+no+`
 |command line, map, config file
-|*In progress (M2).* Is the ball connector made of string?
+|*Implemented.* Is the ball connector made of string?
 
 |[[opt-treasureCollisionMayKill]]`+treasureCollisionMayKill+`
 |`+treasureUnshieldedCollisionKills+`
 |boolean
 |`+no+`
 |command line, map, config file
-|*In progress (M2).* Does a ball kill a player when the player touches it unshielded?
+|*Implemented.* Does a ball kill a player when the player touches it unshielded?
 
 |===
 
@@ -2299,35 +2299,35 @@ Asteroid appearance and behaviour.
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Can ships be destroyed when hit by an asteroid?
+|*Implemented.* Can ships be destroyed when hit by an asteroid?
 
 |[[opt-asteroidProb]]`+asteroidProb+`
 |
 |real
 |`+5e-7+`
 |command line, map, config file
-|*In progress (M2).* Probability for an asteroid to appear.
+|*Implemented.* Probability for an asteroid to appear.
 
 |[[opt-maxAsteroidDensity]]`+maxAsteroidDensity+`
 |
 |real
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* Maximum density [0.0-1.0] for asteroids (max asteroids per block.
+|*Implemented.* Maximum density [0.0-1.0] for asteroids (max asteroids per block.
 
 |[[opt-asteroidConcentratorRadius]]`+asteroidConcentratorRadius+`
 |`+asteroidConcentratorRange+`
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* The maximum distance from an asteroid concentrator for asteroids to appear in. Sensible values are in the range 1 to 20. If no asteroid concentrators are defined in a map then asteroids can popup anywhere. If any are then asteroids popup in the vicinity of an asteroid concentrator with probability asteroidConcentratorProb and anywhere the remainder of the time. An asteroid concentrator is drawn on the screen as three rotating squares. The map symbol is the ampersand '&'.
+|*Implemented.* The maximum distance from an asteroid concentrator for asteroids to appear in. Sensible values are in the range 1 to 20. If no asteroid concentrators are defined in a map then asteroids can popup anywhere. If any are then asteroids popup in the vicinity of an asteroid concentrator with probability asteroidConcentratorProb and anywhere the remainder of the time. An asteroid concentrator is drawn on the screen as three rotating squares. The map symbol is the ampersand '&'.
 
 |[[opt-asteroidConcentratorProb]]`+asteroidConcentratorProb+`
 |
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* The probability, if any asteroid concentrators are present, that they will be used. This proportion of asteroids will be placed near asteroid concentrators, within asteroidConcentratorRadius.
+|*Implemented.* The probability, if any asteroid concentrators are present, that they will be used. This proportion of asteroids will be placed near asteroid concentrators, within asteroidConcentratorRadius.
 
 |===
 

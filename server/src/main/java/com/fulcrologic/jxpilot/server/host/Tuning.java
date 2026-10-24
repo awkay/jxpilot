@@ -30,6 +30,7 @@ import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.ItemParams;
+import com.fulcrologic.jxpilot.server.world.ModeParams;
 import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -46,7 +47,7 @@ import java.util.function.Consumer;
  * <p>
  * {@link #tune} stores the new value in {@link World#options} (C stores it in the option's variable), runs the
  * option's tuner, and brings {@link World#params} up to date: the fields whose value the change alters (a
- * {@link Params#from} before and after the change) are copied into the live parameters, so state the
+ * {@link Params#from} before and after the change; likewise {@code ItemParams} and {@code ModeParams}) are copied into the live parameters, so state the
  * simulation adjusted on its own is kept. C's latched rules stay latched: {@code KILLING_SHOTS} and
  * {@code DEF_USED} only ever lose bits ({@code Set_world_rules}), the crash masks change only when
  * {@code Move_init} runs, and alliances follow {@code allowAlliances} only when the world rules are computed.
@@ -264,6 +265,7 @@ final class Tuning {
         }
         Params before = Params.from(opts, w.map);
         ItemParams beforeItems = ItemParams.from(opts, w.width, w.height, w.params.fps);
+        ModeParams beforeModes = ModeParams.from(opts, w.map, w.params.fps);
         opts.force(o, stored);
         fixValues(t, o);
         int cannonMask = w.params.objCannonMask;
@@ -271,6 +273,7 @@ final class Tuning {
         int treasureMask = w.params.objTreasureMask;
         copyChanges(before, Params.from(opts, w.map), w.params);
         copyChanges(beforeItems, ItemParams.from(opts, w.width, w.height, w.params.fps), w.items);
+        copyChanges(beforeModes, ModeParams.from(opts, w.map, w.params.fps), w.modeParams);
         w.params.objCannonMask = cannonMask;
         w.params.objTargetMask = targetMask;
         w.params.objTreasureMask = treasureMask;

@@ -84,6 +84,7 @@ public final class SimGameHost implements GameHost {
     boolean gameLock;
     /** C {@code RawMode} (idleRun; an operator may change it). */
     private boolean rawMode;
+    private boolean shutdown;
     private final String mapName;
     private final String mapAuthor;
 
@@ -132,6 +133,7 @@ public final class SimGameHost implements GameHost {
     private final Msg.GameEvent gameEvent = new Msg.GameEvent();
     private final Msg.PlayerThrust thrust = new Msg.PlayerThrust();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
+    private final Msg.Timing timing = new Msg.Timing();
     private final Msg.Settings settingsMsg = new Msg.Settings();
     private final Msg.ChangeTeam changeTeam = new Msg.ChangeTeam();
     private final Msg.PlayerAlliance allianceMsg = new Msg.PlayerAlliance();
@@ -538,11 +540,19 @@ public final class SimGameHost implements GameHost {
      * stays its input, robots get none, and the sim runs tick {@code tick}. Otherwise robots are disabled, the
      * world only takes the tick number and queued input is dropped.
      * BEHAVIOR: a connected human the sim removed during the tick (maxPauseTime) is kicked.
+     * BEHAVIOR: first the shutdown countdown after a gameDuration game over (C Main_loop): once it ran out
+     * nothing else happens and {@link #shutdownDue} is true. The first running tick with a human starts the
+     * gameDuration clock.
      */
     @Override
     public void tick(int tick) {
+        if (shutdown || sim.rounds.shutdownTick()) {
+            shutdown = true;
+            return;
+        }
         runKicks();
-        boolean run = rawMode || humans() > 0;
+        int humans = humans();
+        boolean run = rawMode || humans > 0;
         if (sim.robots.enabled() != run) {
             sim.robots.setEnabled(run);
         }
@@ -554,9 +564,16 @@ public final class SimGameHost implements GameHost {
             return;
         }
         applyQueuedInput();
+        sim.rounds.startGameDuration(humans > 0);
         long from = w.events.seq();
         sim.tick(tick, keysBySlot);
         kickRemoved(from);
+    }
+
+    /** BEHAVIOR: true once the shutdown countdown after a gameDuration game over has run out (C End_game). */
+    @Override
+    public boolean shutdownDue() {
+        return shutdown;
     }
 
     private void runKicks() {
@@ -696,8 +713,8 @@ public final class SimGameHost implements GameHost {
      * <p>
      * BEHAVIOR: for each player in the game, in order: PLAYER_JOIN (SELF for the viewer, ROBOT, PAUSED; power,
      * afterburners, name, its ship's shape), BASE_OWNER (its home), SCORE (score, lives with limitedLives else
-     * -1, status) and, for a player in an alliance, PLAYER_ALLIANCE with the viewer's mark; then in team play
-     * TEAM_SCORE for every team with members. The event cursor starts at the
+     * -1, status), for a player in an alliance PLAYER_ALLIANCE with the viewer's mark, and in race mode TIMING
+     * (check, round); then in team play TEAM_SCORE for every team with members. The event cursor starts at the
      * newest event (the burst cursor at the newest burst).
      */
     @Override
@@ -724,6 +741,12 @@ public final class SimGameHost implements GameHost {
             score.send(out);
             if (allMarks || p.alliance != Player.ALLIANCE_NOT_SET) {
                 sendAlliance(viewerId, p.id, p.alliance, out);
+            }
+            if (w.modeParams.timing) {
+                timing.id = p.id;
+                timing.check = p.check;
+                timing.round = p.round;
+                timing.send(out);
             }
         }
         if (w.params.teamPlay) {
@@ -766,8 +789,8 @@ public final class SimGameHost implements GameHost {
      * in the game, then the full state (PLAYER_ALLIANCE for every player), and continues from the newest event.
      * BEHAVIOR: JOIN: PLAYER_JOIN of the player as it is now (none when it already left); LEAVE: PLAYER_LEAVE;
      * TEAM: PLAYER_TEAM; SCORE / TEAM_SCORE; MESSAGE for everyone or this viewer (from mapped); BASE_OWNER
-     * (NO_ID = released); GAME_EVENT (ids mapped, value kept); THRUST: PLAYER_THRUST; SCORE_OBJECT only to its
-     * player; ALLIANCE: PLAYER_ALLIANCE with the viewer's mark ({@link #allianceMark}).
+     * (NO_ID = released); GAME_EVENT (ids mapped, value kept); THRUST: PLAYER_THRUST; TIMING (race progress);
+     * SCORE_OBJECT only to its player; ALLIANCE: PLAYER_ALLIANCE with the viewer's mark ({@link #allianceMark}).
      */
     @Override
     public void drainEvents(int viewerId, ReliableChannel out) {
@@ -853,6 +876,12 @@ public final class SimGameHost implements GameHost {
                 thrust.send(out);
             }
             case Events.ALLIANCE -> sendAlliance(viewerId, e.a[i], e.b[i], out);
+            case Events.TIMING -> {
+                timing.id = e.a[i];
+                timing.check = e.b[i];
+                timing.round = e.c[i];
+                timing.send(out);
+            }
             case Events.SCORE_OBJECT -> {
                 if (e.a[i] == viewerId) {
                     scoreObject.score = e.value[i];

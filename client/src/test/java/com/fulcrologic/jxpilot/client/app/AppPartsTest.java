@@ -75,7 +75,21 @@ class AppPartsTest {
                 () -> assertEquals(Const.TARGET_DAMAGE, t.targetDamage(0), "fresh: intact"),
                 () -> assertEquals(1, s.selfTeam(), "own team"),
                 () -> assertEquals(42L, s.loops(), "loops as set"),
-                () -> assertEquals(0, s.nextCheckpoint(), "checkpoints not modelled"));
+                () -> assertEquals(0, s.nextCheckpoint(), "no TIMING yet: checkpoint 0"));
+        }
+
+        @Test
+        @DisplayName("the next checkpoint is the own player's check from TIMING")
+        void nextCheckpoint() {
+            AppFixture f = new AppFixture(true).players();
+            com.fulcrologic.jxpilot.common.net.Msg.Timing t = new com.fulcrologic.jxpilot.common.net.Msg.Timing();
+            t.id = f.game.players().selfId();
+            t.check = 3;
+            t.round = 1;
+            java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(16);
+            t.write(b);
+            f.game.onReliable(com.fulcrologic.jxpilot.common.net.ReliableType.TIMING, b.flip());
+            assertEquals(3, new WorldMapState(f.game).nextCheckpoint(), "TIMING check of the own player");
         }
 
         @Test

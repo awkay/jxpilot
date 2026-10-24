@@ -530,7 +530,8 @@ final class Commands {
     /**
      * The swap of C {@code Cmd_team} (command.c:409-437).
      * <p>
-     * BEHAVIOR: everyone gets "NAME has swapped to team N."; the member counts move; with teamShareScore the
+     * BEHAVIOR: everyone gets "NAME has swapped to team N."; a ship holding a ball drops it (C
+     * {@code Detach_ball(ind, -1)}); the member counts move; with teamShareScore the
      * player's score is taken from the old team and given to the new one (C's order, so the score the new team
      * gets is the old team's new share); with limitedLives, when an opponent is in the game (not paused) the
      * swapper waits for the next round ('W', no lives, GAME_OVER, no self-destruct, count -1); a new home base of
@@ -540,7 +541,9 @@ final class Commands {
     void swapTeam(Player pl, int team) {
         var p = w.params;
         all().append(pl.name).append(" has swapped to team ").append(team).append('.');
-        // C Detach_ball here: balls are not in this build's simulation (server-modes)
+        if ((pl.have & com.fulcrologic.jxpilot.server.world.Has.BALL) != 0) {
+            sim.balls.detach(pl, -1); // C Detach_ball(ind, -1)
+        }
         w.teamMembers[pl.team]--;
         if (p.teamShareScore) {
             sim.scoring.teamScore(pl.team, -pl.score);

@@ -56,6 +56,11 @@ public final class ReliableType {
     /** {@link Msg.ScoreObject}: a score popup for the receiver's HUD (C score objects). */
     public static final int SCORE_OBJECT = 12;
     /**
+     * {@link Msg.Timing}: race progress of a player (C {@code Send_timing}). Game-mode messages use ids 20-26
+     * (server-modes block).
+     */
+    public static final int TIMING = 20;
+    /**
      * server-commands block 31-33: {@link Msg.PlayerAlliance}: a player's alliance mark as the receiver sees
      * it (C {@code Send_score}'s alliance character).
      */
