@@ -128,6 +128,24 @@ class ServerOptionsTest {
     }
 
     @Test
+    @DisplayName("passwordFileName: read after the defaults (origin PASSWORD); only password is taken; a missing file is an error")
+    void passwordFile() throws IOException {
+        Path pw = file("password", "# set this to a unique word\npassword: \\override:  Sesame\nshotSpeed: 99\n");
+        Path d = file("mydefaults", "password: fromDefaults\n");
+        String map = bareMap("");
+        Options o = Server.readOptions(new String[] {"--map", map, "-defaults", d.toString(), "-passwordFileName",
+            pw.toString()});
+        Options none = Server.readOptions(new String[] {"--map", map, "-defaults", d.toString()});
+        assertAll(
+            () -> assertEquals("Sesame", o.getString(Opt.PASSWORD), "the password file beats the defaults file"),
+            () -> assertEquals(OptionOrigin.PASSWORD, o.originOf(Opt.PASSWORD), "origin PASSWORD"),
+            () -> assertEquals(OptionOrigin.INIT, o.originOf(Opt.SHOT_SPEED), "other options are refused there"),
+            () -> assertEquals("fromDefaults", none.getString(Opt.PASSWORD), "without the option no password file is read"),
+            () -> assertThrows(IOException.class, () -> Server.readOptions(new String[] {"--map", map,
+                "-passwordFileName", dir.resolve("missing").toString()}), "a named file that cannot be read"));
+    }
+
+    @Test
     @DisplayName("the positional config file is read after lib/defaults and beats it; the map still beats both")
     void configFile() throws IOException {
         Path cfg = file("server.cfg", "gravity: -0.3\nshotSpeed: 25\n");

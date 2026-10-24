@@ -340,13 +340,18 @@ public final class World {
         return params.teamPlay && a.team == b.team && a.team != Const.TEAM_NOT_SET;
     }
 
-    /** C {@code Team_immune}: different ids, team immunity on and team mates. */
+    /** C {@code Team_immune}: different ids, team immunity on, and team mates or allies (player.c:1998). */
     public boolean teamImmune(int id1, int id2) {
         if (id1 == id2 || !params.teamImmunity || id1 == Obj.NO_ID || id2 == Obj.NO_ID) {
             return false;
         }
         Player a = byId(id1);
         Player b = byId(id2);
-        return a != null && b != null && sameTeam(a, b);
+        return a != null && b != null && (sameTeam(a, b) || allied(a, b));
+    }
+
+    /** server-commands: C {@code ALLIANCE(i, j)}: {@code a} is in an alliance and {@code b} is in the same one. */
+    public boolean allied(Player a, Player b) {
+        return a.alliance != Player.ALLIANCE_NOT_SET && b.alliance == a.alliance;
     }
 }

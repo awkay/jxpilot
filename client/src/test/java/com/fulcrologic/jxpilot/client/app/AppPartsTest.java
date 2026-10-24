@@ -142,13 +142,14 @@ class AppPartsTest {
         @DisplayName("XPilot login: nick, team, shape, real name reduced to safe characters")
         void xpLogin() {
             XpConnection.Login l = GameConnector.xpLogin("Ace", 4, "(SH: 1,0)", true, "t.käy x");
-            XpConnection.Login empty = GameConnector.xpLogin("Ace", 4, "", false, "ä");
+            XpConnection.Login empty = GameConnector.xpLogin("Ace", 4, null, false, "ä");
             assertAll(
                 () -> assertEquals("Ace", l.nick, "nick"),
                 () -> assertEquals(4, l.team, "team"),
                 () -> assertEquals("(SH: 1,0)", l.shape, "shape"),
                 () -> assertEquals("t.kyx", l.realName, "non-ASCII and space dropped"),
                 () -> assertEquals("jxpilot", empty.realName, "nothing left: jxpilot"),
+                () -> assertEquals("", empty.shape, "no shape is the empty shape (the default ship)"),
                 () -> assertTrue(l.audio, "asks for audio when sound is on"),
                 () -> assertFalse(empty.audio, "does not ask for audio when sound is off"));
         }
@@ -164,10 +165,18 @@ class AppPartsTest {
                 @Override public void close() { }
             };
             ClientConnection c = GameConnector.nativeConnection(t, "x", new AppFixture(true).game, "Ace", 3, "(SH: 1,0)");
+            ClientConnection tiny = GameConnector.nativeConnection(t, "x", new AppFixture(true).game, "Ace", 3,
+                "(MG: 2,2)(SH: 1,1 2,2 3,3)");
+            ClientConnection none = GameConnector.nativeConnection(t, "x", new AppFixture(true).game, "Ace", 3, null);
+            String defaultWire = "(SH: 15,0 -9,8 -9,-8)(EN: -9,0)(MG: 15,0)(LL: -9,8)(RL: -9,-8)(MR: 15,0)";
             assertAll(
                 () -> assertEquals("Ace", c.connect.name.toString(), "name"),
                 () -> assertEquals(3, c.connect.team, "team"),
-                () -> assertEquals("(SH: 1,0)", c.connect.shape.toString(), "shape"));
+                () -> assertEquals(defaultWire, c.connect.shape.toString(),
+                    "an invalid shape is sent as the default ship's canonical string (C Send_shape)"),
+                () -> assertEquals("(SH: 1,1 2,2 3,3)(EN: 1,0)(MG: 2,2)(LL: 3,3)(RL: 1,1)(MR: 2,2)",
+                    tiny.connect.shape.toString(), "a shape is converted without limits and sent canonically"),
+                () -> assertEquals(defaultWire, none.connect.shape.toString(), "no shape is the default ship"));
         }
 
         @Test

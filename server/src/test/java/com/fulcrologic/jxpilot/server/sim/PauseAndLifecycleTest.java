@@ -365,14 +365,14 @@ class PauseAndLifecycleTest {
         }
 
         @Test
-        @DisplayName("I9: a reused slot starts with the default ship")
+        @DisplayName("I9: a reused slot starts with the defaultShipShape ship (C Init_player)")
         void shipReset() {
             Simulation s = sim("");
             Player p = TestWorlds.join(s, "a", 0);
             p.ship = new ShipGeom(ShipShape.parse("(SH: 10,0 0,10 -10,0 0,-10)(EN: -10,0)(MG: 10,0)"));
             s.ships.leave(p);
             Player q = TestWorlds.join(s, "b", 0);
-            assertEquals(ShipGeom.defaultShip(), q.ship, "Init_player resets the ship shape");
+            assertEquals(s.ships.defaultShipShape, q.ship, "Init_player resets the ship shape");
         }
     }
 

@@ -179,6 +179,21 @@ class KeyConfigTest {
                 () -> assertEquals(0.5, s.altTurnResistance, "altTurnResistance with *"),
                 () -> assertEquals(List.of(), c.problems(), "no problems"));
         }
+
+        @Test
+        @DisplayName("shipShape and shipShapeFile are kept for the shape (the last line wins), null when absent")
+        void shipShape() {
+            KeyConfig c = KeyConfig.load("xpilot.shipShape: first\nshipShape: (SH: 15,0 -9,8 -9,-8)\n"
+                + "xpilot.shipShapeFile: /tmp/ships\n", "rc", null);
+            KeyConfig none = KeyConfig.load("power: 50\n", "rc", null);
+            assertAll(
+                () -> assertEquals("(SH: 15,0 -9,8 -9,-8)", c.shipShape(), "the last shipShape line"),
+                () -> assertEquals("/tmp/ships", c.shipShapeFile(), "shipShapeFile with the xpilot. prefix"),
+                () -> assertEquals(List.of(), c.problems(), "neither is reported as unused"),
+                () -> assertNull(none.shipShape(), "no shipShape line: null"),
+                () -> assertNull(none.shipShapeFile(), "no shipShapeFile line: null"),
+                () -> assertNull(KeyConfig.defaults(null).shipShape(), "the defaults have no shape"));
+        }
     }
 
     @Nested

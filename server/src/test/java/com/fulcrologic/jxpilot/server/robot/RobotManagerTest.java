@@ -231,7 +231,7 @@ class RobotManagerTest {
             s.robots.create();
             List<String> during = RobotFixture.messages(s.world, f1);
             assertAll(
-                () -> assertSame(ShipGeom.defaultShip(), p.ship, "default ship"),
+                () -> assertSame(s.ships.defaultShipShape, p.ship, "without allowShipShapes: defaultShipShape"),
                 () -> assertEquals(1, after.size(), "after the round delay: only the enter message"),
                 () -> assertEquals(0, delayAfter, "after the round delay: no new delay"),
                 () -> assertEquals(2, during.size(), "during a round delay: the enter message and the delay message"),

@@ -74,6 +74,8 @@ public final class Simulation {
     public final Cannons cannons;
     public final Keys keys;
     public final Rounds rounds;
+    /** server-commands: alliances between players (C alliance.c). */
+    public final Alliances alliances;
     /** Robot players (C {@code Robot_update}); off until {@link RobotManager#setEnabled enabled}. */
     public final RobotManager robots;
 
@@ -92,6 +94,7 @@ public final class Simulation {
         this.rounds = new Rounds(world, this);
         com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder.initRecordClasses();
         Sounds.initClasses();
+        this.alliances = new Alliances(world, this);
         this.robots = new RobotManager(world, this);
     }
 

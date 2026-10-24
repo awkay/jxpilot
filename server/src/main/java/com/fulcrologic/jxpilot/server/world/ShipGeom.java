@@ -42,6 +42,11 @@ public final class ShipGeom {
     public final float[] engineY = new float[Const.RES];
     public final float[] gunX = new float[Const.RES];
     public final float[] gunY = new float[Const.RES];
+    /**
+     * server-commands: the shape as PLAYER_JOIN carries it (C {@code Convert_ship_2_string}); empty for the
+     * built-in default ship, which clients draw without it.
+     */
+    public final String wire;
 
     public ShipGeom(ShipShape shape) {
         this.shape = shape;
@@ -53,6 +58,17 @@ public final class ShipGeom {
         }
         rotate(shape.engineX, shape.engineY, engineX, engineY);
         rotate(shape.mainGunX, shape.mainGunY, gunX, gunY);
+        this.wire = shape == ShipShape.defaultShip() ? "" : shape.toWireString();
+    }
+
+    /**
+     * server-commands: C {@code Parse_shape_str} (the shape limits apply) as rotated geometry.
+     * <p>
+     * BEHAVIOR: a valid shape string gives its geometry; an empty, missing or invalid one the default ship.
+     */
+    public static ShipGeom parse(CharSequence shape) {
+        ShipShape s = shape == null || shape.isEmpty() ? null : ShipShape.parse(shape.toString());
+        return s == null ? DEFAULT : new ShipGeom(s);
     }
 
     /**

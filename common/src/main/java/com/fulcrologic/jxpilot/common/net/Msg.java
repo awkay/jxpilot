@@ -63,8 +63,11 @@ public final class Msg {
         }
     }
 
-    /** Ship shape strings are capped to this many chars on decode (C {@code MSG_LEN}). */
-    public static final int MAX_SHAPE_LEN = 256;
+    /**
+     * Ship shape strings are capped to this many chars on decode: C {@code 2 * MSG_LEN} (netserver.c
+     * Receive_shape's {@code str[2*MSG_LEN]}), room for a canonical shape's buf + ext.
+     */
+    public static final int MAX_SHAPE_LEN = 512;
     /** C {@code MSG_LEN}: initial capacity of the text builders, so normal messages never grow them. */
     public static final int MSG_LEN = 256;
 
@@ -140,6 +143,8 @@ public final class Msg {
         public static final int REASON_VERSION = 2;
         public static final int REASON_BAD_NAME = 3;
         public static final int REASON_OTHER = 4;
+        /** The game is locked by an operator ({@code /lock 1}, C {@code E_GAME_LOCKED}). */
+        public static final int REASON_LOCKED = 5;
 
         public int nonce;
         public int reason;
@@ -421,6 +426,34 @@ public final class Msg {
 
         public void send(ReliableChannel ch) {
             Msg.send(ch, this, ReliableType.PLAYER_TEAM);
+        }
+    }
+
+    /**
+     * {@link ReliableType#PLAYER_ALLIANCE}: the alliance mark of player {@code id} for the receiver (C
+     * {@code Send_score}'s alliance character): {@link #NONE} ' ' not in an alliance (or, when alliances are not
+     * announced, not in the receiver's), {@link #ALLY} '+' in the receiver's alliance, '0'..'9' the alliance
+     * number when alliances are announced.
+     */
+    public static final class PlayerAlliance implements Payload {
+        public static final char NONE = ' ';
+        public static final char ALLY = '+';
+
+        public int id;
+        public char mark = NONE;
+
+        public void write(ByteBuffer b) {
+            b.putShort((short) id);
+            b.put((byte) (mark > 0xFF ? '?' : mark));
+        }
+
+        public void read(ByteBuffer b) {
+            id = b.getShort() & 0xFFFF;
+            mark = (char) (b.get() & 0xFF);
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.PLAYER_ALLIANCE);
         }
     }
 

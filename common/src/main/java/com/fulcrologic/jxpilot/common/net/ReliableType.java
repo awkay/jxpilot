@@ -55,6 +55,11 @@ public final class ReliableType {
     public static final int PLAYER_THRUST = 11;
     /** {@link Msg.ScoreObject}: a score popup for the receiver's HUD (C score objects). */
     public static final int SCORE_OBJECT = 12;
+    /**
+     * server-commands block 31-33: {@link Msg.PlayerAlliance}: a player's alliance mark as the receiver sees
+     * it (C {@code Send_score}'s alliance character).
+     */
+    public static final int PLAYER_ALLIANCE = 31;
 
     // ---- client -> server
     /** Empty body: client has the config/map and is ready to play. */

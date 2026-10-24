@@ -146,8 +146,11 @@ public final class Server implements AutoCloseable {
      * Every option source of {@link #start}, in C {@code Parser}'s order (edge: reads files).
      * <p>
      * BEHAVIOR: command line, then the defaults file ({@link DefaultsFile#apply}), then the positional config
-     * file (origin DEFAULTS), then the map (origin MAP), then the {@code expand} list; precedence per
-     * {@link Options#setValue}.
+     * file (origin DEFAULTS), then the password file named by {@code passwordFileName} (origin PASSWORD, C
+     * {@code parsePasswordFile}; none without the option), then the map (origin MAP), then the {@code expand}
+     * list; precedence per {@link Options#setValue}.
+     *
+     * @throws IOException when a named password file cannot be read (as a named defaults file)
      *
      * @throws IllegalArgumentException for an unknown option, two config files or no {@code --map}
      */
@@ -158,6 +161,14 @@ public final class Server implements AutoCloseable {
         DefaultsFile.apply(opts);
         if (config != null) {
             ConfigParser.parseFile(config, OptionOrigin.DEFAULTS, opts);
+        }
+        String passwordFile = opts.getString(Opt.PASSWORD_FILE_NAME);
+        if (passwordFile != null && !passwordFile.isEmpty()) {
+            try {
+                ConfigParser.parseFile(Path.of(passwordFile), OptionOrigin.PASSWORD, opts);
+            } catch (IOException e) {
+                throw new IOException("cannot read password file " + passwordFile + " (" + e + ")", e);
+            }
         }
         String mapFile = opts.getString(Opt.MAP_FILE_NAME);
         if (mapFile == null) {

@@ -79,7 +79,8 @@ class AppOptionsTest {
                 () -> assertNull(o.bind(), "any local address"),
                 () -> assertEquals("Tony", o.name(), "name from the user name"),
                 () -> assertEquals(Protocol.NO_TEAM, o.team(), "no team"),
-                () -> assertEquals("", o.shape(), "default ship"),
+                () -> assertNull(o.shape(), "no shape given (the resource file's or the default ship)"),
+                () -> assertNull(o.shipShapeFile(), "no shape file given"),
                 () -> assertNull(o.localMap(), "no local map"),
                 () -> assertNull(o.screenshot(), "no screenshot"),
                 () -> assertEquals(AppOptions.DEFAULT_FRAMES, o.frames(), "default frames"),
@@ -156,6 +157,20 @@ class AppOptionsTest {
         }
 
         @Test
+        @DisplayName("--shipShape is --shape (the last one wins); --shipShapeFile names the shape file")
+        void shipShape() {
+            AppOptions o = parse("--connect", "h", "--shape", "a", "--shipShape", "dart", "--shipShapeFile", "ships.txt");
+            AppOptions p = parse("--connect", "h", "--shipShape", "a", "--shape", "(SH: 15,0 -9,8 -9,-8)");
+            assertAll(
+                () -> assertEquals("dart", o.shape(), "--shipShape after --shape wins"),
+                () -> assertEquals("(SH: 15,0 -9,8 -9,-8)", p.shape(), "--shape after --shipShape wins"),
+                () -> assertEquals("ships.txt", o.shipShapeFile(), "shape file"),
+                () -> assertNull(p.shipShapeFile(), "no shape file unless given"),
+                () -> assertTrue(error("--connect", "h", "--shipShapeFile").contains("--shipShapeFile needs a value"),
+                    "the shape file needs a value"));
+        }
+
+        @Test
         @DisplayName("an xp:// scheme selects the XPilot protocol and wins over --protocol")
         void scheme() {
             assertEquals(ConnectTarget.Protocol.XPILOT,
@@ -204,7 +219,13 @@ class AppOptionsTest {
                 () -> assertEquals(0, parse("--connect", "h", "--team", "0").team(), "team 0 ok"),
                 () -> assertEquals(9, parse("--connect", "h", "--team", " 9").team(), "team 9 ok, trimmed"),
                 () -> assertTrue(error("--connect", "h", "--team", "x").contains("integer"), "team not a number"),
-                () -> assertTrue(error("--connect", "h", "--shape", "junk").contains("ship shape"), "bad shape"),
+                () -> assertTrue(error("--connect", "h", "--shape", "(junk)").contains("--shape is not a valid ship shape"),
+                    "a bad shape string (holding '(') is an error"),
+                () -> assertTrue(error("--connect", "h", "--shipShape", "(SH: 1,1 2,2 3,3)").contains("--shipShape"),
+                    "--shipShape is checked as --shape, under the server's limits"),
+                () -> assertEquals("junk", parse("--connect", "h", "--shape", "junk").shape(),
+                    "a value without '(' is a shape name, resolved later"),
+                () -> assertEquals("", parse("--connect", "h", "--shape", "").shape(), "an empty shape is kept: the default ship"),
                 () -> assertTrue(error("--connect", "h", "--frames", "0").contains("positive"), "frames 0"),
                 () -> assertEquals(1, parse("--connect", "h", "--frames", "1").frames(), "frames 1 ok"),
                 () -> assertTrue(error("--connect", "h", "--size", "640").contains("WxH"), "size without x"),

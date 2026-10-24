@@ -23,6 +23,8 @@
  */
 package com.fulcrologic.jxpilot.server.net;
 
+import com.fulcrologic.jxpilot.common.config.Opt;
+import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.net.ConfigTransfer;
 import com.fulcrologic.jxpilot.common.net.InputReader;
 import com.fulcrologic.jxpilot.common.net.Msg;
@@ -194,7 +196,31 @@ public final class ServerNet {
             parts[i] = ByteBuffer.allocateDirect(Protocol.MAX_PACKET);
         }
         writer.setWorld(cfg.worldWidth, cfg.worldHeight, cfg.edgeWrap);
-        host.attach(this::kick);
+        host.attach(new GameHost.Sessions() {
+            @Override
+            public void kick(int playerId, CharSequence reason) {
+                ServerNet.this.kick(playerId, reason);
+            }
+
+            @Override
+            public void optionChanged(Opt o, Options options) {
+                ServerNet.this.optionChanged(o, options);
+            }
+        });
+    }
+
+    /**
+     * server-commands: an operator changed an option at run time ({@link GameHost.Sessions#optionChanged}).
+     * <p>
+     * BEHAVIOR: denyHosts (C tuner {@code Set_deny_hosts}) and maxClientsPerIP take their new values for the
+     * next CONNECTs; other options are not the network layer's.
+     */
+    void optionChanged(Opt o, Options options) {
+        if (o == Opt.DENY_HOSTS) {
+            cfg.denyHosts = DenyList.parse(options.getString(Opt.DENY_HOSTS));
+        } else if (o == Opt.MAX_CLIENTS_PER_IP) {
+            cfg.maxPerIp = options.getInt(Opt.MAX_CLIENTS_PER_IP);
+        }
     }
 
     /**
@@ -623,6 +649,7 @@ public final class ServerNet {
             case Msg.Reject.REASON_FULL -> "server is full";
             case Msg.Reject.REASON_VERSION -> "incompatible version";
             case Msg.Reject.REASON_BAD_NAME -> "name not accepted";
+            case Msg.Reject.REASON_LOCKED -> "game locked";
             default -> "join refused";
         };
     }

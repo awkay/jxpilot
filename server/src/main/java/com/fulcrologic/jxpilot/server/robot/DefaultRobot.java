@@ -141,22 +141,22 @@ public final class DefaultRobot {
     /** Our own object buckets (C {@code Cell_get_objects}), rebuilt each frame before the robots look. */
     private final Grid cells;
 
-    // ---- options the C globals hold that Params does not
-    final boolean cloakedShield;
-    final boolean wormholeVisible;
-    final boolean limitedVisibility;
-    final boolean allowSmartMissiles;
-    final boolean allowNukes;
-    final boolean allowClusters;
-    final boolean allowModifiers;
-    final boolean allowLaserModifiers;
-    final int nukeMinMines;
-    final int nukeMinSmarts;
-    final double ballConnectorLength;
-    final int maxOffensiveItems;
-    final int maxDefensiveItems;
+    // ---- options the C globals hold that Params does not (re-read by reloadOptions after /set)
+    boolean cloakedShield;
+    boolean wormholeVisible;
+    boolean limitedVisibility;
+    boolean allowSmartMissiles;
+    boolean allowNukes;
+    boolean allowClusters;
+    boolean allowModifiers;
+    boolean allowLaserModifiers;
+    int nukeMinMines;
+    int nukeMinSmarts;
+    double ballConnectorLength;
+    int maxOffensiveItems;
+    int maxDefensiveItems;
     /** C {@code KILLING_SHOTS} plus balls/wreckage/asteroids when their collisions may kill. */
-    final int killingShots;
+    int killingShots;
 
     /** C {@code Visibility_distance} (file static, set by {@link #roundTick}). */
     double visibilityDistance = VISIBILITY_DISTANCE;
@@ -168,6 +168,15 @@ public final class DefaultRobot {
         this.sim = sim;
         this.items = items;
         this.cells = new Grid(w.width, w.height, w.wrap, w.params.maxObjects);
+        reloadOptions();
+        maxEnemyDistance = w.params.hypotenuse;
+    }
+
+    /**
+     * server-commands: (re)read the options this class keeps (at construction, and after an operator's
+     * {@code /set} changed an option at run time).
+     */
+    public void reloadOptions() {
         Options o = w.options;
         cloakedShield = o.getBool(Opt.CLOAKED_SHIELD);
         wormholeVisible = o.getBool(Opt.WORMHOLE_VISIBLE);
@@ -193,7 +202,6 @@ public final class DefaultRobot {
             ks |= Obj.ASTEROID;
         }
         killingShots = ks;
-        maxEnemyDistance = w.params.hypotenuse;
     }
 
     // ================================================================ type methods

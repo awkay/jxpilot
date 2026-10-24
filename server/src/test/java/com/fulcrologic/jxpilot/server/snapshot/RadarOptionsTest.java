@@ -92,4 +92,26 @@ class RadarOptionsTest {
         assertEquals(List.of(Records.Radar.FLAG_SELF, Records.Radar.FLAG_FRIENDLY, 0), radarFlags(s, p1),
             "self, team mate, opponent");
     }
+
+    @Test
+    @DisplayName("allies are on the radar without playersOnRadar, and friendly (frame.c:1168, 1187)")
+    void allies() {
+        Simulation s = TestWorlds.sim("framesPerSecond: 60\ngravity: 0\nplayersOnRadar: no\n", "xxxxxxxxx",
+            "x _ _ _ x", "xxxxxxxxx");
+        Player a = TestWorlds.join(s, "a", 0);
+        Player b = TestWorlds.join(s, "b", 0);
+        TestWorlds.join(s, "c", 0);
+        s.alliances.invite(a, b);
+        s.alliances.accept(b, a);
+        Simulation on = TestWorlds.sim("framesPerSecond: 60\ngravity: 0\n", "xxxxxxx", "x _ _ x", "xxxxxxx");
+        Player x = TestWorlds.join(on, "x", 0);
+        Player y = TestWorlds.join(on, "y", 0);
+        on.alliances.invite(x, y);
+        on.alliances.accept(y, x);
+        assertAll(
+            () -> assertEquals(List.of(Records.Radar.FLAG_SELF, Records.Radar.FLAG_FRIENDLY), radarFlags(s, a),
+                "self and the ally; the stranger is hidden"),
+            () -> assertEquals(List.of(Records.Radar.FLAG_SELF, Records.Radar.FLAG_FRIENDLY), radarFlags(on, x),
+                "with playersOnRadar the ally is marked friendly"));
+    }
 }

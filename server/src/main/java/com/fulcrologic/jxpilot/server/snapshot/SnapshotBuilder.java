@@ -70,7 +70,7 @@ public final class SnapshotBuilder {
     private final int[] wrecks;
     private int wreckCount;
     /** C {@code playersOnRadar}: other teams' ships appear on the radar (frame.c:1152-1170). */
-    private final boolean playersOnRadar;
+    private boolean playersOnRadar;
     private final SnapshotWriter wr = new SnapshotWriter();
     private final ShotHash hash;
     /** {@link World#frames} when {@link #hash} was last rebuilt (-1: never). */
@@ -98,13 +98,18 @@ public final class SnapshotBuilder {
 
     public SnapshotBuilder(World w) {
         this.w = w;
-        this.playersOnRadar = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.PLAYERS_ON_RADAR);
+        reloadOptions();
         wr.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
         shotList = new int[w.objects.capacity];
         shotVariant = new int[w.objects.capacity];
         wrecks = new int[w.objects.capacity];
         hash = new ShotHash(w);
         initRecordClasses();
+    }
+
+    /** server-commands: (re)read the options this class keeps (at construction, and after {@code /set}). */
+    public void reloadOptions() {
+        this.playersOnRadar = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.PLAYERS_ON_RADAR);
     }
 
     /**
@@ -501,14 +506,15 @@ public final class SnapshotBuilder {
     private void writeRadar(Player v) {
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
-            if (!pl.isAlive() || (!playersOnRadar && pl != v && !w.sameTeam(pl, v)) || !need(Section.RADAR, 0)) {
+            if (!pl.isAlive() || (!playersOnRadar && pl != v && !w.sameTeam(pl, v) && !w.allied(v, pl))
+                || !need(Section.RADAR, 0)) {
                 continue;
             }
             int flags = 0;
             if (pl == v) {
                 flags |= Records.Radar.FLAG_SELF;
             }
-            if (pl != v && w.sameTeam(pl, v)) {
+            if (pl != v && (w.sameTeam(pl, v) || w.allied(v, pl))) { // allies: frame.c:1168, 1187
                 flags |= Records.Radar.FLAG_FRIENDLY;
             }
             Records.Radar.put(wr, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK, flags);

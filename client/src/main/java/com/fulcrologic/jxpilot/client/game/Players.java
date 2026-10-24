@@ -43,6 +43,8 @@ public final class Players {
     private final int[] idOf = new int[CAPACITY];
     private final boolean[] used = new boolean[CAPACITY];
     private final int[] team = new int[CAPACITY];
+    /** server-commands: C {@code other->alliance}, the alliance mark (' ', '+', '0'..'9'). */
+    private final char[] alliance = new char[CAPACITY];
     private final int[] flags = new int[CAPACITY];
     private final float[] power = new float[CAPACITY];
     private final int[] afterburners = new int[CAPACITY];
@@ -113,8 +115,9 @@ public final class Players {
      * BEHAVIOR: a known id is updated in place (rejoin), else a free slot is used and appended to the
      * join order; returns the slot or -1 when the pool is full.
      * BEHAVIOR: FLAG_SELF makes this the self id.
-     * BEHAVIOR: the engine offset comes from the parsed shape (default ship when empty or invalid);
-     * score, lives and status reset (0, -1 unlimited, 0).
+     * BEHAVIOR: the engine offset comes from the shape read without limits as C client.c Handle_player's
+     * {@code Convert_shape_str} (default ship when empty or invalid);
+     * score, lives and status reset (0, -1 unlimited, 0); the alliance mark is blank.
      */
     public int join(Msg.PlayerJoin j) {
         int s = slotOf(j.id);
@@ -129,10 +132,11 @@ public final class Players {
             order[count++] = s;
         }
         team[s] = j.team;
+        alliance[s] = ' ';
         flags[s] = j.flags;
         power[s] = j.power;
         afterburners[s] = j.afterburners;
-        ShipShape sh = j.shape.length() == 0 ? ShipShape.defaultShip() : ShipShape.parseOrDefault(j.shape.toString());
+        ShipShape sh = j.shape.length() == 0 ? ShipShape.defaultShip() : ShipShape.convert(j.shape.toString());
         shape[s] = sh;
         engineX[s] = sh.engineX;
         engineY[s] = sh.engineY;
@@ -184,6 +188,22 @@ public final class Players {
             version++;
         }
     }
+
+    /**
+     * server-commands: PLAYER_ALLIANCE (C {@code Handle_score}'s alliance character) for a known id.
+     * <p>
+     * BEHAVIOR: sets the mark; unknown ids are ignored.
+     */
+    public void setAlliance(int id, char mark) {
+        int s = slotOf(id);
+        if (s >= 0) {
+            alliance[s] = mark;
+            version++;
+        }
+    }
+
+    /** The alliance mark of a slot: ' ' none, '+' an ally (alliances not announced), '0'..'9' the alliance. */
+    public char alliance(int slot) { return alliance[slot]; }
 
     /** BEHAVIOR: PLAYER_THRUST for a known id; unknown ids are ignored. */
     public void setThrust(int id, float pw, int ab) {

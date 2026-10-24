@@ -89,7 +89,7 @@ public final class HudExtras {
      * HUD off; hx/hy are {@link Hud#hudX}/{@link Hud#hudY} of the unscaled view
      * ({@link Hud#extent}, C {@code ext_view_width}; the Hud's zoom is set to {@code zoom}).
      * BEHAVIOR: lock: a known locked player (not NO_ID); its name, lives, team friendliness
-     * ({@link HudPainter#isFriend} without alliances), its shape's points at heading 0; distance and RES
+     * ({@link HudPainter#isFriend}, alliances included), its shape's points at heading 0; distance and RES
      * direction as the server sends them in SELF (C frame.c lock_dist/lock_dir) when non-zero, else from the
      * own ship when its ship is in the interpolated list (wrap-aware), else 0.
      * BEHAVIOR: warningPhase is {@code loops} even; items: counts above 0, else -1; autopilot from the
@@ -132,7 +132,8 @@ public final class HudExtras {
         limitedLives = g.options() != null && g.options().getBool(Opt.LIMITED_LIVES);
         lockLives = p.lives(slot);
         int self = p.slotOf(p.selfId());
-        lockFriend = HudPainter.isFriend(self >= 0, g.teamPlay(), self >= 0 ? p.team(self) : -1, p.team(slot), ' ', ' ');
+        lockFriend = HudPainter.isFriend(self >= 0, g.teamPlay(), self >= 0 ? p.team(self) : -1, p.team(slot),
+            self >= 0 ? p.alliance(self) : ' ', p.alliance(slot));
         ShipShape s = p.shape(slot);
         lockShipPoints = s.numPoints();
         for (int i = 0; i < lockShipPoints; i++) {

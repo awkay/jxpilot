@@ -351,6 +351,25 @@ class SceneFillerTest {
         }
 
         @Test
+        @DisplayName("friendly: equal non-blank alliance marks, in or out of team play (C guiobjects.c:680-684)")
+        void friendlyAlliance() {
+            AppFixture f = new AppFixture(true).players();
+            Players p = f.game.players();
+            boolean blank = SceneFiller.friendly(0, p, p.slotOf(FOE), false);
+            p.setAlliance(SELF, '+');
+            boolean selfOnly = SceneFiller.friendly(0, p, p.slotOf(FOE), false);
+            p.setAlliance(FOE, '+');
+            boolean both = SceneFiller.friendly(0, p, p.slotOf(FOE), false);
+            p.setAlliance(SELF, '3');
+            boolean differ = SceneFiller.friendly(0, p, p.slotOf(FOE), true);
+            assertAll(
+                () -> assertFalse(blank, "no marks: a stranger"),
+                () -> assertFalse(selfOnly, "only the own mark"),
+                () -> assertTrue(both, "both '+': allies outside team play"),
+                () -> assertFalse(differ, "different marks, other team: not friendly"));
+        }
+
+        @Test
         @DisplayName("friendly needs the own player to be known")
         void friendlyWithoutSelf() {
             AppFixture f = new AppFixture(true).join(MATE, 1, 0, "Mate", "");

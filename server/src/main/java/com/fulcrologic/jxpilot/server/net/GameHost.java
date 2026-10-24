@@ -52,6 +52,14 @@ public interface GameHost {
          * only, never while a client message is being delivered.
          */
         void kick(int playerId, CharSequence reason);
+
+        /**
+         * server-commands: an operator changed option {@code o} at run time ({@code /set}); the network layer
+         * re-reads what it keeps (denyHosts, maxClientsPerIP).
+         */
+        default void optionChanged(com.fulcrologic.jxpilot.common.config.Opt o,
+                                   com.fulcrologic.jxpilot.common.config.Options options) {
+        }
     }
 
     /** Called once by the network layer, before any other method, with its session control. */

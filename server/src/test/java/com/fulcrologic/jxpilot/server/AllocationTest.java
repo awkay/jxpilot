@@ -280,6 +280,35 @@ class AllocationTest {
     }
 
     @Test
+    @DisplayName("server-commands: with alliances (shared scores, immunity, radar) busy ticks allocate zero bytes")
+    void alliedTicksAreAllocationFree() {
+        Run r = new Run(7, 3000, 8);
+        r.w.params.teamShareScore = true;
+        for (int k = 0; k + 1 < r.w.numPlayers; k += 2) {
+            Player a = r.w.playerAt(k);
+            Player b = r.w.playerAt(k + 1);
+            if (r.s.alliances.count() < 10) {
+                r.s.alliances.invite(a, b);
+                r.s.alliances.accept(b, a);
+            } else {
+                r.s.alliances.invite(a, r.w.playerAt(0));
+                r.s.alliances.accept(r.w.playerAt(0), a);
+            }
+        }
+        int alliances = r.s.alliances.count();
+        int warm = 8000;
+        int measured = 1200;
+        for (int i = 0; i < warm + measured; i++) {
+            r.step(i, i >= warm, -1);
+        }
+        assertAll(
+            () -> assertEquals("none", r.report(), "no measured tick allocates (first allocating tick and phase)"),
+            () -> assertEquals(10, alliances, "ten alliances were formed"),
+            () -> assertEquals(10, r.s.alliances.count(), "they are still there"),
+            () -> assertTrue(r.partsWritten > 0, "snapshots were written"));
+    }
+
+    @Test
     @DisplayName("16 robots flying, fighting, dying, leaving and joining allocate zero bytes per tick")
     void robotTickIsAllocationFree() {
         Simulation s = new Simulation(new World(TestWorlds.options(

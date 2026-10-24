@@ -139,6 +139,16 @@ public final class Player {
     /** Score, lives or status changed this tick (a SCORE event is emitted at the end of the tick). */
     public boolean scoreDirty;
 
+    // ---- alliances and operator status (server-commands: C alliance.c, command.c)
+    /** C {@code ALLIANCE_NOT_SET}. */
+    public static final int ALLIANCE_NOT_SET = -1;
+    /** C {@code alliance}: the id of the player's alliance, or {@link #ALLIANCE_NOT_SET}. */
+    public int alliance = ALLIANCE_NOT_SET;
+    /** C {@code invite}: the id of the player this one has invited into an alliance, or {@link Obj#NO_ID}. */
+    public int invite = Obj.NO_ID;
+    /** C {@code isoperator}: operator status, given by {@code /password}. */
+    public boolean isOperator;
+
     public Player(int slot) {
         this.slot = slot;
     }

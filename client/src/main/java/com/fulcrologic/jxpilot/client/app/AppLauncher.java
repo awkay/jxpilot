@@ -92,7 +92,9 @@ public final class AppLauncher {
 
     private static int play(AppOptions o, ConnectTarget target, KeyConfig keys) throws Exception {
         ClientGame game = new ClientGame();
-        GameConnection conn = GameConnector.open(target, o.bind(), game, o.name(), o.team(), o.shape(),
+        String shape = ShipShapeResource.resolve(o.shape(), o.shipShapeFile(), keys.shipShape(), keys.shipShapeFile(),
+            ShipShapeResource::readLatin1, System.err);
+        GameConnection conn = GameConnector.open(target, o.bind(), game, o.name(), o.team(), shape,
             o.sound() && o.maxVolume() > 0, (int) System.nanoTime());
         new GameApp(o, game, conn, target.toString(), null, keys).run();
         return 0;
