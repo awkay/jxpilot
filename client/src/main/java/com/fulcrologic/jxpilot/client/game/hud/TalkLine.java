@@ -43,9 +43,13 @@ public final class TalkLine {
     public static final int MAX_LEN = MAX_CHARS - 2;
     /** C default {@code maxLinesInHistory}. */
     public static final int HISTORY = 32;
+    /** C {@code MAX_HIST_MSGS}: the largest {@code maxLinesInHistory}. */
+    public static final int MAX_HISTORY = 128;
 
     private final CharBuf line = new CharBuf(MAX_CHARS);
-    private final CharBuf[] history = new CharBuf[HISTORY];
+    private final CharBuf[] history = new CharBuf[MAX_HISTORY];
+    /** C {@code maxLinesInHistory}. */
+    private int historySize = HISTORY;
     private int cursor;
     private boolean open;
     private int historyPos = -1;
@@ -55,10 +59,25 @@ public final class TalkLine {
     private int maxWidth;
 
     public TalkLine() {
-        for (int i = 0; i < HISTORY; i++) {
+        for (int i = 0; i < MAX_HISTORY; i++) {
             history[i] = new CharBuf(MAX_CHARS);
         }
     }
+
+    /**
+     * C {@code maxLinesInHistory}.
+     * <p>
+     * BEHAVIOR: clamped to 1..{@link #MAX_HISTORY}; lines beyond the new size are forgotten; browsing restarts.
+     */
+    public void setHistorySize(int n) {
+        historySize = Math.max(1, Math.min(MAX_HISTORY, n));
+        for (int i = historySize; i < MAX_HISTORY; i++) {
+            history[i].clear();
+        }
+        historyPos = -1;
+    }
+
+    public int historySize() { return historySize; }
 
     public boolean isOpen() { return open; }
 
@@ -237,12 +256,12 @@ public final class TalkLine {
             return;
         }
         int pos = historyPos;
-        for (int i = 0; i < HISTORY; i++) {
+        for (int i = 0; i < historySize; i++) {
             pos += dir;
-            if (pos >= HISTORY) {
+            if (pos >= historySize) {
                 pos = 0;
             } else if (pos < 0) {
-                pos = HISTORY - 1;
+                pos = historySize - 1;
             }
             if (history[pos].length() > 0) {
                 historyPos = pos;
@@ -261,8 +280,8 @@ public final class TalkLine {
 
     /** C {@code Add_msg_to_history}: newest first, oldest dropped; browsing restarts at the newest. */
     private void save() {
-        CharBuf oldest = history[HISTORY - 1];
-        System.arraycopy(history, 0, history, 1, HISTORY - 1);
+        CharBuf oldest = history[historySize - 1];
+        System.arraycopy(history, 0, history, 1, historySize - 1);
         history[0] = oldest.clear().append(line);
         historyPos = 0;
         typed = false;

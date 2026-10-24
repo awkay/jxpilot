@@ -106,6 +106,7 @@ public final class Mover {
             int max = ((dist - 2) * BS) >> 1;
             if ((float) (max * max) >= o.vx[h] * o.vx[h] + o.vy[h] * o.vy[h]) {
                 o.setClicks(h, w.wrapXClick(o.cx[h] + tx), w.wrapYClick(o.cy[h] + ty));
+                o.touchCell(h);
                 return;
             }
         }
@@ -192,6 +193,7 @@ public final class Mover {
         if (posUpdate) {
             o.remember(h);
         }
+        o.touchCell(h);
     }
 
     /** A ball's team for its target test: its owner's team, else TEAM_NOT_SET (walls.c Move_segment). */

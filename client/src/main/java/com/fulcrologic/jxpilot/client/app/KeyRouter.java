@@ -59,18 +59,23 @@ public final class KeyRouter {
     public static final int SHOW_CONTROLS = 32;
     /** Toggle the key help overlay (JXPilot keyHelp). */
     public static final int HELP = 64;
-    /** keyIdMode: toggle real names in the score list (C {@code Key_press_id_mode}). */
-    public static final int ID_MODE = 128;
-    /** keyToggleOwnedItems: toggle showItems (C {@code Key_press_show_items}). */
-    public static final int TOGGLE_ITEMS = 256;
-    /** keyToggleMessages: toggle showMessages (C {@code Key_press_show_messages}). */
+    /** Toggle the permanent owned-items list (C {@code Key_press_show_items}: KEY_TOGGLE_OWNED_ITEMS, showItems). */
+    public static final int TOGGLE_ITEMS = 128;
+    /**
+     * Show the fuel on the HUD (C {@code fuelCount = FUEL_NOTIFY}): a refuel, repair or tank next/prev key pressed
+     * ({@code Key_press_fuel}), or a refuel or repair key released ({@code Key_release}).
+     */
+    public static final int FUEL_NOTIFY = 256;
+    /** Toggle the game messages (C {@code Key_press_show_messages}: KEY_TOGGLE_MESSAGES, showMessages). */
     public static final int TOGGLE_MESSAGES = 512;
+    /** keyIdMode: toggle real names in the score list (C {@code Key_press_id_mode}). */
+    public static final int ID_MODE = 1024;
     /** keyPointerControl: toggle pointer control (C {@code Key_press_pointer_control}). */
-    public static final int POINTER_CONTROL = 1024;
+    public static final int POINTER_CONTROL = 2048;
     /** keyPrintMessagesStdout: print the messages (C {@code Key_press_msgs_stdout}). */
-    public static final int PRINT_MESSAGES = 2048;
+    public static final int PRINT_MESSAGES = 4096;
     /** keySendMsg1..20: talk macros to send, {@link #takeMacros()} (C {@code Key_check_talk_macro}). */
-    public static final int TALK_MACRO = 4096;
+    public static final int TALK_MACRO = 8192;
 
     private final InputState input;
     private final TalkLine talk;
@@ -125,10 +130,13 @@ public final class KeyRouter {
      * BEHAVIOR (playing): Escape press is {@link #QUIT}; other presses go to {@link InputState#press};
      * a TALK action opens the talk line (game keys released, the key's character is not typed); a
      * SWAP_SCALEFACTOR action is {@link #SWAP_SCALE}, a TOGGLE_SOUND action {@link #TOGGLE_SOUND}, a HELP action
-     * {@link #HELP}; releases go to {@link InputState#release}; repeats are ignored.
+     * {@link #HELP}, a TOGGLE_OWNED_ITEMS action {@link #TOGGLE_ITEMS}, a TOGGLE_MESSAGES action {@link #TOGGLE_MESSAGES};
+     * releases go to {@link InputState#release}; repeats are ignored.
      * BEHAVIOR (playing): increase/decrease power and turn speed change the {@link ControlSettings} as C's
      * key handlers do and are {@link #SETTINGS} | {@link #SHOW_CONTROLS}; swap settings swaps them and is
      * {@link #SHOW_CONTROLS} only (the key goes to the server, which swaps its copy, as in C).
+     * BEHAVIOR (playing): a press of a key bound to REFUEL, REPAIR, TANK_NEXT or TANK_PREV, and a release of one bound
+     * to REFUEL or REPAIR, is {@link #FUEL_NOTIFY} (C xevent.c:523-527, 634-636); the keys still go to the server.
      * BEHAVIOR (playing): each SELECT_ITEM and LOSE_ITEM function bound to a pressed or released key is a
      * {@link LoseItemSelection#press} / {@link LoseItemSelection#release} (C {@code Key_press_select_lose_item},
      * {@code Key_release}); the keys still go to the server.
@@ -145,7 +153,7 @@ public final class KeyRouter {
             for (int i = loseKeys(key); i > 0; i--) {
                 loseSelection.release();
             }
-            return NONE;
+            return fuelKey(key, FUEL_RELEASE);
         }
         if (action != GLFW_PRESS) {
             return NONE;
@@ -157,7 +165,7 @@ public final class KeyRouter {
             loseSelection.press();
         }
         long acts = input.press(key);
-        return actions(acts) | controls(input.bindings().gameMask(key));
+        return actions(acts) | controls(input.bindings().gameMask(key)) | fuelKey(key, FUEL_PRESS);
     }
 
     /**
@@ -166,7 +174,7 @@ public final class KeyRouter {
      * <p>
      * BEHAVIOR: ignored while talking. A press is a key press bound to exactly these functions ({@link
      * InputState#pressFunctions}, the lose-item outline, the client actions and the power/turn-speed keys as
-     * {@link #key}); a release releases the game functions.
+     * {@link #key}, the fuel notice too); a release releases the game functions (refuel/repair: the fuel notice).
      */
     public int pointerButton(boolean press, long game, long acts) {
         if (talk.isOpen()) {
@@ -178,12 +186,12 @@ public final class KeyRouter {
             for (int i = lose; i > 0; i--) {
                 loseSelection.release();
             }
-            return NONE;
+            return fuel(game, FUEL_RELEASE);
         }
         for (int i = lose; i > 0; i--) {
             loseSelection.press();
         }
-        return actions(input.pressFunctions(game, acts)) | controls(game);
+        return actions(input.pressFunctions(game, acts)) | controls(game) | fuel(game, FUEL_PRESS);
     }
 
     /** BEHAVIOR: the talk macros pressed since the last call, bit n = keySendMsg(n + 1); cleared. */
@@ -237,6 +245,25 @@ public final class KeyRouter {
             ev |= TALK_MACRO;
         }
         return ev;
+    }
+
+    /** Refuel, repair and tank next/prev: a press shows the fuel (C {@code Key_press_fuel}). */
+    private static final long FUEL_PRESS = ControlKey.REFUEL.mask() | ControlKey.REPAIR.mask()
+        | ControlKey.TANK_NEXT.mask() | ControlKey.TANK_PREV.mask();
+    /** Refuel and repair: a release shows the fuel too (C {@code Key_release}). */
+    private static final long FUEL_RELEASE = ControlKey.REFUEL.mask() | ControlKey.REPAIR.mask();
+
+    /** {@link #FUEL_NOTIFY} when the key is bound to one of the {@code keys}; NONE otherwise and for out-of-range codes. */
+    private int fuelKey(int key, long keys) {
+        if (key < 0 || key >= KeyBindings.SIZE) {
+            return NONE;
+        }
+        return fuel(input.bindings().gameMask(key), keys);
+    }
+
+    /** {@link #FUEL_NOTIFY} when {@code game} has one of the {@code keys}. */
+    private static int fuel(long game, long keys) {
+        return (game & keys) != 0 ? FUEL_NOTIFY : NONE;
     }
 
     /** How many of SELECT_ITEM and LOSE_ITEM the key is bound to (0..2); 0 for out-of-range codes. */

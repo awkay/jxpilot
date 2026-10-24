@@ -535,15 +535,18 @@ public final class Rounds {
      * objects move.
      * <p>
      * BEHAVIOR: the first frame with a human in the game starts the timer once: with gameDuration &gt; 0 the
-     * game ends at wall-clock second (time_t)(gameDuration * 60) + now ({@link World#gameOverTime}).
+     * game ends at wall-clock second (time_t)(gameDuration * 60) + now ({@link World#gameOverTime}), and the
+     * result is true (C then logs "Server will stop in N minutes.").
      */
-    public void startGameDuration(boolean humans) {
+    public boolean startGameDuration(boolean humans) {
         if (w.noPlayersEnteredYet && humans) {
             w.noPlayersEnteredYet = false;
             if (w.gameDuration > 0) {
                 w.gameOverTime = (long) (w.gameDuration * 60) + w.wallSeconds.getAsLong();
+                return true;
             }
         }
+        return false;
     }
 
     /**

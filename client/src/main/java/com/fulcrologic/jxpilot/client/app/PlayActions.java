@@ -26,9 +26,9 @@ package com.fulcrologic.jxpilot.client.app;
 import com.fulcrologic.jxpilot.client.game.ClientGame;
 import com.fulcrologic.jxpilot.client.game.Players;
 import com.fulcrologic.jxpilot.client.game.TalkMacros;
-import com.fulcrologic.jxpilot.client.game.hud.Hud;
 import com.fulcrologic.jxpilot.client.game.input.PlayResources;
 import com.fulcrologic.jxpilot.client.game.input.PointerControl;
+import com.fulcrologic.jxpilot.client.game.options.ClientOptions;
 import com.fulcrologic.jxpilot.client.xp.GameConnection;
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.net.Protocol;
@@ -43,17 +43,17 @@ import java.util.SplittableRandom;
 import static org.lwjgl.glfw.GLFW.*;
 
 /**
- * The play keys and pointer of C's client ({@code xevent.c}) that act on the client: talk macros, ID mode, the
- * owned-items and messages toggles, printing the messages, and pointer control with its buttons. {@link ClientFrame}
- * passes {@link KeyRouter} events here; the window passes pointer events. Talk macros and printing allocate (a
- * key press); the rest does not.
+ * The play keys and pointer of C's client ({@code xevent.c}) that act on the client: talk macros, ID mode,
+ * printing the messages, and pointer control with its buttons. {@link ClientFrame} passes {@link KeyRouter} events
+ * here; the window passes pointer events. The resources come from the {@link ClientOptions} and follow their changes.
+ * Talk macros, printing and an option change allocate; the rest does not.
  */
 public final class PlayActions implements TalkMacros.Context {
     private final ClientGame game;
     private final GameConnection conn;
-    private final Hud hud;
-    private final HudExtras extras;
-    private final PlayResources res;
+    private final ClientOptions options;
+    private final PlayResources res = new PlayResources();
+    private int applied;
     private final PrintStream stdout;
     private final PrintStream stderr;
     private final TalkMacros macros = new TalkMacros(this);
@@ -62,18 +62,33 @@ public final class PlayActions implements TalkMacros.Context {
     private boolean talking;
     private long now;
 
-    public PlayActions(ClientGame game, GameConnection conn, Hud hud, HudExtras extras, PlayResources res,
-                       PrintStream stdout, PrintStream stderr, long seed) {
+    /** BEHAVIOR: takes the options at once; pointerControl arms pointer control for the first focus (C). */
+    public PlayActions(ClientGame game, GameConnection conn, ClientOptions options, PrintStream stdout,
+                       PrintStream stderr, long seed) {
         this.game = game;
         this.conn = conn;
-        this.hud = hud;
-        this.extras = extras;
-        this.res = res;
+        this.options = options;
         this.stdout = stdout;
         this.stderr = stderr;
         this.random = new SplittableRandom(seed);
+        apply();
         this.pointer = new PointerControl(res.pointerControl);
+    }
+
+    /** The resources as last taken from the options. */
+    public PlayResources resources() { return res; }
+
+    private void apply() {
+        applied = options.version();
+        res.update(options, stderr::println);
         game.messages().setStdout(res.messagesToStdout, stdout);
+    }
+
+    /** BEHAVIOR: takes the options again iff they changed since (the CONFIG panel edits them live). */
+    private void refresh() {
+        if (options.version() != applied) {
+            apply();
+        }
     }
 
     public PointerControl pointer() { return pointer; }
@@ -81,20 +96,15 @@ public final class PlayActions implements TalkMacros.Context {
     /**
      * The client side of a key's {@link KeyRouter} events (C {@code Key_press}).
      * <p>
-     * BEHAVIOR: ID_MODE toggles the score list's real names; TOGGLE_ITEMS showItems; TOGGLE_MESSAGES showMessages;
-     * PRINT_MESSAGES prints the messages to stdout; POINTER_CONTROL toggles pointer control; TALK_MACRO sends
-     * each pressed macro ({@link TalkMacros#send}) in number order.
+     * BEHAVIOR: ID_MODE toggles the score list's real names; PRINT_MESSAGES prints the messages to stdout;
+     * POINTER_CONTROL toggles pointer control; TALK_MACRO sends each pressed macro ({@link TalkMacros#send}) in
+     * number order, as the options say now.
      */
     public void handle(int ev, int macroMask, long nowNanos) {
         now = nowNanos;
+        refresh();
         if ((ev & KeyRouter.ID_MODE) != 0) {
             game.scoreboard().toggleIdMode();
-        }
-        if ((ev & KeyRouter.TOGGLE_ITEMS) != 0) {
-            extras.showItems = !extras.showItems;
-        }
-        if ((ev & KeyRouter.TOGGLE_MESSAGES) != 0) {
-            hud.showMessages = !hud.showMessages;
         }
         if ((ev & KeyRouter.PRINT_MESSAGES) != 0) {
             game.messages().print(stdout, false);
@@ -126,6 +136,7 @@ public final class PlayActions implements TalkMacros.Context {
 
     /** BEHAVIOR: this frame's pointer movement for {@code GameConnection.sendInput} ({@link PointerControl}). */
     public int takeAim() {
+        refresh();
         return pointer.takeMovement(talking);
     }
 
@@ -151,6 +162,7 @@ public final class PlayActions implements TalkMacros.Context {
         if (!pointer.on() || talking || b < 1 || b > PlayResources.BUTTONS) {
             return KeyRouter.NONE;
         }
+        refresh();
         return router.pointerButton(press, res.buttonGame[b - 1], res.buttonActions[b - 1]);
     }
 

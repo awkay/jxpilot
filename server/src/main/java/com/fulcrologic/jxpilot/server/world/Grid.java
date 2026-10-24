@@ -41,6 +41,8 @@ public final class Grid {
     private final boolean wrap;
     private final int[] head;
     private final int[] next;
+    /** Live objects in cell-join order (scratch for {@link #rebuild}). */
+    private final int[] joined;
     /** Block offsets sorted by distance (C {@code cell_dist}). */
     final int[] offX;
     final int[] offY;
@@ -55,6 +57,7 @@ public final class Grid {
         this.wrap = wrap;
         head = new int[width * height];
         next = new int[capacity];
+        joined = new int[capacity];
         result = new int[capacity];
         int right;
         int left;
@@ -98,19 +101,32 @@ public final class Grid {
     }
 
     /**
-     * Bucket every live object by its block, as C {@code Cell_add_object} after a frame of moves.
+     * Bucket every live object by its block, as C's cell lists after a frame of {@code Cell_add_object}.
      * <p>
      * BEHAVIOR: the block is {@code pixel / BLOCK_SZ} truncated toward zero (C {@code pos.bx}); an object whose
      * block is outside the world is in no cell and is never returned by {@link #query}.
-     * BEHAVIOR: within a block, objects are listed in reverse pool order ({@code Objects.active} from last to
-     * first): C prepends each object to its cell list as it is moved in pool order, and objects created later
-     * in the frame (higher indices) are prepended after that.
+     * BEHAVIOR: within a block, the object that joined its cell last ({@code Objects.cellSeq}: created or
+     * moved) comes first: C prepends an object to its cell list whenever it is created or moved, so objects
+     * moved in pool order are followed by the asteroids moved after them in their list order and preceded by
+     * objects created later in the frame.
      */
     public void rebuild(Objects o) {
         Arrays.fill(head, -1);
         int n = o.count();
+        long[] seq = o.cellSeq;
+        // insertion sort by join order: the pool order already is, except for the asteroids (moved last)
         for (int k = 0; k < n; k++) {
             int hnd = o.active[k];
+            long s = seq[hnd];
+            int j = k - 1;
+            while (j >= 0 && seq[joined[j]] > s) {
+                joined[j + 1] = joined[j];
+                j--;
+            }
+            joined[j + 1] = hnd;
+        }
+        for (int k = 0; k < n; k++) {
+            int hnd = joined[k];
             int bx = o.px[hnd] / Const.BLOCK_SZ;
             int by = o.py[hnd] / Const.BLOCK_SZ;
             if (bx < 0 || bx >= w || by < 0 || by >= h) {

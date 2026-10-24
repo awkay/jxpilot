@@ -23,6 +23,8 @@
  */
 package com.fulcrologic.jxpilot.client.game.input;
 
+import com.fulcrologic.jxpilot.client.game.options.ClientOption;
+import com.fulcrologic.jxpilot.client.game.options.ClientOptions;
 import com.fulcrologic.jxpilot.client.sound.SoundPlayer;
 import com.fulcrologic.jxpilot.common.Const;
 
@@ -54,7 +56,6 @@ public final class KeyConfig {
 
     private final KeyBindings bindings;
     private final ControlSettings settings = new ControlSettings();
-    private final PlayResources play = new PlayResources();
     /** C {@code modBankStr}: the modifierBank1..4 resources (C default "" each). */
     private final String[] modifierBanks = {"", "", "", ""};
     /** C {@code modBankStr[i]} is MAX_CHARS (80) bytes: Get_resource keeps at most 79 chars. */
@@ -62,6 +63,8 @@ public final class KeyConfig {
     /** C {@code maxVolume} from the file, -1 when the file does not set it. */
     private int maxVolume = -1;
     private final List<String> problems = new ArrayList<>();
+    /** Every other C resource ({@link ClientOption}). */
+    private final ClientOptions options = new ClientOptions();
     private final String source;
     private String shipShape;
     private String shipShapeFile;
@@ -76,9 +79,39 @@ public final class KeyConfig {
 
     /** BEHAVIOR: defaults and supplement, Escape unbound, the swap key (when not null) bound. */
     public static KeyConfig defaults(String swapKey) {
-        KeyConfig c = new KeyConfig("defaults");
+        return defaults(swapKey, List.of());
+    }
+
+    /**
+     * BEHAVIOR: the defaults with the command-line resources applied in order as from a file named
+     * "command line" (see {@link #load}).
+     */
+    public static KeyConfig defaults(String swapKey, List<XpilotRc.Entry> commandLine) {
+        KeyConfig c = new KeyConfig(commandLine.isEmpty() ? "defaults" : "defaults + command line");
+        c.applyAll(COMMAND_LINE, commandLine);
         c.finish(swapKey);
         return c;
+    }
+
+    /** Source name of {@code --resource value} arguments in problem messages. */
+    public static final String COMMAND_LINE = "command line";
+
+    private void applyAll(String src, List<XpilotRc.Entry> entries) {
+        for (XpilotRc.Entry e : entries) {
+            apply(src, e);
+        }
+    }
+
+    /**
+     * BEHAVIOR: true for every resource a file or {@code --resource value} may set: the key functions, the
+     * control settings, maxVolume, modifierBank1-4, shipShape, shipShapeFile and every {@link ClientOption}
+     * (case-insensitive).
+     */
+    public static boolean knownResource(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        return KeyFunctions.byResource(name) != null || ClientOption.byResource(name) != null
+            || n.equals("shipshape") || n.equals("shipshapefile") || n.equals("maxvolume")
+            || n.matches("modifierbank[1-4]") || n.matches("(alt)?(power|turnspeed|turnresistance)");
     }
 
     /**
@@ -97,28 +130,34 @@ public final class KeyConfig {
      * reported when outside; a value that is not an integer is reported and ignored.
      * BEHAVIOR: modifierBank1..4 (C default.c) set {@link #modifierBanks()} to the text as written (the server
      * parses it); a text over 79 chars is cut to 79 (C's MAX_CHARS buffer) and reported.
+     * BEHAVIOR: every {@link ClientOption} resource goes to {@link #options()} ({@link ClientOptions#apply}; its
+     * problems are reported).
      * BEHAVIOR: an unknown {@code key...} resource is reported; other resources are reported as ignored.
      * BEHAVIOR: binding Escape is reported (it always quits); parse problems of the file are reported.
      *
      * @param sourceName file name used in problem messages
      */
     public static KeyConfig load(String text, String sourceName, String swapKey) {
-        KeyConfig c = new KeyConfig("defaults + " + sourceName);
+        return load(text, sourceName, swapKey, List.of());
+    }
+
+    /**
+     * {@link #load(String, String, String)}, then the command-line resources ({@code --resource value}, in order),
+     * which win over the file; their problems name {@link #COMMAND_LINE} with the argument's position as line.
+     */
+    public static KeyConfig load(String text, String sourceName, String swapKey, List<XpilotRc.Entry> commandLine) {
+        KeyConfig c = new KeyConfig("defaults + " + sourceName + (commandLine.isEmpty() ? "" : " + command line"));
         XpilotRc.Result r = XpilotRc.parse(text);
         for (XpilotRc.Problem p : r.problems()) {
             c.problem(sourceName, p.line(), p.message());
         }
-        for (XpilotRc.Entry e : r.entries()) {
-            c.apply(sourceName, e);
-        }
+        c.applyAll(sourceName, r.entries());
+        c.applyAll(COMMAND_LINE, commandLine);
         c.finish(swapKey);
         return c;
     }
 
     private void apply(String src, XpilotRc.Entry e) {
-        if (play.apply(e, (line, msg) -> problem(src, line, msg))) {
-            return;
-        }
         KeyFunctions.Fn f = KeyFunctions.byResource(e.name());
         if (f != null) {
             bindings.set(f, usableKeysyms(src, e));
@@ -133,6 +172,14 @@ public final class KeyConfig {
         }
         if (e.name().equals("shipShapeFile")) {
             shipShapeFile = e.value();
+            return;
+        }
+        ClientOption o = ClientOption.byResource(e.name());
+        if (o != null) {
+            String p = options.apply(o, e.value());
+            if (p != null) {
+                problem(src, e.line(), p);
+            }
             return;
         }
         if (e.name().startsWith("key")) {
@@ -261,8 +308,8 @@ public final class KeyConfig {
 
     public KeyBindings bindings() { return bindings; }
 
-    /** The talk macros, pointer and message resources ({@link PlayResources}). */
-    public PlayResources play() { return play; }
+    /** Every other C resource: the file's and command line's values over C's defaults. */
+    public ClientOptions options() { return options; }
 
     public ControlSettings settings() { return settings; }
 

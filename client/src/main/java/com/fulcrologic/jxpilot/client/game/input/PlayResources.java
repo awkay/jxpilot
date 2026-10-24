@@ -24,14 +24,16 @@
 package com.fulcrologic.jxpilot.client.game.input;
 
 import com.fulcrologic.jxpilot.client.game.TalkMacros;
+import com.fulcrologic.jxpilot.client.game.options.ClientOption;
+import com.fulcrologic.jxpilot.client.game.options.ClientOptions;
 
 import java.util.Arrays;
-import java.util.Locale;
-import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
- * The play resources of {@code ~/.xpilotrc} beyond keys and control settings (C {@code default.c}): the talk
- * macros {@code msg1..msg20}, {@code pointerControl}, {@code pointerButton1..5} and {@code messagesToStdout}.
+ * The play resources in the form the play keys use (C {@code default.c}): the talk macros {@code msg1..msg20},
+ * {@code pointerControl}, the pointer button bindings {@code pointerButton1..5} as function masks and
+ * {@code messagesToStdout}, read from the {@link ClientOptions}.
  */
 public final class PlayResources {
     /** C {@code MAX_POINTER_BUTTONS}. */
@@ -58,66 +60,23 @@ public final class PlayResources {
     }
 
     /**
-     * Take one resource if it is a play resource.
+     * Take the values of {@code o}.
      * <p>
-     * BEHAVIOR: returns false (not taken) for other names. Names match ignoring case.
-     * BEHAVIOR: {@code msgN} (1..20) keeps at most {@link TalkMacros#MSG_SIZE} - 1 chars (C's buffer).
-     * BEHAVIOR: {@code pointerControl} is an X boolean (yes/no, true/false, on/off, 1/0); anything else is a
-     * problem and keeps the value.
-     * BEHAVIOR: {@code pointerButtonN} (1..5) as {@link #pointerButton}.
-     * BEHAVIOR: {@code messagesToStdout} is an integer; anything else is a problem and keeps the value.
+     * BEHAVIOR: each {@code msgN} keeps at most {@link TalkMacros#MSG_SIZE} - 1 chars (C's buffer); the pointer
+     * buttons as {@link #pointerButton}; pointerControl and messagesToStdout as they are.
      *
-     * @param problem receives (line, message) for every problem
+     * @param problems receives the pointer button problems (null: ignored)
      */
-    public boolean apply(XpilotRc.Entry e, BiConsumer<Integer, String> problem) {
-        String n = e.name().toLowerCase(Locale.ROOT);
-        int msg = indexed(n, "msg", TalkMacros.COUNT);
-        if (msg >= 0) {
-            String v = e.value();
-            talkMacros[msg] = v.length() < TalkMacros.MSG_SIZE ? v : v.substring(0, TalkMacros.MSG_SIZE - 1);
-            return true;
+    public void update(ClientOptions o, Consumer<String> problems) {
+        for (int i = 0; i < TalkMacros.COUNT; i++) {
+            String v = o.text(ClientOption.message(i + 1));
+            talkMacros[i] = v.length() < TalkMacros.MSG_SIZE ? v : v.substring(0, TalkMacros.MSG_SIZE - 1);
         }
-        int button = indexed(n, "pointerbutton", BUTTONS);
-        if (button >= 0) {
-            pointerButton(button, e.value(), m -> problem.accept(e.line(), m));
-            return true;
+        for (int b = 0; b < BUTTONS; b++) {
+            pointerButton(b, o.text(ClientOption.pointerButton(b + 1)), problems);
         }
-        if (n.equals("pointercontrol")) {
-            Boolean b = bool(e.value());
-            if (b == null) {
-                problem.accept(e.line(), e.name() + ": not a boolean: '" + e.value() + "'");
-            } else {
-                pointerControl = b;
-            }
-            return true;
-        }
-        if (n.equals("messagestostdout")) {
-            try {
-                messagesToStdout = Integer.parseInt(e.value().trim());
-            } catch (NumberFormatException ex) {
-                problem.accept(e.line(), e.name() + ": not an integer: '" + e.value() + "'");
-            }
-            return true;
-        }
-        return false;
-    }
-
-    /** BEHAVIOR: the 0-based index of {@code prefix1..prefixMax}, -1 for any other name. */
-    static int indexed(String lower, String prefix, int max) {
-        if (!lower.startsWith(prefix) || lower.length() == prefix.length()) {
-            return -1;
-        }
-        String d = lower.substring(prefix.length());
-        if (d.charAt(0) == '0' || d.length() > 2) {
-            return -1;
-        }
-        for (int i = 0; i < d.length(); i++) {
-            if (d.charAt(i) < '0' || d.charAt(i) > '9') {
-                return -1;
-            }
-        }
-        int v = Integer.parseInt(d);
-        return v <= max ? v - 1 : -1;
+        pointerControl = o.flag(ClientOption.POINTER_CONTROL);
+        messagesToStdout = o.integer(ClientOption.MESSAGES_TO_STDOUT);
     }
 
     /**
@@ -128,7 +87,7 @@ public final class PlayResources {
      * keys bound to pointer button N"); an unknown name is reported ("Unknown key ... for pointer button N", N
      * 0-based as C prints it) and skipped. A null problem sink ignores problems.
      */
-    public void pointerButton(int b, String value, java.util.function.Consumer<String> problem) {
+    public void pointerButton(int b, String value, Consumer<String> problem) {
         buttonGame[b] = 0;
         buttonActions[b] = 0;
         int defs = 0;
@@ -160,14 +119,5 @@ public final class PlayResources {
                 buttonActions[b] |= 1L << f.action().ordinal();
             }
         }
-    }
-
-    /** BEHAVIOR: X resource booleans: yes/true/on/1 and no/false/off/0 (any case); null otherwise. */
-    static Boolean bool(String v) {
-        return switch (v.trim().toLowerCase(Locale.ROOT)) {
-            case "yes", "true", "on", "1" -> Boolean.TRUE;
-            case "no", "false", "off", "0" -> Boolean.FALSE;
-            default -> null;
-        };
     }
 }

@@ -523,50 +523,6 @@ class SceneFillerTest {
     }
 
     @Nested
-    @DisplayName("mine owner names (C showMineName)")
-    class MineNames {
-        AppFixture minesOf(int... owners) {
-            return new AppFixture(true).players().twice(x -> {
-                x.w.beginSection(Section.MINE);
-                for (int i = 0; i < owners.length; i++) {
-                    Records.Mine.put(x.w, 110 + 4 * i, 50, 0, owners[i]);
-                }
-                x.w.endSection();
-            });
-        }
-
-        @Test
-        @DisplayName("no id: none; EXPIRED_MINE_ID: Expired; a player: its name; any other id: Not of this world!")
-        void names() {
-            fill(minesOf(Protocol.NO_ID, Records.Mine.EXPIRED_MINE_ID, AppFixture.FOE, 77));
-            assertAll(
-                () -> assertEquals(4, scene.mineCount, "four mines"),
-                () -> assertNull(scene.mineName[0], "unidentified owner: no name"),
-                () -> assertEquals("Expired", String.valueOf(scene.mineName[1]), "nobody owns it"),
-                () -> assertEquals("Foe", String.valueOf(scene.mineName[2]), "the owner's name"),
-                () -> assertEquals("Not of this world!", String.valueOf(scene.mineName[3]), "an id nobody has"));
-        }
-
-        @Test
-        @DisplayName("showMineName off: no names at all")
-        void off() {
-            AppFixture f = minesOf(AppFixture.FOE, Records.Mine.EXPIRED_MINE_ID);
-            filler.showMineName = false;
-            fill(f);
-            assertAll(
-                () -> assertEquals(2, scene.mineCount, "mines still drawn"),
-                () -> assertNull(scene.mineName[0], "no owner name"),
-                () -> assertNull(scene.mineName[1], "no Expired"));
-        }
-
-        @Test
-        @DisplayName("a null player table knows nobody")
-        void nullPlayers() {
-            assertEquals("Not of this world!", String.valueOf(SceneFiller.mineName(3, null)), "unknown owner text");
-        }
-    }
-
-    @Nested
     @DisplayName("fill: M2 objects, beams, timers")
     class ObjectsAndBeams {
         @Test
@@ -578,7 +534,7 @@ class SceneFillerTest {
                 Records.ItemObj.put(w, 100, 50, 7);
                 w.endSection();
                 w.beginSection(Section.MINE);
-                Records.Mine.put(w, 110, 50, Records.Mine.FLAG_FRIENDLY, 3);
+                Records.Mine.put(w, 110, 50, Records.Mine.FLAG_FRIENDLY, MATE);
                 Records.Mine.put(w, 112, 50, 0, 3);
                 w.endSection();
                 w.beginSection(Section.MISSILE);
@@ -617,8 +573,8 @@ class SceneFillerTest {
                 () -> assertEquals(2, scene.mineCount, "two mines"),
                 () -> assertTrue(scene.mineTeam[0], "FRIENDLY: team mine"),
                 () -> assertFalse(scene.mineTeam[1], "not friendly"),
-                () -> assertEquals("Not of this world!", String.valueOf(scene.mineName[0]),
-                    "an id that is no player: C's unknown-owner text"),
+                () -> assertEquals("Mate", String.valueOf(scene.mineName[0]), "mine labelled with its known owner"),
+                () -> assertEquals(SceneFiller.UNKNOWN_MINE_NAME, scene.mineName[1], "unknown owner: Not of this world!"),
                 () -> assertEquals(15f, scene.missileLen[0], "missile length"),
                 () -> assertEquals(32, scene.missileDir[0], "pi/2 = RES 32"),
                 () -> assertEquals(130f, scene.ballX[0], "ball x"),
@@ -636,12 +592,39 @@ class SceneFillerTest {
                 () -> assertEquals(2, scene.wreckType[0], "wreck shape"),
                 () -> assertEquals(64, scene.wreckRot[0], "wreck rotation RES"),
                 () -> assertEquals(8, scene.wreckSize[0], "wreck size"),
-                () -> assertEquals(120f, scene.ecmSize[0], "ECM diameter = 2 * radius"),
+                () -> assertEquals(60f, scene.ecmSize[0], "ECM diameter = the record's C ecm->size (C Gui_paint_ecm)"),
                 () -> assertEquals(3, scene.linkCount, "three links"),
                 () -> assertEquals(SceneData.LINK_CONNECTOR, scene.linkKind[0], "ball connector: dashed pick-up line"),
                 () -> assertEquals(190f, scene.linkX2[0], "connector end"),
                 () -> assertEquals(SceneData.LINK_TRACTOR, scene.linkKind[1], "pressor: beam"),
                 () -> assertEquals(SceneData.LINK_TRANSPORTER, scene.linkKind[2], "transporter"));
+        }
+
+        @Test
+        @DisplayName("mine names follow C Paint_mines; a missile without a length is C's MISSILE_LEN long")
+        void mineNamesAndMissileLength() {
+            AppFixture f = new AppFixture(true).players().twice(x -> {
+                SnapshotWriter w = x.w;
+                w.beginSection(Section.MINE);
+                Records.Mine.put(w, 110, 50, 0, Protocol.NO_ID);
+                Records.Mine.put(w, 112, 50, 0, Records.Mine.EXPIRED_MINE_ID);
+                Records.Mine.put(w, 114, 50, 0, FOE);
+                w.endSection();
+                w.beginSection(Section.MISSILE);
+                Records.Missile.put(w, 9, 120, 50, 0, Records.Missile.KIND_SMART, 0);
+                Records.Missile.put(w, 9, 122, 50, 0, Records.Missile.KIND_SMART, 12);
+                w.endSection();
+            });
+            fill(f);
+            Players p = f.game.players();
+            assertAll(
+                () -> assertNull(scene.mineName[0], "an unidentified owner (C id 0) draws no name"),
+                () -> assertEquals("Expired", scene.mineName[1], "EXPIRED_MINE_ID: Expired"),
+                () -> assertEquals("Foe", String.valueOf(scene.mineName[2]), "a known owner's name"),
+                () -> assertNull(SceneFiller.mineName(false, FOE, p), "showMineName off: no name"),
+                () -> assertEquals("Not of this world!", SceneFiller.mineName(true, 3, p), "an unknown owner"),
+                () -> assertEquals(15f, scene.missileLen[0], "length 0: C MISSILE_LEN"),
+                () -> assertEquals(12f, scene.missileLen[1], "a sent length is kept"));
         }
 
         @Test

@@ -79,7 +79,8 @@ class WormholesTest {
         }
 
         @Test
-        @DisplayName("countDown removes expired temporaries (blocks restored, the last takes the freed index)")
+        @DisplayName("countDown removes expired temporaries (blocks restored, the last takes the freed index; as C, "
+            + "its block keeps the index it left, then a new temporary's)")
         void countDown() {
             Simulation s = sim("wormTime: 1\n");
             World w = s.world;
@@ -90,27 +91,43 @@ class WormholesTest {
             t.countDown();
             int afterOne = t.count();
             int movedIdx = w.map.itemId(20, 15);
+            int staleType = t.type(movedIdx);
+            int staleBx = t.bx(movedIdx);
             w.wormCountdown[0] = 3;
             t.countDown();
+            t.addTemp(12, 6, 22, 16);
+            int reused = w.map.itemId(20, 15);
             assertAll(
                 () -> assertEquals(3, afterOne, "the expired IN went"),
                 () -> assertEquals(BlockType.SPACE, w.map.block(10, 5), "its block is SPACE again"),
                 () -> assertEquals(-1, w.map.itemId(10, 5), "and its index restored"),
-                () -> assertEquals(2, movedIdx, "the OUT took index 2"),
+                () -> assertEquals(3, movedIdx, "the moved OUT's block keeps index 3, past the table (map.c:1368-1382)"),
+                () -> assertEquals(WormTable.OUT, staleType, "where the copy it left is read (as C in practice)"),
+                () -> assertEquals(20, staleBx, "(the copy's x)"),
                 () -> assertEquals(20, t.bx(2), "OUT moved to 2"),
+                () -> assertEquals(3, reused, "a new pair takes index 3: the old OUT's block now leads into the new IN"),
+                () -> assertEquals(WormTable.IN, t.type(reused), "(an IN)"),
                 () -> assertEquals(3, t.countdown(2), "its countdown runs on"),
                 () -> assertEquals(2, w.wormCountdown[0], "map countdowns run too"));
         }
 
         @Test
-        @DisplayName("no more than TEMP_CAPACITY temporaries")
+        @DisplayName("no limit, as C's realloc: the table grows past TEMP_CAPACITY and keeps every wormhole")
         void capacity() {
             Simulation s = sim("wormTime: 9\n");
             WormTable t = s.world.worms;
-            for (int i = 0; i < WormTable.TEMP_CAPACITY / 2 + 3; i++) {
-                t.addTemp(10, 5, 20, 15);
+            int pairs = WormTable.TEMP_CAPACITY + 3;
+            for (int i = 0; i < pairs; i++) {
+                t.addTemp(1 + i % 20, 5, 20, 15);
             }
-            assertEquals(WormTable.TEMP_CAPACITY, t.tempCount(), "capped");
+            int first = t.mapCount;
+            int last = t.count() - 2;
+            assertAll(
+                () -> assertEquals(2 * pairs, t.tempCount(), "every pair"),
+                () -> assertEquals(1, t.bx(first), "the first IN kept"),
+                () -> assertEquals(1 + (pairs - 1) % 20, t.bx(last), "the last IN"),
+                () -> assertEquals(last + 1, t.lastDest(last), "leading to its OUT"),
+                () -> assertEquals(9 * 14, t.countdown(last), "with wormTime"));
         }
     }
 
@@ -138,6 +155,52 @@ class WormholesTest {
                 () -> assertEquals(fromBx, w.worms.bx(2), "IN where it jumped from"),
                 () -> assertEquals(fromBy, w.worms.by(2), "(y)"),
                 () -> assertEquals(bx, w.worms.bx(3), "OUT where it landed"));
+        }
+
+        @Test
+        @DisplayName("on a map of walls with a few space blocks every jump lands on one of them; with none it stays")
+        void landsOnSpace() {
+            String[] rows = new String[6];
+            java.util.Arrays.fill(rows, "xxxxxx");
+            rows[2] = "x  xxx";
+            rows[5] = "x_xxxx";
+            Simulation s = TestWorlds.sim(SimFixture.FPS14, rows);
+            World w = s.world;
+            Player p = ready(s, "P", 0, 1.5 * 35, 3.5 * 35);
+            boolean allSpace = true;
+            for (int i = 0; i < 30; i++) {
+                p.wormHoleHit = -1;
+                p.status |= Obj.WARPING;
+                s.ships.warp(p);
+                int t = w.map.block(p.px / 35, p.py / 35);
+                allSpace &= t == BlockType.SPACE || t == BlockType.BASE;
+            }
+            boolean ok = allSpace;
+            // only the base block (1, 0) is space-like: most jumps fail 20 tries and stay
+            String[] walls = new String[20];
+            java.util.Arrays.fill(walls, "x".repeat(20));
+            walls[19] = "x_" + "x".repeat(18);
+            Simulation n = TestWorlds.sim(SimFixture.FPS14, walls);
+            Player q = ready(n, "Q", 0, 1.5 * 35, 0.5 * 35);
+            int stays = 0;
+            boolean neverInWall = true;
+            for (int i = 0; i < 10; i++) {
+                int x = q.cx;
+                int y = q.cy;
+                q.wormHoleHit = -1;
+                q.status |= Obj.WARPING;
+                n.ships.warp(q);
+                if (q.cx == x && q.cy == y) {
+                    stays++;
+                }
+                neverInWall &= q.px / 35 == 1 && q.py / 35 == 0;
+            }
+            int st = stays;
+            boolean nw = neverInWall;
+            assertAll(
+                () -> assertTrue(ok, "never inside a wall"),
+                () -> assertTrue(st > 0, "20 failed tries: the ship stays (" + st + " of 10)"),
+                () -> assertTrue(nw, "and is never put into a wall"));
         }
 
         @Test
@@ -183,5 +246,39 @@ class WormholesTest {
                 () -> assertEquals(15, w.objects.py[h] / 35, "out at the OUT block (y)"),
                 () -> assertFalse(Click.fromPixels(0f) != 0, "(clicks)"));
         }
+    }
+
+    @Test
+    @DisplayName("C's break: a warp to a wormhole index that went away ends the whole player loop for the frame")
+    void warpBreak() {
+        Simulation s = sim("");
+        World w = s.world;
+        Player a = ready(s, "A", 0, 300, 300);
+        Player b = ready(s, "B", 0, 600, 300);
+        a.status |= Obj.WARPING;
+        a.wormHoleHit = 7;
+        b.vx = 5;
+        int bx = b.cx;
+        long[] in = new long[w.players.length];
+        s.tick(in);
+        int bxAfterBreak = b.cx;
+        boolean warpingCleared = (a.status & Obj.WARPING) == 0;
+        s.tick(in);
+        int bxNext = b.cx;
+        Simulation t = sim("");
+        Player c = ready(t, "C", 0, 300, 300);
+        Player d = ready(t, "D", 0, 600, 300);
+        c.status |= Obj.WARPING;
+        c.wormHoleHit = -3;
+        d.vx = 5;
+        int dx = d.cx;
+        boolean guard = t.ships.update(c);
+        t.tick(new long[t.world.players.length]);
+        assertAll(
+            () -> assertTrue(warpingCleared, "the warp ends"),
+            () -> assertEquals(bx, bxAfterBreak, "the ship after it is not updated (does not move) this frame"),
+            () -> assertTrue(bxNext > bx, "next frame it moves again"),
+            () -> assertFalse(guard, "an index below -1 (not reachable in C) just ends the warp"),
+            () -> assertTrue(d.cx > dx, "and the loop goes on"));
     }
 }

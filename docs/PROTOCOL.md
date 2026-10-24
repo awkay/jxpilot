@@ -248,7 +248,8 @@ M1 uses 1-8; 9-22 are defined for M2; 37 is SOUND. Item sections as the server f
   else 15.
 - LASER: from the pulse start when in view, else from its end backwards; colour BLUE when harmless to the receiver
   (team immune, or its own with `selfImmunity`), else RED.
-- ECM: centre and current radius (it halves every tick).
+- ECM: centre and current radius (it halves every tick): C's `ecm->size`, also on the XPilot path (PKT_ECM's size
+  as sent). The client draws it as C does, a circle `size` pixels across (`Gui_paint_ecm`), i.e. half the blast radius.
 - CONNECTOR: tractor/pressor beams of players and cannons, three lines from the beam source to the target's first three
   hull points.
 - TRANSPORTER: from the victim to the thief (or where the cannon fired it), for 5 ticks.
@@ -264,8 +265,10 @@ rests in it); BALL (id = the server's object handle, team = the team of the ball
 treasure, holder = the connected ship or NO_ID: the client draws the ball connector from it); CONNECTOR kind
 BALL only for a ship still *reaching* for a ball with its connector (C `pl->ball`); ASTEROID (size 1-4,
 rotation) and WRECKAGE (shape, size 0-255, rotation); RADAR blips with FLAG_BALL (`treasuresOnRadar`) and
-FLAG_ASTEROID (`asteroidsOnRadar`) within the receiver's sensor range; TEMP_WORMHOLE for every temporary (hyperjump) wormhole, whole world,
-type = `Wormhole.Type` ordinal (1 IN, 2 OUT). SHIP flags carry HAS_BALL and REPAIRING. Game-mode snapshot section ids
+FLAG_ASTEROID (`asteroidsOnRadar`) within the receiver's sensor range; TEMP_WORMHOLE for the IN end of every temporary (hyperjump) wormhole in view, only with
+`wormholeVisible` (C frame.c:611-636; type = `Wormhole.Type` ordinal, so always 1). The client draws each like a map
+wormhole half a block up and right of its block, as C's client does with the block centre the C server sends.
+TIMING carries race progress; in timing mode the client's score list follows the race (C `Client_score_table`). SHIP flags carry HAS_BALL and REPAIRING. Game-mode snapshot section ids
 30-36 are reserved for future mode sections (none used yet).
 A BURST of one particle with no speed and no life is a
 position-only point particle (C debris on the XPilot path) that the client tracks across frames. Indices refer to the `WorldMap` lists, which both sides build

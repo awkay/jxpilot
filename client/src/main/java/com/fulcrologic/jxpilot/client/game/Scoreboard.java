@@ -71,6 +71,18 @@ public final class Scoreboard {
         }
     }
 
+    /** BEHAVIOR: C {@code showScoreDecimals} (0..2, clamped); labels change from the next {@code update}. */
+    public void setDecimals(int showScoreDecimals) {
+        int d = Math.max(0, Math.min(2, showScoreDecimals));
+        if (d != decimals) {
+            decimals = d;
+            builtVersion = -1;
+        }
+    }
+
+    /** C {@code showScoreDecimals} in use. */
+    public int decimals() { return decimals; }
+
     /** Game mode flags (WELCOME / options) and C {@code showScoreDecimals} (default 1). */
     public void configure(boolean teamPlay, boolean timing, boolean limitedLives, int showScoreDecimals) {
         this.teamPlay = teamPlay;

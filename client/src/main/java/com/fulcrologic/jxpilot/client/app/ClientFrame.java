@@ -78,6 +78,8 @@ public final class ClientFrame {
     private final SceneFiller filler = new SceneFiller();
     private final HudExtras extras = new HudExtras();
     private final WorldMapState mapState;
+    /** The C client options (client-ui): pushed into the HUD, messages and talk line when they change. */
+    private final LiveOptions liveOptions;
     private final PlayActions play;
 
     private WorldMap lastMap;
@@ -114,13 +116,14 @@ public final class ClientFrame {
         this.settings = keys.settings();
         this.router = new KeyRouter(input, talk, settings);
         this.mapState = new WorldMapState(game);
+        this.liveOptions = new LiveOptions(keys.options());
         java.util.List<String> helpKeys = input.bindings().keysyms(KeyFunctions.of(ClientAction.HELP));
         this.helpHint = helpKeys.isEmpty() ? null : helpKeys.get(0) + ": keys";
         this.help = new KeyHelp("Keys (" + keys.source() + ")" + (helpHint != null ? " - " + helpKeys.get(0)
             + " closes" : ""), keys.helpLines());
         conn.sendSettings(settings.copyTo(settingsMsg), 0);
         conn.setModifierBanks(keys.modifierBanks());
-        this.play = new PlayActions(game, conn, hud, extras, keys.play(), System.out, System.err, System.nanoTime());
+        this.play = new PlayActions(game, conn, keys.options(), System.out, System.err, System.nanoTime());
     }
 
     /**
@@ -137,13 +140,14 @@ public final class ClientFrame {
      * PLAYING frame a message names the key help key ("F1: keys"), unless keyHelp is unbound.
      * BEHAVIOR: lays out the key help overlay ({@link #helpHud()}), or the server MOTD panel while it is open (it opens
      * once, when the whole MOTD has arrived).
-     * BEHAVIOR: fills the scene, radar, view HUD, HUD extras (with the lose-item outline of the
-     * {@link KeyRouter#loseSelection}, aged by dt) and the score list panel (at
+     * BEHAVIOR: fills the scene, radar, view HUD, HUD extras (item timers aged by {@code dt * gameFps} original
+     * frames, with the lose-item outline of the {@link KeyRouter#loseSelection}, aged by dt) and the score list panel (at
      * {@code (0, scoreTop)}, {@code panelW} wide).
      */
     public void step(long nowNanos, int viewW, int viewH, double zoom, TextMetrics m, int panelW, int scoreTop) {
         double dt = started ? (nowNanos - lastNow) / 1e9 : 0;
         started = true;
+        liveOptions.apply(hud, game, extras, talk, filler);
         lastNow = nowNanos;
         conn.update(nowNanos);
         game.frame(nowNanos, dt);
@@ -182,6 +186,7 @@ public final class ClientFrame {
         }
         hud.zoom = zoom;
         hud.build(viewHud, game, talk, viewW, viewH, m, dt * game.gameFps());
+        extras.step(dt * game.gameFps(), game.gameFps());
         extras.fill(game, hud, viewW, viewH, zoom, centreX, centreY, scene.loops);
         extras.loseItem(router.loseSelection(), dt);
         panelHud.clear();
@@ -241,8 +246,10 @@ public final class ClientFrame {
      * BEHAVIOR: a finished chat line is sent with {@link GameConnection#sendChat}; QUIT sets
      * {@link #quitRequested()}; SWAP_SCALE sets {@link #takeSwapScale()}; TOGGLE_SOUND sets
      * {@link #takeToggleSound()}; SETTINGS sends the control settings ({@link GameConnection#sendSettings});
-     * SHOW_CONTROLS shows the power and turn speed meters; HELP closes an open MOTD panel, else toggles the key help.
-     * BEHAVIOR: the play events (ID mode, toggles, talk macros, pointer control) go to {@link PlayActions#handle};
+     * SHOW_CONTROLS shows the power and turn speed meters; HELP closes an open MOTD panel, else toggles the key help;
+     * TOGGLE_ITEMS toggles {@link HudExtras#showItems} (C {@code Key_press_show_items}); FUEL_NOTIFY shows the fuel
+     * ({@link Hud#notifyFuel}); TOGGLE_MESSAGES toggles {@link Hud#showMessages} (C {@code Key_press_show_messages}).
+     * BEHAVIOR: the play events (ID mode, print, talk macros, pointer control) go to {@link PlayActions#handle};
      * the talk line's state to {@link PlayActions#talk}.
      */
     public void key(int key, int action, int mods, long nowNanos) {
@@ -309,6 +316,15 @@ public final class ClientFrame {
         }
         if ((ev & KeyRouter.TOGGLE_SOUND) != 0) {
             toggleSound = true;
+        }
+        if ((ev & KeyRouter.TOGGLE_ITEMS) != 0) {
+            extras.showItems = !extras.showItems;
+        }
+        if ((ev & KeyRouter.FUEL_NOTIFY) != 0) {
+            hud.notifyFuel(game.gameFps());
+        }
+        if ((ev & KeyRouter.TOGGLE_MESSAGES) != 0) {
+            hud.showMessages = !hud.showMessages;
         }
     }
 
@@ -384,6 +400,9 @@ public final class ClientFrame {
     public HudExtras extras() { return extras; }
 
     public WorldMapState mapState() { return mapState; }
+
+    /** The C client options in use (the key configuration's, changed live by the CONFIG panel). */
+    public com.fulcrologic.jxpilot.client.game.options.ClientOptions options() { return liveOptions.options(); }
 
     public SceneData scene() { return scene; }
 

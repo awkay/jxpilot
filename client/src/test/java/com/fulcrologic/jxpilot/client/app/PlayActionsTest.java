@@ -23,12 +23,12 @@
  */
 package com.fulcrologic.jxpilot.client.app;
 
-import com.fulcrologic.jxpilot.client.game.hud.Hud;
 import com.fulcrologic.jxpilot.client.game.hud.TalkLine;
 import com.fulcrologic.jxpilot.client.game.input.ClientAction;
 import com.fulcrologic.jxpilot.client.game.input.InputState;
 import com.fulcrologic.jxpilot.client.game.input.KeyConfig;
-import com.fulcrologic.jxpilot.client.game.input.PlayResources;
+import com.fulcrologic.jxpilot.client.game.options.ClientOption;
+import com.fulcrologic.jxpilot.client.game.options.ClientOptions;
 import com.fulcrologic.jxpilot.client.paint.SceneData;
 import com.fulcrologic.jxpilot.common.net.ControlKey;
 import com.fulcrologic.jxpilot.common.net.Msg;
@@ -52,12 +52,10 @@ class PlayActionsTest {
     final ByteArrayOutputStream errBytes = new ByteArrayOutputStream();
     final PrintStream out = new PrintStream(outBytes, true, StandardCharsets.UTF_8);
     final PrintStream err = new PrintStream(errBytes, true, StandardCharsets.UTF_8);
-    final Hud hud = new Hud();
-    final HudExtras extras = new HudExtras();
-    final PlayResources res = new PlayResources();
+    final ClientOptions options = new ClientOptions();
 
     PlayActions actions(AppFixture f) {
-        return new PlayActions(f.game, conn, hud, extras, res, out, err, 7);
+        return new PlayActions(f.game, conn, options, out, err, 7);
     }
 
     List<String> chats() {
@@ -68,28 +66,21 @@ class PlayActionsTest {
     @DisplayName("handle")
     class Handle {
         @Test
-        @DisplayName("each toggle flips its flag; print writes the messages; pointer control toggles")
+        @DisplayName("ID mode flips; print writes the messages; pointer control toggles")
         void toggles() {
             AppFixture f = new AppFixture(true).players();
             PlayActions a = actions(f);
             f.game.messages().add(Msg.Text.KIND_GAME, "Me was killed.");
-            a.handle(KeyRouter.ID_MODE | KeyRouter.TOGGLE_ITEMS | KeyRouter.TOGGLE_MESSAGES | KeyRouter.PRINT_MESSAGES
-                | KeyRouter.POINTER_CONTROL, 0, T0);
+            a.handle(KeyRouter.ID_MODE | KeyRouter.PRINT_MESSAGES | KeyRouter.POINTER_CONTROL, 0, T0);
             boolean id = f.game.scoreboard().idMode();
-            boolean items = extras.showItems;
-            boolean msgs = hud.showMessages;
             boolean pointer = a.pointer().on();
-            a.handle(KeyRouter.ID_MODE | KeyRouter.TOGGLE_ITEMS | KeyRouter.TOGGLE_MESSAGES | KeyRouter.POINTER_CONTROL,
-                0, T0);
+            a.handle(KeyRouter.ID_MODE | KeyRouter.POINTER_CONTROL, 0, T0);
             assertAll(
                 () -> assertTrue(id, "ID mode on"),
-                () -> assertFalse(items, "showItems off"),
-                () -> assertFalse(msgs, "showMessages off"),
                 () -> assertTrue(pointer, "pointer control on"),
                 () -> assertEquals("[talk messages]\n[server messages]\n  Me was killed.\n\n",
                     outBytes.toString(StandardCharsets.UTF_8), "C Print_messages_to_stdout"),
                 () -> assertFalse(f.game.scoreboard().idMode(), "ID mode off again"),
-                () -> assertTrue(extras.showItems && hud.showMessages, "both back on"),
                 () -> assertFalse(a.pointer().on(), "pointer control off again"),
                 () -> assertEquals(List.of(), chats(), "nothing sent"));
         }
@@ -99,10 +90,11 @@ class PlayActionsTest {
         void macros() {
             AppFixture f = new AppFixture(true).players();
             PlayActions a = actions(f);
-            res.talkMacros[1] = "I am #sn";
-            res.talkMacros[4] = "five";
+            options.apply(ClientOption.message(2), "I am #sn");
+            options.apply(ClientOption.message(5), "five");
             a.handle(KeyRouter.TALK_MACRO, 1 << 4 | 1 << 1 | 1 << 2, T0);
-            assertEquals(List.of("chat:I am Me", "chat:five"), chats(), "msg2 then msg5; msg3 is empty");
+            assertEquals(List.of("chat:I am Me", "chat:five"), chats(),
+                "msg2 then msg5, as the options say now; msg3 is empty");
         }
 
         @Test
@@ -115,8 +107,8 @@ class PlayActionsTest {
                 () -> assertEquals(-1, a.lockSlot(), "no lock"),
                 () -> assertEquals(f.game.players().slotOf(SELF), a.selfSlot(), "the own player"),
                 () -> assertTrue(a.limitedLives(), "the fixture's limitedLives: yes"),
-                () -> assertFalse(new PlayActions(new com.fulcrologic.jxpilot.client.game.ClientGame(), conn, hud, extras,
-                    res, out, err, 1).limitedLives(), "no options yet: no limited lives"),
+                () -> assertFalse(new PlayActions(new com.fulcrologic.jxpilot.client.game.ClientGame(), conn, options,
+                    out, err, 1).limitedLives(), "no options yet: no limited lives"),
                 () -> assertNull(a.readFile("/nonexistent/jxpilot/macro"), "unreadable"),
                 () -> assertEquals(System.getenv("HOME"), a.home(), "$HOME"),
                 () -> assertTrue(a.random(3) >= 0 && a.random(3) < 3, "in range"),
@@ -124,13 +116,16 @@ class PlayActionsTest {
         }
 
         @Test
-        @DisplayName("messagesToStdout comes from the resource")
+        @DisplayName("messagesToStdout comes from the options and follows their changes")
         void stdout() {
-            res.messagesToStdout = 2;
+            options.apply(ClientOption.MESSAGES_TO_STDOUT, "2");
             AppFixture f = new AppFixture(true).players();
-            actions(f);
+            PlayActions a = actions(f);
             f.game.messages().add(Msg.Text.KIND_GAME, "hello");
-            assertEquals("hello\n", outBytes.toString(StandardCharsets.UTF_8), "printed as it arrives");
+            options.apply(ClientOption.MESSAGES_TO_STDOUT, "0");
+            a.takeAim();
+            f.game.messages().add(Msg.Text.KIND_GAME, "quiet");
+            assertEquals("hello\n", outBytes.toString(StandardCharsets.UTF_8), "printed as it arrives, until the option changes");
         }
     }
 

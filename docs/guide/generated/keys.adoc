@@ -264,19 +264,19 @@
 
 |`+keyIdMode+`
 |`+u+`
-|Toggle User mode (show real names). _Not in JXPilot._
+|Toggle User mode (show real names).
 
 |`+keyToggleOwnedItems+`
 |`+KP_8+` (pass:c[Keypad 8])
-|Toggle list of owned items on HUD. _Not in JXPilot._
+|Toggle list of owned items on HUD.
 
 |`+keyToggleMessages+`
 |`+KP_9+` (pass:c[Keypad 9])
-|Toggle showing of messages. _Not in JXPilot._
+|Toggle showing of messages.
 
 |`+keyPointerControl+`
 |`+KP_Enter+` (pass:c[Keypad Enter])
-|Toggle pointer control. _Not in JXPilot._
+|Toggle pointer control.
 
 |`+keyToggleRecord+`
 |`+KP_5+` (pass:c[Keypad 5])
@@ -284,7 +284,7 @@
 
 |`+keyPrintMessagesStdout+`
 |`+Print+`
-|Print the current messages to stdout. _Not in JXPilot._
+|Print the current messages to stdout.
 
 |`+keyTalkCursorLeft+`
 |`+Left+`
@@ -308,83 +308,83 @@
 
 |`+keySendMsg1+`
 |-
-|Sends the talkmessage stored in msg1. _Not in JXPilot._ _XPilot's default: `+F1+`._
+|Sends the talkmessage stored in msg1. _XPilot's default: `+F1+`._
 
 |`+keySendMsg2+`
 |`+F2+`
-|Sends the talkmessage stored in msg2. _Not in JXPilot._
+|Sends the talkmessage stored in msg2.
 
 |`+keySendMsg3+`
 |`+F3+`
-|Sends the talkmessage stored in msg3. _Not in JXPilot._
+|Sends the talkmessage stored in msg3.
 
 |`+keySendMsg4+`
 |`+F4+`
-|Sends the talkmessage stored in msg4. _Not in JXPilot._
+|Sends the talkmessage stored in msg4.
 
 |`+keySendMsg5+`
 |`+F5+`
-|Sends the talkmessage stored in msg5. _Not in JXPilot._
+|Sends the talkmessage stored in msg5.
 
 |`+keySendMsg6+`
 |`+F6+`
-|Sends the talkmessage stored in msg6. _Not in JXPilot._
+|Sends the talkmessage stored in msg6.
 
 |`+keySendMsg7+`
 |`+F7+`
-|Sends the talkmessage stored in msg7. _Not in JXPilot._
+|Sends the talkmessage stored in msg7.
 
 |`+keySendMsg8+`
 |`+F8+`
-|Sends the talkmessage stored in msg8. _Not in JXPilot._
+|Sends the talkmessage stored in msg8.
 
 |`+keySendMsg9+`
 |`+F9+`
-|Sends the talkmessage stored in msg9. _Not in JXPilot._
+|Sends the talkmessage stored in msg9.
 
 |`+keySendMsg10+`
 |`+F10+`
-|Sends the talkmessage stored in msg10. _Not in JXPilot._
+|Sends the talkmessage stored in msg10.
 
 |`+keySendMsg11+`
 |`+F11+`
-|Sends the talkmessage stored in msg11. _Not in JXPilot._
+|Sends the talkmessage stored in msg11.
 
 |`+keySendMsg12+`
 |`+F12+`
-|Sends the talkmessage stored in msg12. _Not in JXPilot._
+|Sends the talkmessage stored in msg12.
 
 |`+keySendMsg13+`
 |-
-|Sends the talkmessage stored in msg13. _Not in JXPilot._
+|Sends the talkmessage stored in msg13.
 
 |`+keySendMsg14+`
 |-
-|Sends the talkmessage stored in msg14. _Not in JXPilot._
+|Sends the talkmessage stored in msg14.
 
 |`+keySendMsg15+`
 |-
-|Sends the talkmessage stored in msg15. _Not in JXPilot._
+|Sends the talkmessage stored in msg15.
 
 |`+keySendMsg16+`
 |-
-|Sends the talkmessage stored in msg16. _Not in JXPilot._
+|Sends the talkmessage stored in msg16.
 
 |`+keySendMsg17+`
 |-
-|Sends the talkmessage stored in msg17. _Not in JXPilot._
+|Sends the talkmessage stored in msg17.
 
 |`+keySendMsg18+`
 |-
-|Sends the talkmessage stored in msg18. _Not in JXPilot._
+|Sends the talkmessage stored in msg18.
 
 |`+keySendMsg19+`
 |-
-|Sends the talkmessage stored in msg19. _Not in JXPilot._
+|Sends the talkmessage stored in msg19.
 
 |`+keySendMsg20+`
 |-
-|Sends the talkmessage stored in msg20. _Not in JXPilot._
+|Sends the talkmessage stored in msg20.
 
 |`+keyToggleSound+`
 |`+minus+` (pass:c[-])

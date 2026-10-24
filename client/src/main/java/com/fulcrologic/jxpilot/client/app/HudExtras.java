@@ -58,7 +58,7 @@ public final class HudExtras {
     public CharSequence lockName;
     public boolean limitedLives;
     public int lockLives;
-    /** Pixels to the target; 0 when it is not in view (C then shows no disc). */
+    /** Pixels to the target as SELF sends it (C {@code lock_dist}); 0 when the lock is not shown (no distance, no disc). */
     public int lockDist;
     /** RES (0..127) direction to the target. */
     public int lockDir;
@@ -70,7 +70,7 @@ public final class HudExtras {
     public final float[] lockShipY = new float[ShipShape.MAX_SHIP_PTS];
     public int lockShipPoints;
 
-    /** Per {@link Item} ordinal: the count shown, or -1 (C {@code showItems}: counts above 0). */
+    /** Per {@link Item} ordinal: the count shown, or -1 ({@link #itemCount}). */
     public final int[] itemCounts = new int[Item.COUNT];
     public boolean autopilot;
     /** Seconds of game time left, -1 when the server never said ({@link ClientWorld#timeLeft()}). */
@@ -82,10 +82,63 @@ public final class HudExtras {
     /** C {@code mods}: the own weapon modifiers as the C HUD string ({@link Modifiers#format}). */
     public final CharBuf mods = new CharBuf(32);
 
+    /**
+     * C option {@code showItems} (ClientOption SHOW_ITEMS via LiveOptions; KEY_TOGGLE_OWNED_ITEMS toggles it): owned
+     * items always listed; when off, an item shows for {@link #showItemsTime} after it changes.
+     */
+    public boolean showItems = true;
+    /** C option {@code showItemsTime} in seconds (ClientOption SHOW_ITEMS_TIME, 0..10). */
+    public double showItemsTime = 2.0;
+    /** C {@code lastNumItems}: the count each item had on the previous HUD frame. */
+    private final int[] lastNumItems = new int[Item.COUNT];
+    /** C {@code numItemsTime}: original frames each changed count still shows (without showItems). */
+    private final double[] numItemsTime = new double[Item.COUNT];
+    private double stepFrames;
+    private double stepFps = 1;
+
     private final int[] scoreSlot = new int[ScoreObjects.MAX_SCORE_OBJECTS];
     private final int[] scoreX = new int[ScoreObjects.MAX_SCORE_OBJECTS];
     private final int[] scoreY = new int[ScoreObjects.MAX_SCORE_OBJECTS];
     private int scoreCount;
+
+    /**
+     * The original frames the next {@link #fill} covers and the game's frame rate (they age the item display
+     * while {@link #showItems} is off). BEHAVIOR: the values are used by the next fill only.
+     */
+    public void step(double frames, double fps) {
+        stepFrames = frames;
+        stepFps = fps;
+    }
+
+    /**
+     * C {@code Paint_HUD}'s item count choice (painthud.c:527-546) for item {@code i} owning {@code num}, on a HUD
+     * frame {@link #step} original frames after the previous one.
+     * <p>
+     * BEHAVIOR: fuel is never listed (-1). With {@link #showItems}: {@code num} when above 0, else -1; the count is
+     * remembered.
+     * BEHAVIOR: without it, a count different from the remembered one restarts the item's timer at
+     * {@code (int)(showItemsTime * fps)} frames and is remembered; the count (also 0) is shown while the timer is
+     * above 0, and the timer then runs down by the step's frames; at 0 it is -1.
+     */
+    int itemCount(int i, int num) {
+        if (i == Item.FUEL.ordinal()) {
+            return -1;
+        }
+        if (showItems) {
+            lastNumItems[i] = num;
+            return num > 0 ? num : -1;
+        }
+        if (num != lastNumItems[i]) {
+            numItemsTime[i] = (int) (showItemsTime * (float) stepFps);
+            lastNumItems[i] = num;
+        }
+        if (numItemsTime[i] <= 0) {
+            numItemsTime[i] = 0;
+            return -1;
+        }
+        numItemsTime[i] -= stepFrames;
+        return num;
+    }
 
     /**
      * Compute this frame's values.
@@ -95,10 +148,9 @@ public final class HudExtras {
      * ({@link Hud#extent}, C {@code ext_view_width}; the Hud's zoom is set to {@code zoom}).
      * BEHAVIOR: lock: a known locked player (not NO_ID); its name, lives, team friendliness
      * ({@link HudPainter#isFriend}, alliances included), its shape's points at heading 0; distance and RES
-     * direction as the server sends them in SELF (C frame.c lock_dist/lock_dir) when non-zero, else from the
-     * own ship when its ship is in the interpolated list (wrap-aware), else 0.
-     * BEHAVIOR: warningPhase is {@code loops} even; items: {@link #itemCount} per item, one C paint per new
-     * {@code loops}; autopilot from the
+     * direction exactly as the server sends them in SELF (C frame.c lock_dist/lock_dir, painthud.c:335-376: a 0
+     * distance means the lock is not shown, so no distance and no disc, even when the target ship is drawn).
+     * BEHAVIOR: warningPhase is {@code loops} even; items: {@link #itemCount}; autopilot from the
      * own ship's AUTOPILOT flag; time left from the world; mods: the SELF modifier bits as C's string.
      * BEHAVIOR: score objects: see {@link #scoreObjects}.
      *
@@ -125,11 +177,8 @@ public final class HudExtras {
         autopilot = (w.selfFlags() & Records.ShipFlags.AUTOPILOT) != 0;
         timeLeft = w.timeLeft();
         Modifiers.format(w.selfMods(), mods.clear());
-        int paints = itemLoops < 0 ? 1 : (int) Math.max(0, Math.min(Integer.MAX_VALUE, loops - itemLoops));
-        itemLoops = loops;
-        int showFrames = (int) (showItemsTime * g.gameFps());
         for (int i = 0; i < Item.COUNT; i++) {
-            itemCounts[i] = itemCount(i, w.selfItem(i), paints, showFrames);
+            itemCounts[i] = itemCount(i, w.selfItem(i));
         }
         warningPhase = (loops & 1) == 0;
         int id = w.selfLockId();
@@ -153,18 +202,6 @@ public final class HudExtras {
         mapDiag = g.map() == null ? 0 : HudPainter.mapDiag(g.map().width(), g.map().height());
         lockDist = w.selfLockDist();
         lockDir = w.selfLockDir();
-        if (lockDist != 0) {
-            return;
-        }
-        for (int i = 0; i < w.shipCount(); i++) {
-            if (w.shipId(i) == id) {
-                double dx = XMath.wrapDelta(w.shipX(i) - w.selfX(), w.worldWidth(), w.wraps());
-                double dy = XMath.wrapDelta(w.shipY(i) - w.selfY(), w.worldHeight(), w.wraps());
-                lockDist = (int) Math.sqrt(dx * dx + dy * dy);
-                lockDir = direction(dx, dy);
-                break;
-            }
-        }
     }
 
     /**
@@ -179,49 +216,6 @@ public final class HudExtras {
     public void loseItem(LoseItemSelection sel, double dt) {
         loseActive = active && loseItem >= 0 && loseItem < Item.COUNT && loseItem != Item.FUEL.ordinal()
             && itemCounts[loseItem] >= 0 && sel.paint(dt);
-    }
-
-    /** C {@code showItems} (default on): owned items stay on the HUD; off, they show for a while after a change. */
-    public boolean showItems = true;
-    /** C {@code showItemsTime} (default 2.0, 0..10): seconds an item shows after a change while showItems is off. */
-    public double showItemsTime = 2.0;
-    private final int[] lastItem = new int[Item.COUNT];
-    private final int[] itemTime = new int[Item.COUNT];
-    private long itemLoops = -1;
-
-    /**
-     * C {@code Paint_HUD}'s item counts for one item over {@code paints} paints (frames since the last call).
-     * <p>
-     * BEHAVIOR: with showItems: counts above 0, else -1 (fuel: likewise, C skips it).
-     * BEHAVIOR: without: a count different from the last one restarts a timer of {@code showFrames}
-     * ({@code showItemsTime * FPS}) paints; the count (0 included) shows while the timer, counted down once per
-     * paint, was above 0 before that paint's decrement; then -1. With no new paint the timer only decides.
-     */
-    int itemCount(int i, int num, int paints, int showFrames) {
-        if (showItems || i == Item.FUEL.ordinal()) {
-            lastItem[i] = num;
-            return num > 0 ? num : -1;
-        }
-        if (num != lastItem[i]) {
-            itemTime[i] = showFrames;
-            lastItem[i] = num;
-        }
-        if (paints == 0) {
-            return itemTime[i] > 0 ? num : -1;
-        }
-        if (paints > 1) {
-            itemTime[i] = Math.max(0, itemTime[i] - (paints - 1));
-        }
-        if (itemTime[i]-- <= 0) {
-            itemTime[i] = 0;
-            return -1;
-        }
-        return num;
-    }
-
-    /** BEHAVIOR: RES (128 per turn) direction of (dx, dy), rounded, in 0..127. */
-    static int direction(double dx, double dy) {
-        return (int) Math.round(Math.atan2(dy, dx) * 128 / (2 * Math.PI)) & 127;
     }
 
     /**

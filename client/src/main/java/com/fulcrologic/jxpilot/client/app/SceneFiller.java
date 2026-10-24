@@ -63,6 +63,15 @@ public final class SceneFiller {
     public static final int RADAR_ASTEROID_SIZE = 1;
     /** Radar size byte meaning "not shown this frame" (a blink phase). */
     public static final int HIDDEN = -1;
+    /** C {@code MISSILE_LEN}: the length C draws a missile sent with no length (paintobjects.c:403-406). */
+    public static final int MISSILE_LEN = 15;
+    /** C {@code Paint_mines}: the label of an identified mine nobody owns ({@code EXPIRED_MINE_ID}). */
+    public static final String EXPIRED_MINE_NAME = "Expired";
+    /** C {@code Paint_mines}: the label of a mine whose identified owner the client does not know. */
+    public static final String UNKNOWN_MINE_NAME = "Not of this world!";
+
+    /** C option {@code showMineName} (default yes, SHOW_MINE_NAME): label mines with their owner. */
+    public boolean showMineName = true;
 
     /**
      * Fill {@code out} and {@code radar} for the frame the world was last updated to.
@@ -110,8 +119,7 @@ public final class SceneFiller {
             int c = nuclearBlink(w.shotKind(i), w.shotColor(i), harmless, w.renderTick());
             out.addShot(w.shotX(i), w.shotY(i), shotColor(c, harmless), teamShot(c, harmless));
         }
-        players = p;
-        objects(out, w);
+        objects(out, w, p);
         particles(out, w);
         for (int i = 0; i < w.pointCount(); i++) {
             out.addParticle(w.pointX(i), w.pointY(i), pointColor(w.pointColor(i)));
@@ -157,25 +165,23 @@ public final class SceneFiller {
 
     private boolean roundDelay;
     private WorldMap map;
-    private Players players;
-    /** C {@code showMineName} (default on): mines carry their owner's name. */
-    public boolean showMineName = true;
     /** The vx of the ship being added: C's pause count for a paused ship without an id (see XpTranslator). */
     private float pauseCount;
 
     /**
      * The M2 objects of {@link ClientWorld#objects()} into the scene.
      * <p>
-     * BEHAVIOR: items with their type; mines (team mine iff FRIENDLY, the {@link #mineName} while
-     * {@link #showMineName}, else none); missiles with their length
-     * and RES direction; balls, each with its tether ({@link #ballTether}); lasers with RES direction and the object colour ({@link #pointColor});
+     * BEHAVIOR: items with their type; mines (team mine iff FRIENDLY, labelled by {@link #mineName}); missiles
+     * with their length ({@link #MISSILE_LEN} when the record has none, C paintobjects.c:403-406) and RES
+     * direction; balls, each with its tether ({@link #ballTether}); lasers with RES direction and the object colour ({@link #pointColor});
      * asteroids (shape type from the size byte's high nibble, RES rotation, size from its low nibble);
      * wreckage (deadly iff its shape byte has bit 7 (C), the shape in the low 7 bits, RES rotation, size); ECM
-     * flashes of diameter 2 * radius; connectors ({@link #linkKind}: ball pick-up lines, refuel/repair beams
+     * flashes of diameter = the record's radius field, which carries C's {@code ecm->size} on both paths (C
+     * {@code Gui_paint_ecm} draws an arc {@code size} wide, guiobjects.c:484-490); connectors ({@link #linkKind}: ball pick-up lines, refuel/repair beams
      * from the server's endpoints, tractor/pressor beams) and transporter beams (LINK_TRANSPORTER), each the
      * short way ({@link #line}).
      */
-    void objects(SceneData out, ClientWorld w) {
+    void objects(SceneData out, ClientWorld w, Players p) {
         ObjectLists o = w.objects();
         for (int i = 0; i < o.count(ObjectLists.ITEM); i++) {
             out.addItem(o.get(ObjectLists.ITEM, i, 0), o.get(ObjectLists.ITEM, i, 1), (int) o.get(ObjectLists.ITEM, i, 2));
@@ -183,11 +189,12 @@ public final class SceneFiller {
         for (int i = 0; i < o.count(ObjectLists.MINE); i++) {
             out.addMine(o.get(ObjectLists.MINE, i, 0), o.get(ObjectLists.MINE, i, 1),
                 ((int) o.get(ObjectLists.MINE, i, 2) & Records.Mine.FLAG_FRIENDLY) != 0,
-                showMineName ? mineName((int) o.get(ObjectLists.MINE, i, 3), players) : null);
+                mineName(showMineName, (int) o.get(ObjectLists.MINE, i, 3), p));
         }
         for (int i = 0; i < o.count(ObjectLists.MISSILE); i++) {
+            float len = o.get(ObjectLists.MISSILE, i, 4);
             out.addMissile(o.get(ObjectLists.MISSILE, i, 0), o.get(ObjectLists.MISSILE, i, 1),
-                o.get(ObjectLists.MISSILE, i, 4), res(o.get(ObjectLists.MISSILE, i, 2)));
+                len > 0 ? len : MISSILE_LEN, res(o.get(ObjectLists.MISSILE, i, 2)));
         }
         for (int i = 0; i < o.count(ObjectLists.BALL); i++) {
             float bx = o.get(ObjectLists.BALL, i, 0);
@@ -210,7 +217,7 @@ public final class SceneFiller {
                 shape & 0x7F, res(o.get(ObjectLists.WRECK, i, 4)), (int) o.get(ObjectLists.WRECK, i, 3));
         }
         for (int i = 0; i < o.count(ObjectLists.ECM); i++) {
-            out.addEcm(o.get(ObjectLists.ECM, i, 0), o.get(ObjectLists.ECM, i, 1), 2 * o.get(ObjectLists.ECM, i, 2));
+            out.addEcm(o.get(ObjectLists.ECM, i, 0), o.get(ObjectLists.ECM, i, 1), o.get(ObjectLists.ECM, i, 2));
         }
         for (int i = 0; i < o.count(ObjectLists.CONNECTOR); i++) {
             line(out, w, o.get(ObjectLists.CONNECTOR, i, 0), o.get(ObjectLists.CONNECTOR, i, 1),
@@ -221,6 +228,24 @@ public final class SceneFiller {
             line(out, w, o.get(ObjectLists.TRANSPORTER, i, 0), o.get(ObjectLists.TRANSPORTER, i, 1),
                 o.get(ObjectLists.TRANSPORTER, i, 2), o.get(ObjectLists.TRANSPORTER, i, 3), SceneData.LINK_TRANSPORTER);
         }
+    }
+
+    /**
+     * C {@code Paint_mines} (paintobjects.c:262-283): the name drawn under a mine, or null for none.
+     * <p>
+     * BEHAVIOR: null when {@code show} is off or the owner is not identified ({@link Protocol#NO_ID}, C id 0);
+     * {@link #EXPIRED_MINE_NAME} for {@link Records.Mine#EXPIRED_MINE_ID}; the owner's name when the player is
+     * known; else {@link #UNKNOWN_MINE_NAME}.
+     */
+    static CharSequence mineName(boolean show, int owner, Players p) {
+        if (!show || owner == Protocol.NO_ID) {
+            return null;
+        }
+        if (owner == Records.Mine.EXPIRED_MINE_ID) {
+            return EXPIRED_MINE_NAME;
+        }
+        int slot = p.slotOf(owner);
+        return slot >= 0 ? p.name(slot) : UNKNOWN_MINE_NAME;
     }
 
     /**
@@ -298,26 +323,6 @@ public final class SceneFiller {
         radar.checkpointVisible = true;
         radar.checkpointBx = m.checkpoints().get(next).bx();
         radar.checkpointBy = m.checkpoints().get(next).by();
-    }
-
-    static final String EXPIRED = "Expired";
-    static final String NOT_OF_THIS_WORLD = "Not of this world!";
-
-    /**
-     * The name C's client draws under a mine (paintobjects.c Paint_objects).
-     * <p>
-     * BEHAVIOR: no owner id ({@link Protocol#NO_ID}): none (null); {@link Records.Mine#EXPIRED_MINE_ID}: "Expired"; a
-     * known player: its name; any other id: "Not of this world!". A null player table knows nobody.
-     */
-    static CharSequence mineName(int ownerId, Players p) {
-        if (ownerId == Protocol.NO_ID) {
-            return null;
-        }
-        if (ownerId == Records.Mine.EXPIRED_MINE_ID) {
-            return EXPIRED;
-        }
-        int slot = p == null ? -1 : p.slotOf(ownerId);
-        return slot >= 0 ? p.name(slot) : NOT_OF_THIS_WORLD;
     }
 
     static boolean friendly(int flags, Players p, int slot, boolean teamPlay) {

@@ -117,6 +117,13 @@ public final class ClientWorld {
     private final Records.FuelState fuelRec = new Records.FuelState();
     private final Records.TargetState targetRec = new Records.TargetState();
     private final Records.TreasureState treasureRec = new Records.TreasureState();
+    private final Records.TempWormhole tempWormRec = new Records.TempWormhole();
+    /** Temporary wormholes of the newest tick (C {@code wormhole_ptr}, refilled every frame). */
+    private final int[] tempWormBx = new int[TEMP_WORMHOLES];
+    private final int[] tempWormBy = new int[TEMP_WORMHOLES];
+    private int tempWorms;
+    /** Most temporary wormholes kept per tick. */
+    public static final int TEMP_WORMHOLES = 64;
     private final Records.Radar radarRec = new Records.Radar();
     private final Records.SelfItems itemsRec = new Records.SelfItems();
     private final Records.ItemObj itemRec = new Records.ItemObj();
@@ -466,6 +473,7 @@ public final class ClientWorld {
             }
             newestTick = tick;
             haveNewest = true;
+            tempWorms = 0;
             samplePending = true;
             sampleTick = tick;
             sampleNanos = nowNanos;
@@ -753,7 +761,17 @@ public final class ClientWorld {
                     }
                 }
             }
-            default -> { } // TEMP_WORMHOLE and newer sections are not modelled
+            case Section.TEMP_WORMHOLE -> {
+                if (newest) {
+                    for (int i = 0; i < n && tempWorms < TEMP_WORMHOLES; i++) {
+                        tempWormRec.wrap(reader, i);
+                        tempWormBx[tempWorms] = tempWormRec.bx();
+                        tempWormBy[tempWorms] = tempWormRec.by();
+                        tempWorms++;
+                    }
+                }
+            }
+            default -> { } // newer sections are not modelled
         }
     }
 
@@ -1392,6 +1410,15 @@ public final class ClientWorld {
 
     /** Newest snapshot tick received. */
     public int newestTick() { return newestTick; }
+
+    /** Temporary wormholes in the newest tick (TEMP_WORMHOLE: C draws the IN ends the server sends). */
+    public int tempWormholes() { return tempWorms; }
+
+    /** Block x of temporary wormhole {@code i}. */
+    public int tempWormholeBx(int i) { return tempWormBx[i]; }
+
+    /** Block y of temporary wormhole {@code i}. */
+    public int tempWormholeBy(int i) { return tempWormBy[i]; }
 
     public boolean hasSnapshot() { return haveNewest; }
 

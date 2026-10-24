@@ -703,7 +703,9 @@ public final class XpTranslator {
                 double x = wrapX(f.ecmX[k]);
                 double y = wrapY(f.ecmY[k]);
                 if (visible(x, y)) {
-                    Records.Ecm.put(w, x, y, Math.max(0, f.ecmSize[k]) / 2);
+                    // C ecm->size as is: the native server sends the same value (the blast radius); the
+                    // client draws it as C's arc diameter (Gui_paint_ecm)
+                    Records.Ecm.put(w, x, y, Math.max(0, f.ecmSize[k]));
                 }
             }
             w.endSection();
