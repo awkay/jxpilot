@@ -179,6 +179,31 @@ class KeyConfigTest {
                 () -> assertEquals(0.5, s.altTurnResistance, "altTurnResistance with *"),
                 () -> assertEquals(List.of(), c.problems(), "no problems"));
         }
+
+        @Test
+        @DisplayName("maxVolume (C default.c): an integer 0-255, clamped and reported outside, ignored when not a number")
+        void maxVolume() {
+            KeyConfig set = KeyConfig.load("xpilot.maxVolume: 40\n", "rc", null);
+            KeyConfig edge = KeyConfig.load("maxvolume: 255\n", "rc", null);
+            KeyConfig high = KeyConfig.load("maxVolume: 300\n", "rc", null);
+            KeyConfig low = KeyConfig.load("maxVolume: -3\n", "rc", null);
+            KeyConfig bad = KeyConfig.load("maxVolume: 40%\n", "rc", null);
+            KeyConfig zero = KeyConfig.load("maxVolume: 0\n", "rc", null);
+            assertAll(
+                () -> assertEquals(40, set.maxVolume(), "the value, with the xpilot. prefix"),
+                () -> assertEquals(List.of(), set.problems(), "no problems"),
+                () -> assertEquals(255, edge.maxVolume(), "255 is allowed (any case)"),
+                () -> assertEquals(List.of(), edge.problems(), "without a problem"),
+                () -> assertEquals(0, zero.maxVolume(), "0 is allowed (no sound)"),
+                () -> assertEquals(255, high.maxVolume(), "too high is clamped"),
+                () -> assertEquals(List.of("rc:1: maxVolume: 300 is outside 0-255, using 255"), high.problems(), "and reported"),
+                () -> assertEquals(0, low.maxVolume(), "negative is clamped to 0"),
+                () -> assertEquals(List.of("rc:1: maxVolume: -3 is outside 0-255, using 0"), low.problems(), "and reported"),
+                () -> assertEquals(-1, bad.maxVolume(), "not an integer: not set"),
+                () -> assertEquals(List.of("rc:1: maxVolume: not an integer: '40%'"), bad.problems(), "and reported"),
+                () -> assertEquals(-1, KeyConfig.load("power: 50\n", "rc", null).maxVolume(), "a file without it: not set"),
+                () -> assertEquals(-1, KeyConfig.defaults(null).maxVolume(), "the defaults: not set"));
+        }
     }
 
     @Nested

@@ -93,7 +93,7 @@ class AppOptionsTest {
                 () -> assertEquals(13.0, o.fontSize(), "font size 13"),
                 () -> assertNull(o.keysFile(), "keys from ~/.xpilotrc"),
                 () -> assertTrue(o.sound(), "sound on"),
-                () -> assertEquals(100, o.maxVolume(), "maxVolume 100 (C default)"));
+                () -> assertEquals(AppOptions.VOLUME_UNSET, o.maxVolume(), "no --volume (the key file or 100 decide)"));
         }
 
         @Test
@@ -126,7 +126,8 @@ class AppOptionsTest {
                 () -> assertEquals("--volume must be 0..255: -1", error("--connect", "h", "--volume", "-1"), "negative"),
                 () -> assertEquals("--volume expects an integer: x", error("--connect", "h", "--volume", "x"), "not a number"),
                 () -> assertTrue(parse("--view-map", "m.xp").sound(), "the viewer's options default to sound on"),
-                () -> assertEquals(100, parse().maxVolume(), "help defaults to maxVolume 100"));
+                () -> assertEquals(AppOptions.VOLUME_UNSET, parse().maxVolume(), "help has no --volume"),
+                () -> assertEquals(AppOptions.VOLUME_UNSET, parse("--view-map", "m.xp").maxVolume(), "nor the viewer"));
         }
 
         @Test

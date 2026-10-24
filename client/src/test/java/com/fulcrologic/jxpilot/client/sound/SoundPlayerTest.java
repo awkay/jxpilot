@@ -180,7 +180,7 @@ class SoundPlayerTest {
         @Test
         @DisplayName("start on the loop voice, follow the gain, stop once the hold time passes without an event")
         void hold() {
-            p.setFrameRate(10);
+            p.setHold(10, 0.1);
             p.play(THRUST, 60, 0);
             p.play(THRUST, 60, 10 * MS);
             List<String> start = log();
@@ -201,10 +201,35 @@ class SoundPlayerTest {
         }
 
         @Test
+        @DisplayName("hold = max(2.5 frames, 1.5 arrival intervals): snapshotDivisor 3 at 14 fps, a paused C player")
+        void arrivals() {
+            p.setHold(14, 3 / 14.0);
+            p.play(THRUST, 100, 0);
+            log();
+            p.update(321 * MS);
+            List<String> divisor3 = log();
+            p.update(322 * MS);
+            List<String> divisor3After = log();
+            p.setHold(12, 4 / 12.0);
+            p.play(THRUST, 100, 1000 * MS);
+            log();
+            p.update(1500 * MS);
+            List<String> paused = log();
+            p.update(1500 * MS + 1);
+            assertAll(
+                // 1.5 * 3/14 s = 321.4 ms beats 2.5/14 s = 178.6 ms
+                () -> assertEquals(List.of(), divisor3, "every 3rd tick: held 1.5 x 3/14 s (321.4 ms)"),
+                () -> assertEquals(List.of("stop v0"), divisor3After, "and stopped after it"),
+                // 1.5 * 4/12 s = 500 ms beats 2.5/12 s = 208 ms
+                () -> assertEquals(List.of(), paused, "a paused C player's every 4th frame at 12 fps: held 500 ms"),
+                () -> assertEquals(List.of("stop v0"), log(), "and stopped right after"));
+        }
+
+        @Test
         @DisplayName("the hold follows the frame rate; a rate of 0 keeps the last one")
         void frameRate() {
-            p.setFrameRate(5);
-            p.setFrameRate(0);
+            p.setHold(5, 0);
+            p.setHold(0, 99);
             p.play(THRUST, 100, 0);
             p.update(500 * MS);
             List<String> held = log();
@@ -276,11 +301,11 @@ class SoundPlayerTest {
         void frame() {
             SoundQueue q = new SoundQueue(8);
             q.add(THRUST, 100);
-            p.frame(q, 10, 0);
+            p.frame(q, 10, 0.1, 0);
             List<String> first = log();
-            p.frame(q, 10, 250 * MS);
+            p.frame(q, 10, 0.1, 250 * MS);
             List<String> held = log();
-            p.frame(q, 10, 250 * MS + 1);
+            p.frame(q, 10, 0.1, 250 * MS + 1);
             assertAll(
                 () -> assertEquals(List.of("play v0 c102 1.0 loop"), first, "the thrust starts"),
                 () -> assertEquals(List.of(), held, "it holds 2.5 frames at the given 10 fps (250 ms, not the default 14 fps)"),
