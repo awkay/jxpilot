@@ -261,7 +261,8 @@ sent as if typed, so the prefixes above work. `#` starts an escape, as in XPilot
 |`#t` |Your team digit (team play).
 |`#h` |Your home directory.
 |`#s` `#l` followed by `n`, `s`, `t` or `l` |The name, score, team or lives of yourself (`#s`) or of the
-player you have locked on (`#l`); without a locked player the macro is not sent.
+player you have locked on (`#l`; while you watch another player, that player); without one the macro
+is not sent.
 |`#n` |Sends what came before as a line of its own.
 |`#r[a\|b\|c]` |One of the fields, at random.
 |`#=[x\|y\|then\|else]` |`then` if x and y expand to the same text, else `else`.

@@ -370,8 +370,9 @@ game; the JXPilot client draws it with the same painters, HUD and keys. Known di
 
 As the XPilot client does, the client logs in with your real name (`$XPILOTUSER`, else your login
 name), host (`$XPILOTHOST`, else this computer's name) and display (`$DISPLAY`, else `:0.0`); the `user`,
-`host` and `display` resources override them. Network errors do not end the game: while the server is
-silent, "No response from server" appears every 10 seconds. A server host name that cannot be resolved
+`host` and `display` resources override them. Network errors and silence do not end the game: while
+the server is silent, "No response from server" appears every 10 seconds and the client keeps waiting,
+as XPilot's does, until you quit. A server host name that cannot be resolved
 ends the client with a message and exit status 1.
 * XPilot server versions older than 4.5.5's protocol (0x4203 to 0x44ff) should work but were not
   tested.
