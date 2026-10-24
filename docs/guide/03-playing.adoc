@@ -323,8 +323,72 @@ can play at once.
 All of these options are in <<05-server-options.adoc#opts-race,Races, rounds and game length>> and
 <<05-server-options.adoc#opts-ships,Ships and players>>.
 
-NOTE: Race mode (checkpoints and laps) and treasure rules do not end rounds yet; they come with
-milestone M2. On race maps the game currently runs without rounds.
+Game length:: With `gameDuration` (minutes, short `time`), the whole game has a wall-clock limit that
+starts when the first human joins. The HUD shows the time left. When it runs out the game is over
+(`Game over...`), and 30 seconds later the server shuts down: a countdown shows on the HUD and every
+player is disconnected.
+
+[[ball-games]]
+== Ball games: treasures and balls
+
+On maps with treasures (map symbol `*`) every team has a treasure with a ball resting in it. The goal is
+to steal another team's ball and bring it to your own treasure.
+
+* Fly close to a ball and hold the connector key (kbd:[Ctrl] or kbd:[Alt]/kbd:[Option]): a dashed
+  connector reaches out. Pull away; when the line gets long enough (`ballConnectorLength`) it snaps
+  solid and the ball is yours, on a springy tether. You can tow it, swing it and throw it; kbd:[D]
+  drops it.
+* Bring an enemy ball to your own treasure to destroy their treasure. Your team scores and the losing
+  team loses points; with `treasureKillTeam` its players die too. The ball's home treasure gets a new
+  ball only if it is not destroyed.
+* Bring your own team's ball back to your treasure to replace it (5 points).
+* With `captureTheFlag` (short `ctf`) you can only cash an enemy ball while your own ball is home: "Your
+  treasure must be safe before you can cash an opponent's!".
+* A loose ball hit by a ship, an asteroid or a shot dies and comes back home
+  (`treasureCollisionDestroys`); with `treasureCollisionMayKill` a ball can kill an unshielded ship.
+
+Empty treasures (`^`) have no ball of their own but count as a home for cashing. With
+`treasuresOnRadar`, balls show on the radar.
+
+[[targets]]
+== Targets
+
+Targets (map symbol `!`) belong to the team with the closest base. Shots damage enemy targets, a mine
+destroys one at once, and a ship ramming one damages it; the target's crossed lines show the damage. A
+destroyed target scores for the attacker's team and comes back after `targetDeadTime` seconds (with
+`targetSync`, a team's targets all come back together); with `targetKillTeam`, destroying a team's last
+target kills its players. Damaged targets slowly repair themselves; you can speed this up for your own
+team's targets by holding the repair key (kbd:[F]) within about 2.5 blocks. With `targetTeamCollision`
+off, your own team flies and shoots through its targets.
+
+As in XPilot, the "target destroyed" sound is played at the map's origin rather than at the target, so
+you only hear it near the bottom-left corner of the map.
+
+[[races]]
+== Races
+
+On race maps (`timing`, short `race`) you fly through the checkpoints (`A`, `B`, `C`, ...) in order;
+the next one is drawn filled and shown on the radar. Pass within `checkpointRadius` blocks of it.
+Passing `A` starts a lap; after `raceLaps` laps you finish. The messages give your lap times and your
+best lap ("NAME completes lap 2 in 21.36 s. Personal race best lap time: 20.71 s.").
+
+Finishers score by position: the first gets the most, shared when several finish in the same frame. The
+race ends when someone has finished (with limited lives, when at most one racer is left), or when
+`maxRoundTime` runs out. The best lap of the race scores extra, and the next race starts with the bases
+reassigned by best lap time. With `ballrace`, a ball carried through the checkpoints counts instead of
+the ship (with `ballraceConnected`, only a ball on its tether).
+
+NOTE: The JXPilot client does not show the race column of the score list yet (it is being added).
+
+[[asteroids]]
+== Asteroids
+
+On maps with asteroids (`maxAsteroidDensity` above 0, more around the `&` concentrators) large rocks
+drift and spin through the world. Shots and weapons break an asteroid into two smaller ones; the
+smallest break into wreckage, and sometimes items (`asteroidItemProb`). Breaking one scores
+`asteroidPoints`, up to `asteroidMaxScore`. Hitting an asteroid costs fuel unless your shield is fully
+up, and with `asteroidCollisionMayKill` (on by default) it kills an unshielded ship. With `asteroidsOnRadar`
+they show on the radar.
 
 [[pausing]]
 == Pausing

@@ -82,16 +82,16 @@ names already in use are refused, ignoring case
 |Real names and host names |shown in the player list and join messages |not known; join messages show
 the player name only
 |Changing team or ship shape while playing |possible |not yet
-|Rounds |also end races and treasure games |race and treasure rounds come with those features (M2);
-team rounds end by lives or `maxRoundTime`
 |Keys |every key press in a client packet counts |the server sees your keys once per frame; a key
 pressed and released within one frame (1/14 s) is lost
 |Random events |XPilot's random number generator |another generator: random details (sparks, explosions, robot
 choices) differ, nothing else
-|Gravity of a `gravityPoint` on a non-square wrapping map; objects exactly half a world apart |XPilot bugs
-|fixed
-|Hyperjump with `wormTime` |leaves a pair of temporary wormholes |no temporary wormholes; the jump is
-the same
+|Gravity of a `gravityPoint` on a non-square wrapping map; objects exactly half a world apart; connecting
+to a ball that was just destroyed; a vanishing temporary wormhole cutting short every ship's warp |XPilot
+bugs |fixed
+|Temporary (hyperjump) wormholes |unlimited |at most 64 at a time
+|`gameDuration` |the server log says "Server will stop in N minutes." |no log line; the HUD shows the
+time left and, after the game, the shutdown countdown
 |Mines, missiles and nukes on the radar |blink |always shown
 |An ECM reprogramming a robot |all players are told |the robot goes to war without a message
 |Modifier banks |the XPilot client loads them from its resources when you join |start empty; store
@@ -198,7 +198,7 @@ the system's sound output, or use `--no-sound` to skip the attempt.
 
 Can I play JXPilot now?::
 Yes: against robots with `--local`, on a JXPilot server with `--connect`, or on an original XPilot
-server with `--connect xp://...`. Balls, targets, races and asteroids are not on the JXPilot server yet
+server with `--connect xp://...`. Alliances and the `/` commands are not on the JXPilot server yet
 (<<01-introduction.adoc#status,Status>>).
 
 Can I join an original XPilot server, or use the original XPilot client with a JXPilot server?::

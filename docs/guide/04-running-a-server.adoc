@@ -13,7 +13,7 @@ endif::[]
 
 The JXPilot server runs the game: the simulation ported from the XPilot server, robots, and the
 network layer that JXPilot clients connect to. It is headless and runs on any system with Java 25.
-Balls, targets, races and asteroids are not on it yet (<<01-introduction.adoc#status,Status>>).
+Alliances and the `/` commands are not on it yet (<<01-introduction.adoc#status,Status>>).
 
 [[server-cli]]
 == Command line
@@ -75,7 +75,9 @@ config file.
 [[exit-status]]
 === Exit status and stopping
 
-The server runs until it is stopped with kbd:[Ctrl+C] or `SIGTERM`, also when every player has left.
+The server runs until it is stopped with kbd:[Ctrl+C] or `SIGTERM`, also when every player has left,
+or, with `gameDuration`, until 30 seconds after the game is over: then it logs
+`game over: shutting down`, disconnects every player and exits with status 0.
 (XPilot's server exits when the last human leaves, unless started with `-noQuit`; matching that is
 being worked on.) It then tells connected players
 it is going away, closes its sockets and exits; as for any Java program, the exit status is then 130

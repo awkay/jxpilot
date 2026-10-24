@@ -22,8 +22,8 @@ here instead.
 ====
 
 Status: work in progress, but playable: the Java server runs the XPilot game with robots, and the
-client plays on it or on original XPilot servers. Items work; balls, targets, races and asteroids (milestone M2)
-are being added. See `docs/SPEC.md` for the plan and milestones, and the user guide's
+client plays on it or on original XPilot servers. Items, ball games, targets, races and asteroids work;
+alliances and the `/` commands are being added. See `docs/SPEC.md` for the plan and milestones, and the user guide's
 link:docs/guide/01-introduction.adoc#status[status table].
 
 == Documentation
