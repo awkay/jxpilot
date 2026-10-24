@@ -404,13 +404,18 @@ class XpConnectionTest {
             st.power = 49.5f;
             boolean sent = conn.sendSettings(st, now);
             server.step();
-            List<String> later = server.loginPackets.subList(before, server.loginPackets.size());
+            List<String> later = List.copyOf(server.loginPackets.subList(before, server.loginPackets.size()));
+            boolean again = conn.sendSettings(st, now);
+            server.step();
+            int afterAgain = server.loginPackets.size();
             assertAll(
                 () -> assertFalse(early, "not sent before playing"),
                 () -> assertTrue(server.loginPackets.contains("power36=10240"), "the join carried turn speed 40 * 256"),
                 () -> assertTrue(sent, "sent while playing"),
-                () -> assertEquals(List.of("power34=12672", "power35=8960", "power36=10752", "power37=6400",
-                    "power38=30", "power39=30"), later, "all six settings at once (C Send_power ...)"),
+                () -> assertEquals(List.of("power34=12672", "power36=10752"), later,
+                    "only the changed values, one packet each (C: one Send_power / Send_turnspeed per key)"),
+                () -> assertFalse(again, "the same settings again send nothing"),
+                () -> assertEquals(before + 2, afterAgain, "no duplicate packets"),
                 () -> assertEquals(42f, login.settings.turnSpeed, "and remembered for the next join"),
                 () -> assertEquals(List.of(), server.violations, "nothing the C server would reject"));
         }

@@ -82,23 +82,16 @@ public final class Server implements AutoCloseable {
     /**
      * Parse {@code --map <file> [--port N] [--bind sel ...] [--bindWait] [config file]} (plus any
      * XPilot option), load the map, bind, and start the loop.
-     * Options precedence: command line, then map, then config file, then defaults.
+     * Sources are read in C {@code Parser}'s order: command line, the defaults file ({@link DefaultsFile}:
+     * XPilot's lib/defaults unless {@code --defaults FILE|none}), the optional positional config file (also
+     * origin DEFAULTS, so it beats lib/defaults), then the map. Precedence is C's: command line, then
+     * {@code \override:} defaults, then the map, then the defaults.
      *
      * @throws IllegalArgumentException for bad arguments, a missing map or a failed bind
+     * @throws IOException              for an unreadable defaults, config or map file
      */
     public static Server start(String[] args, Settings s) throws IOException {
-        Options opts = new Options();
-        List<String> rest = opts.parseCommandLine(ServerArgs.joinRepeated(args, Opt.BIND));
-        Path config = ServerArgs.configFile(rest);
-        if (config != null) {
-            ConfigParser.parseFile(config, OptionOrigin.DEFAULTS, opts);
-        }
-        String mapFile = opts.getString(Opt.MAP_FILE_NAME);
-        if (mapFile == null) {
-            throw new IllegalArgumentException("--map <file> is required");
-        }
-        ConfigParser.parseFile(Path.of(mapFile), OptionOrigin.MAP, opts);
-        opts.finishParsing();
+        Options opts = readOptions(args);
         for (String w : opts.warnings()) {
             s.log.log("option warning: " + w);
         }
@@ -107,11 +100,11 @@ public final class Server implements AutoCloseable {
         if (port < 0 || port > 0xFFFF) {
             throw new IllegalArgumentException("port " + port + " out of range");
         }
-        ConfigTransfer.Blob blob = ConfigTransfer.encode(opts.toConfigText());
+        ConfigTransfer.Blob blob = ConfigTransfer.encode(opts.toConfigText(ClientMap.of(opts.mapData(), opts)));
 
         List<String> warnings = new java.util.ArrayList<>();
         List<BindSelector> selectors = BindPlan.resolveNames(
-            BindSelector.parseAll(opts.getList(Opt.BIND)), s.interfaces.snapshot(), s.resolver, warnings);
+            BindSelector.parseAll(ServerArgs.bindList(opts)), s.interfaces.snapshot(), s.resolver, warnings);
         BindPlan.Choice choice = BindPlan.choose(selectors, s.interfaces.snapshot());
         warnings.addAll(choice.warnings());
         for (String w : warnings) {
@@ -147,6 +140,32 @@ public final class Server implements AutoCloseable {
             server.rescan.start();
         }
         return server;
+    }
+
+    /**
+     * Every option source of {@link #start}, in C {@code Parser}'s order (edge: reads files).
+     * <p>
+     * BEHAVIOR: command line, then the defaults file ({@link DefaultsFile#apply}), then the positional config
+     * file (origin DEFAULTS), then the map (origin MAP), then the {@code expand} list; precedence per
+     * {@link Options#setValue}.
+     *
+     * @throws IllegalArgumentException for an unknown option, two config files or no {@code --map}
+     */
+    public static Options readOptions(String[] args) throws IOException {
+        Options opts = new Options();
+        List<String> rest = opts.parseCommandLine(ServerArgs.joinRepeated(args, Opt.BIND));
+        Path config = ServerArgs.configFile(rest);
+        DefaultsFile.apply(opts);
+        if (config != null) {
+            ConfigParser.parseFile(config, OptionOrigin.DEFAULTS, opts);
+        }
+        String mapFile = opts.getString(Opt.MAP_FILE_NAME);
+        if (mapFile == null) {
+            throw new IllegalArgumentException("--map <file> is required");
+        }
+        ConfigParser.parseFile(Path.of(mapFile), OptionOrigin.MAP, opts);
+        opts.finishParsing();
+        return opts;
     }
 
     private static BindPlan.Choice waitForTargets(List<BindSelector> selectors, BindPlan.Choice choice, Settings s)

@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.net;
 
 import com.fulcrologic.jxpilot.common.config.Opt;
+import com.fulcrologic.jxpilot.common.config.Options;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -88,6 +89,21 @@ public final class ServerArgs {
             file = Path.of(a);
         }
         return file;
+    }
+
+    /**
+     * The bind selectors of the options: {@code bind}, or C's {@code serverHost} (server.c:163-171: the contact
+     * socket binds to that host's address) when only serverHost is set.
+     * <p>
+     * BEHAVIOR: an explicitly set bind wins; else a non-empty serverHost is the one selector; else bind's
+     * default ({@code all}).
+     */
+    public static List<String> bindList(Options o) {
+        String host = o.getString(Opt.SERVER_HOST);
+        if (!o.isSet(Opt.BIND) && host != null && !host.isBlank()) {
+            return List.of(host.strip());
+        }
+        return o.getList(Opt.BIND);
     }
 
     private static boolean isFlag(String a, Opt opt) {
