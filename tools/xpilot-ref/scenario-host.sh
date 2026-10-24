@@ -14,6 +14,8 @@ FRAMES=8
 INTERVAL=0.5
 ROBOTS=""
 ALL_PLAYERS=0
+TRACE_OBJS=0
+MAP_FILE=""
 NAME=refpilot
 KEYS=""
 PASS=()
@@ -30,6 +32,8 @@ while [ $# -gt 0 ]; do
         --interval) INTERVAL="$2"; shift 2;;
         --robots) ROBOTS="$2"; shift 2;;
         --all-players) ALL_PLAYERS=1; shift;;
+        --trace-objs) TRACE_OBJS=1; shift;;
+        --map-file) MAP_FILE="$2"; shift 2;;
         --name) NAME="$2"; shift 2;;
         --keys) KEYS="$2"; shift 2;;
         --map|--size|--tile|--seed|--server-opt|--client-opt) PASS+=("$1" "$2"); shift 2;;
@@ -53,6 +57,7 @@ args=(--name "$NAME" --after "$AFTER" --robots "$ROBOTS" --out /out ${PASS[@]+"$
 [ "$MODE" = frames ] && args+=(--frames "$FRAMES" --interval "$INTERVAL")
 if [ "$MODE" = trace ]; then
     args+=(--trace)
+    [ "$TRACE_OBJS" = 1 ] && args+=(--trace-objs)
     if [ "$ALL_PLAYERS" = 0 ]; then
         # The server capitalises the first letter of the nick.
         cap="$(printf '%s' "${NAME:0:1}" | tr '[:lower:]' '[:upper:]')${NAME:1}"
@@ -66,6 +71,11 @@ budget=$(awk -v a="$AFTER" -v k="$key_sleep" -v f="$FRAMES" -v i="$INTERVAL" -v 
     'BEGIN{t=a+k+20; if (m=="frames") t+=f*(i+1); printf "%d", t+0.999}')
 
 tmp="$(xpref_tmpdir)"
+if [ -n "$MAP_FILE" ]; then
+    # a map from the host: copied next to the outputs, which the container sees as /out
+    cp "$MAP_FILE" "$tmp/" || die "cannot copy $MAP_FILE"
+    args+=(--map "/out/$(basename "$MAP_FILE")")
+fi
 cname=$(xpref_container_name "$MODE")
 start=$(date +%s)
 xpref_run_deadline "$((budget + 15))" "$cname" --network none -v "$tmp:/out" "$XPREF_IMAGE" \

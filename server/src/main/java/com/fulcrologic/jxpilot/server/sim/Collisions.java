@@ -196,7 +196,9 @@ public final class Collisions {
                     shipsCollide(pl, o, p);
                 }
             }
+            sim.balls.connect(pl);
             playerObjects(pl);
+            sim.race.playerFrame(pl);
         }
     }
 
@@ -328,6 +330,15 @@ public final class Collisions {
                 continue;
             }
             if ((type & (Obj.SHOT | Obj.CANNON_SHOT)) != 0 && pl.id == owner && o.life[h] > o.fuseLife[h]) {
+                continue;
+            } else if (type == Obj.BALL && sim.balls.phased(h)) {
+                continue;
+            }
+            if (type == Obj.BALL) {
+                sim.balls.playerHit(pl, h, Const.SHIP_SZ + o.plRadius[h]);
+                if ((pl.status & Obj.KILLED) != 0) {
+                    return;
+                }
                 continue;
             }
             // C computes hit = (SHIP_SZ + pl_radius >= range) || in_range_acd(..., range): the same test as above

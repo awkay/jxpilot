@@ -60,12 +60,20 @@ public final class Crashes {
      * BEHAVIOR: wormhole crashes (and NOT_A_CRASH, C's default case) do nothing; every other crash ends the
      * object's life.
      * BEHAVIOR: hitting a cannon destroys it ({@link #cannonDies}).
+     * BEHAVIOR: a ball's treasure crash was already handled while moving ({@link Balls#atTreasure}); a target
+     * crash damages the target ({@link Targets#objectHits}).
      */
     public void objectCrashed(int h, MoveState ms) {
         if (ms.crash == CRASH_WORMHOLE || ms.crash == NOT_A_CRASH) {
             return;
         }
+        if (ms.crash == CRASH_TREASURE && w.objects.type[h] == Obj.BALL) {
+            return;
+        }
         w.objects.life[h] = 0;
+        if (ms.crash == CRASH_TARGET) {
+            sim.targets.objectHits(ms.target, h);
+        }
         if (ms.crash == CRASH_CANNON) {
             cannonDies(ms.cannon, w.objects.owner[h]);
         }
@@ -100,7 +108,10 @@ public final class Crashes {
             case CRASH_WALL_SPEED -> how = " against a wall";
             case CRASH_WALL_NO_FUEL -> how = " against a wall";
             case CRASH_WALL_ANGLE -> how = " against a wall";
-            case CRASH_TARGET -> how = " against a target";
+            case CRASH_TARGET -> {
+                how = " against a target";
+                sim.targets.playerHits(ms.target, pl, -1);
+            }
             case CRASH_TREASURE -> how = " against a treasure";
             case CRASH_CANNON -> {
                 boolean shielded = pl.fullyShielded();

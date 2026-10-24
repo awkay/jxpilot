@@ -44,6 +44,14 @@ public final class Segment {
     private static final int BC = Click.BLOCK_CLICKS;
     private final World world;
     private final WorldMap map;
+    /** Ball reactions to treasures (C handles balls inside Move_segment); null: balls crash like objects. */
+    TreasureHook treasureHook;
+
+    /** The ball part of the TREASURE case of C {@code Move_segment} ({@link Balls#atTreasure}). */
+    public interface TreasureHook {
+        /** @return true when the move continues through the treasure block, false when it ends */
+        boolean atTreasure(MoveState ms);
+    }
 
     public Segment(World world) {
         this.world = world;
@@ -406,6 +414,11 @@ public final class Segment {
                         }
                         ms.treasure = map.itemId(blockX, blockY);
                         ms.crash = CRASH_TREASURE;
+                        if (ms.type == Obj.BALL && treasureHook != null) {
+                            if (treasureHook.atTreasure(ms)) {
+                                break;
+                            }
+                        }
                         return;
                     }
                     if (blockType == BlockType.TARGET && ms.targetCrashes) {
@@ -413,8 +426,8 @@ public final class Segment {
                         ms.target = i;
                         boolean skip = false;
                         if (!world.params.targetTeamCollision) {
-                            int team = ms.pl != null ? ms.pl.team : ms.team;
-                            if (team == map.targets().get(i).team()) {
+                            int team = ms.pl != null ? ms.pl.team : ms.targetTeam;
+                            if (team == world.modes.targetTeam[i]) {
                                 skip = true;
                             }
                         }

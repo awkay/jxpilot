@@ -75,6 +75,11 @@ public final class MoveState {
     public int status;
     /** Object type bits. */
     public int type;
+    /**
+     * Team that a target treats as its own ({@code targetTeamCollision} off): the ship's or object's team, for a
+     * ball its owner's team or TEAM_NOT_SET (walls.c Move_segment).
+     */
+    public int targetTeam;
 
     // ---- move_state_t
     public int crash;
@@ -131,5 +136,6 @@ public final class MoveState {
         team = o.team;
         status = o.status;
         type = o.type;
+        targetTeam = o.targetTeam;
     }
 }

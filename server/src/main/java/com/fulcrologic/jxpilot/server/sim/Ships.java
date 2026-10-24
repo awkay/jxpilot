@@ -26,6 +26,7 @@ package com.fulcrologic.jxpilot.server.sim;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.map.Base;
+import com.fulcrologic.jxpilot.common.map.Checkpoint;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.FuelStation;
 import com.fulcrologic.jxpilot.common.map.Wormhole;
@@ -223,6 +224,8 @@ public final class Ships {
      * Remove a player (C {@code Delete_player}).
      * <p>
      * BEHAVIOR: a reserved player that never spawned just frees its slot (no events).
+     * BEHAVIOR: a ball connected to the player is deleted at once (it explodes and returns to its treasure);
+     * balls the player owned lose their owner.
      * BEHAVIOR: the player's debris and sparks lose their owner and keep flying; its other objects lose their
      * owner and, without keepShots, die (life 0) and cannon shots lose their mass so they do not explode;
      * without keepShots EVERY cannon shot in the world dies the same way (a C quirk, kept).
@@ -245,6 +248,14 @@ public final class Ships {
         for (int k = o.count() - 1; k >= 0; k--) {
             int h = o.active[k];
             int type = o.type[h];
+            if (type == Obj.BALL) {
+                if (o.owner[h] == id) {
+                    sim.shots.delete(h);
+                } else if (w.modes.ballOwner[h] == id) {
+                    w.modes.ballOwner[h] = Obj.NO_ID;
+                }
+                continue;
+            }
             if (o.owner[h] == id) {
                 if ((type & (Obj.DEBRIS | Obj.SPARK)) == 0 && !keep) {
                     o.life[h] = 0;
@@ -543,6 +554,9 @@ public final class Ships {
     /**
      * C {@code Go_home}: put the ship on its base, at rest, facing the base direction.
      * <p>
+     * BEHAVIOR: in race mode after the first checkpoint (not GAME_OVER) the ship appears at the centre of the
+     * last checkpoint passed instead, with a random velocity of at most +-0.05 per axis and the heading it
+     * passed that checkpoint with, +-RES/16 at random.
      * BEHAVIOR: clears velocity, acceleration, turning and the key state: keys still held are ignored until the
      * client's key state changes (C clears {@code last_keyv}/{@code prev_keyv}).
      * BEHAVIOR: C {@code Player_used_kill}: USED_KILL abilities off, and without default shields HAS_SHIELD is
@@ -551,12 +565,26 @@ public final class Ships {
      * follows its JOIN).
      */
     public void goHome(Player pl) {
-        Base b = w.map.bases().get(pl.homeBase);
-        pl.dir = b.dir();
-        pl.floatDir = b.dir();
-        pl.initPixels((b.bx() + 0.5) * Const.BLOCK_SZ, (b.by() + 0.5) * Const.BLOCK_SZ);
-        pl.vx = pl.vy = 0;
-        pl.velocity = 0;
+        int check = sim.race.respawnCheck(pl, true);
+        if (check >= 0) {
+            Checkpoint c = w.map.checkpoints().get(check);
+            float vx = (float) ((w.rfrac() - 0.5) * 0.1);
+            float vy = (float) ((w.rfrac() - 0.5) * 0.1);
+            int dir = (pl.lastCheckDir + (int) ((w.rfrac() - 0.5) * (Const.RES / 8))) & (Const.RES - 1);
+            pl.dir = dir;
+            pl.floatDir = dir;
+            pl.initPixels((c.bx() + 0.5) * Const.BLOCK_SZ + vx, (c.by() + 0.5) * Const.BLOCK_SZ + vy);
+            pl.vx = vx;
+            pl.vy = vy;
+            pl.velocity = (float) StrictMath.hypot(vx, vy);
+        } else {
+            Base b = w.map.bases().get(pl.homeBase);
+            pl.dir = b.dir();
+            pl.floatDir = b.dir();
+            pl.initPixels((b.bx() + 0.5) * Const.BLOCK_SZ, (b.by() + 0.5) * Const.BLOCK_SZ);
+            pl.vx = pl.vy = 0;
+            pl.velocity = 0;
+        }
         pl.accX = pl.accY = 0;
         pl.turnAcc = pl.turnVel = 0;
         pl.prevKeys = 0;
@@ -581,7 +609,8 @@ public final class Ships {
     /**
      * C {@code Pause_player}.
      * <p>
-     * BEHAVIOR: on (when not paused): count = 10*FPS, SELF_DESTRUCT and PLAYING off, PAUSE on, mychar 'P'.
+     * BEHAVIOR: on (when not paused): count = 10*FPS, SELF_DESTRUCT and PLAYING off, PAUSE on, mychar 'P'; a
+     * ship with a ball drops it.
      * BEHAVIOR: off (when paused and the count has run out): PAUSE off; with limitedLives, if a non-team player
      * has lost a life it is too late: life 0, 'W', GAME_OVER; otherwise ' ', Go_home, PLAYING, and full lives
      * with limitedLives. Otherwise nothing happens.
@@ -594,6 +623,9 @@ public final class Ships {
             pl.status |= Obj.PAUSE;
             pl.mychar = 'P';
             pl.scoreDirty = true;
+            if ((pl.have & Has.BALL) != 0) {
+                sim.balls.detach(pl, -1);
+            }
         } else if (!on && (pl.status & Obj.PAUSE) != 0 && pl.count <= 0) {
             pl.status &= ~Obj.PAUSE;
             pl.scoreDirty = true;
@@ -693,6 +725,7 @@ public final class Ships {
             pl.addFuel(ED_SHIELD);
         }
         refuel(pl);
+        sim.targets.repair(pl);
         if (pl.fuel <= 0) {
             pl.used &= ~(Has.SHIELD | Has.CLOAKING_DEVICE | Has.DEFLECTOR);
             pl.status &= ~Obj.THRUSTING;
@@ -900,13 +933,23 @@ public final class Ships {
      * C {@code Transport_to_home}: velocity that carries a dead ship to its base in RECOVERY_DELAY frames,
      * accelerating for the first half and braking for the second (C floats).
      * <p>
+     * BEHAVIOR: in race mode after the first checkpoint the destination is the last checkpoint passed.
      * BEHAVIOR: with t = count + 0.5 and T = 3*FPS: m = 2/t while 2t &lt;= T, else t' = T - t and
      * m = 4t'/(T^2 - 2t'^2); velocity = wrapped distance to the base centre * m.
      */
     void transportToHome(Player pl) {
-        Base b = w.map.bases().get(pl.homeBase);
-        float bx = (float) ((b.bx() + 0.5) * Const.BLOCK_SZ);
-        float by = (float) ((b.by() + 0.5) * Const.BLOCK_SZ);
+        int check = sim.race.respawnCheck(pl, false);
+        float bx;
+        float by;
+        if (check >= 0) {
+            Checkpoint c = w.map.checkpoints().get(check);
+            bx = (float) ((c.bx() + 0.5) * Const.BLOCK_SZ);
+            by = (float) ((c.by() + 0.5) * Const.BLOCK_SZ);
+        } else {
+            Base b = w.map.bases().get(pl.homeBase);
+            bx = (float) ((b.bx() + 0.5) * Const.BLOCK_SZ);
+            by = (float) ((b.by() + 0.5) * Const.BLOCK_SZ);
+        }
         float dx = (float) w.wrapDx(bx - pl.px);
         float dy = (float) w.wrapDy(by - pl.py);
         int bigT = 3 * w.params.fps;
@@ -961,14 +1004,44 @@ public final class Ships {
             j = nearestAhead(pl, hit, n);
         }
         Wormhole dest = w.map.wormholes().get(j);
+        float wx = (float) ((dest.bx() + 0.5) * Const.BLOCK_SZ);
+        float wy = (float) ((dest.by() + 0.5) * Const.BLOCK_SZ);
+        warpBalls(pl, wx, wy);
         pl.wormHoleDest = j;
-        pl.initPixels((dest.bx() + 0.5) * Const.BLOCK_SZ, (dest.by() + 0.5) * Const.BLOCK_SZ);
+        pl.initPixels(wx, wy);
         if (j != hit) {
             w.wormLastDest[hit] = j;
             w.wormCountdown[hit] = w.params.wormTime != 0 ? w.params.wormTime : WORMCOUNT;
         }
         pl.status &= ~Obj.WARPING;
         pl.status |= Obj.WARPED;
+    }
+
+    /**
+     * The ball part of a warp (update.c:1149-1178): the ship stops reaching for a ball, and every ball connected
+     * to it moves along by the same offset (wrapped); a ball that would leave the world dies.
+     */
+    void warpBalls(Player pl, float wx, float wy) {
+        if ((pl.used & Has.CONNECTOR) != 0) {
+            pl.ball = -1;
+        }
+        if ((pl.have & Has.BALL) == 0) {
+            return;
+        }
+        Objects o = w.objects;
+        for (int k = 0; k < o.count(); k++) {
+            int h = o.active[k];
+            if ((o.type[h] & Obj.BALL) == 0 || o.owner[h] != pl.id) {
+                continue;
+            }
+            float bx = (float) w.wrapXPixel(o.px[h] + (wx - pl.px));
+            float by = (float) w.wrapYPixel(o.py[h] + (wy - pl.py));
+            if (bx < 0 || bx >= w.pixelWidth || by < 0 || by >= w.pixelHeight) {
+                o.life[h] = 0;
+            } else {
+                o.initPixels(h, bx, by);
+            }
+        }
     }
 
     /** The RANDOM_REAR_WORM choice of update.c:1065-1110 (note: C wraps the y offset with WRAP_DX). */
@@ -1012,6 +1085,7 @@ public final class Ships {
     /**
      * C {@code Player_death_reset}.
      * <p>
+     * BEHAVIOR: every ball is dropped and the connector is off ({@link Balls#detach}).
      * BEHAVIOR: velocity and acceleration zeroed, mass reset, KILL_BITS cleared (so not PLAYING), items reset,
      * respawn count = max(3*FPS, count).
      * BEHAVIOR: fuel = max((long)(fuel*0.9), initialFuel*256 + (int)(rfrac*(1+that)*0.2)), capped at the tank.
@@ -1021,6 +1095,7 @@ public final class Ships {
      */
     public void deathReset(Player pl) {
         Params p = w.params;
+        sim.balls.detach(pl, -1);
         pl.vx = pl.vy = 0;
         pl.accX = pl.accY = 0;
         pl.emptyMass = pl.mass = p.shipMass;

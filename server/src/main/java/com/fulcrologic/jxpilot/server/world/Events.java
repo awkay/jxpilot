@@ -77,6 +77,11 @@ public final class Events {
      * (the only receiver), b = block x, c = block y, value = points; label in {@link #text}.
      */
     public static final int SCORE_OBJECT = 10;
+    /**
+     * Race progress of a player (C {@code Send_timing}; game modes use kinds 20-26): a = player id, b = the next
+     * checkpoint to pass (C {@code check}), c = laps started (C {@code round}).
+     */
+    public static final int TIMING = 20;
 
     public final int[] kind = new int[CAPACITY];
     public final int[] a = new int[CAPACITY];

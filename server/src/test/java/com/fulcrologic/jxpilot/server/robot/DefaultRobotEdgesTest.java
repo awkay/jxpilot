@@ -968,6 +968,9 @@ class DefaultRobotEdgesTest {
             bottom[28] = '2';
             rows[9] = new String(bottom);
             s = RobotFixture.sim("teamPlay: yes\nreserveRobotTeam: no\n", rows);
+            // these tests place their own balls: remove the treasure balls the world starts with
+            s.world.objects.clear();
+            java.util.Arrays.fill(s.world.modes.treasureHave, false);
             it = new SpyItems();
             s.robots.setItems(it);
             r = s.robots.robot();

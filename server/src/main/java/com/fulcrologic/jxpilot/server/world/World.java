@@ -70,6 +70,12 @@ public final class World {
     public final Grid grid;
     public final Events events = new Events();
 
+    // ---- game modes (balls/treasures, targets, race, asteroids: server-modes)
+    /** Mode parameters (C globals of cmdline.c for balls, race, asteroids...). */
+    public final ModeParams modeParams;
+    /** Mode state: ball/asteroid object fields, treasures, target damage, the asteroid list. */
+    public final ModeState modes;
+
     // ---- dynamic map state
     /** Frames a cannon stays dead; 0 = alive. */
     public final int[] cannonDeadTime;
@@ -129,6 +135,8 @@ public final class World {
         Arrays.fill(slotOfId, -1);
         objects = new Objects(params.maxObjects);
         grid = new Grid(width, height, wrap, params.maxObjects);
+        modeParams = ModeParams.from(options, map, params.fps);
+        modes = new ModeState(map, params.maxObjects);
 
         cannonDeadTime = new int[map.cannons().size()];
         fuelLevel = new double[map.fuels().size()];

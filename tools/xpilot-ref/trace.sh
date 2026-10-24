@@ -7,12 +7,15 @@
 # --server-opt to set physics options.
 #
 # usage: trace.sh --map NAME --out FILE.txt [--after S] [--keys "ACTIONS"]
-#                 [--robots N] [--all-players] [--png FILE.png] [...]
+#                 [--robots N] [--all-players] [--trace-objs] [--png FILE.png] [...]
 #
 #   --after S      seconds after the ship enters play before the keys start
 #   --keys ACTIONS as screenshot.sh; the trace covers the whole run
 #   --robots N     default 0 here (no robots disturbing the scenario)
 #   --all-players  trace robots too (default: only the human player)
+#   --map-file F   use the map file F from the host instead of a shipped map
+#   --trace-objs   also XPOBJ/XPPL2/XPTRS/XPTGT/XPTEAM lines (patch 0003): balls,
+#                  asteroids, wreckage, race and treasure/target state
 #   --png FILE     also save a final screenshot
 #
 # Output columns (see header line XPTRACE_HDR, name is the last field and may

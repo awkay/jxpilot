@@ -27,6 +27,7 @@ INTERVAL=0.5
 OUT=/out
 NAME=refpilot
 TRACE=0
+TRACE_OBJS=0
 TRACE_NAME=""
 SEED=""
 SERVER_OPTS=()
@@ -54,6 +55,7 @@ while [ $# -gt 0 ]; do
         --out) OUT="$2"; shift 2;;
         --name) NAME="$2"; shift 2;;
         --trace) TRACE=1; shift;;
+        --trace-objs) TRACE_OBJS=1; shift;;
         --trace-name) TRACE_NAME="$2"; shift 2;;
         --seed) SEED="$2"; shift 2;;
         --server-opt) SERVER_OPTS+=("$2"); shift 2;;
@@ -86,8 +88,8 @@ cleanup() {
         fi
     done
     if [ -f "$OUT/server.raw" ]; then
-        grep -a '^XPTRACE' "$OUT/server.raw" > "$OUT/trace.txt" || true
-        grep -av '^XPTRACE' "$OUT/server.raw" > "$OUT/server.log" || true
+        grep -a '^XP[A-Z0-9_]* ' "$OUT/server.raw" > "$OUT/trace.txt" || true
+        grep -av '^XP[A-Z0-9_]* ' "$OUT/server.raw" > "$OUT/server.log" || true
         rm -f "$OUT/server.raw"
         [ "$TRACE" = 1 ] || rm -f "$OUT/trace.txt"
     fi
@@ -110,12 +112,13 @@ xdpyinfo > /dev/null 2>&1 || { log "Xvfb did not start"; cat "$OUT/xvfb.log"; ex
 if [ "$TRACE" = 1 ]; then
     export XPILOT_TRACE=1
     export XPILOT_TRACE_NAME="$TRACE_NAME"
+    [ "$TRACE_OBJS" = 1 ] && export XPILOT_TRACE_OBJS=1
 fi
 [ -n "$SEED" ] && export XPILOT_SEED="$SEED"
 xpilots -map "$MAP" -robots "$ROBOTS" -minRobots "$ROBOTS" -noQuit \
         +reportToMetaServer "${SERVER_OPTS[@]}" > "$OUT/server.raw" 2>&1 &
 SERVER_PID=$!
-unset XPILOT_TRACE XPILOT_TRACE_NAME XPILOT_SEED
+unset XPILOT_TRACE XPILOT_TRACE_NAME XPILOT_TRACE_OBJS XPILOT_SEED
 for _ in $(seq 1 100); do
     grep -aq "Server runs at" "$OUT/server.raw" 2>/dev/null && break
     kill -0 "$SERVER_PID" 2>/dev/null || break

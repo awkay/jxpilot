@@ -66,6 +66,13 @@ public final class Obj {
     public static final int FROMBOUNCE = 1 << 18;
     public static final int OWNERIMMUNE = 1 << 19;
     public static final int COLLISIONSHOVE = 1 << 22;
+    // game modes (server-modes)
+    /** No ball recreate explosion. */
+    public static final int NOEXPLOSION = 1 << 21;
+    /** Reached the race finish this frame. */
+    public static final int FINISH = 1 << 23;
+    /** Finished the race and scored. */
+    public static final int RACE_OVER = 1 << 24;
 
     /** C {@code KILL_BITS} (rules.c): cleared on death. */
     public static final int KILL_BITS = THRUSTING | PLAYING | KILLED | SELF_DESTRUCT | WARPING | WARPED;
