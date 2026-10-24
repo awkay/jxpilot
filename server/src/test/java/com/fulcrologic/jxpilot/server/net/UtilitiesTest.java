@@ -278,7 +278,7 @@ class UtilitiesTest {
             () -> assertEquals(255, fastCfg.simHz, "the tick rate is capped at 255 (u8 in WELCOME)"),
             () -> assertEquals(1, p.snapshotDivisor, "a snapshot every tick by default"),
             () -> assertEquals(3, p.radarDivisor, "radar every 3rd snapshot by default"),
-            () -> assertEquals(4, p.maxPerIp, "4 sessions per source by default"),
+            () -> assertEquals(2, p.maxPerIp, "2 sessions per source by default (C cmdline.c:1122)"),
             () -> assertEquals(400.0, p.ratePerSecond, "per-source rate default"),
             () -> assertEquals(800.0, p.sessionRateBurst, "per-session burst default"),
             () -> assertEquals(14, r.snapshotDivisor, "snapshotDivisor is clamped to the tick rate"),

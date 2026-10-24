@@ -27,9 +27,10 @@ Precedence is C's `Option_change_node` (option.c:340-460, `Options.allowChange`)
 
 What lib/defaults changes compared to the cmdline.c defaults:
 
-- `gravity -0.25`, `framesPerSecond 14`, `movingItemProb 0.3`, `maxItemDensity` and the small
-  `item*Prob` values;
-- `allowNukes no`, `allowClusters no`, `allowModifiers yes`;
+- `gravity -0.25`, `movingItemProb 0.3`, `maxItemDensity` and the small `item*Prob` values of 15 items
+  (not armor, mirror, deflector, hyperjump or phasing);
+- `allowModifiers yes`. It also sets `allowNukes no`, `allowClusters no` and `framesPerSecond 14`, which
+  equal the cmdline.c defaults;
 - through `expand: SoftWalls`, wall bounce speeds and angles of 180.
 
 Maps that set any of these keep their own value. `default.xp`, for instance, keeps its 60 bounce speeds
@@ -100,7 +101,7 @@ follow C; the alias is the C command-line name.
 | `logRobots` |  | bool | `true` | CMD+DEF+VIS | implemented (server-batch2): "NAME (n, robotRealName) starts at startpos B." on the server log |
 | `mapWidth` |  | int | `100` | ANY+VIS | implemented (MapLoader) |
 | `mapHeight` |  | int | `100` | ANY+VIS | implemented (MapLoader) |
-| `mapFileName` | map | string | `(none)` | CMD+DEF | implemented (Server) |
+| `mapFileName` | map | string | `(none)` | CMD+DEF | implemented (Server.readOptions): --map FILE, a path to the map file; required (C falls back to its default map and searches its map directory: bundled-maps, in progress) |
 | `mapName` |  | string | `unknown` | ANY+VIS | implemented (SimGameHost, MapLoader) |
 | `mapAuthor` |  | string | `anonymous` | ANY+VIS | implemented (SimGameHost, MapLoader) |
 | `contactPort` | port | int | `15345` | CMD+DEF+VIS | implemented (Server) |
@@ -144,7 +145,7 @@ follow C; the alias is the C command-line name.
 | `reportToMetaServer` | reportMeta | bool | `yes` | CMD+DEF+VIS | unsupported: no meta server speaks the JXPilot protocol |
 | `searchDomainForXPilot` |  | bool | `no` | CMD+DEF+VIS | unsupported: no meta server speaks the JXPilot protocol |
 | `denyHosts` |  | string | `` | CMD+DEF+VIS | implemented (server-batch2): CONNECTs from those addresses/networks are ignored (contact.c) |
-| `maxClientsPerIP` | maxPerIP | int | `4` | CMD+DEF+VIS | implemented (ServerNetConfig) |
+| `maxClientsPerIP` | maxPerIP | int | `2` | CMD+DEF+VIS | implemented (ServerNetConfig) |
 | `limitedVisibility` |  | bool | `no` | ANY+VIS | read by the robot AI only; the feature belongs to server-items (sensors/visibility) |
 | `minVisibilityDistance` | minVisibility | real | `0.0` | ANY+VIS | read (Params); the feature belongs to server-items |
 | `maxVisibilityDistance` | maxVisibility | real | `0.0` | ANY+VIS | read (Params); the feature belongs to server-items |
@@ -168,10 +169,10 @@ follow C; the alias is the C command-line name.
 | `teamShareScore` |  | bool | `no` | ANY+VIS | implemented (Params) |
 | `ecmsReprogramMines` |  | bool | `yes` | ANY+VIS | server-items (weapons) |
 | `ecmsReprogramRobots` |  | bool | `yes` | ANY+VIS | server-items (weapons) |
-| `targetKillTeam` |  | bool | `no` | ANY+VIS | implemented (Params) |
+| `targetKillTeam` |  | bool | `no` | ANY+VIS | server-modes (in progress) |
 | `targetTeamCollision` | targetCollision | bool | `yes` | ANY+VIS | implemented (Params) |
-| `targetSync` |  | bool | `no` | ANY+VIS | implemented (Params) |
-| `targetDeadTime` |  | sec | `60` | ANY+VIS | implemented (Params) |
+| `targetSync` |  | bool | `no` | ANY+VIS | server-modes (in progress) |
+| `targetDeadTime` |  | sec | `60` | ANY+VIS | server-modes (in progress) |
 | `treasureKillTeam` |  | bool | `no` | ANY+VIS | server-modes (balls/treasures) |
 | `captureTheFlag` | ctf | bool | `no` | ANY+VIS | server-modes (balls/treasures) |
 | `treasureCollisionDestroys` | treasureCollisionDestroy | bool | `yes` | ANY+VIS | server-modes (balls/treasures) |
@@ -184,7 +185,7 @@ follow C; the alias is the C command-line name.
 | `wreckageCollisionMayKill` | wreckageUnshieldedCollisionKills | bool | `no` | ANY+VIS | implemented (server-batch2): wreckage kills unshielded ships without armor, or takes one armor (collision.c:1099-1138); robots avoid it |
 | `asteroidCollisionMayKill` | asteroidUnshieldedCollisionKills | bool | `yes` | ANY+VIS | read by the robot AI only; the feature belongs to server-modes |
 | `ignore20MaxFPS` |  | bool | `true` | CMD+DEF+VIS | not applicable: the native protocol has no client maxFPS request; snapshots run at the map's framesPerSecond |
-| `timing` | race | bool | `no` | ANY+VIS | implemented (MapLoader) |
+| `timing` | race | bool | `no` | ANY+VIS | server-modes (in progress; race) |
 | `ballrace` |  | bool | `false` | ANY+VIS | server-modes (race) |
 | `ballraceConnected` |  | bool | `false` | ANY+VIS | server-modes (race) |
 | `edgeWrap` |  | bool | `no` | ANY+VIS | implemented (MapLoader) |
@@ -229,7 +230,7 @@ follow C; the alias is the C command-line name.
 | `laserIsStunGun` | stunGun | bool | `False` | ANY+VIS | server-items (weapons) |
 | `nukeMinSmarts` |  | int | `7` | ANY+VIS | read by the robot AI only; the feature belongs to server-items |
 | `nukeMinMines` |  | int | `4` | ANY+VIS | read by the robot AI only; the feature belongs to server-items |
-| `nukeClusterDamage` |  | real | `1.0` | ANY+VIS | accepted, no effect: C 4.5.5 declares it but never reads it |
+| `nukeClusterDamage` |  | real | `1.0` | ANY+VIS | server-items (weapons: C reads it through SHOT_MULT, serverconst.h:185-187) |
 | `mineFuseTime` |  | sec | `0.0` | ANY+VIS | server-items (weapons) |
 | `mineLife` |  | int | `0` | ANY+VIS | server-items (weapons) |
 | `minMineSpeed` |  | real | `0` | ANY+VIS | server-items (weapons) |
@@ -269,32 +270,32 @@ follow C; the alias is the C command-line name.
 | `asteroidProb` |  | real | `5e-7` | ANY+VIS | server-modes (asteroids) |
 | `maxAsteroidDensity` |  | real | `0` | ANY+VIS | server-modes (asteroids) |
 | `itemConcentratorRadius` | itemConcentratorRange | int | `10` | ANY+VIS | server-items (items) |
-| `itemConcentratorProb` |  | real | `1.0` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
+| `itemConcentratorProb` |  | real | `1.0` | ANY+VIS | server-items (items) |
 | `asteroidConcentratorRadius` | asteroidConcentratorRange | int | `10` | ANY+VIS | server-modes (asteroids) |
 | `asteroidConcentratorProb` |  | real | `1.0` | ANY+VIS | server-modes (asteroids) |
 | `rogueHeatProb` |  | real | `1.0` | ANY+VIS | server-items (weapons) |
 | `rogueMineProb` |  | real | `1.0` | ANY+VIS | server-items (weapons) |
-| `itemEnergyPackProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemTankProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemECMProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemArmorProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemMineProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemMissileProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemCloakProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemSensorProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemWideangleProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemRearshotProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemAfterburnerProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemTransporterProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemMirrorProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemDeflectorProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemHyperJumpProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemPhasingProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemLaserProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemEmergencyThrustProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemTractorBeamProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemAutopilotProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemEmergencyShieldProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
+| `itemEnergyPackProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemTankProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemECMProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemArmorProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability) |
+| `itemMineProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemMissileProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemCloakProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemSensorProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemWideangleProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemRearshotProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemAfterburnerProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemTransporterProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemMirrorProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability) |
+| `itemDeflectorProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability) |
+| `itemHyperJumpProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability) |
+| `itemPhasingProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability) |
+| `itemLaserProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemEmergencyThrustProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemTractorBeamProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemAutopilotProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
+| `itemEmergencyShieldProb` |  | real | `1e-9` | ANY+VIS | server-items (item probability; lib/defaults sets it) |
 | `initialFuel` |  | int | `1000` | ANY+VIS | implemented (Params) |
 | `initialTanks` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
 | `initialECMs` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |

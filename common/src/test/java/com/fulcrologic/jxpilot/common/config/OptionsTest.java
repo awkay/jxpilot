@@ -124,7 +124,7 @@ class OptionsTest {
                 () -> assertEquals(800.0, o.getDouble(Opt.IP_PACKET_BURST), EPS, "ipPacketBurst defaults to 800"),
                 () -> assertEquals(400.0, o.getDouble(Opt.SESSION_PACKET_RATE), EPS, "sessionPacketRate defaults to 400/s"),
                 () -> assertEquals(800.0, o.getDouble(Opt.SESSION_PACKET_BURST), EPS, "sessionPacketBurst defaults to 800"),
-                () -> assertEquals(4, o.getInt(Opt.MAX_CLIENTS_PER_IP), "maxClientsPerIP defaults to 4 in JXPilot"),
+                () -> assertEquals(2, o.getInt(Opt.MAX_CLIENTS_PER_IP), "maxClientsPerIP defaults to 2, as C (cmdline.c:1122)"),
                 () -> assertEquals(List.of(false, false, false, false, false, false, false), fromMap,
                     "none of them can be set from a map"),
                 () -> assertEquals(3, cli.getInt(Opt.SNAPSHOT_DIVISOR), "--snapshotDivisor"),

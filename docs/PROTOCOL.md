@@ -42,7 +42,7 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
 1. Client sends CONNECT (repeat until ACCEPT/REJECT).
    - A CONNECT whose header has the JX magic but another protocol version gets `REJECT` with reason
      VERSION (if it is at least as large as a bare 14-byte REJECT).
-   - More than `maxClientsPerIP` sessions (default 4; an IPv4 address or an IPv6 /64 counts as one source;
+   - More than `maxClientsPerIP` sessions (default 2, as C; an IPv4 address or an IPv6 /64 counts as one source;
      0 = unlimited) get `REJECT` FULL.
    - A CONNECT with a new nonce from an address that already has a session replaces it, but the old
      session is dropped only after the new join succeeded.

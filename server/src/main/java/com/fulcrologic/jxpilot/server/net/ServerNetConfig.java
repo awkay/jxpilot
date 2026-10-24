@@ -43,7 +43,7 @@ public final class ServerNetConfig {
     /** Connection pool size (each preallocates a reliable channel, about 70 KB). */
     public int maxConnections = 32;
     /** Sessions per source (IPv4 address or IPv6 /64); 0 or less is unlimited. Beyond it: REJECT FULL. */
-    public int maxPerIp = 4;
+    public int maxPerIp = 2;
     /**
      * Drop a verified peer after this long without a packet, or when its oldest unacknowledged reliable
      * message has waited this long.

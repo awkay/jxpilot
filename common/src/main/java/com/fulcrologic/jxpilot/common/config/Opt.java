@@ -206,7 +206,7 @@ public enum Opt {
         "Search the local domain for the existence of xpilot.domain?"),
     DENY_HOSTS("denyHosts", "denyHosts", "", OptionType.STRING, F.CMD|F.DEF|F.VIS,
         "List of network addresses of computers which are denied service. Each address may optionally be followed by a slash and a network mask."),
-    MAX_CLIENTS_PER_IP("maxClientsPerIP", "maxPerIP", "4", OptionType.INT, F.CMD|F.DEF|F.VIS,
+    MAX_CLIENTS_PER_IP("maxClientsPerIP", "maxPerIP", "2", OptionType.INT, F.CMD|F.DEF|F.VIS,
         "JXPilot default 4 (XPilot: 2); 0 or less is unlimited; IPv6 counts per /64. Maximum number of clients per IP address that are allowed to connect. This prevents unfriendly players from occupying all the bases, effectively 'kicking' paused players and denying other players to join."),
     LIMITED_VISIBILITY("limitedVisibility", "limitedVisibility", "no", OptionType.BOOL, F.ANY|F.VIS,
         "Should the players have a limited visibility?"),
