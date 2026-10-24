@@ -43,6 +43,8 @@ public final class Players {
     private final int[] idOf = new int[CAPACITY];
     private final boolean[] used = new boolean[CAPACITY];
     private final int[] team = new int[CAPACITY];
+    /** server-commands: C {@code other->alliance}, the alliance mark (' ', '+', '0'..'9'). */
+    private final char[] alliance = new char[CAPACITY];
     private final int[] flags = new int[CAPACITY];
     private final float[] power = new float[CAPACITY];
     private final int[] afterburners = new int[CAPACITY];
@@ -54,7 +56,6 @@ public final class Players {
     private final int[] lives = new int[CAPACITY];
     private final int[] status = new int[CAPACITY];
     private final boolean[] scored = new boolean[CAPACITY];
-    private final char[] alliance = new char[CAPACITY];
     private final int[] check = new int[CAPACITY];
     private final int[] round = new int[CAPACITY];
     private final int[] timingTick = new int[CAPACITY];
@@ -78,7 +79,8 @@ public final class Players {
 
     /**
      * BEHAVIOR: the parsed shape of {@code s}: a shape string seen among the last {@value #SHAPE_CACHE} is
-     * reused without parsing or allocating; a new one is parsed ({@link ShipShape#parseOrDefault}) and kept.
+     * reused without parsing or allocating; a new one is read without limits ({@link ShipShape#convert}, C
+     * {@code Convert_shape_str}) and kept.
      */
     ShipShape shape(CharSequence s) {
         for (int i = 0; i < SHAPE_CACHE; i++) {
@@ -86,7 +88,7 @@ public final class Players {
                 return shapeVal[i];
             }
         }
-        ShipShape sh = ShipShape.parseOrDefault(s.toString());
+        ShipShape sh = ShipShape.convert(s.toString());
         int k = shapeNext;
         shapeNext = (shapeNext + 1) % SHAPE_CACHE;
         if (shapeKey[k] == null) {
@@ -157,8 +159,10 @@ public final class Players {
      * BEHAVIOR: a known id is updated in place (rejoin), else a free slot is used and appended to the
      * join order; returns the slot or -1 when the pool is full.
      * BEHAVIOR: FLAG_SELF makes this the self id.
-     * BEHAVIOR: the engine offset comes from the parsed shape (default ship when empty or invalid);
-     * score, lives and status reset (0, -1 unlimited, 0), race progress too (C {@code other->timing = 0}).
+     * BEHAVIOR: the engine offset comes from the shape read without limits as C client.c Handle_player's
+     * {@code Convert_shape_str} (default ship when empty or invalid);
+     * score, lives and status reset (0, -1 unlimited, 0), race progress too (C {@code other->timing = 0});
+     * the alliance mark is blank.
      */
     public int join(Msg.PlayerJoin j) {
         int s = slotOf(j.id);
@@ -173,6 +177,7 @@ public final class Players {
             order[count++] = s;
         }
         team[s] = j.team;
+        alliance[s] = ' ';
         flags[s] = j.flags;
         power[s] = j.power;
         afterburners[s] = j.afterburners;
@@ -189,7 +194,6 @@ public final class Players {
         check[s] = 0;
         round[s] = 0;
         timingTick[s] = 0;
-        alliance[s] = ' ';
         if ((j.flags & Msg.PlayerJoin.FLAG_SELF) != 0) {
             selfId = j.id;
         }
@@ -232,6 +236,22 @@ public final class Players {
             version++;
         }
     }
+
+    /**
+     * server-commands: PLAYER_ALLIANCE (C {@code Handle_score}'s alliance character) for a known id.
+     * <p>
+     * BEHAVIOR: sets the mark; unknown ids are ignored.
+     */
+    public void setAlliance(int id, char mark) {
+        int s = slotOf(id);
+        if (s >= 0) {
+            alliance[s] = mark;
+            version++;
+        }
+    }
+
+    /** The alliance mark of a slot: ' ' none, '+' an ally (alliances not announced), '0'..'9' the alliance. */
+    public char alliance(int slot) { return alliance[slot]; }
 
     /** BEHAVIOR: PLAYER_THRUST for a known id; unknown ids are ignored. */
     public void setThrust(int id, float pw, int ab) {
@@ -276,22 +296,6 @@ public final class Players {
         timingTick[s] = tick;
         version++;
     }
-
-    /** BEHAVIOR: C {@code Handle_score}'s alliance char for a known id (0 counts as ' '); unknown ids: nothing. */
-    public void setAlliance(int id, int a) {
-        int s = slotOf(id);
-        if (s < 0) {
-            return;
-        }
-        char c = a == 0 ? ' ' : (char) a;
-        if (alliance[s] != c) {
-            alliance[s] = c;
-            version++;
-        }
-    }
-
-    /** C {@code other->alliance}: ' ' when in no alliance. */
-    public char alliance(int slot) { return alliance[slot]; }
 
     /** Next race checkpoint. */
     public int check(int slot) { return check[slot]; }

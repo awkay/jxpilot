@@ -33,7 +33,9 @@ import java.util.Arrays;
  * <p>
  * {@link #defaultShip()} is C {@code Default_ship()}. {@link #parse(String)} accepts both the
  * 3.2 keyword format {@code (SH: 15,0 -9,8 -9,-8)(MG: 15,0)...} and the old 3.1 format
- * {@code (3,1,2)(15,0)(-9,8)(-9,-8)}, filling in defaults and applying the C validity limits.
+ * {@code (3,1,2)(15,0)(-9,8)(-9,-8)}, filling in defaults and applying the C validity limits
+ * (C {@code Parse_shape_str}); {@link #convert(String)} skips the limits (C {@code Convert_shape_str}).
+ * {@link #toWireString()} is C {@code Convert_ship_2_string}.
  */
 public final class ShipShape {
     public static final int MIN_SHIP_PTS = 3;
@@ -102,9 +104,9 @@ public final class ShipShape {
         this.rightLightY = rlY;
         this.missileRackX = mrX;
         this.missileRackY = mrY;
-        int max = 0;
+        double max = 0; // C Calculate_shield_radius works in DFLOAT: no int overflow for converted shapes
         for (int i = 0; i < ptX.length; i++) {
-            max = Math.max(max, ptX[i] * ptX[i] + ptY[i] * ptY[i]);
+            max = Math.max(max, (double) ptX[i] * ptX[i] + (double) ptY[i] * ptY[i]);
         }
         int r = (int) (2.0 * Math.sqrt(max));
         this.shieldRadius = (r + 2 <= 34) ? 34 : (r + 2 - (r & 1));
@@ -129,7 +131,8 @@ public final class ShipShape {
     };
 
     /**
-     * Parse, returning the default ship if the string is empty or invalid (C {@code Parse_shape_str}).
+     * Parse with the C limits, returning the default ship if the string is empty or invalid
+     * (C {@code Parse_shape_str}: what the server uses for players and robots).
      * <p>
      * BEHAVIOR: results are cached by string (the {@link #CACHE_SIZE} most recently used; shapes are
      * immutable), so the same shape string returns the same instance without parsing again; thread safe.
@@ -149,6 +152,20 @@ public final class ShipShape {
         return result;
     }
 
+    /**
+     * Parse without the C size/grid limits, returning the default ship if the string is empty or
+     * invalid (C {@code Convert_shape_str}: what the C client uses for its own shape before sending it and
+     * for other players' shapes received from the server).
+     * <p>
+     * BEHAVIOR: the keyword/old-format reading, the 3-point minimum and the defaults are as {@link #parse};
+     * the size, width and inside-the-hull checks are skipped, so the old-format engine is never moved.
+     * BEHAVIOR: null, empty and invalid strings give {@link #defaultShip()}.
+     */
+    public static ShipShape convert(String s) {
+        ShipShape sh = parse(s, false);
+        return sh == null ? DEFAULT : sh;
+    }
+
     /** Rotate a ship-local point by heading (cos, sin): x component. */
     public static double rotX(double x, double y, double cos, double sin) {
         return x * cos - y * sin;
@@ -159,6 +176,75 @@ public final class ShipShape {
         return x * sin + y * cos;
     }
 
+    // ---------------------------------------------------------------- wire string
+
+    /** C {@code MSG_LEN}: each half of the wire string stays below this. */
+    static final int MSG_LEN = 256;
+
+    /**
+     * The two halves of C {@code Convert_ship_2_string}: {@code buf} (sent by every version) and
+     * {@code ext} (the overflow, sent to and by peers newer than 3.2; a 3.2+ peer appends it to buf).
+     */
+    public record WireParts(String buf, String ext) {}
+
+    /**
+     * The canonical shape string, C {@code Convert_ship_2_string} for version 3.2 and up, as buf + ext.
+     *
+     * @see #toWireParts()
+     */
+    public String toWireString() {
+        WireParts w = toWireParts();
+        return w.buf() + w.ext();
+    }
+
+    /**
+     * C {@code Convert_ship_2_string} (shipshape.c, the {@code shape_version >= 0x3200} branch).
+     * <p>
+     * BEHAVIOR: buf starts with {@code (SH: x,y ...)(EN: x,y)(MG: x,y)}, each point as " x,y".
+     * BEHAVIOR: then, in the order LG, RG, LR, RR, LL, RL, MR, each non-empty group {@code (XX: x,y ...)} goes
+     * into buf if buf stays below {@link #MSG_LEN} chars, else into ext if ext stays below it, else is dropped.
+     * BEHAVIOR: buf itself is never cut (C overflows its buffer there, which a shape within the limits
+     * cannot reach).
+     */
+    public WireParts toWireParts() {
+        StringBuilder buf = new StringBuilder(MSG_LEN);
+        StringBuilder ext = new StringBuilder(MSG_LEN);
+        buf.append("(SH:");
+        appendPoints(buf, ptX, ptY);
+        buf.append(")(EN: ").append(engineX).append(',').append(engineY)
+            .append(")(MG: ").append(mainGunX).append(',').append(mainGunY).append(')');
+        StringBuilder tmp = new StringBuilder(MSG_LEN);
+        group(buf, ext, tmp, "(LG:", leftGunX, leftGunY);
+        group(buf, ext, tmp, "(RG:", rightGunX, rightGunY);
+        group(buf, ext, tmp, "(LR:", leftRearGunX, leftRearGunY);
+        group(buf, ext, tmp, "(RR:", rightRearGunX, rightRearGunY);
+        group(buf, ext, tmp, "(LL:", leftLightX, leftLightY);
+        group(buf, ext, tmp, "(RL:", rightLightX, rightLightY);
+        group(buf, ext, tmp, "(MR:", missileRackX, missileRackY);
+        return new WireParts(buf.toString(), ext.toString());
+    }
+
+    private static void appendPoints(StringBuilder sb, int[] xs, int[] ys) {
+        for (int i = 0; i < xs.length; i++) {
+            sb.append(' ').append(xs[i]).append(',').append(ys[i]);
+        }
+    }
+
+    private static void group(StringBuilder buf, StringBuilder ext, StringBuilder tmp, String key, int[] xs, int[] ys) {
+        if (xs.length == 0) {
+            return;
+        }
+        tmp.setLength(0);
+        tmp.append(key);
+        appendPoints(tmp, xs, ys);
+        tmp.append(')');
+        if (buf.length() + tmp.length() < MSG_LEN) {
+            buf.append(tmp);
+        } else if (ext.length() + tmp.length() < MSG_LEN) {
+            ext.append(tmp);
+        }
+    }
+
     // ---------------------------------------------------------------- parsing
 
     private static final String[] KEYS = {
@@ -166,6 +252,8 @@ public final class ShipShape {
         "engine:", "missileRack:", "name:", "author:", "leftRearGun:", "rightRearGun:"};
     private static final String[] ABBREV = {
         "SH:", "MG:", "LG:", "RG:", "LL:", "RL:", "EN:", "MR:", "NM:", "AU:", "LR:", "RR:"};
+    /** C {@code char keyw[20]}: a keyword is read up to its colon, at most 19 chars before it. */
+    private static final int KEYW_LEN = 20;
 
     private static final class Pts {
         final int max;
@@ -192,41 +280,83 @@ public final class ShipShape {
         int[] ys() { return Arrays.copyOf(y, n); }
     }
 
-    /** sscanf("%d,%d") at position; returns null on failure, else {x, y}. */
-    private static int[] scanPair(String s, int from) {
+    /** C {@code isspace} in the C locale. */
+    private static boolean isCSpace(char c) {
+        return c == ' ' || (c >= '\t' && c <= '\r');
+    }
+
+    private static boolean isCDigit(char c) {
+        return c >= '0' && c <= '9';
+    }
+
+    /**
+     * One sscanf {@code %d} at {@code from}: C whitespace, an optional sign, at least one digit. The value
+     * saturates like glibc's strtol at the long range and is then truncated to int, as glibc stores it.
+     *
+     * @param out receives the value in out[k]
+     * @return the index after the number, or -1 if there is none
+     */
+    private static int scanInt(String s, int from, int[] out, int k) {
         int i = from;
         int n = s.length();
-        long[] v = new long[2];
-        for (int k = 0; k < 2; k++) {
-            while (i < n && Character.isWhitespace(s.charAt(i))) {
-                i++;
+        while (i < n && isCSpace(s.charAt(i))) {
+            i++;
+        }
+        boolean neg = false;
+        if (i < n && (s.charAt(i) == '-' || s.charAt(i) == '+')) {
+            neg = s.charAt(i) == '-';
+            i++;
+        }
+        int st = i;
+        long a = 0;
+        boolean over = false;
+        while (i < n && isCDigit(s.charAt(i))) {
+            int d = s.charAt(i) - '0';
+            if (a > (Long.MAX_VALUE - d) / 10) {
+                over = true;
+            } else {
+                a = a * 10 + d;
             }
-            boolean neg = false;
-            if (i < n && (s.charAt(i) == '-' || s.charAt(i) == '+')) {
-                neg = s.charAt(i) == '-';
-                i++;
-            }
-            int st = i;
-            long a = 0;
-            while (i < n && s.charAt(i) >= '0' && s.charAt(i) <= '9') {
-                a = a * 10 + (s.charAt(i) - '0');
-                if (a > 100000) {
-                    a = 100000;
-                }
-                i++;
-            }
-            if (i == st) {
+            i++;
+        }
+        if (i == st) {
+            return -1;
+        }
+        long v = over ? (neg ? Long.MIN_VALUE : Long.MAX_VALUE) : (neg ? -a : a);
+        out[k] = (int) v;
+        return i;
+    }
+
+    /** sscanf("%d,%d") at position; returns null on failure, else {x, y}. */
+    private static int[] scanPair(String s, int from) {
+        int[] v = new int[2];
+        int i = scanInt(s, from, v, 0);
+        if (i < 0 || i >= s.length() || s.charAt(i) != ',') {
+            return null;
+        }
+        return scanInt(s, i + 1, v, 1) < 0 ? null : v;
+    }
+
+    /** sscanf(s, "(%d,%d,%d)") == 3 at the start of s; returns null on failure, else the three values. */
+    static int[] scanTriple(String s) {
+        if (!s.startsWith("(")) {
+            return null;
+        }
+        int[] v = new int[3];
+        int i = 1;
+        for (int k = 0; k < 3; k++) {
+            i = scanInt(s, i, v, k);
+            if (i < 0) {
                 return null;
             }
-            v[k] = neg ? -a : a;
-            if (k == 0) {
-                if (i >= n || s.charAt(i) != ',') {
+            if (k < 2) {
+                if (i >= s.length() || s.charAt(i) != ',') {
                     return null;
                 }
                 i++;
             }
         }
-        return new int[] {(int) v[0], (int) v[1]};
+        return v;
     }
 
     /** Parse a list of "x,y" pairs separated by spaces into pts (C loop with strchr(' ')). */
@@ -245,10 +375,11 @@ public final class ShipShape {
         }
     }
 
+    /** C {@code Get_shape_keyword}: the key index, {@code table.length} if unknown, -1 if not a letter. */
     private static int keyword(String k) {
-        char c = k.charAt(0); // never empty: the key always ends with ':'
+        char c = k.charAt(0); // never empty: the key holds at least the char at the '(' + 1
 
-        String[] table = Character.isLowerCase(c) ? KEYS : (Character.isUpperCase(c) ? ABBREV : null);
+        String[] table = (c >= 'a' && c <= 'z') ? KEYS : ((c >= 'A' && c <= 'Z') ? ABBREV : null);
         if (table == null) {
             return -1;
         }
@@ -261,11 +392,33 @@ public final class ShipShape {
     }
 
     /**
-     * Parse a ship shape string.
+     * The end of the keyword that starts at {@code p} (C shape2wire's keyw loop): the index of its colon,
+     * or -1 when there is none. C copies at most {@code KEYW_LEN - 1} chars, then tests the char at that
+     * index for the colon without having compared it, so a colon at offset 19 still ends a keyword (one that
+     * is then unknown, because its copy lacks the colon).
+     */
+    private static int keywordEnd(String str, int p) {
+        for (int i = 0; p + i < str.length(); i++) {
+            if (i == KEYW_LEN - 1) {
+                return str.charAt(p + i) == ':' ? p + i : -1;
+            }
+            if (str.charAt(p + i) == ':') {
+                return p + i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Parse a ship shape string with the C limits (C {@code Parse_shape_str} without the default).
      * <p>
      * BEHAVIOR: reads 3.2 keyword lists (full or abbreviated keywords; unknown keywords ignored; lists
      * capped at 24 points / 3 guns / 3 lights / 4 racks; the first main gun and engine win).
-     * BEHAVIOR: reads the 3.1 "(n,left,right)(x,y)..." format (gun = point 0, engine between the lights).
+     * BEHAVIOR: a keyword is the text after '(' up to its colon, which must lie within 20 chars; without
+     * one the next '(' is tried.
+     * BEHAVIOR: reads the 3.1 "(n,left,right)(x,y)..." format (gun = point 0, engine between the lights) when
+     * the first '(' is followed by an ASCII digit; the header is C's {@code sscanf("(%d,%d,%d)")}.
+     * BEHAVIOR: numbers are C {@code %d}: C whitespace, optional sign, ASCII digits.
      * BEHAVIOR: missing main gun, lights, engine and rack get C's defaults.
      * BEHAVIOR: applies the C limits; any special point outside the hull rejects the shape, except a 3.1
      * engine, which moves to the first hull point on y = 0.
@@ -273,6 +426,11 @@ public final class ShipShape {
      * @return the shape, or null if it is empty or invalid
      */
     public static ShipShape parse(String str) {
+        return parse(str, true);
+    }
+
+    /** C {@code shape2wire} with {@code shapeLimits} as given; null for empty or invalid strings. */
+    static ShipShape parse(String str, boolean shapeLimits) {
         if (str == null || str.isEmpty()) {
             return null;
         }
@@ -294,22 +452,17 @@ public final class ShipShape {
         while ((p = str.indexOf('(', p)) >= 0) {
             p++;
             if (version == 0) {
-                if (p < str.length() && Character.isDigit(str.charAt(p))) {
+                if (p < str.length() && isCDigit(str.charAt(p))) {
                     version = 0x3100;
                     break;
                 }
                 version = 0x3200;
             }
-            int colon = -1;
-            for (int i = p; i < str.length() && i - p < 19; i++) {
-                if (str.charAt(i) == ':') {
-                    colon = i;
-                    break;
-                }
-            }
+            int colon = keywordEnd(str, p);
             if (colon < 0) {
                 continue;
             }
+            // C drops the colon from a 19-char key; no keyword is that long, so either way it is unknown.
             String key = str.substring(p, colon + 1);
             int close = str.indexOf(')', colon + 1);
             String val = close < 0 ? str.substring(colon + 1) : str.substring(colon + 1, close);
@@ -318,7 +471,7 @@ public final class ShipShape {
                 case 0 -> scanList(val, pt);
                 case 1 -> {
                     if (mg == null) {
-                        mg = scanPair(val.stripLeading(), 0);
+                        mg = scanPair(val, 0);
                     }
                 }
                 case 2 -> scanList(val, lg);
@@ -327,7 +480,7 @@ public final class ShipShape {
                 case 5 -> scanList(val, rl);
                 case 6 -> {
                     if (en == null) {
-                        en = scanPair(val.stripLeading(), 0);
+                        en = scanPair(val, 0);
                     }
                 }
                 case 7 -> scanList(val, mr);
@@ -405,6 +558,24 @@ public final class ShipShape {
         if (mr.n == 0) {
             mr.add(mg[0], mg[1]);
         }
+        if (shapeLimits) {
+            en = checkLimits(pt, mg, en, version, lg, rg, lrg, rrg, mr, ll, rl);
+            if (en == null) {
+                return null;
+            }
+        }
+        return new ShipShape(name == null ? "" : name, author == null ? "" : author,
+            pt.xs(), pt.ys(), en[0], en[1], mg[0], mg[1],
+            lg.xs(), lg.ys(), rg.xs(), rg.ys(), lrg.xs(), lrg.ys(), rrg.xs(), rrg.ys(),
+            ll.xs(), ll.ys(), rl.xs(), rl.ys(), mr.xs(), mr.ys());
+    }
+
+    /**
+     * The C {@code shapeLimits} block: size, width and the inside-the-hull checks.
+     *
+     * @return the engine (moved for a 3.1 shape), or null if the shape is invalid
+     */
+    private static int[] checkLimits(Pts pt, int[] mg, int[] en, int version, Pts... special) {
         if (!sizeLimitsOk(pt.x, pt.y, pt.n) || !widthOk(pt.x, pt.y, pt.n)) {
             return null;
         }
@@ -412,7 +583,7 @@ public final class ShipShape {
         if (outside(grid, mg[0], mg[1])) {
             return null;
         }
-        for (Pts sp : new Pts[] {lg, rg, lrg, rrg, mr, ll, rl}) {
+        for (Pts sp : special) {
             for (int i = 0; i < sp.n; i++) {
                 if (outside(grid, sp.x[i], sp.y[i])) {
                     return null;
@@ -421,31 +592,9 @@ public final class ShipShape {
         }
         if (outside(grid, en[0], en[1])) {
             int moved = version == 0x3100 ? firstInsideOnAxis(grid) : NO_POINT;
-            if (moved == NO_POINT) {
-                return null;
-            }
-            en = new int[] {moved, 0};
+            return moved == NO_POINT ? null : new int[] {moved, 0};
         }
-        return new ShipShape(name == null ? "" : name, author == null ? "" : author,
-            pt.xs(), pt.ys(), en[0], en[1], mg[0], mg[1],
-            lg.xs(), lg.ys(), rg.xs(), rg.ys(), lrg.xs(), lrg.ys(), rrg.xs(), rrg.ys(),
-            ll.xs(), ll.ys(), rl.xs(), rl.ys(), mr.xs(), mr.ys());
-    }
-
-    private static int[] scanTriple(String s) {
-        if (!s.startsWith("(")) {
-            return null;
-        }
-        String[] parts = s.substring(1, Math.max(1, s.indexOf(')'))).split(",");
-        if (parts.length != 3) {
-            return null;
-        }
-        try {
-            return new int[] {Integer.parseInt(parts[0].strip()), Integer.parseInt(parts[1].strip()),
-                Integer.parseInt(parts[2].strip())};
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return en;
     }
 
     static final int NO_POINT = Integer.MIN_VALUE;

@@ -43,6 +43,32 @@ import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
  * treasures/balls are not simulated.
  */
 public final class Crashes {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_AGAINST_A_CANNON = Texts.of(" against a cannon");
+    private static final String T_AGAINST_A_TARGET = Texts.of(" against a target");
+    private static final String T_AGAINST_A_TREASURE = Texts.of(" against a treasure");
+    private static final String T_AGAINST_A_WALL = Texts.of(" against a wall");
+    private static final String T_AND = Texts.of(" and ");
+    private static final String T_BUG = Texts.of("[Bug]");
+    private static final String T_CANNON = Texts.of("[Cannon]");
+    private static final String T_CRASHED = Texts.of(" crashed");
+    private static final String T_HEAD_FIRST = Texts.of(" head first");
+    private static final String T_INTO_A_PROGRAMMING_ERROR = Texts.of(" into a programming error");
+    private static final String T_LEFT = Texts.of(" left");
+    private static final String T_PUNCT = Texts.of(", ");
+    private static final String T_SHOVE = Texts.of("[Shove]");
+    private static final String T_SLAMMED = Texts.of(" slammed");
+    private static final String T_SMACKED = Texts.of(" smacked");
+    private static final String T_SMASHED = Texts.of(" smashed");
+    private static final String T_TARGET = Texts.of("[Target]");
+    private static final String T_THE_KNOWN_UNIVERSE = Texts.of(" the known universe");
+    private static final String T_TREASURE = Texts.of("[Treasure]");
+    private static final String T_UNIVERSE = Texts.of("[Universe]");
+    private static final String T_WALL = Texts.of("[Wall]");
+    private static final String T_WAS_TRASHED = Texts.of(" was trashed");
+    private static final String T_WITH_HELP_FROM = Texts.of(" with help from ");
+
     /** Shoves older than this many frames don't count (walls.c:2147). */
     static final int SHOVE_WINDOW = 20;
 
@@ -116,15 +142,15 @@ public final class Crashes {
                 pl.wormHoleHit = ms.wormhole;
                 return;
             }
-            case CRASH_WALL -> how = " against a wall";
-            case CRASH_WALL_SPEED -> how = " against a wall";
-            case CRASH_WALL_NO_FUEL -> how = " against a wall";
-            case CRASH_WALL_ANGLE -> how = " against a wall";
+            case CRASH_WALL -> how = T_AGAINST_A_WALL;
+            case CRASH_WALL_SPEED -> how = T_AGAINST_A_WALL;
+            case CRASH_WALL_NO_FUEL -> how = T_AGAINST_A_WALL;
+            case CRASH_WALL_ANGLE -> how = T_AGAINST_A_WALL;
             case CRASH_TARGET -> {
-                how = " against a target";
+                how = T_AGAINST_A_TARGET;
                 sim.targets.playerHits(ms.target, pl, -1);
             }
-            case CRASH_TREASURE -> how = " against a treasure";
+            case CRASH_TREASURE -> how = T_AGAINST_A_TREASURE;
             case CRASH_CANNON -> {
                 boolean shielded = pl.fullyShielded();
                 if (!shielded) {
@@ -136,10 +162,10 @@ public final class Crashes {
                 if (shielded) {
                     return;
                 }
-                how = " against a cannon";
+                how = T_AGAINST_A_CANNON;
             }
             case CRASH_UNIVERSE -> how = null;
-            default -> how = " into a programming error";
+            default -> how = T_INTO_A_PROGRAMMING_ERROR;
         }
         if (ms.crash != CRASH_CANNON) {
             Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_WALL);
@@ -148,10 +174,10 @@ public final class Crashes {
         StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID);
         msg.append(pl.name).append(verb(ms.crash));
         if (how == null) {
-            msg.append(" the known universe");
+            msg.append(T_THE_KNOWN_UNIVERSE);
         }
         if (pt == 0) {
-            msg.append(" head first");
+            msg.append(T_HEAD_FIRST);
         }
         if (how != null) {
             msg.append(how);
@@ -175,7 +201,7 @@ public final class Crashes {
         int average = (int) (totalScore / total);
         for (int i = 0; i < num; i++) {
             Player pusher = pushers[i];
-            msg.append(i == 0 ? " with help from " : (i < num - 1 ? ", " : " and ")).append(pusher.name);
+            msg.append(i == 0 ? T_WITH_HELP_FROM : (i < num - 1 ? T_PUNCT : T_AND)).append(pusher.name);
             double sc = pushCount[i] * Scoring.rate(pusher.score, pl.score) * w.params.shoveKillScoreMult / total;
             sim.scoring.score(pusher, sc, pl.bx, pl.by, pl.name);
             if (i >= num - 1) {
@@ -183,7 +209,7 @@ public final class Crashes {
             }
         }
         sim.scoring.score(pl, -Scoring.rate(average, pl.score) * w.params.shoveKillScoreMult, pl.bx, pl.by,
-            "[Shove]");
+            T_SHOVE);
         msg.append('.');
         // walls.c:2195-2197: robots declare war on a random pusher
         w.events.aux[ev] = pushers[(int) (w.rfrac() * num)].id;
@@ -204,23 +230,23 @@ public final class Crashes {
     /** BEHAVIOR: the score popup label C gives each crash kind (walls.c Player_crash {@code hudmsg}). */
     static String hud(int crash) {
         return switch (crash) {
-            case CRASH_WALL, CRASH_WALL_SPEED, CRASH_WALL_NO_FUEL, CRASH_WALL_ANGLE -> "[Wall]";
-            case CRASH_TARGET -> "[Target]";
-            case CRASH_TREASURE -> "[Treasure]";
-            case CRASH_CANNON -> "[Cannon]";
-            case CRASH_UNIVERSE -> "[Universe]";
-            default -> "[Bug]";
+            case CRASH_WALL, CRASH_WALL_SPEED, CRASH_WALL_NO_FUEL, CRASH_WALL_ANGLE -> T_WALL;
+            case CRASH_TARGET -> T_TARGET;
+            case CRASH_TREASURE -> T_TREASURE;
+            case CRASH_CANNON -> T_CANNON;
+            case CRASH_UNIVERSE -> T_UNIVERSE;
+            default -> T_BUG;
         };
     }
 
     private static String verb(int crash) {
         return switch (crash) {
-            case CRASH_WALL -> " crashed";
-            case CRASH_WALL_NO_FUEL -> " smacked";
-            case CRASH_WALL_ANGLE -> " was trashed";
-            case CRASH_UNIVERSE -> " left";
-            case CRASH_UNKNOWN -> " slammed";
-            default -> " smashed";
+            case CRASH_WALL -> T_CRASHED;
+            case CRASH_WALL_NO_FUEL -> T_SMACKED;
+            case CRASH_WALL_ANGLE -> T_WAS_TRASHED;
+            case CRASH_UNIVERSE -> T_LEFT;
+            case CRASH_UNKNOWN -> T_SLAMMED;
+            default -> T_SMASHED;
         };
     }
 

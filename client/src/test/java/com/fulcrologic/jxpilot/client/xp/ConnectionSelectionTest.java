@@ -148,6 +148,7 @@ class ConnectionSelectionTest {
             com.fulcrologic.jxpilot.common.net.Msg.Settings st = new com.fulcrologic.jxpilot.common.net.Msg.Settings();
             st.turnSpeed = 40;
             boolean settingsEarly = n.sendSettings(st, 0);
+            boolean displayEarly = n.sendDisplay(900, 700, 0);
             boolean beforeStart = n.sendChat("early", 0);
             long now = 1_000_000_000L;
             n.start(now);
@@ -162,6 +163,7 @@ class ConnectionSelectionTest {
             st.turnSpeed = 42;
             boolean settingsLater = n.sendSettings(st, now);
             boolean duplicate = n.sendSettings(st, now);
+            boolean displayLater = n.sendDisplay(1000, 800, now);
             boolean empty = n.sendChat("", now);
             boolean sent = n.sendChat("hello", now);
             n.flush(now);
@@ -175,6 +177,10 @@ class ConnectionSelectionTest {
                 () -> assertFalse(duplicate, "the same settings again: no second SETTINGS"),
                 () -> assertEquals(java.util.List.of("45.0/40.0", "45.0/42.0"), server.settings,
                     "the join carried the early settings (before READY), then the change"),
+                () -> assertFalse(displayEarly, "the view size is not sent before a session"),
+                () -> assertTrue(displayLater, "but at once while playing"),
+                () -> assertEquals(java.util.List.of("900x700", "1000x800"), server.displays,
+                    "the join carried the early view size (before READY), then the change"),
                 () -> assertFalse(empty, "empty text refused"),
                 () -> assertTrue(sent, "queued while playing"),
                 () -> assertEquals(java.util.List.of("hello"), server.chats, "server got the CHAT"),

@@ -109,6 +109,27 @@ public final class NativeGameConnection implements GameConnection {
             && a.altTurnResistance == b.altTurnResistance && a.flags == b.flags;
     }
 
+    /**
+     * BEHAVIOR: stores the size in the connection's DISPLAY (sent before READY on every join); while PLAYING
+     * also queues it as a reliable DISPLAY now (true). (While JOINING the join itself sends it.)
+     */
+    @Override
+    public boolean sendDisplay(int viewWidth, int viewHeight, long nowNanos) {
+        conn.display.viewWidth = viewWidth;
+        conn.display.viewHeight = viewHeight;
+        if (conn.state() != ConnectionState.PLAYING) {
+            return false;
+        }
+        conn.display.send(conn.channel());
+        return true;
+    }
+
+    /** BEHAVIOR: stores the banks in the connection, which sends them before READY on every join. */
+    @Override
+    public void setModifierBanks(String[] banks) {
+        System.arraycopy(banks, 0, conn.modifierBanks, 0, Msg.ModifierBank.BANKS);
+    }
+
     static void copy(Msg.Settings from, Msg.Settings to) {
         to.power = from.power;
         to.turnSpeed = from.turnSpeed;

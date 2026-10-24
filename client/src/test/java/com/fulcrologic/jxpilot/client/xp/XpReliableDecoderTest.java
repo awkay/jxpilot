@@ -235,10 +235,11 @@ class XpReliableDecoderTest {
             decode(new CPackets().player(5, 0, ' ', "A", "r", "h", "", "").score(5, 12.34, 3, 'P', '+')
                 .score(5, -2.5, 0, 'W', ' ').score(5, 1, 0, 'D', ' ').score(5, 0, 0, ' ', ' '));
             assertEquals(List.of("join id=5 team=0 flags=0 name=A shape=",
-                "score id=5 score=12.34 lives=-1 status=" + Msg.Score.STATUS_PAUSED + " alliance=+",
-                "score id=5 score=-2.5 lives=-1 status=" + Msg.Score.STATUS_WAITING,
-                "score id=5 score=1.0 lives=-1 status=" + Msg.Score.STATUS_OUT_OF_LIVES,
-                "score id=5 score=0.0 lives=-1 status=0"), rec.events, "score / 100, status chars, unlimited lives, the alliance char");
+                "score id=5 score=12.34 lives=-1 status=" + Msg.Score.STATUS_PAUSED, "alliance id=5 mark=+",
+                "score id=5 score=-2.5 lives=-1 status=" + Msg.Score.STATUS_WAITING, "alliance id=5 mark= ",
+                "score id=5 score=1.0 lives=-1 status=" + Msg.Score.STATUS_OUT_OF_LIVES, "alliance id=5 mark= ",
+                "score id=5 score=0.0 lives=-1 status=0", "alliance id=5 mark= "), rec.events,
+                "score / 100, status chars, unlimited lives; the alliance character as PLAYER_ALLIANCE");
             prefixesIncomplete(new CPackets().score(5, 1, 1, ' ', ' '));
         }
 
@@ -246,7 +247,8 @@ class XpReliableDecoderTest {
         void livesOnlyWithLimitedLives() {
             configure(XpProto.MODE_LIMITED_LIVES, XpProto.MY_VERSION);
             decode(new CPackets().score(5, 1, 3, ' ', ' '));
-            assertEquals(List.of("score id=5 score=1.0 lives=3 status=0"), rec.events, "lives reported");
+            assertEquals(List.of("score id=5 score=1.0 lives=3 status=0", "alliance id=5 mark= "), rec.events,
+                "lives reported");
         }
 
         @Test
@@ -254,9 +256,10 @@ class XpReliableDecoderTest {
             configure(0, 0x4401);
             decode(new CPackets().scoreOld(5, 42, 2, ' ').c(XpProto.PKT_SCORE_OBJECT).hd(-3).hd(4).hd(0xFFFE).s("x")
                 .message("m"));
-            assertEquals(List.of("score id=5 score=42.0 lives=-1 status=0",
+            assertEquals(List.of("score id=5 score=42.0 lives=-1 status=0", "alliance id=5 mark= ",
                     "scoreobject score=-3.0 at=4,65534 label=x", "message kind=4 from=65535 m"), rec.events,
-                "16-bit integer scores and score objects (%hd whole points, %hu blocks) before 0x4500");
+                "16-bit integer scores and score objects (%hd whole points, %hu blocks) before 0x4500; no alliance"
+                    + " character (blank)");
             prefixesIncomplete(new CPackets().scoreOld(5, 1, 1, ' '));
             prefixesIncomplete(new CPackets().c(XpProto.PKT_SCORE_OBJECT).hd(3).hd(0).hd(0).s("x"));
         }

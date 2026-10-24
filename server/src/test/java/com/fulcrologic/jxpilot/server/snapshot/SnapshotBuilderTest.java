@@ -595,6 +595,33 @@ class SnapshotBuilderTest {
         }
 
         @Test
+        @DisplayName("setViewSize: the half-size is size / 2 + VIEW_MARGIN (128) per axis; a new builder uses 1024 / 2 + 128")
+        void viewSize() {
+            a.initPixels(700, 100);
+            shotAt(700 + 320, 100);
+            shotAt(700 - 320, 100);
+            shotAt(700 + 321, 100);
+            shotAt(700 - 321, 100);
+            shotAt(700, 100 + 128);
+            shotAt(700, 100 + 129);
+            shotAt(700 + 640, 100);
+            shotAt(700 + 641, 100);
+            SnapshotBuilder sized = new SnapshotBuilder(w);
+            sized.setViewSize(384, 0);
+            List<String> sent = decode(sized.build(a, 0, w.events.burstSeq(), false, parts)).shots.values()
+                .iterator().next();
+            clearParts();
+            List<String> byDefault = decode(new SnapshotBuilder(w).build(a, 0, w.events.burstSeq(), false, parts))
+                .shots.values().iterator().next();
+            assertAll(
+                () -> assertEquals(java.util.Set.of("380.0,100.0 v0,0", "700.0,228.0 v0,0", "1020.0,100.0 v0,0"),
+                    java.util.Set.copyOf(sent), "384 x 0: x within 192 + 128 = 320 and y within 0 + 128 are sent"),
+                () -> assertTrue(byDefault.contains("1340.0,100.0 v0,0"), "default: x +640 is in"),
+                () -> assertFalse(byDefault.contains("1341.0,100.0 v0,0"), "default: x +641 is out"),
+                () -> assertTrue(byDefault.contains("1021.0,100.0 v0,0"), "default: x +321 is in"));
+        }
+
+        @Test
         @DisplayName("only live shots and cannon shots are SHOT records; debris and sparks are not")
         void kinds() {
             int dead = shotAt(250, 120);

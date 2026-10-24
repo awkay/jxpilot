@@ -25,7 +25,6 @@ package com.fulcrologic.jxpilot.common.net;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.file.Path;
 
 /**
  * A game server running inside this process, for the client's {@code --local} (SPEC "Architecture": same code
@@ -44,12 +43,14 @@ public interface LocalServer extends AutoCloseable {
     /** Starts local servers; one is registered by the server module. */
     interface Provider {
         /**
-         * Load {@code mapFile}, bind {@code loopback} only on a free port and start serving.
+         * Load {@code map}, bind {@code loopback} only on a free port and start serving.
          *
+         * @param map     a bundled map name or a map file, as the server's {@code --map}
+         *                ({@link com.fulcrologic.jxpilot.common.map.MapLocator})
          * @param options extra server options as on the server's command line ({@code -name value})
          * @throws IOException              when the map cannot be read or nothing can be bound
          * @throws IllegalArgumentException for a bad map or option
          */
-        LocalServer start(Path mapFile, String... options) throws IOException;
+        LocalServer start(String map, String... options) throws IOException;
     }
 }

@@ -43,8 +43,6 @@ public final class ControlSettings {
     public double altPower = 35.0;
     public double altTurnSpeed = 25.0;
     public double altTurnResistance = 0.12;
-    /** C {@code modifierBank1..4} (empty by default), e.g. "N C V2". */
-    public final String[] modifierBanks = {"", "", "", ""};
 
     /** BEHAVIOR: power * 1.10, at most MAX_PLAYER_POWER (C Key_press_increase_power). */
     public void increasePower() {

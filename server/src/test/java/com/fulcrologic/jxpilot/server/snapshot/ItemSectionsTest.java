@@ -232,6 +232,44 @@ class ItemSectionsTest {
                 () -> assertEquals("0,0,0,0,0,0,0,0,3,0,0,2,0,0,0,0,0,0,0,0,0", items, "the item counts"));
         }
 
+        /** SELF_ITEMS' loseItem for viewer {@code v} (-1 without a SELF_ITEMS record). */
+        int loseItemOf(Player v) {
+            for (ByteBuffer b : parts) {
+                b.clear();
+            }
+            int n = new SnapshotBuilder(w).build(v, 0, w.events.burstSeq(), false, parts);
+            SnapshotReader r = new SnapshotReader();
+            r.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
+            for (int p = 0; p < n; p++) {
+                ByteBuffer buf = parts[p].duplicate();
+                buf.flip();
+                r.begin(buf);
+                while (r.nextSection()) {
+                    if (r.type() == Section.SELF_ITEMS) {
+                        return new Records.SelfItems().wrap(r, 0).loseItem();
+                    }
+                }
+            }
+            return -1;
+        }
+
+        @Test
+        @DisplayName("SELF_ITEMS carries the viewer's lose item (C Send_loseitem), whatever its lose_item_state")
+        void loseItem() {
+            a.loseItem = Item.MINE.ordinal();
+            a.loseItemState = 0;
+            int idle = loseItemOf(a);
+            a.loseItem = Item.LASER.ordinal();
+            a.loseItemState = 2;
+            int selecting = loseItemOf(a);
+            b.loseItem = Item.ECM.ordinal();
+            int other = loseItemOf(a);
+            assertAll(
+                () -> assertEquals(Item.MINE.ordinal(), idle, "sent while not selecting too (state 0)"),
+                () -> assertEquals(Item.LASER.ordinal(), selecting, "the current lose item while selecting"),
+                () -> assertEquals(Item.LASER.ordinal(), other, "the viewer's own, not another player's"));
+        }
+
         @Test
         @DisplayName("SELF: lock distance/direction only when LOCK_VISIBLE; the modifiers in SELF's layout")
         void lockAndMods() {
@@ -453,10 +491,10 @@ class ItemSectionsTest {
         @DisplayName("a cloaked opponent the viewer cannot see is neither drawn nor on radar; seen it is, with CLOAKED")
         void cloaked() {
             b.used |= Has.CLOAKING_DEVICE;
-            a.canSee[b.slot] = false;
+            a.canSee[b.ind] = false;
             List<String> hidden = records(a, Section.SHIP, true);
             List<String> radarHidden = records(a, Section.RADAR, true);
-            a.canSee[b.slot] = true;
+            a.canSee[b.ind] = true;
             List<String> seen = records(a, Section.SHIP, true);
             assertAll(
                 () -> assertEquals(List.of(), hidden, "not drawn"),
@@ -628,8 +666,8 @@ class ItemSectionsTest {
                     "A's own fused (owner-immune) mine: friendly, not armed"),
                 () -> assertEquals(confused, m.subList(4, 10),
                     "confused identified mines: nobody shown, friendliness from the snapshot RNG"),
-                () -> assertEquals("310.0,120.0 f" + armed + " o" + Protocol.NO_ID, m.get(10),
-                    "an unowned mine shows nobody"),
+                () -> assertEquals("310.0,120.0 f" + armed + " o" + Records.Mine.EXPIRED_MINE_ID, m.get(10),
+                    "an identified unowned mine shows C's EXPIRED_MINE_ID (frame.c:873)"),
                 () -> assertEquals("420.0,120.0 f" + friendly + " o" + Protocol.NO_ID, m.get(11),
                     "out of sensing range a confused mine follows the normal rule: A's own fused mine is friendly"),
                 () -> assertEquals("430.0,120.0 f" + armed + " o" + Protocol.NO_ID, m.get(12),
@@ -894,12 +932,12 @@ class ItemSectionsTest {
         @DisplayName("drawn when seen, the viewer itself, a team mate or the viewer's own tank")
         void rules() {
             ItemSections is = sections();
-            a.canSee[a.slot] = false;
-            a.canSee[b.slot] = false;
-            a.canSee[c.slot] = false;
+            a.canSee[a.ind] = false;
+            a.canSee[b.ind] = false;
+            a.canSee[c.ind] = false;
             boolean self = is.shipShown(a, a);
             boolean unseen = is.shipShown(b, a);
-            a.canSee[b.slot] = true;
+            a.canSee[b.ind] = true;
             boolean seen = is.shipShown(b, a);
             w.params.teamPlay = true;
             a.team = 3;
@@ -958,8 +996,8 @@ class ItemSectionsTest {
         void friends() {
             ItemSections is = sections();
             w.items.playersOnRadar = false;
-            a.canSee[b.slot] = false;
-            a.canSee[c.slot] = false;
+            a.canSee[b.ind] = false;
+            a.canSee[c.ind] = false;
             boolean hidden = is.onRadar(b, a);
             w.params.teamPlay = true;
             a.team = 4;
@@ -973,7 +1011,7 @@ class ItemSectionsTest {
             boolean otherTank = is.onRadar(c, a);
             w.items.playersOnRadar = true;
             boolean unseen = is.onRadar(b, a);
-            a.canSee[b.slot] = true;
+            a.canSee[b.ind] = true;
             boolean seen = is.onRadar(b, a);
             w.items.playersOnRadar = false;
             boolean seenNoOption = is.onRadar(b, a);
@@ -1007,31 +1045,44 @@ class ItemSectionsTest {
         }
 
         @Test
-        @DisplayName("the compass-locked ship blinks off 2 of every 5 frames (C frame.c:1180-1185)")
-        void blink() {
+        @DisplayName("the compass-locked ship stays on the radar marked LOCKED (the client blinks it, C frame.c:1180)")
+        void locked() {
             ItemSections is = sections();
             w.items.playersOnRadar = true;
             a.used |= Has.COMPASS;
             a.lockTagged = Player.LOCK_PLAYER;
             a.lockPlId = b.id;
-            boolean[] f = new boolean[6];
-            for (int i = 0; i < 6; i++) {
-                w.frames = 10 + i;
-                f[i] = is.onRadar(b, a);
-            }
             w.frames = 13;
-            boolean other = is.onRadar(c, a);
+            boolean shown = is.onRadar(b, a);
+            boolean locked = is.radarLocked(b, a);
+            boolean other = is.radarLocked(c, a);
             a.used &= ~Has.COMPASS;
-            boolean noCompass = is.onRadar(b, a);
+            boolean noCompass = is.radarLocked(b, a);
             a.used |= Has.COMPASS;
             a.lockTagged = 0;
-            boolean noLock = is.onRadar(b, a);
+            boolean noLock = is.radarLocked(b, a);
             assertAll(
-                () -> assertEquals("true true true false false true", f[0] + " " + f[1] + " " + f[2] + " " + f[3] + " "
-                    + f[4] + " " + f[5], "frames 10..15: off when frame % 5 is 3 or 4"),
-                () -> assertTrue(other, "an unlocked ship does not blink"),
-                () -> assertTrue(noCompass, "without the compass the lock does not blink"),
-                () -> assertTrue(noLock, "without a player lock nothing blinks"));
+                () -> assertTrue(shown, "shown at frame 13 (13 % 5 = 3): the server no longer hides it"),
+                () -> assertTrue(locked, "the compass lock is LOCKED"),
+                () -> assertEquals(false, other, "an unlocked ship is not"),
+                () -> assertEquals(false, noCompass, "without the compass it is not"),
+                () -> assertEquals(false, noLock, "without a player lock it is not"));
+        }
+
+        @Test
+        @DisplayName("radar friendliness without team play: only the viewer's own tank (C frame.c:1186 OWNS_TANK)")
+        void friendly() {
+            ItemSections is = sections();
+            boolean other = is.radarFriendly(b, a);
+            c.tank = true;
+            c.lockPlId = a.id;
+            boolean ownTank = is.radarFriendly(c, a);
+            c.lockPlId = b.id;
+            boolean othersTank = is.radarFriendly(c, a);
+            assertAll(
+                () -> assertEquals(false, other, "another player is not friendly"),
+                () -> assertTrue(ownTank, "the viewer's own tank is friendly"),
+                () -> assertEquals(false, othersTank, "someone else's tank is not"));
         }
     }
 }

@@ -104,6 +104,37 @@ class ServerOptionsTest {
     }
 
     @Test
+    @DisplayName("--map NAME is the bundled map, in any case and with or without .xp: the same options as the file")
+    void bundledMapByName() throws IOException {
+        Options file = Server.readOptions(new String[] {"--map", DEFAULT_MAP});
+        Options named = Server.readOptions(new String[] {"--map", "default"});
+        Options upper = Server.readOptions(new String[] {"--map", "DEFAULT.XP"});
+        assertAll(
+            () -> assertEquals(file.toConfigText(), named.toConfigText(), "'default' is maps/default.xp"),
+            () -> assertEquals(file.toConfigText(), upper.toConfigText(), "'DEFAULT.XP' is the same map"),
+            () -> assertEquals("The Newbie Globe", named.getString(Opt.MAP_NAME), "its header"),
+            () -> assertEquals(OptionOrigin.MAP, named.originOf(Opt.MAP_NAME), "read as the map"));
+    }
+
+    @Test
+    @DisplayName("a config file's mapFileName is resolved the same way; an unknown map lists the bundled ones; no map"
+        + " at all is the bundled default, as C's MAPDIR/default.xp")
+    void configFileMapName() throws IOException {
+        Path cfg = file("server.cfg", "mapFileName: doggy\n");
+        Options o = Server.readOptions(new String[] {cfg.toString()});
+        String msg = assertThrows(java.io.FileNotFoundException.class,
+            () -> Server.readOptions(new String[] {"--map", "no-such-map"}), "an unknown map is an error").getMessage();
+        Options none = Server.readOptions(new String[0]);
+        Options defaultFile = Server.readOptions(new String[] {"--map", DEFAULT_MAP});
+        assertAll(
+            () -> assertEquals("DoggyStyle", o.getString(Opt.MAP_NAME), "the bundled doggy"),
+            () -> assertTrue(msg.startsWith("map 'no-such-map' not found: it is not a bundled map"), "says why: " + msg),
+            () -> assertTrue(msg.contains("Bundled maps: blood-music2, CAMD, cloudscape, default,"), "lists them: " + msg),
+            () -> assertEquals(defaultFile.toConfigText(), none.toConfigText(), "no map plays maps/default.xp"),
+            () -> assertEquals(OptionOrigin.MAP, none.originOf(Opt.MAP_NAME), "read as the map"));
+    }
+
+    @Test
     @DisplayName("--defaults none reads no defaults file: the cmdline.c defaults stay")
     void none() throws IOException {
         Options o = Server.readOptions(new String[] {"--map", bareMap(""), "--defaults", "NONE"});
@@ -125,6 +156,24 @@ class ServerOptionsTest {
             () -> assertEquals(30.0, o.getDouble(Opt.SHOT_SPEED), "\\override: in the defaults file beats the map"),
             () -> assertEquals(50, o.getInt(Opt.SHOT_LIFE), "the command line beats an override"),
             () -> assertEquals(0.1, o.getDouble(Opt.FRICTION), "the map beats plain defaults"));
+    }
+
+    @Test
+    @DisplayName("passwordFileName: read after the defaults (origin PASSWORD); only password is taken; a missing file is an error")
+    void passwordFile() throws IOException {
+        Path pw = file("password", "# set this to a unique word\npassword: \\override:  Sesame\nshotSpeed: 99\n");
+        Path d = file("mydefaults", "password: fromDefaults\n");
+        String map = bareMap("");
+        Options o = Server.readOptions(new String[] {"--map", map, "-defaults", d.toString(), "-passwordFileName",
+            pw.toString()});
+        Options none = Server.readOptions(new String[] {"--map", map, "-defaults", d.toString()});
+        assertAll(
+            () -> assertEquals("Sesame", o.getString(Opt.PASSWORD), "the password file beats the defaults file"),
+            () -> assertEquals(OptionOrigin.PASSWORD, o.originOf(Opt.PASSWORD), "origin PASSWORD"),
+            () -> assertEquals(OptionOrigin.INIT, o.originOf(Opt.SHOT_SPEED), "other options are refused there"),
+            () -> assertEquals("fromDefaults", none.getString(Opt.PASSWORD), "without the option no password file is read"),
+            () -> assertThrows(IOException.class, () -> Server.readOptions(new String[] {"--map", map,
+                "-passwordFileName", dir.resolve("missing").toString()}), "a named file that cannot be read"));
     }
 
     @Test

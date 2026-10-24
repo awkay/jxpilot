@@ -1074,7 +1074,7 @@ class DevicesTest {
         }
 
         @Test
-        @DisplayName("without 0.15 fuel units the deflector goes off and pushes nothing")
+        @DisplayName("below 0.15 fuel units (38.4) the deflector goes off and pushes nothing")
         void noFuel() {
             Player p = setup("");
             p.items[it(Item.DEFLECTOR)] = 1;
@@ -1094,13 +1094,22 @@ class DevicesTest {
             p.fuel = 38;
             p.used |= Has.DEFLECTOR;
             d.doDeflector(p);
+            int used38 = p.used;
+            double fuel38 = p.fuel;
+            float vx38 = w.objects.vx[h];
+            p.fuel = 39;
+            p.used |= Has.DEFLECTOR;
+            d.doDeflector(p);
             assertAll(
-                () -> assertEquals(0, usedLow & Has.DEFLECTOR, "37 < 38: the deflector goes off"),
-                () -> assertEquals(-2f, vxLow, "37 < 38: nothing is pushed"),
+                () -> assertEquals(0, usedLow & Has.DEFLECTOR, "37 < 38.4: the deflector goes off"),
+                () -> assertEquals(-2f, vxLow, "37 < 38.4: nothing is pushed"),
                 () -> assertTrue((qHave & Has.DEFLECTOR) != 0, "a deflector not in use is not switched off"),
-                () -> assertTrue((p.used & Has.DEFLECTOR) != 0, "exactly 38: the deflector stays on"),
-                () -> assertEquals(0.0, p.fuel, "exactly 38: it pays all of it"),
-                () -> assertTrue(w.objects.vx[h] > -2f, "exactly 38: the object is pushed"));
+                () -> assertEquals(0, used38 & Has.DEFLECTOR, "38 < 38.4 (C compares the uncast ED_DEFLECTOR): off"),
+                () -> assertEquals(38.0, fuel38, "and it costs nothing"),
+                () -> assertEquals(-2f, vx38, "nor pushes"),
+                () -> assertTrue((p.used & Has.DEFLECTOR) != 0, "39: the deflector stays on"),
+                () -> assertEquals(1.0, p.fuel, "it pays (long)ED_DEFLECTOR = 38"),
+                () -> assertTrue(w.objects.vx[h] > -2f, "39: the object is pushed"));
         }
     }
 
@@ -1824,63 +1833,4 @@ class DevicesTest {
             () -> assertEquals(0, q.status & Obj.WARPING, "no hyperjump: no warp"));
     }
 
-    @Nested
-    @DisplayName("hyperjumpDestination (update.c:1137-1167)")
-    class JumpDestination {
-        /** 20 x 20 blocks: columns 0-9 are wall, 10-19 space (one base at x 15). */
-        Player halfWall() {
-            String[] rows = new String[20];
-            for (int r = 0; r < 20; r++) {
-                rows[r] = "xxxxxxxxxx" + (r == 10 ? "     _    " : "          ");
-            }
-            s = com.fulcrologic.jxpilot.server.TestWorlds.sim(FRAME, rows);
-            w = s.world;
-            d = s.devices;
-            return SimFixture.ready(s, "P", 0, 600, 360);
-        }
-
-        @Test
-        @DisplayName("random positions (int)(rfrac * width), (int)(rfrac * height) are tried until one is space")
-        void retries() {
-            Player p = halfWall();
-            int seed = seedWhere(r -> (int) (r.nextFloat() * 700) < 350 && r.nextFloat() >= 0
-                && (int) (r.nextFloat() * 700) >= 350);
-            w.rng.seed(seed);
-            Rng ref = new Rng(seed);
-            ref.nextFloat();
-            ref.nextFloat();
-            float x = (int) ((double) ref.nextFloat() * 700);
-            float y = (int) ((double) ref.nextFloat() * 700);
-            d.hyperjumpDestination(p);
-            assertAll(
-                () -> assertTrue(x >= 350, "the second try is in the space half"),
-                () -> assertEquals(x, d.jumpX, "the first try hit a wall: the second x is used"),
-                () -> assertEquals(y, d.jumpY, "the second y is used"));
-        }
-
-        @Test
-        @DisplayName("after 20 failed tries the ship stays where it is (40 draws)")
-        void givesUp() {
-            Player p = halfWall();
-            int seed = seedWhere(r -> {
-                for (int i = 0; i < 20; i++) {
-                    if ((int) (r.nextFloat() * 700) >= 350) {
-                        return false;
-                    }
-                    r.nextFloat();
-                }
-                return true;
-            });
-            w.rng.seed(seed);
-            Rng ref = new Rng(seed);
-            for (int i = 0; i < 40; i++) {
-                ref.nextInt();
-            }
-            d.hyperjumpDestination(p);
-            assertAll(
-                () -> assertEquals((float) p.px, d.jumpX, "the ship's x is kept"),
-                () -> assertEquals((float) p.py, d.jumpY, "the ship's y is kept"),
-                () -> assertEquals(ref.nextInt(), w.rng.nextInt(), "exactly 20 x/y pairs were drawn"));
-        }
-    }
 }

@@ -126,6 +126,8 @@ final class FakeCServer implements XpConnection.PortOpener {
     final List<String> contactRequests = new ArrayList<>();
     final List<Integer> keyboardChanges = new ArrayList<>();
     final List<String> loginPackets = new ArrayList<>();
+    /** Every PKT_SHAPE received: its shape string and extension (C Receive_shape, version > 0x3200). */
+    final List<List<String>> shapes = new ArrayList<>();
     long lastKeys;
     int lastKeyChange;
     /** Every PKT_KEYBOARD received, with the server frame it arrived in. */
@@ -317,8 +319,10 @@ final class FakeCServer implements XpConnection.PortOpener {
                 }
                 case XpProto.PKT_SHAPE -> {
                     StringBuilder s = new StringBuilder();
+                    StringBuilder ext = new StringBuilder();
                     r.string(s, XpProto.MSG_LEN);
-                    r.string(s, XpProto.MSG_LEN);
+                    r.string(ext, XpProto.MSG_LEN);
+                    shapes.add(List.of(s.toString(), ext.toString()));
                     loginPackets.add("shape");
                 }
                 case XpProto.PKT_PLAY -> {
@@ -345,14 +349,14 @@ final class FakeCServer implements XpConnection.PortOpener {
                 case XpProto.PKT_DISPLAY -> {
                     loginPackets.add("display " + r.s16() + "x" + r.s16() + " colors=" + r.u8() + " spark=" + r.u8());
                 }
-                case XpProto.PKT_REQUEST_AUDIO -> loginPackets.add("audio " + r.u8());
-                case XpProto.PKT_MOTD -> loginPackets.add("motd " + r.s32() + " " + r.s32());
                 case XpProto.PKT_MODIFIERBANK -> {
                     int bank = r.u8();
-                    StringBuilder mb = new StringBuilder();
-                    r.string(mb, XpProto.MAX_CHARS);
-                    loginPackets.add("modbank" + bank + "=" + mb);
+                    StringBuilder s = new StringBuilder();
+                    r.string(s, XpProto.MAX_CHARS);
+                    loginPackets.add("modbank " + bank + "=" + s);
                 }
+                case XpProto.PKT_REQUEST_AUDIO -> loginPackets.add("audio " + r.u8());
+                case XpProto.PKT_MOTD -> loginPackets.add("motd " + r.s32() + " " + r.s32());
                 case XpProto.PKT_ASYNC_FPS -> loginPackets.add("fps " + r.u8());
                 case XpProto.PKT_KEYBOARD -> {
                     if (!playing) {

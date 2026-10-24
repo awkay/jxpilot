@@ -424,7 +424,7 @@ public final class GameApp {
                     e.warningPhase, hudColor, PaintConfig.HUD_LOCK_COLOR);
             }
         }
-        hudPainter.paintItems(dyn, viewScreen, e.hx, e.hy, e.itemCounts, -1, false, hudColor);
+        hudPainter.paintItems(dyn, viewScreen, e.hx, e.hy, e.itemCounts, e.loseItem, e.loseActive, hudColor);
         hudPainter.paintTimeLeft(dyn, viewScreen, e.hx, e.hy, e.timeLeft, hudColor);
         hudPainter.paintMods(dyn, viewScreen, e.hx, e.hy, e.mods, hudColor);
         if (e.autopilot) {

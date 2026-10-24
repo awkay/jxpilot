@@ -24,6 +24,8 @@
 package com.fulcrologic.jxpilot.client.viewer;
 
 import com.fulcrologic.jxpilot.client.Fixtures;
+import com.fulcrologic.jxpilot.common.map.BundledMaps;
+import com.fulcrologic.jxpilot.common.map.MapSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -42,8 +44,11 @@ class MapCatalogTest {
         Files.writeString(dir.resolve("c.txt"), "");
         Files.createDirectory(dir.resolve("d.xp"));
         MapCatalog c = MapCatalog.scan(dir);
-        assertEquals(List.of("A.XP", "b.xp"), c.maps().stream().map(p -> p.getFileName().toString()).toList(),
-            ".xp files only (extension case-insensitive), no directories, sorted ignoring case");
+        assertAll(
+            () -> assertEquals(List.of("A.XP", "b.xp"), c.maps().stream().map(MapSource::fileName).toList(),
+                ".xp files only (extension case-insensitive), no directories, sorted ignoring case"),
+            () -> assertEquals(List.of(dir.resolve("A.XP"), dir.resolve("b.xp")),
+                c.maps().stream().map(MapSource::file).toList(), "each entry is the file in that directory"));
     }
 
     @Test
@@ -52,8 +57,10 @@ class MapCatalogTest {
         Files.writeString(dir.resolve("b.xp"), "");
         MapCatalog c = MapCatalog.scan(dir);
         assertAll(
-            () -> assertEquals(1, c.indexOf(dir.resolve("x/../b.xp")), "finds a file through a non-normalized path"),
-            () -> assertEquals(-1, c.indexOf(dir.resolve("z.xp")), "-1 for an unknown file"),
+            () -> assertEquals(1, c.indexOf(MapSource.of(dir.resolve("x/../b.xp"))),
+                "finds a file through a non-normalized path"),
+            () -> assertEquals(-1, c.indexOf(MapSource.of(dir.resolve("z.xp"))), "-1 for an unknown file"),
+            () -> assertEquals(-1, c.indexOf(MapSource.bundled("b.xp")), "a bundled map is not a file of the same name"),
             () -> assertEquals(1, c.next(0), "next after 0"),
             () -> assertEquals(0, c.next(1), "wraps after the last"),
             () -> assertEquals(0, c.next(-1), "an unknown index starts at 0"),
@@ -63,6 +70,33 @@ class MapCatalogTest {
     @Test
     void emptyCatalogHasNoNext(@TempDir Path dir) throws IOException {
         assertEquals(-1, MapCatalog.scan(dir).next(0), "-1 when there are no maps");
+    }
+
+    @Test
+    void bundledCatalogCyclesTheBundledMaps() throws IOException {
+        BundledMaps b = BundledMaps.standard();
+        MapCatalog c = MapCatalog.bundled(b);
+        assertAll(
+            () -> assertEquals(b.files(), c.maps().stream().map(MapSource::fileName).toList(),
+                "every bundled map, in index order"),
+            () -> assertTrue(c.maps().stream().allMatch(MapSource::isBundled), "all entries are bundled"),
+            () -> assertEquals(b.files().indexOf("doggy.xp"), c.indexOf(MapSource.bundled("doggy.xp")),
+                "finds a bundled map by file name"),
+            () -> assertEquals(-1, c.indexOf(MapSource.of(Fixtures.MAPS.resolve("doggy.xp"))),
+                "a file is not the bundled map of the same name"));
+    }
+
+    @Test
+    void aMapsCatalogIsWhereItCameFrom(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("mine.xp"), "");
+        Files.writeString(dir.resolve("other.xp"), "");
+        MapCatalog files = MapCatalog.around(MapSource.of(dir.resolve("mine.xp")), BundledMaps.standard());
+        MapCatalog bundled = MapCatalog.around(MapSource.bundled("war.xp"), BundledMaps.standard());
+        assertAll(
+            () -> assertEquals(List.of("mine.xp", "other.xp"), files.maps().stream().map(MapSource::fileName).toList(),
+                "a file's catalog is its directory"),
+            () -> assertEquals(BundledMaps.standard().files(), bundled.maps().stream().map(MapSource::fileName).toList(),
+                "a bundled map's catalog is the bundled maps"));
     }
 
     @Test

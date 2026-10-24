@@ -252,7 +252,8 @@ public final class XpReliableDecoder {
         int life = r.s16();
         int mychar = r.u8();
         int alliance = newer ? r.u8() : ' ';
-        events.score(id, sc, life, mychar, alliance);
+        events.score(id, sc, life, mychar);
+        events.alliance(id, (char) alliance);
         return OK;
     }
 

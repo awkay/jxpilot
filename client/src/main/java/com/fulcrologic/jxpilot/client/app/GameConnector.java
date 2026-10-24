@@ -33,6 +33,7 @@ import com.fulcrologic.jxpilot.client.xp.ConnectTarget;
 import com.fulcrologic.jxpilot.client.xp.GameConnection;
 import com.fulcrologic.jxpilot.client.xp.NativeGameConnection;
 import com.fulcrologic.jxpilot.client.xp.XpConnection;
+import com.fulcrologic.jxpilot.common.math.ShipShape;
 
 import java.io.IOException;
 
@@ -47,6 +48,7 @@ public final class GameConnector {
      * Open (not start) a connection over UDP.
      *
      * @param bind  local source address, null for any
+     * @param shape the shipShape resource (C {@code Get_shipshape_resource}); null or "" for the default ship
      * @param audio ask an XPilot server for sound events (the native server always sends them)
      */
     public static GameConnection open(ConnectTarget target, Endpoint bind, ConnectionListener listener, String name,
@@ -64,7 +66,7 @@ public final class GameConnector {
     /**
      * The XPilot login.
      * <p>
-     * BEHAVIOR: nick, team and shape as given; debris colours = the client's spark colours (temperature
+     * BEHAVIOR: nick, team and shape as given (null is ""; XpConnection converts it when sending); debris colours = the client's spark colours (temperature
      * levels, as the C client asks) and spark probability 1 (every particle every frame, so particles can be
      * tracked across frames; the painter does C's sparkle); the real name is {@code userName} reduced to ASCII letters,
      * digits, '-', '_' and '.' ("jxpilot" when nothing is left); audio (PKT_REQUEST_AUDIO) as given.
@@ -74,7 +76,7 @@ public final class GameConnector {
         login.audio = audio;
         login.nick = name;
         login.team = team;
-        login.shape = shape;
+        login.shape = shape == null ? "" : shape;
         login.debrisColors = PaintConfig.SPARK_COLORS.length;
         login.sparkProb = 1.0;
         StringBuilder sb = new StringBuilder();
@@ -88,13 +90,17 @@ public final class GameConnector {
         return login;
     }
 
-    /** BEHAVIOR: a native connection whose CONNECT carries the name, team and shape. */
+    /**
+     * BEHAVIOR: a native connection whose CONNECT carries the name, team and shape; the shape is sent as C
+     * {@code Send_shape} does: converted without limits ({@link ShipShape#convert}, so an empty or invalid
+     * shape is the default ship) and written canonically ({@link ShipShape#toWireString}).
+     */
     static ClientConnection nativeConnection(Transport t, String label, ConnectionListener listener, String name,
                                              int team, String shape) {
         ClientConnection c = new ClientConnection(t, listener, label, (int) System.nanoTime());
         c.connect.name.append(name);
         c.connect.team = team;
-        c.connect.shape.append(shape);
+        c.connect.shape.append(ShipShape.convert(shape).toWireString());
         return c;
     }
 }

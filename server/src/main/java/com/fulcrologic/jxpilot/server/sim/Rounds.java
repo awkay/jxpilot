@@ -44,6 +44,54 @@ import com.fulcrologic.jxpilot.server.world.World;
  * {@link Targets}.
  */
 public final class Rounds {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_AND = Texts.of(" and ");
+    private static final String T_AND_SCORING = Texts.of(", and scoring ");
+    private static final String T_ARE_THE_DEADLY_PLAYERS_WITH = Texts.of(" are the Deadly Players with kill ratios of ");
+    private static final String T_AS_EVERYONE_DIED = Texts.of(" as everyone died");
+    private static final String T_BEST_HUMAN_PLAYER = Texts.of("Best human player: ");
+    private static final String T_BEST_TEAM = Texts.of("Best team (");
+    private static final String T_BETWEEN_TEAMS = Texts.of(" between teams ");
+    private static final String T_BY_DESTROYING = Texts.of(" by destroying ");
+    private static final String T_BY_STAYING_ALIVE = Texts.of(" by staying alive");
+    private static final String T_BY_STAYING_IN_THE_GAME = Texts.of(" by staying in the game");
+    private static final String T_COMPLETED = Texts.of(" completed. >");
+    private static final String T_DEADLIEST = Texts.of("[Deadliest]");
+    private static final String T_DEADLY = Texts.of("[Deadly]");
+    private static final String T_DELAYING = Texts.of("Delaying ");
+    private static final String T_GAME_OVER = Texts.of("Game over...");
+    private static final String T_HAS_WON_THE_GAME = Texts.of(" has won the game! >");
+    private static final String T_HAS_WON_THE_GAME_2 = Texts.of(" has won the game");
+    private static final String T_IS_THE_DEADLIEST_PLAYER_WITH = Texts.of(" is the Deadliest Player with a kill ratio of ");
+    private static final String T_OUT_OF = Texts.of(" out of ");
+    private static final String T_PLAYER_ENTERED_DELAYING = Texts.of("Player entered. Delaying ");
+    private static final String T_POINTS = Texts.of(" points");
+    private static final String T_PTS_TEAM = Texts.of(" Pts): Team ");
+    private static final String T_PUNCT = Texts.of(", ");
+    private static final String T_PUNCT_2 = Texts.of(" < ");
+    private static final String T_PUNCT_3 = Texts.of("! >");
+    private static final String T_RACE = Texts.of("Race");
+    private static final String T_RACE_2 = Texts.of("race");
+    private static final String T_ROUND = Texts.of("Round");
+    private static final String T_ROUND_2 = Texts.of(" < Round ");
+    private static final String T_ROUND_3 = Texts.of("round");
+    private static final String T_SECONDS_UNTIL_NEXT = Texts.of(" seconds until next ");
+    private static final String T_SECONDS_UNTIL_START_OF_NEXT = Texts.of(" seconds until start of next ");
+    private static final String T_STARTS_NOW = Texts.of(" starts now.");
+    private static final String T_TEAM = Texts.of(" < Team ");
+    private static final String T_THERE_IS_NO_DEADLY_PLAYER = Texts.of("There is no Deadly Player");
+    private static final String T_THE_ROBOTS_HAVE_WON_THE = Texts.of(" < The robots have won the game! >");
+    private static final String T_TIMER_EXPIRED_ROUND_ENDS_NOW = Texts.of("Timer expired. Round ends now.");
+    private static final String T_TREASURES = Texts.of(" treasures");
+    private static final String T_TREASURES_AND_SUCCESSFULLY_DEFENDING = Texts.of(" treasures and successfully defending ");
+    private static final String T_TREASURES_SAVING = Texts.of(" treasures, saving ");
+    private static final String T_WE_HAVE_A_DRAW = Texts.of(" < We have a draw! >");
+    private static final String T_WE_HAVE_A_DRAW_2 = Texts.of(" < We have a draw");
+    private static final String T_WINNER = Texts.of("[Winner]");
+    private static final String T_WORST_HUMAN_PLAYER = Texts.of("Worst human player: ");
+    private static final String T_WORST_TEAM = Texts.of("Worst team (");
+
     /** C {@code MSG_LEN}: messages are split before they would reach it. */
     static final int MSG_LEN = 80;
 
@@ -95,8 +143,8 @@ public final class Rounds {
         }
         if (w.roundDelay > 0) {
             if (--w.roundDelay == 0) {
-                w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(w.modeParams.timing ? "Race" : "Round")
-                    .append(" starts now.");
+                w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(w.modeParams.timing ? T_RACE : T_ROUND)
+                    .append(T_STARTS_NOW);
                 w.roundTime = p.maxRoundTime * p.fps;
                 for (int k = 0; k < w.numPlayers; k++) {
                     w.playerAt(k).frameLastBusy = w.frames;
@@ -148,7 +196,7 @@ public final class Rounds {
         } else if (aliveRobots > 1 && alive == aliveRobots && activeHumans > 0) {
             individualGameOver(-2);
         } else if (timerExpired()) {
-            message().append("Timer expired. Round ends now.");
+            message().append(T_TIMER_EXPIRED_ROUND_ENDS_NOW);
             individualGameOver(-1);
         }
     }
@@ -203,7 +251,7 @@ public final class Rounds {
                 return;
             }
             if (timerExpired()) {
-                message().append("Timer expired. Round ends now.");
+                message().append(T_TIMER_EXPIRED_ROUND_ENDS_NOW);
             }
             int winners = 0;
             for (int i = 0; i < Const.MAX_TEAMS; i++) {
@@ -223,7 +271,7 @@ public final class Rounds {
             StringBuilder r = reason;
             r.setLength(0);
             if (winners == 1) {
-                r.append(" by destroying ").append(maxDestroyed).append(" treasures");
+                r.append(T_BY_DESTROYING).append(maxDestroyed).append(T_TREASURES);
                 teamGameOver(winning, r);
                 return;
             }
@@ -249,7 +297,7 @@ public final class Rounds {
                 }
             }
             if (winners == 1) {
-                r.append(" by destroying ").append(maxDestroyed).append(" treasures and successfully defending ")
+                r.append(T_BY_DESTROYING).append(maxDestroyed).append(T_TREASURES_AND_SUCCESSFULLY_DEFENDING)
                     .append(maxLeft);
                 teamGameOver(winning, r);
                 return;
@@ -267,26 +315,26 @@ public final class Rounds {
                 }
             }
             if (winners == 1) {
-                r.append(" by destroying ").append(maxDestroyed).append(" treasures, saving ").append(maxLeft)
-                    .append(", and scoring ");
+                r.append(T_BY_DESTROYING).append(maxDestroyed).append(T_TREASURES_SAVING).append(maxLeft)
+                    .append(T_AND_SCORING);
                 appendFixed2(r, maxScore);
-                r.append(" points");
+                r.append(T_POINTS);
                 teamGameOver(winning, r);
                 return;
             }
-            r.append(" between teams ");
+            r.append(T_BETWEEN_TEAMS);
             for (int i = 0; i < Const.MAX_TEAMS; i++) {
                 if (teamWin[i]) {
-                    r.append((char) ('0' + i)).append(", ");
+                    r.append((char) ('0' + i)).append(T_PUNCT);
                 }
             }
             r.setLength(r.length() - 2);
             teamGameOver(-1, r);
         } else if (deadTeams > 0) {
             if (aliveTeams == 1) {
-                teamGameOver(winning, " by staying alive");
+                teamGameOver(winning, T_BY_STAYING_ALIVE);
             } else {
-                teamGameOver(-1, " as everyone died");
+                teamGameOver(-1, T_AS_EVERYONE_DIED);
             }
         } else {
             int destroyed = 0;
@@ -294,7 +342,7 @@ public final class Rounds {
                 destroyed += m.teamTreasures[i] - m.teamEmptyTreasures[i] - m.teamTreasuresLeft[i];
             }
             if (destroyed != 0) {
-                teamGameOver(winning, " by staying in the game");
+                teamGameOver(winning, T_BY_STAYING_IN_THE_GAME);
             }
         }
     }
@@ -359,13 +407,13 @@ public final class Rounds {
             return;
         }
         if (bestRatio == 0) {
-            message().append("There is no Deadly Player");
+            message().append(T_THERE_IS_NO_DEADLY_PLAYER);
         } else if (numBest == 1) {
             Player bp = w.playerAt(bestPlayers[0]);
-            message().append(bp.name).append(" is the Deadliest Player with a kill ratio of ").append(bp.kills)
+            message().append(bp.name).append(T_IS_THE_DEADLIEST_PLAYER_WITH).append(bp.kills)
                 .append('/').append(bp.deaths).append('.');
             double points = bestRatio * Scoring.rate(bp.score, averageScore);
-            sim.scoring.score(bp, points, bp.bx, bp.by, "[Deadliest]");
+            sim.scoring.score(bp, points, bp.bx, bp.by, T_DEADLIEST);
         } else {
             StringBuilder msg = names;
             msg.setLength(0);
@@ -374,7 +422,7 @@ public final class Rounds {
                 float ratio = (float) Scoring.rate(bp.score, averageScore);
                 float score = (ratio + numBest) / numBest;
                 if (msg.length() > 0) {
-                    msg.append(i == numBest - 1 ? " and " : ", ");
+                    msg.append(i == numBest - 1 ? T_AND : T_PUNCT);
                 }
                 if (msg.length() + 8 + bp.name.length() >= MSG_LEN) {
                     message().append(msg);
@@ -382,14 +430,14 @@ public final class Rounds {
                 }
                 msg.append(bp.name);
                 double points = (int) (bestRatio * score);
-                sim.scoring.score(bp, points, bp.bx, bp.by, "[Deadly]");
+                sim.scoring.score(bp, points, bp.bx, bp.by, T_DEADLY);
             }
             if (msg.length() + 64 >= MSG_LEN) {
                 message().append(msg);
                 msg.setLength(0);
             }
             Player first = w.playerAt(bestPlayers[0]);
-            msg.append(" are the Deadly Players with kill ratios of ").append(first.kills).append('/')
+            msg.append(T_ARE_THE_DEADLY_PLAYERS_WITH).append(first.kills).append('/')
                 .append(first.deaths).append('.');
             message().append(msg);
         }
@@ -399,7 +447,7 @@ public final class Rounds {
     void individualBonus(Player pl) {
         float ratio = (float) pl.kills / (pl.deaths + 1);
         double points = ratio * Scoring.rate(pl.score, averageScore);
-        sim.scoring.score(pl, points, pl.bx, pl.by, "[Winner]");
+        sim.scoring.score(pl, points, pl.bx, pl.by, T_WINNER);
     }
 
     private boolean isBest(int k) {
@@ -421,13 +469,13 @@ public final class Rounds {
     void individualGameOver(int winner) {
         endOfRoundValues();
         if (winner == -1) {
-            message().append(" < We have a draw! >");
+            message().append(T_WE_HAVE_A_DRAW);
             Sounds.playAll(w, SoundEvent.PLAYER_DRAW);
         } else if (winner == -2) {
-            message().append(" < The robots have won the game! >");
+            message().append(T_THE_ROBOTS_HAVE_WON_THE);
             Sounds.playAll(w, SoundEvent.PLAYER_WIN);
         } else {
-            message().append(" < ").append(w.playerAt(winner).name).append(" has won the game! >");
+            message().append(T_PUNCT_2).append(w.playerAt(winner).name).append(T_HAS_WON_THE_GAME);
             Sounds.playAll(w, SoundEvent.PLAYER_WIN);
         }
         bestPlayerBonus();
@@ -455,11 +503,11 @@ public final class Rounds {
     void teamGameOver(int winningTeam, CharSequence reason) {
         endOfRoundValues();
         if (winningTeam != -1) {
-            message().append(" < Team ").append(winningTeam).append(" has won the game").append(reason)
-                .append("! >");
+            message().append(T_TEAM).append(winningTeam).append(T_HAS_WON_THE_GAME_2).append(reason)
+                .append(T_PUNCT_3);
             Sounds.playAll(w, SoundEvent.TEAM_WIN);
         } else {
-            message().append(" < We have a draw").append(reason).append("! >");
+            message().append(T_WE_HAVE_A_DRAW_2).append(reason).append(T_PUNCT_3);
             Sounds.playAll(w, SoundEvent.TEAM_DRAW);
         }
         bestPlayerBonus();
@@ -544,8 +592,8 @@ public final class Rounds {
             return;
         }
         ++w.roundsPlayed;
-        message().append(" < Round ").append(w.roundsPlayed).append(" out of ").append(p.roundsToPlay)
-            .append(" completed. >");
+        message().append(T_ROUND_2).append(w.roundsPlayed).append(T_OUT_OF).append(p.roundsToPlay)
+            .append(T_COMPLETED);
         if (w.roundsPlayed >= p.roundsToPlay) {
             gameOver();
         }
@@ -556,7 +604,7 @@ public final class Rounds {
      * player; every player is GAME_OVER and rounds stop being judged (gameDuration = -1).
      */
     void gameOver() {
-        message().append("Game over...");
+        message().append(T_GAME_OVER);
         w.gameDuration = -1.0f;
         if (w.params.teamPlay) {
             final int unused = 1234567;
@@ -589,10 +637,10 @@ public final class Rounds {
                 }
             }
             if (win != -1) {
-                message().append("Best team (").append(maxsc).append(" Pts): Team ").append(win);
+                message().append(T_BEST_TEAM).append(maxsc).append(T_PTS_TEAM).append(win);
             }
             if (lose != -1 && lose != win) {
-                message().append("Worst team (").append(minsc).append(" Pts): Team ").append(lose);
+                message().append(T_WORST_TEAM).append(minsc).append(T_PTS_TEAM).append(lose);
             }
         }
         long maxsc = -32767;
@@ -615,10 +663,10 @@ public final class Rounds {
             }
         }
         if (win != null) {
-            message().append("Best human player: ").append(win.name);
+            message().append(T_BEST_HUMAN_PLAYER).append(win.name);
         }
         if (lose != null && lose != win) {
-            message().append("Worst human player: ").append(lose.name);
+            message().append(T_WORST_HUMAN_PLAYER).append(lose.name);
         }
     }
 
@@ -636,7 +684,7 @@ public final class Rounds {
      * BEHAVIOR: with roundDelay the next round waits roundDelay seconds ("Delaying N seconds until start of
      * next round."), else the round timer restarts; every score is resent.
      */
-    void resetAllPlayers() {
+    public void resetAllPlayers() {
         Params p = w.params;
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
@@ -693,8 +741,8 @@ public final class Rounds {
             w.roundDelay = p.roundDelaySeconds * p.fps;
             w.roundDelaySend = w.roundDelay + p.fps;
             w.roundTime = -1;
-            message().append("Delaying ").append(p.roundDelaySeconds).append(" seconds until start of next ")
-                .append(w.modeParams.timing ? "race" : "round").append('.');
+            message().append(T_DELAYING).append(p.roundDelaySeconds).append(T_SECONDS_UNTIL_START_OF_NEXT)
+                .append(w.modeParams.timing ? T_RACE_2 : T_ROUND_3).append('.');
         } else {
             w.roundTime = p.maxRoundTime * p.fps;
         }
@@ -724,8 +772,8 @@ public final class Rounds {
         if (w.roundDelay > 0 || w.numPlayers == 1) {
             w.roundDelay = p.roundDelaySeconds * p.fps;
             w.roundTime = p.maxRoundTime > 0 && p.roundDelaySeconds == 0 ? p.maxRoundTime * p.fps : -1;
-            message().append("Player entered. Delaying ").append(p.roundDelaySeconds)
-                .append(" seconds until next ").append(w.map.timing() ? "race" : "round").append('.');
+            message().append(T_PLAYER_ENTERED_DELAYING).append(p.roundDelaySeconds)
+                .append(T_SECONDS_UNTIL_NEXT).append(w.map.timing() ? T_RACE_2 : T_ROUND_3).append('.');
         }
     }
 
@@ -743,8 +791,8 @@ public final class Rounds {
             w.roundDelay = p.roundDelaySeconds * p.fps;
             w.roundDelaySend = w.roundDelay + p.fps;
             w.roundTime = p.maxRoundTime > 0 && p.roundDelaySeconds == 0 ? p.maxRoundTime * p.fps : -1;
-            message().append("Player entered. Delaying ").append(p.roundDelaySeconds)
-                .append(" seconds until next ").append(w.map.timing() ? "race" : "round").append('.');
+            message().append(T_PLAYER_ENTERED_DELAYING).append(p.roundDelaySeconds)
+                .append(T_SECONDS_UNTIL_NEXT).append(w.map.timing() ? T_RACE_2 : T_ROUND_3).append('.');
         }
     }
 }

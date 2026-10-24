@@ -87,6 +87,9 @@ public final class ClientFrame {
     private boolean swapScale;
     private boolean toggleSound;
     private int talkWidthFor = -1;
+    /** World view size last given to {@link GameConnection#sendDisplay} (-1: never). */
+    private int displayW = -1;
+    private int displayH = -1;
 
     /** With the default key configuration and the given input (tests). */
     public ClientFrame(ClientGame game, GameConnection conn, InputState input, SceneData scene, RadarBlips radar) {
@@ -113,7 +116,7 @@ public final class ClientFrame {
         this.help = new KeyHelp("Keys (" + keys.source() + ")" + (helpHint != null ? " - " + helpKeys.get(0)
             + " closes" : ""), keys.helpLines());
         conn.sendSettings(settings.copyTo(settingsMsg), 0);
-        conn.setModifierBanks(settings.modifierBanks);
+        conn.setModifierBanks(keys.modifierBanks());
     }
 
     /**
@@ -122,14 +125,15 @@ public final class ClientFrame {
      * BEHAVIOR: elapsed time (0 on the first step) ages messages and HUD timers by {@code dt * gameFps}
      * original frames.
      * BEHAVIOR: order: receive, game frame, map check, shields ({@link InputState#setPlaying}: the newest
-     * SELF says the player is in play, C Game_over_action; frames without SELF change nothing), INPUT with the
-     * current keys, flush.
+     * SELF says the player is in play, C Game_over_action; frames without SELF change nothing), the view size
+     * in world pixels when it changed ({@code GameConnection.sendDisplay}), INPUT with the current keys, flush.
      * BEHAVIOR: a new map object bumps {@link #mapVersion()} and centres the view on the first base
      * (the map centre without bases); afterwards the own ship, whenever it exists, is the centre.
      * BEHAVIOR: while not playing the HUD's status line shows the connection's current status; on the first
      * PLAYING frame a message names the key help key ("F1: keys"), unless keyHelp is unbound.
      * BEHAVIOR: lays out the key help overlay ({@link #helpHud()}).
-     * BEHAVIOR: fills the scene, radar, view HUD, HUD extras and the score list panel (at
+     * BEHAVIOR: fills the scene, radar, view HUD, HUD extras (with the lose-item outline of the
+     * {@link KeyRouter#loseSelection}, aged by dt) and the score list panel (at
      * {@code (0, scoreTop)}, {@code panelW} wide).
      */
     public void step(long nowNanos, int viewW, int viewH, double zoom, TextMetrics m, int panelW, int scoreTop) {
@@ -149,6 +153,7 @@ public final class ClientFrame {
         ClientWorld w = game.world();
         boolean inPlay = w.selfPlaying();
         input.setPlaying(inPlay);
+        sendDisplayIfChanged(viewW, viewH, zoom, nowNanos);
         conn.sendInput(input.takeKeys(), 0, nowNanos);
         conn.flush(nowNanos);
         if (w.hasSelf()) {
@@ -172,9 +177,25 @@ public final class ClientFrame {
         hud.zoom = zoom;
         hud.build(viewHud, game, talk, viewW, viewH, m, dt * game.gameFps());
         extras.fill(game, hud, viewW, viewH, zoom, centreX, centreY, scene.loops);
+        extras.loseItem(router.loseSelection(), dt);
         panelHud.clear();
         hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, m);
         help.layout(helpHud, viewW, viewH, m);
+    }
+
+    /**
+     * C {@code Send_display}: the world area of the view, {@code (int) (size / zoom + 0.5)} per axis (C: draw size
+     * times scaleFactor, rounded), goes to {@link GameConnection#sendDisplay} on the first step and whenever it
+     * changes (window resize, scale swap); never again for an unchanged size.
+     */
+    private void sendDisplayIfChanged(int viewW, int viewH, double zoom, long nowNanos) {
+        int w = (int) (viewW / zoom + 0.5);
+        int h = (int) (viewH / zoom + 0.5);
+        if (w != displayW || h != displayH) {
+            displayW = w;
+            displayH = h;
+            conn.sendDisplay(w, h, nowNanos);
+        }
     }
 
     private void centreOnStart(WorldMap map) {

@@ -126,6 +126,37 @@ class XpTranslatorTest {
         }
 
         @Test
+        @DisplayName("SELF_ITEMS' loseItem is the last PKT_LOSEITEM, kept over frames without one (C lose_item); configure resets it")
+        void loseItemIsKept() {
+            int[] items = new int[XpProto.NUM_ITEMS];
+            items[0] = 5;
+            List<String> none = frame(selfFrame(1, items, -1));
+            List<String> sent = frame(selfFrame(2, items, 7));
+            List<String> kept = frame(selfFrame(3, items, -1));
+            List<String> zero = frame(selfFrame(4, items, 0));
+            frame(selfFrame(5, items, 9));
+            tr.configure(built, XpProto.MODE_WRAP_PLAY, XpProto.MY_VERSION);
+            tr.expectSelf();
+            tr.player(3, 255, ' ', "Me", "");
+            List<String> fresh = frame(selfFrame(6, items, -1));
+            String plain = "SELF_ITEMS 5 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0";
+            assertAll(
+                () -> assertEquals(List.of(plain), SnapDump.only(none, "SELF_ITEMS"), "0 before any PKT_LOSEITEM"),
+                () -> assertEquals(List.of(plain + " lose=7"), SnapDump.only(sent, "SELF_ITEMS"), "the frame's PKT_LOSEITEM"),
+                () -> assertEquals(List.of(plain + " lose=7"), SnapDump.only(kept, "SELF_ITEMS"),
+                    "a frame without PKT_LOSEITEM keeps the last value"),
+                () -> assertEquals(List.of(plain), SnapDump.only(zero, "SELF_ITEMS"), "PKT_LOSEITEM 0 sets 0"),
+                () -> assertEquals(List.of(plain), SnapDump.only(fresh, "SELF_ITEMS"), "a new configure starts at 0"));
+        }
+
+        /** A frame with PKT_SELF and the items, plus PKT_LOSEITEM {@code lose} unless it is -1. */
+        CPackets selfFrame(int loops, int[] items, int lose) {
+            CPackets p = c(loops).self(1000, 2000, -3, 4, 32, 45, 35, 30, -1, 0, 0, 0, 1, 900, 2600, 768, 768, 0,
+                XpProto.STATUS_PLAYING, 0).selfItems(items);
+            return (lose >= 0 ? p.loseItem(lose) : p).end(loops);
+        }
+
+        @Test
         void selfFlagsFromStatusAndVisibility() {
             List<String> dead = frame(c(1).self(10, 10, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 1, 2, 768, 768, 0,
                 XpProto.STATUS_PAUSE | XpProto.STATUS_SELF_DESTRUCT, 1).end(1));
@@ -429,9 +460,9 @@ class XpTranslatorTest {
             assertAll(
                 () -> assertEquals(List.of("ITEM pos=1001.0,1002.0 type=7"), SnapDump.only(s, "ITEM"), "item"),
                 () -> assertEquals(List.of("MINE pos=1003.0,1004.0 flags=" + Records.Mine.FLAG_FRIENDLY + " owner=9",
-                    "MINE pos=1005.0,1006.0 flags=0 owner=" + Protocol.NO_ID,
+                    "MINE pos=1005.0,1006.0 flags=0 owner=" + Records.Mine.EXPIRED_MINE_ID,
                     "MINE pos=1.0,2.0 flags=0 owner=" + Protocol.NO_ID), SnapDump.only(s, "MINE"),
-                    "team mine friendly; expired or unknown owner is NO_ID"),
+                    "team mine friendly; an expired mine keeps EXPIRED_MINE_ID, an unknown owner is NO_ID"),
                 () -> assertEquals(List.of("MISSILE id=" + Protocol.NO_ID + " pos=1007.0,1008.0 h=1.571 kind="
                     + Records.Missile.KIND_HEAT + " len=15"),
                     SnapDump.only(s, "MISSILE"), "missile"),

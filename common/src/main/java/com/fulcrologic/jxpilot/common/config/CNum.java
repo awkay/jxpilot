@@ -28,7 +28,7 @@ package com.fulcrologic.jxpilot.common.config;
  * {@code strtod} and XPilot's boolean words. Like C, a numeric prefix is enough
  * ({@code "12abc"} parses as 12).
  */
-final class CNum {
+public final class CNum {
     private CNum() {}
 
     private static boolean isSpace(char c) {
@@ -43,7 +43,7 @@ final class CNum {
      * BEHAVIOR: stops at the first non-digit; returns true iff at least one digit was consumed.
      * BEHAVIOR: magnitudes are clamped to 4 * Integer.MAX_VALUE.
      */
-    static boolean strtol(String s, long[] out) {
+    public static boolean strtol(String s, long[] out) {
         int i = 0;
         int n = s.length();
         while (i < n && isSpace(s.charAt(i))) {
@@ -85,7 +85,7 @@ final class CNum {
      * BEHAVIOR: accepts sign, digits, one '.', and an exponent only if it has digits.
      * BEHAVIOR: returns false (value 0) when there is no mantissa digit.
      */
-    static boolean strtod(String s, double[] out) {
+    public static boolean strtod(String s, double[] out) {
         int i = 0;
         int n = s.length();
         while (i < n && isSpace(s.charAt(i))) {
@@ -132,7 +132,7 @@ final class CNum {
     }
 
     /** BEHAVIOR: 1 for yes/on/true, 0 for no/off/false (case-insensitive), -1 otherwise. */
-    static int bool(String s) {
+    public static int bool(String s) {
         if (s.equalsIgnoreCase("yes") || s.equalsIgnoreCase("on") || s.equalsIgnoreCase("true")) {
             return 1;
         }

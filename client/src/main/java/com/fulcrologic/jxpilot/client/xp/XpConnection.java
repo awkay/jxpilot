@@ -26,6 +26,7 @@ package com.fulcrologic.jxpilot.client.xp;
 import com.fulcrologic.jxpilot.client.net.ConnectionListener;
 import com.fulcrologic.jxpilot.client.net.ConnectionState;
 import com.fulcrologic.jxpilot.client.net.Transport;
+import com.fulcrologic.jxpilot.common.math.ShipShape;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.net.Protocol;
 
@@ -76,11 +77,9 @@ public final class XpConnection implements GameConnection {
         public String display = ":0";
         /** Team 0..9 or {@link Protocol#NO_TEAM}. */
         public int team = Protocol.NO_TEAM;
-        /** Ship shape string, empty for the default ship. */
+        /** The shipShape resource, empty for the default ship; converted when sent (C Send_shape). */
         public String shape = "";
         public final Msg.Settings settings = new Msg.Settings();
-        /** C {@code modifierBank1..4} resources, sent with the first PKT_PLAY ({@code Send_modifier_bank}). */
-        public final String[] modifierBanks = {"", "", "", ""};
         /** View size requested with PKT_DISPLAY (C limits it to 384..1024). */
         public int viewWidth = XpProto.MAX_VIEW_SIZE;
         public int viewHeight = XpProto.MAX_VIEW_SIZE;
@@ -90,6 +89,8 @@ public final class XpConnection implements GameConnection {
         public double sparkProb = 0.5;
         /** Ask for PKT_AUDIO (C {@code Send_audio_request(1)} in a client built with sound). */
         public boolean audio;
+        /** C {@code modBankStr}: the modifier banks sent with every play request (PKT_MODIFIERBANK). */
+        public final String[] modifierBanks = {"", "", "", ""};
     }
 
     /** Internal steps of the handshake. */
@@ -443,14 +444,6 @@ public final class XpConnection implements GameConnection {
      * that differ from what the server was last sent go out at once, one packet each (value * 256): a power or
      * turn-speed key sends exactly the one packet C's key handler sends; true iff something was sent.
      */
-    /** BEHAVIOR: remembered for the next PKT_PLAY (C sends the banks once, at the start). */
-    @Override
-    public void setModifierBanks(String[] banks) {
-        for (int i = 0; i < login.modifierBanks.length && i < banks.length; i++) {
-            login.modifierBanks[i] = banks[i] == null ? "" : banks[i];
-        }
-    }
-
     @Override
     public boolean sendSettings(Msg.Settings settings, long nowNanos) {
         now = nowNanos;
@@ -480,6 +473,12 @@ public final class XpConnection implements GameConnection {
         }
         power(type, now);
         return 1;
+    }
+
+    /** BEHAVIOR: the banks become the login's, sent with every play request (C sends them only at login). */
+    @Override
+    public void setModifierBanks(String[] banks) {
+        System.arraycopy(banks, 0, login.modifierBanks, 0, login.modifierBanks.length);
     }
 
     private void writeSettings(Msg.Settings st) {
@@ -627,19 +626,21 @@ public final class XpConnection implements GameConnection {
 
     /**
      * C {@code Net_start}: shape (first {@value #SHAPE_TRIES} tries), PKT_PLAY, the six power
-     * settings (value * 256), PKT_DISPLAY, PKT_REQUEST_AUDIO (on iff {@link Login#audio}) and PKT_ASYNC_FPS
-     * (the server rate).
+     * settings (value * 256), PKT_DISPLAY, the four PKT_MODIFIERBANK (C {@code Client_power}'s
+     * {@code Send_modifier_bank}: {@code %c%c%s} bank, text), PKT_REQUEST_AUDIO (on iff {@link Login#audio}) and
+     * PKT_ASYNC_FPS (the server rate).
      */
     private void sendPlay() {
         tries++;
         lastSend = now;
         if (tries <= SHAPE_TRIES) {
+            // C Send_shape: Convert_shape_str (no limits; empty or invalid is the default ship), then
+            // Convert_ship_2_string's buf, and its ext for servers newer than 3.2.
+            ShipShape.WireParts w = ShipShape.convert(login.shape).toWireParts();
             XpWriter.u8(tx, XpProto.PKT_SHAPE);
-            String s = login.shape;
-            int cut = Math.min(s.length(), XpProto.MSG_LEN - 1);
-            XpWriter.string(tx, s.substring(0, cut), XpProto.MSG_LEN);
+            XpWriter.string(tx, w.buf(), XpProto.MSG_LEN);
             if (version > 0x3200) {
-                XpWriter.string(tx, s.substring(cut), XpProto.MSG_LEN);
+                XpWriter.string(tx, w.ext(), XpProto.MSG_LEN);
             }
         }
         XpWriter.u8(tx, XpProto.PKT_PLAY);
@@ -650,15 +651,15 @@ public final class XpConnection implements GameConnection {
         XpWriter.u8(tx, login.debrisColors);
         XpWriter.u8(tx, (int) Math.round(Math.max(0, Math.min(1, login.sparkProb)) * XpProto.MAX_SPARK_RAND));
         if (tries == 1) {
-            // C Client_power: Startup_server_motd (autoServerMotdPopup) and the four modifier banks
+            // C Client_power: Startup_server_motd (autoServerMotdPopup)
             XpWriter.u8(tx, XpProto.PKT_MOTD);
             XpWriter.s32(tx, 0);
             XpWriter.s32(tx, XpProto.MAX_MOTD_SIZE);
-            for (int b = 0; b < XpProto.NUM_MODBANKS; b++) {
-                XpWriter.u8(tx, XpProto.PKT_MODIFIERBANK);
-                XpWriter.u8(tx, b);
-                XpWriter.string(tx, login.modifierBanks[b], XpProto.MAX_CHARS);
-            }
+        }
+        for (int i = 0; i < login.modifierBanks.length; i++) {
+            XpWriter.u8(tx, XpProto.PKT_MODIFIERBANK);
+            XpWriter.u8(tx, i);
+            XpWriter.string(tx, login.modifierBanks[i], XpProto.MAX_CHARS);
         }
         XpWriter.u8(tx, XpProto.PKT_REQUEST_AUDIO);
         XpWriter.u8(tx, login.audio ? 1 : 0);

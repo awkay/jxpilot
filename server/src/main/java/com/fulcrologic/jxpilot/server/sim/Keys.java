@@ -43,6 +43,12 @@ import com.fulcrologic.jxpilot.server.world.World;
  * mask, in key order, exactly like C's {@code last_keyv}/{@code prev_keyv}.
  */
 public final class Keys {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_HAS_CHANGED_HOME_BASE = Texts.of(" has changed home base.");
+    private static final String T_HAS_TAKEN_OVER = Texts.of(" has taken over ");
+    private static final String T_S_HOME_BASE = Texts.of("'s home base.");
+
     private static final long DEAD_KEYS = ControlKey.PAUSE.mask() | ControlKey.LOCK_NEXT.mask()
         | ControlKey.LOCK_PREV.mask() | ControlKey.LOCK_CLOSE.mask() | ControlKey.LOCK_NEXT_CLOSE.mask()
         | ControlKey.TOGGLE_NUCLEAR.mask() | ControlKey.TOGGLE_CLUSTER.mask() | ControlKey.TOGGLE_IMPLOSION.mask()
@@ -599,9 +605,9 @@ public final class Keys {
         Sounds.playAll(w, SoundEvent.CHANGE_HOME);
         StringBuilder m = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name);
         if (displaced == null) {
-            m.append(" has changed home base.");
+            m.append(T_HAS_CHANGED_HOME_BASE);
         } else {
-            m.append(" has taken over ").append(displaced.name).append("'s home base.");
+            m.append(T_HAS_TAKEN_OVER).append(displaced.name).append(T_S_HOME_BASE);
         }
     }
 }

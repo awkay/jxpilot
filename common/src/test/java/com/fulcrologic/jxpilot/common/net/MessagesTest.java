@@ -167,17 +167,17 @@ class MessagesTest {
             Msg.Shape s2 = new Msg.Shape();
             s2.read(b);
             Msg.Connect c = new Msg.Connect();
-            c.shape.append("z".repeat(500));
+            c.shape.append("z".repeat(600));
             ByteBuffer cb = ByteBuffer.allocate(1000);
             c.write(cb);
             cb.flip();
             Msg.Connect c2 = new Msg.Connect();
             c2.read(cb);
             assertAll(
-                () -> assertEquals(Msg.MAX_SHAPE_LEN, j2.shape.length(), "player join shape is capped at 256"),
+                () -> assertEquals(Msg.MAX_SHAPE_LEN, j2.shape.length(), "player join shape is capped at MAX_SHAPE_LEN"),
                 () -> assertEquals("n", j2.name.toString(), "the name survives"),
-                () -> assertEquals(Msg.MAX_SHAPE_LEN, s2.shape.length(), "shape message is capped at 256"),
-                () -> assertEquals(Msg.MAX_SHAPE_LEN, c2.shape.length(), "connect shape is capped at 256"));
+                () -> assertEquals(Msg.MAX_SHAPE_LEN, s2.shape.length(), "shape message is capped at MAX_SHAPE_LEN"),
+                () -> assertEquals(Msg.MAX_SHAPE_LEN, c2.shape.length(), "connect shape is capped at MAX_SHAPE_LEN"));
         }
 
         @Test
@@ -391,7 +391,6 @@ class MessagesTest {
             s.score = -12.5f;
             s.lives = -1;
             s.status = Msg.Score.STATUS_DEAD;
-            s.alliance = 'x';
             s.send(tx);
             Msg.TeamScore ts = new Msg.TeamScore();
             ts.team = 2;
@@ -483,9 +482,6 @@ class MessagesTest {
                 () -> assertEquals(-12.5f, s2.score, "score keeps negative score"),
                 () -> assertEquals(-1, s2.lives, "score keeps lives sign"),
                 () -> assertEquals(Msg.Score.STATUS_DEAD, s2.status, "score keeps status"),
-                () -> assertEquals('x', s2.alliance, "score keeps the alliance char"),
-                () -> assertEquals(' ', allianceOf(new byte[] {0, 4, 0, 0, 0, 0, 0, 0, 0}),
-                    "a SCORE without the appended alliance reads as ' '"),
                 () -> assertEquals(4, s2.id, "score keeps id"),
                 () -> assertEquals(2, ts2.team, "team score keeps team"),
                 () -> assertEquals(99f, ts2.score, "team score keeps score"),
@@ -508,6 +504,47 @@ class MessagesTest {
                 () -> assertEquals(0, cap.payloads.get(13).remaining(), "ready has an empty body"),
                 () -> assertEquals(3, end, "data chunk returns offset + length"),
                 () -> assertEquals("[0, 8, 7, 0]", java.util.Arrays.toString(dest), "data chunk copies to its offset"));
+        }
+
+        @Test
+        @DisplayName("DISPLAY: u16 width and height round trip with type 15; out-of-range values saturate")
+        void display() {
+            ReliableChannel tx = new ReliableChannel();
+            Msg.Display d = new Msg.Display();
+            Msg.Display defaults = new Msg.Display();
+            d.viewWidth = 1100;
+            d.viewHeight = 400;
+            d.send(tx);
+            d.viewWidth = 70000;
+            d.viewHeight = -5;
+            d.send(tx);
+            d.viewWidth = 0xFFFF;
+            d.viewHeight = 40000;
+            d.send(tx);
+            ReliableChannel rx = new ReliableChannel();
+            Capture cap = new Capture();
+            ByteBuffer p = buf();
+            tx.write(p, 0);
+            p.flip();
+            rx.read(p, cap);
+            int bodySize = cap.payloads.get(0).remaining();
+            Msg.Display a = new Msg.Display();
+            a.read(cap.payloads.get(0));
+            Msg.Display sat = new Msg.Display();
+            sat.read(cap.payloads.get(1));
+            Msg.Display top = new Msg.Display();
+            top.read(cap.payloads.get(2));
+            assertAll(
+                () -> assertEquals(List.of(15, 15, 15), cap.types, "DISPLAY is reliable type 15"),
+                () -> assertEquals(4, bodySize, "the body is two u16"),
+                () -> assertEquals(1100, a.viewWidth, "width round trips"),
+                () -> assertEquals(400, a.viewHeight, "height round trips"),
+                () -> assertEquals(0xFFFF, sat.viewWidth, "a width above 65535 saturates to 65535"),
+                () -> assertEquals(0, sat.viewHeight, "a negative height saturates to 0"),
+                () -> assertEquals(0xFFFF, top.viewWidth, "65535 is read unsigned"),
+                () -> assertEquals(40000, top.viewHeight, "values above 32767 are read unsigned"),
+                () -> assertEquals(768, defaults.viewWidth, "default width is C DEF_VIEW_SIZE"),
+                () -> assertEquals(768, defaults.viewHeight, "default height is C DEF_VIEW_SIZE"));
         }
 
         @Test
@@ -943,11 +980,5 @@ class MessagesTest {
             () -> assertTrue(new Msg.Reject().text.capacity() >= Msg.MSG_LEN, "REJECT text"),
             () -> assertTrue(new Msg.Disconnect().text.capacity() >= Msg.MSG_LEN, "DISCONNECT text"),
             () -> assertTrue(new Msg.ScoreObject().text.capacity() >= Msg.MSG_LEN, "SCORE_OBJECT label"));
-    }
-
-    static int allianceOf(byte[] body) {
-        Msg.Score s = new Msg.Score();
-        s.read(ByteBuffer.wrap(body));
-        return s.alliance;
     }
 }

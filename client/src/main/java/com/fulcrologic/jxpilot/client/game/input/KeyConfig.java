@@ -54,10 +54,16 @@ public final class KeyConfig {
 
     private final KeyBindings bindings;
     private final ControlSettings settings = new ControlSettings();
+    /** C {@code modBankStr}: the modifierBank1..4 resources (C default "" each). */
+    private final String[] modifierBanks = {"", "", "", ""};
+    /** C {@code modBankStr[i]} is MAX_CHARS (80) bytes: Get_resource keeps at most 79 chars. */
+    public static final int MAX_MODIFIER_BANK = Const.MAX_CHARS - 1;
     /** C {@code maxVolume} from the file, -1 when the file does not set it. */
     private int maxVolume = -1;
     private final List<String> problems = new ArrayList<>();
     private final String source;
+    private String shipShape;
+    private String shipShapeFile;
 
     private KeyConfig(String source) {
         this.bindings = KeyBindings.defaults();
@@ -83,10 +89,13 @@ public final class KeyConfig {
      * bound; a keysym JXPilot cannot see (no GLFW key) is reported.
      * BEHAVIOR: power, turnSpeed, turnResistance, altPower, altTurnSpeed and altTurnResistance set the
      * control settings; a value that is not a number is reported; one outside C's range (5-55, 4-64, 0-1)
-     * is clamped and reported. modifierBank1..4 set the weapon modifier banks (C resources, sent to the
-     * server at the start).
+     * is clamped and reported.
+     * BEHAVIOR: shipShape and shipShapeFile are kept as given ({@link #shipShape()}, {@link #shipShapeFile()};
+     * the last entry wins).
      * BEHAVIOR: maxVolume (C default.c) sets {@link #maxVolume()}: an integer, clamped to C's 0-255 and
      * reported when outside; a value that is not an integer is reported and ignored.
+     * BEHAVIOR: modifierBank1..4 (C default.c) set {@link #modifierBanks()} to the text as written (the server
+     * parses it); a text over 79 chars is cut to 79 (C's MAX_CHARS buffer) and reported.
      * BEHAVIOR: an unknown {@code key...} resource is reported; other resources are reported as ignored.
      * BEHAVIOR: binding Escape is reported (it always quits); parse problems of the file are reported.
      *
@@ -114,9 +123,12 @@ public final class KeyConfig {
         if (setting(src, e)) {
             return;
         }
-        int bank = modifierBank(e.name());
-        if (bank >= 0) {
-            settings.modifierBanks[bank] = e.value().trim();
+        if (e.name().equals("shipShape")) {
+            shipShape = e.value();
+            return;
+        }
+        if (e.name().equals("shipShapeFile")) {
+            shipShapeFile = e.value();
             return;
         }
         if (e.name().startsWith("key")) {
@@ -153,20 +165,20 @@ public final class KeyConfig {
         return ok.toString();
     }
 
-    /** BEHAVIOR: 0..3 for modifierBank1..4 (any case), else -1. */
-    static int modifierBank(String name) {
-        String n = name.toLowerCase(Locale.ROOT);
-        if (n.length() == 13 && n.startsWith("modifierbank")) {
-            int b = n.charAt(12) - '1';
-            return b >= 0 && b < 4 ? b : -1;
-        }
-        return -1;
-    }
-
     private boolean setting(String src, XpilotRc.Entry e) {
         String n = e.name().toLowerCase(Locale.ROOT);
         if (n.equals("maxvolume")) {
             volume(src, e);
+            return true;
+        }
+        if (n.length() == "modifierbank1".length() && n.startsWith("modifierbank")
+            && n.charAt(n.length() - 1) >= '1' && n.charAt(n.length() - 1) <= '4') {
+            String v = e.value();
+            if (v.length() > MAX_MODIFIER_BANK) {
+                problem(src, e.line(), e.name() + ": longer than " + MAX_MODIFIER_BANK + " chars, cut");
+                v = v.substring(0, MAX_MODIFIER_BANK);
+            }
+            modifierBanks[n.charAt(n.length() - 1) - '1'] = v;
             return true;
         }
         double lo;
@@ -247,6 +259,9 @@ public final class KeyConfig {
 
     public ControlSettings settings() { return settings; }
 
+    /** A copy of the four modifier bank texts (modifierBank1..4; "" when not set). */
+    public String[] modifierBanks() { return modifierBanks.clone(); }
+
     /** The file's C {@code maxVolume} (0..255), or -1 when it does not set one. */
     public int maxVolume() { return maxVolume; }
 
@@ -255,6 +270,12 @@ public final class KeyConfig {
 
     /** "defaults" or "defaults + FILE". */
     public String source() { return source; }
+
+    /** The file's {@code shipShape} resource (C default.c), or null when it has none. */
+    public String shipShape() { return shipShape; }
+
+    /** The file's {@code shipShapeFile} resource, or null when it has none. */
+    public String shipShapeFile() { return shipShapeFile; }
 
     /**
      * Keys bound to more than one function where C's defaults do not already do so (C allows it, so it is

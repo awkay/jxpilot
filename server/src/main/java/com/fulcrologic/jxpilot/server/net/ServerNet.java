@@ -23,6 +23,8 @@
  */
 package com.fulcrologic.jxpilot.server.net;
 
+import com.fulcrologic.jxpilot.common.config.Opt;
+import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.net.ConfigTransfer;
 import com.fulcrologic.jxpilot.common.net.InputReader;
 import com.fulcrologic.jxpilot.common.net.Msg;
@@ -195,7 +197,31 @@ public final class ServerNet {
             parts[i] = ByteBuffer.allocateDirect(Protocol.MAX_PACKET);
         }
         writer.setWorld(cfg.worldWidth, cfg.worldHeight, cfg.edgeWrap);
-        host.attach(this::kick);
+        host.attach(new GameHost.Sessions() {
+            @Override
+            public void kick(int playerId, CharSequence reason) {
+                ServerNet.this.kick(playerId, reason);
+            }
+
+            @Override
+            public void optionChanged(Opt o, Options options) {
+                ServerNet.this.optionChanged(o, options);
+            }
+        });
+    }
+
+    /**
+     * server-commands: an operator changed an option at run time ({@link GameHost.Sessions#optionChanged}).
+     * <p>
+     * BEHAVIOR: denyHosts (C tuner {@code Set_deny_hosts}) and maxClientsPerIP take their new values for the
+     * next CONNECTs; other options are not the network layer's.
+     */
+    void optionChanged(Opt o, Options options) {
+        if (o == Opt.DENY_HOSTS) {
+            cfg.denyHosts = DenyList.parse(options.getString(Opt.DENY_HOSTS));
+        } else if (o == Opt.MAX_CLIENTS_PER_IP) {
+            cfg.maxPerIp = options.getInt(Opt.MAX_CLIENTS_PER_IP);
+        }
     }
 
     /**
@@ -327,7 +353,13 @@ public final class ServerNet {
             sendReject(channel, from, connect.nonce, Msg.Reject.REASON_FULL, "too many players from your address", size);
             return;
         }
-        int id = host.join(connect.name, connect.team, connect.shape);
+        int id = host.join(connect.name, connect.team, connect.shape, source);
+        if (id == -Msg.Reject.REASON_QUEUED) {
+            int pos = host.queuePosition();
+            reject.position = pos;
+            sendReject(channel, from, connect.nonce, Msg.Reject.REASON_QUEUED, "queued at position " + pos, size);
+            return;
+        }
         if (id < 0) {
             sendReject(channel, from, connect.nonce, -id, rejectText(-id), size);
             return;
@@ -503,7 +535,7 @@ public final class ServerNet {
             out.send(c.channel, c.addr, outBuf);
             sent = true;
         }
-        if (snapshot && c.snapshotsOn) {
+        if (snapshot && c.snapshotsOn && host.snapshotDue(c.playerId)) {
             sendSnapshot(c, radar);
             sent = true;
         }
@@ -615,7 +647,7 @@ public final class ServerNet {
         reject.reason = reason;
         reject.text.setLength(0);
         reject.text.append(text);
-        Wire.cap(reject.text, maxBytes - REJECT_OVERHEAD);
+        Wire.cap(reject.text, maxBytes - REJECT_OVERHEAD - (reason == Msg.Reject.REASON_QUEUED ? 2 : 0));
         reject.write(outBuf);
         outBuf.flip();
         out.send(channel, to, outBuf);
@@ -634,6 +666,8 @@ public final class ServerNet {
             case Msg.Reject.REASON_FULL -> "server is full";
             case Msg.Reject.REASON_VERSION -> "incompatible version";
             case Msg.Reject.REASON_BAD_NAME -> "name not accepted";
+            case Msg.Reject.REASON_LOCKED -> "game locked";
+            case Msg.Reject.REASON_QUEUED -> "queued";
             default -> "join refused";
         };
     }

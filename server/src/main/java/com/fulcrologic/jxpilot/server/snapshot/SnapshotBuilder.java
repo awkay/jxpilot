@@ -27,6 +27,7 @@ import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.map.Cannon;
 import com.fulcrologic.jxpilot.common.map.FuelStation;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
+import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.net.Protocol;
 import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.common.net.Section;
@@ -60,8 +61,15 @@ import java.nio.ByteBuffer;
  * {@code Simulation.tick}); burst ages are measured from it.
  */
 public final class SnapshotBuilder {
-    /** Default view half-width/height in pixels (the C client's maximum view is 1024 px wide). */
-    public static final double DEFAULT_VIEW_HALF = 640;
+    /**
+     * Pixels added on each side of the client's view (C culls at the view edge, {@code Frame_parameters}): the
+     * client draws ships interpolated and shots extrapolated (up to two snapshot intervals) between snapshots,
+     * so an object culled exactly at the edge would pop in or vanish inside the visible area; 128 px covers a
+     * fast shot's travel over that time.
+     */
+    public static final int VIEW_MARGIN = 128;
+    /** Default view half-width/height in pixels: the largest C view (MAX_VIEW_SIZE 1024) / 2 plus the margin. */
+    public static final double DEFAULT_VIEW_HALF = Msg.Display.MAX_VIEW_SIZE / 2 + VIEW_MARGIN;
     /** Extra margin for bursts, whose particles spread from the origin. */
     public static final double BURST_MARGIN = 400;
 
@@ -150,6 +158,16 @@ public final class SnapshotBuilder {
     public void setView(double halfWidth, double halfHeight) {
         viewHalfX = halfWidth;
         viewHalfY = halfHeight;
+    }
+
+    /**
+     * Cull the next {@link #build}s for a client view of {@code width x height} world pixels (C
+     * {@code Frame_parameters}: the receiving connection's {@code view_width/height}).
+     * <p>
+     * BEHAVIOR: the view half-size becomes {@code size / 2 + VIEW_MARGIN} on each axis.
+     */
+    public void setViewSize(int width, int height) {
+        setView(width / 2.0 + VIEW_MARGIN, height / 2.0 + VIEW_MARGIN);
     }
 
     /**
@@ -675,8 +693,11 @@ public final class SnapshotBuilder {
             if (pl == v) {
                 flags |= Records.Radar.FLAG_SELF;
             }
-            if (pl != v && w.sameTeam(pl, v)) {
+            if (pl != v && itemSections.radarFriendly(pl, v)) {
                 flags |= Records.Radar.FLAG_FRIENDLY;
+            }
+            if (itemSections.radarLocked(pl, v)) {
+                flags |= Records.Radar.FLAG_LOCKED;
             }
             Records.Radar.put(wr, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK, flags);
         }

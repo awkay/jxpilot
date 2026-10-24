@@ -1,0 +1,28 @@
+# JXPilot golden-trace test arena (not an XPilot original map).
+# Copyright (C) 2026 Tony Kay and the JXPilot contributors. GPL-2.0-or-later.
+# Two bases, one 4 blocks above the other, and an item concentrator just
+# above the upper base: with -gravity 0 both ships stay put, the lower ship's
+# laser (pointing up) reaches the upper one, and items spawned at the
+# concentrator are picked up by the upper ship.
+mapWidth:	21
+mapHeight:	14
+mapName:	JXPilot item arena
+mapAuthor:	JXPilot contributors
+edgeWrap:	no
+teamPlay:	no
+mapData:	\multiline: EndOfMapdata
+xxxxxxxxxxxxxxxxxxxxx
+x                   x
+x                   x
+x                   x
+x                   x
+x         %         x
+x         _         x
+x                   x
+x                   x
+x                   x
+x         _         x
+x                   x
+x                   x
+xxxxxxxxxxxxxxxxxxxxx
+EndOfMapdata

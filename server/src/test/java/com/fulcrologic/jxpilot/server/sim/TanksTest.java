@@ -497,15 +497,17 @@ class TanksTest {
         }
 
         @Test
-        @DisplayName("with shields allowed there is no shield timer, and without ship shapes the default ship")
+        @DisplayName("with shields allowed there is no shield timer; the tank wears Ships.tankShipShape, which without"
+            + " ship shapes is defaultShipShape (C ship.c:416-418, Init_player)")
         void shieldsAllowed() {
             prepare();
-            w.items.allowShipShapes = false;
             t.detach(p);
             Player d = tankOf(p);
+            Simulation noShapes = sim(FRAME + "allowShipShapes: no\n", 20, 20, "__");
             assertAll(
                 () -> assertEquals(0, d.shieldTime, "no shield time"),
-                () -> assertSame(ShipGeom.defaultShip(), d.ship, "the default ship"));
+                () -> assertSame(s.ships.tankShipShape, d.ship, "the one parsed tank ship"),
+                () -> assertSame(noShapes.ships.defaultShipShape, noShapes.ships.tankShipShape, "without ship shapes"));
         }
 
         @Test
@@ -516,8 +518,8 @@ class TanksTest {
             Player d1 = tankOf(p);
             d1.kills = 5;
             d1.items[Item.ECM.ordinal()] = 3;
-            other.visLastChange[d1.slot] = 99;
-            d1.visLastChange[other.slot] = 98;
+            other.visLastChange[d1.ind] = 99;
+            d1.visLastChange[other.ind] = 98;
             w.removePlayer(d1);
             t.detach(p);
             Player d2 = tankOf(p);
@@ -526,8 +528,8 @@ class TanksTest {
                 () -> assertEquals("A's tank", d2.name.toString(), "the name is rebuilt, not appended"),
                 () -> assertEquals(0, d2.kills, "kills reset by Init_player"),
                 () -> assertEquals(0, d2.items[Item.ECM.ordinal()], "items reset by Init_player"),
-                () -> assertEquals(0L, other.visLastChange[d2.slot], "others' visibility time of the tank reset"),
-                () -> assertEquals(0L, d2.visLastChange[other.slot], "the tank's visibility times reset"));
+                () -> assertEquals(0L, other.visLastChange[d2.ind], "others' visibility time of the tank reset"),
+                () -> assertEquals(0L, d2.visLastChange[other.ind], "the tank's visibility times reset"));
         }
 
         @Test
