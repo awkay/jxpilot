@@ -67,9 +67,10 @@ import java.util.function.LongSupplier;
  *   <li>Plan C: call {@code recvfrom} through the FFM API into a preallocated {@code sockaddr} segment
  *   and key peers by its raw bytes.</li>
  * </ul>
- * Must be used from one thread, except {@link #localAddress} and {@link #boundTargets}.
+ * Must be used from one thread, except {@link #localAddress}, {@link #boundTargets} and {@link #send}: the
+ * lobby shares one transport between the game loops of its maps, each sending from its own thread.
  */
-public final class UdpTransport implements Datagrams, Closeable {
+public final class UdpTransport implements NetTransport {
     /** Datagrams drained per channel per readiness event, so one flooded channel cannot starve the loop. */
     static final int MAX_DRAIN = 256;
     private static final int SOCKET_BUFFER = 1 << 20;
@@ -104,6 +105,8 @@ public final class UdpTransport implements Datagrams, Closeable {
     private final ByteBuffer rx = ByteBuffer.allocateDirect(Protocol.MAX_PACKET + 1);
     private final Consumer<SelectionKey> onReady = this::drain;
     private volatile List<Bound> snapshot = List.of();
+    /** Live channels by id (null where closed), published for {@link #send} from other threads. */
+    private volatile Bound[] byId = new Bound[0];
     private Receiver receiver = (c, f, d, n) -> { };
     private long oversized;
     private long ioErrors;
@@ -119,6 +122,7 @@ public final class UdpTransport implements Datagrams, Closeable {
         this.selector = Selector.open();
     }
 
+    @Override
     public void setReceiver(Receiver r) {
         this.receiver = r;
     }
@@ -185,6 +189,7 @@ public final class UdpTransport implements Datagrams, Closeable {
      * wake about a millisecond early ({@link #selectMillis}); the caller's next poll then covers the
      * remainder by parking the thread, which is precise, and polling.
      */
+    @Override
     public void poll(long timeoutNanos) throws IOException {
         long ms = selectMillis(timeoutNanos);
         if (ms >= 1) {
@@ -240,7 +245,8 @@ public final class UdpTransport implements Datagrams, Closeable {
 
     @Override
     public void send(int channel, SocketAddress to, ByteBuffer data) {
-        Bound b = channel < channels.size() ? channels.get(channel) : null;
+        Bound[] live = byId;
+        Bound b = channel >= 0 && channel < live.length ? live[channel] : null;
         if (b == null) {
             return;
         }
@@ -277,6 +283,7 @@ public final class UdpTransport implements Datagrams, Closeable {
     public long ioErrors() { return ioErrors; }
 
     /** Wake a thread blocked in {@link #poll}. */
+    @Override
     public void wakeup() {
         selector.wakeup();
     }
@@ -306,6 +313,11 @@ public final class UdpTransport implements Datagrams, Closeable {
             }
         }
         snapshot = List.copyOf(live);
+        Bound[] ids = new Bound[channels.size()];
+        for (int i = 0; i < ids.length; i++) {
+            ids[i] = channels.get(i);
+        }
+        byId = ids;
     }
 
     private static void closeQuietly(DatagramChannel ch) {

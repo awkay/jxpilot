@@ -189,6 +189,11 @@ public final class Msg {
          * {@link #position}; the client keeps sending CONNECT to keep its place and is accepted when admitted.
          */
         public static final int REASON_QUEUED = 6;
+        /**
+         * Lobby server: this address is not in any game yet; the client continues with the lobby messages
+         * ({@link LobbyMsg}) and sends CONNECT again once a map is chosen.
+         */
+        public static final int REASON_LOBBY = 7;
 
         public int nonce;
         public int reason;
