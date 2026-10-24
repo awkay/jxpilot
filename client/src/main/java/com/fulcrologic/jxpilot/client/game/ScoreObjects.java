@@ -31,17 +31,18 @@ package com.fulcrologic.jxpilot.client.game;
  * drawn at the block where it happened) and a frame counter. Points use {@code %.*f} with
  * showScoreDecimals (printf rounding), or {@code %d} of rint when 0.
  * <p>
- * Protocol gap: SCORE carries no reason text or position, so {@link ClientGame} derives them from the
- * GAME_EVENT of the same batch; without one the HUD text is the points alone (C would show the
- * server's message). Allocation free.
+ * Fed by {@link ClientGame} from SCORE_OBJECT (the server's C {@code Send_score_object}: points, label and
+ * block), or the C protocol's {@code PKT_SCORE_OBJECT} on the XPilot path. Allocation free.
  */
 public final class ScoreObjects {
     /** C {@code MAX_SCORE_OBJECTS}. */
     public static final int MAX_SCORE_OBJECTS = 10;
     /** C {@code SCORE_OBJECT_COUNT}: frames an object lives. */
     public static final int SCORE_OBJECT_COUNT = 100;
-    /** Text capacity (C {@code MAX_CHARS}). */
+    /** Game-area text capacity (C {@code MAX_CHARS}). */
     public static final int TEXT_LEN = 80;
+    /** HUD text capacity (C {@code hud_msg[MAX_CHARS + 10]}). */
+    public static final int HUD_TEXT_LEN = TEXT_LEN + 10;
 
     private final float[] score = new float[MAX_SCORE_OBJECTS];
     private final CharBuf[] hud = new CharBuf[MAX_SCORE_OBJECTS];
@@ -55,7 +56,7 @@ public final class ScoreObjects {
 
     public ScoreObjects() {
         for (int i = 0; i < MAX_SCORE_OBJECTS; i++) {
-            hud[i] = new CharBuf(TEXT_LEN);
+            hud[i] = new CharBuf(HUD_TEXT_LEN);
             text[i] = new CharBuf(TEXT_LEN);
         }
     }
@@ -78,10 +79,11 @@ public final class ScoreObjects {
      * C {@code Handle_score_object}: overwrite the next ring slot.
      * <p>
      * BEHAVIOR: count starts at 1; the game-area text is the formatted points; the HUD text is
-     * {@code msg + " " + points} when msg is non-empty, the points alone when msg is null (reason unknown),
-     * and none for an empty msg (as C); the position is kept iff {@code withPos}.
+     * {@code msg + " " + points} when msg is non-empty, the points alone when msg is null, and none
+     * for an empty msg (as C), cut at {@link #HUD_TEXT_LEN}; the position is kept iff {@code withPos}.
      *
-     * @param msg the reason (other player's name, "[Wall]", "Target: "...), "" for none, null if unknown
+     * @param msg the reason (other player's name, "[Wall]", "Target: "...), "" for none, null for the
+     *            points alone
      */
     public void add(float points, CharSequence msg, boolean withPos, int blockX, int blockY) {
         int i = next;

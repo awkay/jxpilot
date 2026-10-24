@@ -140,8 +140,8 @@ class XpNetAllocationTest {
         }
         assertEquals(ConnectionState.PLAYING, conn.state(), "joined during setup");
 
-        // C frames with reliable traffic: a chat echo with its talk ack, a score change and a game message
-        // every 60 C frames.
+        // C frames with reliable traffic: a chat echo with its talk ack, a score object, a score change and a
+        // game message every 60 C frames.
         server.login.toClient.clear();
         server.retransmitSteps = 3;
         List<byte[]> packets = new ArrayList<>();
@@ -153,7 +153,8 @@ class XpNetAllocationTest {
             }
             if (f % 60 == 30) {
                 server.stream.put(new CPackets().talkAck(f).message("chat " + f + " [Robby]")
-                    .score(FakeCServer.ROBOT_ID, f / 10.0, 0, 'R', ' ').message("Robby was killed.").bytes());
+                    .scoreObject(f / 100.0, 3, 4, "Robby").score(FakeCServer.ROBOT_ID, f / 10.0, 0, 'R', ' ')
+                    .message("Robby was killed.").bytes());
             }
             server.step();
             for (byte[] a = server.login.toClient.poll(); a != null; a = server.login.toClient.poll()) {
@@ -205,6 +206,7 @@ class XpNetAllocationTest {
             () -> assertEquals(0, conn.malformed(), "nothing malformed"),
             () -> assertTrue(game.world().pointCount() > 0, "debris tracked as point particles"),
             () -> assertTrue(game.messages().talkCount() > 0, "chat arrived"),
+            () -> assertTrue(game.scoreObjects().text(0).length() > 0, "PKT_SCORE_OBJECT made score objects"),
             () -> assertTrue(conn.keyboard().change() > 100, "keys changed"),
             () -> assertTrue(nz <= MAX_NONZERO_FRAMES, "at most a few JIT frames allocate: " + nz),
             () -> assertTrue(w <= MAX_FRAME_BYTES, "and only a little: " + w + " bytes"),

@@ -181,39 +181,30 @@ class SceneFillerTest {
     @DisplayName("fill: shots, particles, radar, loops")
     class Objects {
         @Test
-        @DisplayName("shots keep snapshot order with C colours and team-shot flags")
+        @DisplayName("shots keep snapshot order; the harmless bit, not the colour, makes C's blue teamshot")
         void shots() {
             AppFixture f = new AppFixture(true).players().twice(x -> x
                 .self(0, 100, 100, 0, 0xFFFF)
                 .shot(Records.ShotKind.SHOT, Records.ObjColor.ENEMY, 10, 20)
-                .shot(Records.ShotKind.SHOT, Records.ObjColor.TEAM, 30, 40)
+                .shot(Records.ShotKind.SHOT, Records.ObjColor.TEAM, true, 30, 40)
+                .shot(Records.ShotKind.SHOT, Records.ObjColor.TEAM, 35, 45)
                 .shot(Records.ShotKind.CANNON_SHOT, Records.ObjColor.RED, 50, 60)
-                .shot(Records.ShotKind.SHOT, Records.ObjColor.OWN, 70, 80));
+                .shot(Records.ShotKind.SHOT, Records.ObjColor.OWN, 70, 80)
+                .shot(Records.ShotKind.SHOT, Records.ObjColor.OWN, true, 75, 85)
+                .shot(Records.ShotKind.CLUSTER, Records.ObjColor.ENEMY, true, 90, 95));
             fill(f);
-            assertAll(
-                () -> assertEquals(4, scene.shotCount, "all shots"),
-                () -> assertEquals(10f, scene.shotX[0], "first x"),
-                () -> assertEquals(20f, scene.shotY[0], "first y"),
-                () -> assertEquals(Palette.WHITE, scene.shotColor[0], "enemy: white"),
-                () -> assertFalse(scene.shotTeam[0], "enemy: square"),
-                () -> assertEquals(Palette.BLUE, scene.shotColor[1], "team: blue"),
-                () -> assertTrue(scene.shotTeam[1], "team: X/+"),
-                () -> assertEquals(Palette.RED, scene.shotColor[2], "nuclear blink: red"),
-                () -> assertTrue(scene.shotTeam[2], "nuclear blink: X/+"),
-                () -> assertEquals(70f, scene.shotX[3], "last x"),
-                () -> assertEquals(Palette.WHITE, scene.shotColor[3], "own without selfImmunity: white"),
-                () -> assertFalse(scene.shotTeam[3], "own without selfImmunity: square"));
-        }
-
-        @Test
-        @DisplayName("own shots are blue team shots with selfImmunity")
-        void selfImmunity() {
-            AppFixture f = new AppFixture(true, "selfImmunity: yes\n").players().twice(x -> x
-                .shot(Records.ShotKind.SHOT, Records.ObjColor.OWN, 70, 80));
-            fill(f);
-            assertAll(
-                () -> assertEquals(Palette.BLUE, scene.shotColor[0], "blue"),
-                () -> assertTrue(scene.shotTeam[0], "team shot"));
+            List<String> drawn = new ArrayList<>();
+            for (int i = 0; i < scene.shotCount; i++) {
+                drawn.add(scene.shotX[i] + "," + scene.shotY[i] + " c" + scene.shotColor[i] + (scene.shotTeam[i] ? " X" : " sq"));
+            }
+            int blue = Palette.BLUE;
+            int white = Palette.WHITE;
+            assertEquals(List.of("10.0,20.0 c" + white + " sq", "30.0,40.0 c" + blue + " X", "35.0,45.0 c" + white + " sq",
+                    "50.0,60.0 c" + Palette.RED + " X", "70.0,80.0 c" + white + " sq", "75.0,85.0 c" + blue + " X",
+                    "90.0,95.0 c" + blue + " X"), drawn,
+                "every shot in order: enemy white square; harmless team mate blue X/+; a team mate's shot that can "
+                    + "hurt (no teamImmunity) white square; nuclear blink red X/+; own white square; own harmless "
+                    + "(selfImmunity) blue X/+; any harmless shot (paused owner's cluster) blue X/+");
         }
 
         @Test
@@ -285,19 +276,21 @@ class SceneFillerTest {
         @DisplayName("shotColor and teamShot follow C's Frame_shots rules")
         void shotRules() {
             assertAll(
-                () -> assertEquals(Palette.BLUE, SceneFiller.shotColor(Records.ObjColor.TEAM, false), "team blue"),
-                () -> assertEquals(Palette.BLUE, SceneFiller.shotColor(Records.ObjColor.BLUE, false), "blue blue"),
-                () -> assertEquals(Palette.WHITE, SceneFiller.shotColor(Records.ObjColor.OWN, false), "own white"),
-                () -> assertEquals(Palette.BLUE, SceneFiller.shotColor(Records.ObjColor.OWN, true), "own immune blue"),
-                () -> assertEquals(Palette.RED, SceneFiller.shotColor(Records.ObjColor.RED, false), "red red"),
-                () -> assertEquals(Palette.WHITE, SceneFiller.shotColor(Records.ObjColor.NEUTRAL, true), "neutral white"),
-                () -> assertEquals(Palette.WHITE, SceneFiller.shotColor(Records.ObjColor.WHITE, true), "white white"),
-                () -> assertTrue(SceneFiller.teamShot(Records.ObjColor.TEAM, false), "team: team shot"),
-                () -> assertTrue(SceneFiller.teamShot(Records.ObjColor.BLUE, false), "blue: team shot"),
-                () -> assertTrue(SceneFiller.teamShot(Records.ObjColor.RED, false), "red: team shot"),
-                () -> assertTrue(SceneFiller.teamShot(Records.ObjColor.OWN, true), "own immune: team shot"),
-                () -> assertFalse(SceneFiller.teamShot(Records.ObjColor.OWN, false), "own: square"),
-                () -> assertFalse(SceneFiller.teamShot(Records.ObjColor.ENEMY, true), "enemy: square"));
+                () -> assertEquals(Palette.BLUE, SceneFiller.shotColor(Records.ObjColor.TEAM, true), "harmless: blue"),
+                () -> assertEquals(Palette.BLUE, SceneFiller.shotColor(Records.ObjColor.ENEMY, true), "harmless enemy: blue"),
+                () -> assertEquals(Palette.BLUE, SceneFiller.shotColor(Records.ObjColor.RED, true), "harmless red: blue"),
+                () -> assertEquals(Palette.WHITE, SceneFiller.shotColor(Records.ObjColor.TEAM, false), "harmful team: white"),
+                () -> assertEquals(Palette.WHITE, SceneFiller.shotColor(Records.ObjColor.OWN, false), "own: white"),
+                () -> assertEquals(Palette.WHITE, SceneFiller.shotColor(Records.ObjColor.NEUTRAL, false), "neutral: white"),
+                () -> assertEquals(Palette.WHITE, SceneFiller.shotColor(Records.ObjColor.WHITE, false), "white: white"),
+                () -> assertEquals(Palette.BLUE, SceneFiller.shotColor(Records.ObjColor.BLUE, false),
+                    "a harmful BLUE fast shot stays blue (C Paint_fastshots)"),
+                () -> assertEquals(Palette.RED, SceneFiller.shotColor(Records.ObjColor.RED, false), "nuclear blink: red"),
+                () -> assertTrue(SceneFiller.teamShot(Records.ObjColor.ENEMY, true), "harmless: X/+"),
+                () -> assertTrue(SceneFiller.teamShot(Records.ObjColor.RED, false), "nuclear blink: X/+"),
+                () -> assertFalse(SceneFiller.teamShot(Records.ObjColor.TEAM, false), "harmful team: square"),
+                () -> assertFalse(SceneFiller.teamShot(Records.ObjColor.BLUE, false), "harmful blue fast shot: square"),
+                () -> assertFalse(SceneFiller.teamShot(Records.ObjColor.OWN, false), "own: square"));
         }
 
         @Test

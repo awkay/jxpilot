@@ -311,6 +311,12 @@ class AllocationTest {
         }
         com.fulcrologic.jxpilot.server.world.World w = hostRef.get().simulation().world;
         int robots = hostRef.get().simulation().robots.numRobots();
+        int robotJoins = 0;
+        com.fulcrologic.jxpilot.server.robot.RobotRoster roster = hostRef.get().simulation().robots.roster();
+        for (int i = 0; i < roster.size(); i++) {
+            robotJoins += roster.used(i);
+        }
+        int joins = robotJoins;
         long allocatedBytes = allocated;
         int snaps = snapshots;
         long ticks = measuredTicks;
@@ -320,7 +326,9 @@ class AllocationTest {
             () -> assertEquals(0, allocatedBytes, "8 s of the real game (1 peer, 8 robots) allocate nothing on the loop thread"),
             () -> assertTrue(ticks > 100, "the game ticked during the measurement (" + ticks + ")"),
             () -> assertTrue(snaps > 80, "snapshots flowed during the measurement (" + snaps + ")"),
-            () -> assertEquals(8, robots, "8 robots were playing"));
+            () -> assertTrue(joins >= 8, "8 robots joined (" + joins + " robot joins)"),
+            () -> assertTrue(robots >= 7, "and were playing at the end (" + robots + "; one may be between leaving and"
+                + " its replacement, 2*FPS frames later)"));
     }
 
     /**

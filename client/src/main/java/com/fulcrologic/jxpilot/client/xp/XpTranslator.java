@@ -68,6 +68,7 @@ public final class XpTranslator {
     private final Msg.PlayerLeave leave = new Msg.PlayerLeave();
     private final Msg.Score score = new Msg.Score();
     private final Msg.TeamScore teamScore = new Msg.TeamScore();
+    private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
     private final Msg.Text text = new Msg.Text();
     private final Msg.BaseOwner baseOwner = new Msg.BaseOwner();
 
@@ -379,46 +380,57 @@ public final class XpTranslator {
 
     /**
      * BEHAVIOR: fast shots (C {@code Paint_fastshots}/{@code Paint_teamshots}): normal shots that are
-     * neither white nor blue are drawn white; team shots keep their colour. One SHOT section per
-     * resulting colour, velocity 0 (C sends none).
+     * neither white nor blue are drawn white; team shots keep their colour. A team shot (C type
+     * {@code DEBRIS_TYPES..2*DEBRIS_TYPES-1}) that is not RED is harmless (C frame.c's BLUE teamshot: it
+     * cannot hurt the viewer) and gets {@link Records.ShotKind#FLAG_HARMLESS}, so both protocols draw it
+     * the same way; a RED team shot is a blinking nuclear one, which can hurt. One SHOT section per
+     * resulting colour and harmless flag, velocity 0 (C sends none).
      */
     private void writeShots(XpFrame f) {
         if (f.fastshots == 0) {
             return;
         }
+        for (int col = Records.ObjColor.RED; col <= Records.ObjColor.WHITE; col++) {
+            if (!writeShots(f, col, false) || !writeShots(f, col, true)) {
+                return;
+            }
+        }
+    }
+
+    /** The shots of one colour and harmless flag as one section; false when the body is full. */
+    private boolean writeShots(XpFrame f, int col, boolean harmless) {
         int xa = xAreas();
         int ya = yAreas();
         int areas = xa * ya;
-        for (int col = Records.ObjColor.RED; col <= Records.ObjColor.WHITE; col++) {
-            boolean open = false;
-            for (int k = 0; k < f.fastshots; k++) {
-                int t = f.fastshotType[k];
-                boolean team = t >= XpProto.DEBRIS_TYPES;
-                int i = team ? t - XpProto.DEBRIS_TYPES : t;
-                int c = i / areas;
-                if (!team && c != XpProto.WHITE && c != XpProto.BLUE) {
-                    c = XpProto.WHITE;
-                }
-                if (objColor(c) != col) {
-                    continue;
-                }
-                double x = particleX(i, xa, f.fastshotX[k] & 0xFF);
-                double y = particleY(i, xa, ya, f.fastshotY[k] & 0xFF);
-                if (!visible(x, y)) {
-                    continue;
-                }
-                if (!open) {
-                    if (!w.beginSection(Section.SHOT, Records.ShotKind.variant(Records.ShotKind.SHOT, col))) {
-                        return;
-                    }
-                    open = true;
-                }
-                Records.Shot.put(w, x, y, 0, 0);
+        boolean open = false;
+        for (int k = 0; k < f.fastshots; k++) {
+            int t = f.fastshotType[k];
+            boolean team = t >= XpProto.DEBRIS_TYPES;
+            int i = team ? t - XpProto.DEBRIS_TYPES : t;
+            int c = i / areas;
+            if (!team && c != XpProto.WHITE && c != XpProto.BLUE) {
+                c = XpProto.WHITE;
             }
-            if (open) {
-                w.endSection();
+            if (objColor(c) != col || (team && c != XpProto.RED) != harmless) {
+                continue;
             }
+            double x = particleX(i, xa, f.fastshotX[k] & 0xFF);
+            double y = particleY(i, xa, ya, f.fastshotY[k] & 0xFF);
+            if (!visible(x, y)) {
+                continue;
+            }
+            if (!open) {
+                if (!w.beginSection(Section.SHOT, Records.ShotKind.variant(Records.ShotKind.SHOT, col, harmless))) {
+                    return false;
+                }
+                open = true;
+            }
+            Records.Shot.put(w, x, y, 0, 0);
         }
+        if (open) {
+            w.endSection();
+        }
+        return true;
     }
 
     /**
@@ -762,6 +774,21 @@ public final class XpTranslator {
             nameChar[s] = (char) mychar;
         }
         deliver(score, ReliableType.SCORE);
+    }
+
+    /**
+     * C {@code Handle_score_object}: the server's score popup for the own player.
+     * <p>
+     * BEHAVIOR: delivered as SCORE_OBJECT with the points, block (C block coordinates, the same as ours)
+     * and label.
+     */
+    public void scoreObject(double points, int bx, int by, CharSequence label) {
+        scoreObject.score = (float) points;
+        scoreObject.bx = bx;
+        scoreObject.by = by;
+        scoreObject.text.setLength(0);
+        scoreObject.text.append(label);
+        deliver(scoreObject, ReliableType.SCORE_OBJECT);
     }
 
     /** C {@code Handle_team_score}. */

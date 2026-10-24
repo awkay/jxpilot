@@ -151,6 +151,36 @@ class ShipsJoinTest {
         }
 
         @Test
+        @DisplayName("the enter listener hears a human's spawn after JOIN/BASE_OWNER/SPAWN and before the round part;"
+            + " never a robot's; no listener is fine")
+        void enterListener() {
+            Simulation s = sim(C_FRAMES, THREE);
+            World w = s.world;
+            List<String> heard = new java.util.ArrayList<>();
+            s.ships.enterListener = pl -> {
+                heard.add(pl.name + " " + events(w, 0));
+                w.events.message(Msg.Text.KIND_SERVER, Obj.NO_ID).append("hello ").append(pl.name);
+            };
+            Player ann = s.ships.join("ann", 0);
+            List<String> annEvents = events(w, 0);
+            long mark = w.events.seq();
+            s.ships.join("robo", 0, true);
+            s.ships.enterListener = null;
+            Player bob = s.ships.join("bob", 0);
+            assertAll(
+                () -> assertEquals(List.of("ann [JOIN 1 0 0, BASE_OWNER " + ann.homeBase + " 1 0, GAME_EVENT "
+                    + Msg.GameEvent.SPAWN + " 1 " + ann.homeBase + "]"), heard,
+                    "told once, for the human only, after its JOIN, BASE_OWNER and SPAWN"),
+                () -> assertEquals("MESSAGE " + Msg.Text.KIND_SERVER + " -1 hello ann", annEvents.get(3),
+                    "the listener's message precedes the round part"),
+                () -> assertEquals("MESSAGE " + Msg.Text.KIND_GAME + " -1 Player entered. Delaying 0 seconds until next round.",
+                    annEvents.get(4), "which follows it"),
+                () -> assertEquals(List.of(), events(w, mark).stream().filter(e -> e.contains("hello")).toList(),
+                    "no listener call for the robot"),
+                () -> assertTrue(bob.spawned, "a spawn without a listener works"));
+        }
+
+        @Test
         void aFullWorldRefusesThePlayer() {
             Simulation s = sim(C_FRAMES, ROOM);
             s.ships.join("ann", 0);

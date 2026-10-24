@@ -149,118 +149,83 @@ class ClientGameTest {
         return r;
     }
 
-    static ClientGame withPlayers() {
-        ClientGame g = configured();
-        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(7, 0, "me")));
-        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(9, 0, "Robby")));
-        g.onReliable(ReliableType.SCORE, payload(score(7, 10)));
-        g.onReliable(ReliableType.SCORE, payload(score(9, 10)));
-        return g;
+    static Msg.ScoreObject scoreObject(float points, int bx, int by, String label) {
+        Msg.ScoreObject o = new Msg.ScoreObject();
+        o.score = points;
+        o.bx = bx;
+        o.by = by;
+        o.text.append(label);
+        return o;
+    }
+
+    static Msg.GameEvent event(int kind, int a, int b, float value) {
+        Msg.GameEvent e = event(kind, a, b);
+        e.value = value;
+        return e;
     }
 
     @Test
-    @DisplayName("own score changes become score objects; others, the join baseline and resets to 0 do not")
+    @DisplayName("SCORE_OBJECT makes a score object with its points, label and block; SCORE never does")
     void scoreObjects() {
         ClientGame g = configured();
         g.onReliable(ReliableType.PLAYER_JOIN, payload(join(7, 0, "me")));
-        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(9, 0, "it")));
-        g.onReliable(ReliableType.SCORE, payload(score(9, 4)));
-        g.onReliable(ReliableType.SCORE, payload(score(9, 6)));
+        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(9, 0, "Robby")));
         g.onReliable(ReliableType.SCORE, payload(score(7, 150)));
-        List<String> afterBaseline = hud(g);
         g.onReliable(ReliableType.SCORE, payload(score(7, 152.5f)));
-        g.onReliable(ReliableType.SCORE, payload(score(7, 0)));
-        ScoreObjects so = g.scoreObjects();
-        int s = so.hudOrder(ScoreObjects.MAX_SCORE_OBJECTS - 1);
-        List<String> objects = hud(g);
-        String text = so.text(s).toString();
-        float points = so.score(s);
-        boolean placed = so.hasPosition(s);
-        g.onAccepted(7);
-        boolean afterNewSession = g.scoreObjects().active(s);
-        assertAll(
-            () -> assertFalse(afterNewSession, "a new session forgets score objects"),
-            () -> assertEquals(List.of(), afterBaseline, "another player's change and the join baseline make none"),
-            () -> assertEquals(List.of("2.5"), objects, "one object; the reset to 0 makes none; unknown reason: points only"),
-            () -> assertEquals("2.5", text, "game-area text: the points"),
-            () -> assertEquals(2.5f, points, "points"),
-            () -> assertFalse(placed, "no place without an event"));
-    }
-
-    @Test
-    @DisplayName("kill events name the other player and place the object at the victim")
-    void killReasons() {
-        WorldFixture f = new WorldFixture(true);
-        ClientGame g = withPlayers();
-        f.begin(100).self(7, 0, 100, 100, 0, 0, 0).ship(9, 0, 350, 175, 0, 0, 0);
-        f.buf.flip();
-        g.onSnapshot(f.buf, WorldFixture.at(100));
-        g.frame(WorldFixture.at(100), 0);
+        g.onReliable(ReliableType.SCORE, payload(score(9, 6)));
+        List<String> afterScores = hud(g);
+        float ownScore = g.players().score(g.players().slotOf(7));
         g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.KILL, 7, 9)));
-        g.onReliable(ReliableType.SCORE, payload(score(7, 13)));
-        g.frame(WorldFixture.at(100), 0);
-        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.KILL, 9, 7)));
-        g.onReliable(ReliableType.SCORE, payload(score(7, 12)));
-        g.frame(WorldFixture.at(100), 0);
-        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.KILL, 7, 7)));
-        g.onReliable(ReliableType.SCORE, payload(score(7, 11)));
-        g.frame(WorldFixture.at(100), 0);
-        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.KILL, Protocol.NO_ID, 7)));
-        g.onReliable(ReliableType.SCORE, payload(score(7, 10)));
-        g.frame(WorldFixture.at(100), 0);
-        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.KILL, 9, 4)));
-        g.onReliable(ReliableType.SCORE, payload(score(7, 9)));
-        assertEquals(List.of("Robby 3.0 @10,5", "Robby -1.0 @2,2", "me -1.0 @2,2", "-1.0", "-1.0"), hud(g),
-            "killer: victim's name at the victim; victim: killer's name; self-kill: own name; "
-                + "killed by nobody: points only; another pair's kill is no reason");
+        g.onReliable(ReliableType.SCORE_OBJECT, payload(scoreObject(3, 10, 5, "Robby")));
+        g.onReliable(ReliableType.SCORE, payload(score(7, 155.5f)));
+        g.onReliable(ReliableType.SCORE_OBJECT, payload(scoreObject(-1, 2, 300, "[Wall]")));
+        g.onReliable(ReliableType.SCORE_OBJECT, payload(scoreObject(4, 1, 2, "")));
+        ScoreObjects so = g.scoreObjects();
+        int last = so.hudOrder(ScoreObjects.MAX_SCORE_OBJECTS - 1);
+        List<String> objects = hud(g);
+        String text = so.text(last).toString();
+        String hudText = so.hudText(last).toString();
+        float points = so.score(last);
+        List<Integer> place = List.of(so.blockX(last), so.blockY(last));
+        boolean placed = so.hasPosition(last);
+        g.onAccepted(7);
+        boolean afterNewSession = g.scoreObjects().active(last);
+        assertAll(
+            () -> assertEquals(List.of(), afterScores, "own and other SCOREs make no object (no delta heuristic)"),
+            () -> assertEquals(152.5f, ownScore, "SCORE still sets the score"),
+            () -> assertEquals(List.of("Robby 3.0 @10,5", "[Wall] -1.0 @2,300", " @1,2"), objects,
+                "one object per SCORE_OBJECT in arrival order: HUD text \"label points\" at the sent block"),
+            () -> assertEquals("", hudText, "an empty label makes no HUD text (C Handle_score_object)"),
+            () -> assertEquals("4.0", text, "the game-area text is still the points"),
+            () -> assertEquals(4f, points, "points"),
+            () -> assertEquals(List.of(1, 2), place, "block"),
+            () -> assertTrue(placed, "SCORE_OBJECT always has a place"),
+            () -> assertFalse(afterNewSession, "a new session forgets score objects"));
     }
 
     @Test
-    @DisplayName("crash, target and treasure reasons; a reason does not outlive its batch")
-    void otherReasons() {
-        WorldFixture f = new WorldFixture(true);
-        ClientGame g = withPlayers();
-        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.CRASH, 7, 0)));
-        g.onReliable(ReliableType.SCORE, payload(score(7, 9)));
-        g.frame(WorldFixture.at(100), 0);
-        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.TREASURE_DESTROYED, 7,
-            f.map.treasures().size())));
-        g.onReliable(ReliableType.SCORE, payload(score(7, 8)));
-        g.frame(WorldFixture.at(100), 0);
-        g.onReliable(ReliableType.SCORE, payload(score(7, 9)));
-        g.frame(WorldFixture.at(100), 0);
-        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.TARGET_DESTROYED, 7, 0)));
-        g.onReliable(ReliableType.SCORE, payload(score(7, 11)));
-        g.frame(WorldFixture.at(100), 0);
-        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.TREASURE_DESTROYED, 7, 0)));
-        g.onReliable(ReliableType.SCORE, payload(score(7, 12)));
-        g.frame(WorldFixture.at(100), 0);
-        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.TARGET_DESTROYED, 7, 5)));
-        g.onReliable(ReliableType.SCORE, payload(score(7, 13)));
-        g.frame(WorldFixture.at(100), 0);
-        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.CRASH, 9, 0)));
-        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.TARGET_DESTROYED, 9, 0)));
-        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.SPAWN, 7, 0)));
-        g.onReliable(ReliableType.SCORE, payload(score(7, 14)));
-        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.CRASH, 7, 0)));
-        g.frame(WorldFixture.at(100), 0);
-        g.onReliable(ReliableType.SCORE, payload(score(7, 15)));
-        String target = "@" + f.map.targets().get(0).bx() + "," + f.map.targets().get(0).by();
-        String treasure = "@" + f.map.treasures().get(0).bx() + "," + f.map.treasures().get(0).by();
-        f.begin(100).self(7, 0, 100, 100, 0, 0, 0);
-        f.buf.flip();
-        g.onSnapshot(f.buf, WorldFixture.at(100));
-        g.frame(WorldFixture.at(100), 0);
-        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.CRASH, 7, 0)));
-        g.onReliable(ReliableType.SCORE, payload(score(7, 14)));
-        assertEquals(List.of("Treasure:  -1.0", "1.0", "Target:  2.0 " + target, "Treasure:  1.0 " + treasure,
-                "Target:  1.0", "1.0", "1.0", "[Wall] -1.0 @2,2"), hud(g).subList(1, 9),
-            "a treasure index equal to the count: no place; a crash at the visible own ship is placed there");
-        assertEquals(List.of("[Wall] -1.0", "Treasure:  -1.0", "1.0", "Target:  2.0 " + target, "Treasure:  1.0 " + treasure,
-                "Target:  1.0", "1.0", "1.0"), hud(g).subList(0, 8),
-            "crash at an unknown own ship: no place; target/treasure at their block (C's double space); "
-                + "a bad index: no place; other players' events and SPAWN are no reason; a reason after the "
-                + "SCORE is forgotten at the frame");
+    @DisplayName("GAME_EVENT crash sub-types and shove kills reach the ring unchanged and make no score object")
+    void crashSubTypes() {
+        ClientGame g = configured();
+        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(7, 0, "me")));
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.CRASH, 7, Protocol.NO_ID,
+            Msg.GameEvent.CRASH_WALL)));
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.CRASH, 7, 9, Msg.GameEvent.CRASH_SHIPS)));
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.CRASH, 7, Protocol.NO_ID,
+            Msg.GameEvent.CRASH_UNKNOWN)));
+        g.onReliable(ReliableType.GAME_EVENT, payload(event(Msg.GameEvent.KILL, 9, 7, Msg.GameEvent.CRASH_WALL)));
+        GameEvents ev = g.events();
+        List<String> held = new ArrayList<>();
+        for (int i = 0; i < ev.size(); i++) {
+            held.add(ev.kind(i) + " " + ev.a(i) + " " + ev.b(i) + " " + ev.value(i));
+        }
+        int crash = Msg.GameEvent.CRASH;
+        assertAll(
+            () -> assertEquals(List.of(crash + " 7 65535 1.0", crash + " 7 9 6.0", crash + " 7 65535 7.0",
+                    Msg.GameEvent.KILL + " 9 7 1.0"), held,
+                "wall crash (b NO_ID), two-ship crash (b = other ship), unknown crash, shove kill by the pusher "
+                    + "with the wall sub-type, in order"),
+            () -> assertEquals(List.of(), hud(g), "events alone make no score objects"));
     }
 
     @Test

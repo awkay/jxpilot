@@ -263,6 +263,16 @@ public final class FakeServer {
         e.send(channel);
     }
 
+    /** Queue a SCORE_OBJECT (the server sends it before the SCORE it explains). */
+    public void scoreObject(float points, int bx, int by, String label) {
+        Msg.ScoreObject o = new Msg.ScoreObject();
+        o.score = points;
+        o.bx = bx;
+        o.by = by;
+        o.text.append(label);
+        o.send(channel);
+    }
+
     /** Queue a SCORE. */
     public void score(int id, float score) {
         Msg.Score s = new Msg.Score();

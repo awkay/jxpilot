@@ -66,6 +66,10 @@ final class FakeHost implements GameHost {
     int lastTick;
     long inputCount;
     long keySum;
+    /** The network layer's session control, captured in {@link #attach}. */
+    GameHost.Sessions sessions;
+    /** When set, the next join first kicks this player (as SimGameHost does for a full game), then is cleared. */
+    Integer kickOnJoin;
     private final Msg.PlayerJoin join = new Msg.PlayerJoin();
     private final Msg.Text text = new Msg.Text();
 
@@ -81,9 +85,19 @@ final class FakeHost implements GameHost {
     }
 
     @Override
+    public void attach(Sessions s) {
+        sessions = s;
+    }
+
+    @Override
     public int join(CharSequence name, int t, CharSequence shape) {
         if (record) {
             calls.add("join " + name + " team=" + t + " shape=" + shape);
+        }
+        if (kickOnJoin != null) {
+            int victim = kickOnJoin;
+            kickOnJoin = null;
+            sessions.kick(victim, "no pause with full game");
         }
         if (throwOnJoin != null) {
             throw throwOnJoin;
