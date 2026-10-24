@@ -899,33 +899,26 @@ public final class XpTranslator {
         deliver(teamScore, ReliableType.TEAM_SCORE);
     }
 
-    /** MOTD lines shown as server messages (C pops the MOTD up in a window instead). */
-    public static final int MOTD_LINES = 6;
-
     /**
-     * The server's message of the day (C {@code Handle_motd}, shown in a popup by C's autoServerMotdPopup).
+     * The server's message of the day (C {@code Handle_motd}; C's autoServerMotdPopup opens its MOTD viewer).
      * <p>
-     * BEHAVIOR: its first {@link #MOTD_LINES} non-blank lines (trailing blanks cut) become server MESSAGEs
-     * (a documented deviation: no popup window).
+     * BEHAVIOR: delivered as MOTD pieces (offset, total size, Latin-1 bytes; the text cut to
+     * {@link Msg.Motd#MAX_SIZE}), so the client opens the same MOTD panel as for the JXPilot server; an empty
+     * MOTD delivers nothing.
      */
     public void motd(CharSequence motdText) {
-        int shown = 0;
-        int start = 0;
-        int n = motdText.length();
-        for (int i = 0; i <= n && shown < MOTD_LINES; i++) {
-            if (i == n || motdText.charAt(i) == '\n') {
-                int end = i;
-                while (end > start && Character.isWhitespace(motdText.charAt(end - 1))) {
-                    end--;
-                }
-                if (end > start) {
-                    shown++;
-                    clientMessage().append(motdText, start, end);
-                    text.kind = Msg.Text.KIND_SERVER;
-                    deliver(text, ReliableType.MESSAGE);
-                }
-                start = i + 1;
+        int total = Math.min(motdText.length(), Msg.Motd.MAX_SIZE);
+        int off = 0;
+        while (off < total) {
+            pay.clear();
+            int len = Math.min(total - off, pay.capacity() - 8);
+            pay.putInt(off).putInt(total);
+            for (int i = 0; i < len; i++) {
+                pay.put((byte) motdText.charAt(off + i));
             }
+            pay.flip();
+            listener.onReliable(ReliableType.MOTD, pay);
+            off += len;
         }
     }
 

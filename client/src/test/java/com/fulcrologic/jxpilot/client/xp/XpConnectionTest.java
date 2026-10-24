@@ -354,6 +354,9 @@ class XpConnectionTest {
                 () -> assertEquals(XpConnection.MAX_TRIES, server.plays, "play request resent every second"),
                 () -> assertEquals(XpConnection.SHAPE_TRIES,
                     server.loginPackets.stream().filter("shape"::equals).count(), "shape only in the first 5"),
+                () -> assertEquals(XpConnection.MAX_TRIES,
+                    server.loginPackets.stream().filter(x -> x.startsWith("motd")).count(),
+                    "the MOTD request is in every play request (C Client_power)"),
                 () -> assertEquals("Can't start play on 127.0.0.1:15345 after 10 attempts", conn.status().toString(),
                     "gave up"));
         }
@@ -461,7 +464,7 @@ class XpConnectionTest {
         }
 
         @Test
-        @DisplayName("the first play request asks for the MOTD once (C Client_power: Startup_server_motd)")
+        @DisplayName("the play request asks for the whole MOTD (C Client_power: Startup_server_motd)")
         void motdRequested() {
             play();
             assertEquals(List.of("motd 0 30720"),
