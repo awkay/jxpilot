@@ -257,7 +257,12 @@ jobs:
         env:
           IMAGES_RESULT: ${{ needs.app-image.result }}
         run: |
-          sed "s/@VERSION@/$VERSION/g" .github/release-notes.md > notes.md
+          # A per-version section (.github/release-notes/vVERSION.md), if there is one, goes first.
+          : > notes.md
+          if [ -f ".github/release-notes/v$VERSION.md" ]; then
+            cat ".github/release-notes/v$VERSION.md" >> notes.md
+          fi
+          sed "s/@VERSION@/$VERSION/g" .github/release-notes.md >> notes.md
           if [ "$IMAGES_RESULT" != success ]; then
             printf '\n> Note: some platform app images failed to build for this release; the jars work everywhere.\n' >> notes.md
           fi
