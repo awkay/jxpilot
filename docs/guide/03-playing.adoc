@@ -182,6 +182,7 @@ default, as in XPilot.
 kbd:[M] opens the talk line at the bottom of the screen. Type, then kbd:[Enter] sends and kbd:[Esc]
 cancels. kbd:[Left] and kbd:[Right] move the cursor, kbd:[Up] and kbd:[Down] browse the lines you sent
 before, kbd:[Backspace] and kbd:[Delete] erase, kbd:[Home] and kbd:[End] jump to the start and end.
+As in XPilot, the server cuts a message to 79 characters.
 
 As in XPilot, a prefix before a colon decides who reads a line (the Java server; an original XPilot
 server works the same way):
@@ -430,7 +431,8 @@ race ends when someone has finished (with limited lives, when at most one racer 
 reassigned by best lap time. With `ballrace`, a ball carried through the checkpoints counts instead of
 the ship (with `ballraceConnected`, only a ball on its tether).
 
-NOTE: The JXPilot client does not show the race column of the score list yet (it is being added).
+In race mode the score list is ordered by race progress, the leader first, and a column shows each
+racer's lap and checkpoint as XPilot shows them (for example `2.c`).
 
 [[asteroids]]
 == Asteroids
