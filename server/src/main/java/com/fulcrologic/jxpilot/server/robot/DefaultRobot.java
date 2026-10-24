@@ -1076,6 +1076,19 @@ public final class DefaultRobot {
     }
 
     /**
+     * Load this class's enum switch map now (the Simulation constructor calls it): the first item a robot ranks
+     * would otherwise load it inside a tick.
+     * <p>
+     * BEHAVIOR: returns 0.
+     */
+    public static int warmSwitches() {
+        return switch (Item.FUEL) {
+            case FUEL -> 0;
+            default -> 1;
+        };
+    }
+
+    /**
      * C {@code Rank_item_value}: 2 must have, 1 handy, 0 ignore.
      * <p>
      * BEHAVIOR: autopilot, a full item and a full offensive/defensive class are ignored.
@@ -1398,12 +1411,26 @@ public final class DefaultRobot {
     int mineI;
     int mineDist;
 
+    /** {@link Objects#version} the buckets were built at. */
+    private int cellsVersion;
+
     /**
-     * Rebuild the robot's object buckets (call once per frame before any robot plays): C keeps its cells
-     * up to date as objects are created and deleted; ours are rebuilt from the live pool.
+     * Rebuild the robot's object buckets (once per frame before any robot plays): C keeps its cells up to date
+     * as objects are created and deleted; ours are rebuilt from the live pool.
      */
     void refreshCells() {
         cells.rebuild(w.objects);
+        cellsVersion = w.objects.version;
+    }
+
+    /**
+     * Rebuild the buckets when objects were made or deleted since the last build (an earlier robot's mine or
+     * shot this frame), as C's Cell_add_object/remove are immediate (shot.c:278, 1054; robotdef.c:1980).
+     */
+    void freshCells() {
+        if (w.objects.version != cellsVersion) {
+            refreshCells();
+        }
     }
 
     /**
@@ -1428,6 +1455,7 @@ public final class DefaultRobot {
         Objects o = w.objects;
         Params p = w.params;
         int ks = killingShots;
+        freshCells();
         cells.query(pl.bx, pl.by, (int) (visibilityDistance / BLOCK_SZ), MAX_OBJS);
         int n = cells.resultCount;
         for (int j = 0; j < n; j++) {
@@ -1526,6 +1554,19 @@ public final class DefaultRobot {
                     pl.used |= Has.SHOT;
                 }
             }
+        }
+        // C's quirk, kept (robotdef.c:2163-2170): item_i becomes the index in Obj[] of the FIRST object whose id
+        // equals the chosen item's id; items are unowned (NO_ID), so that is the first unowned object of any kind
+        // in C's object order (the active list here), and later code reads that object's position and info.
+        if (itemI >= 0) {
+            int id = o.owner[itemI];
+            int first = -1;
+            for (int k = 0; k < o.count() && first < 0; k++) {
+                if (o.owner[o.active[k]] == id) {
+                    first = o.active[k];
+                }
+            }
+            itemI = first;
         }
     }
 

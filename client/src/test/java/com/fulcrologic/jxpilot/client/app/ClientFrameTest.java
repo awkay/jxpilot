@@ -371,6 +371,46 @@ class ClientFrameTest {
         }
 
         @Test
+        @DisplayName("the file's modifier banks go to the connection once, at construction (C sends them at login)")
+        void modifierBanks() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = withRc(f, "modifierBank1: FN C\nmodifierBank4: X4 LS\n");
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            ClientFrame plain = frame(new AppFixture(true).players());
+            assertAll(
+                () -> assertEquals(List.of("FN C|||X4 LS", "|||"), conn.banks,
+                    "banks 1..4 from the file, then a default frame's four empty banks; a step sends none"));
+        }
+
+        @Test
+        @DisplayName("the lose-item keys outline the server's lose item on the HUD (C lose_item_active)")
+        void loseItemOutline() {
+            int[] counts = new int[com.fulcrologic.jxpilot.common.Item.COUNT];
+            int mine = com.fulcrologic.jxpilot.common.Item.MINE.ordinal();
+            counts[mine] = 3;
+            AppFixture f = new AppFixture(true).players().twice(x -> x.self(0, 100, 100, 0, 0xFFFF)
+                .loseItems(mine, counts));
+            ClientFrame cf = frame(f);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            boolean before = cf.extras().loseActive;
+            cf.key(GLFW_KEY_KP_0, GLFW_PRESS, 0, T0);
+            cf.step(T0 + 10_000_000L, 800, 600, 1, M, 256, 100);
+            boolean held = cf.extras().loseActive;
+            int item = cf.extras().loseItem;
+            cf.key(GLFW_KEY_KP_0, GLFW_RELEASE, 0, T0);
+            cf.step(T0 + 2_000_000_000L, 800, 600, 1, M, 256, 100);
+            boolean lastFade = cf.extras().loseActive;
+            cf.step(T0 + 2_010_000_000L, 800, 600, 1, M, 256, 100);
+            boolean after = cf.extras().loseActive;
+            assertAll(
+                () -> assertFalse(before, "no key yet: no outline"),
+                () -> assertTrue(held, "SELECT_ITEM held: outline"),
+                () -> assertEquals(mine, item, "on SELF_ITEMS' lose item"),
+                () -> assertTrue(lastFade, "released: the frame that uses up the fade still outlines (aged by dt)"),
+                () -> assertFalse(after, "then no outline"));
+        }
+
+        @Test
         @DisplayName("swap settings swaps locally, sends the key (the server swaps its copy) and shows the meters")
         void swap() {
             AppFixture f = new AppFixture(true).players();

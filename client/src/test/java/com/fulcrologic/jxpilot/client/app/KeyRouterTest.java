@@ -296,4 +296,57 @@ class KeyRouterTest {
                 () -> assertEquals(before, r.settings().turnSpeed, "settings unchanged while talking"));
         }
     }
+
+    @Nested
+    @DisplayName("lose-item selection keys (C Key_press_select_lose_item / Key_release)")
+    class LoseItemKeys {
+        @Test
+        @DisplayName("SELECT_ITEM / LOSE_ITEM presses and releases drive the selection; the keys still go out")
+        void pressRelease() {
+            int fresh = r.loseSelection().state();
+            press(GLFW_KEY_KP_0);
+            int select = r.loseSelection().state();
+            long sent = input.keys() & ControlKey.SELECT_ITEM.mask();
+            press(GLFW_KEY_KP_DECIMAL);
+            int both = r.loseSelection().state();
+            r.key(GLFW_KEY_KP_DECIMAL, GLFW_RELEASE, 0);
+            int oneLeft = r.loseSelection().state();
+            r.key(GLFW_KEY_KP_0, GLFW_REPEAT, 0);
+            int repeated = r.loseSelection().state();
+            r.key(GLFW_KEY_KP_0, GLFW_RELEASE, 0);
+            int released = r.loseSelection().state();
+            press(GLFW_KEY_RIGHT_SHIFT);
+            r.key(GLFW_KEY_RIGHT_SHIFT, GLFW_RELEASE, 0);
+            int otherKey = r.loseSelection().state();
+            assertAll(
+                () -> assertEquals(0, fresh, "starts off"),
+                () -> assertEquals(1, select, "SELECT_ITEM press: 1"),
+                () -> assertEquals(ControlKey.SELECT_ITEM.mask(), sent, "the key is still sent to the server"),
+                () -> assertEquals(2, both, "LOSE_ITEM pressed while selecting: 2"),
+                () -> assertEquals(1, oneLeft, "LOSE_ITEM released: back to 1"),
+                () -> assertEquals(1, repeated, "a repeat changes nothing"),
+                () -> assertEquals(-1, released, "SELECT_ITEM released: fading"),
+                () -> assertEquals(-1, otherKey, "other keys do not touch the selection"));
+        }
+
+        @Test
+        @DisplayName("a key bound to both functions counts twice; keys typed into the talk line count not at all")
+        void doubleBindingAndTalk() {
+            input.bindings().bind(ControlKey.SELECT_ITEM, "F9");
+            input.bindings().bind(ControlKey.LOSE_ITEM, "F9");
+            press(GLFW_KEY_F9);
+            int pressed = r.loseSelection().state();
+            r.key(GLFW_KEY_F9, GLFW_RELEASE, 0);
+            int released = r.loseSelection().state();
+            KeyRouter t = new KeyRouter(new InputState(KeyRouter.bindings(null)), new TalkLine());
+            t.key(GLFW_KEY_M, GLFW_PRESS, 0);
+            t.key(GLFW_KEY_KP_0, GLFW_PRESS, 0);
+            t.key(GLFW_KEY_KP_0, GLFW_RELEASE, 0);
+            int talking = t.loseSelection().state();
+            assertAll(
+                () -> assertEquals(2, pressed, "one press of both functions: 0 -> 1 -> 2"),
+                () -> assertEquals(-1, released, "one release of both: 2 -> 1 -> fading"),
+                () -> assertEquals(0, talking, "while talking the keys go to the talk line"));
+        }
+    }
 }

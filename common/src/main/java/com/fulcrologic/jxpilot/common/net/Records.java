@@ -617,6 +617,11 @@ public final class Records {
         public static final int FLAG_FRIENDLY = 2;
         public static final int FLAG_NUCLEAR = 4;
         public static final int FLAG_OWN = 8;
+        /**
+         * {@link #ownerId} of an identified mine nobody owns (C {@code EXPIRED_MINE_ID}, const.h:121, frame.c:873):
+         * C's client labels it "Expired"; NO_ID means the owner is not identified.
+         */
+        public static final int EXPIRED_MINE_ID = 4096;
 
         public static void put(SnapshotWriter w, double x, double y, int flags, int ownerId) {
             w.buffer().putShort((short) w.relX(x)).putShort((short) w.relY(y)).put((byte) flags)
@@ -843,17 +848,36 @@ public final class Records {
         public float y1() { return relY(6); }
     }
 
-    /** Receiver's item counts: 21 x u8 indexed by {@link Item} ordinal. */
+    /**
+     * Receiver's item counts and lose item: {@code 0 21 x u8 counts} (by {@link Item} ordinal), {@code 21 u8 loseItem}
+     * (C {@code pl->lose_item}, the item KEY_LOSE_ITEM drops: C sends it as PKT_LOSEITEM while the selection is
+     * shown; it only changes with that, so it rides along in every record).
+     */
     public static final class SelfItems extends Fly {
-        public static final int SIZE = Item.COUNT;
+        public static final int SIZE = Item.COUNT + 1;
+        /** Offset of loseItem; a record of this size or less (before loseItem existed) reads loseItem 0. */
+        static final int LOSE_ITEM = Item.COUNT;
 
-        /** BEHAVIOR: writes counts[0..20], missing entries as 0, each clamped to 0..255. */
+        /** BEHAVIOR: as {@link #put(SnapshotWriter, int[], int)} with loseItem 0. */
         public static void put(SnapshotWriter w, int[] counts) {
+            put(w, counts, 0);
+        }
+
+        /**
+         * BEHAVIOR: writes counts[0..20], missing entries as 0, each clamped to 0..255, then loseItem clamped to
+         * 0..255.
+         */
+        public static void put(SnapshotWriter w, int[] counts, int loseItem) {
             ByteBuffer out = w.buffer();
-            for (int i = 0; i < SIZE; i++) {
+            for (int i = 0; i < Item.COUNT; i++) {
                 int c = i < counts.length ? counts[i] : 0;
-                out.put((byte) Math.min(255, Math.max(0, c)));
+                out.put((byte) clampU8(c));
             }
+            out.put((byte) clampU8(loseItem));
+        }
+
+        private static int clampU8(int v) {
+            return Math.min(255, Math.max(0, v));
         }
 
         public SelfItems wrap(SnapshotReader r, int i) {
@@ -862,6 +886,9 @@ public final class Records {
         }
 
         public int count(int item) { return u8(item); }
+
+        /** The item KEY_LOSE_ITEM drops ({@link Item} ordinal); 0 from an older record without it. */
+        public int loseItem() { return sz > LOSE_ITEM ? u8(LOSE_ITEM) : 0; }
     }
 
     /** Treasure state. {@code 0 u16 index (WorldMap.treasures()), 2 u8 flags}. */

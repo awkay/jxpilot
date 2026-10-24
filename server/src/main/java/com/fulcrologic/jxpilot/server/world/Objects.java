@@ -91,6 +91,8 @@ public final class Objects {
     private final int[] freeStack;
     private int freeTop;
     private int count;
+    /** Bumped on every alloc and free: lets lookup structures know the live set changed (no allocation). */
+    public int version;
 
     public Objects(int capacity) {
         this.capacity = capacity;
@@ -167,6 +169,7 @@ public final class Objects {
         int h = freeStack[--freeTop];
         slot[h] = count;
         active[count++] = h;
+        version++;
         type[h] = Obj.DEBRIS;
         life[h] = 0;
         return h;
@@ -185,6 +188,7 @@ public final class Objects {
         int h = freeStack[--freeTop];
         slot[h] = count;
         active[count++] = h;
+        version++;
         type[h] = 0;
         status[h] = 0;
         owner[h] = Obj.NO_ID;
@@ -236,6 +240,7 @@ public final class Objects {
         slot[last] = s;
         slot[h] = -1;
         freeStack[freeTop++] = h;
+        version++;
     }
 
     /** True if the handle is live. */

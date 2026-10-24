@@ -1074,7 +1074,7 @@ class DevicesTest {
         }
 
         @Test
-        @DisplayName("without 0.15 fuel units the deflector goes off and pushes nothing")
+        @DisplayName("below 0.15 fuel units (38.4) the deflector goes off and pushes nothing")
         void noFuel() {
             Player p = setup("");
             p.items[it(Item.DEFLECTOR)] = 1;
@@ -1094,13 +1094,22 @@ class DevicesTest {
             p.fuel = 38;
             p.used |= Has.DEFLECTOR;
             d.doDeflector(p);
+            int used38 = p.used;
+            double fuel38 = p.fuel;
+            float vx38 = w.objects.vx[h];
+            p.fuel = 39;
+            p.used |= Has.DEFLECTOR;
+            d.doDeflector(p);
             assertAll(
-                () -> assertEquals(0, usedLow & Has.DEFLECTOR, "37 < 38: the deflector goes off"),
-                () -> assertEquals(-2f, vxLow, "37 < 38: nothing is pushed"),
+                () -> assertEquals(0, usedLow & Has.DEFLECTOR, "37 < 38.4: the deflector goes off"),
+                () -> assertEquals(-2f, vxLow, "37 < 38.4: nothing is pushed"),
                 () -> assertTrue((qHave & Has.DEFLECTOR) != 0, "a deflector not in use is not switched off"),
-                () -> assertTrue((p.used & Has.DEFLECTOR) != 0, "exactly 38: the deflector stays on"),
-                () -> assertEquals(0.0, p.fuel, "exactly 38: it pays all of it"),
-                () -> assertTrue(w.objects.vx[h] > -2f, "exactly 38: the object is pushed"));
+                () -> assertEquals(0, used38 & Has.DEFLECTOR, "38 < 38.4 (C compares the uncast ED_DEFLECTOR): off"),
+                () -> assertEquals(38.0, fuel38, "and it costs nothing"),
+                () -> assertEquals(-2f, vx38, "nor pushes"),
+                () -> assertTrue((p.used & Has.DEFLECTOR) != 0, "39: the deflector stays on"),
+                () -> assertEquals(1.0, p.fuel, "it pays (long)ED_DEFLECTOR = 38"),
+                () -> assertTrue(w.objects.vx[h] > -2f, "39: the object is pushed"));
         }
     }
 

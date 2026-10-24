@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.client.app;
 
 import com.fulcrologic.jxpilot.client.game.hud.Hud;
+import com.fulcrologic.jxpilot.client.game.hud.LoseItemSelection;
 import com.fulcrologic.jxpilot.client.paint.HudPainter;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
@@ -221,5 +222,75 @@ class HudExtrasTest {
             () -> assertEquals(96, HudExtras.direction(0, -1), "south: -32 wraps to 96"),
             () -> assertEquals(1, HudExtras.direction(Math.cos(0.04), Math.sin(0.04)), "0.815 rounds up to 1"),
             () -> assertEquals(0, HudExtras.direction(Math.cos(0.02), Math.sin(0.02)), "0.41 rounds down to 0"));
+    }
+
+    @Nested
+    @DisplayName("loseItem (C painthud.c:558-566)")
+    class LoseItem {
+        static final int MINE = Item.MINE.ordinal();
+        static final int ECM = Item.ECM.ordinal();
+        static final int FUEL = Item.FUEL.ordinal();
+
+        AppFixture with(int loseItem) {
+            int[] c = new int[Item.COUNT];
+            c[MINE] = 3;
+            c[FUEL] = 500;
+            return new AppFixture(true).players().twice(x -> x.self(0, 100, 100, 0, FOE).loseItems(loseItem, c));
+        }
+
+        @Test
+        @DisplayName("outlines the server's lose item iff the selection is on and the item is listed")
+        void listed() {
+            AppFixture f = with(MINE);
+            LoseItemSelection sel = new LoseItemSelection();
+            e.fill(f.game, hud, 800, 600, 1, 100, 100, 0);
+            e.loseItem(sel, 0.1);
+            boolean off = e.loseActive;
+            int item = e.loseItem;
+            sel.press();
+            e.loseItem(sel, 0.1);
+            boolean on = e.loseActive;
+            AppFixture unlisted = with(ECM);
+            e.fill(unlisted.game, hud, 800, 600, 1, 100, 100, 0);
+            e.loseItem(sel, 0.1);
+            boolean notListed = e.loseActive;
+            AppFixture fuel = with(FUEL);
+            e.fill(fuel.game, hud, 800, 600, 1, 100, 100, 0);
+            e.loseItem(sel, 0.1);
+            boolean fuelOff = e.loseActive;
+            assertAll(
+                () -> assertEquals(MINE, item, "loseItem is SELF_ITEMS' loseItem"),
+                () -> assertFalse(off, "selection off: no outline"),
+                () -> assertTrue(on, "selection on and the mines listed: outline"),
+                () -> assertFalse(notListed, "an item with no count shown is not outlined"),
+                () -> assertFalse(fuelOff, "fuel is never listed, so never outlined"));
+        }
+
+        @Test
+        @DisplayName("the fade ages only on frames that outline the item; an inactive HUD outlines nothing")
+        void ageing() {
+            LoseItemSelection sel = new LoseItemSelection();
+            sel.release();
+            e.fill(with(ECM).game, hud, 800, 600, 1, 100, 100, 0);
+            e.loseItem(sel, 5);
+            int unlisted = sel.state();
+            hud.showHud = false;
+            e.fill(with(MINE).game, hud, 800, 600, 1, 100, 100, 0);
+            e.loseItem(sel, 5);
+            boolean hidden = e.loseActive;
+            int hiddenState = sel.state();
+            hud.showHud = true;
+            e.fill(with(MINE).game, hud, 800, 600, 1, 100, 100, 0);
+            e.loseItem(sel, 5);
+            boolean last = e.loseActive;
+            e.loseItem(sel, 0);
+            boolean after = e.loseActive;
+            assertAll(
+                () -> assertEquals(-1, unlisted, "an unlisted item does not age the fade"),
+                () -> assertFalse(hidden, "HUD off: no outline"),
+                () -> assertEquals(-1, hiddenState, "and no ageing"),
+                () -> assertTrue(last, "listed: the fade's last frame outlines"),
+                () -> assertFalse(after, "then the fade is over"));
+        }
     }
 }

@@ -45,6 +45,17 @@ import com.fulcrologic.jxpilot.server.world.World;
  * through the walls ({@link Mover#moveObject}), as C does.
  */
 public final class Lasers {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_CANNON = Texts.of("Cannon");
+    private static final String T_GOT_PARALYSED_BY = Texts.of(" got paralysed by ");
+    private static final String T_GOT_PARALYSED_BY_A_STUN = Texts.of(" got paralysed by a stun laser.");
+    private static final String T_GOT_ROASTED_ALIVE_BY = Texts.of(" got roasted alive by ");
+    private static final String T_GOT_ROASTED_ALIVE_BY_CANNONFIRE = Texts.of(" got roasted alive by cannonfire.");
+    private static final String T_HOW_STRANGE = Texts.of(" How strange!");
+    private static final String T_S_LASER = Texts.of("'s laser.");
+    private static final String T_S_STUN_LASER = Texts.of("'s stun laser.");
+
     /** C {@code PULSE_SPEED}, {@code PULSE_SAMPLE_DISTANCE}, {@code PULSE_LENGTH}. */
     public static final int PULSE_SPEED = 90;
     public static final int PULSE_SAMPLE_DISTANCE = 5;
@@ -423,12 +434,12 @@ public final class Lasers {
             if ((v.used & (Has.SHIELD | Has.LASER | Has.SHOT)) != 0 || (v.status & Obj.THRUSTING) != 0) {
                 StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(v.name);
                 if (pl != null) {
-                    msg.append(" got paralysed by ").append(pl.name).append("'s stun laser.");
+                    msg.append(T_GOT_PARALYSED_BY).append(pl.name).append(T_S_STUN_LASER);
                     if (v.id == pl.id) {
-                        msg.append(" How strange!");
+                        msg.append(T_HOW_STRANGE);
                     }
                 } else {
-                    msg.append(" got paralysed by a stun laser.");
+                    msg.append(T_GOT_PARALYSED_BY_A_STUN);
                 }
                 v.used &= ~(Has.SHIELD | Has.LASER | Has.SHOT);
                 v.status &= ~Obj.THRUSTING;
@@ -447,12 +458,12 @@ public final class Lasers {
                 v.status |= Obj.KILLED;
                 StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(v.name);
                 if (pl != null) {
-                    msg.append(" got roasted alive by ").append(pl.name).append("'s laser.");
+                    msg.append(T_GOT_ROASTED_ALIVE_BY).append(pl.name).append(T_S_LASER);
                     if (v.id == pl.id) {
                         w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, Obj.NO_ID, v.id, 0f);
                         double sc = Scoring.rate(0, pl.score) * w.items.laserKillScoreMult * w.params.selfKillScoreMult;
                         sim.scoring.score(v, -sc, v.bx, v.by, v.name);
-                        msg.append(" How strange!");
+                        msg.append(T_HOW_STRANGE);
                     } else {
                         w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, pl.id, v.id, 0f);
                         double sc = Scoring.rate(pl.score, v.score) * w.items.laserKillScoreMult;
@@ -461,11 +472,11 @@ public final class Lasers {
                 } else {
                     w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, Obj.NO_ID, v.id, 0f);
                     double sc = Scoring.rate(Scoring.CANNON_SCORE, v.score) / 4;
-                    sim.scoring.score(v, -sc, v.bx, v.by, "Cannon");
+                    sim.scoring.score(v, -sc, v.bx, v.by, T_CANNON);
                     if (w.params.teamPlay && v.team != p.team[i]) {
                         sim.scoring.teamScore(p.team[i], sc);
                     }
-                    msg.append(" got roasted alive by cannonfire.");
+                    msg.append(T_GOT_ROASTED_ALIVE_BY_CANNONFIRE);
                 }
                 Sounds.play(w, v.px, v.py, SoundEvent.PLAYER_ROASTED);
                 if (pl != null && pl.id != v.id) {

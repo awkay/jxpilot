@@ -37,6 +37,7 @@ import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder;
 import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
+import com.fulcrologic.jxpilot.server.world.ModifierBanks;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -96,6 +97,8 @@ public final class SimGameHost implements GameHost {
     /** SETTINGS that arrived before the spawn, applied at the spawn. */
     private final boolean[] pendingSettings = new boolean[IDS];
     private final float[][] settings = new float[IDS][6];
+    /** MODIFIER_BANKs that arrived before the spawn (parsed, {@code Mods}), put in place at the spawn. */
+    private final int[][] pendingBanks = new int[IDS][Player.BANKS];
 
     // ---- per sim slot
     private final long[] keysBySlot;
@@ -125,6 +128,7 @@ public final class SimGameHost implements GameHost {
     private final Msg.Seek seek = new Msg.Seek();
     private final Msg.Settings settingsMsg = new Msg.Settings();
     private final Msg.Display displayMsg = new Msg.Display();
+    private final Msg.ModifierBank bankMsg = new Msg.ModifierBank();
     private final StringBuilder nameBuf = new StringBuilder(Const.MAX_CHARS);
 
     /**
@@ -212,6 +216,7 @@ public final class SimGameHost implements GameHost {
         spawnTeam[id] = t;
         queued[id] = 0;
         pendingSettings[id] = false;
+        java.util.Arrays.fill(pendingBanks[id], 0);
         pl.viewWidth = Msg.Display.DEF_VIEW_SIZE;
         pl.viewHeight = Msg.Display.DEF_VIEW_SIZE;
         keysBySlot[pl.slot] = 0;
@@ -384,6 +389,10 @@ public final class SimGameHost implements GameHost {
      * BEHAVIOR: DISPLAY, before or after READY, sets the player's view size, each axis limited to
      * [MIN_VIEW_SIZE 384, MAX_VIEW_SIZE 1024] (C {@code Receive_display}); it applies from the next snapshot
      * and HUD lock test.
+     * BEHAVIOR: MODIFIER_BANK is parsed as C {@code Receive_modifier_bank} ({@link ModifierBanks}) with the rules
+     * at arrival: in play into the player's bank; before READY kept and put in place by the spawn (C receives the
+     * banks after Init_player has cleared them, so they are there when the player plays). A bank above 3 or an
+     * over-long text is ignored.
      * BEHAVIOR: CHANGE_TEAM, SHAPE, unknown types and messages of unbound ids are ignored.
      */
     @Override
@@ -420,6 +429,7 @@ public final class SimGameHost implements GameHost {
                 p.viewWidth = limitView(displayMsg.viewWidth);
                 p.viewHeight = limitView(displayMsg.viewHeight);
             }
+            case ReliableType.MODIFIER_BANK -> modifierBank(p, payload);
             default -> { } // CHANGE_TEAM and SHAPE are not supported; newer types are ignored
         }
     }
@@ -433,9 +443,25 @@ public final class SimGameHost implements GameHost {
             return;
         }
         keysBySlot[p.slot] = 0;
+        System.arraycopy(pendingBanks[p.id], 0, p.modBank, 0, Player.BANKS);
         if (pendingSettings[p.id]) {
             pendingSettings[p.id] = false;
             applySettings(p);
+        }
+    }
+
+    private void modifierBank(Player p, ByteBuffer payload) {
+        bankMsg.read(payload);
+        if (!ModifierBanks.accepted(bankMsg.bank, bankMsg.text)) {
+            return;
+        }
+        var ip = w.items;
+        int m = ModifierBanks.parse(bankMsg.text, ip.allowModifiers, ip.allowNukes, ip.allowClusters,
+            ip.allowLaserModifiers);
+        if (p.spawned) {
+            p.modBank[bankMsg.bank] = m;
+        } else {
+            pendingBanks[p.id][bankMsg.bank] = m;
         }
     }
 

@@ -108,6 +108,12 @@ public final class NativeGameConnection implements GameConnection {
         return true;
     }
 
+    /** BEHAVIOR: stores the banks in the connection, which sends them before READY on every join. */
+    @Override
+    public void setModifierBanks(String[] banks) {
+        System.arraycopy(banks, 0, conn.modifierBanks, 0, Msg.ModifierBank.BANKS);
+    }
+
     static void copy(Msg.Settings from, Msg.Settings to) {
         to.power = from.power;
         to.turnSpeed = from.turnSpeed;

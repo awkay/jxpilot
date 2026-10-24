@@ -46,6 +46,25 @@ import com.fulcrologic.jxpilot.server.world.World;
  * The simulation skips collisions entirely during the round delay (collision.c:250).
  */
 public final class Collisions {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_AND = Texts.of(" and ");
+    private static final String T_ATE = Texts.of(" ate ");
+    private static final String T_A_SHOT = Texts.of("a shot");
+    private static final String T_CANNON = Texts.of("Cannon");
+    private static final String T_CLUSTER_DEBRIS = Texts.of("cluster debris");
+    private static final String T_CLUSTER_FLAK = Texts.of("cluster flak");
+    private static final String T_CRASHED = Texts.of(" crashed.");
+    private static final String T_EXPLOSION = Texts.of("[Explosion]");
+    private static final String T_FROM = Texts.of(" from ");
+    private static final String T_HOW_STRANGE = Texts.of(".  How strange!");
+    private static final String T_HOW_STRANGE_2 = Texts.of("  How strange!");
+    private static final String T_LEFT_THE_KNOWN_UNIVERSE = Texts.of(" left the known universe.");
+    private static final String T_RAN_OVER = Texts.of(" ran over ");
+    private static final String T_SUCCUMBED_TO_AN_EXPLOSION = Texts.of(" succumbed to an explosion");
+    private static final String T_WAS_HIT_BY_CANNONFIRE = Texts.of(" was hit by cannonfire.");
+    private static final String T_WAS_KILLED_BY = Texts.of(" was killed by ");
+
     /** C {@code (long) ED_PL_CRASH}. */
     static final long ED_PL_CRASH = (long) (-100.0 * 256);
     /** C {@code ED_SHOT_HIT}. */
@@ -179,7 +198,7 @@ public final class Collisions {
             }
             if (pl.px < 0 || pl.py < 0 || pl.px >= w.pixelWidth || pl.py >= w.pixelHeight) {
                 pl.status |= Obj.KILLED;
-                w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" left the known universe.");
+                w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(T_LEFT_THE_KNOWN_UNIVERSE);
                 w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, pl.id, Obj.NO_ID, Msg.GameEvent.CRASH_UNIVERSE);
                 sim.scoring.score(pl, -Scoring.rate(Scoring.WALL_SCORE, pl.score), pl.bx, pl.by, pl.name);
                 continue;
@@ -241,8 +260,8 @@ public final class Collisions {
         boolean plDead = (pl.status & Obj.KILLED) != 0;
         boolean oDead = (o.status & Obj.KILLED) != 0;
         if (oDead && plDead) {
-            w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" and ").append(o.name)
-                .append(" crashed.");
+            w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(T_AND).append(o.name)
+                .append(T_CRASHED);
             w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, pl.id, o.id, Msg.GameEvent.CRASH_SHIPS);
             if (!pl.tank && !o.tank) {
                 double sc = Scoring.rate(o.score, pl.score) * p.crashScoreMult;
@@ -281,7 +300,7 @@ public final class Collisions {
      * tankKillScoreMult, a ship's with runoverKillScoreMult.
      */
     private void ranOver(Player winner, Player victim, Params p) {
-        w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(winner.name).append(" ran over ")
+        w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(winner.name).append(T_RAN_OVER)
             .append(victim.name).append('.');
         Sounds.play(w, victim.px, victim.py, SoundEvent.PLAYER_RAN_OVER_PLAYER);
         winner.kills++;
@@ -477,12 +496,12 @@ public final class Collisions {
         }
         pl.status |= Obj.KILLED;
         StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name)
-            .append(" succumbed to an explosion");
+            .append(T_SUCCUMBED_TO_AN_EXPLOSION);
         Player killer = w.byId(o.owner[h]);
         if (killer != null) {
-            msg.append(" from ").append(killer.name);
+            msg.append(T_FROM).append(killer.name);
             if (killer == pl) {
-                msg.append(".  How strange!");
+                msg.append(T_HOW_STRANGE);
             } else {
                 msg.append('.');
             }
@@ -492,7 +511,7 @@ public final class Collisions {
         if (killer == null || killer == pl) {
             w.events.kill(Obj.NO_ID, pl.id, 0f, Events.KILL_EXPLOSION);
             sim.scoring.score(pl, -Scoring.rate(0, pl.score) * p.explosionKillScoreMult * p.selfKillScoreMult,
-                pl.bx, pl.by, killer == null ? "[Explosion]" : pl.name);
+                pl.bx, pl.by, killer == null ? T_EXPLOSION : pl.name);
         } else {
             killer.kills++;
             double sc = Scoring.rate(killer.score, pl.score) * p.explosionKillScoreMult;
@@ -531,10 +550,10 @@ public final class Collisions {
             }
             if (missile) {
                 Player killer = o.owner[h] != Obj.NO_ID ? w.byId(o.owner[h]) : null;
-                StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" ate ");
+                StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(T_ATE);
                 ShotNames.append(msg, type, o.status[h], o.mods[h], true);
                 if (killer != null) {
-                    msg.append(" from ").append(killer.name);
+                    msg.append(T_FROM).append(killer.name);
                 }
                 msg.append('.');
                 long drain = (long) (ED_SMART_SHOT_HIT / ((Mods.mini(o.mods[h]) + 1) * (Mods.power(o.mods[h]) + 1)));
@@ -571,20 +590,20 @@ public final class Collisions {
         boolean fromCannon = (o.status[h] & Obj.FROMCANNON) != 0;
         if (fromCannon) {
             Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_CANNONFIRE);
-            msg.append(" was hit by cannonfire.");
+            msg.append(T_WAS_HIT_BY_CANNONFIRE);
             sc = Scoring.rate(Scoring.CANNON_SCORE, pl.score) / 4;
         } else if (o.owner[h] == Obj.NO_ID || w.byId(o.owner[h]) == null) {
-            msg.append(" was killed by ");
+            msg.append(T_WAS_KILLED_BY);
             ShotNames.append(msg, type, o.status[h], o.mods[h], true).append('.');
             sc = Scoring.rate(0, pl.score) * p.unownedKillScoreMult;
         } else {
             killer = w.byId(o.owner[h]);
-            msg.append(" was killed by ");
-            ShotNames.append(msg, type, o.status[h], o.mods[h], true).append(" from ").append(killer.name)
+            msg.append(T_WAS_KILLED_BY);
+            ShotNames.append(msg, type, o.status[h], o.mods[h], true).append(T_FROM).append(killer.name)
                 .append('.');
             if (killer == pl) {
                 Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_SHOT_THEMSELF);
-                msg.append("  How strange!");
+                msg.append(T_HOW_STRANGE_2);
                 sc = Scoring.rate(0, pl.score) * p.selfKillScoreMult;
             } else {
                 killer.kills++;
@@ -602,7 +621,7 @@ public final class Collisions {
         sc *= factor;
         w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, killer != null ? killer.id : Obj.NO_ID, pl.id, 0f);
         if (fromCannon) {
-            sim.scoring.score(pl, -sc, pl.bx, pl.by, "Cannon");
+            sim.scoring.score(pl, -sc, pl.bx, pl.by, T_CANNON);
             if (p.teamPlay && pl.team != o.team[h]) {
                 sim.scoring.teamScore(o.team[h], sc);
             }
@@ -627,8 +646,8 @@ public final class Collisions {
      */
     static String describe(int type, int mods) {
         if ((mods & Obj.MOD_CLUSTER) == 0) {
-            return "a shot";
+            return T_A_SHOT;
         }
-        return type == Obj.CANNON_SHOT ? "cluster flak" : "cluster debris";
+        return type == Obj.CANNON_SHOT ? T_CLUSTER_FLAK : T_CLUSTER_DEBRIS;
     }
 }

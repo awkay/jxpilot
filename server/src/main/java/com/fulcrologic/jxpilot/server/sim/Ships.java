@@ -49,6 +49,11 @@ import com.fulcrologic.jxpilot.server.world.World;
  * One sim tick is one C frame: every rule is C's per-frame rule, with C's float ({@code DFLOAT}) arithmetic.
  */
 public final class Ships {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_HAS_COMMITTED_SUICIDE = Texts.of(" has committed suicide.");
+    private static final String T_SELF_DESTRUCT = Texts.of("Self-Destruct");
+
     /** C {@code ED_SHIELD} after the {@code (long)} cast in update.c: fuel per frame with shields up. */
     static final long ED_SHIELD = (long) (-0.20 * 256);
     /** C {@code REFUEL_RATE} (fixed point). */
@@ -1011,10 +1016,10 @@ public final class Ships {
         w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, pl.id, pl.id, 0f);
         if (w.params.selfDestructScoreMult != 0) {
             sim.scoring.score(pl, -Scoring.rate(0, pl.score) * w.params.selfDestructScoreMult, pl.bx, pl.by,
-                "Self-Destruct");
+                T_SELF_DESTRUCT);
         }
         pl.status |= Obj.KILLED;
-        w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" has committed suicide.");
+        w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(T_HAS_COMMITTED_SUICIDE);
         sim.items.throwItems(pl);
         kill(pl);
     }

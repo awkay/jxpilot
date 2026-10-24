@@ -61,6 +61,12 @@ public final class ReliableType {
      */
     public static final int DISPLAY = 15;
     /**
+     * {@link Msg.ModifierBank} (client to server, despite the id below 64, like {@link #DISPLAY}): one of the
+     * client's four weapon modifier banks as C's text (C {@code PKT_MODIFIERBANK}, the {@code modifierBank1..4}
+     * resources), sent before READY; the server parses it (C {@code Receive_modifier_bank}) at login or in play.
+     */
+    public static final int MODIFIER_BANK = 14;
+    /**
      * Server to client: a player's ECM reprogrammed a robot to seek someone (C {@code PKT_SEEK},
      * {@code Send_seek}, item.c:1207); body {@link Msg.Seek}.
      */

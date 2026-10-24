@@ -668,6 +668,34 @@ public final class Msg {
         }
     }
 
+    /**
+     * {@link ReliableType#MODIFIER_BANK}: u8 bank (0..3), str8 text (C {@code "%c%c%s"}, PKT_MODIFIERBANK, bank,
+     * {@code modBankStr[bank]}). The text is C's modifier string ("FN C V2 X4 LS"); the server parses it.
+     */
+    public static final class ModifierBank implements Payload {
+        /** C {@code NUM_MODBANKS}. */
+        public static final int BANKS = 4;
+
+        public int bank;
+        public final StringBuilder text = new StringBuilder(com.fulcrologic.jxpilot.common.Const.MAX_CHARS);
+
+        /** BEHAVIOR: u8 bank, then the text with a u8 length (at most 255 chars, see {@link Wire#putString8}). */
+        public void write(ByteBuffer b) {
+            b.put((byte) bank);
+            Wire.putString8(b, text);
+        }
+
+        /** BEHAVIOR: reads the bank (0..255, unchecked) and the whole text. */
+        public void read(ByteBuffer b) {
+            bank = b.get() & 0xFF;
+            Wire.getString8(b, text);
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.MODIFIER_BANK);
+        }
+    }
+
     /** {@link ReliableType#SEEK}: u16 programmerId, u16 robotId, u16 soughtId (C {@code "%c%hd%hd%hd"}). */
     public static final class Seek implements Payload {
         public int programmerId;

@@ -87,11 +87,12 @@ final class ItemSections {
     }
 
     /**
-     * BEHAVIOR: one SELF_ITEMS record with the viewer's item counts (tanks as its tank count).
+     * BEHAVIOR: one SELF_ITEMS record with the viewer's item counts (tanks as its tank count) and its lose item
+     * (C {@code Frame_lose_item_state} sends {@code pl->lose_item} as PKT_LOSEITEM while selecting; here always).
      */
     void writeSelfItems(Player v) {
         if (b.need(Section.SELF_ITEMS, 0)) {
-            Records.SelfItems.put(b.writer(), v.items);
+            Records.SelfItems.put(b.writer(), v.items, v.loseItem);
         }
     }
 
@@ -273,14 +274,18 @@ final class ItemSections {
     }
 
     /**
-     * BEHAVIOR: the identified controller's id ({@link Protocol#NO_ID} when unknown, unowned or confused; a
+     * BEHAVIOR: the identified controller's id ({@link Protocol#NO_ID} when not identified or confused; an
+     * identified mine nobody owns is {@code EXPIRED_MINE_ID}, C frame.c:873; a
      * confused mine of a paused controller still shows it, C frame.c:877-889 resets the id only outside the
      * paused branch).
      */
     int mineId(int h, Player v) {
         Objects o = w.objects;
-        if (!identified(h, v) || o.owner[h] == Obj.NO_ID) {
+        if (!identified(h, v)) {
             return Protocol.NO_ID;
+        }
+        if (o.owner[h] == Obj.NO_ID) {
+            return Records.Mine.EXPIRED_MINE_ID;
         }
         Player owner = w.byId(o.owner[h]);
         if ((o.status[h] & Obj.CONFUSED) != 0 && (owner == null || (owner.status & Obj.PAUSE) == 0)) {

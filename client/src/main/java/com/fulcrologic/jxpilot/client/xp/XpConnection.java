@@ -85,6 +85,8 @@ public final class XpConnection implements GameConnection {
         public double sparkProb = 0.5;
         /** Ask for PKT_AUDIO (C {@code Send_audio_request(1)} in a client built with sound). */
         public boolean audio;
+        /** C {@code modBankStr}: the modifier banks sent with every play request (PKT_MODIFIERBANK). */
+        public final String[] modifierBanks = {"", "", "", ""};
     }
 
     /** Internal steps of the handshake. */
@@ -450,6 +452,12 @@ public final class XpConnection implements GameConnection {
         return true;
     }
 
+    /** BEHAVIOR: the banks become the login's, sent with every play request (C sends them only at login). */
+    @Override
+    public void setModifierBanks(String[] banks) {
+        System.arraycopy(banks, 0, login.modifierBanks, 0, login.modifierBanks.length);
+    }
+
     private void writeSettings(Msg.Settings st) {
         power(XpProto.PKT_POWER, st.power);
         power(XpProto.PKT_POWER_S, st.altPower);
@@ -594,8 +602,9 @@ public final class XpConnection implements GameConnection {
 
     /**
      * C {@code Net_start}: shape (first {@value #SHAPE_TRIES} tries), PKT_PLAY, the six power
-     * settings (value * 256), PKT_DISPLAY, PKT_REQUEST_AUDIO (on iff {@link Login#audio}) and PKT_ASYNC_FPS
-     * (the server rate).
+     * settings (value * 256), PKT_DISPLAY, the four PKT_MODIFIERBANK (C {@code Client_power}'s
+     * {@code Send_modifier_bank}: {@code %c%c%s} bank, text), PKT_REQUEST_AUDIO (on iff {@link Login#audio}) and
+     * PKT_ASYNC_FPS (the server rate).
      */
     private void sendPlay() {
         tries++;
@@ -616,6 +625,11 @@ public final class XpConnection implements GameConnection {
         XpWriter.s16(tx, clampView(login.viewHeight));
         XpWriter.u8(tx, login.debrisColors);
         XpWriter.u8(tx, (int) Math.round(Math.max(0, Math.min(1, login.sparkProb)) * XpProto.MAX_SPARK_RAND));
+        for (int i = 0; i < login.modifierBanks.length; i++) {
+            XpWriter.u8(tx, XpProto.PKT_MODIFIERBANK);
+            XpWriter.u8(tx, i);
+            XpWriter.string(tx, login.modifierBanks[i], XpProto.MAX_CHARS);
+        }
         XpWriter.u8(tx, XpProto.PKT_REQUEST_AUDIO);
         XpWriter.u8(tx, login.audio ? 1 : 0);
         XpWriter.u8(tx, XpProto.PKT_ASYNC_FPS);

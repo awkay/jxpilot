@@ -118,6 +118,8 @@ public final class Simulation {
         Items.warmSwitches();
         Devices.warmSwitches();
         ShotNames.warm();
+        com.fulcrologic.jxpilot.server.robot.DefaultRobot.warmSwitches();
+        com.fulcrologic.jxpilot.common.math.ThrustSparks.wirePos(0f);
     }
 
     /**

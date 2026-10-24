@@ -30,6 +30,7 @@ import com.fulcrologic.jxpilot.client.game.ClientWorld;
 import com.fulcrologic.jxpilot.client.game.Players;
 import com.fulcrologic.jxpilot.client.game.ScoreObjects;
 import com.fulcrologic.jxpilot.client.game.hud.Hud;
+import com.fulcrologic.jxpilot.client.game.hud.LoseItemSelection;
 import com.fulcrologic.jxpilot.client.paint.HudPainter;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
@@ -74,6 +75,10 @@ public final class HudExtras {
     public boolean autopilot;
     /** Seconds of game time left, -1 when the server never said ({@link ClientWorld#timeLeft()}). */
     public int timeLeft = -1;
+    /** C {@code lose_item}: the {@link Item} (ordinal) KEY_LOSE_ITEM drops ({@link ClientWorld#selfLoseItem}). */
+    public int loseItem;
+    /** C {@code lose_item_active != 0} on this painted frame: outline {@link #loseItem} ({@link #loseItem(LoseItemSelection, double)}). */
+    public boolean loseActive;
     /** C {@code mods}: the own weapon modifiers as the C HUD string ({@link Modifiers#format}). */
     public final CharBuf mods = new CharBuf(32);
 
@@ -109,9 +114,11 @@ public final class HudExtras {
         active = w.hasSelf() && hud.showHud;
         lock = false;
         autopilot = false;
+        loseActive = false;
         if (!active) {
             return;
         }
+        loseItem = w.selfLoseItem();
         hx = hud.hudX(uw, w.selfVx());
         hy = hud.hudY(uh, w.selfVy());
         autopilot = (w.selfFlags() & Records.ShipFlags.AUTOPILOT) != 0;
@@ -154,6 +161,20 @@ public final class HudExtras {
                 break;
             }
         }
+    }
+
+    /**
+     * C {@code painthud.c}:558-566, after {@link #fill}: whether this painted frame outlines the lose item.
+     * <p>
+     * BEHAVIOR: loseActive iff the HUD is active, the lose item is listed (a count is shown; fuel never is) and
+     * {@link LoseItemSelection#paint} draws; the selection is aged by {@code dt} only on such frames (C counts
+     * the fade only while it paints the lose item).
+     *
+     * @param dt seconds since the last painted frame
+     */
+    public void loseItem(LoseItemSelection sel, double dt) {
+        loseActive = active && loseItem >= 0 && loseItem < Item.COUNT && loseItem != Item.FUEL.ordinal()
+            && itemCounts[loseItem] >= 0 && sel.paint(dt);
     }
 
     /** BEHAVIOR: RES (128 per turn) direction of (dx, dy), rounded, in 0..127. */

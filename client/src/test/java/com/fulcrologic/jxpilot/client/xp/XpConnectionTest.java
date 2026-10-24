@@ -161,6 +161,20 @@ class XpConnectionTest {
         }
 
         @Test
+        @DisplayName("the modifier banks go with every play request after PKT_DISPLAY (C Client_power's Send_modifier_bank)")
+        void modifierBanks() {
+            conn.setModifierBanks(new String[] {"FN C", "", "X4 LS", "x".repeat(100)});
+            play();
+            int display = server.loginPackets.indexOf("display 1024x1024 colors=0 spark=64");
+            assertAll(
+                () -> assertEquals(List.of("modbank 0=FN C", "modbank 1=", "modbank 2=X4 LS", "modbank 3=" + "x".repeat(79)),
+                    server.loginPackets.subList(display + 1, display + 5),
+                    "banks 0..3 in order right after PKT_DISPLAY, a long text cut to MAX_CHARS - 1"),
+                () -> assertEquals("FN C", login.modifierBanks[0], "remembered in the login for later joins"),
+                () -> assertEquals(List.of(), server.violations, "nothing the C server would reject"));
+        }
+
+        @Test
         void fullHandshakeReachesPlaying() {
             play();
             assertAll(
@@ -180,8 +194,9 @@ class XpConnectionTest {
                 () -> assertTrue(server.contact.closed, "contact socket closed after the verify"),
                 () -> assertEquals(0x1234ABCD, conn.magic(), "connection magic"),
                 () -> assertEquals(List.of("shape", "play", "power34=11520", "power35=8960", "power36=8960",
-                    "power37=6400", "power38=30", "power39=30", "display 1024x1024 colors=0 spark=64", "audio 0",
-                    "fps 12"), server.loginPackets, "C Net_start bundle: values * 256, display, audio off, fps"),
+                    "power37=6400", "power38=30", "power39=30", "display 1024x1024 colors=0 spark=64", "modbank 0=",
+                    "modbank 1=", "modbank 2=", "modbank 3=", "audio 0", "fps 12"), server.loginPackets,
+                    "C Net_start bundle: values * 256, display, the 4 (empty) modifier banks, audio off, fps"),
                 () -> assertEquals(1, server.plays, "one play request"),
                 () -> assertEquals(List.of(1), server.keyboardChanges, "keyboard announced once (Net_key_change)"),
                 () -> assertEquals(List.of(), server.violations, "nothing the C server would reject"),

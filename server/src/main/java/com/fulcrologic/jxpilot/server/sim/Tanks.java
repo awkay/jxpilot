@@ -35,6 +35,10 @@ import com.fulcrologic.jxpilot.server.world.World;
  * (event.c) and the tank macros of {@code src/server/serverconst.h}. Fuel is C fixed point (256 per unit).
  */
 public final class Tanks {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_S_TANK = Texts.of("'s tank");
+
     /** C {@code MAX_PLAYER_FUEL}. */
     static final double MAX_PLAYER_FUEL = 2600 * 256;
     /** C {@code TANK_REFILL_LIMIT} = MIN_PLAYER_FUEL / 8. */
@@ -299,7 +303,7 @@ public final class Tanks {
         dummy.name.setLength(0);
         dummy.name.append(pl.name);
         int max = com.fulcrologic.jxpilot.common.Const.MAX_CHARS - 1;
-        CharSequence suffix = "'s tank";
+        CharSequence suffix = T_S_TANK;
         for (int i = 0; i < suffix.length() && dummy.name.length() < max; i++) {
             dummy.name.append(suffix.charAt(i));
         }

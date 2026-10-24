@@ -143,7 +143,9 @@ Client → server:
 | 68 | SHAPE | str16 shape |
 | 15 | DISPLAY | u16 viewWidth, u16 viewHeight: the world area the client shows, in world pixels (C PKT_DISPLAY's `view_width`/`view_height`: window size times scaleFactor). Sent before READY on every join and again whenever it changes (resize, scale swap). The server limits each axis to 384..1024 (C `Receive_display`, MIN/MAX_VIEW_SIZE) and uses it for the HUD lock's in-view test and for culling the receiver's snapshots; until it arrives the view is 768 x 768 (DEF_VIEW_SIZE) |
 
-DISPLAY is a client → server message although its id is below 64; ids 13 (SEEK) and 14 (MODIFIER_BANK) are taken too.
+| 14 | MODIFIER_BANK | u8 bank (0..3), str8 text: one of the client's weapon modifier banks as C text (the `modifierBank1..4` resources, e.g. `FN C V2 X4 LS`; C PKT_MODIFIERBANK). The client sends all four before READY on every join (C sends them once at login, after PKT_DISPLAY). The server parses the text as C `Receive_modifier_bank` into the player's bank, before READY (kept for the spawn) or in play: nothing without allowModifiers; `N` nuclear and `FN` full nuclear need allowNukes, `C` cluster allowClusters, `LS`/`LB` stun/blind laser allowLaserModifiers (the char after `L` is always consumed); `I` implosion, `V#` velocity 0..3, `X#` mini 2..4 (stored 1..3), `Z#` spread 0..3, `B#` power 0..3 (a number out of range is the minimum); other chars are skipped, case is ignored, the text ends at a NUL. A bank above 3 is ignored; a text of 80 chars or more (C MAX_CHARS string overflow) is dropped |
+
+DISPLAY and MODIFIER_BANK are client → server messages although their ids are below 64 (13 is SEEK).
 
 ## INPUT — `InputHistory` (client) / `InputReader` (server)
 
@@ -212,7 +214,7 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 | 16 | ECM | 6 | rel x, rel y, u16 radius |
 | 17 | CONNECTOR | 9 | rel x0, y0, x1, y1, u8 kind (0 ball, 1 tractor, 2 pressor, 3 refuel: station to ship, 4 repair: ship to target) |
 | 18 | TRANSPORTER | 8 | rel x0, y0, x1, y1 |
-| 19 | SELF_ITEMS | 21 | u8 count per `Item` |
+| 19 | SELF_ITEMS | 22 | u8 count per `Item` (21), u8 loseItem (the `Item` KEY_LOSE_ITEM drops, C `pl->lose_item` / PKT_LOSEITEM). loseItem was appended; an older 21-byte record reads 0 |
 | 20 | TREASURE | 3 | u16 index, u8 flags (has ball) |
 | 21 | TEMP_WORMHOLE | 5 | u16 bx, u16 by, u8 type |
 | 22 | TIMERS | 26 | u16 damaged (frames of ECM damage left), u16 roundDelay (frames, 0 none), i32 timeLeft (seconds, -1 none), u16 destruct (self-destruct frames left, 0 none), u16 thrustLeft, thrustMax, shieldLeft, shieldMax, phasingLeft, phasingMax (C meters; max 0 = no meter), i16 shutdownCount (-1 none), u16 shutdownDelay — the receiver's HUD timers. Fields from destruct on were appended; an older 8-byte record reads as none |
@@ -226,7 +228,9 @@ M1 uses 1-8; 9-22 are defined for M2; 37 is SOUND. Item sections as the server f
   autopilot light (`showautopilot`: blinking 4 of 8 frames, steady once a hover pause has run out).
 - TIMERS: sent every snapshot; the emergency thrust, emergency shield and phasing meters while each is in use, the
   self-destruct countdown while self-destructing.
-- SELF_ITEMS: one record per snapshot with the receiver's item counts (TANK = its tank count).
+- SELF_ITEMS: one record per snapshot with the receiver's item counts (TANK = its tank count) and its lose item (C sends
+  PKT_LOSEITEM only while the selection is shown; the value only changes with KEY_SELECT_ITEM, so every record carries
+  it and the client draws the selection box itself from its own SELECT_ITEM / LOSE_ITEM key presses, C xevent.c).
 - ITEM: floating items in view; a random item (`randomItemProb`) shows a random kind each snapshot.
 - MINE: flags ARMED (no longer owner-immune), FRIENDLY (C `laid_by_team`: the controller is paused, team-immune with
   the receiver, or it is the receiver's own fused mine; random for a confused identified mine), NUCLEAR, OWN (the
