@@ -135,7 +135,9 @@ public final class GameApp {
     private WorldMap map;
     private int mapVersion;
     private int radarHeight;
-    private long targetsKey = -1;
+    private final TargetWatch targets = new TargetWatch();
+    private final java.util.function.IntPredicate targetAlive = this::targetAlive;
+    private int[] radarPixels = new int[0];
 
     /**
      * @param label  server label for the window title
@@ -207,15 +209,18 @@ public final class GameApp {
         });
     }
 
-    /** Shortest frame with vsync on: when the window is hidden macOS stops blocking in swap. */
-    static final long MIN_FRAME_NANOS = 1_000_000_000L / 250;
+    private final FramePacer pacer = new FramePacer();
 
     private void loop() throws IOException {
         int n = 0;
         long prevFrame = 0;
+        long swapNanos = FramePacer.FAST_SWAP_NANOS;
         while (!window.shouldClose()) {
-            long early = prevFrame + MIN_FRAME_NANOS - System.nanoTime();
-            if (opts.vsync() && early > 0) {
+            long h = window.handle();
+            boolean hidden = glfwGetWindowAttrib(h, GLFW_ICONIFIED) == GLFW_TRUE
+                || glfwGetWindowAttrib(h, GLFW_VISIBLE) == GLFW_FALSE;
+            long early = prevFrame + pacer.minFrameNanos(opts.vsync(), hidden, swapNanos) - System.nanoTime();
+            if (early > 0) {
                 java.util.concurrent.locks.LockSupport.parkNanos(early);
             }
             long now = System.nanoTime();
@@ -255,7 +260,9 @@ public final class GameApp {
                 Screenshot.save(shot, window.framebufferWidth(), window.framebufferHeight());
                 System.out.println("screenshot " + shot + " frame " + n + ": " + conn.status());
             }
+            long beforeSwap = System.nanoTime();
             window.swap();
+            swapNanos = System.nanoTime() - beforeSwap;
             n++;
             if (last || script != null && script.done(n - 1)) {
                 break;
@@ -323,11 +330,36 @@ public final class GameApp {
         dyn.clear();
         SceneData scene = frame.scene();
         if (scenePainter.damagedFlash(dyn, cam, scene)) {
+            // C paint.c: an ECM-damaged view is only the flash, but the side panel is still drawn (R11)
             gl.setPointScale(0);
             gl.flush(dyn);
             dyn.clear();
-            return;
+        } else {
+            drawView(scene);
         }
+
+        // ---- panel: radar and score list
+        glViewport(0, 0, panelFb, fbH);
+        gl.setView(panelFb, fbH, ratio);
+        xf[0] = 2f / panelFb;
+        xf[1] = 2f / fbH;
+        xf[2] = -1;
+        xf[3] = -1;
+        gl.setTransform(xf);
+        panelScreen.set(fbH, ratio);
+        if (map != null) {
+            radar(ratio, fbH, scene.loops);
+        }
+        hudList.setScale(1);
+        hudList.paint(dyn, panelScreen, panelList);
+        gl.flush(dyn);
+        dyn.clear();
+    }
+
+    /** The game view: map, symbols, scene, HUD, key help (everything but an ECM flash). */
+    private void drawView(SceneData scene) {
+        int fbH = window.framebufferHeight();
+        double ratio = window.pixelRatio();
         viewScreen.set(fbH, ratio);
         if (map != null) {
             gl.setPointScale(zoom);
@@ -353,22 +385,6 @@ public final class GameApp {
         gl.flush(dyn);
         dyn.clear();
 
-        // ---- panel: radar and score list
-        glViewport(0, 0, panelFb, fbH);
-        gl.setView(panelFb, fbH, ratio);
-        xf[0] = 2f / panelFb;
-        xf[1] = 2f / fbH;
-        xf[2] = -1;
-        xf[3] = -1;
-        gl.setTransform(xf);
-        panelScreen.set(fbH, ratio);
-        if (map != null) {
-            radar(ratio, fbH, scene.loops);
-        }
-        hudList.setScale(1);
-        hudList.paint(dyn, panelScreen, panelList);
-        gl.flush(dyn);
-        dyn.clear();
     }
 
     /** The view HUD: the draw list and the directly painted parts; {@code arcs}: only C's Arc_add parts. */
@@ -439,9 +455,12 @@ public final class GameApp {
         gl.delete(mesh);
         mesh = null;
         map = m;
-        targetsKey = -1;
         if (m == null) {
             return;
+        }
+        targets.reset(m.targets().size());
+        if (radarPixels.length < RadarImage.WIDTH * RadarImage.height(m)) {
+            radarPixels = new int[RadarImage.WIDTH * RadarImage.height(m)];
         }
         mesh = gl.upload(StaticMap.build(m, palette, false, true));
         symbols = new MapSymbols(m, palette);
@@ -450,22 +469,16 @@ public final class GameApp {
         window.setTitle("JXPilot - " + (m.name() != null ? m.name() : "untitled map") + " - " + label);
     }
 
+    private boolean targetAlive(int i) {
+        return frame.mapState().targetAlive(i);
+    }
+
     /** Rebuild the radar picture when the set of destroyed targets changes (C redraws it then). */
     private void updateRadarPicture() {
-        if (map == null) {
+        if (map == null || !targets.changed(frame.mapState())) {
             return;
         }
-        long key = 0;
-        int n = Math.min(64, map.targets().size());
-        for (int i = 0; i < n; i++) {
-            if (!frame.mapState().targetAlive(i)) {
-                key |= 1L << i;
-            }
-        }
-        if (key != targetsKey) {
-            targetsKey = key;
-            atlas.setRadar(RadarImage.build(map, palette, true, i -> frame.mapState().targetAlive(i)), radarHeight);
-        }
+        atlas.setRadar(RadarImage.build(map, palette, true, targetAlive, radarPixels), radarHeight);
     }
 
     private void dispose() {

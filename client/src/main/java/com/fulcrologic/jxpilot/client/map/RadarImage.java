@@ -90,9 +90,18 @@ public final class RadarImage {
      * BEHAVIOR: the walk as {@link Walker}, then each live target's block painted by {@link #block}.
      */
     public static int[] build(WorldMap m, Palette p, boolean showDecor, IntPredicate targetAlive) {
+        return build(m, p, showDecor, targetAlive, new int[WIDTH * height(m)]);
+    }
+
+    /**
+     * As {@link #build(WorldMap, Palette, boolean, IntPredicate)} into {@code px} (R14: a rebuild on a target
+     * change allocates no pixel array).
+     * <p>
+     * BEHAVIOR: {@code px} must hold at least {@code WIDTH * height(m)} entries; it is returned.
+     */
+    public static int[] build(WorldMap m, Palette p, boolean showDecor, IntPredicate targetAlive, int[] px) {
         int h = height(m);
-        int[] px = new int[WIDTH * h];
-        java.util.Arrays.fill(px, p.color(Palette.BLACK));
+        java.util.Arrays.fill(px, 0, WIDTH * h, p.color(Palette.BLACK));
         Walker w = new Walker(px, h, p);
         if (m.width() >= WIDTH) {
             float xs = (float) (WIDTH - 1) / (m.width() - 1);
