@@ -313,10 +313,10 @@ public final class SceneFiller {
         ParticlePool pp = w.particles();
         float ff = w.frameFraction();
         double rt = w.renderTick();
-        double now = w.serverTickNow();
+        double own = w.hasSelf() ? w.selfDrawnTick() : rt;
         for (int i = 0; i < pp.count(); i++) {
             if (pp.visible(i)) {
-                double tick = pp.own(i) ? now : rt;
+                double tick = pp.own(i) ? own : rt;
                 out.addParticle(pp.x(i), pp.y(i), particleColor(pp.life(i), pp.birth(i), tick, ff, pp.color(i)));
             }
         }

@@ -280,10 +280,13 @@ class ClientWorldTrackingTest {
             f.begin(100).self(7, 0, 100, 50, 4, 8, 1.5f).ingestAtTick(100);
             f.begin(102).self(7, 0, 104, 54, 6, 12, 1.5f).ingestAtTick(102);
             f.world.update(at(104.7));
+            // predicted 2.7 ticks = 0.675 frames past tick 102 with a = (6-4)/0.5 = 4 px/frame^2 in x and
+            // (12-8)/0.5 = 8, clamped to MAX_SELF_ACCEL = 4, in y
             assertAll(
-                () -> assertEquals(5.5f, f.world.selfVx(), 1e-5f, "three quarters of 4 -> 6"),
-                () -> assertEquals(11f, f.world.selfVy(), 1e-5f, "three quarters of 8 -> 12"),
-                () -> assertEquals(53f, f.world.selfY(), 1e-3f, "three quarters of 50 -> 54"));
+                () -> assertEquals(8.7f, f.world.selfVx(), 1e-5f, "6 + 4 * 0.675"),
+                () -> assertEquals(14.7f, f.world.selfVy(), 1e-5f, "12 + 4 (clamped) * 0.675"),
+                () -> assertEquals(54 + 12 * 0.675 + 2 * 0.675 * 0.675, f.world.selfY(), 1e-3,
+                    "54 + 12 * 0.675 + 4 * 0.675^2 / 2"));
         }
     }
 }

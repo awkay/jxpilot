@@ -52,6 +52,8 @@ public final class TickClock {
     public static final int BACKWARD_RESYNC_SAMPLES = 4;
     /** Largest change of the shown offset per tick of local time (a 3% rate change). */
     public static final double SLEW = 0.03;
+    /** Time constant (ticks) of the shown offset's approach to the smoothed offset, below the SLEW cap. */
+    public static final double SLEW_TICKS = 2;
 
     private double simHz = 60;
     private boolean synced;
@@ -125,8 +127,9 @@ public final class TickClock {
      * Estimated server tick (fractional) at {@code nowNanos}; call it once per rendered frame.
      * <p>
      * BEHAVIOR: 0 before the first sample. After the first sample or a resync the estimate is exactly
-     * {@code local ticks + offset}; otherwise the offset it uses moves toward the smoothed offset by at most
-     * {@link #SLEW} times the local ticks elapsed since the previous call (none when time went backwards).
+     * {@code local ticks + offset}; otherwise the offset it uses moves toward the smoothed offset by
+     * (gap * elapsed / {@link #SLEW_TICKS}), at most {@link #SLEW} times the local ticks elapsed since the
+     * previous call (none when time went backwards).
      */
     public double serverTick(long nowNanos) {
         if (!synced) {
@@ -137,8 +140,12 @@ public final class TickClock {
             shown = offset;
             jump = false;
         } else {
-            double max = Math.max(0, local - lastLocal) * SLEW;
-            shown += Math.max(-max, Math.min(max, offset - shown));
+            double elapsed = Math.max(0, local - lastLocal);
+            double max = elapsed * SLEW;
+            // approach the offset exponentially (time constant SLEW_TICKS), never faster than SLEW: a bang-bang
+            // step of +-SLEW every frame near the target would make the apparent speed chatter by 2 * SLEW
+            double step = (offset - shown) * Math.min(1, elapsed / SLEW_TICKS);
+            shown += Math.max(-max, Math.min(max, step));
         }
         lastLocal = local;
         return local + shown;
