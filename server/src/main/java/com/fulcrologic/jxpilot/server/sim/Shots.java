@@ -183,6 +183,7 @@ public final class Shots {
             }
             case Obj.CANNON_SHOT -> explode(h);
             case Obj.BALL -> ballTreasure = sim.balls.deleting(h);
+            case Obj.ASTEROID -> sim.asteroids.broken(h);
             default -> { }
         }
         o.free(h);

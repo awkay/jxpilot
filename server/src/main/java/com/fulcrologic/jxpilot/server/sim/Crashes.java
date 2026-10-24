@@ -255,6 +255,8 @@ public final class Crashes {
         sim.debris.make(x, y, 0f, 0f, Obj.NO_ID, c.team(), Obj.DEBRIS, 4.5f, Obj.GRAVITY, Records.ObjColor.RED,
             Records.BurstKind.DEBRIS, 6, 20, 40, (int) (c.dir() - (Const.RES * 0.2)), (int) (c.dir() + (Const.RES * 0.2)),
             20, 50, 8, 68);
+        sim.wreckage.make(x, y, 0f, 0f, Obj.NO_ID, c.team(), 3.5f, 23, 28, Obj.GRAVITY, Records.ObjColor.WHITE, 10,
+            (int) (c.dir() - (Const.RES * 0.2)), (int) (c.dir() + (Const.RES * 0.2)), 10, 25, 8, 68);
         Player pl = w.byId(killerId);
         if (pl == null || w.params.cannonPoints <= 0) {
             return;

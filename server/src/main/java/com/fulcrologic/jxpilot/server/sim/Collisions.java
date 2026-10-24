@@ -341,9 +341,17 @@ public final class Collisions {
                 }
                 continue;
             }
+            if (type == Obj.ASTEROID) {
+                sim.asteroids.playerHit(pl, h);
+                sim.objPhysics.deltaMvElastic(pl, h);
+                if ((pl.status & Obj.KILLED) != 0) {
+                    return;
+                }
+                continue;
+            }
             // C computes hit = (SHIP_SZ + pl_radius >= range) || in_range_acd(..., range): the same test as above
             // (C passes range, not radius), so every object that gets here hits.
-            if (type == Obj.DEBRIS) {
+            if (type == Obj.DEBRIS || type == Obj.WRECKAGE) {
                 debris(pl, h);
                 if ((pl.status & Obj.KILLED) != 0) {
                     return;
@@ -400,7 +408,12 @@ public final class Collisions {
         if (!pl.fullyShielded()) {
             pl.addFuel(-cost);
         }
-        if (pl.fuel != 0) {
+        boolean wreck = o.type[h] == Obj.WRECKAGE && w.modeParams.wreckageCollisionMayKill
+            && (pl.used & Has.SHIELD) == 0;
+        if (pl.fuel != 0 && !(wreck && (pl.have & Has.ARMOR) == 0)) {
+            if (wreck) {
+                sim.ships.hitArmor(pl);
+            }
             return;
         }
         pl.status |= Obj.KILLED;

@@ -210,6 +210,11 @@ public final class Targets {
         return 0;
     }
 
+    /** C {@code mods.power} of an object (0 until the modifiers are ported). */
+    int power(int h) {
+        return 0;
+    }
+
     /** C {@code SHOT_MULT(obj)}: nukeClusterDamage for nuclear cluster shots, else 1 (no nukes yet). */
     float shotMult(int h) {
         return 1.0f;

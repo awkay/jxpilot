@@ -79,6 +79,8 @@ public final class Simulation {
     public final Balls balls;
     public final Targets targets;
     public final Race race;
+    public final Wreckage wreckage;
+    public final Asteroids asteroids;
 
     public Simulation(World world) {
         this.world = world;
@@ -96,6 +98,8 @@ public final class Simulation {
         this.balls = new Balls(world, this);
         this.targets = new Targets(world, this);
         this.race = new Race(world, this);
+        this.wreckage = new Wreckage(world);
+        this.asteroids = new Asteroids(world, this);
         mover.setTreasureHook(balls);
         com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder.initRecordClasses();
         this.robots = new RobotManager(world, this);
@@ -141,6 +145,7 @@ public final class Simulation {
         if (w.roundDelay == 0) {
             collisions.check();
         }
+        asteroids.collide();
         killPlayers();
         expireObjects();
         if (w.gameDuration >= 0 || w.params.maxRoundTime > 0) {
@@ -190,6 +195,8 @@ public final class Simulation {
             int h = o.active[k];
             if (o.type[h] == Obj.BALL && o.owner[h] != Obj.NO_ID) {
                 balls.move(h);
+            } else if (o.type[h] == Obj.WRECKAGE) {
+                wreckage.rotate(h);
             }
             if ((o.status[h] & Obj.GRAVITY) != 0) {
                 int bx = o.px[h] / Const.BLOCK_SZ;
@@ -200,8 +207,11 @@ public final class Simulation {
                 o.vx[h] += o.accX[h];
                 o.vy[h] += o.accY[h];
             }
-            mover.moveObject(h);
+            if (o.type[h] != Obj.ASTEROID) {
+                mover.moveObject(h);
+            }
         }
+        asteroids.update();
     }
 
     /** Wormhole countdowns run down by one frame (update.c:1222-1230). */

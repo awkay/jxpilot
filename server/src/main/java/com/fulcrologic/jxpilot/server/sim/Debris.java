@@ -118,11 +118,12 @@ public final class Debris implements DebrisBurst.Sink {
         }
         float minSp = (float) minSpeed;
         float maxSp = (float) maxSpeed;
+        // C World.hypotenuse is an int: the caps are integer divisions
         if (minSp * maxLife > p.hypotenuse) {
-            minSp = (float) (p.hypotenuse / maxLife);
+            minSp = (int) p.hypotenuse / maxLife;
         }
         if (maxSp * minLife > p.hypotenuse) {
-            maxSp = (float) (p.hypotenuse / minLife);
+            maxSp = (int) p.hypotenuse / minLife;
         }
         if (maxSp < minSp) {
             maxSp = minSp;

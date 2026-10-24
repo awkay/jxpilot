@@ -1079,6 +1079,7 @@ public final class Ships {
      */
     public void kill(Player pl) {
         sim.debris.explodeShip(pl);
+        sim.wreckage.explodeShip(pl);
         deathReset(pl);
     }
 

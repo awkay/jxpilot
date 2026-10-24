@@ -37,3 +37,9 @@ through A (lap 1 completed in 171 frames), bounce off the floor.
   XPREF_IMAGE=xpilot-ref:server-modes tools/xpilot-ref/trace.sh
     --map-file server/src/test/resources/ctrace/race-climb.xp --seed 42 --after 1 --trace-objs
     --keys "down:Shift_L sleep:0.8 up:Shift_L sleep:13"
+
+asteroid-box.txt (210 frames): asteroids appear (C RNG), fall, bounce off walls and wall blocks, spin and
+break. ModeTraceTest injects each asteroid C creates into the Java world and compares motion, wall bounces
+(with the life and brake factors), spin and life until the first one breaks.
+  XPREF_IMAGE=xpilot-ref:server-modes tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/asteroid-box.xp --seed 42 --after 1 --trace-objs --keys "sleep:14"

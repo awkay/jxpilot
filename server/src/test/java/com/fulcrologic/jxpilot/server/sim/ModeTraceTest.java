@@ -200,4 +200,98 @@ class ModeTraceTest {
             () -> assertEquals(171, last.bestLap(), "(in 171 frames)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }
+
+    /**
+     * Asteroid replay: C places asteroids with its own RNG, so every asteroid C creates is injected into the Java
+     * world with C's values at the end of the frame it appeared in; from then on the Java motion, gravity, wall
+     * bounces (with their life and brake factors), rotation and life count are compared with C's, until the
+     * first asteroid breaks (breaking is random in C).
+     */
+    static Result replayAsteroids(Simulation s, ModeTrace t) {
+        World w = s.world;
+        w.modeParams.asteroidChance = 0;
+        Player p = s.ships.join("Refpilot", 0);
+        s.ships.goHome(p);
+        long[] in = new long[w.players.length];
+        java.util.Map<String, Integer> handles = new java.util.HashMap<>();
+        List<String> bad = new ArrayList<>();
+        int compared = 0;
+        for (ModeTrace.Frame f : t.frames) {
+            s.tick(in);
+            boolean broke = false;
+            java.util.Set<String> present = new java.util.HashSet<>();
+            for (ModeTrace.Obj c : f.objs) {
+                if (c.type() == Obj.WRECKAGE) {
+                    broke = true;
+                }
+                if (c.type() == Obj.ASTEROID) {
+                    present.add(c.ptr());
+                }
+            }
+            for (String ptr : handles.keySet()) {
+                if (!present.contains(ptr)) {
+                    broke = true;
+                }
+            }
+            if (broke) {
+                break;
+            }
+            compared++;
+            for (ModeTrace.Obj c : f.objs) {
+                Integer h = handles.get(c.ptr());
+                if (h == null) {
+                    handles.put(c.ptr(), inject(w, c));
+                    continue;
+                }
+                String cs = c.cx() + " " + c.cy() + " " + c.prevX() + " " + c.prevY() + " " + c.vx() + " " + c.vy()
+                    + " " + c.life() + " " + c.a() + " " + c.b() + " " + c.c();
+                Objects o = w.objects;
+                String js = o.cx[h] + " " + o.cy[h] + " " + o.prevX[h] + " " + o.prevY[h] + " " + o.vx[h] + " "
+                    + o.vy[h] + " " + (long) o.life[h] + " " + w.modes.wireSize[h] + " " + w.modes.wireRotation[h]
+                    + " " + w.modes.wireTurnspeed[h];
+                if (!cs.equals(js) && bad.size() < 6) {
+                    bad.add("frame " + f.frame + " asteroid " + c.ptr() + "\n  C    " + cs + "\n  Java " + js);
+                }
+            }
+        }
+        return new Result(compared, bad);
+    }
+
+    /** A Java asteroid with C's state (after the frame it was made in). */
+    static int inject(World w, ModeTrace.Obj c) {
+        Objects o = w.objects;
+        int h = o.alloc();
+        o.type[h] = Obj.ASTEROID;
+        o.owner[h] = Obj.NO_ID;
+        o.team[h] = Const.TEAM_NOT_SET;
+        o.setClicks(h, c.cx(), c.cy());
+        o.prevX[h] = c.prevX();
+        o.prevY[h] = c.prevY();
+        o.vx[h] = c.vx();
+        o.vy[h] = c.vy();
+        o.mass[h] = c.mass();
+        o.life[h] = c.life();
+        o.fuseLife[h] = Asteroids.LIFE - 1;
+        o.status[h] = c.status();
+        int r = (int) Asteroids.radius(c.a());
+        o.plRange[h] = r;
+        o.plRadius[h] = r;
+        w.modes.wireSize[h] = c.a();
+        w.modes.wireRotation[h] = c.b();
+        w.modes.wireTurnspeed[h] = c.c();
+        w.modes.addAsteroid(h);
+        w.modes.asteroidNum += 1 << (c.a() - 1);
+        return h;
+    }
+
+    @Test
+    @DisplayName("asteroids: gravity, wall bounces (life and brake factors) and spin match C until the first break")
+    void asteroidBox() throws Exception {
+        ModeTrace t = ModeTrace.load("asteroid-box.txt");
+        Simulation s = resourceMap("asteroid-box.xp", 1);
+        Result r = replayAsteroids(s, t);
+        assertAll(
+            () -> assertTrue(r.frames() > 100, "more than 100 frames compared (" + r.frames() + ")"),
+            () -> assertEquals(List.of(), r.mismatches(), "no asteroid differs from C"));
+    }
 }
