@@ -24,8 +24,8 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.map.Target;
-import com.fulcrologic.jxpilot.server.world.Has;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Has;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;

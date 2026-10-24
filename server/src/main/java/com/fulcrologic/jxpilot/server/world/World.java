@@ -23,6 +23,9 @@
  */
 package com.fulcrologic.jxpilot.server.world;
 
+import com.fulcrologic.jxpilot.common.sim.WallDist;
+import com.fulcrologic.jxpilot.common.sim.Obj;
+import com.fulcrologic.jxpilot.common.sim.Click;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.map.WorldMap;

@@ -33,12 +33,12 @@ import com.fulcrologic.jxpilot.common.map.FuelStation;
 import com.fulcrologic.jxpilot.common.map.Wormhole;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.world.Events;
-import com.fulcrologic.jxpilot.server.world.Has;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Has;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
-import com.fulcrologic.jxpilot.server.world.Trig;
+import com.fulcrologic.jxpilot.common.sim.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
 import com.fulcrologic.jxpilot.server.world.WormTable;
 
@@ -98,23 +98,23 @@ public final class Ships {
      * server-commands: C {@code Parse_shape_str(defaultShipShape)} (the built-in ship when it is invalid): the
      * ship of every player and robot without allowShipShapes (C {@code Init_player}).
      */
-    public final com.fulcrologic.jxpilot.server.world.ShipGeom defaultShipShape;
+    public final com.fulcrologic.jxpilot.common.sim.ShipGeom defaultShipShape;
     /**
      * server-commands: the ship of a detached fuel tank (C ship.c:416-418: {@code Parse_shape_str(tankShipShape)}
      * with allowShipShapes, else Init_player's {@link #defaultShipShape}); for the tank code (server-items).
      */
-    public final com.fulcrologic.jxpilot.server.world.ShipGeom tankShipShape;
+    public final com.fulcrologic.jxpilot.common.sim.ShipGeom tankShipShape;
     private final boolean allowShipShapes;
 
     public Ships(World w, Simulation sim) {
         this.w = w;
         this.sim = sim;
         this.baseOrder = w.map.baseOrder();
-        this.defaultShipShape = com.fulcrologic.jxpilot.server.world.ShipGeom.parse(
+        this.defaultShipShape = com.fulcrologic.jxpilot.common.sim.ShipGeom.parse(
             w.options.getString(com.fulcrologic.jxpilot.common.config.Opt.DEFAULT_SHIP_SHAPE));
         this.allowShipShapes = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.ALLOW_SHIP_SHAPES);
         this.tankShipShape = allowShipShapes
-            ? com.fulcrologic.jxpilot.server.world.ShipGeom.parse(
+            ? com.fulcrologic.jxpilot.common.sim.ShipGeom.parse(
                 w.options.getString(com.fulcrologic.jxpilot.common.config.Opt.TANK_SHIP_SHAPE))
             : defaultShipShape;
     }
@@ -510,7 +510,7 @@ public final class Ships {
         pl.homeBase = -1;
         // server-commands: C Init_player with a client's (empty) shape: the built-in ship with allowShipShapes, else
         // defaultShipShape; the host puts the CONNECT shape, the robot manager the robot's, after the spawn
-        pl.ship = allowShipShapes ? com.fulcrologic.jxpilot.server.world.ShipGeom.defaultShip() : defaultShipShape;
+        pl.ship = allowShipShapes ? com.fulcrologic.jxpilot.common.sim.ShipGeom.defaultShip() : defaultShipShape;
         pl.vx = pl.vy = 0;
         pl.accX = pl.accY = 0;
         pl.dir = DIR_UP;

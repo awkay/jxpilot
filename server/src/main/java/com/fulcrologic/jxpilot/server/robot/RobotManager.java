@@ -32,11 +32,11 @@ import com.fulcrologic.jxpilot.server.sim.Alliances;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.sim.Sounds;
 import com.fulcrologic.jxpilot.server.world.Events;
-import com.fulcrologic.jxpilot.server.world.Has;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Has;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
-import com.fulcrologic.jxpilot.server.world.ShipGeom;
+import com.fulcrologic.jxpilot.common.sim.ShipGeom;
 import com.fulcrologic.jxpilot.server.world.World;
 
 /**

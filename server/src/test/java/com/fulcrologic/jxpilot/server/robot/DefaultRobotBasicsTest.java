@@ -26,7 +26,7 @@ package com.fulcrologic.jxpilot.server.robot;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;

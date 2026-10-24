@@ -24,8 +24,8 @@
 package com.fulcrologic.jxpilot.server.snapshot;
 
 import com.fulcrologic.jxpilot.common.net.Records;
-import com.fulcrologic.jxpilot.server.world.Has;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Has;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

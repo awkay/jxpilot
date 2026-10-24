@@ -26,7 +26,7 @@ package com.fulcrologic.jxpilot.server.sim;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 import com.fulcrologic.jxpilot.server.TestWorlds;
 import com.fulcrologic.jxpilot.server.world.Events;
-import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.common.sim.Has;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;

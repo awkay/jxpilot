@@ -41,7 +41,7 @@ class DigestTest {
     static Simulation fresh() {
         Simulation s = TestWorlds.sim("framesPerSecond: 60", ROWS);
         TestWorlds.join(s, "a", 0);
-        s.shots.fire(s.world.playerAt(0), 0, false, 60, 60, com.fulcrologic.jxpilot.server.world.Obj.SHOT, 0, 0);
+        s.shots.fire(s.world.playerAt(0), 0, false, 60, 60, com.fulcrologic.jxpilot.common.sim.Obj.SHOT, 0, 0);
         return s;
     }
 

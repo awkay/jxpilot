@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.world;
 
+import com.fulcrologic.jxpilot.common.sim.Obj;
 /**
  * Weapon modifiers: C's {@code modifiers} bit-field struct ({@code src/server/object.h}) packed into one int,
  * so objects and players store them in a plain int field. Layout: warhead bits 0-1 ({@link Obj#MOD_CLUSTER},

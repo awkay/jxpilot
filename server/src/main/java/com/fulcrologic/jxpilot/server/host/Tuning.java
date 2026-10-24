@@ -28,7 +28,7 @@ import com.fulcrologic.jxpilot.common.config.CNum;
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
-import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.common.sim.Has;
 import com.fulcrologic.jxpilot.server.world.ItemParams;
 import com.fulcrologic.jxpilot.server.world.ModeParams;
 import com.fulcrologic.jxpilot.server.world.Params;
@@ -578,14 +578,14 @@ final class Tuning {
                 var o = w.objects;
                 for (int k = 0; k < o.count(); k++) {
                     int h = o.active[k];
-                    if (o.type[h] == com.fulcrologic.jxpilot.server.world.Obj.BALL) {
+                    if (o.type[h] == com.fulcrologic.jxpilot.common.sim.Obj.BALL) {
                         o.mass[h] = w.modeParams.ballMass;
                     }
                 }
             }
-            case MINE_LIFE -> reLife(com.fulcrologic.jxpilot.server.world.Obj.MINE, true);
-            case MISSILE_LIFE -> reLife(com.fulcrologic.jxpilot.server.world.Obj.SMART_SHOT
-                | com.fulcrologic.jxpilot.server.world.Obj.HEAT_SHOT | com.fulcrologic.jxpilot.server.world.Obj.TORPEDO,
+            case MINE_LIFE -> reLife(com.fulcrologic.jxpilot.common.sim.Obj.MINE, true);
+            case MISSILE_LIFE -> reLife(com.fulcrologic.jxpilot.common.sim.Obj.SMART_SHOT
+                | com.fulcrologic.jxpilot.common.sim.Obj.HEAT_SHOT | com.fulcrologic.jxpilot.common.sim.Obj.TORPEDO,
                 false);
             case ITEM_PROBS -> deleteExcessItems();
             case PLAYER_SHIELDING -> {
@@ -687,7 +687,7 @@ final class Tuning {
         int fps = w.params.fps;
         for (int k = 0; k < o.count(); k++) {
             int h = o.active[k];
-            if ((o.type[h] & types) == 0 || (o.status[h] & com.fulcrologic.jxpilot.server.world.Obj.FROMCANNON) != 0) {
+            if ((o.type[h] & types) == 0 || (o.status[h] & com.fulcrologic.jxpilot.common.sim.Obj.FROMCANNON) != 0) {
                 continue;
             }
             int base = mineLife != 0 ? mineLife
@@ -711,7 +711,7 @@ final class Tuning {
             }
             for (int k = 0; k < o.count(); k++) {
                 int h = o.active[k];
-                if (o.type[h] == com.fulcrologic.jxpilot.server.world.Obj.ITEM && o.info[h] == i) {
+                if (o.type[h] == com.fulcrologic.jxpilot.common.sim.Obj.ITEM && o.info[h] == i) {
                     sim.items.delete(h);
                     k--;
                     if (--excess == 0) {

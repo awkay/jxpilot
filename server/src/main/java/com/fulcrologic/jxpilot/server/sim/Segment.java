@@ -27,8 +27,8 @@ import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Dir;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
-import com.fulcrologic.jxpilot.server.world.Click;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Click;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.World;
 import com.fulcrologic.jxpilot.server.world.WormTable;
@@ -380,7 +380,7 @@ public final class Segment {
                     }
                     int i = map.itemId(blockX, blockY);
                     ms.cannon = i;
-                    if ((world.cannonItems.used[i] & com.fulcrologic.jxpilot.server.world.Has.PHASING_DEVICE) != 0) {
+                    if ((world.cannonItems.used[i] & com.fulcrologic.jxpilot.common.sim.Has.PHASING_DEVICE) != 0) {
                         break;
                     }
                     if (teamPlay && (world.params.teamImmunity || (ms.status & Obj.FROMCANNON) != 0)

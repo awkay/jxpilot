@@ -21,35 +21,40 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
  */
-package com.fulcrologic.jxpilot.server.world;
+package com.fulcrologic.jxpilot.common.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 
-/** Sub-pixel fixed point positions ({@code src/server/click.h}): 64 clicks per pixel. */
-public final class Click {
-    private Click() {}
+/**
+ * C {@code tcos}/{@code tsin}: the {@code tbl_cos}/{@code tbl_sin} tables of {@code Make_table} (math.c),
+ * {@code (float) cos(i * 2pi/RES)} and {@code (float) sin(...)}: C stores them as {@code DFLOAT}, and two
+ * separate tables (cos is not a shifted sine). Computed with StrictMath so every JVM agrees.
+ */
+public final class Trig {
+    private Trig() {}
 
-    public static final int SHIFT = 6;
-    public static final int CLICK = 1 << SHIFT;
-    public static final int BLOCK_CLICKS = Const.BLOCK_SZ << SHIFT;
+    private static final float[] SIN = new float[Const.RES];
+    private static final float[] COS = new float[Const.RES];
 
-    /** C {@code FLOAT_TO_CLICK}: truncates toward zero. */
-    public static int fromPixels(double px) {
-        return (int) (px * CLICK);
+    static {
+        for (int i = 0; i < Const.RES; i++) {
+            SIN[i] = (float) StrictMath.sin(i * (2.0 * Math.PI / Const.RES));
+            COS[i] = (float) StrictMath.cos(i * (2.0 * Math.PI / Const.RES));
+        }
     }
 
-    /** C {@code CLICK_TO_PIXEL}: arithmetic shift (floor). */
-    public static int toPixel(int c) {
-        return c >> SHIFT;
+    /** BEHAVIOR: sine of a RES heading as a C float; any int is taken modulo RES (C {@code MOD2}). */
+    public static float tsin(int dir) {
+        return SIN[dir & (Const.RES - 1)];
     }
 
-    /** C {@code CLICK_TO_FLOAT}. */
-    public static double toFloat(int c) {
-        return c * (1.0 / CLICK);
+    /** BEHAVIOR: cosine of a RES heading as a C float, from its own table. */
+    public static float tcos(int dir) {
+        return COS[dir & (Const.RES - 1)];
     }
 
-    /** C {@code DOUBLE_TO_INT}: rounds half away from zero. */
-    public static int roundHalfAway(double d) {
-        return d < 0 ? -(int) (0.5 - d) : (int) (d + 0.5);
+    /** C {@code MOD2(x, RES)}. */
+    public static int mod(int dir) {
+        return dir & (Const.RES - 1);
     }
 }

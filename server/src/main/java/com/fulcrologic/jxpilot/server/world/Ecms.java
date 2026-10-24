@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.world;
 
+import com.fulcrologic.jxpilot.common.sim.Obj;
 /**
  * Expanding ECM blasts (C {@code Ecms[]} of {@code ecm_t}) and transporter beams (C {@code Transporters[]} of
  * {@code trans_t}): two small fixed-capacity, dense struct-of-arrays lists; removing entry {@code i} moves the

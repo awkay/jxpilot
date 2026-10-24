@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.world;
 
+import com.fulcrologic.jxpilot.common.sim.Obj;
 /**
  * C {@code Receive_modifier_bank} (netserver.c:2844): a client's modifier bank text ({@code modifierBank1..4},
  * e.g. {@code "FN C V2 X4 LS"}) parsed into packed {@link Mods}. Pure; allocation free.

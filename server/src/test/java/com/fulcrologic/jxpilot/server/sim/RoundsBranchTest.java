@@ -26,7 +26,7 @@ package com.fulcrologic.jxpilot.server.sim;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Target;
 import com.fulcrologic.jxpilot.server.TestWorlds;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -273,7 +273,7 @@ class RoundsBranchTest {
                 () -> assertEquals(Obj.PAUSE, b.status & (Obj.PAUSE | Obj.PLAYING), "still paused, not killed"),
                 () -> assertEquals(3 * 60, b.count, "but death-reset (respawn count at least 3*FPS)"),
                 () -> assertTrue(debrisOnlyNear(w, a), "the explosion debris is a's, none is b's"),
-                () -> assertEquals(w.params.defHave & ~com.fulcrologic.jxpilot.server.world.Has.BALL, a.have,
+                () -> assertEquals(w.params.defHave & ~com.fulcrologic.jxpilot.common.sim.Has.BALL, a.have,
                     "abilities: the defaults without a ball"),
                 () -> assertEquals(BlockType.TARGET, w.map.block(t.bx(), t.by()), "the dead target is back"),
                 () -> assertEquals(0, w.targetDeadTime[0], "alive"),

@@ -27,7 +27,7 @@ import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.server.TestWorlds;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.world.Events;
-import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.common.sim.Has;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -112,7 +112,7 @@ final class RobotFixture {
         p.vx = 0;
         p.vy = 0;
         p.velocity = 0;
-        p.status &= ~com.fulcrologic.jxpilot.server.world.Obj.THRUSTING;
+        p.status &= ~com.fulcrologic.jxpilot.common.sim.Obj.THRUSTING;
     }
 
     static void velocity(Player p, double vx, double vy) {

@@ -35,10 +35,10 @@ import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
 import com.fulcrologic.jxpilot.server.net.GameHost;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder;
-import com.fulcrologic.jxpilot.server.world.Click;
+import com.fulcrologic.jxpilot.common.sim.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.ModifierBanks;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 
@@ -120,7 +120,7 @@ public final class SimGameHost implements GameHost {
     /** MODIFIER_BANKs that arrived before the spawn (parsed, {@code Mods}), put in place at the spawn. */
     private final int[][] pendingBanks = new int[IDS][Player.BANKS];
     /** server-commands: the ship from CONNECT (C {@code connp->ship}), put on the player at its spawn; null without allowShipShapes. */
-    private final com.fulcrologic.jxpilot.server.world.ShipGeom[] shipOf = new com.fulcrologic.jxpilot.server.world.ShipGeom[IDS];
+    private final com.fulcrologic.jxpilot.common.sim.ShipGeom[] shipOf = new com.fulcrologic.jxpilot.common.sim.ShipGeom[IDS];
     private final boolean allowShipShapes;
 
     // ---- per sim slot
@@ -339,7 +339,7 @@ public final class SimGameHost implements GameHost {
         java.util.Arrays.fill(pendingBanks[id], 0);
         pl.viewWidth = Msg.Display.DEF_VIEW_SIZE;
         pl.viewHeight = Msg.Display.DEF_VIEW_SIZE;
-        shipOf[id] = allowShipShapes ? com.fulcrologic.jxpilot.server.world.ShipGeom.parse(shape) : null;
+        shipOf[id] = allowShipShapes ? com.fulcrologic.jxpilot.common.sim.ShipGeom.parse(shape) : null;
         keysBySlot[pl.slot] = 0;
         cursor[id] = w.events.seq();
         burstCursor[id] = w.events.burstSeq();

@@ -29,7 +29,7 @@ import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.sim.Alliances;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.world.Events;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 
@@ -562,7 +562,7 @@ final class Commands {
     void swapTeam(Player pl, int team) {
         var p = w.params;
         all().append(pl.name).append(" has swapped to team ").append(team).append('.');
-        if ((pl.have & com.fulcrologic.jxpilot.server.world.Has.BALL) != 0) {
+        if ((pl.have & com.fulcrologic.jxpilot.common.sim.Has.BALL) != 0) {
             sim.balls.detach(pl, -1); // C Detach_ball(ind, -1)
         }
         w.teamMembers[pl.team]--;

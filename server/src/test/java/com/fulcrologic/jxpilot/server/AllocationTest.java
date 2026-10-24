@@ -31,9 +31,9 @@ import com.fulcrologic.jxpilot.server.sim.RandomPilot;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder;
 import com.fulcrologic.jxpilot.server.world.Events;
-import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.common.sim.Has;
 import com.fulcrologic.jxpilot.server.world.Mods;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -475,8 +475,8 @@ class AllocationTest {
                 for (ControlKey key : ITEM_KEYS) {
                     pl.mods = mods;
                     if (robot != null) {
-                        robot.initPixels(pl.px + 90 * com.fulcrologic.jxpilot.server.world.Trig.tcos(pl.dir),
-                            pl.py + 90 * com.fulcrologic.jxpilot.server.world.Trig.tsin(pl.dir));
+                        robot.initPixels(pl.px + 90 * com.fulcrologic.jxpilot.common.sim.Trig.tcos(pl.dir),
+                            pl.py + 90 * com.fulcrologic.jxpilot.common.sim.Trig.tsin(pl.dir));
                     }
                     in[pl.slot] = key.mask();
                     warmTick(s, sb, parts, in);

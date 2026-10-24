@@ -38,12 +38,12 @@ import com.fulcrologic.jxpilot.server.world.CannonItems;
 import com.fulcrologic.jxpilot.server.world.Ecms;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.Mods;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.Pulses;
-import com.fulcrologic.jxpilot.server.world.Trig;
+import com.fulcrologic.jxpilot.common.sim.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
 
 import java.io.IOException;
@@ -477,8 +477,8 @@ final class CReplay {
             int ocx;
             int ocy;
             // replaying, Java makes C's own particles at C's origin (Debris.cParticles)
-            ocx = com.fulcrologic.jxpilot.server.world.Click.fromPixels(c.x());
-            ocy = com.fulcrologic.jxpilot.server.world.Click.fromPixels(c.y());
+            ocx = com.fulcrologic.jxpilot.common.sim.Click.fromPixels(c.x());
+            ocy = com.fulcrologic.jxpilot.common.sim.Click.fromPixels(c.y());
             if (c.flak()) {
                 // flak fragments are shots, not a recorded burst
                 owner = c.q().id();

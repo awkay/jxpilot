@@ -25,8 +25,8 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.server.TestWorlds;
-import com.fulcrologic.jxpilot.server.world.Click;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Click;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 import com.fulcrologic.jxpilot.server.world.WormTable;
@@ -236,7 +236,7 @@ class WormholesTest {
             Simulation s = sim("wormTime: 3\n");
             World w = s.world;
             w.map.setBlock(3, 5, BlockType.FILLED);
-            System.arraycopy(com.fulcrologic.jxpilot.server.world.WallDist.compute(w.map), 0, w.wallDist, 0,
+            System.arraycopy(com.fulcrologic.jxpilot.common.sim.WallDist.compute(w.map), 0, w.wallDist, 0,
                 w.wallDist.length);
             w.worms.addTemp(1, 5, 20, 15);
             int h = obj(w, Obj.SHOT, Obj.NO_ID, 2 * 35 + 3, 5.5 * 35, -6, 0, 1, 10);

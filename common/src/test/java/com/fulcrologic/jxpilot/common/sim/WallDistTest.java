@@ -21,11 +21,10 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
  */
-package com.fulcrologic.jxpilot.server.world;
+package com.fulcrologic.jxpilot.common.sim;
 
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
-import com.fulcrologic.jxpilot.server.TestWorlds;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -40,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /** C {@code Walldist_init} (walls.c:165-264). Rows are given top first; block y = height-1-row. */
 class WallDistTest {
     private static WorldMap map(String extra, String... rows) {
-        return WorldMap.fromOptions(TestWorlds.options(extra, rows));
+        return WorldMap.fromOptions(KernelFx.options(extra, rows));
     }
 
     /** Distance of block (bx, by) where by counts from the bottom. */

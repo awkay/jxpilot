@@ -23,7 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.sim;
 
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

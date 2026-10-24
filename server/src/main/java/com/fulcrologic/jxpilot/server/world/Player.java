@@ -23,6 +23,10 @@
  */
 package com.fulcrologic.jxpilot.server.world;
 
+import com.fulcrologic.jxpilot.common.sim.ShipGeom;
+import com.fulcrologic.jxpilot.common.sim.Has;
+import com.fulcrologic.jxpilot.common.sim.Obj;
+import com.fulcrologic.jxpilot.common.sim.Click;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
 

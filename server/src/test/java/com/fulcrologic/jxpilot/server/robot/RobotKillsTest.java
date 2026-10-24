@@ -27,7 +27,7 @@ import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.TestWorlds;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.world.Events;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
@@ -210,7 +210,7 @@ class RobotKillsTest {
                 TestWorlds.run(s, 1, 0L);
             }
             victim.life = 0;
-            victim.used &= ~com.fulcrologic.jxpilot.server.world.Has.SHIELD;
+            victim.used &= ~com.fulcrologic.jxpilot.common.sim.Has.SHIELD;
             victim.fuel = 0;
             DefaultRobot.setWar(s.robots.data(killer), human.id);
             int h = w.objects.alloc();

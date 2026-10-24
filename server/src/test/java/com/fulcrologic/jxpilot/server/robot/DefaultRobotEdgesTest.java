@@ -28,11 +28,11 @@ import com.fulcrologic.jxpilot.common.math.XMath;
 import com.fulcrologic.jxpilot.server.robot.DefaultRobotPlayTest.W;
 import com.fulcrologic.jxpilot.server.robot.RobotFixture.SpyItems;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
-import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.common.sim.Has;
 import com.fulcrologic.jxpilot.server.world.Mods;
-import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
-import com.fulcrologic.jxpilot.server.world.Trig;
+import com.fulcrologic.jxpilot.common.sim.Trig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -1328,7 +1328,7 @@ class DefaultRobotEdgesTest {
             int seed = RobotFixture.seedWithFirst(false, 0.4);
             t.w.rng.seed(seed);
             t.d.robotCount = 4;
-            r.chooseWeaponModifier(t.p, t.d, com.fulcrologic.jxpilot.server.world.Has.LASER);
+            r.chooseWeaponModifier(t.p, t.d, com.fulcrologic.jxpilot.common.sim.Has.LASER);
             assertAll(
                 () -> assertEquals(DefaultRobot.NUCLEAR | DefaultRobot.FULLNUCLEAR, at, "41 <= 41; 5 < 8"),
                 () -> assertEquals(DefaultRobot.NUCLEAR | DefaultRobot.FULLNUCLEAR, even, "8 = 2*4 but even count"),
