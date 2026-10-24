@@ -422,9 +422,6 @@ public final class Collisions {
                 if ((o.status[h] & Obj.CONFUSED) != 0) {
                     continue;
                 }
-            } else if ((type & (Obj.BALL | Obj.ASTEROID)) != 0) {
-                // balls and asteroids collide with ships in their owners' code
-                continue;
             } else if (type == Obj.BALL && sim.balls.phased(h)) {
                 continue;
             }
