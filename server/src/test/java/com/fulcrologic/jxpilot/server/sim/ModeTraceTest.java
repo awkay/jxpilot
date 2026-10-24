@@ -180,8 +180,9 @@ class ModeTraceTest {
                 // a ball C deleted and remade in its treasure starts its life count again
                 recreated |= o.type() == Obj.BALL && o.life() == Long.MAX_VALUE;
             }
-            if (wasConnected && !connected && !recreated) {
-                // the ball came loose this frame and lives on: C's player pressed DROP_BALL ('d')
+            if (wasConnected && !connected && !recreated && (pl2.used() & Has.CONNECTOR) == 0) {
+                // the ball came loose this frame and lives on, and the connector went off with it: C's player
+                // pressed DROP_BALL ('d', Detach_ball(ind, -1)); a snapped connector stays on
                 keys |= ControlKey.DROP_BALL.mask();
             }
             wasConnected = connected;
@@ -400,6 +401,144 @@ class ModeTraceTest {
         assertAll(
             () -> assertEquals(107, r.frames(), "107 C frames are compared"),
             () -> assertTrue(t.frames.get(t.frames.size() - 1).objs.get(0).id() == -1, "(the ball was dropped)"),
+            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
+    }
+
+    /** Frames in which C's ship score went up (asteroids it broke), from the trace. */
+    static long scoreRises(ModeTrace t) {
+        long n = 0;
+        double last = 0;
+        for (ModeTrace.Frame f : t.frames) {
+            double sc = f.players.get(0).score();
+            if (sc > last + 0.5) {
+                n++;
+            }
+            last = sc;
+        }
+        return n;
+    }
+
+    @Test
+    @DisplayName("an idle shielded ship under an asteroid concentrator: asteroids hit it, break, push it into a "
+        + "treasure (death), break-up debris hits it: bit-identical with C's random stream and particles")
+    void asteroidRam() throws Exception {
+        ModeTrace t = ModeTrace.load("asteroid-ram.txt");
+        Simulation s = resourceMap("asteroid-ram.xp", 1);
+        Result r = replay(s, t);
+        boolean died = t.frames.stream().anyMatch(f -> f.messages.stream()
+            .anyMatch(m -> m[1].equals("Refpilot smashed against a treasure.")));
+        assertAll(
+            () -> assertEquals(268, r.frames(), "268 C frames are compared"),
+            () -> assertTrue(scoreRises(t) >= 4, "(the ship broke asteroids: " + scoreRises(t) + ")"),
+            () -> assertTrue(died, "(and died)"),
+            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
+    }
+
+    @Test
+    @DisplayName("thrusting through asteroids: thrust sparks push them, the ship rams and breaks them: bit-identical")
+    void asteroidThrust() throws Exception {
+        ModeTrace t = ModeTrace.load("asteroid-thrust.txt");
+        Simulation s = resourceMap("asteroid-box.xp", 1);
+        Result r = replay(s, t);
+        assertAll(
+            () -> assertEquals(194, r.frames(), "194 C frames are compared"),
+            () -> assertTrue(scoreRises(t) >= 4, "(the ship broke asteroids: " + scoreRises(t) + ")"),
+            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
+    }
+
+    @Test
+    @DisplayName("turn and thrust among asteroids, breaking them down to size 1: bit-identical")
+    void asteroidTurn() throws Exception {
+        ModeTrace t = ModeTrace.load("asteroid-turn.txt");
+        Simulation s = resourceMap("asteroid-box.xp", 1);
+        Result r = replay(s, t);
+        assertAll(
+            () -> assertEquals(213, r.frames(), "213 C frames are compared"),
+            () -> assertTrue(scoreRises(t) >= 4, "(the ship broke asteroids: " + scoreRises(t) + ")"),
+            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
+    }
+
+    @Test
+    @DisplayName("lift the ball out of its shaft, drop it, and it lands back in its treasure (and rests there "
+        + "again, life restarted): bit-identical")
+    void ballShaft() throws Exception {
+        ModeTrace t = ModeTrace.load("ball-shaft.txt");
+        Simulation s = resourceMap("ball-shaft.xp", 1);
+        Result r = replay(s, t);
+        long landings = 0;
+        long last = Long.MAX_VALUE;
+        for (ModeTrace.Frame f : t.frames) {
+            ModeTrace.Obj b = f.objs.get(0);
+            if (b.id() == -1 && last < b.life()) {
+                landings++;
+            }
+            last = b.life();
+        }
+        long n = landings;
+        assertAll(
+            () -> assertEquals(109, r.frames(), "109 C frames are compared"),
+            () -> assertTrue(n >= 1, "(the loose ball landed in its treasure: " + n + ")"),
+            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
+    }
+
+    @Test
+    @DisplayName("an over-stretched connector snaps (5%), the held connector reaches and reconnects, three times: "
+        + "bit-identical")
+    void ballSnap() throws Exception {
+        ModeTrace t = ModeTrace.load("ball-snap.txt");
+        Simulation s = resourceMap("ball-snap.xp", 1);
+        Result r = replay(s, t);
+        long snaps = 0;
+        boolean was = false;
+        for (ModeTrace.Frame f : t.frames) {
+            boolean connected = f.objs.get(0).id() != -1;
+            if (was && !connected && (f.players.get(0).used() & Has.CONNECTOR) != 0) {
+                snaps++;
+            }
+            was = connected;
+        }
+        long n = snaps;
+        assertAll(
+            () -> assertEquals(120, r.frames(), "120 C frames are compared"),
+            () -> assertEquals(3, n, "(the connector snapped 3 times with the connector key held)"),
+            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
+    }
+
+    @Test
+    @DisplayName("tow the ball up, drop it, and it bounces back into the ship: the shielded ship bounces off it and "
+        + "pays ED_BALL_HIT: bit-identical")
+    void ballRam() throws Exception {
+        ModeTrace t = ModeTrace.load("ball-ram.txt");
+        Simulation s = resourceMap("ball-tow.xp", 1);
+        Result r = replay(s, t);
+        long hits = 0;
+        for (int i = 1; i < t.frames.size(); i++) {
+            // 50 fuel (12800) for the ball plus the shield's 51
+            if (t.frames.get(i - 1).ship.fuel() - t.frames.get(i).ship.fuel() == 12851) {
+                hits++;
+            }
+        }
+        long n = hits;
+        assertAll(
+            () -> assertEquals(108, r.frames(), "108 C frames are compared"),
+            () -> assertEquals(1, n, "(the ship hit the ball once)"),
+            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
+    }
+
+    @Test
+    @DisplayName("team rounds with targets and one life: shots wear team 2's target down (it repairs), the only "
+        + "team 1 ship self-destructs, the round ends in a draw and the next begins: bit-identical")
+    void teamRounds() throws Exception {
+        ModeTrace t = ModeTrace.load("team-rounds.txt");
+        Simulation s = resourceMap("team-rounds.xp", 1);
+        Result r = replay(s, t);
+        boolean draw = t.frames.stream().anyMatch(f -> f.messages.stream()
+            .anyMatch(m -> m[1].equals(" < We have a draw as everyone died! >")));
+        boolean damaged = t.frames.stream().anyMatch(f -> f.targets.get(0)[1] < 64000);
+        assertAll(
+            () -> assertEquals(340, r.frames(), "340 C frames are compared"),
+            () -> assertTrue(damaged, "(the target took damage)"),
+            () -> assertTrue(draw, "(the round ended)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }
 }

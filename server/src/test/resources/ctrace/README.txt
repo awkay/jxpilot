@@ -31,6 +31,9 @@ gravity field, a 25 px/frame wall bounce, coast.
 Game-mode traces (ModeTraceTest) use xpilot-ref patch 0005 (trace.sh --modes) and a map from this
 directory (--map-file); the image is built with that patch (XPREF_IMAGE=xpilot-ref:4.5.5 build.sh).
 The maps pin the options C's lib/defaults would otherwise set (gravity -0.25, no random items).
+When a trace carries C's random generator, the replay also makes C's own sparks and debris (Make_debris
+draws in C's order, Debris.cParticles and Debris.cThrust) instead of the client-replayable bursts, so
+particles hitting ships, asteroids and balls match C too.
 
 ball-tow.txt (75 frames): reach for the treasure ball with the connector (Control_L) while thrusting
 up, connect at ballConnectorLength, tow and swing it on the spring connector.
@@ -72,7 +75,7 @@ destroyed (dead 3 s, targetDeadTime) and revives. C's random stream is replayed.
 
 treasure-cash.txt (95 frames): team play; the team 1 ship connects to the team 2 ball and pulls it sideways
 into its own treasure: with nobody of team 2 in the game C only awards Rate/2 (Punish_team) and the ball is
-remade at home. Thrust sparks' random draws are counted as C's Thrust makes them (Debris.cThrustDraws).
+remade at home.
   XPREF_IMAGE=xpilot-ref:4.5.5 tools/xpilot-ref/trace.sh
     --map-file server/src/test/resources/ctrace/treasure-cash.xp --seed 42 --after 1 --modes
     --keys "down:Control_L down:Shift_L sleep:0.5 up:Shift_L sleep:4 up:Control_L sleep:1"
@@ -82,3 +85,47 @@ finishes (scores, Race_game_over resets everyone) and a new race starts. C's ran
   XPREF_IMAGE=xpilot-ref:4.5.5 tools/xpilot-ref/trace.sh
     --map-file server/src/test/resources/ctrace/race-laps.xp --seed 42 --after 1 --modes
     --keys "down:Shift_L sleep:0.8 up:Shift_L sleep:13 down:Shift_L sleep:0.8 up:Shift_L sleep:13"
+
+asteroid-ram.txt (268 frames): an idle shielded ship under an asteroid concentrator (asteroid-ram.xp): asteroids
+hit it and break, their debris hits it, one pushes it into the treasure (death), and the breaking goes on.
+  XPREF_IMAGE=xpilot-ref:4.5.5 tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/asteroid-ram.xp --seed 42 --after 1 --modes
+    --keys "sleep:18"
+
+asteroid-thrust.txt (194 frames): asteroid-box with the ship thrusting up among the asteroids, turning and
+thrusting again: thrust sparks push asteroids, the ship rams and breaks them.
+  XPREF_IMAGE=xpilot-ref:4.5.5 tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/asteroid-box.xp --seed 42 --after 1 --modes
+    --keys "sleep:4 down:Shift_L sleep:1.2 up:Shift_L down:s sleep:0.3 up:s down:Shift_L sleep:1 up:Shift_L sleep:6"
+
+asteroid-turn.txt (213 frames): asteroid-box, turn and thrust long into the asteroids, breaking them down to
+size 1.
+  XPREF_IMAGE=xpilot-ref:4.5.5 tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/asteroid-box.xp --seed 42 --after 1 --modes
+    --keys "sleep:3 down:s sleep:0.4 up:s down:Shift_L sleep:2.5 up:Shift_L sleep:8"
+
+ball-shaft.txt (109 frames): the ball lies in its treasure at the bottom of a shaft (ball-shaft.xp); the ship lifts
+it out, drops it, and it falls back into its treasure and rests there again (life restarted), bouncing.
+  XPREF_IMAGE=xpilot-ref:4.5.5 tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/ball-shaft.xp --seed 42 --after 1 --modes
+    --keys "down:Control_L down:Shift_L sleep:0.5 up:Shift_L up:Control_L key:d sleep:6"
+
+ball-snap.txt (120 frames): as ball-shaft with maxBallConnectorRatio 0.05 (ball-snap.xp): the connector key
+is held, the over-stretched connector snaps, the ship reaches again and reconnects, three times.
+  XPREF_IMAGE=xpilot-ref:4.5.5 tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/ball-snap.xp --seed 42 --after 1 --modes
+    --keys "down:Control_L down:Shift_L sleep:1.2 up:Shift_L sleep:2 down:Shift_L sleep:1 up:Shift_L sleep:3 up:Control_L"
+
+ball-ram.txt (108 frames): tow the ball up, then drop it: it bounces off the floor back into the shielded
+ship, which bounces off it and pays ED_BALL_HIT (planned with the Java simulation: thrust 12-14 frames, drop
+5-8 frames later).
+  XPREF_IMAGE=xpilot-ref:4.5.5 tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/ball-tow.xp --seed 42 --after 1 --modes
+    --keys "down:Control_L down:Shift_L sleep:0.93 up:Shift_L sleep:0.46 up:Control_L key:d sleep:5"
+
+team-rounds.txt (340 frames): team play with targets and one life (team-rounds.xp): the team 1 ship wears team 2's
+target down (it repairs between shots), self-destructs, team 1 is dead and the round ends in a draw
+(Team_game_over), then the next round starts.
+  XPREF_IMAGE=xpilot-ref:4.5.5 tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/team-rounds.xp --seed 42 --after 1 --modes
+    --keys "sleep:3 down:Return sleep:2 up:Return key:End sleep:18"

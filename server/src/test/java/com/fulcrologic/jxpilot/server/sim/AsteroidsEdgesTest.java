@@ -321,6 +321,21 @@ class AsteroidsEdgesTest {
         }
 
         @Test
+        @DisplayName("damage is added to the life in C's float: a hit smaller than half a float step at 900 changes nothing")
+        void floatDamage() {
+            Simulation s = sim("");
+            World w = s.world;
+            Objects o = w.objects;
+            Player p = ready(s, "P", 0, 100, 100);
+            int a = rock(s);
+            // damage -|2 m v| = -2e-5, ASTEROID_FUEL_HIT = -2e-5 * 1000 / (256 * 25 * 2): 900 - 1.6e-6 is 900f
+            obj(w, Obj.DEBRIS, p.id, 505, 500, 1e-5f, 0, 1, 20);
+            w.grid.rebuild(o);
+            s.asteroids.collide();
+            assertEquals(900.0, o.life[a], "(long) (900f - 1.6e-6f) = 900; in double it would be 899");
+        }
+
+        @Test
         @DisplayName("a ball is repelled and (treasureCollisionDestroys) destroyed; its owner scores the break at max score exactly")
         void ballAndScore() {
             Simulation s = sim("asteroidPoints: 2\nasteroidMaxScore: 50\n");
