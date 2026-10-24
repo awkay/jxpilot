@@ -299,6 +299,9 @@ public final class ClientGame implements ConnectionListener {
 
     public boolean teamPlay() { return (welcomeFlags & Msg.Welcome.FLAG_TEAM_PLAY) != 0; }
 
+    /** Race mode (C {@code BIT(Setup->mode, TIMING)}). */
+    public boolean timing() { return (welcomeFlags & Msg.Welcome.FLAG_TIMING) != 0; }
+
     /** F11: the server already blinks radar blips (the C server): the client does not blink them again. */
     public boolean radarBlinked() { return (welcomeFlags & Msg.Welcome.FLAG_RADAR_BLINKED) != 0; }
 

@@ -444,6 +444,9 @@ public final class GameApp {
         dyn.texRect(left, bottom, right, top, u0, v1, u1, 0, palette.color(Palette.WHITE));
         radarPainter.begin(left, bottom, right, top, radarHeight, map.pixelWidth(), map.pixelHeight(), map.edgeWrap());
         RadarBlips r = frame.radar();
+        if (r.checkpointVisible) {
+            radarPainter.checkpoint(dyn, r.checkpointBx, r.checkpointBy);
+        }
         if (r.selfVisible) {
             radarPainter.self(dyn, r.selfX, r.selfY, r.selfHeading, loops);
             radarPainter.selfBlip(dyn, r.selfX, r.selfY);

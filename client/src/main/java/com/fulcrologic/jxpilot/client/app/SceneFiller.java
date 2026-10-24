@@ -74,6 +74,7 @@ public final class SceneFiller {
      * BEHAVIOR: adds every shot ({@link #shotColor}, {@link #teamShot}), every visible particle
      * ({@link #particleColor}), every radar blip ({@link #radarSize}, hidden blink phases skipped; when the
      * server already blinks them {@link #radarSizeUnblinked}) and the own radar ship while visible.
+     * BEHAVIOR: in race mode the next checkpoint's block ({@link #radarCheckpoint}).
      */
     public void fill(SceneData out, RadarBlips radar, ClientGame g) {
         ClientWorld w = g.world();
@@ -109,6 +110,7 @@ public final class SceneFiller {
             int c = nuclearBlink(w.shotKind(i), w.shotColor(i), harmless, w.renderTick());
             out.addShot(w.shotX(i), w.shotY(i), shotColor(c, harmless), teamShot(c, harmless));
         }
+        players = p;
         objects(out, w);
         particles(out, w);
         for (int i = 0; i < w.pointCount(); i++) {
@@ -121,6 +123,7 @@ public final class SceneFiller {
                 radar.add(w.radarX(i), w.radarY(i), size);
             }
         }
+        radarCheckpoint(radar, g.timing(), map, w.selfCheck());
         if (selfAlive) {
             radar.selfVisible = true;
             radar.selfX = w.selfX();
@@ -154,13 +157,17 @@ public final class SceneFiller {
 
     private boolean roundDelay;
     private WorldMap map;
+    private Players players;
+    /** C {@code showMineName} (default on): mines carry their owner's name. */
+    public boolean showMineName = true;
     /** The vx of the ship being added: C's pause count for a paused ship without an id (see XpTranslator). */
     private float pauseCount;
 
     /**
      * The M2 objects of {@link ClientWorld#objects()} into the scene.
      * <p>
-     * BEHAVIOR: items with their type; mines (team mine iff FRIENDLY, no name); missiles with their length
+     * BEHAVIOR: items with their type; mines (team mine iff FRIENDLY, the {@link #mineName} while
+     * {@link #showMineName}, else none); missiles with their length
      * and RES direction; balls, each with its tether ({@link #ballTether}); lasers with RES direction and the object colour ({@link #pointColor});
      * asteroids (shape type from the size byte's high nibble, RES rotation, size from its low nibble);
      * wreckage (deadly iff its shape byte has bit 7 (C), the shape in the low 7 bits, RES rotation, size); ECM
@@ -175,7 +182,8 @@ public final class SceneFiller {
         }
         for (int i = 0; i < o.count(ObjectLists.MINE); i++) {
             out.addMine(o.get(ObjectLists.MINE, i, 0), o.get(ObjectLists.MINE, i, 1),
-                ((int) o.get(ObjectLists.MINE, i, 2) & Records.Mine.FLAG_FRIENDLY) != 0, null);
+                ((int) o.get(ObjectLists.MINE, i, 2) & Records.Mine.FLAG_FRIENDLY) != 0,
+                showMineName ? mineName((int) o.get(ObjectLists.MINE, i, 3), players) : null);
         }
         for (int i = 0; i < o.count(ObjectLists.MISSILE); i++) {
             out.addMissile(o.get(ObjectLists.MISSILE, i, 0), o.get(ObjectLists.MISSILE, i, 1),
@@ -277,6 +285,41 @@ public final class SceneFiller {
      * the own one: true when both have the same non-blank alliance mark (C guiobjects.c:680-684), or in team
      * play on the same team (not {@link Protocol#NO_TEAM}).
      */
+    /**
+     * C {@code Paint_checkpoint_radar}: only in race mode ({@code TIMING}), the checkpoint {@code nextCheckPoint}.
+     * <p>
+     * BEHAVIOR: marks the checkpoint's block iff timing is on, there is a map and {@code next} indexes one of its
+     * checkpoints; otherwise leaves the radar without one.
+     */
+    static void radarCheckpoint(RadarBlips radar, boolean timing, WorldMap m, int next) {
+        if (!timing || m == null || next < 0 || next >= m.checkpoints().size()) {
+            return;
+        }
+        radar.checkpointVisible = true;
+        radar.checkpointBx = m.checkpoints().get(next).bx();
+        radar.checkpointBy = m.checkpoints().get(next).by();
+    }
+
+    static final String EXPIRED = "Expired";
+    static final String NOT_OF_THIS_WORLD = "Not of this world!";
+
+    /**
+     * The name C's client draws under a mine (paintobjects.c Paint_objects).
+     * <p>
+     * BEHAVIOR: no owner id ({@link Protocol#NO_ID}): none (null); {@link Records.Mine#EXPIRED_MINE_ID}: "Expired"; a
+     * known player: its name; any other id: "Not of this world!". A null player table knows nobody.
+     */
+    static CharSequence mineName(int ownerId, Players p) {
+        if (ownerId == Protocol.NO_ID) {
+            return null;
+        }
+        if (ownerId == Records.Mine.EXPIRED_MINE_ID) {
+            return EXPIRED;
+        }
+        int slot = p == null ? -1 : p.slotOf(ownerId);
+        return slot >= 0 ? p.name(slot) : NOT_OF_THIS_WORLD;
+    }
+
     static boolean friendly(int flags, Players p, int slot, boolean teamPlay) {
         if ((flags & Records.ShipFlags.FRIENDLY) != 0) {
             return true;

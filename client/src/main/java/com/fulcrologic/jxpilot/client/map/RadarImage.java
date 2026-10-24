@@ -42,6 +42,7 @@ import java.util.function.IntPredicate;
  * <p>
  * Pixels are packed like {@link Palette} and stored row-major with row 0 at the TOP.
  * <p>
+ * The walk leaves destroyed targets black (C shows a target only while {@code Target_alive} is 0).
  * After the walk, C repaints every live target's block in {@code targetRadarColor}
  * ({@code Paint_world_radar} calling {@code Paint_radar_block}), which restores target pixels the
  * walk's run logic painted over; {@link #build(WorldMap, Palette, boolean, IntPredicate)} takes the
@@ -79,6 +80,34 @@ public final class RadarImage {
         return -1;
     }
 
+    /**
+     * The walk's colour for block (x, y) (C {@code Paint_world_radar}: a target is visible iff
+     * {@code Target_alive(x, y) == 0}).
+     * <p>
+     * BEHAVIOR: a TARGET block is shown iff a target of the map sits on it and {@code targetAlive} passes its
+     * index; other blocks as {@link #colorIndex}.
+     */
+    static int walkColor(WorldMap m, int x, int y, boolean showDecor, IntPredicate targetAlive) {
+        int type = m.block(x, y);
+        if (type == BlockType.TARGET) {
+            int t = targetAt(m, x, y);
+            if (t < 0 || !targetAlive.test(t)) {
+                return -1;
+            }
+        }
+        return colorIndex(type, showDecor);
+    }
+
+    /** BEHAVIOR: the index of the target on block (x, y), -1 when none. */
+    static int targetAt(WorldMap m, int x, int y) {
+        for (int i = 0; i < m.targets().size(); i++) {
+            if (m.targets().get(i).bx() == x && m.targets().get(i).by() == y) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     /** Build the radar pixels ({@code WIDTH * height(m)} entries) with every target alive. */
     public static int[] build(WorldMap m, Palette p, boolean showDecor) {
         return build(m, p, showDecor, i -> true);
@@ -87,7 +116,8 @@ public final class RadarImage {
     /**
      * Build the radar pixels, repainting the targets whose index passes {@code targetAlive}.
      * <p>
-     * BEHAVIOR: the walk as {@link Walker}, then each live target's block painted by {@link #block}.
+     * BEHAVIOR: the walk as {@link Walker} with {@link #walkColor} (dead targets not shown), then each live
+     * target's block painted by {@link #block}.
      */
     public static int[] build(WorldMap m, Palette p, boolean showDecor, IntPredicate targetAlive) {
         return build(m, p, showDecor, targetAlive, new int[WIDTH * height(m)]);
@@ -109,7 +139,7 @@ public final class RadarImage {
             for (int xi = 0; xi < m.width(); xi++) {
                 w.startColumn((int) (xi * xs + 0.5f));
                 for (int yi = 0; yi < m.height(); yi++) {
-                    w.cell(colorIndex(m.block(xi, yi), showDecor), (int) (yi * ys + 0.5f), yi == m.height() - 1);
+                    w.cell(walkColor(m, xi, yi, showDecor, targetAlive), (int) (yi * ys + 0.5f), yi == m.height() - 1);
                 }
             }
         } else {
@@ -120,7 +150,7 @@ public final class RadarImage {
                 w.startColumn(xi);
                 for (int yi = 0; yi < h; yi++) {
                     int ym = (int) (yi * ys + 0.5f);
-                    w.cell(colorIndex(m.block(xm, ym), showDecor), yi, yi == h - 1);
+                    w.cell(walkColor(m, xm, ym, showDecor, targetAlive), yi, yi == h - 1);
                 }
             }
         }

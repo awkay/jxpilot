@@ -472,6 +472,101 @@ class SceneFillerTest {
     }
 
     @Nested
+    @DisplayName("radar checkpoint (C Paint_checkpoint_radar)")
+    class RadarCheckpoint {
+        final com.fulcrologic.jxpilot.common.map.WorldMap race =
+            com.fulcrologic.jxpilot.client.Fixtures.mapWith(false, "timing: yes\n", "A.", "1B");
+
+        @Test
+        @DisplayName("race mode marks the block of checkpoint nextCheckPoint")
+        void marked() {
+            RadarBlips r = new RadarBlips(4);
+            SceneFiller.radarCheckpoint(r, true, race, 1);
+            RadarBlips first = new RadarBlips(4);
+            SceneFiller.radarCheckpoint(first, true, race, 0);
+            assertAll(
+                () -> assertTrue(r.checkpointVisible, "marked"),
+                () -> assertEquals(race.checkpoints().get(1).bx(), r.checkpointBx, "B's block x"),
+                () -> assertEquals(race.checkpoints().get(1).by(), r.checkpointBy, "B's block y"),
+                () -> assertTrue(first.checkpointVisible, "index 0 is a checkpoint too"),
+                () -> assertEquals(race.checkpoints().get(0).bx(), first.checkpointBx, "A's block x"),
+                () -> assertEquals(race.checkpoints().get(0).by(), first.checkpointBy, "A's block y"),
+                () -> assertNotEquals(r.checkpointBy, first.checkpointBy, "A and B are on different rows"));
+        }
+
+        @Test
+        @DisplayName("no mark without timing, without a map, or with an index outside the checkpoints")
+        void unmarked() {
+            RadarBlips noTiming = new RadarBlips(4);
+            SceneFiller.radarCheckpoint(noTiming, false, race, 0);
+            RadarBlips noMap = new RadarBlips(4);
+            SceneFiller.radarCheckpoint(noMap, true, null, 0);
+            RadarBlips negative = new RadarBlips(4);
+            SceneFiller.radarCheckpoint(negative, true, race, -1);
+            RadarBlips past = new RadarBlips(4);
+            SceneFiller.radarCheckpoint(past, true, race, 2);
+            assertAll(
+                () -> assertFalse(noTiming.checkpointVisible, "only in race mode"),
+                () -> assertFalse(noMap.checkpointVisible, "no map"),
+                () -> assertFalse(negative.checkpointVisible, "index -1"),
+                () -> assertFalse(past.checkpointVisible, "index == count"));
+        }
+
+        @Test
+        @DisplayName("clear removes the mark")
+        void cleared() {
+            RadarBlips r = new RadarBlips(4);
+            SceneFiller.radarCheckpoint(r, true, race, 1);
+            r.clear();
+            assertFalse(r.checkpointVisible, "cleared each frame");
+        }
+    }
+
+    @Nested
+    @DisplayName("mine owner names (C showMineName)")
+    class MineNames {
+        AppFixture minesOf(int... owners) {
+            return new AppFixture(true).players().twice(x -> {
+                x.w.beginSection(Section.MINE);
+                for (int i = 0; i < owners.length; i++) {
+                    Records.Mine.put(x.w, 110 + 4 * i, 50, 0, owners[i]);
+                }
+                x.w.endSection();
+            });
+        }
+
+        @Test
+        @DisplayName("no id: none; EXPIRED_MINE_ID: Expired; a player: its name; any other id: Not of this world!")
+        void names() {
+            fill(minesOf(Protocol.NO_ID, Records.Mine.EXPIRED_MINE_ID, AppFixture.FOE, 77));
+            assertAll(
+                () -> assertEquals(4, scene.mineCount, "four mines"),
+                () -> assertNull(scene.mineName[0], "unidentified owner: no name"),
+                () -> assertEquals("Expired", String.valueOf(scene.mineName[1]), "nobody owns it"),
+                () -> assertEquals("Foe", String.valueOf(scene.mineName[2]), "the owner's name"),
+                () -> assertEquals("Not of this world!", String.valueOf(scene.mineName[3]), "an id nobody has"));
+        }
+
+        @Test
+        @DisplayName("showMineName off: no names at all")
+        void off() {
+            AppFixture f = minesOf(AppFixture.FOE, Records.Mine.EXPIRED_MINE_ID);
+            filler.showMineName = false;
+            fill(f);
+            assertAll(
+                () -> assertEquals(2, scene.mineCount, "mines still drawn"),
+                () -> assertNull(scene.mineName[0], "no owner name"),
+                () -> assertNull(scene.mineName[1], "no Expired"));
+        }
+
+        @Test
+        @DisplayName("a null player table knows nobody")
+        void nullPlayers() {
+            assertEquals("Not of this world!", String.valueOf(SceneFiller.mineName(3, null)), "unknown owner text");
+        }
+    }
+
+    @Nested
     @DisplayName("fill: M2 objects, beams, timers")
     class ObjectsAndBeams {
         @Test
@@ -522,7 +617,8 @@ class SceneFillerTest {
                 () -> assertEquals(2, scene.mineCount, "two mines"),
                 () -> assertTrue(scene.mineTeam[0], "FRIENDLY: team mine"),
                 () -> assertFalse(scene.mineTeam[1], "not friendly"),
-                () -> assertNull(scene.mineName[0], "no mine names"),
+                () -> assertEquals("Not of this world!", String.valueOf(scene.mineName[0]),
+                    "an id that is no player: C's unknown-owner text"),
                 () -> assertEquals(15f, scene.missileLen[0], "missile length"),
                 () -> assertEquals(32, scene.missileDir[0], "pi/2 = RES 32"),
                 () -> assertEquals(130f, scene.ballX[0], "ball x"),
