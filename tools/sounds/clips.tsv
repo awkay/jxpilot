@@ -1,0 +1,24 @@
+# clip<TAB>pack<TAB>path inside the pack (docs/SOUND-PLAN.md). Packs: junkala = Juhani Junkala 512,
+# path relative to the pack root folder; kenney = Kenney Sci-Fi Sounds, path relative to the zip root.
+shot.wav	junkala	Weapons/Lasers/sfx_wpn_laser8.wav
+cannon.wav	junkala	Weapons/Cannon/sfx_wpn_cannon4.wav
+laser.wav	junkala	Weapons/Lasers/sfx_wpn_laser5.wav
+missile.wav	junkala	Weapons/Grenade Whistles/sfx_wpn_missilelaunch.wav
+explode_small.wav	junkala	Explosions/Short/sfx_exp_short_hard2.wav
+explode_large.wav	junkala	Explosions/Medium Length/sfx_exp_medium3.wav
+explode_nuke.wav	junkala	Explosions/Long/sfx_exp_long1.wav
+hit.wav	junkala	General Sounds/Simple Damage Sounds/sfx_damage_hit3.wav
+bounce.wav	junkala	General Sounds/Impacts/sfx_sounds_impact5.wav
+pickup.wav	junkala	General Sounds/Positive Sounds/sfx_sounds_powerup3.wav
+drop.wav	junkala	General Sounds/Interactions/sfx_sounds_interaction7.wav
+ball_connect.wav	junkala	General Sounds/Coins/sfx_coin_double1.wav
+warp.wav	junkala	Movement/Portals and Transitions/sfx_movement_portal5.wav
+fail.wav	junkala	General Sounds/Negative Sounds/sfx_sounds_error1.wav
+beam.wav	junkala	General Sounds/Weird Sounds/sfx_sound_mechanicalnoise4.wav
+toggle_on.wav	junkala	General Sounds/Pause Sounds/sfx_sounds_pause1_in.wav
+toggle_off.wav	junkala	General Sounds/Pause Sounds/sfx_sounds_pause1_out.wav
+blip.wav	junkala	General Sounds/Simple Bleeps/sfx_sounds_Blip7.wav
+win.wav	junkala	General Sounds/Fanfares/sfx_sounds_fanfare1.wav
+draw.wav	junkala	General Sounds/Negative Sounds/sfx_sounds_negative2.wav
+start.wav	junkala	General Sounds/Weird Sounds/sfx_sound_poweron.wav
+thrust_loop.wav	kenney	Audio/thrusterFire_004.ogg

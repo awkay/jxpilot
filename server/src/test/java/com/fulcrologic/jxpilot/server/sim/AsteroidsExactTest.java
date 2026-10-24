@@ -65,9 +65,9 @@ class AsteroidsExactTest {
         int rot = (int) (r.nextFloat() * (double) Const.RES);
         int shape = (int) (r.nextFloat() * 256.0);
         assertAll(
-            () -> assertEquals(spin, w.modes.wireTurnspeed[h], "spin"),
-            () -> assertEquals(rot, w.modes.wireRotation[h], "rotation"),
-            () -> assertEquals(shape, w.modes.wireInfo[h], "shape"));
+            () -> assertEquals(spin, w.objects.turnSpeed[h], "spin"),
+            () -> assertEquals(rot, w.objects.rotation[h], "rotation"),
+            () -> assertEquals(shape, w.objects.info[h], "shape"));
     }
 
     @Test
@@ -108,7 +108,7 @@ class AsteroidsExactTest {
             () -> assertEquals(Trig.tsin(dir1) * speed1, o.vy[c1], "child 1 vy"),
             () -> assertEquals(Trig.tcos(dir2) * speed2, o.vx[c2], "child 2 vx"),
             () -> assertEquals(Trig.tsin(dir2) * speed2, o.vy[c2], "child 2 vy"),
-            () -> assertEquals(2, w.modes.wireSize[c1], "one size smaller"),
+            () -> assertEquals(2, w.objects.size[c1], "one size smaller"),
             () -> assertEquals(2, l.size(), "the original left the list"),
             () -> assertEquals(4 + 2 + 2 - 4, w.modes.asteroidNum, "the count: 4 + 2 + 2 - 4"));
     }
@@ -170,7 +170,7 @@ class AsteroidsExactTest {
         assertAll(
             () -> assertEquals(px, w.objects.px[h], "x"),
             () -> assertEquals(py, w.objects.py[h], "y"),
-            () -> assertEquals(size, w.modes.wireSize[h], "size"),
+            () -> assertEquals(size, w.objects.size[h], "size"),
             () -> assertEquals(Trig.tcos(adir) * speed, w.objects.vx[h], "velocity"),
             () -> assertEquals(ppx, pw.objects.px[ph], "without concentrators: anywhere (x)"),
             () -> assertEquals(ppy, pw.objects.py[ph], "(y)"));

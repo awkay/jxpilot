@@ -83,8 +83,13 @@ public final class Section {
 
     /** {@link Records.Timers}: the receiving player's HUD timers (1 record). */
     public static final int TIMERS = 22;
+    /**
+     * {@link Records.Sound}: sound events the receiving player hears, with their volume (C
+     * {@code sound_play_queued}: {@code PKT_AUDIO} after the frame's objects). Not view culled.
+     */
+    public static final int SOUND = 37;
     /** Highest assigned section type. */
-    public static final int MAX_TYPE = 22;
+    public static final int MAX_TYPE = 37;
 
     /** Bytes of the section header. */
     public static final int HEADER_SIZE = 5;
@@ -114,6 +119,7 @@ public final class Section {
         SIZES[TREASURE] = Records.TreasureState.SIZE;
         SIZES[TEMP_WORMHOLE] = Records.TempWormhole.SIZE;
         SIZES[TIMERS] = Records.Timers.SIZE;
+        SIZES[SOUND] = Records.Sound.SIZE;
     }
 
     /** Record size this implementation writes for a type, 0 if unknown. */

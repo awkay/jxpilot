@@ -48,7 +48,7 @@ import java.util.Arrays;
  * {@link SnapshotFrame}s (triple buffer: the two the renderer interpolates between plus the newest).
  * Bursts are expanded into the {@link ParticlePool}; thrust sparks are generated for every sim tick
  * of a thrusting ship ({@link ThrustSparkEmitter}); map object state (cannons, fuel, targets,
- * treasures), radar and own items are applied from the newest tick only.
+ * treasures), radar, own items and sounds ({@link #sounds()}) are applied from the newest tick only.
  * <p>
  * <b>Render</b> ({@link #update}): the tick clock takes one sample per receive batch (the newest tick
  * ingested since the last update). The render tick is the estimated server tick minus
@@ -78,8 +78,12 @@ public final class ClientWorld {
     public static final double TRACK_PX_PER_FRAME = 64;
     /** Point colour codes from this value on are C debris temperature levels (code - base). */
     public static final int POINT_LEVEL_BASE = 16;
-    /** Earlier x later object pairs above which association is skipped (bounded work per snapshot). */
-    public static final long MAX_ASSOCIATION_WORK = 1L << 20;
+    /** A new shot is seeded from a ship at most this far from it (px; the gun plus a frame of flight). */
+    public static final double SEED_RADIUS_PX = 60;
+    /** Unambiguity ratio for shots without a known velocity (R2). */
+    public static final double SHOT_AMBIGUITY_RATIO = 2;
+    /** Slowest a shot of unknown velocity is taken to move (px per original frame). */
+    public static final double MIN_SHOT_SPEED = 2;
     /** Snapshot parts are numbered 0..63 (64 x 1200 bytes is far beyond any tick); higher parts are malformed. */
     public static final int MAX_PARTS = 64;
 
@@ -123,8 +127,21 @@ public final class ClientWorld {
     private final Records.Transporter transRec = new Records.Transporter();
     private final ObjectLists outObjs = new ObjectLists(SnapshotFrame.OBJECT_CAP);
     private final Records.Timers timersRec = new Records.Timers();
+    private final Records.Sound soundRec = new Records.Sound();
+    /** Sounds kept for the player: several snapshots' worth (C sends at most one of each event per frame). */
+    public static final int SOUND_CAP = 256;
+    private final SoundQueue sounds = new SoundQueue(SOUND_CAP);
     private int damaged;
     private int roundDelay;
+    private int destruct;
+    private int thrustLeft;
+    private int thrustMax;
+    private int shieldLeft;
+    private int shieldMax;
+    private int phasingLeft;
+    private int phasingMax;
+    private int shutdownCount = -1;
+    private int shutdownDelay;
     private boolean haveTimeLeft;
     private int timeLeftValue;
     private int timeLeftTick;
@@ -140,9 +157,10 @@ public final class ClientWorld {
     private double worldW = 65536;
     private double worldH = 65536;
     private boolean wrap;
-    private float frameFraction = 14f / 60f;
+    // until configure: one sim tick per C frame at the default framesPerSecond, snapshot divisor 1
+    private float frameFraction = 1f;
     private double snapshotInterval = Protocol.DEFAULT_SNAPSHOT_DIVISOR;
-    private double delayTicks = Protocol.DEFAULT_SNAPSHOT_DIVISOR + JITTER_MARGIN_SECONDS * 60;
+    private double delayTicks = Protocol.DEFAULT_SNAPSHOT_DIVISOR + JITTER_MARGIN_SECONDS * ClientGame.DEFAULT_FPS;
     private double maxExtrapolateTicks = 2.0 * Protocol.DEFAULT_SNAPSHOT_DIVISOR;
     private int defaultEngineX = ShipShape.defaultShip().engineX;
     private int defaultEngineY = ShipShape.defaultShip().engineY;
@@ -190,6 +208,13 @@ public final class ClientWorld {
     private int outSelfTanks;
     private int outSelfCurrentTank;
     private int outSelfRespawn;
+    private int outSelfPower;
+    private int outSelfTurnSpeed;
+    private int outSelfTurnRes255;
+    private int outSelfLockDist;
+    private int outSelfLockDir;
+    private int outSelfCheck;
+    private int outSelfMods;
     private final int shipCap;
     private int outShips;
     private final int[] outShipId;
@@ -209,8 +234,11 @@ public final class ClientWorld {
     private final float[] outPointY;
     private final int[] outPointColor;
     // association scratch (one entry per shot of the later frame / earlier frame)
-    private final int[] claimA;
-    private final float[] claimD;
+    private final Tracker tracker;
+    private final ObjectLists.Scratch objScratch = new ObjectLists.Scratch(SnapshotFrame.OBJECT_CAP);
+    private final int[] keyA;
+    private final int[] keyB;
+    private double shotSpeed = 21;
 
     /**
      * @param shipCap     ships per snapshot
@@ -243,8 +271,9 @@ public final class ClientWorld {
         outPointX = new float[shotCap];
         outPointY = new float[shotCap];
         outPointColor = new int[shotCap];
-        claimA = new int[shotCap];
-        claimD = new float[shotCap];
+        tracker = new Tracker(shotCap);
+        keyA = new int[shotCap];
+        keyB = new int[shotCap];
         shipIndex = new ShipIndex(shipCap);
         usedA = new boolean[shipCap];
     }
@@ -262,6 +291,9 @@ public final class ClientWorld {
      * BEHAVIOR: world size and wrap from the map; frameFraction = gameFps / simHz; snapshot interval =
      * simHz / snapshotHz ticks; delay = interval + {@link #JITTER_MARGIN_SECONDS} * simHz ticks;
      * extrapolation cap = 2 intervals; the clock runs at simHz.
+     * BEHAVIOR: a missing gameFps is the map's framesPerSecond; a missing simHz is the rounded gameFps (the
+     * server ticks once per C frame, so frameFraction is then 1); a missing snapshotHz is
+     * simHz / {@link Protocol#DEFAULT_SNAPSHOT_DIVISOR}.
      * BEHAVIOR: cannons alive, fuel stations full, targets intact, no base owners; clears all state.
      */
     public void configure(WorldMap map, Options opts, Msg.Welcome w) {
@@ -269,14 +301,15 @@ public final class ClientWorld {
         worldH = map.pixelHeight();
         wrap = map.edgeWrap();
         reader.setWorld(worldW, worldH, wrap);
-        int simHz = w.simHz > 0 ? w.simHz : 60;
-        int snapHz = w.snapshotHz > 0 ? w.snapshotHz : simHz / Protocol.DEFAULT_SNAPSHOT_DIVISOR;
         float gameFps = w.gameFps > 0 ? w.gameFps : opts.framesPerSecond();
+        int simHz = w.simHz > 0 ? w.simHz : Math.max(1, Math.round(gameFps));
+        int snapHz = w.snapshotHz > 0 ? w.snapshotHz : simHz / Protocol.DEFAULT_SNAPSHOT_DIVISOR;
         frameFraction = gameFps / simHz;
         snapshotInterval = (double) simHz / snapHz;
         delayTicks = snapshotInterval + JITTER_MARGIN_SECONDS * simHz;
         maxExtrapolateTicks = 2 * snapshotInterval;
         sparks.configure(opts.getInt(Opt.SHOT_LIFE), opts.framesPerSecond(), worldW, worldH, wrap);
+        shotSpeed = opts.getDouble(Opt.SHOT_SPEED);
         clock.reset(simHz);
         cannonFlags = new byte[map.cannons().size()];
         fuelLevel = new float[map.fuels().size()];
@@ -306,6 +339,11 @@ public final class ClientWorld {
         Arrays.fill(selfItems, 0);
         damaged = 0;
         roundDelay = 0;
+        destruct = 0;
+        thrustMax = 0;
+        shieldMax = 0;
+        phasingMax = 0;
+        shutdownCount = -1;
         haveTimeLeft = false;
         clock.reset(clock.simHz());
         outShips = 0;
@@ -313,6 +351,13 @@ public final class ClientWorld {
         outPoints = 0;
         outObjs.clear();
         outSelf = false;
+    }
+
+    /** Forget every frame's association (tests: time a fresh association in {@link #update}). */
+    void invalidateAssociations() {
+        for (SnapshotFrame f : ring) {
+            f.assocValid = false;
+        }
     }
 
     /** Override the interpolation delay (ticks behind the estimated server tick). */
@@ -332,6 +377,11 @@ public final class ClientWorld {
      * BEHAVIOR: thrust sparks are generated only for ticks after the previous newest tick (each tick
      * once), at most {@link #MAX_SPARK_TICKS} per ship; late ticks generate none.
      * BEHAVIOR: map object state, radar, own items and HUD timers are applied only from the newest tick.
+     * BEHAVIOR: the frame is associated ({@link #associate}) with the frames of the ticks just before and
+     * after it when they are in the ring, so shot velocities carry from frame to frame even when the renderer
+     * skips a pair.
+     * BEHAVIOR: SOUND records are appended to {@link #sounds()} only from the newest tick (a late or repeated
+     * part plays nothing).
      * BEHAVIOR: malformed data stops decoding at the error and returns {@link #MALFORMED}; so does a part
      * number of {@link #MAX_PARTS} or more (nothing is merged, so repeats cannot double a frame).
      */
@@ -388,6 +438,14 @@ public final class ClientWorld {
             decodeSection(f, newest);
         }
         generateSparks(f, firstShip, !selfBefore && f.hasSelf);
+        SnapshotFrame prev = frameFor(tick - 1);
+        if (prev != null) {
+            associate(prev, f);
+        }
+        SnapshotFrame after = frameFor(tick + 1);
+        if (after != null) {
+            associate(f, after);
+        }
         if (reader.malformed()) {
             malformedCount++;
             return MALFORMED;
@@ -452,8 +510,9 @@ public final class ClientWorld {
                     f.shotVx[k] = (byte) shotRec.vx();
                     f.shotVy[k] = (byte) shotRec.vy();
                     f.shotVariant[k] = variant;
-                    f.shotEstVx[k] = 0;
-                    f.shotEstVy[k] = 0;
+                    f.shotEstVx[k] = f.shotVx[k];
+                    f.shotEstVy[k] = f.shotVy[k];
+                    f.shotState[k] = f.shotVx[k] != 0 || f.shotVy[k] != 0 ? Tracker.KNOWN : Tracker.UNKNOWN;
                     f.shotNext[k] = -1;
                 }
             }
@@ -469,6 +528,7 @@ public final class ClientWorld {
                             f.pointColor[k] = burstRec.color();
                             f.pointEstVx[k] = 0;
                             f.pointEstVy[k] = 0;
+                            f.pointState[k] = Tracker.UNKNOWN;
                             f.pointNext[k] = -1;
                         }
                         continue;
@@ -606,10 +666,27 @@ public final class ClientWorld {
                     timersRec.wrap(reader, 0);
                     damaged = timersRec.damaged();
                     roundDelay = timersRec.roundDelay();
+                    destruct = timersRec.destruct();
+                    thrustLeft = timersRec.thrustLeft();
+                    thrustMax = timersRec.thrustMax();
+                    shieldLeft = timersRec.shieldLeft();
+                    shieldMax = timersRec.shieldMax();
+                    phasingLeft = timersRec.phasingLeft();
+                    phasingMax = timersRec.phasingMax();
+                    shutdownCount = timersRec.shutdownCount();
+                    shutdownDelay = timersRec.shutdownDelay();
                     if (timersRec.timeLeft() >= 0) {
                         haveTimeLeft = true;
                         timeLeftValue = timersRec.timeLeft();
                         timeLeftTick = f.tick;
+                    }
+                }
+            }
+            case Section.SOUND -> {
+                if (newest) {
+                    for (int i = 0; i < n; i++) {
+                        soundRec.wrap(reader, i);
+                        sounds.add(soundRec.event(), soundRec.volume());
                     }
                 }
             }
@@ -633,6 +710,13 @@ public final class ClientWorld {
         f.selfNumTanks = selfRec.numTanks();
         f.selfCurrentTank = selfRec.currentTank();
         f.selfRespawnFrames = selfRec.respawnFrames();
+        f.selfPower = selfRec.power();
+        f.selfTurnSpeed = selfRec.turnSpeed();
+        f.selfTurnRes255 = selfRec.turnResistance255();
+        f.selfLockDist = selfRec.lockDist();
+        f.selfLockDir = selfRec.lockDir();
+        f.selfCheck = selfRec.check();
+        f.selfMods = selfRec.mods();
     }
 
     private void readRadar(int tick, int n) {
@@ -846,8 +930,15 @@ public final class ClientWorld {
 
     /**
      * Link the shots and point particles of {@code a} to their continuations in the later frame {@code b}
-     * (once per pair of frames and parts), and estimate the velocity of {@code b}'s from the links, for
-     * objects the wire sends without velocity (C fast shots and debris).
+     * (once per pair of frames and parts) with the {@link Tracker}, and estimate the velocity of {@code b}'s
+     * from the links, for objects the wire sends without velocity (C fast shots and debris).
+     * <p>
+     * BEHAVIOR: shots of {@code a} without a velocity are first seeded ({@link #seedShots}); shots link with the
+     * same variant, KNOWN tightly, the rest only when unambiguous ({@link #SHOT_AMBIGUITY_RATIO}); points link
+     * with the same colour to the nearest within {@link #TRACK_PX_PER_FRAME} per frame.
+     * BEHAVIOR: a later shot with a wire velocity keeps it; other linked ones get the displacement over the
+     * frames (KNOWN); unlinked ones none (UNKNOWN).
+     * BEHAVIOR: the moving M2 objects are associated too ({@link ObjectLists#associate}).
      */
     private void associate(SnapshotFrame a, SnapshotFrame b) {
         if (a.assocValid && a.assocTick == b.tick && a.assocParts == b.parts && a.assocOwnParts == a.parts) {
@@ -860,109 +951,88 @@ public final class ClientWorld {
         double frames = (b.tick - a.tick) * (double) frameFraction;
         int sn = Math.min(a.shots, shotCap);
         int sm = Math.min(b.shots, shotCap);
-        link(a.shotX, a.shotY, a.shotEstVx, a.shotEstVy, a.shotVx, a.shotVy, a.shotVariant, null, sn,
-            b.shotX, b.shotY, b.shotVariant, null, sm, a.shotNext, frames);
-        estimate(a.shotX, a.shotY, b.shotX, b.shotY, b.shotEstVx, b.shotEstVy, sm, frames);
-        link(a.pointX, a.pointY, a.pointEstVx, a.pointEstVy, null, null, null, a.pointColor, a.points,
-            b.pointX, b.pointY, null, b.pointColor, b.points, a.pointNext, frames);
-        estimate(a.pointX, a.pointY, b.pointX, b.pointY, b.pointEstVx, b.pointEstVy, b.points, frames);
+        seedShots(a, sn);
+        for (int i = 0; i < sn; i++) {
+            keyA[i] = a.shotVariant[i];
+        }
+        for (int j = 0; j < sm; j++) {
+            keyB[j] = b.shotVariant[j];
+        }
+        tracker.link(sn, a.shotX, a.shotY, a.shotEstVx, a.shotEstVy, a.shotState, keyA, sm, b.shotX, b.shotY, keyB,
+            frames, TRACK_PX_PER_FRAME, SHOT_AMBIGUITY_RATIO, MIN_SHOT_SPEED, worldW, worldH, wrap, a.shotNext);
+        for (int j = 0; j < sm; j++) {
+            if (b.shotVx[j] != 0 || b.shotVy[j] != 0) {
+                continue;
+            }
+            int i = tracker.claimOf(j);
+            if (i >= 0 && frames > 0) {
+                b.shotEstVx[j] = (float) (XMath.wrapDelta(b.shotX[j] - a.shotX[i], worldW, wrap) / frames);
+                b.shotEstVy[j] = (float) (XMath.wrapDelta(b.shotY[j] - a.shotY[i], worldH, wrap) / frames);
+                b.shotState[j] = Tracker.KNOWN;
+            } else {
+                b.shotEstVx[j] = 0;
+                b.shotEstVy[j] = 0;
+                b.shotState[j] = Tracker.UNKNOWN;
+            }
+        }
+        int pn = Math.min(a.points, shotCap);
+        int pm = Math.min(b.points, shotCap);
+        tracker.link(pn, a.pointX, a.pointY, a.pointEstVx, a.pointEstVy, a.pointState, a.pointColor, pm, b.pointX,
+            b.pointY, b.pointColor, frames, TRACK_PX_PER_FRAME, 1, 0, worldW, worldH, wrap, a.pointNext);
+        tracker.estimate(pm, a.pointX, a.pointY, b.pointX, b.pointY, b.pointEstVx, b.pointEstVy, b.pointState, frames);
+        a.objs.associate(b.objs, tracker, objScratch, frames, worldW, worldH, wrap);
     }
 
     /**
-     * Nearest-neighbour association of n earlier objects to m later ones of the same kind (variant or
-     * colour), wrap-aware, within {@link #TRACK_PX_PER_FRAME} per original frame of the predicted position
-     * (earlier position + velocity: the wire's when it has one, else the estimate).
+     * R2: a shot without a velocity (just fired, on the C path) gets a guess from the ship nearest to it within
+     * {@link #SEED_RADIUS_PX}: C {@code Fire_normal_shots}' velocity, the ship's velocity plus shotSpeed along
+     * its heading.
      * <p>
-     * BEHAVIOR: first every earlier object proposes its nearest later one and each later object keeps its
-     * closest proposer (so two shots that pass each other do not swap); then earlier objects left over take
-     * the nearest later one nobody claimed. {@code next[i]} is the later index or -1. With more than
-     * {@link #MAX_ASSOCIATION_WORK} pairs nothing is linked (objects then step at the server rate).
-     * Leaves the later index's claimer in {@link #claimA}.
+     * BEHAVIOR: only UNKNOWN shots are seeded (GUESSED); the own ship (SELF) and every SHIP record are
+     * candidates; with none in range the shot stays UNKNOWN.
      */
-    private void link(float[] ax, float[] ay, float[] aEvx, float[] aEvy, byte[] aWvx, byte[] aWvy, byte[] aVar,
-                      int[] aCol, int n, float[] bx, float[] by, byte[] bVar, int[] bCol, int m, int[] next,
-                      double frames) {
-        for (int j = 0; j < m; j++) {
-            claimA[j] = -1;
-        }
+    void seedShots(SnapshotFrame a, int n) {
         for (int i = 0; i < n; i++) {
-            next[i] = -1;
-        }
-        if ((long) n * m > MAX_ASSOCIATION_WORK || frames <= 0) {
-            return;
-        }
-        double r = TRACK_PX_PER_FRAME * frames;
-        double r2 = r * r;
-        for (int i = 0; i < n; i++) {
-            int j = nearest(i, ax, ay, aEvx, aEvy, aWvx, aWvy, aVar, aCol, bx, by, bVar, bCol, m, frames, r2, false);
-            if (j >= 0 && (claimA[j] < 0 || lastD < claimD[j])) {
-                claimA[j] = i;
-                claimD[j] = (float) lastD;
+            if (a.shotState[i] != Tracker.UNKNOWN) {
+                continue;
             }
-        }
-        for (int j = 0; j < m; j++) {
-            if (claimA[j] >= 0) {
-                next[claimA[j]] = j;
-            }
-        }
-        for (int i = 0; i < n; i++) {
-            if (next[i] < 0) {
-                int j = nearest(i, ax, ay, aEvx, aEvy, aWvx, aWvy, aVar, aCol, bx, by, bVar, bCol, m, frames, r2, true);
-                if (j >= 0) {
-                    next[i] = j;
-                    claimA[j] = i;
+            double bestD = SEED_RADIUS_PX * SEED_RADIUS_PX;
+            double h = 0;
+            double vx = 0;
+            double vy = 0;
+            boolean found = false;
+            if (a.hasSelf) {
+                double d = dist2(a.selfX, a.selfY, a.shotX[i], a.shotY[i]);
+                if (d <= bestD) {
+                    bestD = d;
+                    h = a.selfHeading;
+                    vx = a.selfVx;
+                    vy = a.selfVy;
+                    found = true;
                 }
             }
+            for (int s = 0; s < a.ships; s++) {
+                double d = dist2(a.shipX[s], a.shipY[s], a.shotX[i], a.shotY[i]);
+                if (d < bestD) {
+                    bestD = d;
+                    h = a.shipHeading[s];
+                    vx = a.shipVx[s];
+                    vy = a.shipVy[s];
+                    found = true;
+                }
+            }
+            if (found) {
+                a.shotEstVx[i] = (float) (vx + shotSpeed * Math.cos(h));
+                a.shotEstVy[i] = (float) (vy + shotSpeed * Math.sin(h));
+                a.shotState[i] = Tracker.GUESSED;
+            }
         }
     }
 
-    private double lastD;
-
-    private int nearest(int i, float[] ax, float[] ay, float[] aEvx, float[] aEvy, byte[] aWvx, byte[] aWvy,
-                        byte[] aVar, int[] aCol, float[] bx, float[] by, byte[] bVar, int[] bCol, int m,
-                        double frames, double r2, boolean unclaimedOnly) {
-        double vx = aEvx[i];
-        double vy = aEvy[i];
-        if (aWvx != null && (aWvx[i] != 0 || aWvy[i] != 0)) {
-            vx = aWvx[i];
-            vy = aWvy[i];
-        }
-        double px = ax[i] + vx * frames;
-        double py = ay[i] + vy * frames;
-        int best = -1;
-        double bestD = r2;
-        for (int j = 0; j < m; j++) {
-            if (aVar != null ? aVar[i] != bVar[j] : aCol[i] != bCol[j]) {
-                continue;
-            }
-            if (unclaimedOnly && claimA[j] >= 0) {
-                continue;
-            }
-            double dx = XMath.wrapDelta(bx[j] - px, worldW, wrap);
-            double dy = XMath.wrapDelta(by[j] - py, worldH, wrap);
-            double d = dx * dx + dy * dy;
-            if (d <= bestD) {
-                bestD = d;
-                best = j;
-            }
-        }
-        lastD = bestD;
-        return best;
-    }
-
-    /** BEHAVIOR: a linked later object's velocity is its wrap-aware displacement over the frames; others 0. */
-    private void estimate(float[] ax, float[] ay, float[] bx, float[] by, float[] evx, float[] evy, int m,
-                          double frames) {
-        for (int j = 0; j < m; j++) {
-            int i = claimA[j];
-            if (i >= 0 && frames > 0) {
-                evx[j] = (float) (XMath.wrapDelta(bx[j] - ax[i], worldW, wrap) / frames);
-                evy[j] = (float) (XMath.wrapDelta(by[j] - ay[i], worldH, wrap) / frames);
-            } else {
-                evx[j] = 0;
-                evy[j] = 0;
-            }
-        }
+    private double dist2(double ax, double ay, double bx, double by) {
+        double dx = XMath.wrapDelta(bx - ax, worldW, wrap);
+        double dy = XMath.wrapDelta(by - ay, worldH, wrap);
+        return dx * dx + dy * dy;
     }
 
     /**
@@ -990,24 +1060,27 @@ public final class ClientWorld {
             }
             double vx = a.shotEstVx[i];
             double vy = a.shotEstVy[i];
-            if (a.shotVx[i] != 0 || a.shotVy[i] != 0) {
-                vx = a.shotVx[i];
-                vy = a.shotVy[i];
-            }
             putShot(wrapX(a.shotX[i] + vx * dt), wrapY(a.shotY[i] + vy * dt), a.shotVariant[i]);
         }
     }
 
     /**
-     * BEHAVIOR: the M2 objects of the frame at or before the render tick (else the later one); balls and
-     * missiles move toward their continuation in the later frame ({@link ObjectLists#interpolateMoving}).
+     * BEHAVIOR: the M2 objects of the frame at or before the render tick (else the later one); tracked objects
+     * (items, mines, missiles, balls, asteroids, wreckage) move toward their continuation in the later frame,
+     * or by their estimated velocity when they have none ({@link ObjectLists#moveTracked}, extrapolation capped
+     * like shots); connectors and beams move with their endpoints ({@link ObjectLists#interpolateLines}).
      */
     private void drawObjects(SnapshotFrame a, SnapshotFrame b) {
         SnapshotFrame src = a != null ? a : b;
         outObjs.copyFrom(src.objs);
-        if (a != null && b != null) {
-            double t = (renderTick - a.tick) / (double) (b.tick - a.tick);
-            outObjs.interpolateMoving(b.objs, t, TRACK_PX_PER_FRAME * (b.tick - a.tick) * frameFraction, worldW,
+        if (a == null) {
+            return;
+        }
+        double t = b == null ? 0 : (renderTick - a.tick) / (double) (b.tick - a.tick);
+        double dt = clampExtrapolation(renderTick - a.tick) * frameFraction;
+        outObjs.moveTracked(a.objs, b == null ? null : b.objs, t, dt, worldW, worldH, wrap);
+        if (b != null) {
+            outObjs.interpolateLines(b.objs, t, TRACK_PX_PER_FRAME * (b.tick - a.tick) * frameFraction, worldW,
                 worldH, wrap);
         }
     }
@@ -1110,6 +1183,13 @@ public final class ClientWorld {
         outSelfTanks = s.selfNumTanks;
         outSelfCurrentTank = s.selfCurrentTank;
         outSelfRespawn = s.selfRespawnFrames;
+        outSelfPower = s.selfPower;
+        outSelfTurnSpeed = s.selfTurnSpeed;
+        outSelfTurnRes255 = s.selfTurnRes255;
+        outSelfLockDist = s.selfLockDist;
+        outSelfLockDir = s.selfLockDir;
+        outSelfCheck = s.selfCheck;
+        outSelfMods = s.selfMods;
     }
 
     // ================================================================ reliable-event state
@@ -1159,6 +1239,9 @@ public final class ClientWorld {
     /** Snapshot parts accepted so far. */
     public long ingested() { return ingested; }
 
+    /** Sounds received, in arrival order (see {@link SoundQueue}). */
+    public SoundQueue sounds() { return sounds; }
+
     public long malformedSnapshots() { return malformedCount; }
 
     /** Tick the last {@link #update} rendered (fractional). */
@@ -1198,6 +1281,27 @@ public final class ClientWorld {
 
     public int selfRespawnFrames() { return outSelfRespawn; }
 
+    /** Engine power the server uses (SELF; C {@code displayedPower}). */
+    public int selfPower() { return outSelfPower; }
+
+    /** Turn speed the server uses (SELF; C {@code displayedTurnspeed}). */
+    public int selfTurnSpeed() { return outSelfTurnSpeed; }
+
+    /** Turn resistance * 255 (SELF). */
+    public int selfTurnResistance255() { return outSelfTurnRes255; }
+
+    /** Distance to the locked player in px; 0 when the server does not show the lock (C lock_dist). */
+    public int selfLockDist() { return outSelfLockDist; }
+
+    /** Direction to the locked player in RES units (C lock_dir). */
+    public int selfLockDir() { return outSelfLockDir; }
+
+    /** Next race checkpoint (C {@code nextCheckPoint}). */
+    public int selfCheck() { return outSelfCheck; }
+
+    /** Weapon modifiers, {@link Records.Self} MOD_* bits. */
+    public int selfMods() { return outSelfMods; }
+
     /** Count of a carried {@link Item} (by ordinal). */
     public int selfItem(int item) { return selfItems[item]; }
 
@@ -1224,11 +1328,17 @@ public final class ClientWorld {
 
     public float shotY(int i) { return outShotY[i]; }
 
-    /** {@link Records.ShotKind}. */
+    /** {@link Records.ShotKind} (the variant's 3 kind bits). */
     public int shotKind(int i) { return Records.ShotKind.kindOf(outShotVariant[i]); }
 
-    /** {@link Records.ObjColor}. */
+    /** {@link Records.ObjColor} (the variant's colour nibble). */
     public int shotColor(int i) { return Records.ShotKind.colorOf(outShotVariant[i]); }
+
+    /**
+     * True when the shot cannot hurt the own ship ({@link Records.ShotKind#FLAG_HARMLESS}; C frame.c's
+     * teamshot case, drawn as C {@code Gui_paint_teamshot}).
+     */
+    public boolean shotHarmless(int i) { return Records.ShotKind.harmless(outShotVariant[i]); }
 
     public ParticlePool particles() { return particles; }
 
@@ -1237,6 +1347,30 @@ public final class ClientWorld {
 
     /** Frames until the round starts, 0 when none (newest TIMERS). */
     public int roundDelay() { return roundDelay; }
+
+    /** Self-destruct frames left, 0 when not self-destructing (newest TIMERS; C {@code destruct}). */
+    public int destruct() { return destruct; }
+
+    /** Emergency thrust left (frames) of the meter; see {@link #thrustMax()}. */
+    public int thrustLeft() { return thrustLeft; }
+
+    /** Emergency thrust meter maximum, 0 when no meter (C thrusttimemax). */
+    public int thrustMax() { return thrustMax; }
+
+    public int shieldLeft() { return shieldLeft; }
+
+    /** Emergency shield meter maximum, 0 when no meter. */
+    public int shieldMax() { return shieldMax; }
+
+    public int phasingLeft() { return phasingLeft; }
+
+    /** Phasing meter maximum, 0 when no meter. */
+    public int phasingMax() { return phasingMax; }
+
+    /** Seconds until the server shuts down, -1 when none (C shutdown_count). */
+    public int shutdownCount() { return shutdownCount; }
+
+    public int shutdownDelay() { return shutdownDelay; }
 
     /**
      * Seconds of game time left (C {@code Paint_HUD} time left), counted down from the last report by the

@@ -34,7 +34,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Parsed C golden trace with the game-mode lines of xpilot-ref patch 0003 (XPOBJ, XPPL2, XPTRS, XPTGT,
+ * Parsed C golden trace with the game-mode lines of xpilot-ref patch 0004 (XPOBJ, XPPL2, XPTRS, XPTGT,
  * XPTEAM) next to the XPTRACE player lines of patch 0002, grouped by C frame ({@code frame_loops}).
  */
 final class ModeTrace {

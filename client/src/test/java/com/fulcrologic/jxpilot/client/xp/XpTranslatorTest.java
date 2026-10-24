@@ -177,6 +177,26 @@ class XpTranslatorTest {
     }
 
     @Nested
+    @DisplayName("sounds (PKT_AUDIO)")
+    class Sounds {
+        @Test
+        @DisplayName("each PKT_AUDIO becomes a SOUND record after SELF, with or without PKT_SELF; none, no section")
+        void audio() {
+            List<String> withSelf = frame(c(1).self(1000, 2000).audio(5, 40).audio(23, 100).end(1));
+            List<String> noSelf = frame(c(2).audio(82, 10).end(2));
+            List<String> quiet = frame(c(3).self(1000, 2000).end(3));
+            int self = withSelf.indexOf(SnapDump.only(withSelf, "SELF").get(0));
+            assertAll(
+                () -> assertEquals(List.of("SOUND event=5 volume=40", "SOUND event=23 volume=100"),
+                    SnapDump.only(withSelf, "SOUND"), "type and volume as sent, in order"),
+                () -> assertEquals("SOUND event=5 volume=40", withSelf.get(self + 2), "the SOUND section follows SELF (and its SELFCTL dump line)"),
+                () -> assertEquals(List.of("SOUND event=82 volume=10"), SnapDump.only(noSelf, "SOUND"),
+                    "a frame without PKT_SELF still carries its sounds"),
+                () -> assertEquals(List.of(), SnapDump.only(quiet, "SOUND"), "a frame without PKT_AUDIO has no SOUND"));
+        }
+    }
+
+    @Nested
     @DisplayName("ships")
     class Ships {
         @Test
@@ -231,6 +251,20 @@ class XpTranslatorTest {
         }
 
         @Test
+        void refuelPacketsBecomeBeamsWithTheirEndpoints() {
+            List<String> s = frame(c(1).self(1000, 1000).ship(1000, 1000, 3, 0).ship(1100, 1000, 4, 0)
+                .refuel(700, 700, 1000, 1000).refuel(1100, 1000, 735, 735).refuel(1000, 1000, 1100, 1000)
+                .refuel(800, 800, 820, 820).end(1));
+            assertEquals(List.of(
+                    "CONNECTOR 700.0,700.0 1000.0,1000.0 kind=" + Records.Connector.KIND_REFUEL,
+                    "CONNECTOR 1100.0,1000.0 735.0,735.0 kind=" + Records.Connector.KIND_REPAIR,
+                    "CONNECTOR 1000.0,1000.0 1100.0,1000.0 kind=" + Records.Connector.KIND_REFUEL,
+                    "CONNECTOR 800.0,800.0 820.0,820.0 kind=" + Records.Connector.KIND_REFUEL),
+                SnapDump.only(s, "CONNECTOR"),
+                "station-to-ship is REFUEL; ship-to-non-ship is REPAIR; ship-to-ship and unknown default to REFUEL");
+        }
+
+        @Test
         void pausedShipsHaveNoIdOnTheWire() {
             List<String> s = frame(c(1).self(1000, 1000).paused(1050, 1000, 3).end(1));
             assertEquals(List.of("SHIP id=" + Protocol.NO_ID + " flags=" + Records.ShipFlags.PAUSED
@@ -256,12 +290,14 @@ class XpTranslatorTest {
                 .fastshot(type(XpProto.BLUE, 0, 0), 3, 3).end(1));
             assertEquals(List.of(
                 "SHOT kind=0 color=" + Records.ObjColor.RED + " pos=617.0,617.0 vel=0,0",
-                "SHOT kind=0 color=" + Records.ObjColor.BLUE + " pos=1383.0,1127.0 vel=0,0",
                 "SHOT kind=0 color=" + Records.ObjColor.BLUE + " pos=619.0,619.0 vel=0,0",
+                "SHOT kind=0 color=" + Records.ObjColor.BLUE + " pos=1383.0,1127.0 vel=0,0 harmless",
                 "SHOT kind=0 color=" + Records.ObjColor.WHITE + " pos=882.0,1148.0 vel=0,0",
                 "SHOT kind=0 color=" + Records.ObjColor.WHITE + " pos=616.0,616.0 vel=0,0"),
                 SnapDump.only(s, "SHOT"),
-                "red normal shots are white (C Paint_fastshots); team shots keep colour; origin + area * 256 + byte");
+                "red normal shots are white (C Paint_fastshots); team shots keep colour; a blue team shot is harmless "
+                    + "(C frame.c's teamshot), a red one (nuclear blink) is not; one section per colour and flag; "
+                    + "origin + area * 256 + byte");
         }
 
         @Test
@@ -381,8 +417,8 @@ class XpTranslatorTest {
                 () -> assertEquals(List.of("MISSILE id=" + Protocol.NO_ID + " pos=1007.0,1008.0 h=1.571 kind="
                     + Records.Missile.KIND_HEAT + " len=15"),
                     SnapDump.only(s, "MISSILE"), "missile"),
-                () -> assertEquals(List.of("BALL id=4 pos=1009.0,1010.0 team=" + Protocol.NO_TEAM + " holder="
-                    + Protocol.NO_ID), SnapDump.only(s, "BALL"), "ball"),
+                () -> assertEquals(List.of("BALL id=" + Protocol.NO_ID + " pos=1009.0,1010.0 team=" + Protocol.NO_TEAM
+                    + " holder=4"), SnapDump.only(s, "BALL"), "ball: C's id is the connected player, the ball has none"),
                 () -> assertEquals(List.of("LASER pos=1011.0,1012.0 h=3.142 len=100 color=" + Records.ObjColor.BLUE),
                     SnapDump.only(s, "LASER"), "laser"),
                 () -> assertEquals(List.of("ASTEROID pos=1013.0,1014.0 size=3 rot=1.571"), SnapDump.only(s, "ASTEROID"),

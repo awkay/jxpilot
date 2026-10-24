@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.math.XMath;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.world.Events;
@@ -51,10 +52,13 @@ public final class Collisions {
 
     private final World w;
     private final Simulation sim;
+    /** C {@code wreckageCollisionMayKill}. */
+    private final boolean wreckageMayKill;
 
     public Collisions(World w, Simulation sim) {
         this.w = w;
         this.sim = sim;
+        this.wreckageMayKill = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.WRECKAGE_COLLISION_MAY_KILL);
     }
 
     /**
@@ -172,6 +176,7 @@ public final class Collisions {
             }
             if (pl.px < 0 || pl.py < 0 || pl.px >= w.pixelWidth || pl.py >= w.pixelHeight) {
                 pl.status |= Obj.KILLED;
+                Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_WALL);
                 w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" left the known universe.");
                 w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, pl.id, Obj.NO_ID, Msg.GameEvent.CRASH_UNIVERSE);
                 sim.scoring.score(pl, -Scoring.rate(Scoring.WALL_SCORE, pl.score), pl.bx, pl.by, pl.name);
@@ -193,6 +198,7 @@ public final class Collisions {
                     if (w.teamImmune(pl.id, o.id) || pl.pseudoTeam == o.pseudoTeam) {
                         continue;
                     }
+                    Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_PLAYER);
                     shipsCollide(pl, o, p);
                 }
             }
@@ -247,9 +253,10 @@ public final class Collisions {
     private void ranOver(Player winner, Player victim, Params p) {
         w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(winner.name).append(" ran over ")
             .append(victim.name).append('.');
+        Sounds.play(w, victim.px, victim.py, SoundEvent.PLAYER_RAN_OVER_PLAYER);
         winner.kills++;
         double sc = Scoring.rate(winner.score, victim.score) * p.runoverKillScoreMult;
-        w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, winner.id, victim.id, 0f);
+        w.events.kill(winner.id, victim.id, 0f, Events.KILL_RUNOVER);
         sim.scoring.scorePlayers(winner, sc, victim.name, victim, -sc, winner.name);
     }
 
@@ -351,7 +358,7 @@ public final class Collisions {
             }
             // C computes hit = (SHIP_SZ + pl_radius >= range) || in_range_acd(..., range): the same test as above
             // (C passes range, not radius), so every object that gets here hits.
-            if (type == Obj.DEBRIS || type == Obj.WRECKAGE) {
+            if ((type & (Obj.DEBRIS | Obj.WRECKAGE)) != 0) {
                 debris(pl, h);
                 if ((pl.status & Obj.KILLED) != 0) {
                     return;
@@ -394,11 +401,13 @@ public final class Collisions {
     }
 
     /**
-     * C {@code Player_collides_with_debris}.
+     * C {@code Player_collides_with_debris}, for debris and wreckage.
      * <p>
      * BEHAVIOR: unless fully shielded the ship loses |(long)(2*mass*|v|)| fuel; at zero fuel it dies
      * ("succumbed to an explosion"): the owner (if another player) gets the kill and
      * Rate(owner, victim)*explosionKillScoreMult, else the victim loses Rate(0, score)*explosion*selfKill mults.
+     * BEHAVIOR: with wreckageCollisionMayKill, wreckage also kills a ship without shield and armor, and hits
+     * the armor of an unshielded ship that has armor (collision.c:1099-1102, 1133-1138).
      */
     void debris(Player pl, int h) {
         Objects o = w.objects;
@@ -408,10 +417,9 @@ public final class Collisions {
         if (!pl.fullyShielded()) {
             pl.addFuel(-cost);
         }
-        boolean wreck = o.type[h] == Obj.WRECKAGE && w.modeParams.wreckageCollisionMayKill
-            && (pl.used & Has.SHIELD) == 0;
-        if (pl.fuel != 0 && !(wreck && (pl.have & Has.ARMOR) == 0)) {
-            if (wreck) {
+        boolean deadlyWreck = o.type[h] == Obj.WRECKAGE && wreckageMayKill && (pl.used & Has.SHIELD) == 0;
+        if (pl.fuel != 0 && !(deadlyWreck && (pl.have & Has.ARMOR) == 0)) {
+            if (deadlyWreck) {
                 sim.ships.hitArmor(pl);
             }
             return;
@@ -431,13 +439,13 @@ public final class Collisions {
             msg.append('.');
         }
         if (killer == null || killer == pl) {
-            w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, Obj.NO_ID, pl.id, 0f);
+            w.events.kill(Obj.NO_ID, pl.id, 0f, Events.KILL_EXPLOSION);
             sim.scoring.score(pl, -Scoring.rate(0, pl.score) * p.explosionKillScoreMult * p.selfKillScoreMult,
                 pl.bx, pl.by, killer == null ? "[Explosion]" : pl.name);
         } else {
             killer.kills++;
             double sc = Scoring.rate(killer.score, pl.score) * p.explosionKillScoreMult;
-            w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, killer.id, pl.id, 0f);
+            w.events.kill(killer.id, pl.id, 0f, Events.KILL_EXPLOSION);
             sim.scoring.scorePlayers(killer, sc, pl.name, pl, -sc, killer.name);
         }
         o.life[h] = 0;
@@ -459,6 +467,9 @@ public final class Collisions {
         Params p = w.params;
         int type = o.type[h];
         if ((pl.used & Has.SHIELD) != 0 || (pl.have & Has.ARMOR) != 0) {
+            if (type == Obj.SHOT || type == Obj.CANNON_SHOT) {
+                Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_EAT_SHOT);
+            }
             if (!pl.fullyShielded()) {
                 float drainFactor = 1.0f;
                 if (p.shotHitFuelDrainUsesKineticEnergy) {
@@ -480,6 +491,7 @@ public final class Collisions {
         StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name);
         boolean fromCannon = (o.status[h] & Obj.FROMCANNON) != 0;
         if (fromCannon) {
+            Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_CANNONFIRE);
             msg.append(" was hit by cannonfire.");
             sc = Scoring.rate(Scoring.CANNON_SCORE, pl.score) / 4;
         } else if (o.owner[h] == Obj.NO_ID || w.byId(o.owner[h]) == null) {
@@ -490,6 +502,7 @@ public final class Collisions {
             msg.append(" was killed by ").append(describe(type, o.mods[h])).append(" from ").append(killer.name)
                 .append('.');
             if (killer == pl) {
+                Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_SHOT_THEMSELF);
                 msg.append("  How strange!");
                 sc = Scoring.rate(0, pl.score) * p.selfKillScoreMult;
             } else {

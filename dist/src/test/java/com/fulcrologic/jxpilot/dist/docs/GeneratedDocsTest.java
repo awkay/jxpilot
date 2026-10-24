@@ -30,6 +30,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -69,6 +71,39 @@ class GeneratedDocsTest {
     }
 
     @Test
+    @DisplayName("the committed item table matches the item bitmaps")
+    void itemsUpToDate() throws IOException {
+        check("items.adoc", ItemTable.itemsAdoc());
+    }
+
+    @Test
+    @DisplayName("the committed item pictures have exactly the pixels the item bitmaps give")
+    void itemImagesUpToDate() throws IOException {
+        Path dir = GENERATED.resolveSibling("images");
+        for (Map.Entry<String, BufferedImage> e : ItemTable.images().entrySet()) {
+            Path p = dir.resolve(e.getKey());
+            BufferedImage want = e.getValue();
+            if (Boolean.getBoolean("jxpilot.regenerateDocs")) {
+                Files.createDirectories(p.getParent());
+                ImageIO.write(want, "png", p.toFile());
+                continue;
+            }
+            String what = "docs/guide/images/" + e.getKey();
+            assertTrue(Files.exists(p), what + HOW_TO_FIX);
+            BufferedImage got = ImageIO.read(p.toFile());
+            assertEquals(want.getWidth() + "x" + want.getHeight(), got.getWidth() + "x" + got.getHeight(),
+                what + HOW_TO_FIX);
+            for (int y = 0; y < want.getHeight(); y++) {
+                for (int x = 0; x < want.getWidth(); x++) {
+                    if ((want.getRGB(x, y) | 0xFF000000) != (got.getRGB(x, y) | 0xFF000000)) {
+                        assertEquals(want.getRGB(x, y), got.getRGB(x, y), what + " pixel " + x + "," + y + HOW_TO_FIX);
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     @DisplayName("the committed key table matches ControlKey")
     void keysUpToDate() throws IOException {
         check("keys.adoc", GuideTables.keysAdoc());
@@ -91,11 +126,17 @@ class GeneratedDocsTest {
                     }
                 },
                 () -> assertTrue(doc.contains("|[[opt-contactPort]]`+contactPort+`\n|`+port+`\n|integer\n|`+15345+`\n"
-                        + "|command line, config file\n|The server contact port number.\n"),
-                    "a row lists name, short name, type, default, sources and help"),
-                () -> assertTrue(doc.contains("|[[opt-gravity]]`+gravity+`\n|\n|real\n|`+-0.14+`\n"
+                        + "|command line, config file\n|*Implemented.* The server contact port number.\n"),
+                    "a row lists name, short name, type, default, sources, status and help"),
+                () -> assertTrue(doc.contains("|[[opt-gravity]]`+gravity+`\n|\n|real\n|`+-0.14+` +\nlib/defaults: `+-0.25+`\n"
                         + "|command line, map, config file\n"),
-                    "a short name equal to the name is left blank; ANY options list all three sources"),
+                    "a short name equal to the name is left blank; lib/defaults values follow the cmdline.c default;"
+                        + " ANY options list all three sources"),
+                () -> assertTrue(doc.contains("|[[opt-maxShieldedWallBounceSpeed]]`+maxShieldedWallBounceSpeed+`\n"
+                        + "|`+maxShieldedBounceSpeed+`\n|real\n|`+50+` +\nlib/defaults: `+180+`\n"),
+                    "values set by lib/defaults' expand: SoftWalls are shown too"),
+                () -> assertTrue(doc.contains("|*Not applicable:* JVM server (no mlock, no signal timer). If set to nonzero"),
+                    "a not-applicable option gives its reason before the help"),
                 () -> assertTrue(doc.contains("|[[opt-robotFile]]`+robotFile+`\n|\n|text\n|_(none)_\n"),
                     "a null default reads (none)"),
                 () -> assertTrue(doc.contains("|[[opt-denyHosts]]`+denyHosts+`\n|\n|text\n|_(empty)_\n"),
@@ -121,6 +162,120 @@ class GeneratedDocsTest {
 
         private List<Opt> in(Map<GuideTables.Category, List<Opt>> g, String id) {
             return g.entrySet().stream().filter(e -> e.getKey().id().equals(id)).findFirst().orElseThrow().getValue();
+        }
+    }
+
+    @Nested
+    @DisplayName("option status")
+    class OptionStatus {
+        @Test
+        void labelsAndTexts() {
+            assertAll(
+                () -> assertEquals("Implemented", GuideTables.statusLabel("implemented (Params)"), "implemented"),
+                () -> assertEquals("Implemented", GuideTables.statusLabel("used in the logRobots line only"), "used"),
+                () -> assertEquals("In progress", GuideTables.statusLabel("read (Params); the feature belongs to server-items"),
+                    "read but not built is in progress"),
+                () -> assertEquals("In progress", GuideTables.statusLabel("server-modes (balls/treasures)"),
+                    "an M2 work package is in progress"),
+                () -> assertEquals("Not applicable", GuideTables.statusLabel("not applicable: JVM"), "not applicable"),
+                () -> assertEquals("No effect", GuideTables.statusLabel("accepted, no effect: never read"), "no effect"),
+                () -> assertEquals("Not yet", GuideTables.statusLabel("not implemented, no owner: x"), "not yet"),
+                () -> assertEquals("Not supported", GuideTables.statusLabel("deliberately unsupported: x"),
+                    "deliberately unsupported"),
+                () -> assertEquals("*Not supported:* the server never quits (C quits unless -noQuit).",
+                    GuideTables.statusText("deliberately unsupported: the server never quits (C quits unless -noQuit). "
+                        + "Lead decision wanted; see report"), "developer notes are removed from reasons"),
+                () -> assertEquals("*In progress (M2).*", GuideTables.statusText("server-items (x)"),
+                    "in progress has no reason"),
+                () -> assertEquals(Opt.values().length, GuideTables.statusTexts().keySet().stream()
+                        .filter(n -> Opt.find(n) != null).count(), "every option has a status row"));
+        }
+    }
+
+    @Nested
+    @DisplayName("keys.adoc content")
+    class KeysContent {
+        @Test
+        void effectiveDefaultsAndDifferences() {
+            String doc = GuideTables.keysAdoc();
+            assertAll(
+                () -> assertTrue(doc.contains("|`+keyTurnLeft+`\n|`+a+`\n|Turn left (anti-clockwise).\n"),
+                    "a game key lists its resource, keys and help, with no note when it matches XPilot"),
+                () -> assertTrue(doc.contains("|`+keyToggleSound+`\n|`+minus+` (pass:c[-])\n"),
+                    "the JXPilot mute key is listed with its default"),
+                () -> assertTrue(doc.contains("_XPilot's default: `+Escape+` (pass:c[Esc])._"),
+                    "swap settings notes XPilot's Escape, which JXPilot keeps for quitting"),
+                () -> assertTrue(doc.contains("|`+keySwapSettings+`\n|-\n"), "swap settings has no JXPilot default"),
+                () -> assertTrue(doc.contains("_Not in JXPilot._"), "unimplemented client functions are marked"),
+                () -> assertTrue(doc.contains("Default control settings: power 45, turnSpeed 40, turnResistance 0.12"),
+                    "the control settings follow the table"));
+        }
+
+        @Test
+        void helpers() {
+            assertAll(
+                () -> assertTrue(GuideTables.sameKeys("a  b", "b a"), "key sets ignore order and spacing"),
+                () -> assertTrue(!GuideTables.sameKeys("a", "a b"), "different sets differ"),
+                () -> assertEquals("40", GuideTables.num(40.0), "whole numbers have no decimals"),
+                () -> assertEquals("0.12", GuideTables.num(0.12), "fractions keep their decimals"));
+        }
+    }
+
+    @Nested
+    @DisplayName("item pictures and table")
+    class ItemPictures {
+        private final int red = ItemTable.argb(com.fulcrologic.jxpilot.client.render.Palette.RED);
+        private final int blue = ItemTable.argb(com.fulcrologic.jxpilot.client.render.Palette.BLUE);
+        private final int black = ItemTable.argb(com.fulcrologic.jxpilot.client.render.Palette.BLACK);
+
+        /** Colour of the 1x pixel (x, y): the centre of its SCALE x SCALE block. */
+        private int at(BufferedImage img, int x, int y) {
+            return img.getRGB(x * ItemTable.SCALE + 1, y * ItemTable.SCALE + 1) | 0xFF000000;
+        }
+
+        @Test
+        void symbolAndInPlayPictures() {
+            // itemMinePack.xbm row 7 is 0xffff (a full row), row 0 is empty.
+            BufferedImage sym = ItemTable.symbol(com.fulcrologic.jxpilot.common.Item.MINE);
+            BufferedImage play = ItemTable.inPlay(com.fulcrologic.jxpilot.common.Item.MINE);
+            int s = com.fulcrologic.jxpilot.client.paint.PaintConfig.ITEM_TRIANGLE_SIZE;
+            int c = ItemTable.MARGIN + s;
+            assertAll(
+                () -> assertEquals(48, sym.getWidth(), "the symbol is 16 pixels scaled 3 times"),
+                () -> assertEquals(red, at(sym, 0, 7), "a set bitmap pixel is red"),
+                () -> assertEquals(black, at(sym, 0, 0), "a clear bitmap pixel is black"),
+                () -> assertEquals((2 * c + 1) * 3, play.getWidth(), "the in-play canvas is 2*(margin+S)+1 pixels, scaled"),
+                () -> assertEquals(blue, at(play, c, c + s), "the triangle's apex points down at (c, c+S)"),
+                () -> assertEquals(blue, at(play, c - s, c - s), "the top-left corner is drawn"),
+                () -> assertEquals(blue, at(play, c, c - s), "the top edge is drawn"),
+                () -> assertEquals(red, at(play, c - 8, c - s + 2 + 7), "the symbol's top-left is (c-8, c-S+2)"),
+                () -> assertEquals(black, at(play, 0, 0), "the margin is black"));
+        }
+
+        @Test
+        void namesKeysAndHash() {
+            assertAll(
+                () -> assertEquals("emergency-thrust", ItemTable.stem(com.fulcrologic.jxpilot.common.Item.EMERGENCY_THRUST),
+                    "file stems are lower case with dashes"),
+                () -> assertEquals("Emergency thrust",
+                    ItemTable.displayName(com.fulcrologic.jxpilot.common.Item.EMERGENCY_THRUST), "names read as words"),
+                () -> assertEquals("ECM", ItemTable.displayName(com.fulcrologic.jxpilot.common.Item.ECM),
+                    "ECM stays an acronym"),
+                () -> assertEquals("-", ItemTable.keys(com.fulcrologic.jxpilot.common.Item.ARMOR),
+                    "a passive item has no keys"),
+                () -> assertEquals("ECM: `+bracketleft+` (pass:c[[])",
+                    ItemTable.keys(com.fulcrologic.jxpilot.common.Item.ECM), "keys list function and default keys"),
+                () -> assertEquals(ItemTable.pixelHash(ItemTable.images()), ItemTable.pixelHash(ItemTable.images()),
+                    "the pixel hash is deterministic"),
+                () -> assertEquals(42, ItemTable.images().size(), "two pictures per item"),
+                () -> assertEquals(com.fulcrologic.jxpilot.common.Item.COUNT, ItemTable.C_TEXT.size(),
+                    "every item has its C description"),
+                () -> assertTrue(ItemTable.itemsAdoc().contains("|image:items/fuel.png[Fuel in play]\n"
+                    + "|image:items/fuel-symbol.png[Fuel symbol]\n|[[item-fuel]]*Fuel*\n|Extra energy/fuel\n|-\n"
+                    + "|C server: yes +\nJava server: in progress (M2)\n"), "a row has both pictures, name, C text, keys and status"),
+                () -> assertEquals("C server: yes +\nJava server: in progress (M2)",
+                    ItemTable.status(com.fulcrologic.jxpilot.common.Item.LASER),
+                    "an item the Java server lacks works on C servers and is in progress on the Java server"));
         }
     }
 

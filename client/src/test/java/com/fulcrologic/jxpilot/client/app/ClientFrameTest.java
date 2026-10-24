@@ -267,11 +267,18 @@ class ClientFrameTest {
             cf.key(GLFW_KEY_F12, GLFW_PRESS, 0, T0);
             boolean swap1 = cf.takeSwapScale();
             boolean swap2 = cf.takeSwapScale();
+            boolean noSound = cf.takeToggleSound();
+            cf.key(GLFW_KEY_MINUS, GLFW_PRESS, 0, T0);
+            boolean sound1 = cf.takeToggleSound();
+            boolean sound2 = cf.takeToggleSound();
             cf.key(GLFW_KEY_ESCAPE, GLFW_PRESS, 0, T0);
             assertAll(
                 () -> assertFalse(before, "no quit at start"),
                 () -> assertTrue(swap1, "swap reported"),
                 () -> assertFalse(swap2, "only once"),
+                () -> assertFalse(noSound, "the swap key is no sound toggle"),
+                () -> assertTrue(sound1, "the sound key is reported"),
+                () -> assertFalse(sound2, "once"),
                 () -> assertTrue(cf.quitRequested(), "Escape: quit"));
         }
 
@@ -307,5 +314,127 @@ class ClientFrameTest {
             () -> assertSame(f.game, cf.game(), "game accessor"),
             () -> assertSame(conn, cf.connection(), "connection accessor"),
             () -> assertSame(input, cf.input(), "input accessor"));
+    }
+
+    @Nested
+    @DisplayName("key configuration")
+    class KeyConfiguration {
+        ClientFrame withRc(AppFixture f, String rc) {
+            return new ClientFrame(f.game, conn, com.fulcrologic.jxpilot.client.game.input.KeyConfig.load(rc, "rc", null),
+                new SceneData(8, 16, 64, 8), new RadarBlips(8));
+        }
+
+        @Test
+        @DisplayName("the loaded settings go to the connection at once (for the join); a power key changes and sends them")
+        void settingsSent() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = withRc(f, "turnSpeed: 30\nkeyIncreaseTurnspeed: F10\nkeyIncreasePower: F12\n");
+            List<String> atStart = List.copyOf(conn.settings);
+            cf.key(GLFW_KEY_F10, GLFW_PRESS, 0, T0);
+            cf.key(GLFW_KEY_F10, GLFW_RELEASE, 0, T0);
+            cf.key(GLFW_KEY_F12, GLFW_PRESS, 0, T0);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            assertAll(
+                () -> assertEquals(List.of("45.0 30.0 0.12 35.0 25.0 0.12"), atStart,
+                    "the file's turn speed is handed to the connection by the constructor"),
+                () -> assertEquals(3, conn.settings.size(), "each power/turn speed key sends the settings"),
+                () -> assertEquals("45.0 31.5 0.12 35.0 25.0 0.12", conn.settings.get(1), "turn speed * 1.05"),
+                () -> assertEquals("49.5 31.5 0.12 35.0 25.0 0.12", conn.settings.get(2), "power * 1.10"),
+                () -> assertEquals(0L, conn.lastKeys & (ControlKey.INCREASE_POWER.mask()
+                    | ControlKey.INCREASE_TURNSPEED.mask()), "the keys themselves are not sent (C)"),
+                () -> assertEquals(com.fulcrologic.jxpilot.client.game.hud.Hud.CONTROL_DELAY, cf.hud().controlCount(),
+                    "the control meters show"));
+        }
+
+        @Test
+        @DisplayName("swap settings swaps locally, sends the key (the server swaps its copy) and shows the meters")
+        void swap() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = withRc(f, "keySwapSettings: F8\n");
+            cf.key(GLFW_KEY_F8, GLFW_PRESS, 0, T0);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            assertAll(
+                () -> assertEquals(1, conn.settings.size(), "nothing is sent beyond the constructor's copy"),
+                () -> assertEquals(25.0, cf.settings().turnSpeed, "swapped to the alternate turn speed"),
+                () -> assertEquals(ControlKey.SWAP_SETTINGS.mask(), conn.lastKeys & ControlKey.SWAP_SETTINGS.mask(),
+                    "the swap key goes to the server"),
+                () -> assertTrue(cf.hud().controlCount() > 0, "meters show"));
+        }
+
+        @Test
+        @DisplayName("F1 toggles the key help; the first PLAYING frame says which key shows it")
+        void help() {
+            AppFixture f = new AppFixture(true).players();
+            f.game.onStateChange(ConnectionState.PLAYING, "Playing");
+            ClientFrame cf = frame(f);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            int hidden = cf.helpHud().textCount();
+            cf.key(GLFW_KEY_F1, GLFW_PRESS, 0, T0);
+            cf.step(T0 + 1000, 800, 600, 1, M, 256, 100);
+            int shown = cf.helpHud().textCount();
+            boolean titled = cf.helpHud().text(0).toString().startsWith("Keys (defaults) - F1 closes");
+            cf.key(GLFW_KEY_F1, GLFW_RELEASE, 0, T0);
+            cf.key(GLFW_KEY_F1, GLFW_PRESS, 0, T0);
+            cf.step(T0 + 2000, 800, 600, 1, M, 256, 100);
+            long hints = java.util.stream.IntStream.range(0, f.game.messages().gameCount())
+                .filter(i -> f.game.messages().game(i).text().toString().equals("F1: keys")).count();
+            assertAll(
+                () -> assertEquals(0, hidden, "hidden at first"),
+                () -> assertEquals(1 + 2 * cf.keyHelp().entries(), shown, "title plus keys and text per entry"),
+                () -> assertTrue(titled, "the title names the source and the close key"),
+                () -> assertEquals(0, cf.helpHud().textCount(), "pressed again: hidden"),
+                () -> assertEquals(1, hints, "'F1: keys' once, on joining"));
+        }
+
+        @Test
+        @DisplayName("with keyHelp unbound there is no hint and the key does nothing")
+        void noHelpKey() {
+            AppFixture f = new AppFixture(true).players();
+            f.game.onStateChange(ConnectionState.PLAYING, "Playing");
+            ClientFrame cf = withRc(f, "keyHelp:\n");
+            cf.key(GLFW_KEY_F1, GLFW_PRESS, 0, T0);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            long hints = java.util.stream.IntStream.range(0, f.game.messages().gameCount())
+                .filter(i -> f.game.messages().game(i).text().toString().endsWith(": keys")).count();
+            assertAll(
+                () -> assertEquals(0, hints, "no hint"),
+                () -> assertEquals(0, cf.helpHud().textCount(), "no help"),
+                () -> assertTrue(cf.keyHelp().title().startsWith("Keys (defaults + rc)"), "title without a close key"),
+                () -> assertFalse(cf.keyHelp().title().contains("closes"), "no close key named"));
+        }
+
+        @Test
+        @DisplayName("while not playing no hint is given")
+        void notPlaying() {
+            AppFixture f = new AppFixture(true).players();
+            f.game.onStateChange(ConnectionState.CONNECTING, "Connecting");
+            ClientFrame cf = frame(f);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            long hints = java.util.stream.IntStream.range(0, f.game.messages().gameCount())
+                .filter(i -> f.game.messages().game(i).text().toString().equals("F1: keys")).count();
+            assertEquals(0, hints, "the hint waits for PLAYING");
+        }
+
+        @Test
+        @DisplayName("the HUD shows the server's power and turn speed while the control meters are up")
+        void meters() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = withRc(f, "keyIncreasePower: F12\n");
+            f.twice(a -> a.selfControls(50, 40, com.fulcrologic.jxpilot.common.net.Protocol.NO_ID, 0, 0, 0));
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            boolean before = hasText(cf.viewHud(), "Power");
+            cf.key(GLFW_KEY_F12, GLFW_PRESS, 0, T0);
+            cf.step(T0 + 1000, 800, 600, 1, M, 256, 100);
+            boolean power = hasText(cf.viewHud(), "Power");
+            boolean turn = hasText(cf.viewHud(), "Turnspeed");
+            // 100 original frames at 14 fps later the meters are gone
+            cf.step(T0 + 1000 + 7_200_000_000L, 800, 600, 1, M, 256, 100);
+            boolean after = hasText(cf.viewHud(), "Power");
+            assertAll(
+                () -> assertFalse(before, "no meter before a settings key (C powerMeter off)"),
+                () -> assertTrue(power, "Power meter after the key"),
+                () -> assertTrue(turn, "Turnspeed meter too"),
+                () -> assertFalse(after, "gone after CONTROL_DELAY frames"));
+        }
     }
 }

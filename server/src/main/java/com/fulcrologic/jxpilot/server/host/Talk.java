@@ -37,7 +37,7 @@ import com.fulcrologic.jxpilot.server.world.World;
  * Without a {@code ':'} (or with it first, or followed by a smiley character {@code -_~)(/\}{[]} or nothing)
  * the line goes to everyone as {@code "text [sender]"}. Otherwise the part before the colon addresses it:
  * digits are a team ({@code "text [sender]:[team]"} to every member and the sender), {@code god} is the
- * server log (not ported: dropped), anything else a player by name, exact first, then by unique prefix
+ * server's admin log ({@link AdminLog}), anything else a player by name, exact first, then by unique prefix
  * ({@code "text [sender]:[receiver]"} to both). C also matches the real name; JXPilot has none.
  */
 final class Talk {
@@ -46,9 +46,15 @@ final class Talk {
     static final String SMILEY = "-_~)(/\\}{[]";
 
     private final World w;
+    private final AdminLog admin;
 
     Talk(World w) {
+        this(w, new AdminLog(null, 0, java.time.ZonedDateTime::now));
+    }
+
+    Talk(World w, AdminLog admin) {
         this.w = w;
+        this.admin = admin;
     }
 
     /**
@@ -58,7 +64,8 @@ final class Talk {
      * BEHAVIOR: a team (all digits): KIND_TEAM_CHAT to each player in the game on that team, and to the sender
      * when it is not on it but someone got it; nobody on the team: "Message not sent, nobody in team N!" to the
      * sender (KIND_SERVER).
-     * BEHAVIOR: "god" (any case): dropped.
+     * BEHAVIOR: "god" (any case): the text after the colon goes to the admin log; logged, the sender gets
+     * "text [sender]:[GOD]" (KIND_PRIVATE), else " < GOD doesn't seem to be listening>" (KIND_SERVER).
      * BEHAVIOR: a player: KIND_PRIVATE to the receiver and the sender, unless they are the same (nothing);
      * "Message not sent, X matches more than one player!" / "... does not match any player!" to the sender.
      */
@@ -72,9 +79,19 @@ final class Talk {
         if (allDigits(line, 0, colon)) {
             team(from, line, colon, parseTeam(line, colon));
         } else if (colon == 3 && equalsIgnoreCase("god", line, 0, colon)) {
-            return;
+            god(from, line, colon);
         } else {
             player(from, line, colon);
+        }
+    }
+
+    private void god(Player from, CharSequence line, int colon) {
+        if (admin.log(from.name, line, colon + 1)) {
+            w.events.playerMessage(Msg.Text.KIND_PRIVATE, from.id, from.id).append(line, colon + 1, line.length())
+                .append(" [").append(from.name).append("]:[GOD]");
+        } else {
+            w.events.playerMessage(Msg.Text.KIND_SERVER, Obj.NO_ID, from.id)
+                .append(" < GOD doesn't seem to be listening>");
         }
     }
 

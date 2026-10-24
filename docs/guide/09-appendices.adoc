@@ -35,15 +35,81 @@ https://github.com/awkay/jxpilot.
 [cols="2,3,2",options="header"]
 |===
 |Component |Where |License
+|XPilot 4.5.5 server defaults file (`lib/defaults`), unmodified |Server and client jars
+(`xpilot/defaults`) |GPL v2 or later (part of the XPilot distribution)
 |XPilot 4.5.5 maps |`maps/*.xp`, the maps zip, the application downloads |GPL v2 or later; authors in
 <<06-config-and-maps.adoc#shipped-maps,Shipped maps>>
 |Fira Code font |Client jar (`fonts/`) |SIL Open Font License 1.1 (`fonts/FiraCode-LICENSE.txt`)
+|Sound effects: Juhani Junkala, "The Essential Retro Video Game Sound Effects Collection [512
+sounds]" (21 clips), and Kenney, "Sci-Fi Sounds" `thrusterFire_004` (the engine loop) |Client jar
+(`sounds/`) |CC0 1.0 (public domain). Sources, checksums, the clip each came from and how it was
+processed: `sounds/LICENSE-sounds.txt` in the client jar.
 |LWJGL 3 |Client jar |BSD 3-Clause
 |GLFW, stb, libffi, liburing (in LWJGL's native libraries); Khronos OpenGL headers |Client jar |zlib;
 MIT or public domain; MIT; MIT; Khronos (MIT-style). Texts in `META-INF/licenses/lwjgl/` in the client jar.
+|OpenAL Soft (in LWJGL's OpenAL native libraries) |Client jar |GNU LGPL 2.0 or later
+(`META-INF/licenses/lwjgl/openal_soft_license.txt`). Source: https://github.com/kcat/openal-soft at
+commit `90191edd20bb877c5cbddfdac7ec0fe49ad93727`.
 |Java runtime (OpenJDK, Eclipse Temurin build) |Application downloads only (`runtime/`) |GPL v2 with
 the Classpath Exception; texts in the runtime's `legal/` directory
 |JUnit 5, PIT |Build and tests only, not distributed |EPL 2.0 / Apache 2.0
+|===
+
+[appendix]
+[[differences]]
+== Differences from XPilot
+
+JXPilot aims to play exactly like XPilot 4.5.5, and its server matches the XPilot server frame for frame
+on recorded reference games. These are the deliberate differences a player or server operator may
+notice. The complete list for developers, with the reasons, is in `docs/DEVIATIONS-server.md` in the
+source.
+
+[[differences-server]]
+=== The JXPilot server
+
+[cols="2,3,3",options="header"]
+|===
+|Area |XPilot |JXPilot
+|Defaults file |`LIBDIR/defaults`; a missing file is skipped |XPilot's `lib/defaults` is in the jar;
+`--defaults FILE` replaces it, `--defaults none` skips it, and a named file that cannot be read is an
+error
+|Last player leaves |the server exits, unless started with `-noQuit` |the server keeps running (matching
+XPilot is being worked on)
+|Operator commands, password file |available |not yet
+|Player names |must start with a capital letter (the XPilot client capitalizes) |any non-empty name;
+names already in use are refused, ignoring case
+|Real names and host names |shown in the player list and join messages |not known; join messages show
+the player name only
+|Changing team or ship shape while playing |possible |not yet
+|Rounds |also end races and treasure games |race and treasure rounds come with those features (M2);
+team rounds end by lives or `maxRoundTime`
+|Keys |every key press in a client packet counts |the server sees your keys once per frame; a key
+pressed and released within one frame (1/14 s) is lost
+|Random events |XPilot's random number generator |another generator: random details (sparks, explosions, robot
+choices) differ, nothing else
+|Gravity of a `gravityPoint` on a non-square wrapping map; objects exactly half a world apart |XPilot bugs
+|fixed
+|`denyHosts` |IPv4; `:` also separates entries |IPv4 and IPv6, so `:` does not separate entries
+|`serverHost` |the address the contact socket binds |the bind selector when `--bind` is not given
+|`logRobots` |on standard output, with a time stamp |on the server log, without a time stamp
+|Network |XPilot's protocol, one port per player, meta server |JXPilot's protocol on one UDP port; no meta
+server; the JXPilot client can still join XPilot servers
+|===
+
+[[differences-client]]
+=== The JXPilot client
+
+[cols="2,3,3",options="header"]
+|===
+|Area |XPilot |JXPilot
+|kbd:[Esc] |swaps engine settings |quits (bind `keySwapSettings` to swap settings)
+|kbd:[F1] |talk macro 1 |key help; talk macros are not supported
+|Extra keys |- |kbd:[-] mutes sound, kbd:[Alt]/kbd:[Option] also connects, kbd:[0] also self-destructs
+|Turn speed default |35 |40
+|Engine sound |a short sound every frame |a loop while you thrust
+|ID mode, message and item toggles, pointer control, recording |available |not supported
+|Showing frames |each frame as it arrives |smooth motion at your screen's refresh rate, about 90 ms behind
+the latest frame
 |===
 
 [appendix]
@@ -73,10 +139,6 @@ check `java -version`.
 |Warnings about `sun.misc.Unsafe` at startup
 |Harmless (LWJGL uses it). Add `--sun-misc-unsafe-memory-access=allow` to the `java` command to hide them.
 
-|`java -jar jxpilot-server-...jar` fails with `ClassNotFoundException: ...ServerMain`
-|This release was made before the server's entry point was merged
-(<<02-quick-start.adoc#run-server,Running a server>>).
-
 |Server: `bind selector(s) [...] match no local address`
 |The `--bind` selector matches no address on this machine. Check the interface name or network, or add
 `--bindWait` if the interface appears later (<<04-running-a-server.adoc#bind-wait,bindWait>>).
@@ -94,21 +156,50 @@ server over the VPN.
 |The map sets an option that only the command line or config file may set. Harmless; the map's value is
 ignored.
 
-|`Unknown option: --connect`
-|The game client cannot join servers yet (<<07-client-reference.adoc#network-flags,Network flags>>).
+|Client: `Rejected by ...: name not accepted`, `server is full`, ...
+|The server refused you; the reasons are listed in
+<<04-running-a-server.adoc#joining,Joining, leaving and full servers>>. For a taken name, pick another
+with `--name`.
+
+|Client: stays at "connecting" and never starts
+|Nothing comes back from the server. Check the address and port, that the server is running, and the
+firewalls on both sides; the server answers only from the address you contacted
+(<<04-running-a-server.adoc#multi-homed,Replies from the right address>>).
+
+|Client: the game feels sluggish, your ship reacts late
+|Your keys take a round trip to the server plus about 135 ms. Play on a server closer to you, or host it
+half way between the players (<<04-running-a-server.adoc#hosting,Hosting for friends far away>>).
+
+|Client: `jxpilot keys: ...` lines at startup
+|Your `~/.xpilotrc` (or `--keys` file) has a line JXPilot cannot use, or a key bound to more than one
+function. The message names the file and line; the rest of the file still applies. Check with
+`--list-keys`.
+
+|Client: `no sound: ...` at startup
+|No audio device was found or the audio library could not load; the game plays without sound. Check
+the system's sound output, or use `--no-sound` to skip the attempt.
+
+|`--local`: `cannot start the local server: ...`
+|The map file could not be read or has a bad option; the message says which.
 |===
 
 [appendix]
 [[faq]]
 == FAQ
 
-Can I play JXPilot online now?::
-Not yet. The map viewer works, the server and client networking are written on development branches,
-and the game simulation is being ported. See <<01-introduction.adoc#status,Status>>.
+Can I play JXPilot now?::
+Yes: against robots with `--local`, on a JXPilot server with `--connect`, or on an original XPilot
+server with `--connect xp://...`. Items, balls, targets and races are not on the JXPilot server yet
+(<<01-introduction.adoc#status,Status>>).
 
 Can I join an original XPilot server, or use the original XPilot client with a JXPilot server?::
-Not today: JXPilot has its own network protocol. Support for joining original XPilot 4.5.5 servers is
-being written (<<07-client-reference.adoc#xpilot-protocol,Playing on original XPilot servers>>).
+The JXPilot client joins original XPilot 4.5.5 servers with `xp://`
+(<<07-client-reference.adoc#xpilot-protocol,Playing on original XPilot servers>>). The original XPilot
+client cannot join a JXPilot server.
+
+Does the server need a big machine?::
+No: about 50-60 MB of memory and under 1% of a CPU core with six robots
+(<<04-running-a-server.adoc#hosting,Hosting>>).
 
 Does it use the original maps?::
 Yes, unchanged. The 19 maps of the XPilot 4.5.5 distribution ship with it, and other block-based XPilot
@@ -120,15 +211,16 @@ precedence rules, so existing files load. Many options take effect only as the f
 implemented.
 
 Can I use my `.xpilotrc` key bindings?::
-Not yet. The default XPilot keys are built in; a keys file is planned.
+Yes. JXPilot reads the key bindings and the six control settings from `~/.xpilotrc` in XPilot's format;
+other resources are ignored with a note (<<03-playing.adoc#key-bindings,Changing the keys>>).
 
 Is JXPilot related to the XPilot developers?::
 No. It is an independent port; they were not involved and do not endorse it
 (<<01-introduction.adoc#disclaimer,Relationship to XPilot>>).
 
-Why is the client jar about 5 MB?::
-It carries the native libraries for every supported system, so one file runs on Windows, macOS and
-Linux. The application downloads are larger (about 20 MB zipped) because they include a Java runtime.
+Why is the client jar about 10 MB?::
+It carries the native libraries (graphics and sound) for every supported system, so one file runs on
+Windows, macOS and Linux, and the sound effects. The application downloads are larger because they include a Java runtime.
 
 Does it run on Intel Macs, Linux on ARM, Windows on ARM?::
 The jar includes native libraries for macOS on Intel and Apple Silicon, Linux on x64 and arm64, and

@@ -15,17 +15,25 @@ This chapter lists every server option. The tables are generated from the server
 (`Opt` in the `common` module), and the build fails if they fall out of date, so they always match the
 code of this release.
 
-IMPORTANT: The option set is XPilot 4.5.5's (plus a few JXPilot additions), with XPilot's defaults
-and help texts. JXPilot *accepts* all of them, in all the places listed, but many control features
-that are not implemented yet (<<01-introduction.adoc#status,Status>>). Those options are kept so that
-original XPilot maps and config files load unchanged, and take effect as the features arrive. Unknown
-option names are kept and ignored, as XPilot does.
+The option set is XPilot 4.5.5's, with XPilot's defaults and help texts, plus JXPilot's network options
+(their help starts with "JXPilot:", in <<opts-network,Server and network>>). Every option is accepted
+everywhere the table says, so original XPilot maps and config files load unchanged. Each option's
+description starts with what the JXPilot server does with it:
 
-NOTE: *Unmerged branch* (`server-net`). The JXPilot network options `bind`, `bindWait`,
-`snapshotDivisor`, `radarDivisor`, `ipPacketRate`, `ipPacketBurst`, `sessionPacketRate` and
-`sessionPacketBurst`, and the JXPilot default of 4 for `maxClientsPerIP`, appear in these tables once
-that branch is merged. Until then they are described in
-<<04-running-a-server.adoc#abuse-limits,Connection and traffic limits>>.
+[cols="2,5",options="header"]
+|===
+|Status |Meaning
+|*Implemented* |The server uses the option as XPilot does.
+|*In progress (M2)* |The option belongs to a feature being built: items, balls and treasures, targets,
+races or asteroids. It takes effect when the feature arrives.
+|*Not yet* |Not implemented, and not part of current work; the reason is given.
+|*Not supported* |Deliberately left out; the reason is given.
+|*No effect* |XPilot 4.5.5 itself never uses it.
+|*Not applicable* |Has no meaning for the JXPilot server; the reason is given.
+|===
+
+The status comes from `docs/server-options-status.md` in the source, which records for every option
+where the server uses it. Unknown option names are kept and ignored, as XPilot does.
 
 [[reading-the-tables]]
 == Reading the tables
@@ -51,7 +59,9 @@ take no value: `-name` sets true and `+name` sets false.
 |comma list |Comma-separated values: `a,b,c`.
 |switch (no value) |A command-line switch.
 |===
-Default:: The built-in value. _(none)_ means unset; _(empty)_ means the empty text.
+Default:: The built-in value (XPilot's `cmdline.c`). _(none)_ means unset; _(empty)_ means the empty text.
+When XPilot's `lib/defaults`, which the server reads at every start, sets another value, it follows as
+"lib/defaults: ..." (<<04-running-a-server.adoc#defaults-file,The defaults file>>).
 Set from:: Where the option may be set: `command line`, `map` (a map file), `config file` (the server
 configuration file), and for `password` also the password file. A value from anywhere else is refused
 with a warning. When an option is set in several places, the

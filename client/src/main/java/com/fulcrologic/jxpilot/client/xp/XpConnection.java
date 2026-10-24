@@ -83,6 +83,8 @@ public final class XpConnection implements GameConnection {
         public int debrisColors = 0;
         /** Chance a spark is sent each frame, 0..1 (C {@code sparkProb}, default 0.5). */
         public double sparkProb = 0.5;
+        /** Ask for PKT_AUDIO (C {@code Send_audio_request(1)} in a client built with sound). */
+        public boolean audio;
     }
 
     /** Internal steps of the handshake. */
@@ -430,6 +432,34 @@ public final class XpConnection implements GameConnection {
     }
 
     /**
+     * C {@code Send_power} ... {@code Send_turnresistance_s}.
+     * <p>
+     * BEHAVIOR: the settings become the login's (sent with the next PKT_PLAY); while PLAYING the six
+     * PKT_POWER/TURNSPEED/TURNRESISTANCE (+ _S) packets (value * 256) go out at once (true).
+     */
+    @Override
+    public boolean sendSettings(Msg.Settings settings, long nowNanos) {
+        now = nowNanos;
+        NativeGameConnection.copy(settings, login.settings);
+        if (phase != Phase.PLAYING) {
+            return false;
+        }
+        ensureRoom(6 * 3);
+        writeSettings(login.settings);
+        flushPending();
+        return true;
+    }
+
+    private void writeSettings(Msg.Settings st) {
+        power(XpProto.PKT_POWER, st.power);
+        power(XpProto.PKT_POWER_S, st.altPower);
+        power(XpProto.PKT_TURNSPEED, st.turnSpeed);
+        power(XpProto.PKT_TURNSPEED_S, st.altTurnSpeed);
+        power(XpProto.PKT_TURNRESISTANCE, st.turnResistance);
+        power(XpProto.PKT_TURNRESISTANCE_S, st.altTurnResistance);
+    }
+
+    /**
      * BEHAVIOR: only while PLAYING; queues the line (C {@code Net_talk}) and sends it at once.
      */
     @Override
@@ -564,7 +594,8 @@ public final class XpConnection implements GameConnection {
 
     /**
      * C {@code Net_start}: shape (first {@value #SHAPE_TRIES} tries), PKT_PLAY, the six power
-     * settings (value * 256), PKT_DISPLAY, PKT_REQUEST_AUDIO off and PKT_ASYNC_FPS (the server rate).
+     * settings (value * 256), PKT_DISPLAY, PKT_REQUEST_AUDIO (on iff {@link Login#audio}) and PKT_ASYNC_FPS
+     * (the server rate).
      */
     private void sendPlay() {
         tries++;
@@ -579,20 +610,14 @@ public final class XpConnection implements GameConnection {
             }
         }
         XpWriter.u8(tx, XpProto.PKT_PLAY);
-        Msg.Settings st = login.settings;
-        power(XpProto.PKT_POWER, st.power);
-        power(XpProto.PKT_POWER_S, st.altPower);
-        power(XpProto.PKT_TURNSPEED, st.turnSpeed);
-        power(XpProto.PKT_TURNSPEED_S, st.altTurnSpeed);
-        power(XpProto.PKT_TURNRESISTANCE, st.turnResistance);
-        power(XpProto.PKT_TURNRESISTANCE_S, st.altTurnResistance);
+        writeSettings(login.settings);
         XpWriter.u8(tx, XpProto.PKT_DISPLAY);
         XpWriter.s16(tx, clampView(login.viewWidth));
         XpWriter.s16(tx, clampView(login.viewHeight));
         XpWriter.u8(tx, login.debrisColors);
         XpWriter.u8(tx, (int) Math.round(Math.max(0, Math.min(1, login.sparkProb)) * XpProto.MAX_SPARK_RAND));
         XpWriter.u8(tx, XpProto.PKT_REQUEST_AUDIO);
-        XpWriter.u8(tx, 0);
+        XpWriter.u8(tx, login.audio ? 1 : 0);
         XpWriter.u8(tx, XpProto.PKT_ASYNC_FPS);
         XpWriter.u8(tx, fps());
         transmit(player);

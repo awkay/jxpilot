@@ -365,8 +365,8 @@ public final class Msg {
         /** Block coordinates where the points were made. */
         public int bx;
         public int by;
-        /** Short label ("[Wall]", a player name, ...); may be empty. */
-        public final StringBuilder text = new StringBuilder();
+        /** Short label ("[Wall]", a player name, ...); may be empty. Presized: decoding never grows it. */
+        public final StringBuilder text = new StringBuilder(MSG_LEN);
 
         public void write(ByteBuffer b) {
             b.putFloat(score);

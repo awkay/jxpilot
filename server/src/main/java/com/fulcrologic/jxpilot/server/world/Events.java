@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.server.world;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
+import com.fulcrologic.jxpilot.common.net.Msg;
 
 /**
  * The simulation's output for the network layer: two preallocated rings that the sim appends to and
@@ -83,11 +84,32 @@ public final class Events {
      */
     public static final int TIMING = 20;
 
+    // ---- KILL causes (server-internal: {@link #cause}, never on the wire). They decide C's robot reaction.
+    /**
+     * Default cause: a killing shot of any kind, a ball or a laser by another player. A robot victim reacts with
+     * C {@code Robot_war(victim, killer)} (collision.c:827, 1359; laser.c:307).
+     */
+    public static final int KILL_WEAPON = 0;
+    /**
+     * A shove into a wall (walls.c Player_crash). {@link #aux} is the pusher drawn by
+     * {@code (int)(rfrac() * num_pushers)}, whom a robot victim goes to war with (walls.c:2195-2197); the
+     * killer (b) keeps the kill credit (the last pusher).
+     */
+    public static final int KILL_SHOVE = 1;
+    /** Ran over in a ship crash: no Robot_war; a robot victim drops its war on the killer (collision.c:447-460). */
+    public static final int KILL_RUNOVER = 2;
+    /** Debris of an explosion (Player_collides_with_debris) and other kills without Robot_war in C. */
+    public static final int KILL_EXPLOSION = 3;
+
     public final int[] kind = new int[CAPACITY];
     public final int[] a = new int[CAPACITY];
     public final int[] b = new int[CAPACITY];
     public final int[] c = new int[CAPACITY];
     public final float[] value = new float[CAPACITY];
+    /** GAME_EVENT KILL: {@code KILL_*} cause (0 = {@link #KILL_WEAPON} for every other event). */
+    public final int[] cause = new int[CAPACITY];
+    /** KILL_SHOVE: the pusher a robot victim goes to war with; else {@link Obj#NO_ID}. */
+    public final int[] aux = new int[CAPACITY];
     public final StringBuilder[] text = new StringBuilder[CAPACITY];
     private long seq;
 
@@ -129,6 +151,7 @@ public final class Events {
      * Append an event.
      * <p>
      * BEHAVIOR: takes the next ring slot (overwriting the oldest when full), clears its text, returns its index.
+     * BEHAVIOR: the kill cause is KILL_WEAPON and aux NO_ID until {@link #kill} sets them.
      */
     public int add(int k, int va, int vb, int vc, float v) {
         int i = index(seq++);
@@ -137,7 +160,21 @@ public final class Events {
         b[i] = vb;
         c[i] = vc;
         value[i] = v;
+        cause[i] = KILL_WEAPON;
+        aux[i] = Obj.NO_ID;
         text[i].setLength(0);
+        return i;
+    }
+
+    /**
+     * Append a GAME_EVENT KILL with its cause.
+     * <p>
+     * BEHAVIOR: b = killer (or NO_ID), c = victim, value = the crash sub-type of a shove (else 0), cause as given;
+     * returns the ring index (a shove sets {@link #aux} on it afterwards).
+     */
+    public int kill(int killer, int victim, float crashKind, int killCause) {
+        int i = add(GAME_EVENT, Msg.GameEvent.KILL, killer, victim, crashKind);
+        cause[i] = killCause;
         return i;
     }
 

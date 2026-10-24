@@ -86,9 +86,9 @@ class AsteroidsTest {
                 () -> assertEquals(999.0, o.fuseLife[h], EPS, "fuse"),
                 () -> assertEquals((int) (0.8 * Const.SHIP_SZ * 3), o.plRadius[h], "radius"),
                 () -> assertEquals(Obj.GRAVITY, o.status[h], "gravity"),
-                () -> assertEquals(3, m.wireSize[h], "size"),
-                () -> assertTrue(m.wireTurnspeed[h] >= 0.02f && m.wireTurnspeed[h] < 0.07f, "spin 0.02-0.07"),
-                () -> assertTrue(m.wireRotation[h] >= 0 && m.wireRotation[h] < Const.RES, "rotation"),
+                () -> assertEquals(3, o.size[h], "size"),
+                () -> assertTrue(o.turnSpeed[h] >= 0.02f && o.turnSpeed[h] < 0.07f, "spin 0.02-0.07"),
+                () -> assertTrue(o.rotation[h] >= 0 && o.rotation[h] < Const.RES, "rotation"),
                 () -> assertEquals(List.of(h), asteroids(w), "in the list"),
                 () -> assertEquals(4, m.asteroidNum, "count += 2^(size-1)"));
         }
@@ -139,7 +139,7 @@ class AsteroidsTest {
             int a = s.asteroids.make(300, 300, 1, 0, 0f);
             int b = s.asteroids.make(400, 300, 1, 0, 2f);
             int c = s.asteroids.make(500, 300, 1, 0, 2f);
-            int rotB = w.modes.wireRotation[b];
+            int rotB = w.objects.rotation[b];
             int cxB = o.cx[b];
             s.asteroids.update();
             assertAll(
@@ -147,9 +147,9 @@ class AsteroidsTest {
                 () -> assertEquals(0.0, o.life[a], EPS, "first marked"),
                 () -> assertEquals(0.0, o.life[b], EPS, "second marked (count 3 -> 1)"),
                 () -> assertEquals(1000.0, o.life[c], EPS, "the third survives"),
-                () -> assertEquals(rotB, w.modes.wireRotation[b], "dead ones do not spin"),
+                () -> assertEquals(rotB, w.objects.rotation[b], "dead ones do not spin"),
                 () -> assertEquals(cxB, o.cx[b], "or move"),
-                () -> assertEquals((w.modes.wireRotation[c]), (w.modes.wireRotation[c]) % Const.RES, "(rotation in range)"),
+                () -> assertEquals((w.objects.rotation[c]), (w.objects.rotation[c]) % Const.RES, "(rotation in range)"),
                 () -> assertTrue(o.cx[c] > Click.fromPixels(500f), "live ones move"));
         }
 
@@ -230,7 +230,7 @@ class AsteroidsTest {
             int w0 = wreck;
             assertAll(
                 () -> assertEquals(2, left.size(), "two children"),
-                () -> assertEquals(2, w.modes.wireSize[c1] + w.modes.wireSize[c2] - 2, "both size 2"),
+                () -> assertEquals(2, w.objects.size[c1] + w.objects.size[c2] - 2, "both size 2"),
                 () -> assertEquals(4, w.modes.asteroidNum, "count: 4 - 4 + 2 + 2"),
                 () -> assertTrue(o.py[c1] != o.py[c2], "split across the flight direction"),
                 () -> assertTrue(o.vx[c1] > 0 && o.vx[c2] > 0, "both keep flying forward"),

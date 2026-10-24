@@ -30,10 +30,12 @@
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-glfw</artifactId></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-opengl</artifactId></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-stb</artifactId></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-openal</artifactId></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl</artifactId><classifier>${lwjgl.natives}</classifier></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-glfw</artifactId><classifier>${lwjgl.natives}</classifier></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-opengl</artifactId><classifier>${lwjgl.natives}</classifier></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-stb</artifactId><classifier>${lwjgl.natives}</classifier></dependency>
+    <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-openal</artifactId><classifier>${lwjgl.natives}</classifier></dependency>
   </dependencies>
 
   <build>
@@ -120,9 +122,11 @@
             <param>com.fulcrologic.jxpilot.client.game.*</param>
             <param>com.fulcrologic.jxpilot.client.xp.*</param>
             <param>com.fulcrologic.jxpilot.client.app.*</param>
+            <param>com.fulcrologic.jxpilot.client.sound.*</param>
           </targetClasses>
           <!-- DemoWorld and DemoHud are fake animation data for the demo viewer mode; UdpTransport and
-               ClientSim are I/O edges covered by loopback tests; GameApp and AppLauncher are GL/GLFW glue. -->
+               ClientSim are I/O edges covered by loopback tests; GameApp and AppLauncher are GL/GLFW glue;
+               OpenAlDevice is OpenAL glue (SoundSystemTest drives it on a real device when there is one). -->
           <excludedClasses>
             <param>com.fulcrologic.jxpilot.client.viewer.DemoWorld</param>
             <param>com.fulcrologic.jxpilot.client.viewer.DemoHud</param>
@@ -131,12 +135,14 @@
             <param>com.fulcrologic.jxpilot.client.xp.XpClientSim*</param>
             <param>com.fulcrologic.jxpilot.client.app.GameApp*</param>
             <param>com.fulcrologic.jxpilot.client.app.AppLauncher</param>
+            <param>com.fulcrologic.jxpilot.client.sound.OpenAlDevice</param>
           </excludedClasses>
           <targetTests>
             <param>com.fulcrologic.jxpilot.client.*</param>
           </targetTests>
           <excludedTestClasses>
             <param>com.fulcrologic.jxpilot.client.AllocationTest</param>
+            <param>com.fulcrologic.jxpilot.client.sound.AllocationTest</param>
             <param>*NetAllocationTest*</param>
             <param>*AppAllocationTest*</param>
             <param>*UdpLoopbackTest*</param>

@@ -14,7 +14,7 @@
 #   --robots N     default 0 here (no robots disturbing the scenario)
 #   --all-players  trace robots too (default: only the human player)
 #   --map-file F   use the map file F from the host instead of a shipped map
-#   --trace-objs   also XPOBJ/XPPL2/XPTRS/XPTGT/XPTEAM lines (patch 0003): balls,
+#   --trace-objs   also XPOBJ/XPPL2/XPTRS/XPTGT/XPTEAM lines (patch 0004): balls,
 #                  asteroids, wreckage, race and treasure/target state
 #   --png FILE     also save a final screenshot
 #

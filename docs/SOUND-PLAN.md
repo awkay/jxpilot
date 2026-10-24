@@ -1,7 +1,7 @@
 # Sound plan (optional, M3)
 
-Status: researched 2026-10-23. Not implemented. Add it only once the game is playable, and only if it
-stays cheap (see SPEC.md).
+Status: implemented 2026-10-23 (branch client-sound). The research and plan below are kept; "Implementation"
+at the end records what was built and where it differs.
 
 ## Sources (all CC0; FSF lists CC0 as GPL-compatible)
 - **Primary:** Juhani Junkala, "The Essential Retro Video Game Sound Effects Collection [512 sounds]".
@@ -57,3 +57,55 @@ Junkala paths are relative to the pack root. The picks were chosen by file name 
   - any modifications, e.g. the thrust-loop processing.
 - Add rows for both sources to README.adoc's third-party table.
 - Playback: LWJGL OpenAL (in the LWJGL BOM) or javax.sound. Preload all clips at startup. A fixed voice pool means zero allocation per event.
+
+## Implementation (2026-10-23)
+
+**Which events sound:** exactly C's. The server queues C's events per player (`server.sim.Sounds`, a port
+of `saudio.c`) at the Java ports of C's `sound_play_*` call sites, and sends them in the SNAPSHOT SOUND
+section (37). A C server sends them as `PKT_AUDIO`. Both reach the same client path. Wire and API:
+docs/PROTOCOL.md "Sounds".
+- **Server API** for new features: put one call where C calls `sound_play_*`:
+  - `Sounds.play(world, x, y, SoundEvent.X)` for `sound_play_sensors`;
+  - `Sounds.playAll(world, ...)`;
+  - `Sounds.playPlayer(player, ...)`.
+
+  `SoundEvent` (common) has C's names without `_SOUND`, and its ordinal equals the C index.
+- **Assets:** `tools/sounds/build-sounds.sh` (downloads, verifies sha256, extracts the clips in `clips.tsv`)
+  and `process_sounds.py` rebuild `client/src/main/resources/sounds/` byte for byte. They need curl, unzip,
+  ffmpeg and python3. The ear-pass substitute measured these levels:
+  - every clip lasts 0.047-1.73 s;
+  - one-shots are peak-normalized to -6 dBFS (RMS -8.8 to -20.1);
+  - the thrust loop sits at -24 dBFS RMS;
+  - the loop seam step is 877, against a 4996 p99 sample step.
+
+  A 5 ms tail fade removes end clicks.
+- **Mapping:** `sounds.map` follows the table above. Events the table left out are mapped as follows:
+  - deflector → beam;
+  - hyperjump → warp;
+  - phasing_on/off, emergency_shield_on/off → toggle_on/off;
+  - asteroid_hit → hit;
+  - asteroid_break → explode_small;
+  - every `*_pickup` → pickup.
+
+  refuel stays silent, because no C server plays it.
+- **Playback:** LWJGL OpenAL (OpenAL Soft natives for every platform the release jar bundles). The pieces:
+  - all clips are preloaded;
+  - 16 fixed voices; a loop clip owns one voice;
+  - a one-shot takes a free voice, else the quietest (oldest among equals);
+  - a repeat of the same clip in the same frame shares a voice;
+  - nothing allocates per event (`client.sound.AllocationTest`).
+
+  The gain is C's `MIN(volume, maxVolume)/100`. The server has already attenuated the volume by distance.
+- **Deviations from C:**
+  - Thrust: C replays `thrust` every frame. JXPilot plays a 2 s loop instead, and holds it for 2.5 game
+    frames after the last thrust event.
+  - Mute key: C has no mute key; JXPilot adds one.
+  - Out of range: sounds outside the sensor range are not heard, and distances do not wrap, as C. On
+    wrapping maps a nearby sound across the seam is silent, as C.
+- **Options:**
+  - `--sound` / `--no-sound` (C resource `sound`; default on);
+  - `--volume 0..255` (C `maxVolume`; default 100; 0 means no sound);
+  - the key `minus` (`ClientAction.TOGGLE_SOUND`, resource keyToggleSound; C leaves it unbound) mutes and unmutes, with a "Sound off." / "Sound on." message.
+- **No device:** without an audio device, if the OpenAL library cannot load, or if a clip cannot be read,
+  the client logs `no sound: <reason>` and plays silently. Against a C server, `PKT_REQUEST_AUDIO` is 1
+  only while sound is on.

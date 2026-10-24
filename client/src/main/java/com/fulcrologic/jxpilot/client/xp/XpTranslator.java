@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.client.xp;
 
+import com.fulcrologic.jxpilot.client.game.Modifiers;
 import com.fulcrologic.jxpilot.client.net.ConnectionListener;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 import com.fulcrologic.jxpilot.common.math.XMath;
@@ -68,6 +69,7 @@ public final class XpTranslator {
     private final Msg.PlayerLeave leave = new Msg.PlayerLeave();
     private final Msg.Score score = new Msg.Score();
     private final Msg.TeamScore teamScore = new Msg.TeamScore();
+    private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
     private final Msg.Text text = new Msg.Text();
     private final Msg.BaseOwner baseOwner = new Msg.BaseOwner();
 
@@ -170,6 +172,8 @@ public final class XpTranslator {
      * BURST (debris), CANNON/FUEL/TARGET (updates, C numbers mapped to WorldMap indices), RADAR,
      * SELF_ITEMS (with PKT_SELF), the M2 object sections and TIMERS (with PKT_SELF: damaged, round delay
      * (none = 0) and the time left of a PKT_TIME_LEFT in this frame, else -1).
+     * BEHAVIOR: the frame's PKT_AUDIO become the SOUND section (C {@code Handle_audio}: type and volume as
+     * sent), with or without PKT_SELF.
      * BEHAVIOR: does nothing before {@link #configure}.
      */
     public void frame(XpFrame f, long nowNanos) {
@@ -190,6 +194,7 @@ public final class XpTranslator {
         if (f.hasSelf) {
             writeSelf(f, selfShip);
         }
+        writeSounds(f);
         writeShips(f);
         writeShots(f);
         writeDebris(f);
@@ -202,13 +207,38 @@ public final class XpTranslator {
         }
         writeObjects(f);
         if (f.hasSelf && w.beginSection(Section.TIMERS)) {
-            Records.Timers.put(w, Math.max(0, f.damaged), Math.max(0, f.roundDelay), f.timeLeft);
+            Records.Timers.put(w, Math.max(0, f.damaged), Math.max(0, f.roundDelay), f.timeLeft, Math.max(0, f.destruct),
+                meterLeft(f.thrustTime, f.thrustMax), meterMax(f.thrustTime, f.thrustMax),
+                meterLeft(f.shieldTime, f.shieldMax), meterMax(f.shieldTime, f.shieldMax),
+                meterLeft(f.phasingTime, f.phasingMax), meterMax(f.phasingTime, f.phasingMax),
+                f.shutdownCount, f.shutdownDelay);
             w.endSection();
         }
         rememberShips(f);
         snap.flip();
         snapshots++;
         listener.onSnapshot(snap, nowNanos);
+    }
+
+    /** C {@code Paint_meters}: BEHAVIOR: a meter is shown iff time &gt;= 0 and max &gt; 0; its value is min(time, max). */
+    static int meterLeft(int time, int max) {
+        return time >= 0 && max > 0 ? Math.min(time, max) : 0;
+    }
+
+    /** BEHAVIOR: the meter's max when shown, else 0 (TIMERS: max 0 = no meter). */
+    static int meterMax(int time, int max) {
+        return time >= 0 && max > 0 ? max : 0;
+    }
+
+    private void writeSounds(XpFrame f) {
+        int n = Math.min(f.audioCount, XpFrame.AUDIO_CAP);
+        if (n == 0 || !w.beginSection(Section.SOUND)) {
+            return;
+        }
+        for (int i = 0; i < n && w.hasRoom(); i++) {
+            Records.Sound.put(w, f.audioType[i], f.audioVolume[i]);
+        }
+        w.endSection();
     }
 
     private double wrapX(double x) {
@@ -229,7 +259,9 @@ public final class XpTranslator {
 
     /**
      * BEHAVIOR: flags from the own PKT_SHIP (shield, cloak...), DEAD when the own ship is not in the
-     * frame (C {@code selfVisible}), PAUSED / SELF_DESTRUCT from the status byte; fuel in C units.
+     * frame (C {@code selfVisible}), PAUSED / SELF_DESTRUCT from the status byte; fuel in C units; power,
+     * turn speed, turn resistance, lock distance/direction and checkpoint as sent; the PKT_MODIFIERS string
+     * as {@link Modifiers#parse} bits.
      */
     private void writeSelf(XpFrame f, int selfShip) {
         if (!w.beginSection(Section.SELF)) {
@@ -247,7 +279,9 @@ public final class XpTranslator {
         }
         Records.Self.put(w, selfId & 0xFFFF, flags, (float) viewX, (float) viewY, f.selfVx, f.selfVy,
             (float) (f.selfDir * RAD_PER_DIR), f.selfFuelSum, f.selfFuelMax,
-            f.selfLockId < 0 ? Protocol.NO_ID : f.selfLockId, f.items[XpProto.ITEM_TANK], f.selfCurrentTank, 0);
+            f.selfLockId < 0 ? Protocol.NO_ID : f.selfLockId, f.items[XpProto.ITEM_TANK], f.selfCurrentTank, 0,
+            f.selfPower, f.selfTurnspeed, f.selfTurnresistance / 255.0, Math.max(0, f.selfLockDist), f.selfLockDir,
+            f.selfCheck, Modifiers.parse(f.modifiers));
         w.endSection();
     }
 
@@ -299,6 +333,15 @@ public final class XpTranslator {
             }
         }
         w.endSection();
+    }
+
+    private static boolean isShipAt(XpFrame f, int x, int y) {
+        for (int i = 0; i < f.ships; i++) {
+            if (f.shipX[i] == x && f.shipY[i] == y) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static int refuelFlags(XpFrame f, int x, int y) {
@@ -379,46 +422,57 @@ public final class XpTranslator {
 
     /**
      * BEHAVIOR: fast shots (C {@code Paint_fastshots}/{@code Paint_teamshots}): normal shots that are
-     * neither white nor blue are drawn white; team shots keep their colour. One SHOT section per
-     * resulting colour, velocity 0 (C sends none).
+     * neither white nor blue are drawn white; team shots keep their colour. A team shot (C type
+     * {@code DEBRIS_TYPES..2*DEBRIS_TYPES-1}) that is not RED is harmless (C frame.c's BLUE teamshot: it
+     * cannot hurt the viewer) and gets {@link Records.ShotKind#FLAG_HARMLESS}, so both protocols draw it
+     * the same way; a RED team shot is a blinking nuclear one, which can hurt. One SHOT section per
+     * resulting colour and harmless flag, velocity 0 (C sends none).
      */
     private void writeShots(XpFrame f) {
         if (f.fastshots == 0) {
             return;
         }
+        for (int col = Records.ObjColor.RED; col <= Records.ObjColor.WHITE; col++) {
+            if (!writeShots(f, col, false) || !writeShots(f, col, true)) {
+                return;
+            }
+        }
+    }
+
+    /** The shots of one colour and harmless flag as one section; false when the body is full. */
+    private boolean writeShots(XpFrame f, int col, boolean harmless) {
         int xa = xAreas();
         int ya = yAreas();
         int areas = xa * ya;
-        for (int col = Records.ObjColor.RED; col <= Records.ObjColor.WHITE; col++) {
-            boolean open = false;
-            for (int k = 0; k < f.fastshots; k++) {
-                int t = f.fastshotType[k];
-                boolean team = t >= XpProto.DEBRIS_TYPES;
-                int i = team ? t - XpProto.DEBRIS_TYPES : t;
-                int c = i / areas;
-                if (!team && c != XpProto.WHITE && c != XpProto.BLUE) {
-                    c = XpProto.WHITE;
-                }
-                if (objColor(c) != col) {
-                    continue;
-                }
-                double x = particleX(i, xa, f.fastshotX[k] & 0xFF);
-                double y = particleY(i, xa, ya, f.fastshotY[k] & 0xFF);
-                if (!visible(x, y)) {
-                    continue;
-                }
-                if (!open) {
-                    if (!w.beginSection(Section.SHOT, Records.ShotKind.variant(Records.ShotKind.SHOT, col))) {
-                        return;
-                    }
-                    open = true;
-                }
-                Records.Shot.put(w, x, y, 0, 0);
+        boolean open = false;
+        for (int k = 0; k < f.fastshots; k++) {
+            int t = f.fastshotType[k];
+            boolean team = t >= XpProto.DEBRIS_TYPES;
+            int i = team ? t - XpProto.DEBRIS_TYPES : t;
+            int c = i / areas;
+            if (!team && c != XpProto.WHITE && c != XpProto.BLUE) {
+                c = XpProto.WHITE;
             }
-            if (open) {
-                w.endSection();
+            if (objColor(c) != col || (team && c != XpProto.RED) != harmless) {
+                continue;
             }
+            double x = particleX(i, xa, f.fastshotX[k] & 0xFF);
+            double y = particleY(i, xa, ya, f.fastshotY[k] & 0xFF);
+            if (!visible(x, y)) {
+                continue;
+            }
+            if (!open) {
+                if (!w.beginSection(Section.SHOT, Records.ShotKind.variant(Records.ShotKind.SHOT, col, harmless))) {
+                    return false;
+                }
+                open = true;
+            }
+            Records.Shot.put(w, x, y, 0, 0);
         }
+        if (open) {
+            w.endSection();
+        }
+        return true;
     }
 
     /**
@@ -554,7 +608,11 @@ public final class XpTranslator {
         };
     }
 
-    /** BEHAVIOR: the M2 object sections (items, mines, missiles, balls, lasers, ...); culled like ships. */
+    /**
+     * BEHAVIOR: the M2 object sections (items, mines, missiles, balls, lasers, ...); culled like ships. A
+     * ball's C id is the player it is connected to (C {@code ball->id}, -1 when free): it becomes the record's
+     * connectedPlayer, the ball itself has no id.
+     */
     private void writeObjects(XpFrame f) {
         if (f.itemObjs > 0 && w.beginSection(Section.ITEM)) {
             for (int k = 0; k < f.itemObjs; k++) {
@@ -594,7 +652,9 @@ public final class XpTranslator {
                 double x = wrapX(f.ballX[k]);
                 double y = wrapY(f.ballY[k]);
                 if (visible(x, y)) {
-                    Records.Ball.put(w, f.ballId[k] & 0xFFFF, x, y, Protocol.NO_TEAM, Protocol.NO_ID);
+                    // C's ball id is the player the ball is connected to (-1 none), not an object id
+                    Records.Ball.put(w, Protocol.NO_ID, x, y, Protocol.NO_TEAM,
+                        f.ballId[k] < 0 ? Protocol.NO_ID : f.ballId[k] & 0xFFFF);
                 }
             }
             w.endSection();
@@ -649,9 +709,25 @@ public final class XpTranslator {
         }
     }
 
-    /** BEHAVIOR: connectors (tractor byte 0 = ball, else tractor beam) and transporter beams. */
+    /**
+     * BEHAVIOR: connectors (tractor byte 0 = ball, else tractor beam), then one CONNECTOR per PKT_REFUEL with
+     * its endpoints as sent (C Paint_refuel): kind REPAIR when it starts at a ship and does not end at one (C
+     * Send_refuel(ship, target)), else REFUEL (station to ship); and transporter beams.
+     */
     private void writeLines(XpFrame f) {
-        if (f.connectors > 0 && w.beginSection(Section.CONNECTOR)) {
+        if (f.connectors + f.refuels > 0 && w.beginSection(Section.CONNECTOR)) {
+            for (int k = 0; k < f.refuels; k++) {
+                double x0 = wrapX(f.refuelX0[k]);
+                double y0 = wrapY(f.refuelY0[k]);
+                double x1 = wrapX(f.refuelX1[k]);
+                double y1 = wrapY(f.refuelY1[k]);
+                if (visible(x0, y0) && visible(x1, y1)) {
+                    boolean repair = isShipAt(f, f.refuelX0[k], f.refuelY0[k])
+                        && !isShipAt(f, f.refuelX1[k], f.refuelY1[k]);
+                    Records.Connector.put(w, x0, y0, x1, y1,
+                        repair ? Records.Connector.KIND_REPAIR : Records.Connector.KIND_REFUEL);
+                }
+            }
             for (int k = 0; k < f.connectors; k++) {
                 double x0 = wrapX(f.connX0[k]);
                 double y0 = wrapY(f.connY0[k]);
@@ -762,6 +838,21 @@ public final class XpTranslator {
             nameChar[s] = (char) mychar;
         }
         deliver(score, ReliableType.SCORE);
+    }
+
+    /**
+     * C {@code Handle_score_object}: the server's score popup for the own player.
+     * <p>
+     * BEHAVIOR: delivered as SCORE_OBJECT with the points, block (C block coordinates, the same as ours)
+     * and label.
+     */
+    public void scoreObject(double points, int bx, int by, CharSequence label) {
+        scoreObject.score = (float) points;
+        scoreObject.bx = bx;
+        scoreObject.by = by;
+        scoreObject.text.setLength(0);
+        scoreObject.text.append(label);
+        deliver(scoreObject, ReliableType.SCORE_OBJECT);
     }
 
     /** C {@code Handle_team_score}. */

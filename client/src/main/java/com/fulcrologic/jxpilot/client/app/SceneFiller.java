@@ -34,7 +34,6 @@ import com.fulcrologic.jxpilot.client.paint.RadarPainter;
 import com.fulcrologic.jxpilot.client.paint.SceneData;
 import com.fulcrologic.jxpilot.client.paint.ShipPainter;
 import com.fulcrologic.jxpilot.client.render.Palette;
-import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
 import com.fulcrologic.jxpilot.common.math.XMath;
@@ -49,7 +48,7 @@ import com.fulcrologic.jxpilot.common.net.Records;
  * Drawn: the own ship and other ships (shape from {@link Players}, ship-painter flags, team-relative
  * colour, lock, name), paused players as paused markers, shots (C fastshot/teamshot colouring),
  * sparks and debris (temperature colour) and tracked point particles (C debris), the M2 objects
- * ({@link #objects}), refuel/repair beams ({@link #refuelLinks}), ECM damage and round delay (red ships),
+ * ({@link #objects}, refuel/repair beams among them), ECM damage and round delay (red ships),
  * radar blips and the own radar ship.
  */
 public final class SceneFiller {
@@ -103,10 +102,10 @@ public final class SceneFiller {
                     w.shipId(i) == lock);
             }
         }
-        boolean selfImmunity = g.options() != null && g.options().getBool(Opt.SELF_IMMUNITY);
         for (int i = 0; i < w.shotCount(); i++) {
             int c = w.shotColor(i);
-            out.addShot(w.shotX(i), w.shotY(i), shotColor(c, selfImmunity), teamShot(c, selfImmunity));
+            boolean harmless = w.shotHarmless(i);
+            out.addShot(w.shotX(i), w.shotY(i), shotColor(c, harmless), teamShot(c, harmless));
         }
         objects(out, w);
         particles(out, w);
@@ -134,7 +133,7 @@ public final class SceneFiller {
      * BEHAVIOR: otherwise a ship with the player's shape (the default ship for unknown players), the
      * {@link #SHIP_PAINT_FLAGS} of its flags, colour {@link ShipPainter#shipColor}(friendly, self, round delay
      * pending) with friendly from {@link #friendly}, the lock flag, and the player's name (null when
-     * unknown); then its refuel/repair beams ({@link #refuelLinks}).
+     * unknown).
      */
     void addShip(SceneData out, Players p, int id, int flags, float x, float y, float heading, boolean self,
                  boolean teamPlay, boolean locked) {
@@ -147,77 +146,20 @@ public final class SceneFiller {
         CharSequence name = slot >= 0 ? p.name(slot) : null;
         int color = ShipPainter.shipColor(friendly(flags, p, slot, teamPlay), self, roundDelay);
         out.addShip(x, y, heading, shape, id, flags & SHIP_PAINT_FLAGS, color, locked, name);
-        refuelLinks(out, x, y, flags);
     }
 
     private boolean roundDelay;
     private WorldMap map;
 
     /**
-     * C {@code Send_refuel} lines: from the fuel station to a REFUELING ship, from a REPAIRING ship to the
-     * target, drawn as LINK_REFUEL (crawling dashes).
-     * <p>
-     * BEHAVIOR: the station (target) is the nearest one within {@link #REFUEL_RANGE} px (C drops the beam
-     * beyond 90), wrap-aware; none in range draws nothing; without a map nothing.
-     */
-    void refuelLinks(SceneData out, float x, float y, int flags) {
-        if (map == null) {
-            return;
-        }
-        if ((flags & Records.ShipFlags.REFUELING) != 0) {
-            int best = -1;
-            double bestD = REFUEL_RANGE * REFUEL_RANGE;
-            for (int i = 0; i < map.fuels().size(); i++) {
-                double d = dist2(map.fuels().get(i).x(), map.fuels().get(i).y(), x, y);
-                if (d <= bestD) {
-                    bestD = d;
-                    best = i;
-                }
-            }
-            if (best >= 0) {
-                out.addLink(near(map.fuels().get(best).x(), x, map.pixelWidth()),
-                    near(map.fuels().get(best).y(), y, map.pixelHeight()), x, y, SceneData.LINK_REFUEL);
-            }
-        }
-        if ((flags & Records.ShipFlags.REPAIRING) != 0) {
-            int best = -1;
-            double bestD = REFUEL_RANGE * REFUEL_RANGE;
-            for (int i = 0; i < map.targets().size(); i++) {
-                double d = dist2(map.targets().get(i).x(), map.targets().get(i).y(), x, y);
-                if (d <= bestD) {
-                    bestD = d;
-                    best = i;
-                }
-            }
-            if (best >= 0) {
-                out.addLink(x, y, near(map.targets().get(best).x(), x, map.pixelWidth()),
-                    near(map.targets().get(best).y(), y, map.pixelHeight()), SceneData.LINK_REFUEL);
-            }
-        }
-    }
-
-    /** C's refuel/repair beam range in pixels ({@code update.c}). */
-    public static final double REFUEL_RANGE = 90;
-
-    private double dist2(double ax, double ay, float x, float y) {
-        double dx = XMath.wrapDelta(ax - x, map.pixelWidth(), map.edgeWrap());
-        double dy = XMath.wrapDelta(ay - y, map.pixelHeight(), map.edgeWrap());
-        return dx * dx + dy * dy;
-    }
-
-    /** The copy of world coordinate {@code v} nearest to {@code ref} (so a beam never spans the world). */
-    private float near(double v, float ref, double size) {
-        return (float) (ref + XMath.wrapDelta(v - ref, size, map.edgeWrap()));
-    }
-
-    /**
      * The M2 objects of {@link ClientWorld#objects()} into the scene.
      * <p>
      * BEHAVIOR: items with their type; mines (team mine iff FRIENDLY, no name); missiles with their length
-     * and RES direction; balls; lasers with RES direction and the object colour ({@link #pointColor});
+     * and RES direction; balls, each with its tether ({@link #ballTether}); lasers with RES direction and the object colour ({@link #pointColor});
      * asteroids (type 0, RES rotation, size); wreckage (not deadly, its shape, RES rotation, size); ECM
-     * flashes of diameter 2 * radius; connectors (ball: LINK_CONNECTOR, the dashed pick-up line C sends;
-     * tractor/pressor: LINK_TRACTOR) and transporter beams (LINK_TRANSPORTER).
+     * flashes of diameter 2 * radius; connectors ({@link #linkKind}: ball pick-up lines, refuel/repair beams
+     * from the server's endpoints, tractor/pressor beams) and transporter beams (LINK_TRANSPORTER), each the
+     * short way ({@link #line}).
      */
     void objects(SceneData out, ClientWorld w) {
         ObjectLists o = w.objects();
@@ -233,7 +175,10 @@ public final class SceneFiller {
                 o.get(ObjectLists.MISSILE, i, 4), res(o.get(ObjectLists.MISSILE, i, 2)));
         }
         for (int i = 0; i < o.count(ObjectLists.BALL); i++) {
-            out.addBall(o.get(ObjectLists.BALL, i, 0), o.get(ObjectLists.BALL, i, 1));
+            float bx = o.get(ObjectLists.BALL, i, 0);
+            float by = o.get(ObjectLists.BALL, i, 1);
+            out.addBall(bx, by);
+            ballTether(out, w, bx, by, (int) o.get(ObjectLists.BALL, i, 3));
         }
         for (int i = 0; i < o.count(ObjectLists.LASER); i++) {
             out.addLaser(o.get(ObjectLists.LASER, i, 0), o.get(ObjectLists.LASER, i, 1), o.get(ObjectLists.LASER, i, 3),
@@ -251,15 +196,64 @@ public final class SceneFiller {
             out.addEcm(o.get(ObjectLists.ECM, i, 0), o.get(ObjectLists.ECM, i, 1), 2 * o.get(ObjectLists.ECM, i, 2));
         }
         for (int i = 0; i < o.count(ObjectLists.CONNECTOR); i++) {
-            int kind = (int) o.get(ObjectLists.CONNECTOR, i, 4);
-            out.addLink(o.get(ObjectLists.CONNECTOR, i, 0), o.get(ObjectLists.CONNECTOR, i, 1),
+            line(out, w, o.get(ObjectLists.CONNECTOR, i, 0), o.get(ObjectLists.CONNECTOR, i, 1),
                 o.get(ObjectLists.CONNECTOR, i, 2), o.get(ObjectLists.CONNECTOR, i, 3),
-                kind == Records.Connector.KIND_BALL ? SceneData.LINK_CONNECTOR : SceneData.LINK_TRACTOR);
+                linkKind((int) o.get(ObjectLists.CONNECTOR, i, 4)));
         }
         for (int i = 0; i < o.count(ObjectLists.TRANSPORTER); i++) {
-            out.addLink(o.get(ObjectLists.TRANSPORTER, i, 0), o.get(ObjectLists.TRANSPORTER, i, 1),
+            line(out, w, o.get(ObjectLists.TRANSPORTER, i, 0), o.get(ObjectLists.TRANSPORTER, i, 1),
                 o.get(ObjectLists.TRANSPORTER, i, 2), o.get(ObjectLists.TRANSPORTER, i, 3), SceneData.LINK_TRANSPORTER);
         }
+    }
+
+    /**
+     * C {@code Paint_balls}: the solid line from a connected ball to the ship holding it.
+     * <p>
+     * BEHAVIOR: for a holder id other than NO_ID, a LINK_BALL from the ball to the drawn own ship (when it is
+     * the holder and alive) or to the drawn ship with that id; nothing when that ship is not drawn.
+     */
+    static void ballTether(SceneData out, ClientWorld w, float bx, float by, int holder) {
+        if (holder == Protocol.NO_ID) {
+            return;
+        }
+        if (w.hasSelf() && w.selfId() == holder) {
+            if ((w.selfFlags() & Records.ShipFlags.DEAD) == 0) {
+                tether(out, w, bx, by, w.selfX(), w.selfY());
+            }
+            return;
+        }
+        for (int s = 0; s < w.shipCount(); s++) {
+            if (w.shipId(s) == holder && (w.shipFlags(s) & Records.ShipFlags.DEAD) == 0) {
+                tether(out, w, bx, by, w.shipX(s), w.shipY(s));
+                return;
+            }
+        }
+    }
+
+    /** The ship end is the copy nearest the ball (a tether never spans the world). */
+    private static void tether(SceneData out, ClientWorld w, float bx, float by, float sx, float sy) {
+        line(out, w, bx, by, sx, sy, SceneData.LINK_BALL);
+    }
+
+    /**
+     * BEHAVIOR: a link whose second end is the copy of (x2, y2) nearest (x1, y1) in a wrapping world, so a
+     * line between objects on both sides of the seam (or in a world smaller than the view) is the short one.
+     */
+    static void line(SceneData out, ClientWorld w, float x1, float y1, float x2, float y2, int kind) {
+        out.addLink(x1, y1, (float) (x1 + XMath.wrapDelta(x2 - x1, w.worldWidth(), w.wraps())),
+            (float) (y1 + XMath.wrapDelta(y2 - y1, w.worldHeight(), w.wraps())), kind);
+    }
+
+    /**
+     * BEHAVIOR: connector kind to link kind: BALL is LINK_CONNECTOR, REFUEL and REPAIR are LINK_REFUEL (C
+     * Paint_refuel), anything else (tractor, pressor) LINK_TRACTOR.
+     */
+    static int linkKind(int kind) {
+        return switch (kind) {
+            case Records.Connector.KIND_BALL -> SceneData.LINK_CONNECTOR;
+            case Records.Connector.KIND_REFUEL, Records.Connector.KIND_REPAIR -> SceneData.LINK_REFUEL;
+            default -> SceneData.LINK_TRACTOR;
+        };
     }
 
     /** BEHAVIOR: radians to RES (128 per turn), rounded, in 0..127. */
@@ -285,28 +279,34 @@ public final class SceneFiller {
     }
 
     /**
-     * Shot colour (C server {@code Frame_shots}): team-immune shots blue, blinking nuclear red, else the
-     * owner's white.
+     * Shot colour (C server {@code frame.c} shot case, client {@code Paint_fastshots}/{@code Paint_teamshots}):
+     * a harmless shot is BLUE (frame.c sets {@code color = BLUE} for every teamshot that cannot hurt the
+     * viewer), a blinking nuclear one RED (XPilot path only), a fast shot keeps BLUE, everything else is the
+     * owner's WHITE (C {@code Paint_fastshots} draws other colours white).
      * <p>
-     * BEHAVIOR: TEAM and BLUE are blue; OWN is blue iff selfImmunity; RED is red; everything else white.
+     * BEHAVIOR: harmless → blue whatever the colour; else RED → red, BLUE → blue, any other colour (OWN,
+     * TEAM, ENEMY, NEUTRAL, WHITE) → white.
      */
-    static int shotColor(int objColor, boolean selfImmunity) {
+    static int shotColor(int objColor, boolean harmless) {
+        if (harmless) {
+            return Palette.BLUE;
+        }
         return switch (objColor) {
-            case Records.ObjColor.TEAM, Records.ObjColor.BLUE -> Palette.BLUE;
-            case Records.ObjColor.OWN -> selfImmunity ? Palette.BLUE : Palette.WHITE;
             case Records.ObjColor.RED -> Palette.RED;
+            case Records.ObjColor.BLUE -> Palette.BLUE;
             default -> Palette.WHITE;
         };
     }
 
     /**
-     * C {@code teamshot}: drawn as an X or + instead of a square.
+     * C {@code teamshot} ({@code Gui_paint_teamshot} → {@code Gui_paint_nastyshot}): drawn as an X or +
+     * instead of a square.
      * <p>
-     * BEHAVIOR: true for TEAM, BLUE and RED, and for OWN iff selfImmunity; false otherwise.
+     * BEHAVIOR: true iff the shot is harmless or RED (the blinking nuclear teamshot); a team mate's or the
+     * own shot that can hurt is a plain square like any other.
      */
-    static boolean teamShot(int objColor, boolean selfImmunity) {
-        return objColor == Records.ObjColor.TEAM || objColor == Records.ObjColor.BLUE
-            || objColor == Records.ObjColor.RED || objColor == Records.ObjColor.OWN && selfImmunity;
+    static boolean teamShot(int objColor, boolean harmless) {
+        return harmless || objColor == Records.ObjColor.RED;
     }
 
     private static void particles(SceneData out, ClientWorld w) {

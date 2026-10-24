@@ -276,7 +276,8 @@ class JavaServerEndToEndTest {
             () -> assertTrue(thrustSpeed > 3, "thrust makes it fly (" + thrustSpeed + " px/frame)"),
             () -> assertTrue(Math.hypot(tx - restXf, ty - restYf) > 10, "and it moved away from home"),
             () -> assertTrue(gameTicks >= 60L * fps, "60+ s of game time (" + gameTicks + " ticks at " + fps + ")"),
-            () -> assertEquals(8, robotJoins, "8 robots appeared as players with the R flag"),
+            () -> assertTrue(robotJoins >= 8, "8 robots appeared as players with the R flag (more when one leaves and"
+                + " is replaced, as C's robotsLeave does: " + robotJoins + ")"),
             () -> assertTrue(robotsInModelFinal >= 7, "the client's player list shows them as robots (" + robotsInModelFinal + ")"),
             () -> assertTrue(kills > 0, "kills flowed (" + kills + " KILL events)"),
             () -> assertTrue(a.scores > 20, "scores flowed (" + a.scores + " SCORE messages)"),

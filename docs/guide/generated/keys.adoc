@@ -1,265 +1,399 @@
-// GENERATED from common/src/main/java/com/fulcrologic/jxpilot/common/net/ControlKey.java
-// by dist/src/test/java/com/fulcrologic/jxpilot/dist/docs/GuideTables.java. Do not edit:
-// run `make -C docs/guide generate` instead. The build fails when this file is stale.
+// GENERATED from client/src/main/java/com/fulcrologic/jxpilot/client/game/input/KeyFunctions.java
+// and KeyConfig.java by dist/src/test/java/com/fulcrologic/jxpilot/dist/docs/GuideTables.java.
+// Do not edit: run `make -C docs/guide generate` instead. The build fails when this file is stale.
 
-[cols="1,3,4",options="header"]
+[cols="3,3,5",options="header"]
 |===
-|Id |Function |Default keys (X11 keysym)
+|Resource |Default keys (X11 keysym) |What it does
 
-|1
-|Lock next
-|`+Next+` (pass:c[Page Down]), `+Right+`
-
-|2
-|Lock prev
-|`+Prior+` (pass:c[Page Up]), `+Left+`
-
-|3
-|Lock close
-|`+Select+`, `+Up+`
-
-|4
-|Change home
-|`+Home+`, `+h+`
-
-|5
-|Shield
-|`+space+` (pass:c[Space]), `+Caps_Lock+` (pass:c[Caps Lock])
-
-|6
-|Fire shot
-|`+Return+` (pass:c[Return/Enter]), `+Linefeed+`
-
-|7
-|Fire missile
-|`+backslash+` (pass:c[Backslash])
-
-|8
-|Fire torpedo
-|`+quoteright+` (pass:c[' apostrophe])
-
-|9
-|Toggle nuclear
-|`+n+`
-
-|10
-|Fire heat
-|`+semicolon+` (pass:c[;])
-
-|11
-|Drop mine
-|`+Tab+`
-
-|12
-|Detach mine
-|`+bracketright+` (pass:c[\]])
-
-|13
-|Turn left
+|`+keyTurnLeft+`
 |`+a+`
+|Turn left (anti-clockwise).
 
-|14
-|Turn right
+|`+keyTurnRight+`
 |`+s+`
+|Turn right (clockwise).
 
-|15
-|Self destruct
-|`+End+`
-
-|16
-|Lose item
-|`+KP_Delete+` (pass:c[Keypad Delete]), `+KP_Decimal+` (pass:c[Keypad .])
-
-|17
-|Pause
-|`+Pause+`
-
-|18
-|Tank detach
-|`+r+`
-
-|19
-|Tank next
-|`+e+`
-
-|20
-|Tank prev
-|`+w+`
-
-|21
-|Toggle velocity
-|`+v+`
-
-|22
-|Toggle cluster
-|`+c+`
-
-|23
-|Swap settings
-|`+Escape+` (pass:c[Esc])
-
-|24
-|Refuel
-|`+f+`, `+Control_L+` (pass:c[Left Ctrl]), `+Control_R+` (pass:c[Right Ctrl])
-
-|25
-|Connector
-|`+Control_L+` (pass:c[Left Ctrl])
-
-|26
-|Increase power
-|`+KP_Multiply+` (pass:c[Keypad *])
-
-|27
-|Decrease power
-|`+KP_Divide+` (pass:c[Keypad /])
-
-|28
-|Increase turnspeed
-|`+KP_Add+` (pass:c[Keypad +])
-
-|29
-|Decrease turnspeed
-|`+KP_Subtract+` (pass:c[Keypad -])
-
-|30
-|Thrust
+|`+keyThrust+`
 |`+Shift_R+` (pass:c[Right Shift]), `+Shift_L+` (pass:c[Left Shift])
+|Thrust.
 
-|31
-|Cloak
-|`+Delete+`, `+BackSpace+` (pass:c[Backspace])
+|`+keyShield+`
+|`+space+` (pass:c[Space]), `+Caps_Lock+` (pass:c[Caps Lock])
+|Raise or toggle the shield.
 
-|32
-|Ecm
-|`+bracketleft+` (pass:c[[])
+|`+keyFireShot+`
+|`+Return+` (pass:c[Return/Enter]), `+Linefeed+`
+|Fire shot.
 
-|33
-|Drop ball
-|`+d+`
+|`+keyFireMissile+`
+|`+backslash+` (pass:c[Backslash])
+|Fire smart missile.
 
-|34
-|Transporter
-|`+t+`
+|`+keyFireTorpedo+`
+|`+quoteright+` (pass:c[' apostrophe])
+|Fire unguided torpedo.
 
-|35
-|Talk
-|`+m+`
+|`+keyFireHeat+`
+|`+semicolon+` (pass:c[;])
+|Fire heatseeking missile.
 
-|36
-|Fire laser
+|`+keyFireLaser+`
 |`+slash+` (pass:c[/])
+|Activate laser beam.
 
-|37
-|Lock next close
-|`+Down+`
+|`+keyDropMine+`
+|`+Tab+`
+|Drop a stationary mine.
 
-|38
-|Toggle compass
-|`+KP_7+` (pass:c[Keypad 7])
+|`+keyDetachMine+`
+|`+bracketright+` (pass:c[\]])
+|Detach a moving mine.
 
-|39
-|Toggle mini
-|`+x+`
-
-|40
-|Toggle spread
-|`+z+`
-
-|41
-|Toggle power
-|`+b+`
-
-|42
-|Toggle autopilot
-|`+h+`
-
-|43
-|Toggle laser
-|`+l+`
-
-|44
-|Emergency thrust
-|`+j+`
-
-|45
-|Tractor beam
-|`+comma+` (pass:c[,])
-
-|46
-|Pressor beam
-|`+period+` (pass:c[.])
-
-|47
-|Clear modifiers
-|`+k+`
-
-|48
-|Load modifiers 1
-|`+1+`
-
-|49
-|Load modifiers 2
-|`+2+`
-
-|50
-|Load modifiers 3
-|`+3+`
-
-|51
-|Load modifiers 4
-|`+4+`
-
-|52
-|Select item
-|`+KP_0+` (pass:c[Keypad 0]), `+KP_Insert+` (pass:c[Keypad Insert])
-
-|53
-|Phasing
-|`+p+`
-
-|54
-|Repair
-|`+f+`
-
-|55
-|Toggle implosion
-|`+i+`
-
-|56
-|Reprogram
-|`+quoteleft+` (pass:c[` backtick])
-
-|57
-|Load lock 1
-|`+5+`
-
-|58
-|Load lock 2
-|`+6+`
-
-|59
-|Load lock 3
-|`+7+`
-
-|60
-|Load lock 4
-|`+8+`
-
-|61
-|Emergency shield
-|`+g+`
-
-|62
-|Hyperjump
-|`+q+`
-
-|63
-|Detonate mines
+|`+keyDetonateMines+`
 |`+equal+` (pass:c[=])
+|Detonate the closest mine you have dropped or thrown.
 
-|64
-|Deflector
+|`+keyLockClose+`
+|`+Select+`, `+Up+`
+|Lock on closest player.
+
+|`+keyLockNextClose+`
+|`+Down+`
+|Lock on next closest player.
+
+|`+keyLockNext+`
+|`+Next+` (pass:c[Page Down]), `+Right+`
+|Lock on next player.
+
+|`+keyLockPrev+`
+|`+Prior+` (pass:c[Page Up]), `+Left+`
+|Lock on previous player.
+
+|`+keyRefuel+`
+|`+f+`, `+Control_L+` (pass:c[Left Ctrl]), `+Control_R+` (pass:c[Right Ctrl])
+|Refuel.
+
+|`+keyRepair+`
+|`+f+`
+|Repair target.
+
+|`+keyCloak+`
+|`+Delete+`, `+BackSpace+` (pass:c[Backspace])
+|Toggle cloakdevice.
+
+|`+keyEcm+`
+|`+bracketleft+` (pass:c[[])
+|Use ECM.
+
+|`+keySelfDestruct+`
+|`+End+`, `+0+`
+|Toggle self destruct. _XPilot's default: `+End+`._
+
+|`+keyPause+`
+|`+Pause+`
+|Toggle pause mode.
+
+|`+keySwapSettings+`
+|-
+|Swap control settings. _XPilot's default: `+Escape+` (pass:c[Esc])._
+
+|`+keyChangeHome+`
+|`+Home+`, `+h+`
+|Change home base.
+
+|`+keyConnector+`
+|`+Control_L+` (pass:c[Left Ctrl]), `+Alt_L+` (pass:c[Left Alt / Option]), `+Alt_R+` (pass:c[Right Alt / Option])
+|Connect to a ball. _XPilot's default: `+Control_L+` (pass:c[Left Ctrl])._
+
+|`+keyDropBall+`
+|`+d+`
+|Drop a ball.
+
+|`+keyTankNext+`
+|`+e+`
+|Use the next tank.
+
+|`+keyTankPrev+`
+|`+w+`
+|Use the the previous tank.
+
+|`+keyTankDetach+`
+|`+r+`
+|Detach the current tank.
+
+|`+keyIncreasePower+`
+|`+KP_Multiply+` (pass:c[Keypad *])
+|Increase engine power.
+
+|`+keyDecreasePower+`
+|`+KP_Divide+` (pass:c[Keypad /])
+|Decrease engine power.
+
+|`+keyIncreaseTurnspeed+`
+|`+KP_Add+` (pass:c[Keypad +])
+|Increase turnspeed.
+
+|`+keyDecreaseTurnspeed+`
+|`+KP_Subtract+` (pass:c[Keypad -])
+|Decrease turnspeed.
+
+|`+keyTransporter+`
+|`+t+`
+|Use transporter to steal an item.
+
+|`+keyDeflector+`
 |`+o+`
+|Toggle deflector.
+
+|`+keyHyperJump+`
+|`+q+`
+|Teleport.
+
+|`+keyPhasing+`
+|`+p+`
+|Use phasing device.
+
+|`+keyToggleNuclear+`
+|`+n+`
+|Toggle nuclear weapon modifier.
+
+|`+keyToggleCluster+`
+|`+c+`
+|Toggle cluster weapon modifier.
+
+|`+keyToggleImplosion+`
+|`+i+`
+|Toggle implosion weapon modifier.
+
+|`+keyToggleVelocity+`
+|`+v+`
+|Toggle explosion velocity weapon modifier.
+
+|`+keyToggleMini+`
+|`+x+`
+|Toggle mini weapon modifier.
+
+|`+keyToggleSpread+`
+|`+z+`
+|Toggle spread weapon modifier.
+
+|`+keyTogglePower+`
+|`+b+`
+|Toggle power weapon modifier.
+
+|`+keyToggleCompass+`
+|`+KP_7+` (pass:c[Keypad 7])
+|Toggle HUD/radar compass lock.
+
+|`+keyToggleAutoPilot+`
+|`+h+`
+|Toggle automatic pilot mode.
+
+|`+keyToggleLaser+`
+|`+l+`
+|Toggle laser modifier.
+
+|`+keyEmergencyThrust+`
+|`+j+`
+|Pull emergency thrust handle.
+
+|`+keyEmergencyShield+`
+|`+g+`
+|Toggle emergency shield power.
+
+|`+keyTractorBeam+`
+|`+comma+` (pass:c[,])
+|Use tractor beam in attract mode.
+
+|`+keyPressorBeam+`
+|`+period+` (pass:c[.])
+|Use tractor beam in repulse mode.
+
+|`+keyClearModifiers+`
+|`+k+`
+|Clear current weapon modifiers.
+
+|`+keyLoadModifiers1+`
+|`+1+`
+|Load the weapon modifiers from bank 1.
+
+|`+keyLoadModifiers2+`
+|`+2+`
+|Load the weapon modifiers from bank 2.
+
+|`+keyLoadModifiers3+`
+|`+3+`
+|Load the weapon modifiers from bank 3.
+
+|`+keyLoadModifiers4+`
+|`+4+`
+|Load the weapon modifiers from bank 4.
+
+|`+keyReprogram+`
+|`+quoteleft+` (pass:c[` backtick])
+|Reprogram modifier or lock bank.
+
+|`+keyLoadLock1+`
+|`+5+`
+|Load player lock from bank 1.
+
+|`+keyLoadLock2+`
+|`+6+`
+|Load player lock from bank 2.
+
+|`+keyLoadLock3+`
+|`+7+`
+|Load player lock from bank 3.
+
+|`+keyLoadLock4+`
+|`+8+`
+|Load player lock from bank 4.
+
+|`+keySelectItem+`
+|`+KP_0+` (pass:c[Keypad 0]), `+KP_Insert+` (pass:c[Keypad Insert])
+|Select an item to lose.
+
+|`+keyLoseItem+`
+|`+KP_Delete+` (pass:c[Keypad Delete]), `+KP_Decimal+` (pass:c[Keypad .])
+|Lose the selected item.
+
+|`+keyTalk+`
+|`+m+`
+|Toggle talk window.
+
+|`+keyIdMode+`
+|`+u+`
+|Toggle User mode (show real names). _Not in JXPilot._
+
+|`+keyToggleOwnedItems+`
+|`+KP_8+` (pass:c[Keypad 8])
+|Toggle list of owned items on HUD. _Not in JXPilot._
+
+|`+keyToggleMessages+`
+|`+KP_9+` (pass:c[Keypad 9])
+|Toggle showing of messages. _Not in JXPilot._
+
+|`+keyPointerControl+`
+|`+KP_Enter+` (pass:c[Keypad Enter])
+|Toggle pointer control. _Not in JXPilot._
+
+|`+keyToggleRecord+`
+|`+KP_5+` (pass:c[Keypad 5])
+|Toggle recording of session (see recordFile). _Not in JXPilot._
+
+|`+keyPrintMessagesStdout+`
+|`+Print+`
+|Print the current messages to stdout. _Not in JXPilot._
+
+|`+keyTalkCursorLeft+`
+|`+Left+`
+|Move Cursor to the left in the talk window.
+
+|`+keyTalkCursorRight+`
+|`+Right+`
+|Move Cursor to the right in the talk window.
+
+|`+keyTalkCursorUp+`
+|`+Up+`
+|Browsing in the history of the talk window.
+
+|`+keyTalkCursorDown+`
+|`+Down+`
+|Browsing in the history of the talk window.
+
+|`+keySwapScaleFactor+`
+|-
+|Swap scalefactor settings.
+
+|`+keySendMsg1+`
+|-
+|Sends the talkmessage stored in msg1. _Not in JXPilot._ _XPilot's default: `+F1+`._
+
+|`+keySendMsg2+`
+|`+F2+`
+|Sends the talkmessage stored in msg2. _Not in JXPilot._
+
+|`+keySendMsg3+`
+|`+F3+`
+|Sends the talkmessage stored in msg3. _Not in JXPilot._
+
+|`+keySendMsg4+`
+|`+F4+`
+|Sends the talkmessage stored in msg4. _Not in JXPilot._
+
+|`+keySendMsg5+`
+|`+F5+`
+|Sends the talkmessage stored in msg5. _Not in JXPilot._
+
+|`+keySendMsg6+`
+|`+F6+`
+|Sends the talkmessage stored in msg6. _Not in JXPilot._
+
+|`+keySendMsg7+`
+|`+F7+`
+|Sends the talkmessage stored in msg7. _Not in JXPilot._
+
+|`+keySendMsg8+`
+|`+F8+`
+|Sends the talkmessage stored in msg8. _Not in JXPilot._
+
+|`+keySendMsg9+`
+|`+F9+`
+|Sends the talkmessage stored in msg9. _Not in JXPilot._
+
+|`+keySendMsg10+`
+|`+F10+`
+|Sends the talkmessage stored in msg10. _Not in JXPilot._
+
+|`+keySendMsg11+`
+|`+F11+`
+|Sends the talkmessage stored in msg11. _Not in JXPilot._
+
+|`+keySendMsg12+`
+|`+F12+`
+|Sends the talkmessage stored in msg12. _Not in JXPilot._
+
+|`+keySendMsg13+`
+|-
+|Sends the talkmessage stored in msg13. _Not in JXPilot._
+
+|`+keySendMsg14+`
+|-
+|Sends the talkmessage stored in msg14. _Not in JXPilot._
+
+|`+keySendMsg15+`
+|-
+|Sends the talkmessage stored in msg15. _Not in JXPilot._
+
+|`+keySendMsg16+`
+|-
+|Sends the talkmessage stored in msg16. _Not in JXPilot._
+
+|`+keySendMsg17+`
+|-
+|Sends the talkmessage stored in msg17. _Not in JXPilot._
+
+|`+keySendMsg18+`
+|-
+|Sends the talkmessage stored in msg18. _Not in JXPilot._
+
+|`+keySendMsg19+`
+|-
+|Sends the talkmessage stored in msg19. _Not in JXPilot._
+
+|`+keySendMsg20+`
+|-
+|Sends the talkmessage stored in msg20. _Not in JXPilot._
+
+|`+keyToggleSound+`
+|`+minus+` (pass:c[-])
+|Toggle sound on/off (JXPilot). _XPilot's default: none._
+
+|`+keyHelp+`
+|`+F1+`
+|Show or hide this key help (JXPilot). _XPilot's default: none._
 
 |===
+
+Default control settings: power 45, turnSpeed 40, turnResistance 0.12; alternates altPower 35, altTurnSpeed 25, altTurnResistance 0.12.

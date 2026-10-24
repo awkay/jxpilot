@@ -114,7 +114,7 @@ class RobotModesTest {
         p.ball = 3;
         w.modes.targetDamage[0] = 1234;
         int ast = RobotFixture.obj(w, Obj.ASTEROID, Obj.NO_ID, 100, 100, 0, 0);
-        w.modes.wireSize[ast] = 3;
+        w.objects.size[ast] = 3;
         boolean treasure = it.treasureHasBall(0);
         int towed = it.towedBall(p);
         int have = it.have(p);

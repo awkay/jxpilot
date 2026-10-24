@@ -125,7 +125,7 @@ public class RobotItems {
 
     /** C {@code WIRE_PTR(obj)->size} of an asteroid object. BEHAVIOR: 1 without a world. */
     public int asteroidSize(int h) {
-        return world == null ? 1 : world.modes.wireSize[h];
+        return world == null ? 1 : world.objects.size[h];
     }
 
     /** C {@code obj->info} of an item object: its {@link Item} ordinal. */

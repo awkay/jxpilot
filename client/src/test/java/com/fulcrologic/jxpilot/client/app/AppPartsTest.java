@@ -155,14 +155,16 @@ class AppPartsTest {
         @Test
         @DisplayName("XPilot login: nick, team, shape, real name reduced to safe characters")
         void xpLogin() {
-            XpConnection.Login l = GameConnector.xpLogin("Ace", 4, "(SH: 1,0)", "t.käy x");
-            XpConnection.Login empty = GameConnector.xpLogin("Ace", 4, "", "ä");
+            XpConnection.Login l = GameConnector.xpLogin("Ace", 4, "(SH: 1,0)", true, "t.käy x");
+            XpConnection.Login empty = GameConnector.xpLogin("Ace", 4, "", false, "ä");
             assertAll(
                 () -> assertEquals("Ace", l.nick, "nick"),
                 () -> assertEquals(4, l.team, "team"),
                 () -> assertEquals("(SH: 1,0)", l.shape, "shape"),
                 () -> assertEquals("t.kyx", l.realName, "non-ASCII and space dropped"),
-                () -> assertEquals("jxpilot", empty.realName, "nothing left: jxpilot"));
+                () -> assertEquals("jxpilot", empty.realName, "nothing left: jxpilot"),
+                () -> assertTrue(l.audio, "asks for audio when sound is on"),
+                () -> assertFalse(empty.audio, "does not ask for audio when sound is off"));
         }
 
         @Test
@@ -190,9 +192,9 @@ class AppPartsTest {
                 int port = ((InetSocketAddress) ch.getLocalAddress()).getPort();
                 Endpoint ep = new Endpoint("127.0.0.1", port);
                 GameConnection n = GameConnector.open(new ConnectTarget(ConnectTarget.Protocol.JXPILOT, ep), null,
-                    new AppFixture(true).game, "Ace", 1, "", 5);
+                    new AppFixture(true).game, "Ace", 1, "", true, 5);
                 GameConnection x = GameConnector.open(new ConnectTarget(ConnectTarget.Protocol.XPILOT, ep), null,
-                    new AppFixture(true).game, "Ace", 1, "", 5);
+                    new AppFixture(true).game, "Ace", 1, "", true, 5);
                 try {
                     assertAll(
                         () -> assertInstanceOf(NativeGameConnection.class, n, "native"),
@@ -233,6 +235,62 @@ class AppPartsTest {
                 () -> assertEquals(2, AppLauncher.run(AppOptions.parse(new String[0], "u")), "help: usage, exit 2"),
                 () -> assertEquals(3, AppLauncher.run(AppOptions.parse(new String[] {"--local", "--map",
                     Path.of("no-such-map.xp").toString()}, "u")), "the local server cannot start: exit 3"));
+        }
+    }
+
+    @Nested
+    @DisplayName("key configuration loading")
+    class KeyLoading {
+        @Test
+        @DisplayName("--keys reads the file; without it HOME/.xpilotrc when present, else the defaults; problems go to err")
+        void sources(@org.junit.jupiter.api.io.TempDir Path home) throws Exception {
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            java.io.PrintStream err = new java.io.PrintStream(bytes, true, java.nio.charset.StandardCharsets.UTF_8);
+            AppOptions plain = AppOptions.parse(new String[] {"--list-keys"}, "u");
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig none = AppLauncher.keyConfig(plain, home, err);
+            java.nio.file.Files.writeString(home.resolve(".xpilotrc"), "turnSpeed: 30\nkeyDetonateMines: u\nbogus\n");
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig rc = AppLauncher.keyConfig(plain, home, err);
+            Path other = home.resolve("other.rc");
+            java.nio.file.Files.writeString(other, "turnSpeed: 20\n");
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig given = AppLauncher.keyConfig(
+                AppOptions.parse(new String[] {"--list-keys", "--keys", other.toString()}, "u"), home, err);
+            String out = bytes.toString(java.nio.charset.StandardCharsets.UTF_8);
+            AppOptions missing = AppOptions.parse(new String[] {"--list-keys", "--keys", home.resolve("nope").toString()},
+                "u");
+            assertAll(
+                () -> assertEquals("defaults", none.source(), "no file: defaults"),
+                () -> assertEquals(30.0, rc.settings().turnSpeed, "HOME/.xpilotrc is read"),
+                () -> assertEquals(20.0, given.settings().turnSpeed, "--keys wins over ~/.xpilotrc"),
+                () -> assertTrue(out.contains("jxpilot keys: " + home.resolve(".xpilotrc") + ":3: expected"),
+                    "problems are printed with file and line"),
+                () -> assertTrue(out.contains("jxpilot keys: warning: key bound to more than one function: u: "
+                    + "keyDetonateMines keyIdMode"), "conflicts are printed"),
+                () -> assertThrows(java.io.IOException.class, () -> AppLauncher.keyConfig(missing, home, err),
+                    "a missing --keys file is an error"));
+        }
+
+        @Test
+        @DisplayName("launcher: --list-keys prints the table and exits 0; an unreadable --keys file exits 2")
+        void listKeys(@org.junit.jupiter.api.io.TempDir Path home) throws Exception {
+            java.io.PrintStream saved = System.out;
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            Path rc = home.resolve("k.rc");
+            java.nio.file.Files.writeString(rc, "keyIncreaseTurnspeed: F10\n");
+            int code;
+            try {
+                System.setOut(new java.io.PrintStream(bytes, true, java.nio.charset.StandardCharsets.UTF_8));
+                code = AppLauncher.run(AppOptions.parse(new String[] {"--list-keys", "--keys", rc.toString()}, "u"));
+            } finally {
+                System.setOut(saved);
+            }
+            String out = bytes.toString(java.nio.charset.StandardCharsets.UTF_8);
+            int bad = AppLauncher.run(AppOptions.parse(new String[] {"--list-keys", "--keys",
+                home.resolve("missing").toString()}, "u"));
+            assertAll(
+                () -> assertEquals(0, code, "exit 0"),
+                () -> assertTrue(out.startsWith("JXPilot key bindings (defaults + " + rc + ")"), "the table header"),
+                () -> assertTrue(out.contains("keyIncreaseTurnspeed     F10"), "the effective binding"),
+                () -> assertEquals(2, bad, "exit 2 for a missing key file"));
         }
     }
 }

@@ -175,7 +175,7 @@ class SnapshotModesTest {
         h.used &= ~Has.SHIELD;
         v.ball = ball;
         int ast = s.asteroids.make(15 * 35, 3 * 35, 3, 0, 0f);
-        w.modes.wireRotation[ast] = 32;
+        w.objects.rotation[ast] = 32;
         s.wreckage.make(9 * 35, 3 * 35, 0f, 0f, -1, 0, 5f, 5f, 5f, 0, 6, 1, 0, 0, 0f, 0f, 5, 5);
         Out o = build(s, v, false);
         int bx = (int) Math.round(4.5 * 35);

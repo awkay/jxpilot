@@ -133,7 +133,9 @@ public final class SimGameHost implements GameHost {
         this.sim = sim;
         this.w = sim.world;
         this.builder = new SnapshotBuilder(w);
-        this.talk = new Talk(w);
+        String adminFile = w.options.getString(Opt.ADMIN_MESSAGE_FILE_NAME);
+        this.talk = new Talk(w, new AdminLog(adminFile == null || adminFile.isEmpty() ? null : java.nio.file.Path.of(adminFile),
+            w.options.getInt(Opt.ADMIN_MESSAGE_FILE_SIZE_LIMIT), java.time.ZonedDateTime::now));
         this.rawMode = w.options.getBool(Opt.IDLE_RUN);
         this.mapName = w.options.getString(Opt.MAP_NAME);
         this.mapAuthor = w.options.getString(Opt.MAP_AUTHOR);
@@ -593,6 +595,8 @@ public final class SimGameHost implements GameHost {
      * moves to the newest) into scratch parts; each part p copies the sections of scratch part p after the
      * network layer's header and returns whether more parts follow. A viewer not yet in the game gets no
      * sections.
+     * BEHAVIOR: part 0 sends the viewer's queued sounds and empties its queue (C {@code sound_play_queued}), so
+     * each sound goes out in one snapshot.
      */
     @Override
     public boolean fillSnapshot(int viewerId, int part, boolean radar, SnapshotWriter out) {
@@ -607,6 +611,7 @@ public final class SimGameHost implements GameHost {
             }
             scratchParts = builder.build(p, 0, burstCursor[viewerId], radar, scratch);
             burstCursor[viewerId] = w.events.burstSeq();
+            p.audio.clear();
         }
         if (part >= scratchParts) {
             return false;

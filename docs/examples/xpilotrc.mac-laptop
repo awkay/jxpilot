@@ -1,0 +1,18 @@
+! ~/.xpilotrc for a Mac laptop. Same resource format the C XPilot client reads.
+xpilot.keySelfDestruct:       End 0          ! 0 = "zero yourself"
+xpilot.keyPause:              Pause 9
+xpilot.keyIncreasePower:      KP_Multiply F12
+xpilot.keyDecreasePower:      KP_Divide F11
+xpilot.keyIncreaseTurnspeed:  KP_Add F10
+xpilot.keyDecreaseTurnspeed:  KP_Subtract F9
+xpilot.keyLoseItem:           KP_Delete y
+xpilot.keySelectItem:         KP_0 grave
+xpilot.keyDetonateMines:      u              ! moves off "="; u (ID mode) is rarely used
+xpilot.keyFireLaser:          slash
+xpilot.keySendMsg11:
+xpilot.keySendMsg12:
+xpilot.keySendMsg9:
+xpilot.keySendMsg10:
+xpilot.keyIdMode:                            ! u is detonate now; ID mode left unbound
+xpilot.keyReprogram:          F8             ! grave is select-item now
+xpilot.keySendMsg8:                          ! frees F8 for keyReprogram

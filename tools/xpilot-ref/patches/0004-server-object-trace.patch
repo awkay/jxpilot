@@ -1,4 +1,4 @@
-xpilot-ref patch 0003: optional per-tick trace of balls, asteroids, wreckage,
+xpilot-ref patch 0004: optional per-tick trace of balls, asteroids, wreckage,
 race progress, treasures and targets.
 
 This patch modifies XPilot 4.5.5 (GPL-2.0-or-later, Copyright (C) 1991-2010
@@ -7,16 +7,16 @@ It is a derivative work distributed under the same license.
 
 Why: to compare the reimplementation's game modes (ball connector physics,
 asteroid motion, race timing, treasure and target state) numerically against
-the original server.  Applies on top of patch 0002.  Adds Trace_objects() to
-src/server/server.c, called right after Trace_players().  It is inert unless
+the original server.  Applies on top of patches 0002 and 0003.  Adds Trace_objects() to
+src/server/server.c, called right after Trace_wreckage().  It is inert unless
 the environment variable XPILOT_TRACE_OBJS is set.  Game logic is unchanged.
 
 --- a/src/server/server.c
 +++ b/src/server/server.c
-@@ -288,6 +288,83 @@
- 		pl->fuel.sum,
- 		BIT(pl->status, THRUSTING) ? 1 : 0,
- 		(unsigned long)pl->status, pl->name);
+@@ -325,6 +325,83 @@
+ 		(long)obj->life, (double)obj->mass,
+ 		(int)wr->size, (int)wr->info, (int)wr->rotation,
+ 		(double)wr->turnspeed, (int)obj->id);
 +    }
 +    fflush(stderr);
 +}
@@ -97,10 +97,10 @@ the environment variable XPILOT_TRACE_OBJS is set.  Game logic is unchanged.
      }
      fflush(stderr);
  }
-@@ -330,6 +407,7 @@
- 
+@@ -368,6 +445,7 @@
  	Update_objects();
  	Trace_players();
+ 	Trace_wreckage();
 +	Trace_objects();
  
  	if ((main_loops % UPDATES_PR_FRAME) == 0) {

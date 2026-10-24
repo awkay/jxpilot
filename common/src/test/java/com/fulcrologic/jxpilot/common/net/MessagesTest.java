@@ -937,6 +937,7 @@ class MessagesTest {
         assertAll(
             () -> assertTrue(new Msg.Text().text.capacity() >= Msg.MSG_LEN, "MESSAGE/CHAT text"),
             () -> assertTrue(new Msg.Reject().text.capacity() >= Msg.MSG_LEN, "REJECT text"),
-            () -> assertTrue(new Msg.Disconnect().text.capacity() >= Msg.MSG_LEN, "DISCONNECT text"));
+            () -> assertTrue(new Msg.Disconnect().text.capacity() >= Msg.MSG_LEN, "DISCONNECT text"),
+            () -> assertTrue(new Msg.ScoreObject().text.capacity() >= Msg.MSG_LEN, "SCORE_OBJECT label"));
     }
 }

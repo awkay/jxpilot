@@ -47,7 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Golden traces of the game modes against the original C server (tools/xpilot-ref trace.sh with
- * {@code --trace-objs}, patch 0003; see {@code src/test/resources/ctrace/README.txt}). The same map and inputs
+ * {@code --trace-objs}, patch 0004; see {@code src/test/resources/ctrace/README.txt}). The same map and inputs
  * are replayed in the Java simulation and the ship, every ball/asteroid/wreckage object and the race state are
  * compared frame by frame with no tolerance.
  * <p>
@@ -82,8 +82,8 @@ class ModeTraceTest {
             sb.append(' ').append(w.modes.ballOwner[h]).append(' ').append(w.modes.ballTreasure[h]).append(' ')
                 .append(w.modes.ballLength[h]);
         } else {
-            sb.append(' ').append(w.modes.wireSize[h]).append(' ').append(w.modes.wireRotation[h]).append(' ')
-                .append(w.modes.wireTurnspeed[h]);
+            sb.append(' ').append(w.objects.size[h]).append(' ').append(w.objects.rotation[h]).append(' ')
+                .append(w.objects.turnSpeed[h]);
         }
         return sb.toString();
     }
@@ -257,8 +257,8 @@ class ModeTraceTest {
                     + " " + c.life() + " " + c.a() + " " + c.b() + " " + c.c();
                 Objects o = w.objects;
                 String js = o.cx[h] + " " + o.cy[h] + " " + o.prevX[h] + " " + o.prevY[h] + " " + o.vx[h] + " "
-                    + o.vy[h] + " " + (long) o.life[h] + " " + w.modes.wireSize[h] + " " + w.modes.wireRotation[h]
-                    + " " + w.modes.wireTurnspeed[h];
+                    + o.vy[h] + " " + (long) o.life[h] + " " + w.objects.size[h] + " " + w.objects.rotation[h]
+                    + " " + w.objects.turnSpeed[h];
                 if (!cs.equals(js) && bad.size() < 6) {
                     bad.add("frame " + f.frame + " asteroid " + c.ptr() + "\n  C    " + cs + "\n  Java " + js);
                 }
@@ -286,9 +286,9 @@ class ModeTraceTest {
         int r = (int) Asteroids.radius(c.a());
         o.plRange[h] = r;
         o.plRadius[h] = r;
-        w.modes.wireSize[h] = c.a();
-        w.modes.wireRotation[h] = c.b();
-        w.modes.wireTurnspeed[h] = c.c();
+        w.objects.size[h] = c.a();
+        w.objects.rotation[h] = c.b();
+        w.objects.turnSpeed[h] = c.c();
         w.modes.addAsteroid(h);
         w.modes.asteroidNum += 1 << (c.a() - 1);
         return h;

@@ -29,6 +29,7 @@ import com.fulcrologic.jxpilot.common.map.Concentrator;
 import com.fulcrologic.jxpilot.common.math.XMath;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.net.Records;
+import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.ModeParams;
@@ -188,10 +189,10 @@ public final class Asteroids {
         o.vy[h] = Trig.tsin(dir) * speed;
         o.mass[h] = mass(size);
         o.life[h] = LIFE;
-        m.wireTurnspeed[h] = (float) (0.02 + w.rfrac() * 0.05);
-        m.wireRotation[h] = (int) (w.rfrac() * Const.RES);
-        m.wireSize[h] = size;
-        m.wireInfo[h] = (int) (w.rfrac() * 256);
+        o.turnSpeed[h] = (float) (0.02 + w.rfrac() * 0.05);
+        o.rotation[h] = (int) (w.rfrac() * Const.RES);
+        o.size[h] = size;
+        o.info[h] = (int) (w.rfrac() * 256);
         int r = (int) radius(size);
         o.plRange[h] = r;
         o.plRadius[h] = r;
@@ -298,7 +299,7 @@ public final class Asteroids {
                     int h = m.asteroidList[i];
                     if (o.life[h] > 0) {
                         o.life[h] = 0;
-                        if (m.wireSize[h] == 1) {
+                        if (o.size[h] == 1) {
                             num--;
                         }
                     }
@@ -310,7 +311,7 @@ public final class Asteroids {
             for (int i = 0; i < m.asteroidCount; i++) {
                 int h = m.asteroidList[i];
                 if (o.life[h] > 0) {
-                    m.wireRotation[h] = (m.wireRotation[h] + (int) (m.wireTurnspeed[h] * Const.RES)) % Const.RES;
+                    o.rotation[h] = (o.rotation[h] + (int) (o.turnSpeed[h] * Const.RES)) % Const.RES;
                 }
             }
             for (int i = 0; i < m.asteroidCount; i++) {
@@ -346,14 +347,15 @@ public final class Asteroids {
         Objects o = w.objects;
         ModeState m = w.modes;
         ModeParams mp = w.modeParams;
-        int size = m.wireSize[h];
-        int x = o.px[h];
-        int y = o.py[h];
+        int size = o.size[h];
+        // C passes asteroid->pos (pixels as float) to the wreckage and debris
+        float x = o.cx[h] * (1.0f / Click.CLICK);
+        float y = o.cy[h] * (1.0f / Click.CLICK);
         float vx = o.vx[h];
         float vy = o.vy[h];
         if (size == 1) {
             float mass = o.mass[h] / 2;
-            sim.wreckage.make(x, y, vx, vy, -1, Const.TEAM_NOT_SET, mass / 20, mass / 3, mass, Obj.GRAVITY,
+            sim.wreckage.make(x, y, vx, vy, Obj.NO_ID, Const.TEAM_NOT_SET, mass / 20, mass / 3, mass, Obj.GRAVITY,
                 Records.ObjColor.WHITE, 10, 0, Const.RES - 1, 5, 10, 3, 10);
             sim.debris.make(x, y, vx, vy, -1, Const.TEAM_NOT_SET, Obj.DEBRIS, mass, Obj.GRAVITY,
                 Records.ObjColor.RED, Records.BurstKind.DEBRIS, 8, 20, 50, 0, Const.RES - 1, 5, 10, 3, 10);
@@ -373,7 +375,7 @@ public final class Asteroids {
             int y2 = (int) w.wrapYPixel(y - Trig.tsin(splitDir) * radius);
             make(x1, y1, size - 1, dir1, speed1);
             make(x2, y2, size - 1, dir2, speed2);
-            sim.wreckage.make(x, y, vx, vy, -1, Const.TEAM_NOT_SET, mass3 / 20, mass3 / 3, mass3 / 2, Obj.GRAVITY,
+            sim.wreckage.make(x, y, vx, vy, Obj.NO_ID, Const.TEAM_NOT_SET, mass3 / 20, mass3 / 3, mass3 / 2, Obj.GRAVITY,
                 Records.ObjColor.WHITE, 10, 0, Const.RES - 1, 5, 10, 3, 10);
             sim.debris.make(x, y, vx, vy, -1, Const.TEAM_NOT_SET, Obj.DEBRIS, mass3 / 2, Obj.GRAVITY,
                 Records.ObjColor.RED, Records.BurstKind.DEBRIS, 8, 20, 50, 0, Const.RES - 1, 5, 10, 3, 10);
@@ -381,7 +383,7 @@ public final class Asteroids {
         if (mp.asteroidMaxItems > 0 && w.rfrac() < mp.asteroidItemProb) {
             int nitems = (int) (w.rfrac() * mp.asteroidMaxItems) + 1;
             for (int i = 0; i < nitems && itemDrop != null; i++) {
-                itemDrop.drop(x, y, vx, vy);
+                itemDrop.drop((int) x, (int) y, vx, vy);
             }
         }
         m.asteroidNum -= 1 << (size - 1);
@@ -404,7 +406,7 @@ public final class Asteroids {
     public void playerHit(Player pl, int h) {
         Objects o = w.objects;
         ModeParams mp = w.modeParams;
-        int size = w.modes.wireSize[h];
+        int size = o.size[h];
         float v = (float) StrictMath.hypot(o.vx[h], o.vy[h]);
         long cost = Math.abs((long) (2 * o.mass[h] * v));
         o.life[h] = (long) (o.life[h] + fuelHit(ED_PL_CRASH, size));
@@ -493,7 +495,7 @@ public final class Asteroids {
                     }
                     case Obj.ASTEROID -> {
                         double hit = Math.abs(2 * o.mass[ast] * StrictMath.hypot(o.vx[ast], o.vy[ast]));
-                        o.life[h] = (long) (o.life[h] - fuelHit(hit, m.wireSize[h]));
+                        o.life[h] = (long) (o.life[h] - fuelHit(hit, o.size[h]));
                         damage = (float) -Math.abs(2 * o.mass[h] * StrictMath.hypot(o.vx[h], o.vy[h]));
                         sim.objPhysics.deltaMvElastic(ast, h);
                         o.fuseLife[h] = o.life[h] - 1;
@@ -532,7 +534,7 @@ public final class Asteroids {
                 if (o.life[ast] > 0) {
                     if (o.life[ast] <= o.fuseLife[ast]) {
                         // C: long += float (DFLOAT damage), so the sum is a float
-                        o.life[ast] = (long) ((float) o.life[ast] + (damage * LIFE) / (256 * 25 * hits(m.wireSize[ast])));
+                        o.life[ast] = (long) ((float) o.life[ast] + (damage * LIFE) / (256 * 25 * hits(o.size[ast])));
                     }
                     if (o.life[ast] < 0) {
                         o.life[ast] = 0;

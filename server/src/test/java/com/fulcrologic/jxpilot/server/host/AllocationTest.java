@@ -122,7 +122,8 @@ class AllocationTest {
 
         Loop() throws IOException {
             Options o = doggy();
-            host = (SimGameHost) new SimGameHostFactory(() -> 7).create(o, WorldMap.fromOptions(o));
+            // a no-op robot log: the real one is I/O (System.err) and allocates there, like the network log
+            host = (SimGameHost) new SimGameHostFactory(() -> 7, line -> { }).create(o, WorldMap.fromOptions(o));
             w = host.simulation().world;
             host.attach((pid, why) -> host.leave(pid));
             for (int i = 0; i < parts.length; i++) {

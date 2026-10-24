@@ -48,16 +48,6 @@ public final class ModeState {
     /** C {@code ball->length}: distance ball to player. */
     public final float[] ballLength;
 
-    // ---- wireobject (asteroids, wreckage)
-    /** C {@code size} (u_byte): asteroid size 1..4, wreckage size 0..255. */
-    public final int[] wireSize;
-    /** C {@code rotation} (u_byte, 0..RES-1). */
-    public final int[] wireRotation;
-    /** C {@code turnspeed}. */
-    public final float[] wireTurnspeed;
-    /** C {@code info}: the shape variant clients draw. */
-    public final int[] wireInfo;
-
     // ---- treasures (C treasure_t)
     /** C {@code treasure_t.team}: the closest team in team play, else 0 (map.c). */
     public final int[] treasureTeam;
@@ -91,10 +81,6 @@ public final class ModeState {
         ballOwner = new int[capacity];
         ballTreasure = new int[capacity];
         ballLength = new float[capacity];
-        wireSize = new int[capacity];
-        wireRotation = new int[capacity];
-        wireTurnspeed = new float[capacity];
-        wireInfo = new int[capacity];
         asteroidList = new int[capacity];
         int nt = map.treasures().size();
         treasureHave = new boolean[nt];

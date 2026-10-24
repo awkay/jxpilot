@@ -49,6 +49,11 @@ import java.util.Properties;
  * solid map block (or the world edge without wrap) is within {@link #WALL_RADIUS} pixels of the death
  * position, otherwise as other deaths (shots, cannons, collisions). Refuelling frames are alive frames whose
  * fuel rose by at least {@link #REFUEL_STEP} (C REFUEL_RATE is 1280 per frame).
+ * <p>
+ * Stuck frames: a run of at least {@link #STUCK_FRAMES} consecutive alive frames that all stay within
+ * {@link #STUCK_PX} pixels (per axis) of the run's first frame (a robot pinned against a wall or hovering in
+ * place). Thrust is also reported for the other ("moving") frames, which compares behaviour without the stuck
+ * episodes that dominate single runs.
  */
 final class RobotStats {
     /** Death position within this many pixels of a solid block counts as a wall death. */
@@ -57,6 +62,10 @@ final class RobotStats {
     static final double REFUEL_STEP = 600;
     static final int PLAYING = 1;
     static final int THRUSTING = 1 << 3;
+    /** A stuck run lasts at least this many frames (10 s at 12 FPS). */
+    static final int STUCK_FRAMES = 120;
+    /** ... within this many pixels of its first position on each axis. */
+    static final int STUCK_PX = 3;
 
     private final WorldMap map;
     private final int fps;
@@ -72,6 +81,10 @@ final class RobotStats {
     long shieldOrShotFrames;
     /** Alive frames that lost 400 or more fuel (shielded hits, crashes against ships). */
     long hitFrames;
+    long stuckFrames;
+    long stuckThrustFrames;
+    long movingFrames;
+    long movingThrustFrames;
     double speedSum;
     double fuelSum;
     final long[] speedHist = new long[200];
@@ -81,6 +94,11 @@ final class RobotStats {
         boolean alive;
         double fuel;
         long tick;
+        /** The current run: anchor position, length and thrust frames. */
+        int runX;
+        int runY;
+        long runFrames;
+        long runThrust;
     }
 
     RobotStats(WorldMap map, int fps) {
@@ -92,6 +110,9 @@ final class RobotStats {
     void sample(long tick, int id, String name, int x, int y, double vx, double vy, double fuel, int status) {
         Track t = tracks.get(id);
         if (t == null || !t.name.equals(name)) {
+            if (t != null) {
+                endRun(t);
+            }
             t = new Track();
             t.name = name;
             t.tick = tick - 1;
@@ -100,13 +121,26 @@ final class RobotStats {
         }
         boolean alive = (status & PLAYING) != 0;
         boolean consecutive = tick == t.tick + 1;
+        boolean thrust = (status & THRUSTING) != 0;
+        if (!(alive && consecutive && t.runFrames > 0 && Math.abs(x - t.runX) <= STUCK_PX
+            && Math.abs(y - t.runY) <= STUCK_PX)) {
+            endRun(t);
+            if (alive) {
+                t.runX = x;
+                t.runY = y;
+            }
+        }
+        if (alive) {
+            t.runFrames++;
+            t.runThrust += thrust ? 1 : 0;
+        }
         if (alive) {
             aliveFrames++;
             double v = Math.hypot(vx, vy);
             speedSum += v;
             speedHist[(int) Math.min(speedHist.length - 1, v)]++;
             fuelSum += fuel;
-            if ((status & THRUSTING) != 0) {
+            if (thrust) {
                 thrustFrames++;
             }
             if (consecutive && t.alive) {
@@ -128,6 +162,18 @@ final class RobotStats {
         t.alive = alive;
         t.fuel = fuel;
         t.tick = tick;
+    }
+
+    private void endRun(Track t) {
+        if (t.runFrames >= STUCK_FRAMES) {
+            stuckFrames += t.runFrames;
+            stuckThrustFrames += t.runThrust;
+        } else {
+            movingFrames += t.runFrames;
+            movingThrustFrames += t.runThrust;
+        }
+        t.runFrames = 0;
+        t.runThrust = 0;
     }
 
     /** Sample every robot of the Java world (after a tick). */
@@ -168,6 +214,35 @@ final class RobotStats {
         return false;
     }
 
+    /** Pool another run's counters into this one (both runs' open stuck runs are closed first). */
+    void add(RobotStats o) {
+        flush();
+        o.flush();
+        aliveFrames += o.aliveFrames;
+        deaths += o.deaths;
+        wallDeaths += o.wallDeaths;
+        refuelFrames += o.refuelFrames;
+        thrustFrames += o.thrustFrames;
+        joins += o.joins;
+        shieldOrShotFrames += o.shieldOrShotFrames;
+        hitFrames += o.hitFrames;
+        stuckFrames += o.stuckFrames;
+        stuckThrustFrames += o.stuckThrustFrames;
+        movingFrames += o.movingFrames;
+        movingThrustFrames += o.movingThrustFrames;
+        speedSum += o.speedSum;
+        fuelSum += o.fuelSum;
+        for (int i = 0; i < speedHist.length; i++) {
+            speedHist[i] += o.speedHist[i];
+        }
+    }
+
+    private void flush() {
+        for (Track t : tracks.values()) {
+            endRun(t);
+        }
+    }
+
     double robotMinutes() {
         return aliveFrames / (double) fps / 60.0;
     }
@@ -187,6 +262,7 @@ final class RobotStats {
 
     /** The comparable summary. */
     Properties summary() {
+        flush();
         Properties p = new Properties();
         double min = robotMinutes();
         p.setProperty("robotMinutes", fmt(min));
@@ -200,6 +276,9 @@ final class RobotStats {
         p.setProperty("shieldOrShotFraction", fmt(shieldOrShotFrames / (double) aliveFrames));
         p.setProperty("hitFraction", fmt(hitFrames / (double) aliveFrames));
         p.setProperty("thrustFraction", fmt(thrustFrames / (double) aliveFrames));
+        p.setProperty("stuckShare", fmt(stuckFrames / (double) aliveFrames));
+        p.setProperty("movingThrustFraction", fmt(movingThrustFrames / (double) Math.max(1, movingFrames)));
+        p.setProperty("stuckThrustFraction", fmt(stuckThrustFrames / (double) Math.max(1, stuckFrames)));
         p.setProperty("meanSpeed", fmt(speedSum / aliveFrames));
         p.setProperty("speedP50", fmt(speedQuantile(0.5)));
         p.setProperty("speedP90", fmt(speedQuantile(0.9)));
@@ -213,9 +292,11 @@ final class RobotStats {
 
     /**
      * Feed an XPTRACE file ({@code XPTRACE loop frame id robot x y cx cy vx vy ax ay dir float_dir turnvel
-     * turnacc power mass fuel thrusting status name}); only robot lines are used.
+     * turnacc power mass fuel thrusting status name}); only robot lines are used. Anything after a '|' in the
+     * name (the Java debug trace adds the robot mode there) is dropped.
      */
     void readTrace(Path trace) throws IOException {
+        flush();
         tracks.clear();
         try (BufferedReader r = Files.newBufferedReader(trace, StandardCharsets.ISO_8859_1)) {
             String line;
@@ -227,7 +308,9 @@ final class RobotStats {
                 if (f.length < 23 || !f[4].equals("1")) {
                     continue;
                 }
-                sample(Long.parseLong(f[1]), Integer.parseInt(f[3]), f[22], Integer.parseInt(f[5]),
+                int bar = f[22].indexOf('|');
+                String name = (bar < 0 ? f[22] : f[22].substring(0, bar)).strip();
+                sample(Long.parseLong(f[1]), Integer.parseInt(f[3]), name, Integer.parseInt(f[5]),
                     Integer.parseInt(f[6]), Double.parseDouble(f[9]), Double.parseDouble(f[10]),
                     Double.parseDouble(f[19]), Integer.decode(f[21]));
             }

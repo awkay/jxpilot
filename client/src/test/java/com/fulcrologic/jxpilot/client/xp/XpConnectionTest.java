@@ -153,6 +153,14 @@ class XpConnectionTest {
     @DisplayName("joining")
     class Joining {
         @Test
+        @DisplayName("with sound on, the play bundle asks for audio (C Send_audio_request(1))")
+        void audioRequested() {
+            login.audio = true;
+            play();
+            assertTrue(server.loginPackets.contains("audio 1"), "PKT_REQUEST_AUDIO 1 is sent");
+        }
+
+        @Test
         void fullHandshakeReachesPlaying() {
             play();
             assertAll(
@@ -383,6 +391,28 @@ class XpConnectionTest {
                 () -> assertEquals(3, conn.keyboard().ack(), "server acked the last change"),
                 () -> assertFalse(conn.keyboard().unacked(), "nothing outstanding"),
                 () -> assertEquals(List.of(), server.violations, "never two keyboards per datagram"));
+        }
+
+        @Test
+        void settingsBeforePlayGoWithThePlayAndWhilePlayingAtOnce() {
+            Msg.Settings st = new Msg.Settings();
+            st.turnSpeed = 40;
+            boolean early = conn.sendSettings(st, now);
+            play();
+            int before = server.loginPackets.size();
+            st.turnSpeed = 42;
+            st.power = 49.5f;
+            boolean sent = conn.sendSettings(st, now);
+            server.step();
+            List<String> later = server.loginPackets.subList(before, server.loginPackets.size());
+            assertAll(
+                () -> assertFalse(early, "not sent before playing"),
+                () -> assertTrue(server.loginPackets.contains("power36=10240"), "the join carried turn speed 40 * 256"),
+                () -> assertTrue(sent, "sent while playing"),
+                () -> assertEquals(List.of("power34=12672", "power35=8960", "power36=10752", "power37=6400",
+                    "power38=30", "power39=30"), later, "all six settings at once (C Send_power ...)"),
+                () -> assertEquals(42f, login.settings.turnSpeed, "and remembered for the next join"),
+                () -> assertEquals(List.of(), server.violations, "nothing the C server would reject"));
         }
 
         @Test

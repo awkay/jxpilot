@@ -84,17 +84,12 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          jar=dist/target/release/jxpilot-server-$VERSION.jar
-          main=$(unzip -p "$jar" META-INF/MANIFEST.MF | tr -d '\r' | sed -n 's/^Main-Class: //p')
-          cls="${main//.//}.class"
-          if unzip -l "$jar" "$cls" > /dev/null; then
-            # Starts, binds loopback and serves; stopped after a few seconds.
-            timeout 8s java -jar "$jar" --map maps/default.xp --port 15345 --bind loopback > server.log 2>&1 || true
-            cat server.log
-            grep -q '^listening on ' server.log
-          else
-            echo "::warning::$main is not in the server jar yet (it arrives with the server-net branch); skipping"
-          fi
+          # Starts, binds loopback and serves the map; stopped after a few seconds.
+          timeout 8s java -jar "dist/target/release/jxpilot-server-$VERSION.jar" \
+            --map maps/default.xp --port 15345 --bind loopback > server.log 2>&1 || true
+          cat server.log
+          grep -q '^listening on ' server.log
+          grep -q '^serving map ' server.log
 
       - name: Assemble release files
         env:
@@ -159,8 +154,8 @@ jobs:
 
       # jpackage bundles a trimmed Java runtime with the client jar and the maps. The app's main
       # class is ClientMain itself: the launcher's relaunch is not needed because the JVM options
-      # below already carry -XstartOnFirstThread on macOS. With no arguments the app opens the map
-      # viewer on the bundled default map ($APPDIR is expanded by the jpackage launcher).
+      # below already carry -XstartOnFirstThread on macOS. With no arguments the app starts a game on an
+      # embedded server with robots on the bundled default map ($APPDIR is expanded by the jpackage launcher).
       - name: Build the app image
         run: |
           mkdir -p input
@@ -177,7 +172,7 @@ jobs:
                 --java-options -XX:+UseZGC
                 --java-options --enable-native-access=ALL-UNNAMED
                 --java-options --sun-misc-unsafe-memory-access=allow
-                --arguments --view-map --arguments "$default_map"
+                --arguments --local --arguments --map --arguments "$default_map"
                 --vendor "JXPilot contributors" --copyright "GPL-2.0-or-later; see LICENSE")
           case "$RUNNER_OS" in
             macOS)

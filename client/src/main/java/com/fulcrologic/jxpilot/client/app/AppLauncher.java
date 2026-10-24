@@ -24,12 +24,16 @@
 package com.fulcrologic.jxpilot.client.app;
 
 import com.fulcrologic.jxpilot.client.game.ClientGame;
+import com.fulcrologic.jxpilot.client.game.input.KeyConfig;
 import com.fulcrologic.jxpilot.client.gl.MapViewerApp;
 import com.fulcrologic.jxpilot.client.net.Endpoint;
 import com.fulcrologic.jxpilot.client.xp.ConnectTarget;
 import com.fulcrologic.jxpilot.client.xp.GameConnection;
 
 import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 /** Runs a parsed {@link AppOptions}: the viewer, a game on a server, or a game on an embedded server. */
@@ -38,7 +42,23 @@ public final class AppLauncher {
 
     /** @return the process exit code */
     public static int run(AppOptions o) throws Exception {
+        KeyConfig keys = null;
+        if (o.mode() == AppOptions.Mode.LIST_KEYS || o.mode() == AppOptions.Mode.CONNECT
+            || o.mode() == AppOptions.Mode.LOCAL) {
+            try {
+                keys = keyConfig(o, Path.of(System.getProperty("user.home", ".")), System.err);
+            } catch (IOException e) {
+                System.err.println("cannot read the key file: " + e.getMessage());
+                return 2;
+            }
+        }
         switch (o.mode()) {
+            case LIST_KEYS -> {
+                for (String line : keys.listing()) {
+                    System.out.println(line);
+                }
+                return 0;
+            }
             case HELP -> {
                 System.err.println(AppOptions.USAGE);
                 return 2;
@@ -48,7 +68,7 @@ public final class AppLauncher {
                 return 0;
             }
             case CONNECT -> {
-                return play(o, o.target());
+                return play(o, o.target(), keys);
             }
             case LOCAL -> {
                 EmbeddedServer server;
@@ -63,18 +83,42 @@ public final class AppLauncher {
                 }
                 try (server) {
                     Endpoint ep = server.endpoint();
-                    return play(o, new ConnectTarget(ConnectTarget.Protocol.JXPILOT, ep));
+                    return play(o, new ConnectTarget(ConnectTarget.Protocol.JXPILOT, ep), keys);
                 }
             }
             default -> throw new IllegalStateException("mode " + o.mode());
         }
     }
 
-    private static int play(AppOptions o, ConnectTarget target) throws Exception {
+    private static int play(AppOptions o, ConnectTarget target, KeyConfig keys) throws Exception {
         ClientGame game = new ClientGame();
         GameConnection conn = GameConnector.open(target, o.bind(), game, o.name(), o.team(), o.shape(),
-            (int) System.nanoTime());
-        new GameApp(o, game, conn, target.toString(), null).run();
+            o.sound() && o.maxVolume() > 0, (int) System.nanoTime());
+        new GameApp(o, game, conn, target.toString(), null, keys).run();
         return 0;
+    }
+
+    /**
+     * The key configuration of a launch.
+     * <p>
+     * BEHAVIOR: {@code --keys FILE} is read (a missing or unreadable file is an IOException); without it
+     * {@code HOME/.xpilotrc} is read when it exists, else the defaults are used. Every problem and every
+     * conflicting key is printed to {@code err} ("jxpilot keys: ...").
+     */
+    static KeyConfig keyConfig(AppOptions o, Path home, PrintStream err) throws IOException {
+        Path file = o.keysFile() != null ? Path.of(o.keysFile()) : home.resolve(".xpilotrc");
+        KeyConfig c;
+        if (o.keysFile() != null || Files.isRegularFile(file)) {
+            c = KeyConfig.load(Files.readString(file, StandardCharsets.ISO_8859_1), file.toString(), o.swapScaleKey());
+        } else {
+            c = KeyConfig.defaults(o.swapScaleKey());
+        }
+        for (String p : c.problems()) {
+            err.println("jxpilot keys: " + p);
+        }
+        for (String k : c.conflicts()) {
+            err.println("jxpilot keys: warning: key bound to more than one function: " + k);
+        }
+        return c;
     }
 }

@@ -26,6 +26,7 @@ package com.fulcrologic.jxpilot.server.sim;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.math.Rng;
 import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.Trig;
@@ -39,6 +40,7 @@ import java.util.List;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.FPS14;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.FRAME;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.gameEvents;
+import static com.fulcrologic.jxpilot.server.sim.SimFixture.killCauses;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.messages;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.obj;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.ready;
@@ -380,6 +382,8 @@ class CollisionsTest {
                 () -> assertFalse(killed(b), "the shielded ship survives"),
                 () -> assertEquals(List.of("B ran over A."), messages(w, seq), "the survivor ran over the victim"),
                 () -> assertEquals(List.of("1:" + b.id + ":" + a.id), gameEvents(w, seq), "emits KILL(B, A)"),
+                () -> assertEquals(List.of(b.id + ":" + a.id + ":" + Events.KILL_RUNOVER + ":" + Obj.NO_ID),
+                    killCauses(w, seq), "tagged as a run-over (no Robot_war in C)"),
                 () -> assertEquals(1, b.kills, "the survivor gets the kill"),
                 () -> assertEquals(0, a.kills, "the victim gets no kill"),
                 () -> assertEquals(sc, b.score, EPS, "the survivor gains Rate(B, A) * runoverKillScoreMult"),
@@ -680,6 +684,8 @@ class CollisionsTest {
                 () -> assertTrue(killed(v), "the victim dies"),
                 () -> assertEquals(List.of("V was killed by a shot from K."), messages(w, seq), "names the killer"),
                 () -> assertEquals(List.of("1:" + k.id + ":" + v.id), gameEvents(w, seq), "emits KILL(K, V)"),
+                () -> assertEquals(List.of(k.id + ":" + v.id + ":" + Events.KILL_WEAPON + ":" + Obj.NO_ID),
+                    killCauses(w, seq), "tagged as a weapon kill (C Robot_war)"),
                 () -> assertEquals(1, k.kills, "the killer gets a kill"),
                 () -> assertEquals(50 + sc, k.score, EPS, "the killer gains the score"),
                 () -> assertEquals(100 - sc, v.score, EPS, "the victim loses it"),
@@ -1050,6 +1056,8 @@ class CollisionsTest {
                 () -> assertTrue(killed(v), "an empty tank means death"),
                 () -> assertEquals(List.of("V succumbed to an explosion from K."), messages(w, seq), "names the owner"),
                 () -> assertEquals(List.of("1:" + k.id + ":" + v.id), gameEvents(w, seq), "emits KILL(K, V)"),
+                () -> assertEquals(List.of(k.id + ":" + v.id + ":" + Events.KILL_EXPLOSION + ":" + Obj.NO_ID),
+                    killCauses(w, seq), "tagged as an explosion (no Robot_war in C)"),
                 () -> assertEquals(1, k.kills, "the owner gets the kill"),
                 () -> assertEquals(50 + sc, k.score, EPS, "the owner gains Rate(K, V) * explosionKillScoreMult"),
                 () -> assertEquals(100 - sc, v.score, EPS, "the victim loses it"),
@@ -1067,6 +1075,7 @@ class CollisionsTest {
             check(s);
             List<String> own = messages(w, seq);
             List<String> ownEv = gameEvents(w, seq);
+            List<String> ownCause = killCauses(w, seq);
             List<String> ownLabels = scoreTexts(w, seq);
             double ownScore = v.score;
             setup("");
@@ -1078,6 +1087,8 @@ class CollisionsTest {
             assertAll(
                 () -> assertEquals(List.of("V succumbed to an explosion from V.  How strange!"), own, "own debris is strange"),
                 () -> assertEquals(List.of("1:-1:" + v.id), ownEv, "own debris: KILL(NO_ID, V)"),
+                () -> assertEquals(List.of("-1:" + v.id + ":" + Events.KILL_EXPLOSION + ":-1"), ownCause,
+                    "own debris is an explosion kill too"),
                 () -> assertEquals(100 - sc, ownScore, EPS, "own debris costs Rate(0) * explosion * selfKill"),
                 () -> assertEquals(List.of("V succumbed to an explosion."), messages(w, seq2), "unowned names nobody"),
                 () -> assertEquals(List.of("V"), ownLabels, "own debris: labelled with the own name"),

@@ -40,6 +40,9 @@ final class FakeConnection implements GameConnection {
     long lastKeys = -1;
     boolean chatAccepted = true;
     boolean record = true;
+    /** Every sendSettings call as "power turnSpeed turnResistance altPower altTurnSpeed altTurnResistance". */
+    final List<String> settings = new ArrayList<>();
+    boolean settingsSent = true;
 
     @Override public ConnectTarget.Protocol protocol() { return ConnectTarget.Protocol.JXPILOT; }
 
@@ -64,6 +67,13 @@ final class FakeConnection implements GameConnection {
     public boolean sendChat(CharSequence text, long nowNanos) {
         log("chat:" + text);
         return chatAccepted;
+    }
+
+    @Override
+    public boolean sendSettings(com.fulcrologic.jxpilot.common.net.Msg.Settings s, long nowNanos) {
+        settings.add(s.power + " " + s.turnSpeed + " " + s.turnResistance + " " + s.altPower + " " + s.altTurnSpeed
+            + " " + s.altTurnResistance);
+        return settingsSent;
     }
 
     @Override

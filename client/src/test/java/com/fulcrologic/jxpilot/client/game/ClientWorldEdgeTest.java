@@ -43,6 +43,33 @@ class ClientWorldEdgeTest {
     static final double EPS = 1e-3; // nanosecond rounding of local times
 
     @Nested
+    @DisplayName("shot variant accessors")
+    class ShotVariant {
+        @Test
+        @DisplayName("shotHarmless is bit 7; shotKind (3 bits) and shotColor (4 bits) mask it out")
+        void harmlessBit() {
+            WorldFixture f = new WorldFixture(true);
+            f.world.setInterpolationDelayTicks(0);
+            f.begin(100)
+                .shot(Records.ShotKind.variant(Records.ShotKind.CLUSTER, Records.ObjColor.TEAM, true), 10, 20)
+                .shot(Records.ShotKind.variant(Records.ShotKind.CANNON_SHOT, Records.ObjColor.ENEMY, false), 30, 40)
+                .shot(Records.ShotKind.variant(7, 15, true), 50, 60)
+                .ingestAtTick(100);
+            f.world.update(at(100));
+            ClientWorld w = f.world;
+            List<String> shots = new ArrayList<>();
+            for (int i = 0; i < w.shotCount(); i++) {
+                shots.add(w.shotX(i) + "," + w.shotY(i) + " k" + w.shotKind(i) + " c" + w.shotColor(i)
+                    + (w.shotHarmless(i) ? " harmless" : ""));
+            }
+            assertEquals(List.of("10.0,20.0 k" + Records.ShotKind.CLUSTER + " c" + Records.ObjColor.TEAM + " harmless",
+                    "30.0,40.0 k" + Records.ShotKind.CANNON_SHOT + " c" + Records.ObjColor.ENEMY,
+                    "50.0,60.0 k7 c15 harmless"), shots,
+                "harmless survives the frame's signed byte; kind and colour keep their own bits, all bits set too");
+        }
+    }
+
+    @Nested
     @DisplayName("configure and reset")
     class Setup {
         @Test
@@ -58,6 +85,13 @@ class ClientWorldEdgeTest {
             double delay = w.interpolationDelayTicks();
             Msg.Welcome zero = new Msg.Welcome();
             w.configure(f.map, f.options, zero);
+            float zeroFraction = w.frameFraction();
+            double zeroInterval = w.snapshotIntervalTicks();
+            double zeroDelay = w.interpolationDelayTicks();
+            double zeroClock = w.clock().simHz();
+            Msg.Welcome fpsOnly = new Msg.Welcome();
+            fpsOnly.gameFps = 12.5f;
+            w.configure(f.map, f.options, fpsOnly);
             assertAll(
                 () -> assertEquals(700.0, ww, "width from the map"),
                 () -> assertEquals(350.0, wh, "height from the map"),
@@ -65,9 +99,12 @@ class ClientWorldEdgeTest {
                 () -> assertEquals(0.25f, ff, "gameFps / simHz"),
                 () -> assertEquals(2.0, interval, "simHz / snapshotHz"),
                 () -> assertEquals(2.0 + 0.02 * 60, delay, 1e-12, "one interval plus 20 ms of ticks"),
-                () -> assertEquals(0.25f, w.frameFraction(), "zero gameFps falls back to framesPerSecond, simHz to 60"),
-                () -> assertEquals(1.0, w.snapshotIntervalTicks(), "zero snapshotHz falls back to simHz (snapshot divisor 1)"),
-                () -> assertEquals(60.0, w.clock().simHz(), "the clock runs at simHz"),
+                () -> assertEquals(1f, zeroFraction,
+                    "zero gameFps falls back to framesPerSecond (15), simHz to it: one tick per C frame"),
+                () -> assertEquals(1.0, zeroInterval, "zero snapshotHz falls back to simHz (snapshot divisor 1)"),
+                () -> assertEquals(1.0 + 0.02 * 15, zeroDelay, 1e-12, "delay: one interval plus 20 ms at 15 Hz"),
+                () -> assertEquals(15.0, zeroClock, "the clock runs at simHz"),
+                () -> assertEquals(12.5f / 13, w.frameFraction(), "simHz 0 with gameFps 12.5: Math.round gives 13 Hz"),
                 () -> assertFalse(new WorldFixture(false).world.wraps(), "non-wrapping map"));
         }
 

@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Cannon;
 import com.fulcrologic.jxpilot.common.net.Msg;
@@ -91,7 +92,8 @@ public final class Crashes {
      * kill; the victim loses Rate(average pusher score, score) * shoveKillScoreMult. Without shovers the
      * victim loses Rate(WALL_SCORE, score).
      * BEHAVIOR: the GAME_EVENT comes before the score changes it causes: CRASH(victim, NO_ID, sub-type) without
-     * shovers, else KILL(last pusher, victim, sub-type) ({@link #crashKind}).
+     * shovers, else KILL(last pusher, victim, sub-type) ({@link #crashKind}) with cause KILL_SHOVE and, as aux,
+     * the pusher at (int)(rfrac * number of pushers), drawn after the scores (walls.c:2195-2197).
      */
     public void playerCrashed(Player pl, MoveState ms, int pt) {
         String how;
@@ -115,6 +117,9 @@ public final class Crashes {
             case CRASH_TREASURE -> how = " against a treasure";
             case CRASH_CANNON -> {
                 boolean shielded = pl.fullyShielded();
+                if (!shielded) {
+                    Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_CANNON);
+                }
                 cannonDies(ms.cannon, shielded ? pl.id : Obj.NO_ID);
                 if (shielded) {
                     return;
@@ -123,6 +128,9 @@ public final class Crashes {
             }
             case CRASH_UNIVERSE -> how = null;
             default -> how = " into a programming error";
+        }
+        if (ms.crash != CRASH_CANNON) {
+            Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_WALL);
         }
         pl.status |= Obj.KILLED;
         StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID);
@@ -145,7 +153,7 @@ public final class Crashes {
             msg.append('.');
             return;
         }
-        w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, pushers[num - 1].id, pl.id, kind);
+        int ev = w.events.kill(pushers[num - 1].id, pl.id, kind, Events.KILL_SHOVE);
         int total = 0;
         double totalScore = 0;
         for (int i = 0; i < num; i++) {
@@ -165,6 +173,8 @@ public final class Crashes {
         sim.scoring.score(pl, -Scoring.rate(average, pl.score) * w.params.shoveKillScoreMult, pl.bx, pl.by,
             "[Shove]");
         msg.append('.');
+        // walls.c:2195-2197: robots declare war on a random pusher
+        w.events.aux[ev] = pushers[(int) (w.rfrac() * num)].id;
     }
 
     /** BEHAVIOR: the {@code Msg.GameEvent} crash sub-type of a crash code. */
@@ -234,7 +244,7 @@ public final class Crashes {
     /**
      * C {@code Cannon_dies}: the cannon is dead for cannonDeadTime frames, its block becomes SPACE and it
      * explodes into 20 + (int)(rfrac*20) debris aimed out of its face (dir +- RES*0.2, speed 20-50, life
-     * 8-68 capped by shotLife).
+     * 8-68 capped by shotLife), then into wreckage ({@link Wreckage#cannon}).
      * <p>
      * BEHAVIOR: with cannonPoints &gt; 0 and a killer: in team play with teamCannons the cannon's team loses
      * cannonPoints; the killer gains cannonPoints if their score is at most cannonMaxScore and they are not on
@@ -252,11 +262,11 @@ public final class Crashes {
         w.map.setBlock(c.bx(), c.by(), BlockType.SPACE);
         int x = (int) c.x();
         int y = (int) c.y();
+        Sounds.play(w, x, y, SoundEvent.CANNON_EXPLOSION);
         sim.debris.make(x, y, 0f, 0f, Obj.NO_ID, c.team(), Obj.DEBRIS, 4.5f, Obj.GRAVITY, Records.ObjColor.RED,
             Records.BurstKind.DEBRIS, 6, 20, 40, (int) (c.dir() - (Const.RES * 0.2)), (int) (c.dir() + (Const.RES * 0.2)),
             20, 50, 8, 68);
-        sim.wreckage.make(x, y, 0f, 0f, Obj.NO_ID, c.team(), 3.5f, 23, 28, Obj.GRAVITY, Records.ObjColor.WHITE, 10,
-            (int) (c.dir() - (Const.RES * 0.2)), (int) (c.dir() + (Const.RES * 0.2)), 10, 25, 8, 68);
+        sim.wreckage.cannon(c, x, y); // walls.c:1582-1596
         Player pl = w.byId(killerId);
         if (pl == null || w.params.cannonPoints <= 0) {
             return;

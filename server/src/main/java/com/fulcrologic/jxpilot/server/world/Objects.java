@@ -62,6 +62,12 @@ public final class Objects {
     public final int[] missileDir;
     /** Modifier bits ({@link Obj#MOD_CLUSTER}). */
     public final int[] mods;
+    // ---- C wireobject fields (wreckage; asteroids use the same): rotation in RES units, turn per frame as a
+    // fraction of a turn, size 0..255, info (wreckage shape)
+    public final int[] rotation;
+    public final float[] turnSpeed;
+    public final int[] size;
+    public final int[] info;
 
     /** Dense list of live handles, {@code active[0..count)}. */
     public final int[] active;
@@ -94,6 +100,10 @@ public final class Objects {
         color = new int[capacity];
         missileDir = new int[capacity];
         mods = new int[capacity];
+        rotation = new int[capacity];
+        turnSpeed = new float[capacity];
+        size = new int[capacity];
+        info = new int[capacity];
         active = new int[capacity];
         slot = new int[capacity];
         freeStack = new int[capacity];
@@ -150,6 +160,10 @@ public final class Objects {
         color[h] = 0;
         missileDir[h] = 0;
         mods[h] = 0;
+        rotation[h] = 0;
+        turnSpeed[h] = 0;
+        size[h] = 0;
+        info[h] = 0;
         return h;
     }
 
