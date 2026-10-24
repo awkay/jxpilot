@@ -210,10 +210,10 @@ class GeneratedDocsTest {
                     "every item has its C description"),
                 () -> assertTrue(ItemTable.itemsAdoc().contains("|image:items/fuel.png[Fuel in play]\n"
                     + "|image:items/fuel-symbol.png[Fuel symbol]\n|[[item-fuel]]*Fuel*\n|Extra energy/fuel\n|-\n"
-                    + "|C server: yes +\nJava server: M2\n"), "a row has both pictures, name, C text, keys and status"),
-                () -> assertEquals("C server: yes +\nJava server: M2",
+                    + "|C server: yes +\nJava server: in progress (M2)\n"), "a row has both pictures, name, C text, keys and status"),
+                () -> assertEquals("C server: yes +\nJava server: in progress (M2)",
                     ItemTable.status(com.fulcrologic.jxpilot.common.Item.LASER),
-                    "an item the Java server lacks works on C servers and is M2 on the Java server"));
+                    "an item the Java server lacks works on C servers and is in progress on the Java server"));
         }
     }
 

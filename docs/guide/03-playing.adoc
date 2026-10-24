@@ -12,9 +12,8 @@ ifdef::env-github[]
 :warning-caption: :warning:
 endif::[]
 
-IMPORTANT: Networked play is not available yet (<<01-introduction.adoc#status,Status>>). This chapter
-describes the game as JXPilot implements it from XPilot 4.5.5: the key bindings and the HUD are
-already in the code, and the `--demo` viewer shows what the screen will look like.
+This chapter describes the game as JXPilot implements it from XPilot 4.5.5. To start a game, see
+<<02-quick-start.adoc#run-client,Playing right away>>.
 
 [[basics]]
 == The basics
@@ -25,7 +24,9 @@ hard kills you. Thrusting, shields and many items use fuel; refuel by holding th
 fuel station. When you die, you restart at your home base.
 
 Your shield protects you from shots and collisions while it is up, but it uses fuel and you cannot
-fire while shielded.
+fire while shielded. As in the XPilot client ("autoShield"), your shield is up when you start; firing
+lowers it while you fire and raises it again when you stop. Once you have pressed and released the
+shield key, it works as hold-to-shield.
 
 [[controls]]
 == Controls
@@ -49,8 +50,8 @@ JXPilot uses XPilot's default keys (from the C client's `default.c`). The most i
 |kbd:[H] or kbd:[Home] |Change home base (and toggle the autopilot, kbd:[H])
 |kbd:[Pause] |Pause, only on your home base (<<pausing>>)
 |kbd:[End] |Self-destruct after a 150-frame countdown; press again to cancel
-|kbd:[M] |Talk (type a message, kbd:[Enter] sends it)
-|kbd:[Esc] |Swap between your two engine settings (<<engine-settings>>)
+|kbd:[M] |Talk (type a message, kbd:[Enter] sends it; <<talking>>)
+|kbd:[Esc] |Quit the game (in XPilot it swaps engine settings; <<engine-settings>>)
 |Keypad kbd:[*] / kbd:[/] |More / less engine power
 |Keypad kbd:[+] / kbd:[-] |Faster / slower turning
 |===
@@ -65,9 +66,10 @@ key: refuel, and the ball connector.
 === Engine settings
 
 Your ship's engine power, turn speed and turn resistance are settings you choose. JXPilot starts you
-with the XPilot client's defaults: power 45, turn speed 35 and turn resistance 0.12. kbd:[Esc] swaps to
-the alternative settings, power 35, turn speed 25, turn resistance 0.12, and back. The keypad keys
-above change the current settings.
+with the XPilot client's defaults: power 45, turn speed 35 and turn resistance 0.12, and the
+alternative settings power 35, turn speed 25, turn resistance 0.12. The keypad keys above change the
+current settings. XPilot swaps to the alternative settings with kbd:[Esc]; in JXPilot kbd:[Esc] quits,
+so the swap has no key until key bindings can be changed.
 
 [[all-keys]]
 === All game keys
@@ -84,25 +86,47 @@ endif::[]
 
 include::generated/keys.adoc[]
 
-[[client-keys]]
-=== Client-only keys
+The table lists XPilot's defaults. In JXPilot kbd:[Esc] quits, so "Swap settings" has no key.
 
-NOTE: *Unmerged branch* (`client-net`). These keys act in the client and are never sent to the server.
+[[client-keys]]
+=== Client keys
+
+These keys act in the client and are never sent to the server.
 
 [cols="2,3",options="header"]
 |===
 |Key |Function
 |kbd:[M] |Open the talk line
-|kbd:[Left] / kbd:[Right] / kbd:[Up] / kbd:[Down] |Move in the talk line (only while talking)
-|kbd:[F1] ... kbd:[F12] |Send talk macros 1 to 12 (macros 13 to 20 have no default key)
-|kbd:[U] |ID mode (show player names)
-|Keypad kbd:[8] |Toggle the owned-items display
-|Keypad kbd:[9] |Toggle messages
-|Keypad kbd:[Enter] |Pointer (mouse) control
-|kbd:[Print] |Print messages to standard output
+|kbd:[Esc] |Quit (or, in the talk line, cancel the message)
+|Any key you choose with `--swap-scale-key` |Swap between the normal and the alternative zoom
+(`--scale-factor`, `--alt-scale-factor`; <<07-client-reference.adoc#game-flags,Game flags>>). Unbound by
+default, as in XPilot.
 |===
 
-Changing key bindings with a keys file (`~/.jxpilot/keys`) is planned (milestone M3).
+XPilot's talk macros (kbd:[F1] to kbd:[F12]), ID mode, message toggles and pointer control are not in
+JXPilot. Changing key bindings is planned.
+
+[[talking]]
+=== Talking
+
+kbd:[M] opens the talk line at the bottom of the screen. Type, then kbd:[Enter] sends and kbd:[Esc]
+cancels. kbd:[Left] and kbd:[Right] move the cursor, kbd:[Up] and kbd:[Down] browse the lines you sent
+before, kbd:[Backspace] and kbd:[Delete] erase, kbd:[Home] and kbd:[End] jump to the start and end.
+
+As in XPilot, a prefix before a colon decides who reads a line (the Java server; an original XPilot
+server works the same way):
+
+[cols="2,3",options="header"]
+|===
+|You type |Who gets it
+|`hello all` |Everyone. Lines show as `hello all [YourName]`.
+|`2: regroup at base` |Everyone on team 2 (and you).
+|`ace: nice shot` |The player whose name is `ace`, or starts with `ace` if only one does (and you).
+|`see you :-)` |Everyone: a colon followed by a smiley character, or at the end of the line, is not
+an address.
+|===
+
+If nobody matches, the server tells you: "Message not sent, ace does not match any player!".
 
 [[map-viewer-keys]]
 === Map viewer keys
@@ -215,7 +239,7 @@ All multipliers are in <<05-server-options.adoc#opts-scoring,Scoring options>>.
 
 NOTE: Items are server rules. When the JXPilot client plays on an original C XPilot server, every
 item works: the C server handles pickup and use, and the client draws the items and sends their keys.
-The JXPilot (Java) server does not have items yet; they come with milestone M2. The "Works on" column
+The JXPilot (Java) server does not have items yet; they are being added (milestone M2). The "Works on" column
 shows both.
 
 Items float around the map (more around item concentrators, the `%` map symbol); fly over one to pick

@@ -275,9 +275,9 @@ public final class ItemTable {
         return sb.toString();
     }
 
-    /** BEHAVIOR: C server always yes; Java server yes once implemented, else milestone M2; one per line. */
+    /** BEHAVIOR: C server always yes; Java server yes once implemented, else in progress (M2); one per line. */
     static String status(Item i) {
-        return "C server: yes +\nJava server: " + (JAVA_SERVER_IMPLEMENTED.contains(i) ? "yes" : "M2");
+        return "C server: yes +\nJava server: " + (JAVA_SERVER_IMPLEMENTED.contains(i) ? "yes" : "in progress (M2)");
     }
 
     /** BEHAVIOR: "Function (`keysym`)" for each key, separated by line breaks; "-" for items used passively. */

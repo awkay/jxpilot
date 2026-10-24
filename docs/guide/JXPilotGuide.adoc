@@ -49,8 +49,7 @@ ifndef::env-github[]
 
 This guide is for people who want to play JXPilot or run a JXPilot server; the last chapter is for
 people who want to build or change it. JXPilot is a work in progress, and the guide says plainly which
-features exist today and which are planned. Paragraphs marked *Unmerged branch* describe code that is
-written but not yet merged into the main line; they change when it is merged.
+features exist today and which are planned.
 
 This copy describes version *{revnumber}*.
 

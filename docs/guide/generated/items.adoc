@@ -17,7 +17,7 @@ endif::[]
 |Extra energy/fuel
 |-
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/wideangle.png[Wideangle in play]
 |image:items/wideangle-symbol.png[Wideangle symbol]
@@ -25,7 +25,7 @@ Java server: M2
 |Extra front cannons
 |-
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/rearshot.png[Rearshot in play]
 |image:items/rearshot-symbol.png[Rearshot symbol]
@@ -33,7 +33,7 @@ Java server: M2
 |Extra rear cannon
 |-
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/afterburner.png[Afterburner in play]
 |image:items/afterburner-symbol.png[Afterburner symbol]
@@ -41,7 +41,7 @@ Java server: M2
 |Afterburner; makes your engines more powerful
 |-
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/cloak.png[Cloak in play]
 |image:items/cloak-symbol.png[Cloak symbol]
@@ -49,7 +49,7 @@ Java server: M2
 |Cloaking device; makes you almost invisible, both on radar and on screen
 |Cloak: `+Delete+`, `+BackSpace+` (pass:c[Backspace])
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/sensor.png[Sensor in play]
 |image:items/sensor-symbol.png[Sensor symbol]
@@ -57,7 +57,7 @@ Java server: M2
 |Sensor; enables you to see cloaked opponents more easily
 |-
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/transporter.png[Transporter in play]
 |image:items/transporter-symbol.png[Transporter symbol]
@@ -65,7 +65,7 @@ Java server: M2
 |Transporter; enables you to steal equipment from other players
 |Transporter: `+t+`
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/tank.png[Tank in play]
 |image:items/tank-symbol.png[Tank symbol]
@@ -75,7 +75,7 @@ Java server: M2
 Tank next: `+e+` +
 Tank prev: `+w+`
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/mine.png[Mine in play]
 |image:items/mine-symbol.png[Mine symbol]
@@ -84,7 +84,7 @@ Java server: M2
 |Drop mine: `+Tab+` +
 Detach mine: `+bracketright+` (pass:c[\]])
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/missile.png[Missile in play]
 |image:items/missile-symbol.png[Missile symbol]
@@ -94,7 +94,7 @@ Java server: M2
 Fire heat: `+semicolon+` (pass:c[;]) +
 Fire torpedo: `+quoteright+` (pass:c[' apostrophe])
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/ecm.png[ECM in play]
 |image:items/ecm-symbol.png[ECM symbol]
@@ -102,7 +102,7 @@ Java server: M2
 |ECM (Electronic Counter Measures); can be used to disturb electronic equipment, for instance can it be used to confuse smart missiles and reprogram robots to seek certain players
 |ECM: `+bracketleft+` (pass:c[[])
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/laser.png[Laser in play]
 |image:items/laser-symbol.png[Laser symbol]
@@ -110,7 +110,7 @@ Java server: M2
 |Laser; limited range laser beam, costs a lot of fuel, having more laser items increases the range of the laser, they can be irrepairably damaged by ECMs
 |Fire laser: `+slash+` (pass:c[/])
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/emergency-thrust.png[Emergency thrust in play]
 |image:items/emergency-thrust-symbol.png[Emergency thrust symbol]
@@ -118,7 +118,7 @@ Java server: M2
 |Emergency Thrust; gives emergency thrust capabilities for a limited period
 |Emergency thrust: `+j+`
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/tractor-beam.png[Tractor beam in play]
 |image:items/tractor-beam-symbol.png[Tractor beam symbol]
@@ -127,7 +127,7 @@ Java server: M2
 |Tractor beam: `+comma+` (pass:c[,]) +
 Pressor beam: `+period+` (pass:c[.])
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/autopilot.png[Autopilot in play]
 |image:items/autopilot-symbol.png[Autopilot symbol]
@@ -135,7 +135,7 @@ Java server: M2
 |Autopilot; when on, the ship will turn and thrust against the direction of travel
 |Toggle autopilot: `+h+`
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/emergency-shield.png[Emergency shield in play]
 |image:items/emergency-shield-symbol.png[Emergency shield symbol]
@@ -143,7 +143,7 @@ Java server: M2
 |EmergencyShield; gives emergency shield capabilities for a limited period
 |Emergency shield: `+g+`
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/deflector.png[Deflector in play]
 |image:items/deflector-symbol.png[Deflector symbol]
@@ -151,7 +151,7 @@ Java server: M2
 |Deflector; pushes hostile objects away from your ship
 |Deflector: `+o+`
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/hyperjump.png[Hyperjump in play]
 |image:items/hyperjump-symbol.png[Hyperjump symbol]
@@ -159,7 +159,7 @@ Java server: M2
 |Hyperjump; enables you to teleport to a random map location
 |Hyperjump: `+q+`
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/phasing.png[Phasing in play]
 |image:items/phasing-symbol.png[Phasing symbol]
@@ -167,7 +167,7 @@ Java server: M2
 |Phasing Device; lets you fly through anything for a limited period
 |Phasing: `+p+`
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/mirror.png[Mirror in play]
 |image:items/mirror-symbol.png[Mirror symbol]
@@ -175,7 +175,7 @@ Java server: M2
 |Mirror; reflects laser beams
 |-
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |image:items/armor.png[Armor in play]
 |image:items/armor-symbol.png[Armor symbol]
@@ -183,6 +183,6 @@ Java server: M2
 |Armor; absorbs shots in the absence of shields
 |-
 |C server: yes +
-Java server: M2
+Java server: in progress (M2)
 
 |===

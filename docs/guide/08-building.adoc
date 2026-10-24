@@ -46,8 +46,9 @@ macOS. It runs in the `client/` directory, so relative map paths in `client.args
 |Directory |Contents
 |`common/` |Map and config parsing, the option registry (`Opt`, `Options`), wall geometry, ship shapes,
 the network protocol codecs.
-|`server/` |The game simulation and the network server.
-|`client/` |The LWJGL/OpenGL renderer, HUD, radar, input and client networking.
+|`server/` |The game simulation, robots and the network server.
+|`client/` |The game client: LWJGL/OpenGL renderer, HUD, radar, input, networking for JXPilot and XPilot
+servers, the embedded server for `--local`. `client/scripts/run-client.sh` runs it from a build.
 |`dist/` |Release packaging: the client jar launcher, the release jars (`-Prelease`), and the generator
 of this guide's reference tables.
 |`maps/` |The original XPilot maps, unmodified. Never change these files.
@@ -63,8 +64,8 @@ headlessly, for screenshots and physics traces to compare against.
 
 `jxpilot-client-VERSION.jar`:: The client and all its dependencies, with LWJGL's native libraries
 for macOS (arm64, x64), Linux (x64, arm64) and Windows (x64). LWJGL picks the right one at run time.
-About 5.4 MB. Its main class is the launcher (<<07-client-reference.adoc#launcher,The jar launcher>>).
-`jxpilot-server-VERSION.jar`:: The server with `common`; no LWJGL. About 0.3 MB. Main class
+About 5.8 MB. Its main class is the launcher (<<07-client-reference.adoc#launcher,The jar launcher>>).
+`jxpilot-server-VERSION.jar`:: The server with `common`; no LWJGL. About 0.4 MB. Main class
 `com.fulcrologic.jxpilot.server.ServerMain`.
 
 Both carry the GPL (`META-INF/LICENSE`) and a notice (`META-INF/NOTICE.txt`); the client jar also
