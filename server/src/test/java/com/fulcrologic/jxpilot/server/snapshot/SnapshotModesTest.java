@@ -58,6 +58,8 @@ class SnapshotModesTest {
     };
 
     final ByteBuffer[] parts = new ByteBuffer[4];
+    /** One builder per world, as the server keeps one (it remembers which viewers had timers). */
+    final java.util.Map<World, SnapshotBuilder> builders = new java.util.IdentityHashMap<>();
 
     record Out(List<String> targets, List<String> treasures, List<String> timers, List<String> balls,
                List<String> connectors, List<String> asteroids, List<String> wrecks, List<String> radar,
@@ -68,7 +70,7 @@ class SnapshotModesTest {
         for (int i = 0; i < parts.length; i++) {
             parts[i] = ByteBuffer.allocate(1200);
         }
-        int n = new SnapshotBuilder(w).build(viewer, 1, w.events.burstSeq(), radar, parts);
+        int n = builders.computeIfAbsent(w, SnapshotBuilder::new).build(viewer, 1, w.events.burstSeq(), radar, parts);
         Out o = new Out(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(),
             new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
         SnapshotReader r = new SnapshotReader();
@@ -202,6 +204,11 @@ class SnapshotModesTest {
         w.roundDelay = 9;
         s.asteroids.make(30 * 35, 3 * 35, 1, 0, 0f);
         Out o = build(s, v, true);
+        v.damaged = 0;
+        w.roundTime = -1;
+        w.roundDelaySend = 0;
+        Out clear = build(s, v, false);
+        Out after = build(s, v, false);
         Simulation off = TestWorlds.sim("teamPlay: yes\ngravity: 0\n", ROWS);
         Player q = TestWorlds.join(off, "Q", 1);
         off.asteroids.make(30 * 35, 3 * 35, 1, 0, 0f);
@@ -210,6 +217,8 @@ class SnapshotModesTest {
         long asts = o.radar().stream().filter(f -> f.equals(String.valueOf(Records.Radar.FLAG_ASTEROID))).count();
         assertAll(
             () -> assertEquals(List.of("3:9:11"), o.timers(), "damaged, round delay, 141 frames = 11 s rounded up"),
+            () -> assertEquals(List.of("0:0:-1"), clear.timers(), "once all stopped: one all-clear record"),
+            () -> assertEquals(List.of(), after.timers(), "then nothing"),
             () -> assertEquals(2, balls, "both treasure balls on the radar"),
             () -> assertEquals(1, asts, "the asteroid on the radar"),
             () -> assertTrue(o2.radar().stream().noneMatch(f -> !f.equals(String.valueOf(Records.Radar.FLAG_SELF))),

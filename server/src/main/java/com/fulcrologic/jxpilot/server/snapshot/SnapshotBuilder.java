@@ -73,6 +73,8 @@ public final class SnapshotBuilder {
     private long hashFrames = -1;
     private final int[] shotList;
     private final int[] shotVariant;
+    /** Per player slot: the last TIMERS sent had an active timer (one all-clear record follows). */
+    private final boolean[] timersSent;
     private double viewHalfX = DEFAULT_VIEW_HALF;
     private double viewHalfY = DEFAULT_VIEW_HALF;
 
@@ -97,6 +99,7 @@ public final class SnapshotBuilder {
         wr.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
         shotList = new int[w.objects.capacity];
         shotVariant = new int[w.objects.capacity];
+        timersSent = new boolean[w.players.length];
         hash = new ShotHash(w);
         initRecordClasses();
     }
@@ -482,7 +485,8 @@ public final class SnapshotBuilder {
     }
 
     /**
-     * BEHAVIOR: the viewer's HUD timers, sent while any is active: ECM damage frames, the round delay while C
+     * BEHAVIOR: the viewer's HUD timers, sent while any is active and once more after they all stopped (so the
+     * client, which keeps the last values, sees them cleared): ECM damage frames, the round delay while C
      * would send it (round_delay_send, which runs one second past the delay so clients see 0), and the time
      * left: the gameDuration timer, else the round timer with maxRoundTime, rounded up to seconds, else -1.
      */
@@ -495,9 +499,14 @@ public final class SnapshotBuilder {
         } else {
             left = w.params.maxRoundTime > 0 && w.roundTime >= 0 ? (w.roundTime + fps - 1) / fps : -1;
         }
-        if ((w.roundDelaySend <= 0 && left < 0 && v.damaged <= 0) || !need(Section.TIMERS, 0)) {
+        boolean active = w.roundDelaySend > 0 || left >= 0 || v.damaged > 0;
+        if (!active && !timersSent[v.slot]) {
             return;
         }
+        if (!need(Section.TIMERS, 0)) {
+            return;
+        }
+        timersSent[v.slot] = active;
         Records.Timers.put(wr, Math.max(0, v.damaged), delay, left);
     }
 
