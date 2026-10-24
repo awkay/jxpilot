@@ -3,7 +3,7 @@
 // by dist/src/test/java/com/fulcrologic/jxpilot/dist/docs/GuideTables.java. Do not edit:
 // run `make -C docs/guide generate` instead. The build fails when this file is stale.
 
-The server knows *301* options: 282 implemented, 1 in progress, 5 not yet, 6 not supported, 2 no effect, 5 not applicable. In these groups:
+The server knows *301* options: 284 implemented, 1 in progress, 4 not yet, 5 not supported, 2 no effect, 5 not applicable. In these groups:
 
 * <<opts-files,Command line and server files>> (11)
 * <<opts-network,Server and network>> (23)
@@ -85,7 +85,7 @@ Switches of the server process itself and the files it reads.
 |text
 |_(none)_
 |command line, config file
-|*Not yet:* the native protocol has no MOTD request; needs a protocol and client change. The filename of the MOTD file to show to clients when they join.
+|*Implemented.* The filename of the MOTD file to show to clients when they join.
 
 |[[opt-scoreTableFileName]]`+scoreTableFileName+`
 |`+scoretable+`
@@ -131,7 +131,7 @@ Where and how the server listens, who may connect and how much traffic it accept
 |boolean
 |`+false+`
 |command line, config file
-|*Not supported:* the server never quits when the last human leaves (C quits unless -noQuit). Does the server wait for new human players to show up after all players have left.
+|*Implemented.* Does the server wait for new human players to show up after all players have left.
 
 |[[opt-contactPort]]`+contactPort+`
 |`+port+`
@@ -227,7 +227,7 @@ Where and how the server listens, who may connect and how much traffic it accept
 |[[opt-maxClientsPerIP]]`+maxClientsPerIP+`
 |`+maxPerIP+`
 |integer
-|`+4+`
+|`+2+`
 |command line, config file
 |*Implemented.* JXPilot default 4 (XPilot: 2); 0 or less is unlimited; IPv6 counts per /64. Maximum number of clients per IP address that are allowed to connect. This prevents unfriendly players from occupying all the bases, effectively 'kicking' paused players and denying other players to join.
 
