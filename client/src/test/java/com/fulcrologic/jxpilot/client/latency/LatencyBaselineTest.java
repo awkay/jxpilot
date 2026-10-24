@@ -56,7 +56,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LatencyBaselineTest {
     static final int TRIALS = Integer.getInteger("jxpilot.latency.trials", 48);
     static final int MOTION_SECONDS = Integer.getInteger("jxpilot.latency.seconds", 60);
-    static final int ROBOTS = 3;
     static final long SEED = Long.getLong("jxpilot.latency.seed", 1);
     static final int[] RTTS = {0, 100, 200, 300};
 
@@ -72,7 +71,7 @@ class LatencyBaselineTest {
                     for (Scenario.Loss l : Scenario.Loss.values()) {
                         Scenario s = new Scenario(rtt, j, l);
                         ROWS.add(new MetricTable.Row(c, s, InputToPhoton.measure(c, s, TRIALS, SEED),
-                            MotionMetrics.measure(c, s, ROBOTS, MOTION_SECONDS, SEED)));
+                            MotionMetrics.measure(c, s, c.motionRobots, MOTION_SECONDS, SEED)));
                     }
                 }
             }
@@ -109,7 +108,7 @@ class LatencyBaselineTest {
     }
 
     @Test
-    @DisplayName("own-ship I2P on clean links: RTT + 20..80 ms at p50, at most RTT + 110 ms at p95")
+    @DisplayName("own-ship I2P on clean links: mean RTT + 40..48 ms, p50 RTT + 30..55 ms, p95 at most RTT + 90 ms")
     void cleanI2p() {
         List<Executable> checks = new ArrayList<>();
         for (MetricTable.Row r : ROWS) {
@@ -119,9 +118,13 @@ class LatencyBaselineTest {
             int rtt = r.scenario().rttMs();
             Stats s = r.i2p().stats(null);
             String cell = r.course() + " " + r.scenario().label() + ": ";
-            // RTT + T/2 (36 ms, the wait for the next 14 Hz tick) + about a frame each for the key poll and the draw
-            checks.add(() -> assertTrue(s.p50() >= rtt + 20 && s.p50() <= rtt + 80, cell + "p50 " + s.p50()));
-            checks.add(() -> assertTrue(s.p95() <= rtt + 110, cell + "p95 " + s.p95()));
+            // RTT + T/2 (36 ms, the wait for the next 14 Hz tick over stratified phases) + about half a frame each for
+            // the key poll and the draw: about 44 ms. Seeds 1-3 measured mean RTT + 43.3..45.8, p50 RTT + 41..46, p95
+            // RTT + 75..77
+            double mean = r.i2p().mean();
+            checks.add(() -> assertTrue(mean >= rtt + 40 && mean <= rtt + 48, cell + "mean " + mean));
+            checks.add(() -> assertTrue(s.p50() >= rtt + 30 && s.p50() <= rtt + 55, cell + "p50 " + s.p50()));
+            checks.add(() -> assertTrue(s.p95() <= rtt + 90, cell + "p95 " + s.p95()));
             checks.add(() -> assertTrue(s.percentile(0) >= rtt, cell + "no key shows sooner than one round trip: "
                 + s.percentile(0)));
             for (ControlKey k : new ControlKey[] {ControlKey.TURN_LEFT, ControlKey.THRUST}) {
@@ -133,7 +136,7 @@ class LatencyBaselineTest {
     }
 
     @Test
-    @DisplayName("own-ship I2P with jitter and loss: p50 at most RTT + 120 ms; p95 at most RTT + 200 ms, + 600 ms"
+    @DisplayName("own-ship I2P with jitter and loss: p50 at most RTT + 90 ms; p95 at most RTT + 250 ms, + 600 ms"
         + " with bursty loss")
     void impairedI2p() {
         List<Executable> checks = new ArrayList<>();
@@ -141,10 +144,10 @@ class LatencyBaselineTest {
             int rtt = r.scenario().rttMs();
             Stats s = r.i2p().stats(null);
             String cell = r.course() + " " + r.scenario().label() + ": ";
-            // seeds 1-3 measured p95 up to RTT + 157 ms without bursty loss, RTT + 415 ms with it (a burst can eat an
-            // INPUT and its redundant copy, and the SELF after it)
-            int tail = r.scenario().loss() == Scenario.Loss.BURSTY_5 ? 600 : 200;
-            checks.add(() -> assertTrue(s.p50() <= rtt + 120, cell + "p50 " + s.p50()));
+            // seeds 1-3 measured p50 up to RTT + 69 ms, p95 up to RTT + 196 ms without bursty loss and RTT + 467 ms with
+            // it (a burst can eat an INPUT and its redundant copy, and the SELF after it)
+            int tail = r.scenario().loss() == Scenario.Loss.BURSTY_5 ? 600 : 250;
+            checks.add(() -> assertTrue(s.p50() <= rtt + 90, cell + "p50 " + s.p50()));
             checks.add(() -> assertTrue(s.p95() <= rtt + tail, cell + "p95 " + s.p95()));
         }
         assertAll(checks);
@@ -176,6 +179,9 @@ class LatencyBaselineTest {
             MotionMetrics.Result m = r.motion();
             String cell = r.course() + " " + r.scenario().label() + ": ";
             checks.add(() -> assertTrue(m.ownError().count() > 0, cell + "own error measured"));
+            if (r.course() == Course.DOGFIGHT) {
+                checks.add(() -> assertTrue(m.otherFrames() > 100, cell + "the robots stay in view: " + m.otherFrames()));
+            }
             checks.add(() -> assertTrue(m.ownError().p95() < 20, cell + "own error p95 < 20 px: " + m.ownError().p95()));
             if (clean(r.scenario())) {
                 checks.add(() -> assertTrue(m.ownSmooth().p95() < 0.5, cell + "own step change p95 < 0.5 px: "

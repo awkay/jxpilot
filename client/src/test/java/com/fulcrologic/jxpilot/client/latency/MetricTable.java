@@ -39,10 +39,10 @@ final class MetricTable {
     record Row(Course course, Scenario scenario, InputToPhoton.Result i2p, MotionMetrics.Result motion) { }
 
     static final String HEADER =
-        "| course | RTT/jitter/loss | I2P p50 | I2P p95 | p50 - RTT | turn p50 | thrust p50 | trials"
+        "| course | RTT/jitter/loss | I2P p50 | I2P p95 | p50 - RTT | mean - RTT | turn p50 | thrust p50 | thrust >1px p50 | trials"
             + " | own err p50/p95 | aim err p50/p95 (frames) | smooth own p95/max | smooth others p95"
             + " | snaps/min (teleports) | HUD rtt/jitter/loss | correction p95 | exact % |";
-    static final String RULE = "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|";
+    static final String RULE = "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|";
 
     private MetricTable() {
     }
@@ -68,8 +68,10 @@ final class MetricTable {
             + " | " + num(all.p50(), 0)
             + " | " + num(all.p95(), 0)
             + " | " + num(all.p50() - r.scenario().rttMs(), 0)
+            + " | " + num(r.i2p().mean() - r.scenario().rttMs(), 1)
             + " | " + num(turn.p50(), 0)
             + " | " + num(thrust.p50(), 0)
+            + " | " + num(r.i2p().positionStats().p50(), 0)
             + " | " + all.count() + "/" + r.i2p().trials().size()
             + " | " + num(m.ownError().p50(), 1) + "/" + num(m.ownError().p95(), 1)
             + " | " + num(m.aimError().p50(), 1) + "/" + num(m.aimError().p95(), 1) + " (" + m.otherFrames() + ")"

@@ -28,24 +28,33 @@ import com.fulcrologic.jxpilot.common.net.ControlKey;
 /**
  * A scripted flight on a shipped map (docs/latency-fixes.md §7.4 courses): the map, and the keys held as a
  * function of the time since the ship first appeared. Every course thrusts away from the base for half a second
- * and then coasts, so the map decides the motion: open space with mild gravity, a tight walled box, or a field
- * of gravity attractors.
+ * and then coasts, so the map decides the motion: open space with mild gravity, a tight walled box, a field
+ * of gravity attractors, or a map small enough that the robots are always close. Ball carrying (§7.4) is left
+ * for phase 3, which models the ball connector.
  */
 enum Course {
     /** globe.xp: a long coast across open space under the map's gravity. */
-    FREE_FLIGHT("globe"),
+    FREE_FLIGHT("globe", 3),
     /** tournament.xp: a small walled box; the ship keeps bouncing off its walls. */
-    WALLS("tournament"),
+    WALLS("tournament", 3),
     /** pad.xp: no global gravity, but gravity attractor blocks pull the ship back and forth. */
-    GRAVITY_WELL("pad");
+    GRAVITY_WELL("pad", 3),
+    /**
+     * doggy.xp: the smallest shipped map (49 x 50 blocks), so the robots of the motion runs stay in view and the
+     * others' aim error is measured in every cell.
+     */
+    DOGFIGHT("doggy", 6);
 
     static final long MS = 1_000_000L;
     static final long THRUST = ControlKey.THRUST.mask();
 
     final String map;
+    /** Robots in the motion runs (the I2P runs have none). */
+    final int motionRobots;
 
-    Course(String map) {
+    Course(String map, int motionRobots) {
         this.map = map;
+        this.motionRobots = motionRobots;
     }
 
     /** BEHAVIOR: thrust from 300 to 800 ms after the spawn, nothing otherwise (also before the spawn). */

@@ -78,6 +78,16 @@
     </dependency>
   </dependencies>
 
+  <profiles>
+    <!-- -Platency: only the latency baseline runs (client/pom.xml's latency profile); every other test is skipped -->
+    <profile>
+      <id>latency</id>
+      <properties>
+        <skipTests>true</skipTests>
+      </properties>
+    </profile>
+  </profiles>
+
   <build>
     <pluginManagement>
       <plugins>

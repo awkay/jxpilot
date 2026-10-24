@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -124,7 +125,10 @@ class HarnessPartsTest {
                 () -> assertEquals(List.of("--map", "../maps/pad.xp", "-maxRobots", "3", "-minRobots", "3"),
                     List.of(Course.GRAVITY_WELL.serverArgs(3)), "server command line"),
                 () -> assertEquals("globe", Course.FREE_FLIGHT.map, "free flight on globe"),
-                () -> assertEquals("tournament", Course.WALLS.map, "walls on tournament"));
+                () -> assertEquals("tournament", Course.WALLS.map, "walls on tournament"),
+                () -> assertEquals("doggy", Course.DOGFIGHT.map, "the dogfight on the smallest map"),
+                () -> assertEquals(6, Course.DOGFIGHT.motionRobots, "with 6 robots, so they stay in view"),
+                () -> assertEquals(3, Course.FREE_FLIGHT.motionRobots, "3 robots elsewhere"));
         }
     }
 
@@ -132,11 +136,12 @@ class HarnessPartsTest {
     @DisplayName("InputToPhoton scheduling")
     class Scheduling {
         @Test
-        @DisplayName("trials start 1.5 s after the spawn, 263 ms apart, alternating turn and thrust; tick phase < 71 ms")
+        @DisplayName("trials: earliest 1.5 s after the spawn, 263 ms apart; turn and thrust alternate; tick phase < 71 ms")
         void schedule() {
             assertAll(
-                () -> assertEquals(1000 * MS + 1500 * MS, InputToPhoton.t0(1000 * MS, 0), "first trial"),
-                () -> assertEquals(1000 * MS + (1500 + 3 * 263) * MS, InputToPhoton.t0(1000 * MS, 3), "fourth trial"),
+                () -> assertEquals(1000 * MS + 1500 * MS, InputToPhoton.earliestT0(1000 * MS, 0), "first trial"),
+                () -> assertEquals(1000 * MS + (1500 + 3 * 263) * MS, InputToPhoton.earliestT0(1000 * MS, 3),
+                    "fourth trial"),
                 () -> assertEquals(ControlKey.TURN_LEFT, InputToPhoton.keyOf(0), "even trials turn"),
                 () -> assertEquals(ControlKey.THRUST, InputToPhoton.keyOf(1), "odd trials thrust"),
                 () -> assertEquals(5, InputToPhoton.blockSeed(5, 0), "block 0 is the seed itself"),
@@ -147,15 +152,49 @@ class HarnessPartsTest {
         }
 
         @Test
+        @DisplayName("arrival phases are stratified over one tick; the tick/frame period; t0 lands on a period tick")
+        void phases() {
+            long[] ph = new long[4];
+            for (int j = 0; j < 4; j++) {
+                ph[j] = InputToPhoton.arrivalPhase(j, 4, 10);
+            }
+            // a fake tick grid: tick k at 1000 + 100 ms * k
+            java.util.function.LongUnaryOperator grid = k -> 1000 + k * 100 * MS;
+            long t0 = InputToPhoton.scheduleT0(grid, 1050 * MS, 30 * MS, 10 * MS, 7, 0);
+            long far = InputToPhoton.scheduleT0(grid, 1_000_000 * MS, 0, 0, 3, 0);
+            long exact = InputToPhoton.scheduleT0(grid, 1000 + 700 * MS + 20 * MS, 30 * MS, 10 * MS, 7, 7);
+            long res = InputToPhoton.scheduleT0(grid, 1050 * MS, 30 * MS, 10 * MS, 7, 2);
+            long neg = InputToPhoton.scheduleT0(grid, 1050 * MS, 30 * MS, 10 * MS, 7, -5);
+            assertAll(
+                () -> assertArrayEquals(new long[] {12_500_000, 37_500_000, 62_500_000, 87_500_000}, ph,
+                    "(j + 1/2) / n of a 100 ms tick"),
+                () -> assertEquals(7, InputToPhoton.phasePeriodTicks(14), "14 Hz: 7 ticks = 60 frames"),
+                () -> assertEquals(1, InputToPhoton.phasePeriodTicks(12), "12 Hz: every tick is 10 frames"),
+                () -> assertEquals(13, InputToPhoton.phasePeriodTicks(13), "13 Hz: 13 ticks = 120 frames"),
+                () -> assertEquals(1000 + 1400 * MS + 20 * MS, t0, "residue 0: tick 14 (the first multiple of 7 whose t0 is"
+                    + " late enough), + 30 ms phase - 10 ms uplink"),
+                () -> assertEquals(1000 + 700 * MS + 20 * MS, exact, "a t0 exactly at the earliest time is taken"),
+                () -> assertEquals(1000 + 1600 * MS + 20 * MS, res, "residue 2: tick 16 (11 is too early, 16 = 2 mod 7)"),
+                () -> assertEquals(res, neg, "a negative residue is taken mod the period (-5 = 2 mod 7)"),
+                () -> assertEquals(0, (far - 1000) % (300 * MS), "far ahead: still on a multiple of the period"),
+                () -> assertTrue(far >= 1_000_000 * MS && far < 1_000_000 * MS + 300 * MS, "and the first one"));
+        }
+
+        @Test
         @DisplayName("results: stats per key over measured trials only; outcome counts")
         void result() {
             InputToPhoton.Result r = new InputToPhoton.Result(List.of(
                 new InputToPhoton.Trial(ControlKey.TURN_LEFT, 0, 40, InputToPhoton.Outcome.MEASURED),
-                new InputToPhoton.Trial(ControlKey.THRUST, 0, 60, InputToPhoton.Outcome.MEASURED),
-                new InputToPhoton.Trial(ControlKey.THRUST, 0, Double.NaN, InputToPhoton.Outcome.DEAD_AT_T0),
+                new InputToPhoton.Trial(ControlKey.THRUST, 0, 60, InputToPhoton.Outcome.MEASURED, 0, 85),
+                new InputToPhoton.Trial(ControlKey.THRUST, 0, Double.NaN, InputToPhoton.Outcome.DEAD_AT_T0, 0, 99),
                 new InputToPhoton.Trial(ControlKey.TURN_LEFT, 0, Double.NaN, InputToPhoton.Outcome.NO_DEPARTURE)),
                 0, 0, 0);
+            InputToPhoton.Result none = new InputToPhoton.Result(List.of(), 0, 0, 0);
             assertAll(
+                () -> assertEquals(50, r.mean(), 1e-12, "mean of the measured trials"),
+                () -> assertTrue(Double.isNaN(none.mean()), "no trials: NaN mean"),
+                () -> assertEquals(1, r.positionStats().count(), "position delay of measured thrust trials only"),
+                () -> assertEquals(85, r.positionStats().max(), "its value"),
                 () -> assertEquals(2, r.stats(null).count(), "two measured"),
                 () -> assertEquals(40, r.stats(ControlKey.TURN_LEFT).max(), "turn trials"),
                 () -> assertEquals(60, r.stats(ControlKey.THRUST).max(), "thrust trials"),
@@ -316,7 +355,7 @@ class HarnessPartsTest {
         void row() {
             InputToPhoton.Result i = new InputToPhoton.Result(List.of(
                 new InputToPhoton.Trial(ControlKey.TURN_LEFT, 0, 240, InputToPhoton.Outcome.MEASURED),
-                new InputToPhoton.Trial(ControlKey.THRUST, 0, 250, InputToPhoton.Outcome.MEASURED),
+                new InputToPhoton.Trial(ControlKey.THRUST, 0, 250, InputToPhoton.Outcome.MEASURED, 0, 270),
                 new InputToPhoton.Trial(ControlKey.THRUST, 0, Double.NaN, InputToPhoton.Outcome.DEAD_AT_T0)), 0, 0, 0);
             MotionMetrics.Result m = new MotionMetrics.Result(Stats.of(0.2, 1.0), Stats.of(9, 22), Stats.of(0.02, 5),
                 Stats.of(0.1), 0, Stats.of(), Double.NaN, 42, 2, 203.4, 4.25, Double.NaN);
@@ -328,7 +367,7 @@ class HarnessPartsTest {
                 Scenario.Loss.BURSTY_5), i, noTeleport));
             String table = MetricTable.format(List.of(r));
             assertAll(
-                () -> assertEquals("| walls | 200/0/0 | 240 | 250 | 40 | 240 | 250 | 2/3 | 0.2/1.0 | 9.0/22.0 (42)"
+                () -> assertEquals("| walls | 200/0/0 | 240 | 250 | 40 | 45.0 | 240 | 250 | 270 | 2/3 | 0.2/1.0 | 9.0/22.0 (42)"
                     + " | 5.00/5.0 | 0.10 | 0.0 (2 tp) | 203/4.3/- | n/a (1c) | n/a (1c) |", MetricTable.line(r), "the row"),
                 () -> assertEquals(MetricTable.HEADER + "\n" + MetricTable.RULE + "\n" + MetricTable.line(r) + "\n", table,
                     "header, rule, rows"),
