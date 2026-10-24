@@ -66,7 +66,7 @@ public final class DevRun {
         }
         String traceFile = take(rest, "--trace", null);
         String capFps = take(rest, "--cap-fps", "120");
-        int grabFrom = Integer.parseInt(take(rest, "--grab-from", "-1"));
+        int[] grabStarts = Arrays.stream(take(rest, "--grab-from", "-1").split(",")).mapToInt(Integer::parseInt).toArray();
         int grabCount = Integer.parseInt(take(rest, "--grab-count", "36"));
         java.util.List<byte[]> grabs = new java.util.ArrayList<>();
         int[] grabSize = new int[2];
@@ -107,7 +107,11 @@ public final class DevRun {
             @Override
             public int[] grabAfter(int frame, int fbW, int fbH) {
                 int k = frame - base[0];
-                if (base[0] < 0 || grabFrom < 0 || k < grabFrom || k >= grabFrom + grabCount) {
+                boolean in = false;
+                for (int g : grabStarts) {
+                    in |= g >= 0 && k >= g && k < g + grabCount;
+                }
+                if (base[0] < 0 || !in) {
                     return null;
                 }
                 int w = Math.min(1200, fbW - 516);
@@ -135,7 +139,7 @@ public final class DevRun {
 
             @Override
             public boolean done(int frame) {
-                return base[0] >= 0 && frame - base[0] >= Math.max(last, grabFrom + grabCount);
+                return base[0] >= 0 && frame - base[0] >= Math.max(last, grabStarts[grabStarts.length - 1] + grabCount);
             }
         };
         new GameApp(o, game, conn, o.target().toString(), s, keys).run();
@@ -147,7 +151,7 @@ public final class DevRun {
             java.nio.ByteBuffer px = org.lwjgl.system.MemoryUtil.memAlloc(grabs.get(i).length);
             px.put(grabs.get(i)).flip();
             org.lwjgl.stb.STBImageWrite.stbi_flip_vertically_on_write(true);
-            org.lwjgl.stb.STBImageWrite.stbi_write_png(out.resolve(String.format("grab-%02d.png", i)).toString(),
+            org.lwjgl.stb.STBImageWrite.stbi_write_png(out.resolve(String.format("grab-%03d.png", i)).toString(),
                 grabSize[0], grabSize[1], 4, px, grabSize[0] * 4);
             org.lwjgl.system.MemoryUtil.memFree(px);
         }
@@ -285,47 +289,66 @@ public final class DevRun {
                 }
             }
             case "ball" -> {
-                // U2/U5: fly to the nearest ball, hold the connector (Control_L) until attached, fly, then drop (d)
+                // U2/U5: fly to the nearest ball, hold the connector (Control_L), pull away until it attaches
+                // (C: at ballConnectorLength), fly with it for 150 frames, then drop it (d)
                 var w = f.game().world();
                 if (!w.hasSelf()) {
                     return;
                 }
                 var o = w.objects();
-                int balls = o.count(com.fulcrologic.jxpilot.client.game.ObjectLists.BALL);
-                if (frame < BALL_DROP_FRAME[0] || BALL_DROP_FRAME[0] < 0) {
-                    if (balls > 0 && !PILOT.attached) {
-                        double best = Double.MAX_VALUE;
-                        for (int i = 0; i < balls; i++) {
-                            double bx = o.get(com.fulcrologic.jxpilot.client.game.ObjectLists.BALL, i, 0);
-                            double by = o.get(com.fulcrologic.jxpilot.client.game.ObjectLists.BALL, i, 1);
-                            double d = Math.hypot(Pilot.dx(w, bx), Pilot.dy(w, by));
-                            if (d < best) {
-                                best = d;
-                                PILOT.targetX = bx;
-                                PILOT.targetY = by;
-                            }
-                        }
+                int kBall = com.fulcrologic.jxpilot.client.game.ObjectLists.BALL;
+                int balls = o.count(kBall);
+                int conns = o.count(com.fulcrologic.jxpilot.client.game.ObjectLists.CONNECTOR);
+                boolean holding = false;
+                double bx = -1;
+                double by = -1;
+                double best = Double.MAX_VALUE;
+                for (int i = 0; i < balls; i++) {
+                    if ((int) o.get(kBall, i, 3) == w.selfId()) {
+                        holding = true;
                     }
-                    double dist = PILOT.targetX < 0 ? 1e9 : PILOT.steer(f, PILOT.attached ? 0 : 60, now);
-                    PILOT.hold(f, GLFW_KEY_LEFT_CONTROL, !PILOT.attached && dist < 160, now);
-                    int conns = o.count(com.fulcrologic.jxpilot.client.game.ObjectLists.CONNECTOR);
-                    if (!PILOT.attached && (w.selfFlags() & com.fulcrologic.jxpilot.common.net.Records.ShipFlags.HAS_BALL) != 0) {
+                    double d = Math.hypot(Pilot.dx(w, o.get(kBall, i, 0)), Pilot.dy(w, o.get(kBall, i, 1)));
+                    if (d < best) {
+                        best = d;
+                        bx = o.get(kBall, i, 0);
+                        by = o.get(kBall, i, 1);
+                    }
+                }
+                if (BALL_DROP_FRAME[0] >= 0 && frame >= BALL_DROP_FRAME[0]) {
+                    if (frame == BALL_DROP_FRAME[0]) {
+                        PILOT.release(f, now);
+                        f.key(GLFW_KEY_D, GLFW_PRESS, 0, now);
+                        System.out.println("[ball] drop at frame " + frame);
+                    } else if (frame == BALL_DROP_FRAME[0] + 3) {
+                        f.key(GLFW_KEY_D, GLFW_RELEASE, 0, now);
+                    }
+                } else if (holding) {
+                    if (!PILOT.attached) {
                         PILOT.attached = true;
-                        BALL_DROP_FRAME[0] = frame + 120;
-                        PILOT.targetX = w.selfX() + 600;
-                        PILOT.targetY = w.selfY();
+                        BALL_DROP_FRAME[0] = frame + 150;
+                        PILOT.targetX = w.selfX() - 500;
+                        PILOT.targetY = w.selfY() + 200;
                         System.out.println("[ball] attached at frame " + frame);
                     }
-                    if (frame % 10 == 0) {
-                        System.out.printf("[ball] frame=%d balls=%d connectors=%d attached=%s%n", frame, balls, conns,
-                            PILOT.attached);
+                    PILOT.hold(f, GLFW_KEY_LEFT_CONTROL, false, now);
+                    PILOT.steer(f, 0, now);
+                } else if (bx >= 0) {
+                    if (conns > 0 && best < 200) {
+                        // pull away from the ball along the ball-to-ship line
+                        double ux = -Pilot.dx(w, bx) / Math.max(1, best);
+                        double uy = -Pilot.dy(w, by) / Math.max(1, best);
+                        PILOT.targetX = bx + ux * 400;
+                        PILOT.targetY = by + uy * 400;
+                    } else {
+                        PILOT.targetX = bx;
+                        PILOT.targetY = by;
                     }
-                } else if (frame == BALL_DROP_FRAME[0]) {
-                    PILOT.release(f, now);
-                    f.key(GLFW_KEY_D, GLFW_PRESS, 0, now);
-                    System.out.println("[ball] drop at frame " + frame);
-                } else if (frame == BALL_DROP_FRAME[0] + 3) {
-                    f.key(GLFW_KEY_D, GLFW_RELEASE, 0, now);
+                    PILOT.steer(f, conns > 0 ? 0 : 60, now);
+                    PILOT.hold(f, GLFW_KEY_LEFT_CONTROL, best < 110 || conns > 0, now);
+                }
+                if (frame % 10 == 0) {
+                    System.out.printf("[ball] frame=%d balls=%d connectors=%d dist=%.0f holding=%s%n", frame, balls,
+                        conns, best, holding);
                 }
             }
             default -> { }

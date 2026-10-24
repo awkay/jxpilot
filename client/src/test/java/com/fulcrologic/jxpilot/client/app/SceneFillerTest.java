@@ -501,6 +501,21 @@ class SceneFillerTest {
         }
 
         @Test
+        @DisplayName("connectors and beams across the seam are drawn the short way")
+        void shortLines() {
+            AppFixture f = new AppFixture(true).players().twice(x -> x
+                .self(0, 100, 100, 0, 0xFFFF)
+                .connector(20, 100, 680, 100, Records.Connector.KIND_BALL)
+                .connector(100, 340, 100, 20, Records.Connector.KIND_REFUEL));
+            fill(f);
+            assertAll(
+                () -> assertEquals(2, scene.linkCount, "both lines"),
+                () -> assertEquals(-20f, scene.linkX2[0], "680 is 40 px left of 20 across the seam (700 wide)"),
+                () -> assertEquals(100f, scene.linkY2[0], "y unchanged"),
+                () -> assertEquals(370f, scene.linkY2[1], "20 is 30 px above 340 across the seam (350 high)"));
+        }
+
+        @Test
         @DisplayName("damaged and round delay come from the world; a pending round makes non-friendly ships red")
         void timers() {
             AppFixture f = new AppFixture(true).players().twice(x -> {

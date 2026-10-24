@@ -159,7 +159,8 @@ public final class SceneFiller {
      * and RES direction; balls, each with its tether ({@link #ballTether}); lasers with RES direction and the object colour ({@link #pointColor});
      * asteroids (type 0, RES rotation, size); wreckage (not deadly, its shape, RES rotation, size); ECM
      * flashes of diameter 2 * radius; connectors ({@link #linkKind}: ball pick-up lines, refuel/repair beams
-     * from the server's endpoints, tractor/pressor beams) and transporter beams (LINK_TRANSPORTER).
+     * from the server's endpoints, tractor/pressor beams) and transporter beams (LINK_TRANSPORTER), each the
+     * short way ({@link #line}).
      */
     void objects(SceneData out, ClientWorld w) {
         ObjectLists o = w.objects();
@@ -196,13 +197,12 @@ public final class SceneFiller {
             out.addEcm(o.get(ObjectLists.ECM, i, 0), o.get(ObjectLists.ECM, i, 1), 2 * o.get(ObjectLists.ECM, i, 2));
         }
         for (int i = 0; i < o.count(ObjectLists.CONNECTOR); i++) {
-            int kind = (int) o.get(ObjectLists.CONNECTOR, i, 4);
-            out.addLink(o.get(ObjectLists.CONNECTOR, i, 0), o.get(ObjectLists.CONNECTOR, i, 1),
+            line(out, w, o.get(ObjectLists.CONNECTOR, i, 0), o.get(ObjectLists.CONNECTOR, i, 1),
                 o.get(ObjectLists.CONNECTOR, i, 2), o.get(ObjectLists.CONNECTOR, i, 3),
-                linkKind(kind));
+                linkKind((int) o.get(ObjectLists.CONNECTOR, i, 4)));
         }
         for (int i = 0; i < o.count(ObjectLists.TRANSPORTER); i++) {
-            out.addLink(o.get(ObjectLists.TRANSPORTER, i, 0), o.get(ObjectLists.TRANSPORTER, i, 1),
+            line(out, w, o.get(ObjectLists.TRANSPORTER, i, 0), o.get(ObjectLists.TRANSPORTER, i, 1),
                 o.get(ObjectLists.TRANSPORTER, i, 2), o.get(ObjectLists.TRANSPORTER, i, 3), SceneData.LINK_TRANSPORTER);
         }
     }
@@ -233,8 +233,16 @@ public final class SceneFiller {
 
     /** The ship end is the copy nearest the ball (a tether never spans the world). */
     private static void tether(SceneData out, ClientWorld w, float bx, float by, float sx, float sy) {
-        out.addLink(bx, by, (float) (bx + XMath.wrapDelta(sx - bx, w.worldWidth(), w.wraps())),
-            (float) (by + XMath.wrapDelta(sy - by, w.worldHeight(), w.wraps())), SceneData.LINK_BALL);
+        line(out, w, bx, by, sx, sy, SceneData.LINK_BALL);
+    }
+
+    /**
+     * BEHAVIOR: a link whose second end is the copy of (x2, y2) nearest (x1, y1) in a wrapping world, so a
+     * line between objects on both sides of the seam (or in a world smaller than the view) is the short one.
+     */
+    static void line(SceneData out, ClientWorld w, float x1, float y1, float x2, float y2, int kind) {
+        out.addLink(x1, y1, (float) (x1 + XMath.wrapDelta(x2 - x1, w.worldWidth(), w.wraps())),
+            (float) (y1 + XMath.wrapDelta(y2 - y1, w.worldHeight(), w.wraps())), kind);
     }
 
     /**
