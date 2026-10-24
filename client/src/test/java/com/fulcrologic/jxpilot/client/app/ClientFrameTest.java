@@ -300,6 +300,9 @@ class ClientFrameTest {
             boolean itemsBefore = cf.extras().showItems;
             cf.key(GLFW_KEY_KP_8, GLFW_PRESS, 0, T0);
             boolean itemsToggled = cf.extras().showItems;
+            boolean messagesBefore = cf.hud().showMessages;
+            cf.key(GLFW_KEY_KP_9, GLFW_PRESS, 0, T0);
+            boolean messagesToggled = cf.hud().showMessages;
             double fuelBefore = cf.hud().fuelCount();
             cf.key(GLFW_KEY_E, GLFW_PRESS, 0, T0);
             double fuelShown = cf.hud().fuelCount();
@@ -307,6 +310,8 @@ class ClientFrameTest {
             assertAll(
                 () -> assertTrue(itemsBefore, "showItems on by default (C)"),
                 () -> assertFalse(itemsToggled, "the owned-items key toggles showItems"),
+                () -> assertTrue(messagesBefore, "showMessages on by default (C)"),
+                () -> assertFalse(messagesToggled, "the messages key toggles showMessages"),
                 () -> assertEquals(0.0, fuelBefore, "no fuel notification at start"),
                 () -> assertEquals(3 * cf.game().gameFps(), fuelShown, 1e-9,
                     "a tank key shows the fuel for FUEL_NOTIFY (3 s of frames)"),

@@ -66,6 +66,8 @@ public final class KeyRouter {
      * ({@code Key_press_fuel}), or a refuel or repair key released ({@code Key_release}).
      */
     public static final int FUEL_NOTIFY = 256;
+    /** Toggle the game messages (C {@code Key_press_show_messages}: KEY_TOGGLE_MESSAGES, showMessages). */
+    public static final int TOGGLE_MESSAGES = 512;
 
     private final InputState input;
     private final TalkLine talk;
@@ -118,7 +120,8 @@ public final class KeyRouter {
      * BEHAVIOR (playing): Escape press is {@link #QUIT}; other presses go to {@link InputState#press};
      * a TALK action opens the talk line (game keys released, the key's character is not typed); a
      * SWAP_SCALEFACTOR action is {@link #SWAP_SCALE}, a TOGGLE_SOUND action {@link #TOGGLE_SOUND}, a HELP action
-     * {@link #HELP}, a TOGGLE_OWNED_ITEMS action {@link #TOGGLE_ITEMS}; releases go to {@link InputState#release}; repeats are ignored.
+     * {@link #HELP}, a TOGGLE_OWNED_ITEMS action {@link #TOGGLE_ITEMS}, a TOGGLE_MESSAGES action {@link #TOGGLE_MESSAGES};
+     * releases go to {@link InputState#release}; repeats are ignored.
      * BEHAVIOR (playing): increase/decrease power and turn speed change the {@link ControlSettings} as C's
      * key handlers do and are {@link #SETTINGS} | {@link #SHOW_CONTROLS}; swap settings swaps them and is
      * {@link #SHOW_CONTROLS} only (the key goes to the server, which swaps its copy, as in C).
@@ -169,6 +172,9 @@ public final class KeyRouter {
         }
         if (KeyBindings.has(acts, ClientAction.TOGGLE_OWNED_ITEMS)) {
             ev |= TOGGLE_ITEMS;
+        }
+        if (KeyBindings.has(acts, ClientAction.TOGGLE_MESSAGES)) {
+            ev |= TOGGLE_MESSAGES;
         }
         return ev | controls(input.bindings().gameMask(key)) | fuelKey(key, ControlKey.REFUEL.mask()
             | ControlKey.REPAIR.mask() | ControlKey.TANK_NEXT.mask() | ControlKey.TANK_PREV.mask());

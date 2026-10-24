@@ -58,7 +58,7 @@ public final class HudExtras {
     public CharSequence lockName;
     public boolean limitedLives;
     public int lockLives;
-    /** Pixels to the target; 0 when it is not in view (C then shows no disc). */
+    /** Pixels to the target as SELF sends it (C {@code lock_dist}); 0 when the lock is not shown (no distance, no disc). */
     public int lockDist;
     /** RES (0..127) direction to the target. */
     public int lockDir;
@@ -103,8 +103,8 @@ public final class HudExtras {
      * ({@link Hud#extent}, C {@code ext_view_width}; the Hud's zoom is set to {@code zoom}).
      * BEHAVIOR: lock: a known locked player (not NO_ID); its name, lives, team friendliness
      * ({@link HudPainter#isFriend}, alliances included), its shape's points at heading 0; distance and RES
-     * direction as the server sends them in SELF (C frame.c lock_dist/lock_dir) when non-zero, else from the
-     * own ship when its ship is in the interpolated list (wrap-aware), else 0.
+     * direction exactly as the server sends them in SELF (C frame.c lock_dist/lock_dir, painthud.c:335-376: a 0
+     * distance means the lock is not shown, so no distance and no disc, even when the target ship is drawn).
      * BEHAVIOR: warningPhase is {@code loops} even; items: {@link #items}; autopilot from the
      * own ship's AUTOPILOT flag; time left from the world; mods: the SELF modifier bits as C's string.
      * BEHAVIOR: score objects: see {@link #scoreObjects}.
@@ -167,18 +167,6 @@ public final class HudExtras {
         mapDiag = g.map() == null ? 0 : HudPainter.mapDiag(g.map().width(), g.map().height());
         lockDist = w.selfLockDist();
         lockDir = w.selfLockDir();
-        if (lockDist != 0) {
-            return;
-        }
-        for (int i = 0; i < w.shipCount(); i++) {
-            if (w.shipId(i) == id) {
-                double dx = XMath.wrapDelta(w.shipX(i) - w.selfX(), w.worldWidth(), w.wraps());
-                double dy = XMath.wrapDelta(w.shipY(i) - w.selfY(), w.worldHeight(), w.wraps());
-                lockDist = (int) Math.sqrt(dx * dx + dy * dy);
-                lockDir = direction(dx, dy);
-                break;
-            }
-        }
     }
 
     /**
@@ -223,11 +211,6 @@ public final class HudExtras {
     public void loseItem(LoseItemSelection sel, double dt) {
         loseActive = active && loseItem >= 0 && loseItem < Item.COUNT && loseItem != Item.FUEL.ordinal()
             && itemCounts[loseItem] >= 0 && sel.paint(dt);
-    }
-
-    /** BEHAVIOR: RES (128 per turn) direction of (dx, dy), rounded, in 0..127. */
-    static int direction(double dx, double dy) {
-        return (int) Math.round(Math.atan2(dy, dx) * 128 / (2 * Math.PI)) & 127;
     }
 
     /**

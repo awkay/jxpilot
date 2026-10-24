@@ -240,7 +240,7 @@ public final class ClientFrame {
      * {@link #takeToggleSound()}; SETTINGS sends the control settings ({@link GameConnection#sendSettings});
      * SHOW_CONTROLS shows the power and turn speed meters; HELP closes an open MOTD panel, else toggles the key help;
      * TOGGLE_ITEMS toggles {@link HudExtras#showItems} (C {@code Key_press_show_items}); FUEL_NOTIFY shows the fuel
-     * ({@link Hud#notifyFuel}).
+     * ({@link Hud#notifyFuel}); TOGGLE_MESSAGES toggles {@link Hud#showMessages} (C {@code Key_press_show_messages}).
      */
     public void key(int key, int action, int mods, long nowNanos) {
         int ev = router.key(key, action, mods);
@@ -274,6 +274,9 @@ public final class ClientFrame {
         }
         if ((ev & KeyRouter.FUEL_NOTIFY) != 0) {
             hud.notifyFuel(game.gameFps());
+        }
+        if ((ev & KeyRouter.TOGGLE_MESSAGES) != 0) {
+            hud.showMessages = !hud.showMessages;
         }
     }
 

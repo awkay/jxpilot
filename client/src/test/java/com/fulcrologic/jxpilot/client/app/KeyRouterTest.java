@@ -102,6 +102,8 @@ class KeyRouterTest {
                 () -> assertEquals(KeyRouter.TOGGLE_SOUND, press(GLFW_KEY_MINUS), "minus: sound toggle (ClientAction.TOGGLE_SOUND, a key C leaves unbound)"),
                 () -> assertEquals(KeyRouter.TOGGLE_ITEMS, press(GLFW_KEY_KP_8),
                     "KP_8: toggle the owned items list (C keyToggleOwnedItems)"),
+                () -> assertEquals(KeyRouter.TOGGLE_MESSAGES, press(GLFW_KEY_KP_9),
+                    "KP_9: toggle the game messages (C keyToggleMessages)"),
                 () -> {
                     type("x");
                     assertFalse(talk.isOpen(), "characters do not open talk");
