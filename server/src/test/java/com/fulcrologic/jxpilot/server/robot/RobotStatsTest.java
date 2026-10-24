@@ -114,6 +114,8 @@ class RobotStatsTest {
         assertAll(
             () -> assertEquals("3", sp.getProperty("meanSpeed.runs"), "three runs"),
             () -> assertEquals("2.0000", sp.getProperty("meanSpeed.sd"), "sd of 6, 8, 10 (n - 1)"),
+            () -> assertEquals("8.0000", sp.getProperty("meanSpeed.mean"), "mean of 6, 8, 10"),
+            () -> assertEquals("0.7000", sp.getProperty("stuckThrustFraction.mean"), "mean of 0.9 and 0.5 only"),
             () -> assertEquals("2", sp.getProperty("stuckThrustFraction.runs"), "only runs with stuck frames"),
             () -> assertEquals(RobotStats.fmt(Math.sqrt(0.08)), sp.getProperty("stuckThrustFraction.sd"),
                 "sd of 0.9 and 0.5"),

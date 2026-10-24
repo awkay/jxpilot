@@ -295,7 +295,8 @@ final class RobotStats {
 
     /**
      * The run-to-run spread of single-run summaries: for every {@link #COMPARED} key, {@code KEY.runs} (the
-     * number of runs) and {@code KEY.sd} (their sample standard deviation, 0 for fewer than 2 runs).
+     * number of runs), {@code KEY.mean} (the mean of the single-run values) and {@code KEY.sd} (their sample
+     * standard deviation, 0 for fewer than 2 runs).
      * <p>
      * BEHAVIOR: stuckThrustFraction only counts runs that had stuck frames (it is undefined for the others).
      */
@@ -317,6 +318,7 @@ final class RobotStats {
                 ss += (x - mean) * (x - mean);
             }
             p.setProperty(k + ".runs", Integer.toString(xs.size()));
+            p.setProperty(k + ".mean", fmt(mean));
             p.setProperty(k + ".sd", fmt(xs.size() < 2 ? 0 : Math.sqrt(ss / (xs.size() - 1))));
         }
         return p;

@@ -14,21 +14,24 @@
   docker run --rm --network none -e XPILOT_TRACE=1 -e XPILOT_SEED=N xpilot-ref:4.5.5 \
       timeout -s INT -k 5 SECONDS xpilots -map default -robots R -minRobots R -noQuit +reportToMetaServer \
       -rawMode -defaults /usr/local/lib/xpilot/defaults 2> cRsN.trace
-  #   R=4: N=1, 2 (600 s), N=7, 8 (1200 s)     R=8: N=3 (600 s), N=4, 6 (1200 s)
+  #   R=4: N=1, 2, 10, 12 (600 s), N=7, 8 (1200 s)
+  #   R=8: N=3, 9, 10, 12, 14 (600 s), N=4, 6 (1200 s)
   java -cp server/target/test-classes:server/target/classes:common/target/classes \
       com.fulcrologic.jxpilot.server.robot.RobotStats maps/default.xp 12 TRACE...
   ```
 
   (`tools/xpilot-ref/server.sh --map default --robots R --seconds S --trace --seed N` runs the same
-  command.) Seed 5 equals seed 4: the server's Mersenne Twister seeding ORs in bit 0.
+  command.) Seeds N and N|1 play the same game (the server's Mersenne Twister seeding ORs in bit 0), so each
+  file uses distinct N|1 only (runs 2026-10-23 and, for N >= 9, 2026-10-24).
 - `c-default-4robots-noitems.properties`, `c-default-8robots-noitems.properties`: the same with
-  `-itemProbMult 0` added (no items in the world), 600 s each: R=4: N=1, 2, 7, 8, 9, 10; R=8: N=3, 4, 6, 9,
-  10, 11. Recorded 2026-10-23.
+  `-itemProbMult 0` added (no items in the world), 600 s each: R=4: N=1, 2, 7, 8, 10; R=8: N=3, 4, 6, 9, 10.
+  Recorded 2026-10-23.
 
-Each file holds the pooled statistics of all its traces plus, per compared key, `KEY.runs` and `KEY.sd`: the
-number of single traces and the standard deviation of their single-trace values (`RobotStats.spread`;
-`stuckThrustFraction` only over traces with stuck frames). `RobotStatsRegressionTest` compares Java within 3
-standard errors of the difference. `stuckShare` is the share of alive frames in stuck runs (10 s or more within
+Each file holds the pooled statistics of all its traces plus, per compared key, `KEY.runs`, `KEY.mean` and
+`KEY.sd`: the number of single traces and the mean and standard deviation of their single-trace values
+(`RobotStats.spread`; `stuckThrustFraction` only over traces with stuck frames). `RobotStatsRegressionTest`
+compares the means within 3 standard errors of the difference (pooled values would let one long stuck
+episode decide stuckThrustFraction, and pooled speed quantiles move in whole pixels). `stuckShare` is the share of alive frames in stuck runs (10 s or more within
 3 pixels); `movingThrustFraction` and `stuckThrustFraction` split the thrust share between moving and stuck
 frames. The traces themselves (4-17 MB each) are not committed.
 

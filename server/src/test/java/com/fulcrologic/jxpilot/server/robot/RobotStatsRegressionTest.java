@@ -55,9 +55,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * x {@link #MINUTES} minutes (12 FPS, one tick per frame, seeds run in parallel); C pools 3 to 6 runs of 10 or
  * 20 minutes.
  * <p>
- * Every compared statistic ({@link RobotStats#COMPARED}) must agree within {@link #Z} standard errors of the
- * difference: |Java - C| &lt;= Z * sqrt(sdJ^2/nJ + sdC^2/nC), with sd the run-to-run standard deviation of
- * single runs ({@link RobotStats#spread}) and n the number of runs. C has few runs, so its sd is taken as at
+ * Every compared statistic ({@link RobotStats#COMPARED}) is compared as the mean of its single-run values
+ * ({@link RobotStats#spread}), which must agree within {@link #Z} standard errors of the difference:
+ * |meanJ - meanC| &lt;= Z * sqrt(sdJ^2/nJ + sdC^2/nC), with sd the run-to-run standard deviation and n the number
+ * of runs. (Pooled values would weight stuckThrustFraction by stuck frames, so one long episode would decide
+ * it, and pooled speed quantiles move in whole pixels.) C has few runs, so its sd is taken as at
  * least Java's (the same process should not vary less). Stuck runs (a robot pinned in place for 10 s or more)
  * are rare and long, which is what the spread of stuckShare and stuckThrustFraction reflects; both are bounded
  * from above and below.
@@ -128,11 +130,11 @@ class RobotStatsRegressionTest {
     }
 
     private static void matches(Properties j, Properties c, String key) {
-        double jv = v(j, key);
-        double cv = v(c, key);
+        double jv = v(j, key + ".mean");
+        double cv = v(c, key + ".mean");
         double tol = tolerance(j, c, key);
         assertTrue(Math.abs(jv - cv) <= tol,
-            key + ": Java " + jv + " is within " + String.format(java.util.Locale.ROOT, "%.4f", tol) + " of C " + cv);
+            key + " (mean of runs): Java " + jv + " is within " + String.format(java.util.Locale.ROOT, "%.4f", tol) + " of C " + cv);
     }
 
     static void compare(Properties j, Properties c) {
