@@ -121,6 +121,7 @@ public final class GameApp {
 
     private Window window;
     private SoundPlayer sound;
+    private final int maxVolume;
     private GlRenderer gl;
     private UiAtlas atlas;
     private TextWriter text;
@@ -149,6 +150,7 @@ public final class GameApp {
     public GameApp(AppOptions opts, ClientGame game, GameConnection conn, String label, Script script,
                    KeyConfig keys) {
         this.opts = opts;
+        this.maxVolume = AppLauncher.maxVolume(opts, keys);
         this.conn = conn;
         this.label = label;
         this.script = script;
@@ -176,7 +178,7 @@ public final class GameApp {
             dynPt = MemoryUtil.memAlloc(Math.min(DYNAMIC_POINTS, gl.maxPoints()) * VertexBatch.POINT_STRIDE);
             dyn = VertexBatch.fixed(dynTri, dynSeg, dynPt, 256, gl);
             installInput();
-            sound = SoundSystem.open(opts.sound(), opts.maxVolume(), SoundSystem::openAl, System.out);
+            sound = SoundSystem.open(opts.sound(), maxVolume, SoundSystem::openAl, System.out);
             conn.start(System.nanoTime());
             loop();
         } finally {
@@ -268,7 +270,8 @@ public final class GameApp {
         if (frame.takeToggleSound()) {
             frame.game().messages().add(Msg.Text.KIND_SERVER, sound.toggleMuted() ? "Sound off." : "Sound on.");
         }
-        sound.frame(frame.game().world().sounds(), frame.game().gameFps(), now);
+        sound.frame(frame.game().world().sounds(), frame.game().gameFps(),
+            frame.game().world().arrivalIntervalSeconds(), now);
     }
 
     private void grab(int n, int[] r) {

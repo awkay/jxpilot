@@ -176,7 +176,6 @@ public final class Collisions {
             }
             if (pl.px < 0 || pl.py < 0 || pl.px >= w.pixelWidth || pl.py >= w.pixelHeight) {
                 pl.status |= Obj.KILLED;
-                Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_WALL);
                 w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" left the known universe.");
                 w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, pl.id, Obj.NO_ID, Msg.GameEvent.CRASH_UNIVERSE);
                 sim.scoring.score(pl, -Scoring.rate(Scoring.WALL_SCORE, pl.score), pl.bx, pl.by, pl.name);

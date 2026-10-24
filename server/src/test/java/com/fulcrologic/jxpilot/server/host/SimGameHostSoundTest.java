@@ -95,6 +95,6 @@ class SimGameHostSoundTest {
                 "the first snapshot carries START (Bob's join) and the queued cannon fire"),
             () -> assertEquals(0, left, "sending empties the viewer's queue"),
             () -> assertEquals(List.of(), sounds(second), "the next snapshot repeats nothing"),
-            () -> assertEquals(List.of(), sounds(bobs), "each viewer's queue is its own: Bob heard no START of his own"));
+            () -> assertEquals(List.of("START:100"), sounds(bobs), "each viewer's queue is its own: Bob has only his START"));
     }
 }

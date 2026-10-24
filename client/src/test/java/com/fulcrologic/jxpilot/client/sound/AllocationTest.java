@@ -68,7 +68,7 @@ class AllocationTest {
                     dev.finish(v);
                 }
             }
-            p.frame(q, 14, now[0]);
+            p.frame(q, 14, 1 / 14.0, now[0]);
         };
         for (int i = 0; i < WARMUP; i++) {
             frame.run();
