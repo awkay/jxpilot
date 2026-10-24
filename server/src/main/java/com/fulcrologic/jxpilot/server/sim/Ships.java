@@ -188,7 +188,10 @@ public final class Ships {
             if (enterListener != null) {
                 enterListener.entered(pl);
             }
+            // C Handle_login: sound_play_all(START_SOUND) before the newcomer's PKT_REQUEST_AUDIO sets its
+            // WANT_AUDIO, so everyone but the newcomer hears it
             Sounds.playAll(w, SoundEvent.START);
+            pl.audio.clear();
             sim.rounds.playerEntered(pl);
         }
         return true;

@@ -302,7 +302,7 @@ class SoundSitesTest {
         }
 
         @Test
-        @DisplayName("a human joining plays START to every human; robots neither play nor hear it (netserver.c Handle_login)")
+        @DisplayName("a human joining plays START to the other humans; robots neither play nor hear it (netserver.c Handle_login)")
         void start() {
             Simulation s = sim(FRAME, 20, 20, "___");
             Player a = TestWorlds.join(s, "A", 0);
@@ -311,7 +311,7 @@ class SoundSitesTest {
             Player b = TestWorlds.join(s, "B", 0);
             assertAll(
                 () -> assertEquals(List.of("START:100"), heard(a), "a player already in the game hears the human newcomer only"),
-                () -> assertEquals(List.of("START:100"), heard(b), "the newcomer hears its own start"),
+                () -> assertEquals(List.of(), heard(b), "the newcomer does not hear its own start (no WANT_AUDIO yet in C)"),
                 () -> assertEquals(List.of(), heard(r), "robots hear nothing"));
         }
 

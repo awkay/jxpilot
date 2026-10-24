@@ -74,7 +74,7 @@ public final class DevRun {
         ClientGame game = new ClientGame();
         FrameTrace trace = traceFile == null ? null : new FrameTrace(game);
         GameConnection conn = GameConnector.open(o.target(), o.bind(), trace != null ? trace : game, o.name(),
-            o.team(), o.shape(), (int) System.nanoTime());
+            o.team(), o.shape(), o.sound() && o.maxVolume() > 0, (int) System.nanoTime());
         int last = start + every * (count - 1);
         long cap = 1_000_000_000L / Integer.parseInt(capFps);
         int[] base = {-1};

@@ -47,6 +47,8 @@ public final class KeyRouter {
     public static final int CHAT = 2;
     /** Swap scaleFactor and altScaleFactor (C {@code Key_press_swap_scalefactor}). */
     public static final int SWAP_SCALE = 4;
+    /** Mute or unmute sound ({@link ClientAction#TOGGLE_SOUND}). */
+    public static final int TOGGLE_SOUND = 8;
 
     private final InputState input;
     private final TalkLine talk;
@@ -82,8 +84,8 @@ public final class KeyRouter {
      * <p>
      * BEHAVIOR (playing): Escape press is {@link #QUIT}; other presses go to {@link InputState#press};
      * a TALK action opens the talk line (game keys released, the key's character is not typed); a
-     * SWAP_SCALEFACTOR action is {@link #SWAP_SCALE}; releases go to {@link InputState#release}; repeats
-     * are ignored.
+     * SWAP_SCALEFACTOR action is {@link #SWAP_SCALE}, a TOGGLE_SOUND action {@link #TOGGLE_SOUND}; releases go to
+     * {@link InputState#release}; repeats are ignored.
      * BEHAVIOR (talking): see {@link #talkKey}; releases are ignored.
      */
     public int key(int key, int action, int mods) {
@@ -111,6 +113,9 @@ public final class KeyRouter {
         }
         if (KeyBindings.has(acts, ClientAction.SWAP_SCALEFACTOR)) {
             ev |= SWAP_SCALE;
+        }
+        if (KeyBindings.has(acts, ClientAction.TOGGLE_SOUND)) {
+            ev |= TOGGLE_SOUND;
         }
         return ev;
     }

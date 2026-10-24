@@ -26,6 +26,7 @@ package com.fulcrologic.jxpilot.client.app;
 import com.fulcrologic.jxpilot.client.game.input.KeySyms;
 import com.fulcrologic.jxpilot.client.game.Players;
 import com.fulcrologic.jxpilot.client.net.Endpoint;
+import com.fulcrologic.jxpilot.client.sound.SoundPlayer;
 import com.fulcrologic.jxpilot.client.viewer.LaunchOptions;
 import com.fulcrologic.jxpilot.client.xp.ConnectTarget;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
@@ -49,6 +50,8 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  *   --font FILE, --font-size PX text font (default: bundled, 13)
  *   --screenshot FILE.png      save a PNG after --frames N frames (default 300) and exit
  *   --no-vsync                 render as fast as possible
+ *   --sound, --no-sound        play sound effects (default on; C resource sound)
+ *   --volume N                 C maxVolume: the loudest a sound plays, 0..255 percent (default 100; 0 = no sound)
  * </pre>
  *
  * @param viewer     the viewer's options in {@link Mode#VIEW_MAP}, else null
@@ -60,11 +63,13 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  * @param screenshot PNG path, or null
  * @param swapScaleKey X11 keysym bound to the scale-factor swap, or null
  * @param fontFile   TrueType file, or null for the bundled font
+ * @param sound      play sound effects
+ * @param maxVolume  C {@code maxVolume}, 0..{@value SoundPlayer#MAX_MAX_VOLUME}
  */
 public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, Endpoint bind, String name, int team,
                          String shape, String localMap, String screenshot, int frames, int width, int height,
                          boolean vsync, double scaleFactor, double altScaleFactor, String swapScaleKey,
-                         String fontFile, double fontSize) {
+                         String fontFile, double fontSize, boolean sound, int maxVolume) {
     /** Launch modes. */
     public enum Mode {
         /** No mode chosen: print usage. */
@@ -88,7 +93,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         usage: ClientMain --connect HOST[:PORT] [--protocol xpilot|jxpilot] [--bind ADDR[:PORT]] [--name NAME]
                           [--team T] [--shape SHAPE] [--size WxH] [--scale-factor F] [--alt-scale-factor F]
                           [--swap-scale-key KEYSYM] [--font FILE] [--font-size PX] [--screenshot FILE.png]
-                          [--frames N] [--no-vsync]
+                          [--frames N] [--no-vsync] [--sound | --no-sound] [--volume 0..255]
                ClientMain --local --map FILE [same options as --connect, except --protocol and --bind]
                ClientMain --view-map FILE [--demo] [viewer options: --screenshot --frames --size --zoom ...]""";
 
@@ -104,18 +109,21 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
      * BEHAVIOR: the name defaults to {@link #defaultName(String)}; a given name must have 1..{@link #MAX_NAME}
      * characters; the team is 0..9; the shape must parse ({@link ShipShape#parse}); the swap key must be
      * a known keysym; frames, sizes, scale factors and the font size must be positive.
+     * BEHAVIOR: sound is on unless {@code --no-sound} (the last of --sound/--no-sound wins); {@code --volume}
+     * is an integer 0..{@value SoundPlayer#MAX_MAX_VOLUME} (default {@value SoundPlayer#DEFAULT_MAX_VOLUME}).
      * BEHAVIOR: unknown options and missing values throw IllegalArgumentException naming the option.
      */
     public static AppOptions parse(String[] args, String userName) {
         for (String a : args) {
             if (a.equals("--view-map")) {
                 return new AppOptions(Mode.VIEW_MAP, LaunchOptions.parse(args), null, null, null, Protocol.NO_TEAM,
-                    "", null, null, DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE);
+                    "", null, null, DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true,
+                    SoundPlayer.DEFAULT_MAX_VOLUME);
             }
         }
         if (args.length == 0) {
             return new AppOptions(Mode.HELP, null, null, null, null, Protocol.NO_TEAM, "", null, null,
-                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE);
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, SoundPlayer.DEFAULT_MAX_VOLUME);
         }
         String connect = null;
         String protocol = null;
@@ -135,6 +143,8 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         String swapKey = null;
         String font = null;
         double fontSize = DEFAULT_FONT_SIZE;
+        boolean sound = true;
+        int maxVolume = SoundPlayer.DEFAULT_MAX_VOLUME;
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
             switch (a) {
@@ -183,6 +193,14 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                 }
                 case "--font" -> font = value(args, ++i, a);
                 case "--font-size" -> fontSize = positive(value(args, ++i, a), a);
+                case "--sound" -> sound = true;
+                case "--no-sound" -> sound = false;
+                case "--volume" -> {
+                    maxVolume = integer(value(args, ++i, a), a);
+                    if (maxVolume < 0 || maxVolume > SoundPlayer.MAX_MAX_VOLUME) {
+                        throw new IllegalArgumentException(a + " must be 0.." + SoundPlayer.MAX_MAX_VOLUME + ": " + maxVolume);
+                    }
+                }
                 default -> throw new IllegalArgumentException("Unknown option: " + a);
             }
         }
@@ -209,7 +227,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
             throw new IllegalArgumentException("nothing to do: give --connect, --local or --view-map");
         }
         return new AppOptions(mode, null, target, bind, name != null ? name : defaultName(userName), team, shape,
-            map, screenshot, frames, width, height, vsync, scale, alt, swapKey, font, fontSize);
+            map, screenshot, frames, width, height, vsync, scale, alt, swapKey, font, fontSize, sound, maxVolume);
     }
 
     /**

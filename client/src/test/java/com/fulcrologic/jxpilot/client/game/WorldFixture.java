@@ -169,6 +169,13 @@ final class WorldFixture {
         return this;
     }
 
+    WorldFixture sound(int event, int volume) {
+        w.beginSection(Section.SOUND);
+        Records.Sound.put(w, event, volume);
+        w.endSection();
+        return this;
+    }
+
     /** Ingest the built snapshot at local time {@code now}. */
     int ingest(long now) {
         buf.flip();

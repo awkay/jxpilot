@@ -176,6 +176,10 @@ final class SnapDump {
                 Records.Timers c = new Records.Timers().wrap(r, i);
                 yield "TIMERS damaged=" + c.damaged() + " roundDelay=" + c.roundDelay() + " timeLeft=" + c.timeLeft();
             }
+            case Section.SOUND -> {
+                Records.Sound c = new Records.Sound().wrap(r, i);
+                yield "SOUND event=" + c.event() + " volume=" + c.volume();
+            }
             default -> "UNKNOWN " + r.type();
         };
     }

@@ -94,6 +94,10 @@ class AudioQueueTest {
         assertAll(
             () -> assertEquals(SoundEvent.COUNT, q.count(), "holds all events"),
             () -> assertEquals(SoundEvent.COUNT - 1, q.event(0), "first queued first"),
-            () -> assertEquals(60, q.volume(SoundEvent.COUNT - 1), "the last one took its louder repeat"));
+            () -> assertEquals(60, q.volume(SoundEvent.COUNT - 1), "the last one took its louder repeat"),
+            () -> {
+                q.clear();
+                assertEquals(0, q.count(), "a full queue clears");
+            });
     }
 }

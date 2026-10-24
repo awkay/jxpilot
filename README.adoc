@@ -107,9 +107,9 @@ changes.
 sha256, per-clip origin and modifications)
 |Sound effect: Kenney, "Sci-Fi Sounds" `thrusterFire_004` (kenney.nl), cut into a loop
 |`client/src/main/resources/sounds/thrust_loop.wav` |CC0 1.0 (`LICENSE-sounds.txt`)
-|LWJGL 3 and its natives (GLFW, stb, libffi, liburing; Khronos headers) |Maven dependency; bundled
-only in the release client jar (texts in `dist/src/main/resources/META-INF/licenses/lwjgl/`) |BSD
-3-Clause; zlib, MIT or public domain, MIT, MIT, Khronos (MIT-style)
+|LWJGL 3 and its natives (GLFW, stb, OpenAL Soft, libffi, liburing; Khronos headers) |Maven dependency;
+bundled only in the release client jar (texts in `dist/src/main/resources/META-INF/licenses/lwjgl/`) |BSD
+3-Clause; zlib, MIT or public domain, GNU LGPL 2 or later, MIT, MIT, Khronos (MIT-style)
 |OpenJDK runtime (Eclipse Temurin) |Bundled only in the release client applications |GPL v2 with the
 Classpath Exception (texts in the runtime's `legal/` directory)
 |JUnit 5, PIT (test-time only) |- |EPL 2.0 / Apache 2.0

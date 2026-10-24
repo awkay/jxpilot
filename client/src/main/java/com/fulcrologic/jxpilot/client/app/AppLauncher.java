@@ -73,7 +73,7 @@ public final class AppLauncher {
     private static int play(AppOptions o, ConnectTarget target) throws Exception {
         ClientGame game = new ClientGame();
         GameConnection conn = GameConnector.open(target, o.bind(), game, o.name(), o.team(), o.shape(),
-            (int) System.nanoTime());
+            o.sound() && o.maxVolume() > 0, (int) System.nanoTime());
         new GameApp(o, game, conn, target.toString(), null).run();
         return 0;
     }

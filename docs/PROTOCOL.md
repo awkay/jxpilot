@@ -229,7 +229,8 @@ order first queued, at the loudest volume queued (C `queue_audio`). Simulation c
 - `Sounds.playAll(world, event)` (C `sound_play_all`): every human at 100;
 - `Sounds.playPlayer(player, event)` (C `sound_play_player`): one human at 100.
 
-Robots never hear sounds. Part 0 of the player's next snapshot carries the queue as the SOUND section right
+Robots never hear sounds, and a player entering the game does not hear its own START (C plays it before
+the newcomer's audio request). Part 0 of the player's next snapshot carries the queue as the SOUND section right
 after SELF, and the queue is then emptied (C `sound_play_queued` after the frame's objects), so each sound is
 sent once; a lost snapshot loses its sounds, as a lost C frame does. A player's queue is emptied when it
 enters the game (C `sound_player_init`). The client plays SOUND records only from the newest tick it has

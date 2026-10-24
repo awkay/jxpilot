@@ -141,14 +141,16 @@ class AppPartsTest {
         @Test
         @DisplayName("XPilot login: nick, team, shape, real name reduced to safe characters")
         void xpLogin() {
-            XpConnection.Login l = GameConnector.xpLogin("Ace", 4, "(SH: 1,0)", "t.käy x");
-            XpConnection.Login empty = GameConnector.xpLogin("Ace", 4, "", "ä");
+            XpConnection.Login l = GameConnector.xpLogin("Ace", 4, "(SH: 1,0)", true, "t.käy x");
+            XpConnection.Login empty = GameConnector.xpLogin("Ace", 4, "", false, "ä");
             assertAll(
                 () -> assertEquals("Ace", l.nick, "nick"),
                 () -> assertEquals(4, l.team, "team"),
                 () -> assertEquals("(SH: 1,0)", l.shape, "shape"),
                 () -> assertEquals("t.kyx", l.realName, "non-ASCII and space dropped"),
-                () -> assertEquals("jxpilot", empty.realName, "nothing left: jxpilot"));
+                () -> assertEquals("jxpilot", empty.realName, "nothing left: jxpilot"),
+                () -> assertTrue(l.audio, "asks for audio when sound is on"),
+                () -> assertFalse(empty.audio, "does not ask for audio when sound is off"));
         }
 
         @Test
@@ -176,9 +178,9 @@ class AppPartsTest {
                 int port = ((InetSocketAddress) ch.getLocalAddress()).getPort();
                 Endpoint ep = new Endpoint("127.0.0.1", port);
                 GameConnection n = GameConnector.open(new ConnectTarget(ConnectTarget.Protocol.JXPILOT, ep), null,
-                    new AppFixture(true).game, "Ace", 1, "", 5);
+                    new AppFixture(true).game, "Ace", 1, "", true, 5);
                 GameConnection x = GameConnector.open(new ConnectTarget(ConnectTarget.Protocol.XPILOT, ep), null,
-                    new AppFixture(true).game, "Ace", 1, "", 5);
+                    new AppFixture(true).game, "Ace", 1, "", true, 5);
                 try {
                     assertAll(
                         () -> assertInstanceOf(NativeGameConnection.class, n, "native"),
