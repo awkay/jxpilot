@@ -118,7 +118,7 @@ public final class GameConnector {
      * shape is the default ship) and written canonically ({@link ShipShape#toWireString}).
      */
     static ClientConnection nativeConnection(Transport t, String label, ConnectionListener listener, String name,
-                                             int team, String shape, XpIdentity id) {
+                                             int team, String shape, XpIdentity id) { // ... and id's real name and host
         ClientConnection c = nativeConnection(t, label, listener, name, team, shape);
         c.connect.realName.setLength(0);
         c.connect.realName.append(id.realName());
