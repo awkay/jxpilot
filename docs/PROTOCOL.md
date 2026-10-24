@@ -168,7 +168,7 @@ u16 viewX, u16 viewY` — the receiver's view centre in half pixels. `tick` T is
 one C frame, whose result the snapshot shows: the number the network layer passed to `GameHost.tick(T)`
 and on to the simulation, so bursts' `age` and thrust-spark seeds use the same numbers. Parts are numbered
 0..63; the client treats a higher part as malformed. If a tick does not fit one datagram it is split into
-self-contained parts. Sections are written SELF, SHIP, CANNON, FUEL, RADAR, BURST, then SHOT, which fills
+self-contained parts. Sections are written SELF, SOUND, SHIP, CANNON, FUEL, RADAR, BURST, then SHOT, which fills
 the remaining room nearest first; a record that does not fit drops only itself, smaller records of later
 sections are still sent.
 
@@ -212,10 +212,29 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 | 20 | TREASURE | 3 | u16 index, u8 flags (has ball) |
 | 21 | TEMP_WORMHOLE | 5 | u16 bx, u16 by, u8 type |
 | 22 | TIMERS | 8 | u16 damaged (frames of ECM damage left), u16 roundDelay (frames, 0 none), i32 timeLeft (seconds, -1 none) — the receiver's HUD timers |
+| 37 | SOUND | 2 | u8 event (`SoundEvent` ordinal = C `*_SOUND` index, src/common/audio.h), u8 volume (10..100) — the sounds the receiver hears (below) |
 
-M1 uses 1-8; 9-22 are defined for M2. A BURST of one particle with no speed and no life is a
+M1 uses 1-8; 9-22 are defined for M2; 37 is SOUND. A BURST of one particle with no speed and no life is a
 position-only point particle (C debris on the XPilot path) that the client tracks across frames. Indices refer to the `WorldMap` lists, which both sides build
 identically from the same config text.
+
+### Sounds (SOUND, C `saudio.c`)
+
+The server keeps a queue per human player (`Player.audio`, C `pl->audio`): each event at most once, in the
+order first queued, at the loudest volume queued (C `queue_audio`). Simulation code fills it through
+`server.sim.Sounds`, at the places C calls `sound_play_*`:
+- `Sounds.play(world, x, y, event)` (C `sound_play_sensors`): every human whose larger axis distance
+  `max(|dx|, |dy|)` (pixels, not wrapped, as C) is within `range = 525 + 262.5 * sensors` px hears it at
+  `(int) max(100 - 100 * dist / range, 10)`;
+- `Sounds.playAll(world, event)` (C `sound_play_all`): every human at 100;
+- `Sounds.playPlayer(player, event)` (C `sound_play_player`): one human at 100.
+
+Robots never hear sounds. Part 0 of the player's next snapshot carries the queue as the SOUND section right
+after SELF, and the queue is then emptied (C `sound_play_queued` after the frame's objects), so each sound is
+sent once; a lost snapshot loses its sounds, as a lost C frame does. A player's queue is emptied when it
+enters the game (C `sound_player_init`). The client plays SOUND records only from the newest tick it has
+received. On the XPilot path the client asks for audio with `PKT_REQUEST_AUDIO 1` (when its sound is on) and
+turns each `PKT_AUDIO` (type, volume) into the same SOUND record.
 
 ### Sparks and debris
 

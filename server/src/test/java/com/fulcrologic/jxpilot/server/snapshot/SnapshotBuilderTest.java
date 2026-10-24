@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.snapshot;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.common.net.Section;
@@ -93,6 +94,16 @@ class SnapshotBuilderTest {
             parts[i] = ByteBuffer.allocate(1200);
         }
         w.tick = 42;
+        // joining queued START for everyone; the sound tests queue their own
+        a.audio.clear();
+        b.audio.clear();
+        c.audio.clear();
+    }
+
+    void clearParts() {
+        for (ByteBuffer p : parts) {
+            p.clear();
+        }
     }
 
     /** Decoded content of all parts. */
@@ -106,6 +117,9 @@ class SnapshotBuilderTest {
         final List<String> cannons = new ArrayList<>();
         final List<String> fuel = new ArrayList<>();
         final List<String> radar = new ArrayList<>();
+        final List<String> sounds = new ArrayList<>();
+        /** Section types in order of appearance (all parts). */
+        final List<Integer> types = new ArrayList<>();
     }
 
     Decoded decode(int n) {
@@ -120,6 +134,7 @@ class SnapshotBuilderTest {
         Records.CannonState cs = new Records.CannonState();
         Records.FuelState fs = new Records.FuelState();
         Records.Radar rd = new Records.Radar();
+        Records.Sound snd = new Records.Sound();
         DebrisBurst db = new DebrisBurst();
         for (int p = 0; p < n; p++) {
             ByteBuffer buf = parts[p].duplicate();
@@ -127,6 +142,7 @@ class SnapshotBuilderTest {
             assertTrue(r.begin(buf), "part " + p + " has a header");
             d.headers.add(new int[] {r.tick(), r.lastInputSeq(), r.part(), r.partCount(), r.flags()});
             while (r.nextSection()) {
+                d.types.add(r.type());
                 for (int i = 0; i < r.count(); i++) {
                     switch (r.type()) {
                         case Section.SELF -> {
@@ -163,6 +179,10 @@ class SnapshotBuilderTest {
                             rd.wrap(r, i);
                             d.radar.add(rd.cellX() + "," + rd.cellY() + ":" + rd.flags());
                         }
+                        case Section.SOUND -> {
+                            snd.wrap(r, i);
+                            d.sounds.add(SoundEvent.of(snd.event()) + ":" + snd.volume());
+                        }
                         default -> throw new AssertionError("unexpected section " + r.type());
                     }
                 }
@@ -170,6 +190,34 @@ class SnapshotBuilderTest {
             assertTrue(!r.malformed(), "part " + p + " parses cleanly");
         }
         return d;
+    }
+
+    @Nested
+    @DisplayName("sounds (C sound_play_queued)")
+    class Sounds {
+        @Test
+        @DisplayName("the viewer's queue is the SOUND section right after SELF, in queue order, and is left for the caller")
+        void queue() {
+            a.audio.queue(SoundEvent.THRUST.ordinal(), 40);
+            a.audio.queue(SoundEvent.FIRE_SHOT.ordinal(), 100);
+            b.audio.queue(SoundEvent.START.ordinal(), 100);
+            int n = new SnapshotBuilder(w).build(a, 0, w.events.burstSeq(), false, parts);
+            Decoded d = decode(n);
+            clearParts();
+            int again = new SnapshotBuilder(w).build(b, 0, w.events.burstSeq(), false, parts);
+            Decoded db = decode(again);
+            clearParts();
+            int none = new SnapshotBuilder(w).build(c, 0, w.events.burstSeq(), false, parts);
+            Decoded dc = decode(none);
+            assertAll(
+                () -> assertEquals(List.of("THRUST:40", "FIRE_SHOT:100"), d.sounds, "writes the viewer's sounds in queue order"),
+                () -> assertEquals(Section.SOUND, d.types.get(1), "the SOUND section follows SELF"),
+                () -> assertEquals(Section.SELF, d.types.get(0), "SELF stays first"),
+                () -> assertEquals(2, a.audio.count(), "the builder leaves the queue for the network layer to clear"),
+                () -> assertEquals(List.of("START:100"), db.sounds, "another viewer gets only its own queue"),
+                () -> assertEquals(List.of(), dc.sounds, "an empty queue writes no SOUND section"),
+                () -> assertFalse(dc.types.contains(Section.SOUND), "no empty section is left in the snapshot"));
+        }
     }
 
     @Nested

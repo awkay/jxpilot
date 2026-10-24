@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 import com.fulcrologic.jxpilot.common.math.ThrustSparks;
 import com.fulcrologic.jxpilot.common.net.Records;
@@ -221,6 +222,7 @@ public final class Debris implements DebrisBurst.Sink {
      * speed 20 .. 20 + (int)mass/2, life 5 .. 5 + 1.5*mass, in every direction, red DEBRIS.
      */
     public void explodeShip(Player pl) {
+        Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_EXPLOSION);
         int minDebris = (int) (1 + (pl.fuel / (8.0 * 256)));
         int maxDebris = (int) (minDebris + (pl.mass * 2.0));
         minDebris >>= 1;
@@ -252,6 +254,7 @@ public final class Debris implements DebrisBurst.Sink {
      * THRUST_MASS*ALT_SPARK_MASS_FACT, owner immune, radius 8.
      */
     public void thrust(Player pl) {
+        Sounds.play(w, pl.px, pl.py, SoundEvent.THRUST);
         Params p = w.params;
         int dir = pl.dir;
         ThrustSparks.computeWire(w.tick, pl.id, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK,

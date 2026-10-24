@@ -24,9 +24,11 @@
 package com.fulcrologic.jxpilot.server.robot;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
+import com.fulcrologic.jxpilot.server.sim.Sounds;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.Obj;
@@ -360,6 +362,7 @@ public final class RobotManager {
             talk.says(RobotTalk.WAR, victim.name, killer.name);
             RobotData d = data[victim.slot];
             if (DefaultRobot.warOnPlayer(d) != killer.id) {
+                Sounds.playAll(w, SoundEvent.DECLARE_WAR);
                 DefaultRobot.setWar(d, killer.id);
             }
         }
