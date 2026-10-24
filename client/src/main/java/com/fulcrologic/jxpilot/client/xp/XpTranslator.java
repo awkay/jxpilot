@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.client.xp;
 
+import com.fulcrologic.jxpilot.client.game.Modifiers;
 import com.fulcrologic.jxpilot.client.net.ConnectionListener;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 import com.fulcrologic.jxpilot.common.math.XMath;
@@ -206,13 +207,27 @@ public final class XpTranslator {
         }
         writeObjects(f);
         if (f.hasSelf && w.beginSection(Section.TIMERS)) {
-            Records.Timers.put(w, Math.max(0, f.damaged), Math.max(0, f.roundDelay), f.timeLeft);
+            Records.Timers.put(w, Math.max(0, f.damaged), Math.max(0, f.roundDelay), f.timeLeft, Math.max(0, f.destruct),
+                meterLeft(f.thrustTime, f.thrustMax), meterMax(f.thrustTime, f.thrustMax),
+                meterLeft(f.shieldTime, f.shieldMax), meterMax(f.shieldTime, f.shieldMax),
+                meterLeft(f.phasingTime, f.phasingMax), meterMax(f.phasingTime, f.phasingMax),
+                f.shutdownCount, f.shutdownDelay);
             w.endSection();
         }
         rememberShips(f);
         snap.flip();
         snapshots++;
         listener.onSnapshot(snap, nowNanos);
+    }
+
+    /** C {@code Paint_meters}: BEHAVIOR: a meter is shown iff time &gt;= 0 and max &gt; 0; its value is min(time, max). */
+    static int meterLeft(int time, int max) {
+        return time >= 0 && max > 0 ? Math.min(time, max) : 0;
+    }
+
+    /** BEHAVIOR: the meter's max when shown, else 0 (TIMERS: max 0 = no meter). */
+    static int meterMax(int time, int max) {
+        return time >= 0 && max > 0 ? max : 0;
     }
 
     private void writeSounds(XpFrame f) {
@@ -244,7 +259,9 @@ public final class XpTranslator {
 
     /**
      * BEHAVIOR: flags from the own PKT_SHIP (shield, cloak...), DEAD when the own ship is not in the
-     * frame (C {@code selfVisible}), PAUSED / SELF_DESTRUCT from the status byte; fuel in C units.
+     * frame (C {@code selfVisible}), PAUSED / SELF_DESTRUCT from the status byte; fuel in C units; power,
+     * turn speed, turn resistance, lock distance/direction and checkpoint as sent; the PKT_MODIFIERS string
+     * as {@link Modifiers#parse} bits.
      */
     private void writeSelf(XpFrame f, int selfShip) {
         if (!w.beginSection(Section.SELF)) {
@@ -262,7 +279,9 @@ public final class XpTranslator {
         }
         Records.Self.put(w, selfId & 0xFFFF, flags, (float) viewX, (float) viewY, f.selfVx, f.selfVy,
             (float) (f.selfDir * RAD_PER_DIR), f.selfFuelSum, f.selfFuelMax,
-            f.selfLockId < 0 ? Protocol.NO_ID : f.selfLockId, f.items[XpProto.ITEM_TANK], f.selfCurrentTank, 0);
+            f.selfLockId < 0 ? Protocol.NO_ID : f.selfLockId, f.items[XpProto.ITEM_TANK], f.selfCurrentTank, 0,
+            f.selfPower, f.selfTurnspeed, f.selfTurnresistance / 255.0, Math.max(0, f.selfLockDist), f.selfLockDir,
+            f.selfCheck, Modifiers.parse(f.modifiers));
         w.endSection();
     }
 
@@ -314,6 +333,15 @@ public final class XpTranslator {
             }
         }
         w.endSection();
+    }
+
+    private static boolean isShipAt(XpFrame f, int x, int y) {
+        for (int i = 0; i < f.ships; i++) {
+            if (f.shipX[i] == x && f.shipY[i] == y) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static int refuelFlags(XpFrame f, int x, int y) {
@@ -580,7 +608,11 @@ public final class XpTranslator {
         };
     }
 
-    /** BEHAVIOR: the M2 object sections (items, mines, missiles, balls, lasers, ...); culled like ships. */
+    /**
+     * BEHAVIOR: the M2 object sections (items, mines, missiles, balls, lasers, ...); culled like ships. A
+     * ball's C id is the player it is connected to (C {@code ball->id}, -1 when free): it becomes the record's
+     * connectedPlayer, the ball itself has no id.
+     */
     private void writeObjects(XpFrame f) {
         if (f.itemObjs > 0 && w.beginSection(Section.ITEM)) {
             for (int k = 0; k < f.itemObjs; k++) {
@@ -620,7 +652,9 @@ public final class XpTranslator {
                 double x = wrapX(f.ballX[k]);
                 double y = wrapY(f.ballY[k]);
                 if (visible(x, y)) {
-                    Records.Ball.put(w, f.ballId[k] & 0xFFFF, x, y, Protocol.NO_TEAM, Protocol.NO_ID);
+                    // C's ball id is the player the ball is connected to (-1 none), not an object id
+                    Records.Ball.put(w, Protocol.NO_ID, x, y, Protocol.NO_TEAM,
+                        f.ballId[k] < 0 ? Protocol.NO_ID : f.ballId[k] & 0xFFFF);
                 }
             }
             w.endSection();
@@ -675,9 +709,25 @@ public final class XpTranslator {
         }
     }
 
-    /** BEHAVIOR: connectors (tractor byte 0 = ball, else tractor beam) and transporter beams. */
+    /**
+     * BEHAVIOR: connectors (tractor byte 0 = ball, else tractor beam), then one CONNECTOR per PKT_REFUEL with
+     * its endpoints as sent (C Paint_refuel): kind REPAIR when it starts at a ship and does not end at one (C
+     * Send_refuel(ship, target)), else REFUEL (station to ship); and transporter beams.
+     */
     private void writeLines(XpFrame f) {
-        if (f.connectors > 0 && w.beginSection(Section.CONNECTOR)) {
+        if (f.connectors + f.refuels > 0 && w.beginSection(Section.CONNECTOR)) {
+            for (int k = 0; k < f.refuels; k++) {
+                double x0 = wrapX(f.refuelX0[k]);
+                double y0 = wrapY(f.refuelY0[k]);
+                double x1 = wrapX(f.refuelX1[k]);
+                double y1 = wrapY(f.refuelY1[k]);
+                if (visible(x0, y0) && visible(x1, y1)) {
+                    boolean repair = isShipAt(f, f.refuelX0[k], f.refuelY0[k])
+                        && !isShipAt(f, f.refuelX1[k], f.refuelY1[k]);
+                    Records.Connector.put(w, x0, y0, x1, y1,
+                        repair ? Records.Connector.KIND_REPAIR : Records.Connector.KIND_REFUEL);
+                }
+            }
             for (int k = 0; k < f.connectors; k++) {
                 double x0 = wrapX(f.connX0[k]);
                 double y0 = wrapY(f.connY0[k]);

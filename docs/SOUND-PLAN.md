@@ -105,7 +105,7 @@ docs/PROTOCOL.md "Sounds".
 - **Options:**
   - `--sound` / `--no-sound` (C resource `sound`; default on);
   - `--volume 0..255` (C `maxVolume`; default 100; 0 means no sound);
-  - the key `0` (`ClientAction.TOGGLE_SOUND`) mutes and unmutes, with a "Sound off." / "Sound on." message.
+  - the key `minus` (`ClientAction.TOGGLE_SOUND`, resource keyToggleSound; C leaves it unbound) mutes and unmutes, with a "Sound off." / "Sound on." message.
 - **No device:** without an audio device, if the OpenAL library cannot load, or if a clip cannot be read,
   the client logs `no sound: <reason>` and plays silently. Against a C server, `PKT_REQUEST_AUDIO` is 1
   only while sound is on.

@@ -63,11 +63,20 @@ class ObjectListsTest {
         }
     }
 
+    /** Associate a with b over one frame, then move a copy of a by t (and dt frames when unlinked). */
+    static ObjectLists moved(ObjectLists a, ObjectLists b, double t, double dt, double world, boolean wrap) {
+        a.associate(b, new Tracker(64), new ObjectLists.Scratch(64), 1, world, world, wrap);
+        ObjectLists out = new ObjectLists(a.capacity());
+        out.copyFrom(a);
+        out.moveTracked(a, b, t, dt, world, world, wrap);
+        return out;
+    }
+
     @Nested
-    @DisplayName("interpolateMoving")
+    @DisplayName("tracked objects (associate + moveTracked)")
     class Moving {
         @Test
-        @DisplayName("balls continue by id, missiles without id by nearest (exclusive), unmatched stay; headings turn short")
+        @DisplayName("balls continue by id, missiles without id by the unambiguous nearest, unmatched stay; headings turn short")
         void interpolate() {
             ObjectLists a = new ObjectLists(8);
             ObjectLists b = new ObjectLists(8);
@@ -76,19 +85,17 @@ class ObjectListsTest {
             b.add(BALL, 320, 100, 1, NO_ID, 6, 0);
             b.add(BALL, 110, 120, 1, NO_ID, 5, 0);
             a.add(MISSILE, 50, 50, (float) (0.1), 0, 10, NO_ID);
-            a.add(MISSILE, 60, 50, 0, 0, 10, NO_ID);
             a.add(MISSILE, 500, 500, 0, 0, 10, NO_ID);
             b.add(MISSILE, 54, 50, (float) (2 * Math.PI - 0.1), 0, 10, NO_ID);
-            a.interpolateMoving(b, 0.5, 30, 700, 700, true);
+            ObjectLists o = moved(a, b, 0.5, 0.5, 2000, true);
             assertAll(
-                () -> assertEquals(105f, a.get(BALL, 0, 0), 1e-4f, "ball 5 halfway to its id match (x)"),
-                () -> assertEquals(110f, a.get(BALL, 0, 1), 1e-4f, "ball 5 halfway (y)"),
-                () -> assertEquals(310f, a.get(BALL, 1, 0), 1e-4f, "ball 6 halfway"),
-                () -> assertEquals(52f, a.get(MISSILE, 0, 0), 1e-4f, "first missile takes the nearest"),
-                () -> assertEquals(0.0, com.fulcrologic.jxpilot.common.math.XMath.angleDiff(0, a.get(MISSILE, 0, 2)), 1e-4,
+                () -> assertEquals(105f, o.get(BALL, 0, 0), 1e-4f, "ball 5 halfway to its id match (x)"),
+                () -> assertEquals(110f, o.get(BALL, 0, 1), 1e-4f, "ball 5 halfway (y)"),
+                () -> assertEquals(310f, o.get(BALL, 1, 0), 1e-4f, "ball 6 halfway"),
+                () -> assertEquals(52f, o.get(MISSILE, 0, 0), 1e-4f, "the missile takes its continuation"),
+                () -> assertEquals(0.0, com.fulcrologic.jxpilot.common.math.XMath.angleDiff(0, o.get(MISSILE, 0, 2)), 1e-4,
                     "heading 0.1 to -0.1 the short way: 0 (or its equal 2 pi)"),
-                () -> assertEquals(60f, a.get(MISSILE, 1, 0), 1e-4f, "second missile: the only one is taken, stays"),
-                () -> assertEquals(500f, a.get(MISSILE, 2, 0), 1e-4f, "far missile: nothing within 30, stays"));
+                () -> assertEquals(500f, o.get(MISSILE, 1, 0), 1e-4f, "far missile: nothing within reach, stays"));
         }
 
         @Test
@@ -100,10 +107,106 @@ class ObjectListsTest {
             a.add(BALL, 200, 10, 0, NO_ID, 2, 0);
             b.add(BALL, 10, 10, 0, NO_ID, 1, 0);
             b.add(BALL, 205, 10, 0, NO_ID, 3, 0);
-            a.interpolateMoving(b, 0.75, 30, 700, 700, true);
+            ObjectLists o = moved(a, b, 0.75, 0.75, 700, true);
             assertAll(
-                () -> assertEquals(5f, a.get(BALL, 0, 0), 1e-4f, "690 -> 710: 705 wraps to 5"),
-                () -> assertEquals(200f, a.get(BALL, 1, 0), 1e-4f, "id 2 has no continuation: stays (id 3 is not it)"));
+                () -> assertEquals(5f, o.get(BALL, 0, 0), 1e-4f, "690 -> 710: 705 wraps to 5"),
+                () -> assertEquals(200f, o.get(BALL, 1, 0), 1e-4f, "id 2 has no continuation: stays (id 3 is not it)"));
+        }
+
+        @Test
+        @DisplayName("items, mines, asteroids and wreckage are tracked too; a known velocity carries an unlinked object")
+        void fastItems() {
+            ObjectLists a = new ObjectLists(4);
+            ObjectLists b = new ObjectLists(4);
+            ObjectLists c = new ObjectLists(4);
+            a.add(ITEM, 100, 100, 3, 0, 0, 0);
+            b.add(ITEM, 160, 100, 3, 0, 0, 0);
+            c.add(ITEM, 220, 100, 3, 0, 0, 0);
+            a.add(ASTEROID, 400, 400, 2, 0, 0, 0);
+            b.add(ASTEROID, 430, 400, 2, 0, 0, 0);
+            a.add(WRECK, 600, 600, 1, 4, 0, 0);
+            b.add(WRECK, 600, 620, 1, 4, 0, 0);
+            a.add(MINE, 800, 800, 0, 3, 0, 0);
+            b.add(MINE, 805, 800, 0, 3, 0, 0);
+            ObjectLists ab = moved(a, b, 0.5, 0.5, 4000, false);
+            // b's velocities came from the a->b link; c's frame then goes missing: b's item is extrapolated
+            ObjectLists bOut = new ObjectLists(4);
+            bOut.copyFrom(b);
+            bOut.moveTracked(b, null, 0, 0.5, 4000, 4000, false);
+            b.associate(c, new Tracker(64), new ObjectLists.Scratch(64), 1, 4000, 4000, false);
+            ObjectLists bc = new ObjectLists(4);
+            bc.copyFrom(b);
+            bc.moveTracked(b, c, 0.25, 0.25, 4000, 4000, false);
+            assertAll(
+                () -> assertEquals(130f, ab.get(ITEM, 0, 0), 1e-4f, "a 60 px/frame item is followed (U1)"),
+                () -> assertEquals(415f, ab.get(ASTEROID, 0, 0), 1e-4f, "asteroid halfway"),
+                () -> assertEquals(610f, ab.get(WRECK, 0, 1), 1e-4f, "wreck halfway"),
+                () -> assertEquals(802.5f, ab.get(MINE, 0, 0), 1e-4f, "mine halfway"),
+                () -> assertEquals(190f, bOut.get(ITEM, 0, 0), 1e-4f, "no later frame: by its 60 px/frame velocity"),
+                () -> assertEquals(175f, bc.get(ITEM, 0, 0), 1e-4f, "known velocity: the next link is found tightly"),
+                () -> assertEquals(Tracker.KNOWN, b.state[ITEM][0], "the item's velocity is known after a->b"));
+        }
+
+        @Test
+        @DisplayName("an item of another type is not a continuation")
+        void types() {
+            ObjectLists a = new ObjectLists(4);
+            ObjectLists b = new ObjectLists(4);
+            a.add(ITEM, 100, 100, 3, 0, 0, 0);
+            b.add(ITEM, 110, 100, 4, 0, 0, 0);
+            ObjectLists o = moved(a, b, 0.5, 0.5, 4000, false);
+            assertEquals(100f, o.get(ITEM, 0, 0), 1e-4f, "different item type: stays");
+        }
+    }
+
+    @Nested
+    @DisplayName("shared ids, exclusivity and lines")
+    class Gating {
+        @Test
+        @DisplayName("two balls sharing an id each take their own continuation; a taken ball is not reused")
+        void sharedIds() {
+            ObjectLists a = new ObjectLists(4);
+            ObjectLists b = new ObjectLists(4);
+            a.add(BALL, 100, 100, 0, NO_ID, 9, 0);
+            a.add(BALL, 400, 100, 0, NO_ID, 9, 0);
+            b.add(BALL, 410, 100, 0, NO_ID, 9, 0);
+            b.add(BALL, 110, 100, 0, NO_ID, 9, 0);
+            ObjectLists o = moved(a, b, 0.5, 0.5, 2000, false);
+            ObjectLists c = new ObjectLists(4);
+            ObjectLists d = new ObjectLists(4);
+            c.add(BALL, 100, 100, 0, NO_ID, NO_ID, 0);
+            c.add(BALL, 140, 100, 0, NO_ID, NO_ID, 0);
+            d.add(BALL, 110, 100, 0, NO_ID, NO_ID, 0);
+            ObjectLists e = moved(c, d, 0.5, 0.5, 2000, false);
+            assertAll(
+                () -> assertEquals(105f, o.get(BALL, 0, 0), 1e-4f, "the first id-9 ball does not jump to the far one"),
+                () -> assertEquals(405f, o.get(BALL, 1, 0), 1e-4f, "the second takes the far one"),
+                () -> assertEquals(105f, e.get(BALL, 0, 0), 1e-4f, "free balls: the nearer takes the only later one"),
+                () -> assertEquals(140f, e.get(BALL, 1, 0), 1e-4f, "the other finds it taken and stays"));
+        }
+
+        @Test
+        @DisplayName("connectors follow the same-kind line nearest at both ends; beams too; out of reach stays")
+        void lines() {
+            ObjectLists a = new ObjectLists(4);
+            ObjectLists b = new ObjectLists(4);
+            a.add(CONNECTOR, 100, 100, 200, 100, 0, 0);
+            a.add(CONNECTOR, 100, 300, 200, 300, 3, 0);
+            a.add(CONNECTOR, 500, 500, 600, 500, 0, 0);
+            b.add(CONNECTOR, 110, 300, 210, 300, 0, 0);
+            b.add(CONNECTOR, 120, 100, 220, 110, 0, 0);
+            b.add(CONNECTOR, 104, 300, 204, 300, 3, 0);
+            a.add(TRANSPORTER, 10, 10, 40, 40, 0, 0);
+            b.add(TRANSPORTER, 20, 10, 50, 40, 0, 0);
+            a.interpolateLines(b, 0.5, 30, 2000, 2000, false);
+            assertAll(
+                () -> assertEquals(110f, a.get(CONNECTOR, 0, 0), 1e-4f, "ball connector start halfway"),
+                () -> assertEquals(210f, a.get(CONNECTOR, 0, 2), 1e-4f, "end x halfway"),
+                () -> assertEquals(105f, a.get(CONNECTOR, 0, 3), 1e-4f, "end y halfway"),
+                () -> assertEquals(102f, a.get(CONNECTOR, 1, 0), 1e-4f, "the refuel line follows its own kind"),
+                () -> assertEquals(500f, a.get(CONNECTOR, 2, 0), 1e-4f, "nothing within reach: stays"),
+                () -> assertEquals(15f, a.get(TRANSPORTER, 0, 0), 1e-4f, "transporter beam start"),
+                () -> assertEquals(45f, a.get(TRANSPORTER, 0, 2), 1e-4f, "transporter beam end"));
         }
     }
 

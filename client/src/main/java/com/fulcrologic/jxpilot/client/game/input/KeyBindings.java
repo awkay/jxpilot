@@ -25,14 +25,20 @@ package com.fulcrologic.jxpilot.client.game.input;
 
 import com.fulcrologic.jxpilot.common.net.ControlKey;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_LAST;
 
 /**
- * XPilot key bindings: for every GLFW key code, the {@link ControlKey} mask it sets on the wire and
- * the {@link ClientAction}s it triggers. One key may drive several functions and several keys one
- * function, exactly as XPilot's resources allow (by default {@code f} is both refuel and repair,
- * {@code h} both change-home and autopilot, {@code Control_L} both refuel and connector).
- * Pure table; lookups are allocation free.
+ * Key bindings: for every {@link KeyFunctions.Fn} the X11 keysyms bound to it, and derived from those, for
+ * every GLFW key code, the {@link ControlKey} mask it sets on the wire and the {@link ClientAction}s it
+ * triggers. One key may drive several functions and several keys one function, exactly as XPilot's resources
+ * allow (by default {@code f} is both refuel and repair, {@code h} both change-home and autopilot,
+ * {@code Control_L} both refuel and connector).
+ * <p>
+ * Editing ({@link #set}, {@link #bind}, {@link #unbind}) happens at startup and may allocate; the per-key
+ * lookups ({@link #gameMask}, {@link #actionMask}) are allocation free.
  */
 public final class KeyBindings {
     /** Table size: GLFW key codes 0..GLFW_KEY_LAST. */
@@ -40,60 +46,117 @@ public final class KeyBindings {
 
     private final long[] game = new long[SIZE];
     private final long[] actions = new long[SIZE];
+    private final List<List<String>> keysyms = new ArrayList<>();
+
+    /** No bindings at all. */
+    public KeyBindings() {
+        for (int i = 0; i < KeyFunctions.count(); i++) {
+            keysyms.add(new ArrayList<>());
+        }
+    }
 
     /**
-     * The defaults of {@code src/client/default.c}: every {@link ControlKey#defaultKeys} except
-     * {@link ControlKey#TALK} (talk is the client action {@link ClientAction#TALK}, never sent), and every
-     * {@link ClientAction#defaultKeys}.
+     * The defaults of {@code src/client/default.c} for every function (game keys and client actions), with
+     * the JXPilot changes of {@link ClientAction} (F1 is the key help, keySendMsg1 unbound).
      */
     public static KeyBindings defaults() {
         KeyBindings b = new KeyBindings();
-        for (ControlKey k : ControlKey.values()) {
-            if (k != ControlKey.TALK) {
-                b.bind(k, k.defaultKeys);
-            }
-        }
-        for (ClientAction a : ClientAction.values()) {
-            b.bind(a, a.defaultKeys);
+        for (KeyFunctions.Fn f : KeyFunctions.all()) {
+            b.add(f, f.defaultKeys());
         }
         return b;
     }
 
     /**
-     * Add bindings of {@code key} to space-separated X11 keysyms.
+     * Add keysyms to a function (duplicates are kept once).
      * <p>
-     * BEHAVIOR: keysyms without a GLFW key are skipped; returns how many keysyms were bound.
+     * BEHAVIOR: keysyms without a GLFW key are remembered (shown in listings) but bind nothing; returns how
+     * many keysyms map to a GLFW key.
      */
-    public int bind(ControlKey key, String keysyms) {
+    public int add(KeyFunctions.Fn f, String keysymList) {
+        List<String> l = keysyms.get(f.index());
         int n = 0;
-        for (String s : split(keysyms)) {
-            int g = KeySyms.glfwKey(s);
-            if (g >= 0 && g < SIZE) {
-                game[g] |= key.mask();
+        for (String s : split(keysymList)) {
+            if (!l.contains(s)) {
+                l.add(s);
+            }
+            if (KeySyms.glfwKey(s) != KeySyms.NONE) {
                 n++;
             }
         }
+        rebuild();
         return n;
     }
 
-    /** Add bindings of a client action (see {@link #bind(ControlKey, String)}). */
-    public int bind(ClientAction action, String keysyms) {
-        int n = 0;
-        for (String s : split(keysyms)) {
-            int g = KeySyms.glfwKey(s);
-            if (g >= 0 && g < SIZE) {
-                actions[g] |= 1L << action.ordinal();
-                n++;
-            }
-        }
-        return n;
+    /**
+     * Replace the keysyms of a function (C per-resource override).
+     * <p>
+     * BEHAVIOR: the function loses every earlier keysym; an empty list leaves it unbound; returns as
+     * {@link #add}.
+     */
+    public int set(KeyFunctions.Fn f, String keysymList) {
+        keysyms.get(f.index()).clear();
+        return add(f, keysymList);
     }
 
-    /** BEHAVIOR: removes every binding of the GLFW key. */
+    /** Add bindings of a game key (see {@link #add}). */
+    public int bind(ControlKey key, String keysymList) {
+        return add(KeyFunctions.of(key), keysymList);
+    }
+
+    /** Add bindings of a client action (see {@link #add}). */
+    public int bind(ClientAction action, String keysymList) {
+        return add(KeyFunctions.of(action), keysymList);
+    }
+
+    /** BEHAVIOR: removes every keysym that maps to the GLFW key from every function. */
     public void unbind(int glfwKey) {
-        if (glfwKey >= 0 && glfwKey < SIZE) {
-            game[glfwKey] = 0;
-            actions[glfwKey] = 0;
+        for (List<String> l : keysyms) {
+            l.removeIf(s -> KeySyms.glfwKey(s) == glfwKey);
+        }
+        rebuild();
+    }
+
+    /** The keysyms of a function, in binding order (a copy). */
+    public List<String> keysyms(KeyFunctions.Fn f) {
+        return List.copyOf(keysyms.get(f.index()));
+    }
+
+    /**
+     * BEHAVIOR: the functions a GLFW key triggers, in {@link KeyFunctions#all()} order; empty for unbound or
+     * out-of-range codes.
+     */
+    public List<KeyFunctions.Fn> functionsOf(int glfwKey) {
+        List<KeyFunctions.Fn> out = new ArrayList<>();
+        if (glfwKey < 0 || glfwKey >= SIZE) {
+            return out;
+        }
+        for (KeyFunctions.Fn f : KeyFunctions.all()) {
+            for (String s : keysyms.get(f.index())) {
+                if (KeySyms.glfwKey(s) == glfwKey) {
+                    out.add(f);
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    private void rebuild() {
+        java.util.Arrays.fill(game, 0);
+        java.util.Arrays.fill(actions, 0);
+        for (KeyFunctions.Fn f : KeyFunctions.all()) {
+            for (String s : keysyms.get(f.index())) {
+                int g = KeySyms.glfwKey(s);
+                if (g < 0 || g >= SIZE) {
+                    continue;
+                }
+                if (f.key() != null) {
+                    game[g] |= f.key().mask();
+                } else {
+                    actions[g] |= 1L << f.action().ordinal();
+                }
+            }
         }
     }
 

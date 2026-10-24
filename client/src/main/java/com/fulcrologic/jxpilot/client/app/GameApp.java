@@ -24,7 +24,7 @@
 package com.fulcrologic.jxpilot.client.app;
 
 import com.fulcrologic.jxpilot.client.game.ClientGame;
-import com.fulcrologic.jxpilot.client.game.input.InputState;
+import com.fulcrologic.jxpilot.client.game.input.KeyConfig;
 import com.fulcrologic.jxpilot.client.gl.GlRenderer;
 import com.fulcrologic.jxpilot.client.gl.Screenshot;
 import com.fulcrologic.jxpilot.client.gl.UiAtlas;
@@ -115,6 +115,7 @@ public final class GameApp {
     private final float[] xf = new float[4];
     private final HudFrameList viewList;
     private final HudFrameList panelList;
+    private final HudFrameList helpList;
     private double zoom;
     private double altScaleFactor;
 
@@ -141,14 +142,20 @@ public final class GameApp {
      * @param script dev hook, or null
      */
     public GameApp(AppOptions opts, ClientGame game, GameConnection conn, String label, Script script) {
+        this(opts, game, conn, label, script, KeyConfig.defaults(opts.swapScaleKey()));
+    }
+
+    /** @param keys key bindings, control settings and key help */
+    public GameApp(AppOptions opts, ClientGame game, GameConnection conn, String label, Script script,
+                   KeyConfig keys) {
         this.opts = opts;
         this.conn = conn;
         this.label = label;
         this.script = script;
-        this.frame = new ClientFrame(game, conn, new InputState(KeyRouter.bindings(opts.swapScaleKey())),
-            new SceneData(), new RadarBlips(1024));
+        this.frame = new ClientFrame(game, conn, keys, new SceneData(), new RadarBlips(1024));
         this.viewList = new HudFrameList(frame.viewHud());
         this.panelList = new HudFrameList(frame.panelHud());
+        this.helpList = new HudFrameList(frame.helpHud());
         this.zoom = WinScale.zoomOf(opts.scaleFactor());
         this.altScaleFactor = opts.altScaleFactor();
     }
@@ -341,6 +348,8 @@ public final class GameApp {
             scenePainter.drawArcs(dyn, cam, scene);
         }
         hud(true);
+        hudList.setScale(1);
+        hudList.paint(dyn, viewScreen, helpList);
         gl.flush(dyn);
         dyn.clear();
 
@@ -398,6 +407,7 @@ public final class GameApp {
         }
         hudPainter.paintItems(dyn, viewScreen, e.hx, e.hy, e.itemCounts, -1, false, hudColor);
         hudPainter.paintTimeLeft(dyn, viewScreen, e.hx, e.hy, e.timeLeft, hudColor);
+        hudPainter.paintMods(dyn, viewScreen, e.hx, e.hy, e.mods, hudColor);
         if (e.autopilot) {
             hudPainter.paintAutopilot(dyn, viewScreen, e.hx, e.hy, hudColor);
         }

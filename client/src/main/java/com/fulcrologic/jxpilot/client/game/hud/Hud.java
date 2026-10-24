@@ -31,6 +31,7 @@ import com.fulcrologic.jxpilot.client.game.ScoreObjects;
 import com.fulcrologic.jxpilot.client.game.Scoreboard;
 import com.fulcrologic.jxpilot.client.net.ConnectionState;
 import com.fulcrologic.jxpilot.client.render.WinScale;
+import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.net.Records;
 
 /**
@@ -91,6 +92,12 @@ public final class Hud {
     public boolean fuelGauge = true;
     /** {@code fuelMeter}. */
     public boolean fuelMeter = false;
+    /** {@code powerMeter} (C default off; shown anyway for {@link #CONTROL_DELAY} after a settings change). */
+    public boolean powerMeter = false;
+    /** {@code turnSpeedMeter} (C default off). */
+    public boolean turnSpeedMeter = false;
+    /** C {@code CONTROL_DELAY}: frames the power/turn speed meters stay after a settings key. */
+    public static final int CONTROL_DELAY = 100;
     /** {@code fuelNotify} (fuelLevel3). */
     public int fuelNotify = 500;
     /** {@code fuelWarning} (fuelLevel2). */
@@ -105,6 +112,7 @@ public final class Hud {
     // ---- state
     private double loops;
     private double fuelCount;
+    private double controlCount;
     private float lastFuel = -1;
     private boolean wasVisible;
     private final CharBuf scratch = new CharBuf(32);
@@ -128,12 +136,21 @@ public final class Hud {
     public void advance(double frames, float fuel, double fps, boolean selfVisible) {
         loops += frames;
         fuelCount = Math.max(0, fuelCount - frames);
+        controlCount = Math.max(0, controlCount - frames);
         if (lastFuel >= 0 && fuel > lastFuel && wasVisible) {
             fuelCount = FUEL_NOTIFY_SECONDS * fps;
         }
         lastFuel = fuel;
         wasVisible = selfVisible;
     }
+
+    /** C {@code control_count = CONTROL_DELAY} (power, turn speed or swap key): show the control meters. */
+    public void showControls() {
+        controlCount = CONTROL_DELAY;
+    }
+
+    /** Frames the control meters still show (C {@code control_count}). */
+    public double controlCount() { return controlCount; }
 
     /** C {@code Key_press_fuel}: show the fuel for {@link #FUEL_NOTIFY_SECONDS}. */
     public void notifyFuel(double fps) {
@@ -187,6 +204,7 @@ public final class Hud {
             scratch.clear().append("Fuel");
             meter(out, ew, -10, 20, scratch, (int) fuel, (int) fuelMax, m);
         }
+        meters(out, w, ew, eh, m);
         if (!showHud) {
             return;
         }
@@ -197,6 +215,47 @@ public final class Hud {
         scoreStack(out, hx, hy, g.scoreObjects(), didFuel, m);
         if (fuelGaugeVisible(fuel)) {
             fuelGauge(out, hx, hy, fuel, fuelMax);
+        }
+    }
+
+    /**
+     * The rest of C {@code Paint_meters}.
+     * <p>
+     * BEHAVIOR: Power (-10, 40) and Turnspeed (-10, 60) from the server's SELF values, shown with their
+     * meter option or while {@link #controlCount()} &gt; 0; at x = (viewW - 300) / 2 - 32, y = 2 * viewH / 3
+     * + 0/20/40/60/80: "Thrust Left", "Shields Left", "Phasing left" (each iff its max &gt; 0),
+     * "Self destructing" (destruct / 150, iff destruct &gt; 0) and "SHUTDOWN" (count / delay, iff count &gt;= 0).
+     */
+    void meters(HudFrame out, ClientWorld w, int ew, int eh, TextMetrics m) {
+        if (powerMeter || controlCount > 0) {
+            scratch.clear().append("Power");
+            meter(out, ew, -10, 40, scratch, w.selfPower(), (int) Const.MAX_PLAYER_POWER, m);
+        }
+        if (turnSpeedMeter || controlCount > 0) {
+            scratch.clear().append("Turnspeed");
+            meter(out, ew, -10, 60, scratch, w.selfTurnSpeed(), (int) Const.MAX_PLAYER_TURNSPEED, m);
+        }
+        int x = (ew - 300) / 2 - 32;
+        int y = 2 * eh / 3;
+        if (w.thrustMax() > 0) {
+            scratch.clear().append("Thrust Left");
+            meter(out, ew, x, y, scratch, Math.min(w.thrustLeft(), w.thrustMax()), w.thrustMax(), m);
+        }
+        if (w.shieldMax() > 0) {
+            scratch.clear().append("Shields Left");
+            meter(out, ew, x, y + 20, scratch, Math.min(w.shieldLeft(), w.shieldMax()), w.shieldMax(), m);
+        }
+        if (w.phasingMax() > 0) {
+            scratch.clear().append("Phasing left");
+            meter(out, ew, x, y + 40, scratch, Math.min(w.phasingLeft(), w.phasingMax()), w.phasingMax(), m);
+        }
+        if (w.destruct() > 0) {
+            scratch.clear().append("Self destructing");
+            meter(out, ew, x, y + 60, scratch, w.destruct(), 150, m);
+        }
+        if (w.shutdownCount() >= 0) {
+            scratch.clear().append("SHUTDOWN");
+            meter(out, ew, x, y + 80, scratch, w.shutdownCount(), w.shutdownDelay(), m);
         }
     }
 

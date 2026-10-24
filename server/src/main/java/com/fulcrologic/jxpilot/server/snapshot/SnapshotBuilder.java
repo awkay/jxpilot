@@ -161,6 +161,7 @@ public final class SnapshotBuilder {
         writeSelf(viewer);
         writeSounds(viewer);
         writeShips(viewer);
+        writeRefuel();
         writeCannons();
         writeFuel();
         if (radar) {
@@ -267,7 +268,8 @@ public final class SnapshotBuilder {
         }
         Records.Self.put(wr, v.id, shipFlags(v, v), (float) cx, (float) cy, (float) v.vx, (float) v.vy,
             (float) heading(v), (float) (v.fuel / 256), (float) (v.fuelMax / 256), Protocol.NO_ID, 0, 0,
-            (v.status & Obj.PLAYING) == 0 && v.count > 0 ? v.count : 0);
+            (v.status & Obj.PLAYING) == 0 && v.count > 0 ? v.count : 0, v.power, v.turnSpeed, v.turnResistance,
+            0, 0, 0, 0);
     }
 
     private void writeSounds(Player v) {
@@ -414,6 +416,31 @@ public final class SnapshotBuilder {
                 continue;
             }
             Records.Burst.put(wr, d, e.burstKind[i], e.burstColor[i], tick - e.burstTick[i]);
+        }
+    }
+
+    /**
+     * C {@code Frame_ships} Send_refuel: a refuel beam (CONNECTOR, KIND_REFUEL) from the fuel station to every
+     * refuelling ship.
+     * <p>
+     * BEHAVIOR: for every shown, unpaused ship in view whose used has REFUEL and whose station is in view
+     * (C inview of both); stations are drawn from their pixel centre.
+     */
+    private void writeRefuel() {
+        java.util.List<FuelStation> fuels = w.map.fuels();
+        for (int k = 0; k < w.numPlayers; k++) {
+            Player pl = w.playerAt(k);
+            if (!shown(pl) || (pl.status & Obj.PAUSE) != 0 || (pl.used & Has.REFUEL) == 0 || pl.fs < 0
+                || pl.fs >= fuels.size()) {
+                continue;
+            }
+            double x = pl.cx / (double) Click.CLICK;
+            double y = pl.cy / (double) Click.CLICK;
+            FuelStation f = fuels.get(pl.fs);
+            if (!visible(x, y, 0) || !visible(f.x(), f.y(), 0) || !need(Section.CONNECTOR, 0)) {
+                continue;
+            }
+            Records.Connector.put(wr, f.x(), f.y(), x, y, Records.Connector.KIND_REFUEL);
         }
     }
 

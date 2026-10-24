@@ -223,4 +223,60 @@ class AppPartsTest {
                     Path.of("no-such-map.xp").toString()}, "u")), "the local server cannot start: exit 3"));
         }
     }
+
+    @Nested
+    @DisplayName("key configuration loading")
+    class KeyLoading {
+        @Test
+        @DisplayName("--keys reads the file; without it HOME/.xpilotrc when present, else the defaults; problems go to err")
+        void sources(@org.junit.jupiter.api.io.TempDir Path home) throws Exception {
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            java.io.PrintStream err = new java.io.PrintStream(bytes, true, java.nio.charset.StandardCharsets.UTF_8);
+            AppOptions plain = AppOptions.parse(new String[] {"--list-keys"}, "u");
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig none = AppLauncher.keyConfig(plain, home, err);
+            java.nio.file.Files.writeString(home.resolve(".xpilotrc"), "turnSpeed: 30\nkeyDetonateMines: u\nbogus\n");
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig rc = AppLauncher.keyConfig(plain, home, err);
+            Path other = home.resolve("other.rc");
+            java.nio.file.Files.writeString(other, "turnSpeed: 20\n");
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig given = AppLauncher.keyConfig(
+                AppOptions.parse(new String[] {"--list-keys", "--keys", other.toString()}, "u"), home, err);
+            String out = bytes.toString(java.nio.charset.StandardCharsets.UTF_8);
+            AppOptions missing = AppOptions.parse(new String[] {"--list-keys", "--keys", home.resolve("nope").toString()},
+                "u");
+            assertAll(
+                () -> assertEquals("defaults", none.source(), "no file: defaults"),
+                () -> assertEquals(30.0, rc.settings().turnSpeed, "HOME/.xpilotrc is read"),
+                () -> assertEquals(20.0, given.settings().turnSpeed, "--keys wins over ~/.xpilotrc"),
+                () -> assertTrue(out.contains("jxpilot keys: " + home.resolve(".xpilotrc") + ":3: expected"),
+                    "problems are printed with file and line"),
+                () -> assertTrue(out.contains("jxpilot keys: warning: key bound to more than one function: u: "
+                    + "keyDetonateMines keyIdMode"), "conflicts are printed"),
+                () -> assertThrows(java.io.IOException.class, () -> AppLauncher.keyConfig(missing, home, err),
+                    "a missing --keys file is an error"));
+        }
+
+        @Test
+        @DisplayName("launcher: --list-keys prints the table and exits 0; an unreadable --keys file exits 2")
+        void listKeys(@org.junit.jupiter.api.io.TempDir Path home) throws Exception {
+            java.io.PrintStream saved = System.out;
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            Path rc = home.resolve("k.rc");
+            java.nio.file.Files.writeString(rc, "keyIncreaseTurnspeed: F10\n");
+            int code;
+            try {
+                System.setOut(new java.io.PrintStream(bytes, true, java.nio.charset.StandardCharsets.UTF_8));
+                code = AppLauncher.run(AppOptions.parse(new String[] {"--list-keys", "--keys", rc.toString()}, "u"));
+            } finally {
+                System.setOut(saved);
+            }
+            String out = bytes.toString(java.nio.charset.StandardCharsets.UTF_8);
+            int bad = AppLauncher.run(AppOptions.parse(new String[] {"--list-keys", "--keys",
+                home.resolve("missing").toString()}, "u"));
+            assertAll(
+                () -> assertEquals(0, code, "exit 0"),
+                () -> assertTrue(out.startsWith("JXPilot key bindings (defaults + " + rc + ")"), "the table header"),
+                () -> assertTrue(out.contains("keyIncreaseTurnspeed     F10"), "the effective binding"),
+                () -> assertEquals(2, bad, "exit 2 for a missing key file"));
+        }
+    }
 }

@@ -23,7 +23,9 @@
  */
 package com.fulcrologic.jxpilot.client.app;
 
+import com.fulcrologic.jxpilot.client.game.CharBuf;
 import com.fulcrologic.jxpilot.client.game.ClientGame;
+import com.fulcrologic.jxpilot.client.game.Modifiers;
 import com.fulcrologic.jxpilot.client.game.ClientWorld;
 import com.fulcrologic.jxpilot.client.game.Players;
 import com.fulcrologic.jxpilot.client.game.ScoreObjects;
@@ -40,8 +42,8 @@ import com.fulcrologic.jxpilot.common.net.Records;
 /**
  * The HUD parts {@code HudPainter} draws directly (the rest is client-net's {@code Hud} draw list), as
  * plain values in C's unscaled window coordinates: the lock ({@code Paint_lock}), the item list, the
- * autopilot light and the on-map score objects ({@code Paint_score_objects}). Pure; allocation free.
- * Not filled because the model lacks the data: modifiers and the HUD radar (C default off).
+ * autopilot light, the weapon modifiers and the on-map score objects ({@code Paint_score_objects}). Pure;
+ * allocation free. Not filled: the HUD radar (C default off).
  */
 public final class HudExtras {
     /** True when the own ship's HUD is shown (it exists and the HUD is on). */
@@ -72,6 +74,8 @@ public final class HudExtras {
     public boolean autopilot;
     /** Seconds of game time left, -1 when the server never said ({@link ClientWorld#timeLeft()}). */
     public int timeLeft = -1;
+    /** C {@code mods}: the own weapon modifiers as the C HUD string ({@link Modifiers#format}). */
+    public final CharBuf mods = new CharBuf(32);
 
     private final int[] scoreSlot = new int[ScoreObjects.MAX_SCORE_OBJECTS];
     private final int[] scoreX = new int[ScoreObjects.MAX_SCORE_OBJECTS];
@@ -86,9 +90,10 @@ public final class HudExtras {
      * ({@link Hud#extent}, C {@code ext_view_width}; the Hud's zoom is set to {@code zoom}).
      * BEHAVIOR: lock: a known locked player (not NO_ID); its name, lives, team friendliness
      * ({@link HudPainter#isFriend} without alliances), its shape's points at heading 0; distance and RES
-     * direction from the own ship when its ship is in the interpolated list (wrap-aware), else 0.
+     * direction as the server sends them in SELF (C frame.c lock_dist/lock_dir) when non-zero, else from the
+     * own ship when its ship is in the interpolated list (wrap-aware), else 0.
      * BEHAVIOR: warningPhase is {@code loops} even; items: counts above 0, else -1; autopilot from the
-     * own ship's AUTOPILOT flag; time left from the world.
+     * own ship's AUTOPILOT flag; time left from the world; mods: the SELF modifier bits as C's string.
      * BEHAVIOR: score objects: see {@link #scoreObjects}.
      *
      * @param centreX world x at the view centre (the camera)
@@ -111,6 +116,7 @@ public final class HudExtras {
         hy = hud.hudY(uh, w.selfVy());
         autopilot = (w.selfFlags() & Records.ShipFlags.AUTOPILOT) != 0;
         timeLeft = w.timeLeft();
+        Modifiers.format(w.selfMods(), mods.clear());
         for (int i = 0; i < Item.COUNT; i++) {
             int n = w.selfItem(i);
             itemCounts[i] = n > 0 ? n : -1;
@@ -134,8 +140,11 @@ public final class HudExtras {
             lockShipY[i] = s.ptY[i];
         }
         mapDiag = g.map() == null ? 0 : HudPainter.mapDiag(g.map().width(), g.map().height());
-        lockDist = 0;
-        lockDir = 0;
+        lockDist = w.selfLockDist();
+        lockDir = w.selfLockDir();
+        if (lockDist != 0) {
+            return;
+        }
         for (int i = 0; i < w.shipCount(); i++) {
             if (w.shipId(i) == id) {
                 double dx = XMath.wrapDelta(w.shipX(i) - w.selfX(), w.worldWidth(), w.wraps());

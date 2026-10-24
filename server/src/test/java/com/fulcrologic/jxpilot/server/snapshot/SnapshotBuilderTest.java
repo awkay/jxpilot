@@ -111,12 +111,14 @@ class SnapshotBuilderTest {
         int partCount;
         final List<int[]> headers = new ArrayList<>();
         final List<String> self = new ArrayList<>();
+        final List<String> selfControls = new ArrayList<>();
         final List<String> ships = new ArrayList<>();
         final Map<Integer, List<String>> shots = new TreeMap<>();
         final List<String> bursts = new ArrayList<>();
         final List<String> cannons = new ArrayList<>();
         final List<String> fuel = new ArrayList<>();
         final List<String> radar = new ArrayList<>();
+        final List<float[]> connectors = new ArrayList<>();
         final List<String> sounds = new ArrayList<>();
         /** Section types in order of appearance (all parts). */
         final List<Integer> types = new ArrayList<>();
@@ -134,6 +136,7 @@ class SnapshotBuilderTest {
         Records.CannonState cs = new Records.CannonState();
         Records.FuelState fs = new Records.FuelState();
         Records.Radar rd = new Records.Radar();
+        Records.Connector cn = new Records.Connector();
         Records.Sound snd = new Records.Sound();
         DebrisBurst db = new DebrisBurst();
         for (int p = 0; p < n; p++) {
@@ -150,6 +153,8 @@ class SnapshotBuilderTest {
                             d.self.add(self.id() + " " + self.flags() + " " + self.x() + "," + self.y() + " v"
                                 + self.vx() + "," + self.vy() + " h" + self.heading() + " f" + self.fuel() + "/"
                                 + self.fuelMax());
+                            d.selfControls.add("p" + self.power() + " t" + self.turnSpeed() + " r"
+                                + self.turnResistance255() + " d" + self.lockDist() + " m" + self.mods());
                         }
                         case Section.SHIP -> {
                             ship.wrap(r, i);
@@ -178,6 +183,10 @@ class SnapshotBuilderTest {
                         case Section.RADAR -> {
                             rd.wrap(r, i);
                             d.radar.add(rd.cellX() + "," + rd.cellY() + ":" + rd.flags());
+                        }
+                        case Section.CONNECTOR -> {
+                            cn.wrap(r, i);
+                            d.connectors.add(new float[] {cn.x0(), cn.y0(), cn.x1(), cn.y1(), cn.kind()});
                         }
                         case Section.SOUND -> {
                             snd.wrap(r, i);
@@ -232,6 +241,9 @@ class SnapshotBuilderTest {
             int farShot = sim.shots.fire(c, c.team, false, 1800, 140, Obj.SHOT, 0, 0);
             a.vx = 0;
             a.fuel = 500.5 * 256;
+            a.power = 50.4f;
+            a.turnSpeed = 40f;
+            a.turnResistance = 0.12f;
             b.vx = 2.5f;
             b.vy = -1.0f;
             long burstFrom = w.events.burstSeq();
@@ -262,6 +274,8 @@ class SnapshotBuilderTest {
                 () -> assertEquals(List.of(a.id + " " + (Records.ShipFlags.SHIELD | Records.ShipFlags.FRIENDLY) + " "
                     + ax + "," + ay + " v0.0,0.0 h" + (float) (10 * 2 * Math.PI / Const.RES) + " f500.5/2600.0"),
                     d.self, "SELF has full-precision position, heading dir*2pi/RES and fuel in units"),
+                () -> assertEquals(List.of("p50 t40 r31 d0 m0"), d.selfControls,
+                    "SELF carries the rounded power, turn speed and turn resistance * 255 (no lock or modifiers yet)"),
                 () -> assertEquals(List.of(b.id + " 0 " + bx + "," + by + " v2.5,-1.0 h40"), d.ships,
                     "SHIP lists only the other ship in view (C is 1600 px away), without shield"),
                 () -> assertEquals(1, d.shots.get(own).size(), "the viewer's shot is OWN"),
@@ -354,6 +368,43 @@ class SnapshotBuilderTest {
                 () -> assertEquals(1, n, "one buffer gives one part"),
                 () -> assertEquals(SnapshotWriter.FLAG_LAST_PART, d.headers.get(0)[4], "which is the last part"),
                 () -> assertTrue(total > 100 && total < 400, "the shots that fit are sent (" + total + ")"));
+        }
+    }
+
+    @Nested
+    @DisplayName("refuel beams")
+    class Refuel {
+        @Test
+        @DisplayName("a CONNECTOR of kind REFUEL from the station to each refuelling ship in view; paused, far and "
+            + "not refuelling ships have none")
+        void beams() {
+            com.fulcrologic.jxpilot.common.map.FuelStation f = w.map.fuels().get(0);
+            a.used |= Has.REFUEL;
+            a.fs = 0;
+            b.used |= Has.REFUEL;
+            b.fs = 0;
+            b.status |= Obj.PAUSE;
+            c.used |= Has.REFUEL;
+            c.fs = 0;
+            int n = new SnapshotBuilder(w).build(a, 1, w.events.burstSeq(), false, parts);
+            Decoded d = decode(n);
+            b.status &= ~Obj.PAUSE;
+            b.used &= ~Has.REFUEL;
+            a.used &= ~Has.REFUEL;
+            c.used &= ~Has.REFUEL;
+            for (ByteBuffer p : parts) {
+                p.clear();
+            }
+            Decoded none = decode(new SnapshotBuilder(w).build(a, 1, w.events.burstSeq(), false, parts));
+            float[] k = d.connectors.isEmpty() ? new float[5] : d.connectors.get(0);
+            assertAll(
+                () -> assertEquals(1, d.connectors.size(), "only A's beam (B is paused, C out of view)"),
+                () -> assertEquals(Records.Connector.KIND_REFUEL, (int) k[4], "kind REFUEL"),
+                () -> assertEquals(f.x(), k[0], 0.25, "from the station x"),
+                () -> assertEquals(f.y(), k[1], 0.25, "from the station y"),
+                () -> assertEquals(200.5, k[2], 0.25, "to the ship x"),
+                () -> assertEquals(120.25, k[3], 0.25, "to the ship y"),
+                () -> assertEquals(0, none.connectors.size(), "no refuelling: no beams"));
         }
     }
 

@@ -99,6 +99,8 @@ public final class ClientConnection {
 
     /** CONNECT body; set name, team and shape before {@link #start(long)}. */
     public final Msg.Connect connect = new Msg.Connect();
+    /** Control settings sent (reliable SETTINGS) before READY on every join, as C sends them with PKT_PLAY. */
+    public final Msg.Settings settings = new Msg.Settings();
     /** Reconnect automatically when an established session times out (default true). */
     private boolean autoReconnect = true;
 
@@ -614,6 +616,7 @@ public final class ClientConnection {
         }
         config = null;
         listener.onConfig(welcome, opts, map);
+        settings.send(channel);
         Msg.sendReady(channel);
         status.setLength(0);
         status.append("Playing on ").append(serverLabel);

@@ -106,6 +106,8 @@ public final class FakeServer {
     public long lastKeys;
     public int ackTick;
     public final List<String> chats = new ArrayList<>();
+    /** SETTINGS received, as "power/turnSpeed". */
+    public final List<String> settings = new ArrayList<>();
     public boolean reject;
     public boolean silent;
     public int disconnectsReceived;
@@ -170,6 +172,10 @@ public final class FakeServer {
                     channel.read(rx, (type, p) -> {
                         if (type == ReliableType.READY) {
                             ready = true;
+                        } else if (type == ReliableType.SETTINGS) {
+                            Msg.Settings st = new Msg.Settings();
+                            st.read(p);
+                            settings.add(st.power + "/" + st.turnSpeed);
                         } else if (type == ReliableType.CHAT) {
                             Msg.Text t = new Msg.Text();
                             t.read(p);

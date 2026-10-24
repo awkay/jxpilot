@@ -137,7 +137,7 @@ Client → server:
 |---|---|---|
 | 64 | READY | empty |
 | 65 | CHAT | same as MESSAGE (kind/from ignored); XPilot "name:"/"team:" prefixes in the text |
-| 66 | SETTINGS | f32 power, turnSpeed, turnResistance, altPower, altTurnSpeed, altTurnResistance, u8 flags (1 autoShield) |
+| 66 | SETTINGS | f32 power, turnSpeed, turnResistance, altPower, altTurnSpeed, altTurnResistance, u8 flags (1 autoShield). The client sends it before READY on every join (C sends the settings with PKT_PLAY) and again whenever a power or turn-speed key changes them (C Send_power ...); those keys themselves are never sent |
 | 67 | CHANGE_TEAM | u8 team |
 | 68 | SHAPE | str16 shape |
 
@@ -190,7 +190,7 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 
 | type | section | bytes | layout |
 |---|---|---|---|
-| 1 | SELF | 38 | u16 id, u16 flags, f32 x, y, vx, vy, heading, fuel, fuelMax, u16 lockId, u8 numTanks, u8 currentTank, u16 respawnFrames (absolute, full precision) |
+| 1 | SELF | 47 | u16 id, u16 flags, f32 x, y, vx, vy, heading, fuel, fuelMax, u16 lockId, u8 numTanks, u8 currentTank, u16 respawnFrames (absolute, full precision), u8 power, u8 turnSpeed, u8 turnResistance*255 (C PKT_SELF rounding), u16 lockDist (px, 0 = lock not shown), u8 lockDir (RES), u8 check (next checkpoint), u16 mods (weapon modifier bits: 0 nuclear, 1 full nuclear, 2 cluster, 3 implosion, 4-5 velocity, 6-7 mini, 8-9 spread, 10-11 power, 12 laser stun, 13 laser blind). Fields from power on were appended; a reader of an older 38-byte record gets 0 |
 | 2 | SHIP | 14 | u16 id, u16 flags (`ShipFlags`), rel x, rel y, ang heading, vel16 vx, vel16 vy |
 | 3 | SHOT | 6 | rel x, rel y, i8 vx, i8 vy (whole px/frame). **variant = harmless << 7 \| kind << 4 \| colour** *(S1 fix round: bit 7 `ShotKind.FLAG_HARMLESS` = this shot cannot hurt the receiver, C frame.c's friendly colour: team immune owner, paused owner, an unowned shot of the receiver's team in team play, or the receiver's own shot with selfImmunity; kinds are 3 bits)* |
 | 4 | BURST | 27 | rel x, rel y, vel16 vx, vy, u32 seed, u8 kind, u8 colour, u16 count, u8 minDir, u8 dirSpan (RES), u16 minSpeed, maxSpeed (1/16), u16 minLife, maxLife (frames), u8 age (sim ticks since spawn) |
@@ -206,12 +206,12 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 | 14 | ASTEROID | 7 | rel x, rel y, u8 size, ang rotation |
 | 15 | WRECKAGE | 8 | rel x, rel y, u8 shape, u8 size, ang rotation |
 | 16 | ECM | 6 | rel x, rel y, u16 radius |
-| 17 | CONNECTOR | 9 | rel x0, y0, x1, y1, u8 kind (ball, tractor, pressor) |
+| 17 | CONNECTOR | 9 | rel x0, y0, x1, y1, u8 kind (0 ball, 1 tractor, 2 pressor, 3 refuel: station to ship, 4 repair: ship to target) |
 | 18 | TRANSPORTER | 8 | rel x0, y0, x1, y1 |
 | 19 | SELF_ITEMS | 21 | u8 count per `Item` |
 | 20 | TREASURE | 3 | u16 index, u8 flags (has ball) |
 | 21 | TEMP_WORMHOLE | 5 | u16 bx, u16 by, u8 type |
-| 22 | TIMERS | 8 | u16 damaged (frames of ECM damage left), u16 roundDelay (frames, 0 none), i32 timeLeft (seconds, -1 none) — the receiver's HUD timers |
+| 22 | TIMERS | 26 | u16 damaged (frames of ECM damage left), u16 roundDelay (frames, 0 none), i32 timeLeft (seconds, -1 none), u16 destruct (self-destruct frames left, 0 none), u16 thrustLeft, thrustMax, shieldLeft, shieldMax, phasingLeft, phasingMax (C meters; max 0 = no meter), i16 shutdownCount (-1 none), u16 shutdownDelay — the receiver's HUD timers. Fields from destruct on were appended; an older 8-byte record reads as none |
 | 37 | SOUND | 2 | u8 event (`SoundEvent` ordinal = C `*_SOUND` index, src/common/audio.h), u8 volume (10..100) — the sounds the receiver hears (below) |
 
 M1 uses 1-8; 9-22 are defined for M2; 37 is SOUND. A BURST of one particle with no speed and no life is a

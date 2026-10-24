@@ -52,6 +52,8 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  *   --no-vsync                 render as fast as possible
  *   --sound, --no-sound        play sound effects (default on; C resource sound)
  *   --volume N                 C maxVolume: the loudest a sound plays, 0..255 percent (default 100; 0 = no sound)
+ *   --keys FILE                key bindings and control settings in ~/.xpilotrc format (default: ~/.xpilotrc)
+ *   --list-keys                print the effective key bindings and exit
  * </pre>
  *
  * @param viewer     the viewer's options in {@link Mode#VIEW_MAP}, else null
@@ -65,11 +67,12 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  * @param fontFile   TrueType file, or null for the bundled font
  * @param sound      play sound effects
  * @param maxVolume  C {@code maxVolume}, 0..{@value SoundPlayer#MAX_MAX_VOLUME}
+ * @param keysFile   key file given with {@code --keys}, or null for {@code ~/.xpilotrc}
  */
 public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, Endpoint bind, String name, int team,
                          String shape, String localMap, String screenshot, int frames, int width, int height,
                          boolean vsync, double scaleFactor, double altScaleFactor, String swapScaleKey,
-                         String fontFile, double fontSize, boolean sound, int maxVolume) {
+                         String fontFile, double fontSize, boolean sound, int maxVolume, String keysFile) {
     /** Launch modes. */
     public enum Mode {
         /** No mode chosen: print usage. */
@@ -79,7 +82,9 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         /** Play on a remote server ({@code --connect}). */
         CONNECT,
         /** Play on an embedded server ({@code --local --map}). */
-        LOCAL
+        LOCAL,
+        /** Print the effective key bindings ({@code --list-keys}). */
+        LIST_KEYS
     }
 
     /** Longest player name accepted (the client keeps {@link Players#MAX_NAME} characters). */
@@ -93,8 +98,9 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         usage: ClientMain --connect HOST[:PORT] [--protocol xpilot|jxpilot] [--bind ADDR[:PORT]] [--name NAME]
                           [--team T] [--shape SHAPE] [--size WxH] [--scale-factor F] [--alt-scale-factor F]
                           [--swap-scale-key KEYSYM] [--font FILE] [--font-size PX] [--screenshot FILE.png]
-                          [--frames N] [--no-vsync] [--sound | --no-sound] [--volume 0..255]
+                          [--frames N] [--no-vsync] [--sound | --no-sound] [--volume 0..255] [--keys FILE]
                ClientMain --local --map FILE [same options as --connect, except --protocol and --bind]
+               ClientMain --list-keys [--keys FILE] [--swap-scale-key KEYSYM]
                ClientMain --view-map FILE [--demo] [viewer options: --screenshot --frames --size --zoom ...]""";
 
     /**
@@ -109,6 +115,8 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
      * BEHAVIOR: the name defaults to {@link #defaultName(String)}; a given name must have 1..{@link #MAX_NAME}
      * characters; the team is 0..9; the shape must parse ({@link ShipShape#parse}); the swap key must be
      * a known keysym; frames, sizes, scale factors and the font size must be positive.
+     * BEHAVIOR: {@code --keys FILE} names the key file; {@code --list-keys} selects {@link Mode#LIST_KEYS}
+     * (keeping {@code --keys} and {@code --swap-scale-key}, ignoring the launch mode).
      * BEHAVIOR: sound is on unless {@code --no-sound} (the last of --sound/--no-sound wins); {@code --volume}
      * is an integer 0..{@value SoundPlayer#MAX_MAX_VOLUME} (default {@value SoundPlayer#DEFAULT_MAX_VOLUME}).
      * BEHAVIOR: unknown options and missing values throw IllegalArgumentException naming the option.
@@ -118,12 +126,13 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
             if (a.equals("--view-map")) {
                 return new AppOptions(Mode.VIEW_MAP, LaunchOptions.parse(args), null, null, null, Protocol.NO_TEAM,
                     "", null, null, DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true,
-                    SoundPlayer.DEFAULT_MAX_VOLUME);
+                    SoundPlayer.DEFAULT_MAX_VOLUME, null);
             }
         }
         if (args.length == 0) {
             return new AppOptions(Mode.HELP, null, null, null, null, Protocol.NO_TEAM, "", null, null,
-                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, SoundPlayer.DEFAULT_MAX_VOLUME);
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, SoundPlayer.DEFAULT_MAX_VOLUME,
+                null);
         }
         String connect = null;
         String protocol = null;
@@ -145,6 +154,8 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         double fontSize = DEFAULT_FONT_SIZE;
         boolean sound = true;
         int maxVolume = SoundPlayer.DEFAULT_MAX_VOLUME;
+        String keys = null;
+        boolean listKeys = false;
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
             switch (a) {
@@ -201,11 +212,17 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                         throw new IllegalArgumentException(a + " must be 0.." + SoundPlayer.MAX_MAX_VOLUME + ": " + maxVolume);
                     }
                 }
+                case "--keys" -> keys = value(args, ++i, a);
+                case "--list-keys" -> listKeys = true;
                 default -> throw new IllegalArgumentException("Unknown option: " + a);
             }
         }
         Mode mode;
         ConnectTarget target = null;
+        if (listKeys) {
+            return new AppOptions(Mode.LIST_KEYS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, swapKey, null, DEFAULT_FONT_SIZE, sound, maxVolume, keys);
+        }
         if (connect != null && local) {
             throw new IllegalArgumentException("--connect and --local exclude each other");
         }
@@ -227,7 +244,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
             throw new IllegalArgumentException("nothing to do: give --connect, --local or --view-map");
         }
         return new AppOptions(mode, null, target, bind, name != null ? name : defaultName(userName), team, shape,
-            map, screenshot, frames, width, height, vsync, scale, alt, swapKey, font, fontSize, sound, maxVolume);
+            map, screenshot, frames, width, height, vsync, scale, alt, swapKey, font, fontSize, sound, maxVolume, keys);
     }
 
     /**
