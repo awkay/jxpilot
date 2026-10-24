@@ -224,20 +224,22 @@ class XpConnectionEdgeTest {
         }
 
         @Test
-        void silenceTimeoutBoundary() {
+        void silenceNeverEndsPlay() {
             play();
             server.silentFrames = true;
-            long last = now;
-            for (int i = 0; i < 3; i++) {
-                at(now + FRAME); // drain what is still queued
+            long last = drain();
+            for (int k = 1; k < 60; k++) {
+                at(last + k * XpConnection.NO_RESPONSE_NANOS);
             }
-            at(last + XpConnection.PLAY_TIMEOUT_NANOS - 1);
-            ConnectionState before = conn.state();
-            at(last + XpConnection.PLAY_TIMEOUT_NANOS + 3 * FRAME);
+            game.messages().clear();
+            at(last + 60 * XpConnection.NO_RESPONSE_NANOS - 1);
+            int justBefore = noResponses();
+            at(last + 60 * XpConnection.NO_RESPONSE_NANOS);
             assertAll(
-                () -> assertEquals(ConnectionState.PLAYING, before, "alive just before 60 s of silence"),
-                () -> assertEquals(ConnectionState.CLOSED, conn.state(), "lost after"),
-                () -> assertEquals("Connection to 127.0.0.1:15345 lost (timeout)", conn.status().toString(), "status"));
+                () -> assertEquals(ConnectionState.PLAYING, conn.state(), "10 minutes of silence: still playing (C)"),
+                () -> assertTrue(conn.status().toString().startsWith("Playing on"), "no lost-connection status"),
+                () -> assertEquals(0, justBefore, "the 60th notice not before 600 s"),
+                () -> assertEquals(1, noResponses(), "and at 600 s: the notices keep coming"));
         }
 
         @Test

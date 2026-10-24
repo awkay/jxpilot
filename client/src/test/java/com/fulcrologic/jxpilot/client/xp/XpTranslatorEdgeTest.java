@@ -191,6 +191,27 @@ class XpTranslatorEdgeTest {
     }
 
     @Test
+    void eyesFollowCsRules() {
+        // C Handle_start (self), Handle_eyes (PKT_EYES), Handle_ship (self visible, else the centre ship)
+        frame(c(1).self(1750, 1750).ship(1750, 1750, 3, 0).end(1));
+        int selfVisible = tr.eyesId();
+        frame(c(2).self(1750, 1750).ship(1000, 1000, 7, 0).ship(1750, 1750, 8, 0).end(2));
+        int centre = tr.eyesId();
+        frame(c(3).self(1750, 1750).eyes(9).end(3));
+        int packet = tr.eyesId();
+        frame(c(4).self(1750, 1750).eyes(9).ship(1750, 1750, 8, 0).end(4));
+        int centreOverPacket = tr.eyesId();
+        frame(c(5).self(1750, 1750).end(5));
+        int none = tr.eyesId();
+        assertAll(
+            () -> assertEquals(3, selfVisible, "the own ship in the frame: the own player"),
+            () -> assertEquals(8, centre, "else the ship at the view centre"),
+            () -> assertEquals(9, packet, "else PKT_EYES"),
+            () -> assertEquals(8, centreOverPacket, "the centre ship wins over PKT_EYES (Handle_ship comes later)"),
+            () -> assertEquals(3, none, "nothing said: the own player (Handle_start)"));
+    }
+
+    @Test
     void aWatchedShipAtTheCentreGetsAPlayerBlip() {
         // C Handle_ship: !selfVisible and a ship exactly at the SELF position (spectating): Handle_radar(.., 3)
         List<String> watching = frame(c(1).self(1750, 1750).ship(1000, 1000, 7, 0).ship(1750, 1750, 8, 0).end(1));

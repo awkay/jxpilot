@@ -38,6 +38,10 @@ final class FakeConnection implements GameConnection {
     String status = "Playing on fake";
     LongConsumer onUpdate = t -> { };
     long lastKeys = -1;
+    /** What {@link #eyesId()} says (C eyesId; NO_ID: not said). */
+    int eyes = com.fulcrologic.jxpilot.common.net.Protocol.NO_ID;
+
+    @Override public int eyesId() { return eyes; }
     /** The aimTurn of every sendInput. */
     final List<Integer> aims = new ArrayList<>();
     boolean chatAccepted = true;

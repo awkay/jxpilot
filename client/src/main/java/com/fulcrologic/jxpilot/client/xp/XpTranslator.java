@@ -87,6 +87,7 @@ public final class XpTranslator {
     private int[] cBaseOwner = new int[0];
 
     private int selfId = Protocol.NO_ID;
+    private int eyesId = Protocol.NO_ID;
     private boolean expectSelf;
 
     // previous frame, for derived ship velocities
@@ -132,6 +133,7 @@ public final class XpTranslator {
         cBaseOwner = new int[built.baseIndex().length];
         java.util.Arrays.fill(cBaseOwner, Protocol.NO_ID);
         selfId = Protocol.NO_ID;
+        eyesId = Protocol.NO_ID;
         expectSelf = false;
         prevCount = 0;
         loseItem = 0;
@@ -143,6 +145,12 @@ public final class XpTranslator {
     public void expectSelf() {
         expectSelf = true;
     }
+
+    /**
+     * C {@code eyesId} after the newest frame: the player whose view the frame shows (C {@code Handle_start},
+     * {@code Handle_eyes}, {@code Handle_ship}); {@link Protocol#NO_ID} before any.
+     */
+    public int eyesId() { return eyesId; }
 
     /** Own C player id, {@link Protocol#NO_ID} until known. */
     public int selfId() { return selfId; }
@@ -191,6 +199,7 @@ public final class XpTranslator {
         snap.clear();
         w.begin(snap, f.loops, 0, 0, 1, SnapshotWriter.FLAG_LAST_PART, viewX, viewY);
         int selfShip = selfId == Protocol.NO_ID ? -1 : f.findShip(selfId);
+        eyesId = eyes(f, selfShip);
         if (f.hasSelf) {
             writeSelf(f, selfShip);
         }
@@ -615,6 +624,24 @@ public final class XpTranslator {
     /** BEHAVIOR: the asteroid size of a C radar size byte {@code (size + 1) | 0x80}, at least 0. */
     static int asteroidSize(int sizeByte) {
         return Math.max(0, (sizeByte & 0x07) - 1);
+    }
+
+    /**
+     * C's {@code eyesId} for a frame.
+     * <p>
+     * BEHAVIOR: the own player when its ship is in the frame (C {@code Handle_ship} with {@code self}); else the
+     * first ship at the view centre (the one watched); else the frame's PKT_EYES; else the own player (C
+     * {@code Handle_start}).
+     */
+    int eyes(XpFrame f, int selfShip) {
+        if (selfShip >= 0) {
+            return selfId;
+        }
+        int c = f.hasSelf ? centreShip(f) : -1;
+        if (c >= 0) {
+            return f.shipId[c] & 0xFFFF;
+        }
+        return f.eyes >= 0 ? f.eyes : selfId;
     }
 
     /** BEHAVIOR: the first ship at exactly the SELF position (C {@code x == pos.x && y == pos.y}), -1 when none. */
