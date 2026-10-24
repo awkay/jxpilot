@@ -119,6 +119,8 @@ class SnapshotBuilderTest {
         final List<String> cannons = new ArrayList<>();
         final List<String> fuel = new ArrayList<>();
         final List<String> radar = new ArrayList<>();
+        /** Types of the game-mode sections (tested in SnapshotModesTest). */
+        final List<Integer> modes = new ArrayList<>();
         final List<float[]> connectors = new ArrayList<>();
         final List<String> sounds = new ArrayList<>();
         /** Section types in order of appearance (all parts). */
@@ -187,6 +189,8 @@ class SnapshotBuilderTest {
                             rd.wrap(r, i);
                             d.radar.add(rd.cellX() + "," + rd.cellY() + ":" + rd.flags());
                         }
+                        case Section.TARGET, Section.TREASURE, Section.BALL, Section.ASTEROID,
+                             Section.TEMP_WORMHOLE -> d.modes.add(r.type());
                         case Section.CONNECTOR -> {
                             cn.wrap(r, i);
                             d.connectors.add(new float[] {cn.x0(), cn.y0(), cn.x1(), cn.y1(), cn.kind()});

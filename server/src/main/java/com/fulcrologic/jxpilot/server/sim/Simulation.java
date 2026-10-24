@@ -76,6 +76,13 @@ public final class Simulation {
     public final Rounds rounds;
     /** Robot players (C {@code Robot_update}); off until {@link RobotManager#setEnabled enabled}. */
     public final RobotManager robots;
+    // ---- game modes (server-modes)
+    public final ObjPhysics objPhysics;
+    public final Balls balls;
+    public final Targets targets;
+    public final Race race;
+    public final Asteroids asteroids;
+
     // ---- items (server-items)
     public final Items items;
     public final Tanks tanks;
@@ -100,6 +107,12 @@ public final class Simulation {
         this.cannons = new Cannons(world, this);
         this.keys = new Keys(world, this);
         this.rounds = new Rounds(world, this);
+        this.objPhysics = new ObjPhysics(world, this);
+        this.balls = new Balls(world, this);
+        this.targets = new Targets(world, this);
+        this.race = new Race(world, this);
+        this.asteroids = new Asteroids(world, this);
+        mover.setTreasureHook(balls);
         this.items = new Items(world, this);
         this.tanks = new Tanks(world);
         this.devices = new Devices(world, this);
@@ -113,12 +126,14 @@ public final class Simulation {
         Sounds.initClasses();
         this.robots = new RobotManager(world, this);
         this.ecm.robotProgrammer = robots::program;
+        this.ecm.ballDetacher = balls;
         this.tanks.sim = this;
         // load the item classes used only in rare branches now: the tick must not allocate when they first run
         Items.warmSwitches();
         Devices.warmSwitches();
-        ShotNames.warm();
         com.fulcrologic.jxpilot.server.robot.DefaultRobot.warmSwitches();
+        ShotNames.warm();
+        balls.init();
         com.fulcrologic.jxpilot.common.math.ThrustSparks.wirePos(0f);
     }
 
@@ -154,22 +169,26 @@ public final class Simulation {
         moveObjects();
         ecm.update();
         cannons.update();
+        targets.update();
         for (int k = 0; k < w.numPlayers; k++) {
             ships.update(w.playerAt(k));
         }
         countDownWormholes();
         devices.afterMove();
         w.grid.rebuild(w.objects);
+        balls.collide();
         mines.collide();
         if (w.roundDelay == 0) {
             collisions.check();
         }
         lasers.collide();
+        asteroids.collide();
         killPlayers();
         expireObjects();
         if (w.gameDuration >= 0 || w.params.maxRoundTime > 0) {
             rounds.computeGameStatus();
         }
+        rounds.checkGameDuration();
         emitScores();
         w.frames++;
     }
@@ -215,7 +234,9 @@ public final class Simulation {
         for (int k = 0; k < o.count(); k++) {
             int h = o.active[k];
             int type = o.type[h];
-            if (type == Obj.WRECKAGE) {
+            if (type == Obj.BALL && o.owner[h] != Obj.NO_ID) {
+                balls.move(h);
+            } else if (type == Obj.WRECKAGE) {
                 wreckage.rotate(h);
             } else if ((type & Obj.MINE) != 0) {
                 mines.move(h);
@@ -231,18 +252,19 @@ public final class Simulation {
                 o.vx[h] += o.accX[h];
                 o.vy[h] += o.accY[h];
             }
-            mover.moveObject(h);
-        }
-    }
-
-    /** Wormhole countdowns run down by one frame (update.c:1222-1230). */
-    void countDownWormholes() {
-        int[] c = world.wormCountdown;
-        for (int i = c.length - 1; i >= 0; i--) {
-            if (c[i] > 0) {
-                c[i]--;
+            if (o.type[h] != Obj.ASTEROID) {
+                mover.moveObject(h);
             }
         }
+        asteroids.update();
+    }
+
+    /**
+     * Wormhole countdowns run down by one frame and expired temporary wormholes go (update.c:1222-1230,
+     * {@link com.fulcrologic.jxpilot.server.world.WormTable#countDown}).
+     */
+    void countDownWormholes() {
+        world.worms.countDown();
     }
 
     /**
@@ -311,6 +333,12 @@ public final class Simulation {
         World w = world;
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
+            if (pl.timingDirty) {
+                pl.timingDirty = false;
+                if (w.modeParams.timing) {
+                    w.events.add(Events.TIMING, pl.id, pl.check, pl.round, 0f);
+                }
+            }
             if (pl.scoreDirty) {
                 pl.scoreDirty = false;
                 w.events.add(Events.SCORE, pl.id, w.params.limitedLives ? pl.life : -1, scoreStatus(pl),

@@ -246,9 +246,12 @@ public final class Shots {
      * fragments, life 2, kinetic mass) or else 6 + (int)(rfrac*3) red debris of mass 4.5 at speed 20, life 8-16
      * (intensity 32).
      * BEHAVIOR: sparks and debris just vanish.
+     * BEHAVIOR: a ball is handled by {@link Balls#deleting}; when it is to be recreated, a new ball is made in
+     * its treasure after the old one is freed.
      */
     public void delete(int h) {
         Objects o = w.objects;
+        int ballTreasure = -1;
         switch (o.type[h]) {
             case Obj.SHOT -> {
                 if (o.owner[h] != Obj.NO_ID && (o.status[h] & Obj.FROMCANNON) == 0
@@ -260,6 +263,8 @@ public final class Shots {
                 }
             }
             case Obj.CANNON_SHOT, Obj.MINE, Obj.HEAT_SHOT, Obj.TORPEDO, Obj.SMART_SHOT -> explode(h);
+            case Obj.BALL -> ballTreasure = sim.balls.deleting(h);
+            case Obj.ASTEROID -> sim.asteroids.broken(h);
             case Obj.ITEM -> {
                 sim.items.delete(h);
                 return;
@@ -267,6 +272,9 @@ public final class Shots {
             default -> { }
         }
         o.free(h);
+        if (ballTreasure >= 0) {
+            sim.balls.makeTreasureBall(ballTreasure);
+        }
     }
 
     /**

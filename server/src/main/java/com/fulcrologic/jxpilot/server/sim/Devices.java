@@ -115,6 +115,9 @@ public final class Devices {
             }
             pl.used |= Has.PHASING_DEVICE;
             pl.used &= ~(Has.REFUEL | Has.REPAIR | Has.TRACTOR_BEAM);
+            if ((pl.used & Has.CONNECTOR) != 0) {
+                pl.ball = -1; // update.c:131-132: no reaching for a ball while phased
+            }
             pl.status &= ~Obj.GRAVITY;
             Sounds.play(w, pl.px, pl.py, SoundEvent.PHASING_ON);
         } else {
@@ -909,37 +912,6 @@ public final class Devices {
     public void hyperjump(Player pl) {
         pl.status |= Obj.WARPING;
         pl.wormHoleHit = -1;
-    }
-
-    /** Destination of the last {@link #hyperjumpDestination} (pixels). */
-    public float jumpX;
-    public float jumpY;
-
-    /**
-     * The hyperjump destination of the warp code (update.c:1137-1167, temporary wormholes not made).
-     * <p>
-     * BEHAVIOR: up to 20 random positions until one is on a space block; after 20 failures the ship stays
-     * where it is.
-     */
-    public void hyperjumpDestination(Player pl) {
-        int counter;
-        float x = 0;
-        float y = 0;
-        for (counter = 20; counter > 0; counter--) {
-            x = (int) (w.rfrac() * w.pixelWidth);
-            y = (int) (w.rfrac() * w.pixelHeight);
-            int bx = (int) (x / Const.BLOCK_SZ);
-            int by = (int) (y / Const.BLOCK_SZ);
-            if ((com.fulcrologic.jxpilot.common.map.BlockType.bit(w.map.block(bx, by)) & Items.SPACE_BLOCKS) != 0) {
-                break;
-            }
-        }
-        if (counter == 0) {
-            x = pl.px;
-            y = pl.py;
-        }
-        jumpX = x;
-        jumpY = y;
     }
 
     /**

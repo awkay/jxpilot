@@ -37,6 +37,7 @@ untested.
 | `patches/0002-server-physics-trace.patch` | Opt-in trace and seed hooks. Inert unless their environment variables are set. |
 | `patches/0003-server-wreckage-trace.patch` | Opt-in wreckage trace (`XPILOT_TRACE_WRECK`). Inert unless set. |
 | `patches/0004-server-object-trace.patch` | Opt-in object, laser pulse, ECM and player item trace. Inert unless `XPILOT_TRACE_OBJS` is set. |
+| `patches/0005-server-mode-trace.patch` | Opt-in trace of balls, asteroids, wreckage, race progress, treasures and targets. Inert unless `XPILOT_TRACE_MODES` is set. |
 | `build.sh` | Builds image `xpilot-ref:4.5.5`. |
 | `server.sh` | Runs a headless server and prints its log. |
 | `screenshot.sh` | Runs server and client on Xvfb and saves one PNG. |
@@ -142,7 +143,8 @@ relies on patch 0002.
 
 ```sh
 trace.sh --map NAME --out FILE.txt [--after S] [--keys "ACTIONS"] [--robots N]
-         [--all-players] [--objs] [--seed N] [--png FILE.png] [--server-opt OPT]...
+         [--all-players] [--objs] [--modes] [--map-file F] [--seed N] [--png FILE.png]
+         [--server-opt OPT]...
 
 tools/xpilot-ref/trace.sh --map default --seed 42 --after 1 \
     --keys "down:Shift_L sleep:1 up:Shift_L sleep:1" --out /tmp/thrust-trace.txt
@@ -193,6 +195,29 @@ XPREF_IMAGE=xpilot-ref:items tools/xpilot-ref/build.sh
 XPREF_IMAGE=xpilot-ref:items tools/xpilot-ref/trace.sh --objs --map default --seed 42 \
     --after 1 --server-opt -initialMissiles --server-opt 4 \
     --keys "sleep:0.5 down:quoteright sleep:0.15 up:quoteright sleep:2" --out /tmp/torp.txt
+```
+
+`--modes` sets `XPILOT_TRACE_MODES` and needs an image built with patch 0005.
+Each tick then also prints
+
+```
+XPMOBJ loop frame ptr type cx cy prevx prevy vx vy life id team status mass extra...
+XPPL2  loop frame id used have ball check round time best_lap last_lap last_lap_time mychar
+XPTRS  loop frame index have destroyed
+XPTGT  loop frame index damage dead_time
+XPTEAM loop frame team treasures_left treasures_destroyed score
+```
+
+for every ball, asteroid and wreckage object (balls: `owner treasure length`; asteroids and wreckage:
+`size rotation turnspeed info`), every player, treasure, target and team with treasures. `ptr` is the C
+object's address: an object keeps it while it lives. `--map-file FILE` runs a map from the host (it is
+copied next to the outputs). The C server also reads `lib/defaults` (gravity -0.25, random items), so pin
+those options in such a map. Example (the ball connector trace of `ModeTraceTest`):
+
+```sh
+XPREF_IMAGE=xpilot-ref:server-modes tools/xpilot-ref/trace.sh \
+    --map-file server/src/test/resources/ctrace/ball-tow.xp --seed 42 --after 1 --modes \
+    --keys "down:Control_L down:Shift_L sleep:0.6 up:Shift_L sleep:3 up:Control_L sleep:0.5" --out /tmp/ball.txt
 ```
 
 You can also run the server in raw mode with only robots and trace them:
@@ -282,6 +307,10 @@ GPL-2.0-or-later, and why.
    0003: adds `Trace_objects()`, called right after `Trace_wreckage()`. It
    does nothing unless `XPILOT_TRACE_OBJS` is set; `XPILOT_TRACE_NAME`
    filters the XPITEMS lines like the XPTRACE lines.
+5. `0005-server-mode-trace.patch`, in `src/server/server.c` only, on top of
+   0004: adds `Trace_modes()`, called right after `Trace_objects()`, which prints the
+   XPMOBJ/XPPL2/XPTRS/XPTGT/XPTEAM lines when `XPILOT_TRACE_MODES` is set
+   (`trace.sh --modes`). Inert otherwise.
 
 ## Known quirks
 

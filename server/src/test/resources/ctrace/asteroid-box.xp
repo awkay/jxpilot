@@ -1,0 +1,46 @@
+# JXPilot golden-trace map (GPL-2.0-or-later, see LICENSE): an open box with a
+# few wall blocks for asteroids to bounce off.
+mapName: asteroid-box
+mapAuthor: JXPilot
+mapWidth: 30
+mapHeight: 30
+edgeWrap: no
+maxAsteroidDensity: 0.03
+asteroidProb: 1.6e-5
+# the C server also reads lib/defaults: pin what it sets there
+gravity: -0.25
+maxItemDensity: 0
+movingItemProb: 0
+framesPerSecond: 14
+mapData: \multiline: EndOfMapdata
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+x                            x
+x                            x
+x                            x
+x                            x
+x                            x
+x                            x
+x                            x
+x                            x
+x                            x
+x                            x
+x                            x
+x                            x
+x                            x
+x                            x
+x                            x
+x                            x
+x                   xqw      x
+x                            x
+x                            x
+x                            x
+x         as                 x
+x                            x
+x                            x
+x                            x
+x                            x
+x                            x
+x                            x
+x _                          x
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+EndOfMapdata

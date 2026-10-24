@@ -59,12 +59,12 @@ public final class ItemTable {
     static final int MARGIN = 2;
 
     /**
-     * Items whose game rules the JXPilot (Java) server implements. Empty until milestone M2; add an item here
-     * when the Java server lets players pick it up and use it, and regenerate the guide. (On an original C
-     * XPilot server every item already works: the C server runs the rules and the client draws the items and
-     * sends the keys.)
+     * Items whose game rules the JXPilot (Java) server implements: all of them since server-items. Remove an
+     * item here only if the Java server stops supporting it, and regenerate the guide. (On an original C
+     * XPilot server every item works: the C server runs the rules and the client draws the items and sends
+     * the keys.)
      */
-    static final Set<Item> JAVA_SERVER_IMPLEMENTED = EnumSet.noneOf(Item.class);
+    static final Set<Item> JAVA_SERVER_IMPLEMENTED = EnumSet.allOf(Item.class);
 
     /** The C client's description of each item ({@code itemBitmapData} in {@code src/client/xinit.c}). */
     static final Map<Item, String> C_TEXT = new EnumMap<>(Map.ofEntries(

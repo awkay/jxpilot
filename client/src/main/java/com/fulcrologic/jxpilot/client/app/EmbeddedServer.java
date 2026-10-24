@@ -28,7 +28,6 @@ import com.fulcrologic.jxpilot.common.net.LocalServer;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.file.Path;
 import java.util.ServiceLoader;
 
 /**
@@ -38,7 +37,7 @@ import java.util.ServiceLoader;
  * <p>
  * The server module provides the implementation through common's {@link LocalServer.Provider}, registered in
  * {@code META-INF/services/com.fulcrologic.jxpilot.common.net.LocalServer$Provider}; the client finds it with
- * {@link #start(Path)} and has no compile-time dependency on server code.
+ * {@link #start(String)} and has no compile-time dependency on server code.
  */
 public interface EmbeddedServer extends AutoCloseable {
     /** Where the client connects (a loopback address and the bound port). */
@@ -49,14 +48,15 @@ public interface EmbeddedServer extends AutoCloseable {
     void close();
 
     /**
-     * Start an embedded server for {@code mapFile} through the first {@link ServiceLoader} provider
+     * Start an embedded server for {@code map} (a bundled map name or a map file, as the server's {@code --map})
+     * through the first {@link ServiceLoader} provider
      * (see {@link #provider}).
      *
      * @throws IOException              when the map cannot be read or nothing can be bound
      * @throws IllegalArgumentException for a bad map or option
      */
-    static EmbeddedServer start(Path mapFile) throws IOException {
-        LocalServer s = provider(ServiceLoader.load(LocalServer.Provider.class)).start(mapFile);
+    static EmbeddedServer start(String map) throws IOException {
+        LocalServer s = provider(ServiceLoader.load(LocalServer.Provider.class)).start(map);
         Endpoint ep = endpointOf(s.address());
         return new EmbeddedServer() {
             @Override

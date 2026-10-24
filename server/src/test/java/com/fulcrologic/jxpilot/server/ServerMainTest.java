@@ -63,7 +63,9 @@ class ServerMainTest {
     @DisplayName("1 for bad arguments, 2 when the server loop dies")
     void statuses() {
         ByteArrayOutputStream usage = new ByteArrayOutputStream();
-        int bad = ServerMain.run(new String[] {"--port", "0"}, settings(), new PrintStream(usage, true, StandardCharsets.UTF_8));
+        // --map is optional now (the bundled default map, as C's MAPDIR/default.xp); a missing defaults file is bad
+        int bad = ServerMain.run(new String[] {"--defaults", "/nonexistent/jxpilot-defaults", "--port", "0"}, settings(),
+            new PrintStream(usage, true, StandardCharsets.UTF_8));
         ByteArrayOutputStream died = new ByteArrayOutputStream();
         Server.Settings s = settings();
         s.factory = (o, m) -> new DyingHost(new StubGameHost(m, 4), 3, new IllegalStateException("boom"));
@@ -71,7 +73,7 @@ class ServerMainTest {
             new PrintStream(died, true, StandardCharsets.UTF_8));
         String deathText = died.toString(StandardCharsets.UTF_8);
         assertAll(
-            () -> assertEquals(ServerMain.EXIT_USAGE, bad, "a missing --map exits with 1"),
+            () -> assertEquals(ServerMain.EXIT_USAGE, bad, "a missing defaults file exits with 1"),
             () -> assertTrue(usage.toString(StandardCharsets.UTF_8).contains("usage: ServerMain"), "and prints the usage"),
             () -> assertEquals(ServerMain.EXIT_LOOP_FAILED, dead, "a dead loop exits with 2 instead of hanging"),
             () -> assertTrue(deathText.contains("server loop failed: java.lang.IllegalStateException: boom"),

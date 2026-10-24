@@ -83,6 +83,11 @@ public final class Events {
      * the robot, c = the sought player.
      */
     public static final int SEEK = 11;
+    /**
+     * Race progress of a player (C {@code Send_timing}; game modes use kinds 20-26): a = player id, b = the next
+     * checkpoint to pass (C {@code check}), c = laps started (C {@code round}).
+     */
+    public static final int TIMING = 20;
 
     // ---- KILL causes (server-internal: {@link #cause}, never on the wire). They decide C's robot reaction.
     /**

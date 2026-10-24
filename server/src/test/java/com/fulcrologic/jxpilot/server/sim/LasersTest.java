@@ -30,6 +30,7 @@ import com.fulcrologic.jxpilot.server.TestWorlds;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.Mods;
 import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.Pulses;
 import com.fulcrologic.jxpilot.server.world.Trig;
@@ -95,6 +96,57 @@ class LasersTest {
             owner.numPulses++;
         }
         return i;
+    }
+
+    @Nested
+    @DisplayName("collide: asteroids (laser.c:375-415, 600-635)")
+    class AsteroidHits {
+        @Test
+        @DisplayName("a pulse ends on the first asteroid it reaches, which loses ASTEROID_FUEL_HIT(ED_LASER_HIT, size) life")
+        void hits() {
+            setup("");
+            w.modeParams.asteroidPoints = 2;
+            w.modeParams.asteroidMaxScore = 100;
+            int small = s.asteroids.make(270, 300, 1, 0, 0f); // radius (int)(0.8 * 16) = 12
+            int big = s.asteroids.make(300, 500, 4, 0, 0f);
+            Objects o = w.objects;
+            o.vx[small] = o.vy[small] = o.vx[big] = o.vy[big] = 0;
+            double score0 = p.score;
+            int a = pulseAt(p, 200, 300, 0);
+            int b = pulseAt(null, 200, 500, 0);
+            int c = pulseAt(p, 200, 650, 0);
+            s.lasers.collide();
+            double score1 = p.score;
+            assertAll(
+                () -> assertEquals(0.0, o.life[small], "size 1: 1000 + (-25600 * 1000) / (256 * 25 * 1) clamps to 0"),
+                () -> assertEquals(500.0, o.life[big], "size 4: 1000 - 4000 / 8 = 500 (hit by the cannon's pulse)"),
+                () -> assertTrue(pu.len[a] > 0 && pu.len[a] < Lasers.PULSE_LENGTH, "P's pulse is cut at the asteroid"),
+                () -> assertTrue(pu.len[b] > 0 && pu.len[b] < Lasers.PULSE_LENGTH, "so is the cannon's"),
+                () -> assertEquals(Lasers.PULSE_LENGTH, pu.len[c], "a pulse far from every asteroid runs on"),
+                () -> assertEquals(score0 + 2, score1, 1e-9,
+                    "P's pulse brought an asteroid to 0: asteroidPoints (P's score is <= asteroidMaxScore)"));
+        }
+
+        @Test
+        @DisplayName("no points above asteroidMaxScore or without asteroidPoints")
+        void noPoints() {
+            setup("");
+            w.modeParams.asteroidPoints = 2;
+            w.modeParams.asteroidMaxScore = 100;
+            p.score = 101;
+            s.asteroids.make(270, 300, 1, 0, 0f);
+            pulseAt(p, 200, 300, 0);
+            s.lasers.collide();
+            double above = p.score;
+            w.modeParams.asteroidPoints = 0;
+            p.score = 0;
+            s.asteroids.make(270, 450, 1, 0, 0f);
+            pulseAt(p, 200, 450, 0);
+            s.lasers.collide();
+            assertAll(
+                () -> assertEquals(101.0, above, 1e-9, "score 101 > asteroidMaxScore 100: no points"),
+                () -> assertEquals(0.0, p.score, 1e-9, "asteroidPoints 0: no points"));
+        }
     }
 
     @Nested

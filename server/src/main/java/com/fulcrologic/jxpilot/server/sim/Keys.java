@@ -171,7 +171,9 @@ public final class Keys {
      * fires and starts autofire; TURN keys set turnAcc = (left - right) * turnspeed; THRUST starts thrusting;
      * REFUEL picks the nearest station; SELF_DESTRUCT toggles a 150-frame countdown; SWAP_SETTINGS swaps
      * power/turn settings when not turning; power +-10% and turnspeed +-5% (when not turning) within limits;
-     * CHANGE_HOME takes over the base the ship is on; PAUSE toggles pause ({@link #pauseKey}).
+     * CHANGE_HOME takes over the base the ship is on; PAUSE toggles pause ({@link #pauseKey}); DROP_BALL drops
+     * every ball; REPAIR picks the nearest own target ({@link Targets#startRepair}); CONNECTOR uses the
+     * connector (if the ship has one).
      */
     boolean pressed(Player pl, ControlKey k) {
         switch (k) {
@@ -318,6 +320,13 @@ public final class Keys {
                 pl.turnSpeed = (float) Math.max(pl.turnSpeed, Const.MIN_PLAYER_TURNSPEED);
             }
             case CHANGE_HOME -> changeHome(pl);
+            case DROP_BALL -> sim.balls.detach(pl, -1);
+            case REPAIR -> sim.targets.startRepair(pl);
+            case CONNECTOR -> {
+                if ((pl.have & Has.CONNECTOR) != 0) {
+                    pl.used |= Has.CONNECTOR;
+                }
+            }
             case PAUSE -> {
                 return pauseKey(pl);
             }
@@ -419,7 +428,7 @@ public final class Keys {
      * <p>
      * BEHAVIOR: TURN keys recompute turnAcc; REFUEL stops refuelling; SHIELD (outside the round delay) lowers
      * shields and restarts the fire-repeat timer (no instant shot after dropping shields); FIRE_SHOT stops
-     * autofire; THRUST stops.
+     * autofire; THRUST stops; REPAIR and CONNECTOR stop.
      */
     void released(Player pl, ControlKey k) {
         switch (k) {
@@ -428,6 +437,8 @@ public final class Keys {
                 turnKeys(pl);
             }
             case REFUEL -> pl.used &= ~Has.REFUEL;
+            case REPAIR -> pl.used &= ~Has.REPAIR;
+            case CONNECTOR -> pl.used &= ~Has.CONNECTOR;
             case TRACTOR_BEAM, PRESSOR_BEAM -> pl.used &= ~Has.TRACTOR_BEAM;
             case FIRE_LASER -> pl.used &= ~Has.LASER;
             case REPROGRAM -> pl.status &= ~Obj.REPROGRAM;

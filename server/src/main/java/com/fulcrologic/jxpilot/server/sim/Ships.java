@@ -27,6 +27,7 @@ import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.Base;
+import com.fulcrologic.jxpilot.common.map.Checkpoint;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.FuelStation;
 import com.fulcrologic.jxpilot.common.map.Wormhole;
@@ -39,6 +40,7 @@ import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
+import com.fulcrologic.jxpilot.server.world.WormTable;
 
 /**
  * Ship rules: the per-player part of C {@code Update_objects} ({@code src/server/update.c}), and from
@@ -232,6 +234,8 @@ public final class Ships {
      * Remove a player (C {@code Delete_player}).
      * <p>
      * BEHAVIOR: a reserved player that never spawned just frees its slot (no events).
+     * BEHAVIOR: a ball connected to the player is deleted at once (it explodes and returns to its treasure);
+     * balls the player owned lose their owner.
      * BEHAVIOR: the player's debris and sparks lose their owner and keep flying; its other objects lose their
      * owner and, without keepShots, die (life 0) and cannon shots lose their mass so they do not explode;
      * without keepShots EVERY cannon shot in the world dies the same way (a C quirk, kept).
@@ -256,6 +260,14 @@ public final class Ships {
         for (int k = o.count() - 1; k >= 0; k--) {
             int h = o.active[k];
             int type = o.type[h];
+            if (type == Obj.BALL) {
+                if (o.owner[h] == id) {
+                    sim.shots.delete(h);
+                } else if (w.modes.ballOwner[h] == id) {
+                    w.modes.ballOwner[h] = Obj.NO_ID;
+                }
+                continue;
+            }
             if (o.owner[h] == id) {
                 if ((type & (Obj.DEBRIS | Obj.SPARK)) == 0 && !keep) {
                     o.life[h] = 0;
@@ -611,6 +623,9 @@ public final class Ships {
     /**
      * C {@code Go_home}: put the ship on its base, at rest, facing the base direction.
      * <p>
+     * BEHAVIOR: in race mode after the first checkpoint (not GAME_OVER) the ship appears at the centre of the
+     * last checkpoint passed instead, with a random velocity of at most +-0.05 per axis and the heading it
+     * passed that checkpoint with, +-RES/16 at random.
      * BEHAVIOR: clears velocity, acceleration, turning and the key state: keys still held are ignored until the
      * client's key state changes (C clears {@code last_keyv}/{@code prev_keyv}).
      * BEHAVIOR: C {@code Player_used_kill}: USED_KILL abilities off, and without default shields HAS_SHIELD is
@@ -619,12 +634,26 @@ public final class Ships {
      * follows its JOIN).
      */
     public void goHome(Player pl) {
-        Base b = w.map.bases().get(pl.homeBase);
-        pl.dir = b.dir();
-        pl.floatDir = b.dir();
-        pl.initPixels((b.bx() + 0.5) * Const.BLOCK_SZ, (b.by() + 0.5) * Const.BLOCK_SZ);
-        pl.vx = pl.vy = 0;
-        pl.velocity = 0;
+        int check = sim.race.respawnCheck(pl, true);
+        if (check >= 0) {
+            Checkpoint c = w.map.checkpoints().get(check);
+            float vx = (float) ((w.rfrac() - 0.5) * 0.1);
+            float vy = (float) ((w.rfrac() - 0.5) * 0.1);
+            int dir = (pl.lastCheckDir + (int) ((w.rfrac() - 0.5) * (Const.RES / 8))) & (Const.RES - 1);
+            pl.dir = dir;
+            pl.floatDir = dir;
+            pl.initPixels((c.bx() + 0.5) * Const.BLOCK_SZ + vx, (c.by() + 0.5) * Const.BLOCK_SZ + vy);
+            pl.vx = vx;
+            pl.vy = vy;
+            pl.velocity = (float) StrictMath.hypot(vx, vy);
+        } else {
+            Base b = w.map.bases().get(pl.homeBase);
+            pl.dir = b.dir();
+            pl.floatDir = b.dir();
+            pl.initPixels((b.bx() + 0.5) * Const.BLOCK_SZ, (b.by() + 0.5) * Const.BLOCK_SZ);
+            pl.vx = pl.vy = 0;
+            pl.velocity = 0;
+        }
         pl.accX = pl.accY = 0;
         pl.turnAcc = pl.turnVel = 0;
         pl.prevKeys = 0;
@@ -653,10 +682,12 @@ public final class Ships {
     /**
      * C {@code Pause_player}.
      * <p>
-     * BEHAVIOR: on (when not paused): count = 10*FPS, SELF_DESTRUCT and PLAYING off, PAUSE on, mychar 'P'.
+     * BEHAVIOR: on (when not paused): count = 10*FPS, SELF_DESTRUCT and PLAYING off, PAUSE on, mychar 'P'; a
+     * ship with a ball drops it.
      * BEHAVIOR: off (when paused and the count has run out): PAUSE off; with limitedLives, if a non-team player
      * has lost a life it is too late: life 0, 'W', GAME_OVER; otherwise ' ', Go_home, PLAYING, and full lives
-     * with limitedLives. Otherwise nothing happens.
+     * with limitedLives; in race mode the race progress starts over (after Go_home, as C). Otherwise nothing
+     * happens.
      */
     public void pause(Player pl, boolean on) {
         Params p = w.params;
@@ -667,6 +698,9 @@ public final class Ships {
             pl.status |= Obj.PAUSE;
             pl.mychar = 'P';
             pl.scoreDirty = true;
+            if ((pl.have & Has.BALL) != 0) {
+                sim.balls.detach(pl, -1);
+            }
         } else if (!on && (pl.status & Obj.PAUSE) != 0 && pl.count <= 0) {
             pl.status &= ~Obj.PAUSE;
             pl.scoreDirty = true;
@@ -691,6 +725,11 @@ public final class Ships {
                 if (p.limitedLives) {
                     pl.life = p.worldLives;
                 }
+            }
+            if (w.modeParams.timing) {
+                int count = pl.count;
+                sim.race.resetPlayer(pl);
+                pl.count = count;
             }
         }
     }
@@ -770,6 +809,7 @@ public final class Ships {
         sim.devices.drain(pl);
         sim.locks.updateVisibility(pl);
         refuel(pl);
+        sim.targets.repair(pl);
         if (pl.fuel <= 0) {
             pl.used &= ~(Has.SHIELD | Has.CLOAKING_DEVICE | Has.DEFLECTOR);
             pl.status &= ~Obj.THRUSTING;
@@ -989,13 +1029,23 @@ public final class Ships {
      * C {@code Transport_to_home}: velocity that carries a dead ship to its base in RECOVERY_DELAY frames,
      * accelerating for the first half and braking for the second (C floats).
      * <p>
+     * BEHAVIOR: in race mode after the first checkpoint the destination is the last checkpoint passed.
      * BEHAVIOR: with t = count + 0.5 and T = 3*FPS: m = 2/t while 2t &lt;= T, else t' = T - t and
      * m = 4t'/(T^2 - 2t'^2); velocity = wrapped distance to the base centre * m.
      */
     void transportToHome(Player pl) {
-        Base b = w.map.bases().get(pl.homeBase);
-        float bx = (float) ((b.bx() + 0.5) * Const.BLOCK_SZ);
-        float by = (float) ((b.by() + 0.5) * Const.BLOCK_SZ);
+        int check = sim.race.respawnCheck(pl, false);
+        float bx;
+        float by;
+        if (check >= 0) {
+            Checkpoint c = w.map.checkpoints().get(check);
+            bx = (float) ((c.bx() + 0.5) * Const.BLOCK_SZ);
+            by = (float) ((c.by() + 0.5) * Const.BLOCK_SZ);
+        } else {
+            Base b = w.map.bases().get(pl.homeBase);
+            bx = (float) ((b.bx() + 0.5) * Const.BLOCK_SZ);
+            by = (float) ((b.by() + 0.5) * Const.BLOCK_SZ);
+        }
         float dx = (float) w.wrapDx(bx - pl.px);
         float dy = (float) w.wrapDy(by - pl.py);
         int bigT = 3 * w.params.fps;
@@ -1025,70 +1075,123 @@ public final class Ships {
     }
 
     /**
-     * Wormhole travel (update.c:1041-1188, hyperjump excluded).
+     * Wormhole travel and hyperjumps (update.c:1041-1188).
      * <p>
-     * BEHAVIOR: a wormhole still counting down sends to its last destination; otherwise 10% of the time a
-     * random non-IN other wormhole, else the non-IN wormhole closest to the line of flight ahead (or a random
-     * one if none is ahead).
-     * BEHAVIOR: the ship appears at the destination's centre, the source remembers the destination for
-     * wormTime frames (WORMCOUNT without wormTime), and the ship is WARPED (not WARPING).
-     * BEHAVIOR: a hyperjump (no wormhole) plays HYPERJUMP where the ship was and WORM_HOLE where it lands; a
-     * wormhole trip plays WORM_HOLE before and after.
+     * BEHAVIOR: a wormhole index past the current wormholes (a temporary one that went away) ends the warp.
+     * BEHAVIOR: through a wormhole: one still counting down sends to its last destination; otherwise 10% of the
+     * time a random other wormhole that is neither IN nor temporary, else the non-IN, non-temporary wormhole
+     * closest to the line of flight ahead (or a random non-IN one if none is ahead); the ship appears at its
+     * centre, and the source remembers the destination for wormTime frames (WORMCOUNT without wormTime)
+     * unless the destination is temporary.
+     * BEHAVIOR: a hyperjump (wormHoleHit -1): up to 20 random positions are tried for a space-like block (else
+     * the ship stays); with wormTime, between two plain SPACE blocks, a temporary IN/OUT wormhole pair is made.
+     * BEHAVIOR: towed balls come along ({@link #warpBalls}); the ship is WARPED (not WARPING).
+     * BEHAVIOR: the ship is seen by everyone for 15 more frames (forceVisible).
+     * BEHAVIOR: a hyperjump plays HYPERJUMP where the ship was and WORM_HOLE where it lands; a wormhole trip
+     * plays WORM_HOLE before and after.
      */
     void warp(Player pl) {
+        WormTable worms = w.worms;
         int hit = pl.wormHoleHit;
-        int n = w.map.wormholes().size();
+        int n = worms.count();
         if (hit >= n || hit < -1) {
             pl.status &= ~Obj.WARPING;
             return;
         }
-        if (hit == -1) {
-            sim.devices.hyperjumpDestination(pl);
-            Sounds.play(w, pl.px, pl.py, SoundEvent.HYPERJUMP);
-            pl.wormHoleDest = -2;
-            pl.initPixels(sim.devices.jumpX, sim.devices.jumpY);
-            pl.forceVisible += 15;
-            pl.status &= ~Obj.WARPING;
-            pl.status |= Obj.WARPED;
-            Sounds.play(w, pl.px, pl.py, SoundEvent.WORM_HOLE);
-            return;
-        }
         int j;
-        if (w.wormCountdown[hit] > 0) {
-            j = w.wormLastDest[hit];
-        } else if (w.rfrac() < 0.10f) {
-            do {
-                j = (int) (w.rfrac() * n);
-            } while (w.map.wormholes().get(j).type() == Wormhole.Type.IN || hit == j);
+        float wx;
+        float wy;
+        if (hit != -1) {
+            if (worms.countdown(hit) > 0) {
+                j = worms.lastDest(hit);
+            } else if (w.rfrac() < 0.10f) {
+                do {
+                    j = (int) (w.rfrac() * n);
+                } while (worms.type(j) == WormTable.IN || hit == j || worms.temporary(j));
+            } else {
+                j = nearestAhead(pl, hit, n);
+            }
+            Sounds.play(w, pl.px, pl.py, SoundEvent.WORM_HOLE);
+            wx = (float) ((worms.bx(j) + 0.5) * Const.BLOCK_SZ);
+            wy = (float) ((worms.by(j) + 0.5) * Const.BLOCK_SZ);
         } else {
-            j = nearestAhead(pl, hit, n);
+            int counter;
+            wx = 0;
+            wy = 0;
+            for (counter = 20; counter > 0; counter--) {
+                wx = (int) (w.rfrac() * w.pixelWidth);
+                wy = (int) (w.rfrac() * w.pixelHeight);
+                if ((BlockType.bit(w.map.block((int) (wx / Const.BLOCK_SZ), (int) (wy / Const.BLOCK_SZ)))
+                    & Asteroids.SPACE_BLOCKS) != 0) {
+                    break;
+                }
+            }
+            if (counter == 0) {
+                wx = pl.px;
+                wy = pl.py;
+            }
+            int toBx = (int) (wx / Const.BLOCK_SZ);
+            int toBy = (int) (wy / Const.BLOCK_SZ);
+            if (counter != 0 && w.params.wormTime != 0 && w.map.block(pl.bx, pl.by) == BlockType.SPACE
+                && w.map.block(toBx, toBy) == BlockType.SPACE) {
+                worms.addTemp(pl.bx, pl.by, toBx, toBy);
+            }
+            j = -2;
+            Sounds.play(w, pl.px, pl.py, SoundEvent.HYPERJUMP);
         }
-        Sounds.play(w, pl.px, pl.py, SoundEvent.WORM_HOLE);
-        Wormhole dest = w.map.wormholes().get(j);
+        warpBalls(pl, wx, wy);
         pl.wormHoleDest = j;
-        pl.initPixels((dest.bx() + 0.5) * Const.BLOCK_SZ, (dest.by() + 0.5) * Const.BLOCK_SZ);
+        pl.initPixels(wx, wy);
         pl.forceVisible += 15;
-        if (j != hit) {
-            w.wormLastDest[hit] = j;
-            w.wormCountdown[hit] = w.params.wormTime != 0 ? w.params.wormTime : WORMCOUNT;
+        if (j != hit && hit != -1) {
+            worms.setLastDest(hit, j);
+            if (!worms.temporary(j)) {
+                worms.setCountdown(hit, w.params.wormTime != 0 ? w.params.wormTime : WORMCOUNT);
+            }
         }
         pl.status &= ~Obj.WARPING;
         pl.status |= Obj.WARPED;
         Sounds.play(w, pl.px, pl.py, SoundEvent.WORM_HOLE);
     }
 
+    /**
+     * The ball part of a warp (update.c:1149-1178): the ship stops reaching for a ball, and every ball connected
+     * to it moves along by the same offset (wrapped); a ball that would leave the world dies.
+     */
+    void warpBalls(Player pl, float wx, float wy) {
+        if ((pl.used & Has.CONNECTOR) != 0) {
+            pl.ball = -1;
+        }
+        if ((pl.have & Has.BALL) == 0) {
+            return;
+        }
+        Objects o = w.objects;
+        for (int k = 0; k < o.count(); k++) {
+            int h = o.active[k];
+            if ((o.type[h] & Obj.BALL) == 0 || o.owner[h] != pl.id) {
+                continue;
+            }
+            float bx = (float) w.wrapXPixel(o.px[h] + (wx - pl.px));
+            float by = (float) w.wrapYPixel(o.py[h] + (wy - pl.py));
+            if (bx < 0 || bx >= w.pixelWidth || by < 0 || by >= w.pixelHeight) {
+                o.life[h] = 0;
+            } else {
+                o.initPixels(h, bx, by);
+            }
+        }
+    }
+
     /** The RANDOM_REAR_WORM choice of update.c:1065-1110 (note: C wraps the y offset with WRAP_DX). */
     private int nearestAhead(Player pl, int hit, int n) {
-        Wormhole from = w.map.wormholes().get(hit);
+        WormTable worms = w.worms;
         int nearestFront = -1;
         int proxFront = 10000000;
         for (int j = 0; j < n; j++) {
-            Wormhole h = w.map.wormholes().get(j);
-            if (j == hit || h.type() == Wormhole.Type.IN) {
+            if (j == hit || worms.type(j) == WormTable.IN || worms.temporary(j)) {
                 continue;
             }
-            int wx = (int) w.wrapDx((h.bx() - from.bx()) * Const.BLOCK_SZ);
-            int wy = (int) w.wrapDx((h.by() - from.by()) * Const.BLOCK_SZ);
+            int wx = (int) w.wrapDx((worms.bx(j) - worms.bx(hit)) * Const.BLOCK_SZ);
+            int wy = (int) w.wrapDx((worms.by(j) - worms.by(hit)) * Const.BLOCK_SZ);
             int proximity = Math.abs((int) (pl.vy * wx + pl.vx * wy));
             if (!(pl.vx * wx + pl.vy * wy < 0) && proximity < proxFront) {
                 nearestFront = j;
@@ -1101,7 +1204,7 @@ public final class Ships {
         int j;
         do {
             j = (int) (w.rfrac() * n);
-        } while (w.map.wormholes().get(j).type() == Wormhole.Type.IN || j == hit);
+        } while (worms.type(j) == WormTable.IN || j == hit);
         return j;
     }
 
@@ -1120,6 +1223,7 @@ public final class Ships {
     /**
      * C {@code Player_death_reset}.
      * <p>
+     * BEHAVIOR: every ball is dropped and the connector is off ({@link Balls#detach}).
      * BEHAVIOR: velocity and acceleration zeroed, mass reset, KILL_BITS cleared (so not PLAYING), items reset,
      * respawn count = max(3*FPS, count).
      * BEHAVIOR: fuel = max((long)(fuel*0.9), initialFuel*256 + (int)(rfrac*(1+that)*0.2)), capped at the tank.
@@ -1136,6 +1240,7 @@ public final class Ships {
             leave(pl);
             return;
         }
+        sim.balls.detach(pl, -1);
         if ((pl.used & Has.AUTOPILOT) != 0 || (pl.status & Obj.HOVERPAUSE) != 0) {
             pl.status &= ~Obj.HOVERPAUSE;
             sim.devices.autopilot(pl, false);

@@ -30,6 +30,7 @@ import com.fulcrologic.jxpilot.common.map.Wormhole;
 import com.fulcrologic.jxpilot.common.math.Rng;
 
 import java.util.Arrays;
+import java.util.function.LongSupplier;
 
 /**
  * All simulation state: the map (owned: blocks change when cannons die), resolved parameters, the
@@ -77,6 +78,11 @@ public final class World {
     public final Grid grid;
     public final Events events = new Events();
 
+    // ---- game modes (balls/treasures, targets, race, asteroids: server-modes)
+    /** Mode parameters (C globals of cmdline.c for balls, race, asteroids...). */
+    public final ModeParams modeParams;
+    /** Mode state: ball/asteroid object fields, treasures, target damage, the asteroid list. */
+    public final ModeState modes;
     // ---- items (server-items)
     /** Item, weapon and device options and the per-item table (C {@code World.items[]}). */
     public final ItemParams items;
@@ -98,6 +104,8 @@ public final class World {
     public final int[] targetDeadTime;
     public final int[] wormLastDest;
     public final int[] wormCountdown;
+    /** Every wormhole, the map's and the temporary ones (server-modes). */
+    public final WormTable worms;
 
     // ---- teams (C World.teams)
     public final double[] teamScore = new double[Const.MAX_TEAMS];
@@ -124,6 +132,20 @@ public final class World {
     public int roundsPlayed;
     /** C {@code gameDuration} after {@code Game_Over} sets it to -1 (the game no longer ends rounds). */
     public float gameDuration;
+    /** C {@code time(NULL)}: wall-clock seconds, read by the gameDuration timer only (tests replace it). */
+    public LongSupplier wallSeconds = () -> System.currentTimeMillis() / 1000;
+    /** C {@code NoPlayersEnteredYet}: no human has been in the game yet. */
+    public boolean noPlayersEnteredYet = true;
+    /** C {@code gameOverTime}: wall-clock second at which a positive gameDuration ends the game, 0 until set. */
+    public long gameOverTime;
+    /** C {@code Frame_update}'s static {@code oldTimeLeft}: the last frame's seconds left (0 when not timing). */
+    public long oldTimeLeft;
+    /** C {@code Frame_update}'s static {@code game_over_called}. */
+    public boolean gameOverCalled;
+    /** C {@code ShutdownServer}: frames until the server shuts down, -1 none; counted by the host. */
+    public int shutdownServer = -1;
+    /** C {@code ShutdownDelay}: the full shutdown time the clients' meter is drawn against. */
+    public static final int SHUTDOWN_DELAY = 1000;
 
     /** Build the map from {@code options} (map data + settings) and the initial state. */
     public World(Options options, int seed) {
@@ -151,6 +173,8 @@ public final class World {
         Arrays.fill(slotOfId, -1);
         objects = new Objects(params.maxObjects);
         grid = new Grid(width, height, wrap, params.maxObjects);
+        modeParams = ModeParams.from(options, map, params.fps);
+        modes = new ModeState(map, params.maxObjects);
         items = ItemParams.from(options, width, height, params.fps);
 
         cannonDeadTime = new int[map.cannons().size()];
@@ -164,6 +188,7 @@ public final class World {
         wormLastDest = new int[map.wormholes().size()];
         wormCountdown = new int[map.wormholes().size()];
         initWormholes();
+        worms = new WormTable(this);
         gameDuration = params.gameDuration;
         roundTime = params.maxRoundTime > 0 ? params.maxRoundTime * params.fps : -1;
     }

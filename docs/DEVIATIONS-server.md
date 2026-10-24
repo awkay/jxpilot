@@ -2,7 +2,8 @@
 
 The simulation runs one tick per C frame at the map's `framesPerSecond` and uses C's float (`DFLOAT`)
 arithmetic, so with the same map, options and inputs it matches the C server frame for frame. The golden
-traces in `server/src/test/resources/ctrace/` check that bit for bit (`CTraceTest`). The deviations below
+traces in `server/src/test/resources/ctrace/` check that bit for bit (`CTraceTest`; `ModeTraceTest` for the ball
+connector, race checkpoints and lap times, and asteroid motion). The deviations below
 are deliberate.
 
 | Area | C | JXPilot | Why |
@@ -16,7 +17,12 @@ are deliberate.
 | Score | `DFLOAT` | double | Not physics; scores agree to float display precision. |
 | `teamShareScore` when a player leaves | `TEAM_SCORE(team, -score)` runs after `NumPlayers--` but before the array swap, so the last player in the array misses the re-share | the leaver is removed first, then every remaining member gets the new share | C ordering bug. |
 | `Init_player` limited-lives "too late" check | uses the slot's stale `team` | runs after the team is chosen | Lead decision S10. |
-| Rounds | race mode (`Race_game_over`) and treasure destruction | not ported (S1 has no race scoring or treasures; hover pause and the autopilot are ported with the items); timing maps play without rounds | Scope. Team rounds end by lives or by `maxRoundTime`. |
+| Rounds: `gameDuration` | the server log says "Server will stop in N minutes." when the first human enters; each frame sends the seconds left only when they change (else the round time), and `End_game` kicks every player with "shutting down: ..." | the same wall-clock timer, game over and 30 * FPS shutdown (`Rounds`, `SimGameHost`, `Server`); no log line; TIMERS carries the seconds left in every snapshot while the timer runs, and the shutdown ends every connection with DISCONNECT (shutdown) | The native protocol sends HUD timers as state, not as one-off packets. |
+| Ball life | `LONG_MAX`, counted down every frame; "loose for N frames" is `LONG_MAX - life` | 2^52 (exact in a double), the same countdown and message | `Objects.life` is a double. |
+| Connector reach (`pl->ball`) | a plain pointer: after the ball is deleted the slot may hold another object, and C can then "connect" to it | the handle is checked to still be a live ball | C undefined behaviour. |
+| Temporary wormholes | unlimited (`realloc`); `remove_temp_wormhole` leaves the moved wormhole's `itemID` stale | at most 64 at a time; the moved wormhole's object index is updated | Fixed pool; C bug. |
+| Warp of a removed temporary wormhole | `break` leaves the whole player loop for this frame | only this ship's warp ends | C bug. |
+| Race respawn and asteroid placement | `rfrac()` draws (Mersenne Twister) | the world RNG (xorshift) | As "Random numbers" above. |
 | `Give_best_player_bonus` with nobody eligible | reads an unset array entry | announces nothing | C undefined behaviour. |
 | Login messages (`Handle_login`) | "Welcome to ...", "X (realname) has entered ..." | the network layer (`SimGameHost`) sets them in C's place (before the round-delay message), without the real name: "X has entered ..." / "X (team N) has entered ..." | Our CONNECT carries no real name. |
 | Login name check (`Check_names`) | nick must start with 'A'..'Z' (the C client capitalizes it), else E_INVAL | any non-empty name; duplicates are refused case-insensitively | Clients other than C's do not capitalize. |
@@ -26,6 +32,7 @@ are deliberate.
 | Floating point | GCC may fuse multiply-adds (arm64 `fmadd`) | separate float operations | Matters only for products of non-trivial floats added together (coriolis, local gravity tables); the golden traces show no difference. |
 | Robot hooks of kills (`Robot_war`, `Robot_reset_war`) | called inside the collision code, in the frame of the kill | the robot manager runs them from the KILL/CRASH events at the start of the next frame, before any robot decides (the shove's random pusher is still drawn in `Player_crash`, in C's place) | The robot manager reacts to sim events instead of hooks in the sim. `Robot_war`'s own `rfrac()` is drawn one frame later. |
 | Defaults file (`parseDefaultsFile`) | `LIBDIR/defaults`; a missing file is skipped silently | XPilot's `lib/defaults`, bundled in the jar; `--defaults FILE` replaces it, `--defaults none` skips it, and a named file that cannot be read stops the server with an error | No install directory. A typo in a file you named should not quietly give you different physics. |
+| Map lookup (`openMapFile`, fileparser.c) | the name as given, then `.xp`, then `.map` (and `.gz` variants with `COMPRESSED_MAPS`) in the current directory, then the same in `MAPDIR` for a name without '/'; no `mapFileName` means `MAPDIR/default.xp` | a name without '/', '\\' or a drive letter is first a map bundled in the jar (case-insensitive, with or without `.xp`), then the current directory with C's extension order; a value with a path is only a file, with C's extension order; no compressed maps; an unknown map is an error listing the bundled names; no `mapFileName` means the bundled `default` (C's default map) | No install directory: the bundled maps take `MAPDIR`'s place, ahead of the current directory so that `--map default` always means the real default map (`--map ./default.xp` reaches a local copy). |
 | Password file (`passwordFileName`, `password`) | read after the defaults file; gives operator privileges | not read | No operator commands yet (C command.c). |
 | Wreckage on the wire (frame.c:802-807) | sent only when the client's spark probability is not 0 or wreckage is deadly; the shape's high bit marks deadly wreckage | always sent; shape is `info & 0x7F`, no deadly bit | Our client has no spark-probability setting and does not draw deadly wreckage differently. |
 | `noQuit` | the server exits when the last human leaves, unless `-noQuit` | the server keeps running | Pending a lead decision: quitting would surprise dedicated-server users and the embedded `--local` server. |
@@ -35,6 +42,4 @@ are deliberate.
 | Robot war on shoves (walls.c `Player_crash`) | `Robot_war` with a random pusher (`rfrac() * num_pushers`) | war on the last pusher, the killer of the KILL event the shove produces (no extra `rfrac()` draw) | The robot manager reacts to sim events; only the RNG sequence differs. |
 | Random parts of the frame code (`Frame_shots`: random items, confused mines' friendliness) | world `rfrac()` per client per frame | a snapshot-local RNG seeded from the tick and viewer | Kept: C's frame code draws from the world RNG once per viewer, so the game's random sequence would depend on how many clients are connected (and on their views); ours stays the same however many watch. |
 | Snapshot culling (`Frame_parameters` view rectangle, `inview`) | objects strictly inside the connection's `view_width x view_height` | inside the DISPLAY view plus 128 px on each side (`SnapshotBuilder.VIEW_MARGIN`; bursts 400 px more) | The client interpolates ships and extrapolates shots between snapshots; without the margin objects would pop in or vanish inside the view. |
-| Hyperjump with wormTime | makes a pair of temporary wormholes (`add_temp_wormholes`) | no temporary wormholes; the jump itself is C's | Not ported yet. |
 | Deflector object lookup | C's cells are kept current by every move | the spatial grid is rebuilt for each deflector (and cannon danger) query | Kept: an internal difference only; the query returns the same objects in the same order. |
-| Lasers hitting asteroids, ECM detaching balls | in the laser and ECM code | hooks only (`Ecm.ballDetacher`); asteroids are not simulated by this code | Balls and asteroids belong to their own ports. |

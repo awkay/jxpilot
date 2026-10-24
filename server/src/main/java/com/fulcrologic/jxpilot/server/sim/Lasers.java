@@ -47,6 +47,7 @@ import com.fulcrologic.jxpilot.server.world.World;
 public final class Lasers {
 
     // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_EMPTY = Texts.of("");
     private static final String T_CANNON = Texts.of("Cannon");
     private static final String T_GOT_PARALYSED_BY = Texts.of(" got paralysed by ");
     private static final String T_GOT_PARALYSED_BY_A_STUN = Texts.of(" got paralysed by a stun laser.");
@@ -63,6 +64,8 @@ public final class Lasers {
     /** C {@code ED_LASER}, {@code ED_LASER_HIT}. */
     static final long ED_LASER = -10 * 256;
     static final long ED_LASER_HIT = -100 * 256;
+    /** C {@code ED_LASER_HIT} as the double score.h:44 defines (the asteroid fuel-hit formula uses it uncast). */
+    static final double ED_LASER_HIT_F = -100.0 * 256;
 
     private final World w;
     private final Simulation sim;
@@ -76,6 +79,7 @@ public final class Lasers {
     private boolean refl;
 
     public Lasers(World w, Simulation sim) {
+        this.nearAst = new int[w.modes.asteroidList.length];
         this.w = w;
         this.sim = sim;
         int n = w.players.length;
@@ -269,6 +273,7 @@ public final class Lasers {
             if (w.roundDelay == 0) {
                 findVictims(i, midx, midy);
             }
+            nearAsteroids(i, midx, midy);
             o.type[h] = Obj.PULSE;
             o.life[h] = 1;
             o.owner[h] = p.owner[i];
@@ -304,6 +309,10 @@ public final class Lasers {
                         y1 -= w.pixelHeight;
                     }
                 }
+                hitAsteroid(i, h, x, y);
+                if (o.life[h] == 0) {
+                    continue; // C: "pulse hit asteroid"; the next sample's move ends the pulse
+                }
                 if (w.roundDelay > 0) {
                     continue;
                 }
@@ -318,6 +327,59 @@ public final class Lasers {
         }
         o.type[h] = Obj.DEBRIS;
         o.life[h] = 0;
+    }
+
+    /** C {@code Laser_pulse_get_object_list}'s result: asteroid handles near the current pulse. */
+    private final int[] nearAst;
+    private int numNearAst;
+
+    /**
+     * C {@code Laser_pulse_get_object_list} (laser.c:375-415): the asteroids, in list order, whose centre is
+     * closer than {@code pl_radius + len / 2} to the pulse midpoint.
+     */
+    void nearAsteroids(int i, float midx, float midy) {
+        com.fulcrologic.jxpilot.server.world.ModeState m = w.modes;
+        numNearAst = 0;
+        Objects o = w.objects;
+        int len = w.pulses.len[i];
+        for (int k = 0; k < m.asteroidCount; k++) {
+            int a = m.asteroidList[k];
+            double dx = w.wrapDx(midx - Click.toFloat(o.cx[a]));
+            double dy = w.wrapDy(midy - Click.toFloat(o.cy[a]));
+            int range = o.plRadius[a] + len / 2;
+            if (dx * dx + dy * dy < range * range) {
+                nearAst[numNearAst++] = a;
+            }
+        }
+    }
+
+    /**
+     * The asteroid part of C's pulse sampling (laser.c:600-630): the first shortlisted asteroid whose radius covers
+     * the sample point ends the pulse ({@code life} 0) and loses ASTEROID_FUEL_HIT(ED_LASER_HIT, size) life (at least
+     * down to 0); an asteroid brought to 0 by a player's pulse scores asteroidPoints for that player while its score
+     * is at most asteroidMaxScore.
+     */
+    void hitAsteroid(int i, int h, float x, float y) {
+        Objects o = w.objects;
+        for (int k = 0; k < numNearAst; k++) {
+            int a = nearAst[k];
+            double adx = w.wrapDx(x - Click.toFloat(o.cx[a]));
+            double ady = w.wrapDy(y - Click.toFloat(o.cy[a]));
+            if (adx * adx + ady * ady <= (double) o.plRadius[a] * o.plRadius[a]) {
+                o.life[h] = 0;
+                o.life[a] = (long) (o.life[a] + Asteroids.fuelHit(ED_LASER_HIT_F, o.size[a]));
+                if (o.life[a] < 0) {
+                    o.life[a] = 0;
+                }
+                Player pl = w.pulses.owner[i] == Obj.NO_ID ? null : w.byId(w.pulses.owner[i]);
+                com.fulcrologic.jxpilot.server.world.ModeParams mp = w.modeParams;
+                if (o.life[a] == 0 && pl != null && mp.asteroidPoints > 0 && pl.score <= mp.asteroidMaxScore) {
+                    sim.scoring.score(pl, mp.asteroidPoints, o.px[a] / Const.BLOCK_SZ, o.py[a] / Const.BLOCK_SZ,
+                        T_EMPTY);
+                }
+                return;
+            }
+        }
     }
 
     /**

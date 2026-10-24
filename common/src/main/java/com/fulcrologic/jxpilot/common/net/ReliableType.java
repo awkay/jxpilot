@@ -71,6 +71,11 @@ public final class ReliableType {
      * {@code Send_seek}, item.c:1207); body {@link Msg.Seek}.
      */
     public static final int SEEK = 13;
+    /**
+     * {@link Msg.Timing}: race progress of a player (C {@code Send_timing}). Game-mode messages use ids 20-26
+     * (server-modes block).
+     */
+    public static final int TIMING = 20;
 
     // ---- client -> server
     /** Empty body: client has the config/map and is ready to play. */

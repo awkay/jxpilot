@@ -33,8 +33,7 @@ import com.fulcrologic.jxpilot.server.world.Pulses;
 /**
  * The gate between the robot AI and the item parts of the game: every item count, ability and item action the C
  * robot code uses goes through here, so tests can substitute a spy. This class answers from the simulation and
- * calls its real actions. Balls, treasures, targets and asteroids belong to other parts of the game and keep the
- * neutral answers here until those exist.
+ * calls its real actions, balls, treasures, targets and asteroids included.
  */
 public class RobotItems {
     /** The simulation (null only for test spies that override everything they use). */
@@ -79,29 +78,29 @@ public class RobotItems {
         return (pl.emergencyShieldLeft != 0 ? 1 : 0) + (pl.phasingLeft != 0 ? 1 : 0);
     }
 
-    /** C {@code World.targets[i].damage} (fixed point); targets are not simulated here, so always full. */
+    /** C {@code World.targets[i].damage} (fixed point). */
     public double targetDamage(int target) {
-        return DefaultRobot.TARGET_DAMAGE;
+        return sim.world.modes.targetDamage[target];
     }
 
-    /** C {@code World.treasures[i].have}: the treasure has its ball at home (balls are not simulated here). */
+    /** C {@code World.treasures[i].have}: the treasure has its ball at home. */
     public boolean treasureHasBall(int treasure) {
-        return false;
+        return sim.world.modes.treasureHave[treasure];
     }
 
-    /** C {@code pl->ball}: pool handle of the ball the player tows, or -1. */
+    /** C {@code pl->ball}: the ball the connector reaches for, or -1. */
     public int towedBall(Player pl) {
-        return -1;
+        return pl.ball;
     }
 
     /** C {@code ball->owner} of a ball object. */
     public int ballOwner(int h) {
-        return -1;
+        return sim.world.modes.ballOwner[h];
     }
 
     /** C {@code WIRE_PTR(obj)->size} of an asteroid object. */
     public int asteroidSize(int h) {
-        return 1;
+        return sim.world.objects.size[h];
     }
 
     /** BEHAVIOR: C {@code obj->info} of an item object: its {@link Item} ordinal. */
@@ -198,9 +197,9 @@ public class RobotItems {
         sim.tanks.detach(pl);
     }
 
-    /** C {@code Detach_ball(ind, -1)} (balls are not simulated here). */
+    /** C {@code Detach_ball(ind, -1)}. */
     public void detachBall(Player pl) {
-        pl.used &= ~Has.CONNECTOR;
+        sim.balls.detach(pl, -1);
     }
 
     /** C {@code Compute_sensor_range}. */

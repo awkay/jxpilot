@@ -223,7 +223,9 @@ public final class Collisions {
                     shipsCollide(pl, o, p);
                 }
             }
+            sim.balls.connect(pl);
             playerObjects(pl);
+            sim.race.playerFrame(pl);
         }
     }
 
@@ -417,6 +419,23 @@ public final class Collisions {
                 }
             } else if ((type & (Obj.BALL | Obj.ASTEROID)) != 0) {
                 // balls and asteroids collide with ships in their owners' code
+                continue;
+            } else if (type == Obj.BALL && sim.balls.phased(h)) {
+                continue;
+            }
+            if (type == Obj.BALL) {
+                sim.balls.playerHit(pl, h, Const.SHIP_SZ + o.plRadius[h]);
+                if ((pl.status & Obj.KILLED) != 0) {
+                    return;
+                }
+                continue;
+            }
+            if (type == Obj.ASTEROID) {
+                sim.asteroids.playerHit(pl, h);
+                sim.objPhysics.deltaMvElastic(pl, h);
+                if ((pl.status & Obj.KILLED) != 0) {
+                    return;
+                }
                 continue;
             }
             // C computes hit = (SHIP_SZ + pl_radius >= range) || in_range_acd(..., range): the same test as above
