@@ -413,8 +413,9 @@ class XpConnectionEdgeTest {
                 }
                 flags.add(rec.welcome.flags);
             }
-            assertEquals(List.of(Msg.Welcome.FLAG_TEAM_PLAY, Msg.Welcome.FLAG_TIMING, Msg.Welcome.FLAG_EDGE_WRAP, 0),
-                flags, "one flag per mode bit");
+            int b = Msg.Welcome.FLAG_RADAR_BLINKED;
+            assertEquals(List.of(Msg.Welcome.FLAG_TEAM_PLAY | b, Msg.Welcome.FLAG_TIMING | b, Msg.Welcome.FLAG_EDGE_WRAP | b,
+                b), flags, "one flag per mode bit, plus RADAR_BLINKED always (the C server blinks its radar)");
         }
 
         @Test

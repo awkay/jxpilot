@@ -59,6 +59,10 @@ public final class InputState {
 
     private final KeyBindings bindings;
     private long keys = SHIELD;
+    /** Functions set since the last {@link #takeKeys} (a press). */
+    private long pressedSince;
+    /** Functions pressed and released again since the last {@link #takeKeys}: the next send still has them. */
+    private long tapped;
     private boolean shields = true;
     private boolean talking;
     private boolean playing;
@@ -105,6 +109,7 @@ public final class InputState {
             }
         }
         keys |= m & ~CLIENT_SIDE_KEYS;
+        pressedSince |= m & ~CLIENT_SIDE_KEYS;
         return acts & ~cursor;
     }
 
@@ -122,12 +127,14 @@ public final class InputState {
      * raises SHIELD once no fire function remains set.
      * BEHAVIOR: the shield key: ignored with toggleShield; with autoShield it marks the shields as down.
      * BEHAVIOR: ignored while talking and for out-of-range codes.
+     * BEHAVIOR: a function pressed since the last {@link #takeKeys} is remembered as tapped.
      */
     public void release(int glfwKey) {
         if (talking || glfwKey < 0 || glfwKey >= KeyBindings.SIZE) {
             return;
         }
         long m = bindings.gameMask(glfwKey);
+        tapped |= keys & m & pressedSince;
         if ((m & FIRE_KEYS) != 0 && autoShield && shields && (keys & SHIELD) == 0) {
             keys &= ~m;
             if ((keys & FIRE_KEYS) == 0) {
@@ -200,5 +207,23 @@ public final class InputState {
     /** The current {@link ControlKey} mask. */
     public long keys() {
         return keys;
+    }
+
+    /**
+     * The mask to send this frame (F14: a key pressed and released between two sends still reaches the
+     * server once).
+     * <p>
+     * BEHAVIOR: the current mask plus every function pressed and released since the last call (with a
+     * tapped fire function under autoShield, without SHIELD); the next call no longer has them (so the server
+     * sees the press, then the release).
+     */
+    public long takeKeys() {
+        long k = keys | tapped;
+        if ((tapped & FIRE_KEYS) != 0 && autoShield) {
+            k &= ~SHIELD; // the tapped shot went out with the shield down, as when the press was sent at once
+        }
+        tapped = 0;
+        pressedSince = 0;
+        return k;
     }
 }

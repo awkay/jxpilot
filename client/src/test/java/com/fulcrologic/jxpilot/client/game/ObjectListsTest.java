@@ -211,6 +211,88 @@ class ObjectListsTest {
     }
 
     @Nested
+    @DisplayName("edges of the matching rules")
+    class Edges {
+        @Test
+        @DisplayName("a line exactly at reach follows; the nearest is by the sum over both ends; x counts in reach; "
+            + "transporters do not see the connectors' matches")
+        void lineRules() {
+            ObjectLists a1 = new ObjectLists(4);
+            ObjectLists b1 = new ObjectLists(4);
+            a1.add(CONNECTOR, 100, 100, 200, 100, 0, 0);
+            b1.add(CONNECTOR, 130, 100, 200, 100, 0, 0);
+            a1.interpolateLines(b1, 0.5, 30, 2000, 2000, false);
+            ObjectLists a2 = new ObjectLists(4);
+            ObjectLists b2 = new ObjectLists(4);
+            a2.add(CONNECTOR, 100, 100, 200, 100, 0, 0);
+            b2.add(CONNECTOR, 100, 100, 200, 120, 0, 0);
+            b2.add(CONNECTOR, 110, 100, 210, 100, 0, 0);
+            a2.interpolateLines(b2, 0.5, 30, 2000, 2000, false);
+            ObjectLists a2r = new ObjectLists(4);
+            ObjectLists b2r = new ObjectLists(4);
+            a2r.add(CONNECTOR, 100, 100, 200, 100, 0, 0);
+            b2r.add(CONNECTOR, 110, 100, 210, 100, 0, 0);
+            b2r.add(CONNECTOR, 100, 100, 200, 120, 0, 0);
+            a2r.interpolateLines(b2r, 0.5, 30, 2000, 2000, false);
+            ObjectLists a1e = new ObjectLists(4);
+            ObjectLists b1e = new ObjectLists(4);
+            a1e.add(CONNECTOR, 100, 100, 200, 100, 0, 0);
+            b1e.add(CONNECTOR, 100, 100, 230, 100, 0, 0);
+            a1e.interpolateLines(b1e, 0.5, 30, 2000, 2000, false);
+            ObjectLists a5 = new ObjectLists(4);
+            ObjectLists b5 = new ObjectLists(4);
+            a5.add(CONNECTOR, 100, 100, 200, 100, 0, 0);
+            b5.add(CONNECTOR, 110, 100, 200, 100, 0, 0);
+            b5.add(CONNECTOR, 90, 100, 200, 100, 0, 0);
+            a5.interpolateLines(b5, 0.5, 30, 2000, 2000, false);
+            ObjectLists a3 = new ObjectLists(4);
+            ObjectLists b3 = new ObjectLists(4);
+            a3.add(CONNECTOR, 100, 100, 200, 100, 0, 0);
+            b3.add(CONNECTOR, 140, 100, 240, 100, 0, 0);
+            a3.interpolateLines(b3, 0.5, 30, 2000, 2000, false);
+            ObjectLists a4 = new ObjectLists(4);
+            ObjectLists b4 = new ObjectLists(4);
+            a4.add(CONNECTOR, 100, 100, 200, 100, 0, 0);
+            b4.add(CONNECTOR, 110, 100, 210, 100, 0, 0);
+            a4.add(TRANSPORTER, 100, 100, 200, 100, 0, 0);
+            b4.add(TRANSPORTER, 110, 100, 210, 100, 0, 0);
+            a4.interpolateLines(b4, 0.5, 30, 2000, 2000, false);
+            assertAll(
+                () -> assertEquals(115f, a1.get(CONNECTOR, 0, 0), 1e-4f, "30 px with reach 30: followed"),
+                () -> assertEquals(105f, a2.get(CONNECTOR, 0, 0), 1e-4f,
+                    "10 + 10 px beats 0 + 20 px (squared sums 200 < 400)"),
+                () -> assertEquals(105f, a2r.get(CONNECTOR, 0, 0), 1e-4f, "the same in the other order"),
+                () -> assertEquals(215f, a1e.get(CONNECTOR, 0, 2), 1e-4f, "end 30 px off with reach 30: followed"),
+                () -> assertEquals(105f, a5.get(CONNECTOR, 0, 0), 1e-4f, "equally near: the first one"),
+                () -> assertEquals(100f, a3.get(CONNECTOR, 0, 0), 1e-4f, "40 px in x is out of reach: stays"),
+                () -> assertEquals(105f, a4.get(TRANSPORTER, 0, 0), 1e-4f,
+                    "the beam follows although connector 0 took later connector 0"));
+        }
+
+        @Test
+        @DisplayName("an id-less missile's class key never equals a missile id; an unlinked item extrapolates in y too")
+        void keysAndY() {
+            ObjectLists a = new ObjectLists(4);
+            ObjectLists b = new ObjectLists(4);
+            a.add(MISSILE, 100, 100, 0, 0, 10, 2);
+            b.add(MISSILE, 110, 100, 0, 3, 10, NO_ID);
+            ObjectLists o = moved(a, b, 0.5, 0.5, 4000, false);
+            ObjectLists c = new ObjectLists(4);
+            ObjectLists d = new ObjectLists(4);
+            c.add(ITEM, 100, 100, 3, 0, 0, 0);
+            d.add(ITEM, 160, 130, 3, 0, 0, 0);
+            moved(c, d, 0.5, 0.5, 4000, false);
+            ObjectLists dOut = new ObjectLists(4);
+            dOut.copyFrom(d);
+            dOut.moveTracked(d, null, 0, 0.5, 4000, 4000, false);
+            assertAll(
+                () -> assertEquals(100f, o.get(MISSILE, 0, 0), 1e-4f, "missile id 2 is not the id-less kind-3 missile"),
+                () -> assertEquals(190f, dOut.get(ITEM, 0, 0), 1e-4f, "x by 60 px/frame for half a frame"),
+                () -> assertEquals(145f, dOut.get(ITEM, 0, 1), 1e-4f, "y by 30 px/frame for half a frame"));
+        }
+    }
+
+    @Nested
     @DisplayName("in ClientWorld")
     class InWorld {
         @Test

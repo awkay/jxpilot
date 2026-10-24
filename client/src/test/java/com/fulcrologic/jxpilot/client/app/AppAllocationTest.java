@@ -47,7 +47,9 @@ import static org.lwjgl.glfw.GLFW.*;
  * The whole client frame minus GL allocates nothing in steady state: connection update (receive and
  * decode snapshots and reliable messages), game frame (interpolation, sparks, debris), INPUT and flush,
  * scene and radar fill, HUD layout, HUD extras, score list and key routing, against the scripted server
- * on a real map. Runs in its own surefire execution with escape analysis off.
+ * on a real map, with a robot leaving and rejoining (custom shape) and the lock target changing inside the
+ * measured window (R7), after a warm-up that waits for the JIT to settle. A map change is not scripted: it
+ * reconfigures the world and allocates by design. Runs in its own surefire execution with escape analysis off.
  */
 class AppAllocationTest {
     /** Delegates to a replaceable transport (setup over an allocating link, steady state over a ring). */
@@ -172,7 +174,7 @@ class AppAllocationTest {
                 return 0;
             }
         });
-        int frames = 6000;
+        int frames = 26000;
         long genNow = now;
         long genTick = nextTick;
         for (int f = 0; f < frames; f++) {
@@ -180,6 +182,8 @@ class AppAllocationTest {
             genNow += frameNs;
             while (genTick <= genNow) {
                 server.step(genNow);
+                // the recorded client acks everything at once, so new reliable messages keep flowing
+                server.channel.onAck(server.channel.nextSequence() & 0xFFFF, genNow);
                 genTick += serverPeriod;
             }
         }
@@ -201,14 +205,28 @@ class AppAllocationTest {
             cf.step(t[0], 1200, 800, 1, m, 256, 200);
             ring.frame++;
         };
-        for (int i = 0; i < 4000; i++) {
-            frame.run();
+        // R7: warm up until the JIT is done (no compile time added over 1000 frames), at most 20000 frames
+        java.lang.management.CompilationMXBean jit = ManagementFactory.getCompilationMXBean();
+        long lastCompile = -1;
+        int warm = 0;
+        while (warm < 20_000) {
+            for (int i = 0; i < 1000; i++) {
+                frame.run();
+            }
+            warm += 1000;
+            long ct = jit.isCompilationTimeMonitoringSupported() ? jit.getTotalCompilationTime() : 0;
+            if (ct == lastCompile && warm >= 4000) {
+                break;
+            }
+            lastCompile = ct;
         }
+        long reliableBefore = game.reliableCount();
         long snapshotsBefore = conn.snapshotsReceived();
         // per frame (as XpNetAllocationTest): a bracket around the whole loop also catches the occasional
         // allocation of the thread MXBean / JIT between frames (152-byte multiples, not this code)
         int allocatingFrames = 0;
         long worst = 0;
+        boolean[] lockSeen = new boolean[2];
         for (int i = 0; i < 1500; i++) {
             long b0 = mx.getCurrentThreadAllocatedBytes();
             frame.run();
@@ -217,7 +235,12 @@ class AppAllocationTest {
                 allocatingFrames++;
                 worst = Math.max(worst, d);
             }
+            int lock = game.world().selfLockId();
+            lockSeen[0] |= lock == ScriptedServer.ROBOTS[1];
+            lockSeen[1] |= lock == ScriptedServer.ROBOTS[2];
         }
+        long reliable = game.reliableCount() - reliableBefore;
+        int uzi = game.players().slotOf(ScriptedServer.REJOINER);
         int nz = allocatingFrames;
         long w = worst;
         assertAll(
@@ -230,7 +253,13 @@ class AppAllocationTest {
             () -> assertTrue(cf.extras().lock, "lock shown"),
             () -> assertTrue(cf.viewHud().textCount() > 3, "HUD built"),
             () -> assertTrue(cf.panelHud().textCount() >= 5, "score list built"),
-            () -> assertEquals(0, nz, "no frame allocates in steady state (worst " + w + " bytes)"));
+            () -> assertTrue(lockSeen[0] && lockSeen[1], "R7: the lock target changed while measured"),
+            () -> assertTrue(reliable >= 9, "R7: robot leaves and rejoins were received while measured (" + reliable
+                + " reliable messages)"),
+            () -> assertTrue(uzi >= 0 && game.players().shape(uzi).numPoints() == 4,
+                "the rejoining robot has its custom shape"),
+            () -> assertEquals(0, nz, "no frame allocates in steady state, joins, leaves and lock changes included"
+                + " (worst " + w + " bytes)"));
     }
 
     static byte[] copy(ByteBuffer b) {

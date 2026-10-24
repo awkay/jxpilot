@@ -248,7 +248,20 @@ final class ScriptedServer {
         }
     }
 
+    /** R7: a robot with a custom shape that leaves and rejoins every 7 s (join/leave in the measured window). */
+    static final int REJOINER = ROBOTS[3];
+    static final String REJOINER_SHAPE = "(SH: 15,0 -9,8 -9,-8 -3,0)(GU: 15,0)(EN: -9,0)";
+
     private void script() {
+        if (tick > 6 * fps && tick % (7 * fps) == 0) {
+            Msg.PlayerLeave l = new Msg.PlayerLeave();
+            l.id = REJOINER;
+            l.send(channel);
+            Msg.PlayerJoin j = join(REJOINER, 1, Msg.PlayerJoin.FLAG_ROBOT, NAMES[3]);
+            j.shape.append(REJOINER_SHAPE);
+            j.send(channel);
+            score(REJOINER, 0);
+        }
         if (tick == 3 * fps) {
             message(Msg.Text.KIND_CHAT, "Clyde wants you for dessert. [Clyde]");
         }
@@ -286,8 +299,10 @@ final class ScriptedServer {
         double heading = Math.PI / 2 + Math.sin(tick * 0.03) * 0.6;
         int selfFlags = ((tick / fps) % 3 == 0 ? Records.ShipFlags.SHIELD : Records.ShipFlags.THRUSTING)
             | Records.ShipFlags.REFUELING;
+        // R7: the lock target changes every 3 s
+        int lock = (tick / (3 * fps)) % 2 == 0 ? ROBOTS[1] : ROBOTS[2];
         Records.Self.put(writer, SELF, selfFlags, (float) baseX, (float) baseY, 0, 0, (float) heading, 800, 1000,
-            ROBOTS[1], 0, 0, 0);
+            lock, 0, 0, 0);
         writer.endSection();
         writer.beginSection(Section.SHIP);
         for (int i = 0; i < ROBOTS.length; i++) {
