@@ -586,6 +586,30 @@ class MessagesTest {
         }
 
         @Test
+        @DisplayName("TIMING carries the player id, next checkpoint and rounds")
+        void timing() {
+            ReliableChannel tx = new ReliableChannel();
+            Msg.Timing t = new Msg.Timing();
+            t.id = 65534;
+            t.check = 25;
+            t.round = 60000;
+            t.send(tx);
+            ByteBuffer p = buf();
+            tx.write(p, 0);
+            p.flip();
+            Capture cap = new Capture();
+            new ReliableChannel().read(p, cap);
+            Msg.Timing t2 = new Msg.Timing();
+            t2.read(cap.payloads.get(0));
+            assertAll(
+                () -> assertEquals(List.of(ReliableType.TIMING), cap.types, "sent as TIMING (13)"),
+                () -> assertEquals(13, ReliableType.TIMING, "type id 13"),
+                () -> assertEquals(65534, t2.id, "id as u16"),
+                () -> assertEquals(25, t2.check, "check"),
+                () -> assertEquals(60000, t2.round, "round as u16"));
+        }
+
+        @Test
         @DisplayName("a data chunk past the destination is rejected")
         void chunkOutOfRange() {
             ByteBuffer b = ByteBuffer.allocate(8);

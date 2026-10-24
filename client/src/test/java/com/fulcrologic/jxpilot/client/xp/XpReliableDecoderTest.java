@@ -283,8 +283,9 @@ class XpReliableDecoderTest {
             List<Integer> res = decode(new CPackets().timing(5, 3, 2).string(1, 2, 3).motd(0, "abc".getBytes(), 3));
             assertAll(
                 () -> assertEquals(List.of(5, 6, 14), res, "sizes"),
-                () -> assertEquals(3, dec.ignored(), "three ignored"),
-                () -> assertEquals(List.of(), rec.events, "nothing for the model"));
+                () -> assertEquals(2, dec.ignored(), "string and MOTD ignored"),
+                () -> assertEquals(List.of("timing id=5 check=3 round=2"), rec.events,
+                    "PKT_TIMING becomes TIMING: round * 26 + check unpacked (C Receive_timing)"));
             prefixesIncomplete(new CPackets().timing(1, 2, 3));
             prefixesIncomplete(new CPackets().string(1, 2, 3));
             prefixesIncomplete(new CPackets().motd(0, "ab".getBytes(), 2));

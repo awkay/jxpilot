@@ -165,6 +165,25 @@ class ClientGameTest {
     }
 
     @Test
+    @DisplayName("F4: TIMING sets the player's race progress; unknown players are ignored")
+    void timing() {
+        ClientGame g = configured();
+        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(7, 0, "me")));
+        Msg.Timing t = new Msg.Timing();
+        t.id = 7;
+        t.check = 4;
+        t.round = 2;
+        g.onReliable(ReliableType.TIMING, payload(t));
+        t.id = 99;
+        g.onReliable(ReliableType.TIMING, payload(t));
+        int s = g.players().slotOf(7);
+        assertAll(
+            () -> assertEquals(4, g.players().check(s), "check"),
+            () -> assertEquals(2, g.players().round(s), "round"),
+            () -> assertEquals(-1, g.players().slotOf(99), "an unknown id is not created"));
+    }
+
+    @Test
     @DisplayName("SCORE_OBJECT makes a score object with its points, label and block; SCORE never does")
     void scoreObjects() {
         ClientGame g = configured();

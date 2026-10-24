@@ -72,6 +72,7 @@ public final class XpTranslator {
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
     private final Msg.Text text = new Msg.Text();
     private final Msg.BaseOwner baseOwner = new Msg.BaseOwner();
+    private final Msg.Timing timing = new Msg.Timing();
 
     // configuration
     private XpMap.Built map;
@@ -860,6 +861,14 @@ public final class XpTranslator {
         scoreObject.text.setLength(0);
         scoreObject.text.append(label);
         deliver(scoreObject, ReliableType.SCORE_OBJECT);
+    }
+
+    /** C {@code Handle_timing}: BEHAVIOR: a TIMING with the player's next checkpoint and rounds. */
+    public void timing(int id, int check, int round) {
+        timing.id = id & 0xFFFF;
+        timing.check = check;
+        timing.round = round;
+        deliver(timing, ReliableType.TIMING);
     }
 
     /** C {@code Handle_team_score}. */

@@ -393,6 +393,31 @@ public final class Msg {
         }
     }
 
+    /** {@link ReliableType#TIMING}: race progress of one player (C {@code Send_timing}). */
+    public static final class Timing implements Payload {
+        public int id;
+        /** Next checkpoint index. */
+        public int check;
+        /** Rounds completed. */
+        public int round;
+
+        public void write(ByteBuffer b) {
+            b.putShort((short) id);
+            b.put((byte) check);
+            b.putShort((short) round);
+        }
+
+        public void read(ByteBuffer b) {
+            id = b.getShort() & 0xFFFF;
+            check = b.get() & 0xFF;
+            round = b.getShort() & 0xFFFF;
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.TIMING);
+        }
+    }
+
     /** {@link ReliableType#PLAYER_LEAVE}. */
     public static final class PlayerLeave implements Payload {
         public int id;

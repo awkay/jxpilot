@@ -70,7 +70,7 @@ public final class XpReliableDecoder {
         version = v;
     }
 
-    /** Packets decoded but not used by the client model (MOTD, timing, strings). */
+    /** Packets decoded but not used by the client model (MOTD, strings). */
     public long ignored() { return ignored; }
 
     /** Type of the last BAD packet, -1 if none. */
@@ -92,7 +92,7 @@ public final class XpReliableDecoder {
             case XpProto.PKT_TEAM_SCORE -> teamScore(r);
             case XpProto.PKT_PLAYER -> player(r);
             case XpProto.PKT_SCORE -> score(r);
-            case XpProto.PKT_TIMING -> fixed(r, 5);
+            case XpProto.PKT_TIMING -> timing(r);
             case XpProto.PKT_LEAVE -> leave(r);
             case XpProto.PKT_WAR -> war(r);
             case XpProto.PKT_SEEK -> seek(r);
@@ -118,7 +118,19 @@ public final class XpReliableDecoder {
 
     private static final int OK = 1;
 
-    /** Skips a fixed-size packet the model does not use (PKT_TIMING, PKT_STRING). */
+    /** C {@code Receive_timing}: {@code %c%hd%hu}, timing = round * MAX_CHECKS + check. */
+    private int timing(XpReader r) {
+        if (!r.has(5)) {
+            return INCOMPLETE;
+        }
+        r.skip(1);
+        int id = r.s16();
+        int t = r.u16();
+        events.timing(id, t % XpProto.MAX_CHECKS, t / XpProto.MAX_CHECKS);
+        return OK;
+    }
+
+    /** Skips a fixed-size packet the model does not use (PKT_STRING). */
     private int fixed(XpReader r, int size) {
         if (!r.has(size)) {
             return INCOMPLETE;

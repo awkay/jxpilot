@@ -433,6 +433,38 @@ class ModelsTest {
         }
 
         @Test
+        @DisplayName("F4 timing mode: race order (progress, then who got there first; P/T/W last), race column")
+        void race() {
+            Players p = new Players();
+            p.join(join(1, 0, 0, "Ann", ""));
+            p.join(join(2, 0, Msg.PlayerJoin.FLAG_ROBOT, "Bob", ""));
+            p.join(join(3, 0, 0, "Cy", ""));
+            p.join(join(4, 0, 0, "Dee", ""));
+            p.join(join(5, 0, 0, "Eve", ""));
+            p.setScore(1, 50, -1, 0);
+            p.setScore(4, 0, -1, Msg.Score.STATUS_PAUSED);
+            p.setTiming(1, 3, 1, 100);
+            p.setTiming(2, 2, 2, 120);
+            p.setTiming(3, 2, 2, 110);
+            p.setTiming(4, 5, 9, 90);
+            p.setTiming(5, 0, 120, 95);
+            p.setTiming(99, 1, 1, 1);
+            int v = p.version();
+            p.setTiming(1, 3, 1, 200);
+            Scoreboard sb = new Scoreboard();
+            sb.configure(false, true, false, 0);
+            sb.update(p);
+            assertAll(
+                () -> assertEquals(List.of("  120     0  Eve", "  2.c     0  Cy", "R 2.c     0  Bob",
+                    "  1.d    50  Ann", "P         0  Dee"), labels(sb),
+                    "most progress first; equal progress: earlier tick first; paused last with a blank race column"),
+                () -> assertEquals(v, p.version(), "unchanged progress changes nothing (no new tick)"),
+                () -> assertEquals(100, p.timingTick(p.slotOf(1)), "the first tick it got there is kept"),
+                () -> assertEquals(1 * 26 + 3, p.timing(p.slotOf(1)), "timing = round * 26 + check"),
+                () -> assertEquals(0, sb.bestRow(), "the leader is best"));
+        }
+
+        @Test
         @DisplayName("update rebuilds only on changes")
         void rebuildOnChange() {
             Players p = new Players();

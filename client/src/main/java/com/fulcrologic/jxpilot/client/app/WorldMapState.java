@@ -79,10 +79,22 @@ public final class WorldMapState implements MapState {
         return s < 0 ? Const.TEAM_NOT_SET : p.team(s);
     }
 
-    /** Race checkpoints are not modelled yet: always the first. */
+    /** F4: the next checkpoint from the own SELF (C {@code nextCheckPoint}, guimap.c / paintradar.c). */
     @Override
     public int nextCheckpoint() {
-        return 0;
+        return game.world().selfCheck();
+    }
+
+    /** BEHAVIOR: the owner's name when the base has an owner the player list knows, else null. */
+    @Override
+    public CharSequence baseOwnerName(int i) {
+        int id = game.world().baseOwner(i);
+        if (id == com.fulcrologic.jxpilot.common.net.Protocol.NO_ID) {
+            return null;
+        }
+        Players p = game.players();
+        int s = p.slotOf(id);
+        return s < 0 ? null : p.name(s);
     }
 
     @Override

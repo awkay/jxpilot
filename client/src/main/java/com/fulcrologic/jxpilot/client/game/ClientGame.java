@@ -61,6 +61,7 @@ public final class ClientGame implements ConnectionListener {
     private final Msg.BaseOwner baseOwner = new Msg.BaseOwner();
     private final Msg.GameEvent gameEvent = new Msg.GameEvent();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
+    private final Msg.Timing timing = new Msg.Timing();
 
     private ConnectionState state = ConnectionState.IDLE;
     private WorldMap map;
@@ -139,6 +140,8 @@ public final class ClientGame implements ConnectionListener {
      * BEHAVIOR: SCORE_OBJECT (C {@code Handle_score_object}; the server sends it only to the player whose
      * score changed) becomes a {@link ScoreObjects} entry with its points, label and block; an empty label
      * makes no HUD text. SCORE itself never makes one.
+     * BEHAVIOR: TIMING (C {@code Handle_timing}) sets the player's race check/round, stamped with the newest
+     * tick (C {@code timing_loops}) when they change.
      */
     @Override
     public void onReliable(int type, ByteBuffer p) {
@@ -167,6 +170,10 @@ public final class ClientGame implements ConnectionListener {
             case ReliableType.SCORE_OBJECT -> {
                 scoreObject.read(p);
                 scoreObjects.add(scoreObject.score, scoreObject.text, true, scoreObject.bx, scoreObject.by);
+            }
+            case ReliableType.TIMING -> {
+                timing.read(p);
+                players.setTiming(timing.id, timing.check, timing.round, world.newestTick());
             }
             case ReliableType.TEAM_SCORE -> {
                 teamScore.read(p);

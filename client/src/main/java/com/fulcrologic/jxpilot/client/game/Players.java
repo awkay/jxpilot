@@ -54,6 +54,9 @@ public final class Players {
     private final int[] lives = new int[CAPACITY];
     private final int[] status = new int[CAPACITY];
     private final boolean[] scored = new boolean[CAPACITY];
+    private final int[] check = new int[CAPACITY];
+    private final int[] round = new int[CAPACITY];
+    private final int[] timingTick = new int[CAPACITY];
     private final int[] order = new int[CAPACITY];
     private int count;
     private int selfId = Protocol.NO_ID;
@@ -114,7 +117,7 @@ public final class Players {
      * join order; returns the slot or -1 when the pool is full.
      * BEHAVIOR: FLAG_SELF makes this the self id.
      * BEHAVIOR: the engine offset comes from the parsed shape (default ship when empty or invalid);
-     * score, lives and status reset (0, -1 unlimited, 0).
+     * score, lives and status reset (0, -1 unlimited, 0), race progress too (C {@code other->timing = 0}).
      */
     public int join(Msg.PlayerJoin j) {
         int s = slotOf(j.id);
@@ -142,6 +145,9 @@ public final class Players {
         lives[s] = -1;
         status[s] = 0;
         scored[s] = false;
+        check[s] = 0;
+        round[s] = 0;
+        timingTick[s] = 0;
         if ((j.flags & Msg.PlayerJoin.FLAG_SELF) != 0) {
             selfId = j.id;
         }
@@ -211,6 +217,35 @@ public final class Players {
         version++;
         return delta;
     }
+
+    /**
+     * C {@code Handle_timing}: a player's race progress.
+     * <p>
+     * BEHAVIOR: for a known id whose check or round changed: both are set and {@code tick} is remembered (C
+     * {@code timing_loops}: who got there first); unchanged values or unknown ids change nothing.
+     */
+    public void setTiming(int id, int c, int r, int tick) {
+        int s = slotOf(id);
+        if (s < 0 || check[s] == c && round[s] == r) {
+            return;
+        }
+        check[s] = c;
+        round[s] = r;
+        timingTick[s] = tick;
+        version++;
+    }
+
+    /** Next race checkpoint. */
+    public int check(int slot) { return check[slot]; }
+
+    /** Race rounds completed. */
+    public int round(int slot) { return round[slot]; }
+
+    /** C {@code other->timing}: round * MAX_CHECKS (26) + check. */
+    public int timing(int slot) { return round[slot] * 26 + check[slot]; }
+
+    /** Tick the race progress last changed (C {@code timing_loops}). */
+    public int timingTick(int slot) { return timingTick[slot]; }
 
     public int id(int slot) { return idOf[slot]; }
 
