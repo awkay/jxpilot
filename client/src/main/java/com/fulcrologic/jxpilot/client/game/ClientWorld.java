@@ -78,8 +78,12 @@ public final class ClientWorld {
     public static final double TRACK_PX_PER_FRAME = 64;
     /** Point colour codes from this value on are C debris temperature levels (code - base). */
     public static final int POINT_LEVEL_BASE = 16;
-    /** Earlier x later object pairs above which association is skipped (bounded work per snapshot). */
-    public static final long MAX_ASSOCIATION_WORK = 1L << 20;
+    /** A new shot is seeded from a ship at most this far from it (px; the gun plus a frame of flight). */
+    public static final double SEED_RADIUS_PX = 60;
+    /** Unambiguity ratio for shots without a known velocity (R2). */
+    public static final double SHOT_AMBIGUITY_RATIO = 2;
+    /** Slowest a shot of unknown velocity is taken to move (px per original frame). */
+    public static final double MIN_SHOT_SPEED = 2;
     /** Snapshot parts are numbered 0..63 (64 x 1200 bytes is far beyond any tick); higher parts are malformed. */
     public static final int MAX_PARTS = 64;
 
@@ -225,8 +229,11 @@ public final class ClientWorld {
     private final float[] outPointY;
     private final int[] outPointColor;
     // association scratch (one entry per shot of the later frame / earlier frame)
-    private final int[] claimA;
-    private final float[] claimD;
+    private final Tracker tracker;
+    private final ObjectLists.Scratch objScratch = new ObjectLists.Scratch(SnapshotFrame.OBJECT_CAP);
+    private final int[] keyA;
+    private final int[] keyB;
+    private double shotSpeed = 21;
 
     /**
      * @param shipCap     ships per snapshot
@@ -259,8 +266,9 @@ public final class ClientWorld {
         outPointX = new float[shotCap];
         outPointY = new float[shotCap];
         outPointColor = new int[shotCap];
-        claimA = new int[shotCap];
-        claimD = new float[shotCap];
+        tracker = new Tracker(shotCap);
+        keyA = new int[shotCap];
+        keyB = new int[shotCap];
         shipIndex = new ShipIndex(shipCap);
         usedA = new boolean[shipCap];
     }
@@ -293,6 +301,7 @@ public final class ClientWorld {
         delayTicks = snapshotInterval + JITTER_MARGIN_SECONDS * simHz;
         maxExtrapolateTicks = 2 * snapshotInterval;
         sparks.configure(opts.getInt(Opt.SHOT_LIFE), opts.framesPerSecond(), worldW, worldH, wrap);
+        shotSpeed = opts.getDouble(Opt.SHOT_SPEED);
         clock.reset(simHz);
         cannonFlags = new byte[map.cannons().size()];
         fuelLevel = new float[map.fuels().size()];
@@ -336,6 +345,13 @@ public final class ClientWorld {
         outSelf = false;
     }
 
+    /** Forget every frame's association (tests: time a fresh association in {@link #update}). */
+    void invalidateAssociations() {
+        for (SnapshotFrame f : ring) {
+            f.assocValid = false;
+        }
+    }
+
     /** Override the interpolation delay (ticks behind the estimated server tick). */
     public void setInterpolationDelayTicks(double d) {
         delayTicks = d;
@@ -353,6 +369,9 @@ public final class ClientWorld {
      * BEHAVIOR: thrust sparks are generated only for ticks after the previous newest tick (each tick
      * once), at most {@link #MAX_SPARK_TICKS} per ship; late ticks generate none.
      * BEHAVIOR: map object state, radar, own items and HUD timers are applied only from the newest tick.
+     * BEHAVIOR: the frame is associated ({@link #associate}) with the frames of the ticks just before and
+     * after it when they are in the ring, so shot velocities carry from frame to frame even when the renderer
+     * skips a pair.
      * BEHAVIOR: malformed data stops decoding at the error and returns {@link #MALFORMED}; so does a part
      * number of {@link #MAX_PARTS} or more (nothing is merged, so repeats cannot double a frame).
      */
@@ -409,6 +428,14 @@ public final class ClientWorld {
             decodeSection(f, newest);
         }
         generateSparks(f, firstShip, !selfBefore && f.hasSelf);
+        SnapshotFrame prev = frameFor(tick - 1);
+        if (prev != null) {
+            associate(prev, f);
+        }
+        SnapshotFrame after = frameFor(tick + 1);
+        if (after != null) {
+            associate(f, after);
+        }
         if (reader.malformed()) {
             malformedCount++;
             return MALFORMED;
@@ -473,8 +500,9 @@ public final class ClientWorld {
                     f.shotVx[k] = (byte) shotRec.vx();
                     f.shotVy[k] = (byte) shotRec.vy();
                     f.shotVariant[k] = variant;
-                    f.shotEstVx[k] = 0;
-                    f.shotEstVy[k] = 0;
+                    f.shotEstVx[k] = f.shotVx[k];
+                    f.shotEstVy[k] = f.shotVy[k];
+                    f.shotState[k] = f.shotVx[k] != 0 || f.shotVy[k] != 0 ? Tracker.KNOWN : Tracker.UNKNOWN;
                     f.shotNext[k] = -1;
                 }
             }
@@ -490,6 +518,7 @@ public final class ClientWorld {
                             f.pointColor[k] = burstRec.color();
                             f.pointEstVx[k] = 0;
                             f.pointEstVy[k] = 0;
+                            f.pointState[k] = Tracker.UNKNOWN;
                             f.pointNext[k] = -1;
                         }
                         continue;
@@ -883,8 +912,15 @@ public final class ClientWorld {
 
     /**
      * Link the shots and point particles of {@code a} to their continuations in the later frame {@code b}
-     * (once per pair of frames and parts), and estimate the velocity of {@code b}'s from the links, for
-     * objects the wire sends without velocity (C fast shots and debris).
+     * (once per pair of frames and parts) with the {@link Tracker}, and estimate the velocity of {@code b}'s
+     * from the links, for objects the wire sends without velocity (C fast shots and debris).
+     * <p>
+     * BEHAVIOR: shots of {@code a} without a velocity are first seeded ({@link #seedShots}); shots link with the
+     * same variant, KNOWN tightly, the rest only when unambiguous ({@link #SHOT_AMBIGUITY_RATIO}); points link
+     * with the same colour to the nearest within {@link #TRACK_PX_PER_FRAME} per frame.
+     * BEHAVIOR: a later shot with a wire velocity keeps it; other linked ones get the displacement over the
+     * frames (KNOWN); unlinked ones none (UNKNOWN).
+     * BEHAVIOR: the moving M2 objects are associated too ({@link ObjectLists#associate}).
      */
     private void associate(SnapshotFrame a, SnapshotFrame b) {
         if (a.assocValid && a.assocTick == b.tick && a.assocParts == b.parts && a.assocOwnParts == a.parts) {
@@ -897,109 +933,88 @@ public final class ClientWorld {
         double frames = (b.tick - a.tick) * (double) frameFraction;
         int sn = Math.min(a.shots, shotCap);
         int sm = Math.min(b.shots, shotCap);
-        link(a.shotX, a.shotY, a.shotEstVx, a.shotEstVy, a.shotVx, a.shotVy, a.shotVariant, null, sn,
-            b.shotX, b.shotY, b.shotVariant, null, sm, a.shotNext, frames);
-        estimate(a.shotX, a.shotY, b.shotX, b.shotY, b.shotEstVx, b.shotEstVy, sm, frames);
-        link(a.pointX, a.pointY, a.pointEstVx, a.pointEstVy, null, null, null, a.pointColor, a.points,
-            b.pointX, b.pointY, null, b.pointColor, b.points, a.pointNext, frames);
-        estimate(a.pointX, a.pointY, b.pointX, b.pointY, b.pointEstVx, b.pointEstVy, b.points, frames);
+        seedShots(a, sn);
+        for (int i = 0; i < sn; i++) {
+            keyA[i] = a.shotVariant[i];
+        }
+        for (int j = 0; j < sm; j++) {
+            keyB[j] = b.shotVariant[j];
+        }
+        tracker.link(sn, a.shotX, a.shotY, a.shotEstVx, a.shotEstVy, a.shotState, keyA, sm, b.shotX, b.shotY, keyB,
+            frames, TRACK_PX_PER_FRAME, SHOT_AMBIGUITY_RATIO, MIN_SHOT_SPEED, worldW, worldH, wrap, a.shotNext);
+        for (int j = 0; j < sm; j++) {
+            if (b.shotVx[j] != 0 || b.shotVy[j] != 0) {
+                continue;
+            }
+            int i = tracker.claimOf(j);
+            if (i >= 0 && frames > 0) {
+                b.shotEstVx[j] = (float) (XMath.wrapDelta(b.shotX[j] - a.shotX[i], worldW, wrap) / frames);
+                b.shotEstVy[j] = (float) (XMath.wrapDelta(b.shotY[j] - a.shotY[i], worldH, wrap) / frames);
+                b.shotState[j] = Tracker.KNOWN;
+            } else {
+                b.shotEstVx[j] = 0;
+                b.shotEstVy[j] = 0;
+                b.shotState[j] = Tracker.UNKNOWN;
+            }
+        }
+        int pn = Math.min(a.points, shotCap);
+        int pm = Math.min(b.points, shotCap);
+        tracker.link(pn, a.pointX, a.pointY, a.pointEstVx, a.pointEstVy, a.pointState, a.pointColor, pm, b.pointX,
+            b.pointY, b.pointColor, frames, TRACK_PX_PER_FRAME, 1, 0, worldW, worldH, wrap, a.pointNext);
+        tracker.estimate(pm, a.pointX, a.pointY, b.pointX, b.pointY, b.pointEstVx, b.pointEstVy, b.pointState, frames);
+        a.objs.associate(b.objs, tracker, objScratch, frames, worldW, worldH, wrap);
     }
 
     /**
-     * Nearest-neighbour association of n earlier objects to m later ones of the same kind (variant or
-     * colour), wrap-aware, within {@link #TRACK_PX_PER_FRAME} per original frame of the predicted position
-     * (earlier position + velocity: the wire's when it has one, else the estimate).
+     * R2: a shot without a velocity (just fired, on the C path) gets a guess from the ship nearest to it within
+     * {@link #SEED_RADIUS_PX}: C {@code Fire_normal_shots}' velocity, the ship's velocity plus shotSpeed along
+     * its heading.
      * <p>
-     * BEHAVIOR: first every earlier object proposes its nearest later one and each later object keeps its
-     * closest proposer (so two shots that pass each other do not swap); then earlier objects left over take
-     * the nearest later one nobody claimed. {@code next[i]} is the later index or -1. With more than
-     * {@link #MAX_ASSOCIATION_WORK} pairs nothing is linked (objects then step at the server rate).
-     * Leaves the later index's claimer in {@link #claimA}.
+     * BEHAVIOR: only UNKNOWN shots are seeded (GUESSED); the own ship (SELF) and every SHIP record are
+     * candidates; with none in range the shot stays UNKNOWN.
      */
-    private void link(float[] ax, float[] ay, float[] aEvx, float[] aEvy, byte[] aWvx, byte[] aWvy, byte[] aVar,
-                      int[] aCol, int n, float[] bx, float[] by, byte[] bVar, int[] bCol, int m, int[] next,
-                      double frames) {
-        for (int j = 0; j < m; j++) {
-            claimA[j] = -1;
-        }
+    void seedShots(SnapshotFrame a, int n) {
         for (int i = 0; i < n; i++) {
-            next[i] = -1;
-        }
-        if ((long) n * m > MAX_ASSOCIATION_WORK || frames <= 0) {
-            return;
-        }
-        double r = TRACK_PX_PER_FRAME * frames;
-        double r2 = r * r;
-        for (int i = 0; i < n; i++) {
-            int j = nearest(i, ax, ay, aEvx, aEvy, aWvx, aWvy, aVar, aCol, bx, by, bVar, bCol, m, frames, r2, false);
-            if (j >= 0 && (claimA[j] < 0 || lastD < claimD[j])) {
-                claimA[j] = i;
-                claimD[j] = (float) lastD;
+            if (a.shotState[i] != Tracker.UNKNOWN) {
+                continue;
             }
-        }
-        for (int j = 0; j < m; j++) {
-            if (claimA[j] >= 0) {
-                next[claimA[j]] = j;
-            }
-        }
-        for (int i = 0; i < n; i++) {
-            if (next[i] < 0) {
-                int j = nearest(i, ax, ay, aEvx, aEvy, aWvx, aWvy, aVar, aCol, bx, by, bVar, bCol, m, frames, r2, true);
-                if (j >= 0) {
-                    next[i] = j;
-                    claimA[j] = i;
+            double bestD = SEED_RADIUS_PX * SEED_RADIUS_PX;
+            double h = 0;
+            double vx = 0;
+            double vy = 0;
+            boolean found = false;
+            if (a.hasSelf) {
+                double d = dist2(a.selfX, a.selfY, a.shotX[i], a.shotY[i]);
+                if (d <= bestD) {
+                    bestD = d;
+                    h = a.selfHeading;
+                    vx = a.selfVx;
+                    vy = a.selfVy;
+                    found = true;
                 }
             }
+            for (int s = 0; s < a.ships; s++) {
+                double d = dist2(a.shipX[s], a.shipY[s], a.shotX[i], a.shotY[i]);
+                if (d < bestD) {
+                    bestD = d;
+                    h = a.shipHeading[s];
+                    vx = a.shipVx[s];
+                    vy = a.shipVy[s];
+                    found = true;
+                }
+            }
+            if (found) {
+                a.shotEstVx[i] = (float) (vx + shotSpeed * Math.cos(h));
+                a.shotEstVy[i] = (float) (vy + shotSpeed * Math.sin(h));
+                a.shotState[i] = Tracker.GUESSED;
+            }
         }
     }
 
-    private double lastD;
-
-    private int nearest(int i, float[] ax, float[] ay, float[] aEvx, float[] aEvy, byte[] aWvx, byte[] aWvy,
-                        byte[] aVar, int[] aCol, float[] bx, float[] by, byte[] bVar, int[] bCol, int m,
-                        double frames, double r2, boolean unclaimedOnly) {
-        double vx = aEvx[i];
-        double vy = aEvy[i];
-        if (aWvx != null && (aWvx[i] != 0 || aWvy[i] != 0)) {
-            vx = aWvx[i];
-            vy = aWvy[i];
-        }
-        double px = ax[i] + vx * frames;
-        double py = ay[i] + vy * frames;
-        int best = -1;
-        double bestD = r2;
-        for (int j = 0; j < m; j++) {
-            if (aVar != null ? aVar[i] != bVar[j] : aCol[i] != bCol[j]) {
-                continue;
-            }
-            if (unclaimedOnly && claimA[j] >= 0) {
-                continue;
-            }
-            double dx = XMath.wrapDelta(bx[j] - px, worldW, wrap);
-            double dy = XMath.wrapDelta(by[j] - py, worldH, wrap);
-            double d = dx * dx + dy * dy;
-            if (d <= bestD) {
-                bestD = d;
-                best = j;
-            }
-        }
-        lastD = bestD;
-        return best;
-    }
-
-    /** BEHAVIOR: a linked later object's velocity is its wrap-aware displacement over the frames; others 0. */
-    private void estimate(float[] ax, float[] ay, float[] bx, float[] by, float[] evx, float[] evy, int m,
-                          double frames) {
-        for (int j = 0; j < m; j++) {
-            int i = claimA[j];
-            if (i >= 0 && frames > 0) {
-                evx[j] = (float) (XMath.wrapDelta(bx[j] - ax[i], worldW, wrap) / frames);
-                evy[j] = (float) (XMath.wrapDelta(by[j] - ay[i], worldH, wrap) / frames);
-            } else {
-                evx[j] = 0;
-                evy[j] = 0;
-            }
-        }
+    private double dist2(double ax, double ay, double bx, double by) {
+        double dx = XMath.wrapDelta(bx - ax, worldW, wrap);
+        double dy = XMath.wrapDelta(by - ay, worldH, wrap);
+        return dx * dx + dy * dy;
     }
 
     /**
@@ -1027,24 +1042,27 @@ public final class ClientWorld {
             }
             double vx = a.shotEstVx[i];
             double vy = a.shotEstVy[i];
-            if (a.shotVx[i] != 0 || a.shotVy[i] != 0) {
-                vx = a.shotVx[i];
-                vy = a.shotVy[i];
-            }
             putShot(wrapX(a.shotX[i] + vx * dt), wrapY(a.shotY[i] + vy * dt), a.shotVariant[i]);
         }
     }
 
     /**
-     * BEHAVIOR: the M2 objects of the frame at or before the render tick (else the later one); balls and
-     * missiles move toward their continuation in the later frame ({@link ObjectLists#interpolateMoving}).
+     * BEHAVIOR: the M2 objects of the frame at or before the render tick (else the later one); tracked objects
+     * (items, mines, missiles, balls, asteroids, wreckage) move toward their continuation in the later frame,
+     * or by their estimated velocity when they have none ({@link ObjectLists#moveTracked}, extrapolation capped
+     * like shots); connectors and beams move with their endpoints ({@link ObjectLists#interpolateLines}).
      */
     private void drawObjects(SnapshotFrame a, SnapshotFrame b) {
         SnapshotFrame src = a != null ? a : b;
         outObjs.copyFrom(src.objs);
-        if (a != null && b != null) {
-            double t = (renderTick - a.tick) / (double) (b.tick - a.tick);
-            outObjs.interpolateMoving(b.objs, t, TRACK_PX_PER_FRAME * (b.tick - a.tick) * frameFraction, worldW,
+        if (a == null) {
+            return;
+        }
+        double t = b == null ? 0 : (renderTick - a.tick) / (double) (b.tick - a.tick);
+        double dt = clampExtrapolation(renderTick - a.tick) * frameFraction;
+        outObjs.moveTracked(a.objs, b == null ? null : b.objs, t, dt, worldW, worldH, wrap);
+        if (b != null) {
+            outObjs.interpolateLines(b.objs, t, TRACK_PX_PER_FRAME * (b.tick - a.tick) * frameFraction, worldW,
                 worldH, wrap);
         }
     }
