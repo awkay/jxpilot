@@ -82,10 +82,52 @@ public final class HudExtras {
     /** C {@code mods}: the own weapon modifiers as the C HUD string ({@link Modifiers#format}). */
     public final CharBuf mods = new CharBuf(32);
 
+    /** C {@code showItems}: owned items always listed; when off, an item shows for {@link #showItemsTime} after it changes. */
+    public boolean showItems = true;
+    /** C {@code showItemsTime} in seconds. */
+    public double showItemsTime = 2.0;
+    private final int[] lastNumItems = new int[Item.COUNT];
+    private final double[] numItemsTime = new double[Item.COUNT];
+    private double stepFrames;
+    private double stepFps = 1;
+
     private final int[] scoreSlot = new int[ScoreObjects.MAX_SCORE_OBJECTS];
     private final int[] scoreX = new int[ScoreObjects.MAX_SCORE_OBJECTS];
     private final int[] scoreY = new int[ScoreObjects.MAX_SCORE_OBJECTS];
     private int scoreCount;
+
+    /**
+     * The original frames the next {@link #fill} covers and the game's frame rate (they age the item display
+     * while {@link #showItems} is off). BEHAVIOR: the values are used by the next fill only.
+     */
+    public void step(double frames, double fps) {
+        stepFrames = frames;
+        stepFps = fps;
+    }
+
+    /**
+     * C {@code Paint_HUD_items} item count rule ({@code painthud.c}:534-547).
+     * <p>
+     * BEHAVIOR: showItems: the count when above 0, else -1. Off: a count that differs from the last one starts
+     * {@code showItemsTime * fps} frames (C {@code numItemsTime}); while frames are left the count is shown (0
+     * included) and they run down by the step's frames; when none are left, -1.
+     */
+    int itemCount(int i, int num) {
+        if (showItems) {
+            lastNumItems[i] = num;
+            return num > 0 ? num : -1;
+        }
+        if (num != lastNumItems[i]) {
+            numItemsTime[i] = showItemsTime * stepFps;
+            lastNumItems[i] = num;
+        }
+        if (numItemsTime[i] <= 0) {
+            numItemsTime[i] = 0;
+            return -1;
+        }
+        numItemsTime[i] -= stepFrames;
+        return num;
+    }
 
     /**
      * Compute this frame's values.
@@ -97,7 +139,7 @@ public final class HudExtras {
      * ({@link HudPainter#isFriend}, alliances included), its shape's points at heading 0; distance and RES
      * direction as the server sends them in SELF (C frame.c lock_dist/lock_dir) when non-zero, else from the
      * own ship when its ship is in the interpolated list (wrap-aware), else 0.
-     * BEHAVIOR: warningPhase is {@code loops} even; items: counts above 0, else -1; autopilot from the
+     * BEHAVIOR: warningPhase is {@code loops} even; items: {@link #itemCount}; autopilot from the
      * own ship's AUTOPILOT flag; time left from the world; mods: the SELF modifier bits as C's string.
      * BEHAVIOR: score objects: see {@link #scoreObjects}.
      *
@@ -125,8 +167,7 @@ public final class HudExtras {
         timeLeft = w.timeLeft();
         Modifiers.format(w.selfMods(), mods.clear());
         for (int i = 0; i < Item.COUNT; i++) {
-            int n = w.selfItem(i);
-            itemCounts[i] = n > 0 ? n : -1;
+            itemCounts[i] = itemCount(i, w.selfItem(i));
         }
         warningPhase = (loops & 1) == 0;
         int id = w.selfLockId();

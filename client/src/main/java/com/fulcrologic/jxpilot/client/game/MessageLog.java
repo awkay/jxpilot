@@ -65,7 +65,7 @@ public final class MessageLog {
         public boolean flashing() { return life > MSG_FLASH; }
     }
 
-    private final int max;
+    private int max;
     private final Entry[] talk;
     private final Entry[] game;
     private int talkCount;
@@ -75,9 +75,9 @@ public final class MessageLog {
     /** BEHAVIOR: maxMessages is clamped to 1..{@link #MAX_MSGS}. */
     public MessageLog(int maxMessages) {
         max = Math.max(1, Math.min(MAX_MSGS, maxMessages));
-        talk = new Entry[max];
-        game = new Entry[max];
-        for (int i = 0; i < max; i++) {
+        talk = new Entry[MAX_MSGS];
+        game = new Entry[MAX_MSGS];
+        for (int i = 0; i < MAX_MSGS; i++) {
             talk[i] = new Entry();
             game[i] = new Entry();
         }
@@ -88,6 +88,17 @@ public final class MessageLog {
     }
 
     public int maxMessages() { return max; }
+
+    /**
+     * C {@code maxMessages} (CONFIG panel / resource).
+     * <p>
+     * BEHAVIOR: clamped to 1..{@link #MAX_MSGS}; a smaller limit drops the oldest messages beyond it.
+     */
+    public void setMaxMessages(int maxMessages) {
+        max = Math.max(1, Math.min(MAX_MSGS, maxMessages));
+        talkCount = Math.min(talkCount, max);
+        gameCount = Math.min(gameCount, max);
+    }
 
     public void setCharsPerSecond(int cps) { charsPerSecond = cps; }
 

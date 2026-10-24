@@ -78,6 +78,8 @@ public final class ClientFrame {
     private final SceneFiller filler = new SceneFiller();
     private final HudExtras extras = new HudExtras();
     private final WorldMapState mapState;
+    /** The C client options (client-ui): pushed into the HUD, messages and talk line when they change. */
+    private final LiveOptions liveOptions;
 
     private WorldMap lastMap;
     private int mapVersion;
@@ -113,6 +115,7 @@ public final class ClientFrame {
         this.settings = keys.settings();
         this.router = new KeyRouter(input, talk, settings);
         this.mapState = new WorldMapState(game);
+        this.liveOptions = new LiveOptions(keys.options());
         java.util.List<String> helpKeys = input.bindings().keysyms(KeyFunctions.of(ClientAction.HELP));
         this.helpHint = helpKeys.isEmpty() ? null : helpKeys.get(0) + ": keys";
         this.help = new KeyHelp("Keys (" + keys.source() + ")" + (helpHint != null ? " - " + helpKeys.get(0)
@@ -142,6 +145,7 @@ public final class ClientFrame {
     public void step(long nowNanos, int viewW, int viewH, double zoom, TextMetrics m, int panelW, int scoreTop) {
         double dt = started ? (nowNanos - lastNow) / 1e9 : 0;
         started = true;
+        liveOptions.apply(hud, game, extras, talk);
         lastNow = nowNanos;
         conn.update(nowNanos);
         game.frame(nowNanos, dt);
@@ -179,6 +183,7 @@ public final class ClientFrame {
         }
         hud.zoom = zoom;
         hud.build(viewHud, game, talk, viewW, viewH, m, dt * game.gameFps());
+        extras.step(dt * game.gameFps(), game.gameFps());
         extras.fill(game, hud, viewW, viewH, zoom, centreX, centreY, scene.loops);
         extras.loseItem(router.loseSelection(), dt);
         panelHud.clear();
@@ -337,6 +342,9 @@ public final class ClientFrame {
     public HudExtras extras() { return extras; }
 
     public WorldMapState mapState() { return mapState; }
+
+    /** The C client options in use (the key configuration's, changed live by the CONFIG panel). */
+    public com.fulcrologic.jxpilot.client.game.options.ClientOptions options() { return liveOptions.options(); }
 
     public SceneData scene() { return scene; }
 

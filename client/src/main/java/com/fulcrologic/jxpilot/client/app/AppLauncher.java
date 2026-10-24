@@ -25,6 +25,8 @@ package com.fulcrologic.jxpilot.client.app;
 
 import com.fulcrologic.jxpilot.client.game.ClientGame;
 import com.fulcrologic.jxpilot.client.game.input.KeyConfig;
+import com.fulcrologic.jxpilot.client.game.options.ClientOption;
+import com.fulcrologic.jxpilot.client.game.options.ClientOptions;
 import com.fulcrologic.jxpilot.client.sound.SoundPlayer;
 import com.fulcrologic.jxpilot.client.gl.MapViewerApp;
 import com.fulcrologic.jxpilot.client.net.Endpoint;
@@ -110,10 +112,37 @@ public final class AppLauncher {
         ClientGame game = new ClientGame();
         String shape = ShipShapeResource.resolve(o.shape(), o.shipShapeFile(), keys.shipShape(), keys.shipShapeFile(),
             ShipShapeResource::readLatin1, System.err);
-        GameConnection conn = GameConnector.open(target, o.bind(), game, o.name(), o.team(), shape,
+        GameConnection conn = GameConnector.open(target, o.bind(), game, name(o, keys), team(o, keys), shape,
             o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime());
         new GameApp(o, game, conn, target.toString(), null, keys).run();
         return 0;
+    }
+
+    /**
+     * The player name of a launch.
+     * <p>
+     * BEHAVIOR: the {@code name} resource when the file or command line gave a non-blank one (--name adds it, so
+     * it wins), cut to {@link AppOptions#MAX_NAME} characters; else {@link AppOptions#name()} (from the login name).
+     */
+    static String name(AppOptions o, KeyConfig keys) {
+        ClientOptions opts = keys.options();
+        String n = opts.given(ClientOption.NAME) ? opts.text(ClientOption.NAME).trim() : "";
+        if (n.isEmpty()) {
+            return o.name();
+        }
+        return n.length() > AppOptions.MAX_NAME ? n.substring(0, AppOptions.MAX_NAME) : n;
+    }
+
+    /**
+     * The team of a launch.
+     * <p>
+     * BEHAVIOR: the {@code team} resource when given and 0..9 (--team adds it); else {@link AppOptions#team()}
+     * ({@link com.fulcrologic.jxpilot.common.net.Protocol#NO_TEAM}).
+     */
+    static int team(AppOptions o, KeyConfig keys) {
+        ClientOptions opts = keys.options();
+        int t = opts.integer(ClientOption.TEAM);
+        return opts.given(ClientOption.TEAM) && t >= 0 && t <= 9 ? t : o.team();
     }
 
     /**
@@ -133,16 +162,18 @@ public final class AppLauncher {
      * The key configuration of a launch.
      * <p>
      * BEHAVIOR: {@code --keys FILE} is read (a missing or unreadable file is an IOException); without it
-     * {@code HOME/.xpilotrc} is read when it exists, else the defaults are used. Every problem and every
+     * {@code HOME/.xpilotrc} is read when it exists, else the defaults are used; the command-line resources
+     * ({@link AppOptions#resources()}) are applied after the file. Every problem and every
      * conflicting key is printed to {@code err} ("jxpilot keys: ...").
      */
     static KeyConfig keyConfig(AppOptions o, Path home, PrintStream err) throws IOException {
         Path file = o.keysFile() != null ? Path.of(o.keysFile()) : home.resolve(".xpilotrc");
         KeyConfig c;
         if (o.keysFile() != null || Files.isRegularFile(file)) {
-            c = KeyConfig.load(Files.readString(file, StandardCharsets.ISO_8859_1), file.toString(), o.swapScaleKey());
+            c = KeyConfig.load(Files.readString(file, StandardCharsets.ISO_8859_1), file.toString(), o.swapScaleKey(),
+                o.resources());
         } else {
-            c = KeyConfig.defaults(o.swapScaleKey());
+            c = KeyConfig.defaults(o.swapScaleKey(), o.resources());
         }
         for (String p : c.problems()) {
             err.println("jxpilot keys: " + p);
