@@ -25,48 +25,69 @@ package com.fulcrologic.jxpilot.client.game.input;
 
 /**
  * Client-only key actions of XPilot ({@code keys_t} values after the 64 game keys, plus
- * {@code KEY_TALK}, which opens the talk line instead of going to the server), with their defaults
- * from {@code src/client/default.c}. Not part of the wire mask.
+ * {@code KEY_TALK}, which opens the talk line instead of going to the server), with their resource names,
+ * defaults and help texts from {@code src/client/default.c}. Not part of the wire mask.
+ * <p>
+ * JXPilot deviations: {@link #HELP} (F1, the key help overlay) is new, so {@code keySendMsg1} has no
+ * default key (C: F1).
  */
 public enum ClientAction {
-    TALK("m"),
-    ID_MODE("u"),
-    TOGGLE_OWNED_ITEMS("KP_8"),
-    TOGGLE_MESSAGES("KP_9"),
-    POINTER_CONTROL("KP_Enter"),
-    TOGGLE_RECORD("KP_5"),
-    PRINT_MSGS_STDOUT("Print"),
-    TALK_CURSOR_LEFT("Left"),
-    TALK_CURSOR_RIGHT("Right"),
-    TALK_CURSOR_UP("Up"),
-    TALK_CURSOR_DOWN("Down"),
-    SWAP_SCALEFACTOR(""),
-    MSG_1("F1"),
-    MSG_2("F2"),
-    MSG_3("F3"),
-    MSG_4("F4"),
-    MSG_5("F5"),
-    MSG_6("F6"),
-    MSG_7("F7"),
-    MSG_8("F8"),
-    MSG_9("F9"),
-    MSG_10("F10"),
-    MSG_11("F11"),
-    MSG_12("F12"),
-    MSG_13(""),
-    MSG_14(""),
-    MSG_15(""),
-    MSG_16(""),
-    MSG_17(""),
-    MSG_18(""),
-    MSG_19(""),
-    MSG_20("");
+    TALK("keyTalk", "m", "Toggle talk window."),
+    ID_MODE("keyIdMode", "u", "Toggle User mode (show real names)."),
+    TOGGLE_OWNED_ITEMS("keyToggleOwnedItems", "KP_8", "Toggle list of owned items on HUD."),
+    TOGGLE_MESSAGES("keyToggleMessages", "KP_9", "Toggle showing of messages."),
+    POINTER_CONTROL("keyPointerControl", "KP_Enter", "Toggle pointer control."),
+    TOGGLE_RECORD("keyToggleRecord", "KP_5", "Toggle recording of session (see recordFile)."),
+    PRINT_MSGS_STDOUT("keyPrintMessagesStdout", "Print", "Print the current messages to stdout."),
+    TALK_CURSOR_LEFT("keyTalkCursorLeft", "Left", "Move Cursor to the left in the talk window."),
+    TALK_CURSOR_RIGHT("keyTalkCursorRight", "Right", "Move Cursor to the right in the talk window."),
+    TALK_CURSOR_UP("keyTalkCursorUp", "Up", "Browsing in the history of the talk window."),
+    TALK_CURSOR_DOWN("keyTalkCursorDown", "Down", "Browsing in the history of the talk window."),
+    SWAP_SCALEFACTOR("keySwapScaleFactor", "", "Swap scalefactor settings."),
+    MSG_1("keySendMsg1", "", "Sends the talkmessage stored in msg1."),
+    MSG_2("keySendMsg2", "F2", "Sends the talkmessage stored in msg2."),
+    MSG_3("keySendMsg3", "F3", "Sends the talkmessage stored in msg3."),
+    MSG_4("keySendMsg4", "F4", "Sends the talkmessage stored in msg4."),
+    MSG_5("keySendMsg5", "F5", "Sends the talkmessage stored in msg5."),
+    MSG_6("keySendMsg6", "F6", "Sends the talkmessage stored in msg6."),
+    MSG_7("keySendMsg7", "F7", "Sends the talkmessage stored in msg7."),
+    MSG_8("keySendMsg8", "F8", "Sends the talkmessage stored in msg8."),
+    MSG_9("keySendMsg9", "F9", "Sends the talkmessage stored in msg9."),
+    MSG_10("keySendMsg10", "F10", "Sends the talkmessage stored in msg10."),
+    MSG_11("keySendMsg11", "F11", "Sends the talkmessage stored in msg11."),
+    MSG_12("keySendMsg12", "F12", "Sends the talkmessage stored in msg12."),
+    MSG_13("keySendMsg13", "", "Sends the talkmessage stored in msg13."),
+    MSG_14("keySendMsg14", "", "Sends the talkmessage stored in msg14."),
+    MSG_15("keySendMsg15", "", "Sends the talkmessage stored in msg15."),
+    MSG_16("keySendMsg16", "", "Sends the talkmessage stored in msg16."),
+    MSG_17("keySendMsg17", "", "Sends the talkmessage stored in msg17."),
+    MSG_18("keySendMsg18", "", "Sends the talkmessage stored in msg18."),
+    MSG_19("keySendMsg19", "", "Sends the talkmessage stored in msg19."),
+    MSG_20("keySendMsg20", "", "Sends the talkmessage stored in msg20."),
+    /**
+     * JXPilot only: sound on/off. C has no such key (its sound is the {@code sound} resource); the default is a
+     * key C leaves unbound.
+     */
+    TOGGLE_SOUND("keyToggleSound", "minus", "Toggle sound on/off (JXPilot)."),
+    /** JXPilot: show or hide the key help overlay. */
+    HELP("keyHelp", "F1", "Show or hide this key help (JXPilot).");
 
+    /** The X resource name ({@code keyXxx}). */
+    public final String resource;
     /** Default X11 keysym names, space separated (empty = unbound). */
     public final String defaultKeys;
+    /** One-line help text (C default.c). */
+    public final String help;
 
-    ClientAction(String defaultKeys) {
+    ClientAction(String resource, String defaultKeys, String help) {
+        this.resource = resource;
         this.defaultKeys = defaultKeys;
+        this.help = help;
+    }
+
+    /** BEHAVIOR: true for the actions JXPilot implements (talk, talk cursor, scale-factor swap, sound, key help). */
+    public boolean implemented() {
+        return this == TALK || talkCursor() || this == SWAP_SCALEFACTOR || this == HELP || this == TOGGLE_SOUND;
     }
 
     /** BEHAVIOR: true for the four talk-line cursor keys (only active while talking, as in C). */

@@ -35,7 +35,8 @@ untested.
 | `Dockerfile` | Two stages. The builder runs Imake, applies the patches and runs `make install`. The runtime stage has Xvfb, xdotool, xwd and ImageMagick. |
 | `patches/0001-client-rename-getline.patch` | The only change needed to build. |
 | `patches/0002-server-physics-trace.patch` | Opt-in trace and seed hooks. Inert unless their environment variables are set. |
-| `patches/0003-server-object-trace.patch` | Opt-in object, laser pulse, ECM and player item trace. Inert unless `XPILOT_TRACE_OBJS` is set. |
+| `patches/0003-server-wreckage-trace.patch` | Opt-in wreckage trace (`XPILOT_TRACE_WRECK`). Inert unless set. |
+| `patches/0004-server-object-trace.patch` | Opt-in object, laser pulse, ECM and player item trace. Inert unless `XPILOT_TRACE_OBJS` is set. |
 | `build.sh` | Builds image `xpilot-ref:4.5.5`. |
 | `server.sh` | Runs a headless server and prints its log. |
 | `screenshot.sh` | Runs server and client on Xvfb and saves one PNG. |
@@ -178,7 +179,7 @@ tools/xpilot-ref/trace.sh --map default --seed 42 --after 1 \
   generator. With the same seed, robot names and start positions repeat.
   For example, seed 42 on default.xp always puts the ship at 4252,1452.
 
-`--objs` sets `XPILOT_TRACE_OBJS` and needs an image built with patch 0003
+`--objs` sets `XPILOT_TRACE_OBJS` and needs an image built with patch 0004
 (every image built from this directory has it). Each tick then also prints,
 after the XPTRACE lines: one `XPOBJ` line per object in `Obj[]` except
 sparks and debris, one `XPPULSE` line per laser pulse, one `XPECM` line per
@@ -260,8 +261,25 @@ GPL-2.0-or-later, and why.
 
    Without those environment variables, the server behaves exactly as
    upstream.
-3. `0003-server-object-trace.patch`, in `src/server/server.c` only, on top of
-   0002: adds `Trace_objects()`, called right after `Trace_players()`. It
+3. `0003-server-wreckage-trace.patch`, in `src/server/server.c` and
+   `src/server/ship.c`: with `XPILOT_TRACE_WRECK` set, `Make_wreckage`
+   prints its arguments (`XPWMAKE`) and every `rfrac()` value it draws
+   (`XPWRAND`), and after each `Update_objects()` every wreckage object is
+   printed (`XPWRECK`). Floats are printed with `%a`, so they are exact.
+   The game and its random sequence are unchanged. Used for
+   `server/src/test/resources/ctrace/wreckage-default.txt`:
+
+   ```sh
+   CDPATH= XPREF_IMAGE=xpilot-ref:4.5.5-sb2 tools/xpilot-ref/build.sh   # or rebuild the default tag
+   docker run --rm --network none -e XPILOT_TRACE_WRECK=1 -e XPILOT_SEED=1 xpilot-ref:4.5.5-sb2 \
+       timeout -s INT -k 5 180 xpilots -map default -robots 4 -minRobots 4 -noQuit +reportToMetaServer \
+       -rawMode 2> wreck.trace
+   grep -E '^XPW(MAKE|RAND|RECK) ' wreck.trace > wreckage-default.txt
+   ```
+
+   Images built before this patch lack it; rebuild with `build.sh`.
+4. `0004-server-object-trace.patch`, in `src/server/server.c` only, on top of
+   0003: adds `Trace_objects()`, called right after `Trace_wreckage()`. It
    does nothing unless `XPILOT_TRACE_OBJS` is set; `XPILOT_TRACE_NAME`
    filters the XPITEMS lines like the XPTRACE lines.
 

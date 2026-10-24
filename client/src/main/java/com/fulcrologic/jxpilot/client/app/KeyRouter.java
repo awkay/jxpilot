@@ -25,8 +25,11 @@ package com.fulcrologic.jxpilot.client.app;
 
 import com.fulcrologic.jxpilot.client.game.hud.TalkLine;
 import com.fulcrologic.jxpilot.client.game.input.ClientAction;
+import com.fulcrologic.jxpilot.client.game.input.ControlSettings;
 import com.fulcrologic.jxpilot.client.game.input.InputState;
 import com.fulcrologic.jxpilot.client.game.input.KeyBindings;
+import com.fulcrologic.jxpilot.client.game.input.KeyConfig;
+import com.fulcrologic.jxpilot.common.net.ControlKey;
 
 import static org.lwjgl.glfw.GLFW.*;
 
@@ -47,29 +50,47 @@ public final class KeyRouter {
     public static final int CHAT = 2;
     /** Swap scaleFactor and altScaleFactor (C {@code Key_press_swap_scalefactor}). */
     public static final int SWAP_SCALE = 4;
+    /** Mute or unmute sound ({@link ClientAction#TOGGLE_SOUND}). */
+    public static final int TOGGLE_SOUND = 8;
+    /** The control settings changed by a power/turn-speed key: send them (C {@code Send_power} ...). */
+    public static final int SETTINGS = 16;
+    /** The control settings changed (sent or swapped): show the power and turn speed meters (C control_count). */
+    public static final int SHOW_CONTROLS = 32;
+    /** Toggle the key help overlay (JXPilot keyHelp). */
+    public static final int HELP = 64;
 
     private final InputState input;
     private final TalkLine talk;
+    private final ControlSettings settings;
     private final StringBuilder chat = new StringBuilder(TalkLine.MAX_CHARS);
     private boolean swallowChar;
 
     public KeyRouter(InputState input, TalkLine talk) {
+        this(input, talk, new ControlSettings());
+    }
+
+    /** @param settings the control settings the power/turn-speed/swap keys change */
+    public KeyRouter(InputState input, TalkLine talk, ControlSettings settings) {
         this.input = input;
         this.talk = talk;
+        this.settings = settings;
     }
 
     /**
-     * The game's key bindings: XPilot's defaults with Escape taken from C's swap-settings key, since
-     * Escape quits here (SPEC "Default controls"), and the scale-factor swap bound to {@code swapKey}
-     * (unbound when null, as C's default).
+     * The game's default key bindings ({@link KeyConfig#defaults}): XPilot's defaults plus the JXPilot
+     * supplement, with Escape taken from C's swap-settings key, since Escape quits here (SPEC "Default
+     * controls"), and the scale-factor swap bound to {@code swapKey} (unbound when null, as C's default).
      */
     public static KeyBindings bindings(String swapKey) {
-        KeyBindings b = KeyBindings.defaults();
-        b.unbind(GLFW_KEY_ESCAPE);
-        if (swapKey != null) {
-            b.bind(ClientAction.SWAP_SCALEFACTOR, swapKey);
-        }
-        return b;
+        return KeyConfig.defaults(swapKey).bindings();
+    }
+
+    public ControlSettings settings() {
+        return settings;
+    }
+
+    public InputState input() {
+        return input;
     }
 
     /** The last chat line (valid after a {@link #CHAT} event). */
@@ -82,8 +103,11 @@ public final class KeyRouter {
      * <p>
      * BEHAVIOR (playing): Escape press is {@link #QUIT}; other presses go to {@link InputState#press};
      * a TALK action opens the talk line (game keys released, the key's character is not typed); a
-     * SWAP_SCALEFACTOR action is {@link #SWAP_SCALE}; releases go to {@link InputState#release}; repeats
-     * are ignored.
+     * SWAP_SCALEFACTOR action is {@link #SWAP_SCALE}, a TOGGLE_SOUND action {@link #TOGGLE_SOUND}, a HELP action
+     * {@link #HELP}; releases go to {@link InputState#release}; repeats are ignored.
+     * BEHAVIOR (playing): increase/decrease power and turn speed change the {@link ControlSettings} as C's
+     * key handlers do and are {@link #SETTINGS} | {@link #SHOW_CONTROLS}; swap settings swaps them and is
+     * {@link #SHOW_CONTROLS} only (the key goes to the server, which swaps its copy, as in C).
      * BEHAVIOR (talking): see {@link #talkKey}; releases are ignored.
      */
     public int key(int key, int action, int mods) {
@@ -111,6 +135,37 @@ public final class KeyRouter {
         }
         if (KeyBindings.has(acts, ClientAction.SWAP_SCALEFACTOR)) {
             ev |= SWAP_SCALE;
+        }
+        if (KeyBindings.has(acts, ClientAction.TOGGLE_SOUND)) {
+            ev |= TOGGLE_SOUND;
+        }
+        if (KeyBindings.has(acts, ClientAction.HELP)) {
+            ev |= HELP;
+        }
+        return ev | controls(input.bindings().gameMask(key));
+    }
+
+    private int controls(long m) {
+        int ev = NONE;
+        if ((m & ControlKey.INCREASE_POWER.mask()) != 0) {
+            settings.increasePower();
+            ev = SETTINGS | SHOW_CONTROLS;
+        }
+        if ((m & ControlKey.DECREASE_POWER.mask()) != 0) {
+            settings.decreasePower();
+            ev = SETTINGS | SHOW_CONTROLS;
+        }
+        if ((m & ControlKey.INCREASE_TURNSPEED.mask()) != 0) {
+            settings.increaseTurnSpeed();
+            ev = SETTINGS | SHOW_CONTROLS;
+        }
+        if ((m & ControlKey.DECREASE_TURNSPEED.mask()) != 0) {
+            settings.decreaseTurnSpeed();
+            ev = SETTINGS | SHOW_CONTROLS;
+        }
+        if ((m & ControlKey.SWAP_SETTINGS.mask()) != 0) {
+            settings.swap();
+            ev |= SHOW_CONTROLS;
         }
         return ev;
     }

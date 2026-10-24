@@ -47,6 +47,7 @@ import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.FPS14;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.FRAME;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.gameEvents;
+import static com.fulcrologic.jxpilot.server.sim.SimFixture.killCauses;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.lastBurst;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.live;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.messages;
@@ -396,6 +397,49 @@ class CrashesTest {
                 () -> assertEquals(0, b.kills, "the others do not"),
                 () -> assertEquals(List.of("1:" + c.id + ":" + a.id), gameEvents(w, seq), "emits KILL(C, A)"),
                 () -> assertTrue((a.status & Obj.KILLED) != 0, "the ship dies"));
+        }
+
+        @Test
+        @DisplayName("the KILL is tagged as a shove; robots go to war with the pusher at (int)(rfrac * pushers), drawn"
+            + " after the scores (walls.c:2195-2197)")
+        void shoveWarTarget() {
+            for (int want = 0; want < 2; want++) {
+                setup("");
+                Player b = ready(s, "B", 0, 300, 300);
+                Player c = ready(s, "C", 0, 300, 300);
+                w.frames = 100;
+                a.shovePusher[0] = b.id;
+                a.shoveTime[0] = 90;
+                a.shovePusher[1] = c.id;
+                a.shoveTime[1] = 95;
+                int seed = 1;
+                while ((int) (new Rng(seed).nextFloat() * 2) != want) {
+                    seed++;
+                }
+                w.rng.seed(seed);
+                long seq = w.events.seq();
+                s.crashes.playerCrashed(a, ms(CRASH_WALL), 1);
+                Rng ref = new Rng(seed);
+                ref.nextFloat();
+                int warOn = want == 0 ? b.id : c.id;
+                String label = "pusher " + want;
+                List<String> kills = killCauses(w, seq);
+                float next = (float) w.rfrac();
+                float expectedNext = ref.nextFloat();
+                assertAll(
+                    () -> assertEquals(List.of(c.id + ":" + a.id + ":" + Events.KILL_SHOVE + ":" + warOn), kills,
+                        label + " is the war target; the last pusher keeps the kill"),
+                    () -> assertEquals(expectedNext, next, label + ": exactly one rfrac was drawn"));
+            }
+        }
+
+        @Test
+        @DisplayName("without shovers no rfrac is drawn for a war target")
+        void noShoversNoDraw() {
+            setup("");
+            w.rng.seed(5);
+            s.crashes.playerCrashed(a, ms(CRASH_WALL), 1);
+            assertEquals(new Rng(5).nextFloat(), w.rfrac(), "the next rfrac is still the seed's first");
         }
 
         @Test

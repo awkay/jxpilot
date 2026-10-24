@@ -62,13 +62,18 @@ public final class Objects {
     public final int[] missileDir;
     /** Modifier bits ({@link Mods}). */
     public final int[] mods;
-    // ---- C object.info / count and the mine/missile extensions (server-items)
-    /** C {@code info}: item type, missile target id (-1 none), mine fuse frames, torpedo frame counter. */
+    // ---- C wireobject fields (wreckage; asteroids use the same): rotation in RES units, turn per frame as a
+    // fraction of a turn, size 0..255, info (wreckage shape)
+    public final int[] rotation;
+    /** Wreckage/asteroid turn per frame; C missile {@code turnspeed}. */
+    public final float[] turnSpeed;
+    public final int[] size;
+    /** C {@code info}: wreckage shape; item type, missile target id (-1 none), mine fuse frames, torpedo frame
+     * counter (server-items). */
     public final int[] info;
+    // ---- C object.info / count and the mine/missile extensions (server-items)
     /** C {@code count}: item pack size, heat-seeker error counter, confusion counter. */
     public final int[] counter;
-    /** C missile {@code turnspeed}. */
-    public final float[] turnSpeed;
     /** C missile {@code max_speed}. */
     public final float[] maxSpeed;
     /** C mine/torpedo {@code spread_left}. */
@@ -111,9 +116,11 @@ public final class Objects {
         color = new int[capacity];
         missileDir = new int[capacity];
         mods = new int[capacity];
+        rotation = new int[capacity];
+        turnSpeed = new float[capacity];
+        size = new int[capacity];
         info = new int[capacity];
         counter = new int[capacity];
-        turnSpeed = new float[capacity];
         maxSpeed = new float[capacity];
         spreadLeft = new int[capacity];
         ecmRange = new float[capacity];
@@ -175,9 +182,11 @@ public final class Objects {
         color[h] = 0;
         missileDir[h] = 0;
         mods[h] = 0;
+        rotation[h] = 0;
+        turnSpeed[h] = 0;
+        size[h] = 0;
         info[h] = 0;
         counter[h] = 0;
-        turnSpeed[h] = 0;
         maxSpeed[h] = 0;
         spreadLeft[h] = 0;
         ecmRange[h] = 0;

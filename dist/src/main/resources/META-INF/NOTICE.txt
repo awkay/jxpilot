@@ -11,4 +11,6 @@ any later version; see META-INF/LICENSE. Source code: https://github.com/awkay/j
 
 Bundled third-party components:
   - Fira Code font (SIL Open Font License 1.1): fonts/FiraCode-LICENSE.txt (client jar)
-  - LWJGL 3 and its native libraries: META-INF/licenses/lwjgl/ (client jar)
+  - LWJGL 3 and its native libraries, including OpenAL Soft (GNU LGPL 2 or later):
+    META-INF/licenses/lwjgl/ (client jar)
+  - Sound effects by Juhani Junkala and Kenney (CC0 1.0): sounds/LICENSE-sounds.txt (client jar)

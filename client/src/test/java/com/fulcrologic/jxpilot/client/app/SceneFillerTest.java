@@ -32,6 +32,7 @@ import com.fulcrologic.jxpilot.client.paint.SceneData;
 import com.fulcrologic.jxpilot.client.paint.ShipPainter;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
+import com.fulcrologic.jxpilot.common.net.Protocol;
 import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.common.net.Wire;
 import com.fulcrologic.jxpilot.common.net.Section;
@@ -181,39 +182,30 @@ class SceneFillerTest {
     @DisplayName("fill: shots, particles, radar, loops")
     class Objects {
         @Test
-        @DisplayName("shots keep snapshot order with C colours and team-shot flags")
+        @DisplayName("shots keep snapshot order; the harmless bit, not the colour, makes C's blue teamshot")
         void shots() {
             AppFixture f = new AppFixture(true).players().twice(x -> x
                 .self(0, 100, 100, 0, 0xFFFF)
                 .shot(Records.ShotKind.SHOT, Records.ObjColor.ENEMY, 10, 20)
-                .shot(Records.ShotKind.SHOT, Records.ObjColor.TEAM, 30, 40)
+                .shot(Records.ShotKind.SHOT, Records.ObjColor.TEAM, true, 30, 40)
+                .shot(Records.ShotKind.SHOT, Records.ObjColor.TEAM, 35, 45)
                 .shot(Records.ShotKind.CANNON_SHOT, Records.ObjColor.RED, 50, 60)
-                .shot(Records.ShotKind.SHOT, Records.ObjColor.OWN, 70, 80));
+                .shot(Records.ShotKind.SHOT, Records.ObjColor.OWN, 70, 80)
+                .shot(Records.ShotKind.SHOT, Records.ObjColor.OWN, true, 75, 85)
+                .shot(Records.ShotKind.CLUSTER, Records.ObjColor.ENEMY, true, 90, 95));
             fill(f);
-            assertAll(
-                () -> assertEquals(4, scene.shotCount, "all shots"),
-                () -> assertEquals(10f, scene.shotX[0], "first x"),
-                () -> assertEquals(20f, scene.shotY[0], "first y"),
-                () -> assertEquals(Palette.WHITE, scene.shotColor[0], "enemy: white"),
-                () -> assertFalse(scene.shotTeam[0], "enemy: square"),
-                () -> assertEquals(Palette.BLUE, scene.shotColor[1], "team: blue"),
-                () -> assertTrue(scene.shotTeam[1], "team: X/+"),
-                () -> assertEquals(Palette.RED, scene.shotColor[2], "nuclear blink: red"),
-                () -> assertTrue(scene.shotTeam[2], "nuclear blink: X/+"),
-                () -> assertEquals(70f, scene.shotX[3], "last x"),
-                () -> assertEquals(Palette.WHITE, scene.shotColor[3], "own without selfImmunity: white"),
-                () -> assertFalse(scene.shotTeam[3], "own without selfImmunity: square"));
-        }
-
-        @Test
-        @DisplayName("own shots are blue team shots with selfImmunity")
-        void selfImmunity() {
-            AppFixture f = new AppFixture(true, "selfImmunity: yes\n").players().twice(x -> x
-                .shot(Records.ShotKind.SHOT, Records.ObjColor.OWN, 70, 80));
-            fill(f);
-            assertAll(
-                () -> assertEquals(Palette.BLUE, scene.shotColor[0], "blue"),
-                () -> assertTrue(scene.shotTeam[0], "team shot"));
+            List<String> drawn = new ArrayList<>();
+            for (int i = 0; i < scene.shotCount; i++) {
+                drawn.add(scene.shotX[i] + "," + scene.shotY[i] + " c" + scene.shotColor[i] + (scene.shotTeam[i] ? " X" : " sq"));
+            }
+            int blue = Palette.BLUE;
+            int white = Palette.WHITE;
+            assertEquals(List.of("10.0,20.0 c" + white + " sq", "30.0,40.0 c" + blue + " X", "35.0,45.0 c" + white + " sq",
+                    "50.0,60.0 c" + Palette.RED + " X", "70.0,80.0 c" + white + " sq", "75.0,85.0 c" + blue + " X",
+                    "90.0,95.0 c" + blue + " X"), drawn,
+                "every shot in order: enemy white square; harmless team mate blue X/+; a team mate's shot that can "
+                    + "hurt (no teamImmunity) white square; nuclear blink red X/+; own white square; own harmless "
+                    + "(selfImmunity) blue X/+; any harmless shot (paused owner's cluster) blue X/+");
         }
 
         @Test
@@ -285,19 +277,21 @@ class SceneFillerTest {
         @DisplayName("shotColor and teamShot follow C's Frame_shots rules")
         void shotRules() {
             assertAll(
-                () -> assertEquals(Palette.BLUE, SceneFiller.shotColor(Records.ObjColor.TEAM, false), "team blue"),
-                () -> assertEquals(Palette.BLUE, SceneFiller.shotColor(Records.ObjColor.BLUE, false), "blue blue"),
-                () -> assertEquals(Palette.WHITE, SceneFiller.shotColor(Records.ObjColor.OWN, false), "own white"),
-                () -> assertEquals(Palette.BLUE, SceneFiller.shotColor(Records.ObjColor.OWN, true), "own immune blue"),
-                () -> assertEquals(Palette.RED, SceneFiller.shotColor(Records.ObjColor.RED, false), "red red"),
-                () -> assertEquals(Palette.WHITE, SceneFiller.shotColor(Records.ObjColor.NEUTRAL, true), "neutral white"),
-                () -> assertEquals(Palette.WHITE, SceneFiller.shotColor(Records.ObjColor.WHITE, true), "white white"),
-                () -> assertTrue(SceneFiller.teamShot(Records.ObjColor.TEAM, false), "team: team shot"),
-                () -> assertTrue(SceneFiller.teamShot(Records.ObjColor.BLUE, false), "blue: team shot"),
-                () -> assertTrue(SceneFiller.teamShot(Records.ObjColor.RED, false), "red: team shot"),
-                () -> assertTrue(SceneFiller.teamShot(Records.ObjColor.OWN, true), "own immune: team shot"),
-                () -> assertFalse(SceneFiller.teamShot(Records.ObjColor.OWN, false), "own: square"),
-                () -> assertFalse(SceneFiller.teamShot(Records.ObjColor.ENEMY, true), "enemy: square"));
+                () -> assertEquals(Palette.BLUE, SceneFiller.shotColor(Records.ObjColor.TEAM, true), "harmless: blue"),
+                () -> assertEquals(Palette.BLUE, SceneFiller.shotColor(Records.ObjColor.ENEMY, true), "harmless enemy: blue"),
+                () -> assertEquals(Palette.BLUE, SceneFiller.shotColor(Records.ObjColor.RED, true), "harmless red: blue"),
+                () -> assertEquals(Palette.WHITE, SceneFiller.shotColor(Records.ObjColor.TEAM, false), "harmful team: white"),
+                () -> assertEquals(Palette.WHITE, SceneFiller.shotColor(Records.ObjColor.OWN, false), "own: white"),
+                () -> assertEquals(Palette.WHITE, SceneFiller.shotColor(Records.ObjColor.NEUTRAL, false), "neutral: white"),
+                () -> assertEquals(Palette.WHITE, SceneFiller.shotColor(Records.ObjColor.WHITE, false), "white: white"),
+                () -> assertEquals(Palette.BLUE, SceneFiller.shotColor(Records.ObjColor.BLUE, false),
+                    "a harmful BLUE fast shot stays blue (C Paint_fastshots)"),
+                () -> assertEquals(Palette.RED, SceneFiller.shotColor(Records.ObjColor.RED, false), "nuclear blink: red"),
+                () -> assertTrue(SceneFiller.teamShot(Records.ObjColor.ENEMY, true), "harmless: X/+"),
+                () -> assertTrue(SceneFiller.teamShot(Records.ObjColor.RED, false), "nuclear blink: X/+"),
+                () -> assertFalse(SceneFiller.teamShot(Records.ObjColor.TEAM, false), "harmful team: square"),
+                () -> assertFalse(SceneFiller.teamShot(Records.ObjColor.BLUE, false), "harmful blue fast shot: square"),
+                () -> assertFalse(SceneFiller.teamShot(Records.ObjColor.OWN, false), "own: square"));
         }
 
         @Test
@@ -449,24 +443,69 @@ class SceneFillerTest {
         }
 
         @Test
-        @DisplayName("refuel beam from the nearest station in range to the ship; repair beam from the ship to the target")
+        @DisplayName("refuel and repair beams are drawn from the server's endpoints; ship flags alone draw none")
         void beams() {
-            double fx = 13.5 * 35; // '#' in column 13
-            double fy = 8.5 * 35;
-            double tx = 17.5 * 35; // '!' in column 17
             AppFixture f = new AppFixture(true).players().twice(x -> x
-                .self(Records.ShipFlags.REFUELING, (float) (fx + 50), (float) fy, 0, 0xFFFF)
-                .ship(MATE, Records.ShipFlags.REFUELING, fx + 200, fy, 0)
-                .ship(FOE, Records.ShipFlags.REPAIRING, tx, fy - 60, 0));
+                .self(Records.ShipFlags.REFUELING, 400, 300, 0, 0xFFFF)
+                .ship(FOE, Records.ShipFlags.REPAIRING, 600, 240, 0)
+                .ship(MATE, Records.ShipFlags.REFUELING, 700, 300, 0)
+                .connector(472.5, 297.5, 400, 300, Records.Connector.KIND_REFUEL)
+                .connector(600, 240, 612.5, 297.5, Records.Connector.KIND_REPAIR));
             fill(f);
             assertAll(
-                () -> assertEquals(2, scene.linkCount, "self's refuel beam and the foe's repair beam; mate out of range"),
-                () -> assertEquals(SceneData.LINK_REFUEL, scene.linkKind[0], "refuel kind"),
-                () -> assertEquals((float) fx, scene.linkX1[0], "from the station x"),
-                () -> assertEquals((float) fy, scene.linkY1[0], "from the station y"),
-                () -> assertEquals((float) (fx + 50), scene.linkX2[0], "to the ship"),
-                () -> assertEquals((float) tx, scene.linkX2[1], "repair beam ends at the target"),
-                () -> assertEquals((float) (fy - 60), scene.linkY1[1], "repair beam starts at the ship"));
+                () -> assertEquals(2, scene.linkCount, "one beam per record; the mate's REFUELING flag adds none"),
+                () -> assertEquals(SceneData.LINK_REFUEL, scene.linkKind[0], "refuel: LINK_REFUEL"),
+                () -> assertEquals(472.5f, scene.linkX1[0], "from the station x"),
+                () -> assertEquals(297.5f, scene.linkY1[0], "from the station y"),
+                () -> assertEquals(400f, scene.linkX2[0], "to the ship x"),
+                () -> assertEquals(300f, scene.linkY2[0], "to the ship y"),
+                () -> assertEquals(SceneData.LINK_REFUEL, scene.linkKind[1], "repair: also LINK_REFUEL (C Paint_refuel)"),
+                () -> assertEquals(612.5f, scene.linkX2[1], "repair beam ends at the target"),
+                () -> assertEquals(SceneData.LINK_CONNECTOR, SceneFiller.linkKind(Records.Connector.KIND_BALL), "ball"),
+                () -> assertEquals(SceneData.LINK_TRACTOR, SceneFiller.linkKind(Records.Connector.KIND_TRACTOR), "tractor"),
+                () -> assertEquals(SceneData.LINK_TRACTOR, SceneFiller.linkKind(Records.Connector.KIND_PRESSOR),
+                    "pressor"));
+        }
+
+        @Test
+        @DisplayName("a connected ball is tethered to its holder's drawn ship (own or other, the near copy); free or "
+            + "unseen holders have none")
+        void ballTether() {
+            AppFixture f = new AppFixture(true).players().twice(x -> {
+                x.self(0, 100, 100, 0, 0xFFFF).ship(MATE, 0, 400, 100, 0);
+                x.w.beginSection(Section.BALL);
+                Records.Ball.put(x.w, Protocol.NO_ID, 150, 120, Protocol.NO_TEAM, AppFixture.SELF);
+                Records.Ball.put(x.w, Protocol.NO_ID, 380, 140, Protocol.NO_TEAM, MATE);
+                Records.Ball.put(x.w, Protocol.NO_ID, 300, 300, Protocol.NO_TEAM, Protocol.NO_ID);
+                Records.Ball.put(x.w, Protocol.NO_ID, 330, 300, Protocol.NO_TEAM, FOE);
+                Records.Ball.put(x.w, Protocol.NO_ID, 680, 100, Protocol.NO_TEAM, AppFixture.SELF);
+                x.w.endSection();
+            });
+            fill(f);
+            assertAll(
+                () -> assertEquals(5, scene.ballCount, "every ball drawn"),
+                () -> assertEquals(3, scene.linkCount, "three tethers: own (twice) and the mate's"),
+                () -> assertEquals(SceneData.LINK_BALL, scene.linkKind[0], "solid ball line"),
+                () -> assertEquals(150f, scene.linkX1[0], "from the ball"),
+                () -> assertEquals(100f, scene.linkX2[0], "to the own ship x"),
+                () -> assertEquals(100f, scene.linkY2[0], "to the own ship y"),
+                () -> assertEquals(400f, scene.linkX2[1], "the mate's ball to the mate"),
+                () -> assertEquals(800f, scene.linkX2[2], "across the seam: the own ship's copy nearest the ball"));
+        }
+
+        @Test
+        @DisplayName("connectors and beams across the seam are drawn the short way")
+        void shortLines() {
+            AppFixture f = new AppFixture(true).players().twice(x -> x
+                .self(0, 100, 100, 0, 0xFFFF)
+                .connector(20, 100, 680, 100, Records.Connector.KIND_BALL)
+                .connector(100, 340, 100, 20, Records.Connector.KIND_REFUEL));
+            fill(f);
+            assertAll(
+                () -> assertEquals(2, scene.linkCount, "both lines"),
+                () -> assertEquals(-20f, scene.linkX2[0], "680 is 40 px left of 20 across the seam (700 wide)"),
+                () -> assertEquals(100f, scene.linkY2[0], "y unchanged"),
+                () -> assertEquals(370f, scene.linkY2[1], "20 is 30 px above 340 across the seam (350 high)"));
         }
 
         @Test

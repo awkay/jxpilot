@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.server.world.Has;
@@ -195,6 +196,9 @@ public final class Shots {
                 return -1;
             }
             pl.addFuel(ED_SHOT);
+            if (type == Obj.SHOT || type == Obj.CANNON_SHOT) {
+                Sounds.play(w, pl.px, pl.py, SoundEvent.FIRE_SHOT);
+            }
             pl.shots++;
         }
         if (!p.shotsGravity) {
@@ -278,6 +282,13 @@ public final class Shots {
         }
         if ((o.status[h] & Obj.FROMCANNON) != 0) {
             status |= Obj.FROMCANNON;
+        }
+        if (Mods.isNuclear(m)) {
+            Sounds.playAll(w, SoundEvent.NUKE_EXPLOSION);
+        } else if (objType == Obj.MINE) {
+            Sounds.play(w, o.px[h], o.py[h], SoundEvent.MINE_EXPLOSION);
+        } else {
+            Sounds.play(w, o.px[h], o.py[h], SoundEvent.OBJECT_EXPLOSION);
         }
         int type;
         int color;

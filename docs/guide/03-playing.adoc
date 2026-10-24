@@ -12,9 +12,8 @@ ifdef::env-github[]
 :warning-caption: :warning:
 endif::[]
 
-IMPORTANT: Networked play is not available yet (<<01-introduction.adoc#status,Status>>). This chapter
-describes the game as JXPilot implements it from XPilot 4.5.5: the key bindings and the HUD are
-already in the code, and the `--demo` viewer shows what the screen will look like.
+This chapter describes the game as JXPilot implements it from XPilot 4.5.5. To start a game, see
+<<02-quick-start.adoc#run-client,Playing right away>>.
 
 [[basics]]
 == The basics
@@ -25,7 +24,9 @@ hard kills you. Thrusting, shields and many items use fuel; refuel by holding th
 fuel station. When you die, you restart at your home base.
 
 Your shield protects you from shots and collisions while it is up, but it uses fuel and you cannot
-fire while shielded.
+fire while shielded. As in the XPilot client ("autoShield"), your shield is up when you start; firing
+lowers it while you fire and raises it again when you stop. Once you have pressed and released the
+shield key, it works as hold-to-shield.
 
 [[controls]]
 == Controls
@@ -47,11 +48,28 @@ JXPilot uses XPilot's default keys (from the C client's `default.c`). The most i
 |kbd:[/] |Fire the laser
 |kbd:[Page Down] / kbd:[Page Up] / kbd:[Up] |Lock on the next / previous / closest player
 |kbd:[H] or kbd:[Home] |Change home base (and toggle the autopilot, kbd:[H])
-|kbd:[Pause] |Pause
-|kbd:[End] |Self-destruct
-|kbd:[M] |Talk (type a message, kbd:[Enter] sends it)
-|kbd:[Esc] |Swap settings
+|kbd:[Pause] |Pause, only on your home base (<<pausing>>)
+|kbd:[End] |Self-destruct after a 150-frame countdown; press again to cancel
+|kbd:[M] |Talk (type a message, kbd:[Enter] sends it; <<talking>>)
+|kbd:[Esc] |Quit the game (in XPilot it swaps engine settings; <<engine-settings>>)
+|Keypad kbd:[*] / kbd:[/] |More / less engine power
+|Keypad kbd:[+] / kbd:[-] |Faster / slower turning
 |===
+
+[[laptop-keys]]
+TIP: *Mac laptops and other compact keyboards* have no Page Up, Page Down, End or keypad keys of their
+own. On a Mac laptop, kbd:[fn+↑] and kbd:[fn+↓] are Page Up and Page Down (lock on the previous / next
+player), and kbd:[fn+→] is End (self-destruct). The single kbd:[Control] key works as the left Control
+key: refuel, and the ball connector.
+
+[[engine-settings]]
+=== Engine settings
+
+Your ship's engine power, turn speed and turn resistance are settings you choose. JXPilot starts you
+with the XPilot client's defaults: power 45, turn speed 35 and turn resistance 0.12, and the
+alternative settings power 35, turn speed 25, turn resistance 0.12. The keypad keys above change the
+current settings. XPilot swaps to the alternative settings with kbd:[Esc]; in JXPilot kbd:[Esc] quits,
+so the swap has no key until key bindings can be changed.
 
 [[all-keys]]
 === All game keys
@@ -68,25 +86,48 @@ endif::[]
 
 include::generated/keys.adoc[]
 
-[[client-keys]]
-=== Client-only keys
+The table lists XPilot's defaults. In JXPilot kbd:[Esc] quits, so "Swap settings" has no key.
 
-NOTE: *Unmerged branch* (`client-net`). These keys act in the client and are never sent to the server.
+[[client-keys]]
+=== Client keys
+
+These keys act in the client and are never sent to the server.
 
 [cols="2,3",options="header"]
 |===
 |Key |Function
 |kbd:[M] |Open the talk line
-|kbd:[Left] / kbd:[Right] / kbd:[Up] / kbd:[Down] |Move in the talk line (only while talking)
-|kbd:[F1] ... kbd:[F12] |Send talk macros 1 to 12 (macros 13 to 20 have no default key)
-|kbd:[U] |ID mode (show player names)
-|Keypad kbd:[8] |Toggle the owned-items display
-|Keypad kbd:[9] |Toggle messages
-|Keypad kbd:[Enter] |Pointer (mouse) control
-|kbd:[Print] |Print messages to standard output
+|kbd:[Esc] |Quit (or, in the talk line, cancel the message)
+|kbd:[0] |Sound off and on (<<sound>>). This default may change.
+|Any key you choose with `--swap-scale-key` |Swap between the normal and the alternative zoom
+(`--scale-factor`, `--alt-scale-factor`; <<07-client-reference.adoc#game-flags,Game flags>>). Unbound by
+default, as in XPilot.
 |===
 
-Changing key bindings with a keys file (`~/.jxpilot/keys`) is planned (milestone M3).
+XPilot's talk macros (kbd:[F1] to kbd:[F12]), ID mode, message toggles and pointer control are not in
+JXPilot. Changing key bindings is planned.
+
+[[talking]]
+=== Talking
+
+kbd:[M] opens the talk line at the bottom of the screen. Type, then kbd:[Enter] sends and kbd:[Esc]
+cancels. kbd:[Left] and kbd:[Right] move the cursor, kbd:[Up] and kbd:[Down] browse the lines you sent
+before, kbd:[Backspace] and kbd:[Delete] erase, kbd:[Home] and kbd:[End] jump to the start and end.
+
+As in XPilot, a prefix before a colon decides who reads a line (the Java server; an original XPilot
+server works the same way):
+
+[cols="2,3",options="header"]
+|===
+|You type |Who gets it
+|`hello all` |Everyone. Lines show as `hello all [YourName]`.
+|`2: regroup at base` |Everyone on team 2 (and you).
+|`ace: nice shot` |The player whose name is `ace`, or starts with `ace` if only one does (and you).
+|`see you :-)` |Everyone: a colon followed by a smiley character, or at the end of the line, is not
+an address.
+|===
+
+If nobody matches, the server tells you: "Message not sent, ace does not match any player!".
 
 [[map-viewer-keys]]
 === Map viewer keys
@@ -106,10 +147,42 @@ swap-scale-factor key
 |kbd:[Esc] or kbd:[Q] |Quit
 |===
 
+[[sound]]
+== Sound
+
+The client plays sound effects, on by default. Which sounds play, and when, is decided as in XPilot:
+the server sends XPilot's sound events (shots, explosions, hits, pickups, wormholes, wins and so on),
+already made quieter with distance, and the client plays a clip for each. This works the same on a
+JXPilot server and on an original XPilot server.
+
+[cols="2,4",options="header"]
+|===
+|Control |Effect
+|`--no-sound` (or `--sound`) |Turn sound off (on) for this run. XPilot's `sound` resource.
+|`--volume N` |XPilot's `maxVolume`: the loudest a sound may play, 0 to 255 (default 100). `0` means no
+sound; values above 100 play like 100.
+|kbd:[0] |Mute and unmute while playing; the message log shows `Sound off.` / `Sound on.`
+|===
+
+Details:
+
+* XPilot's 82 sound events map to 22 clips (`sounds/sounds.map` in the client jar): for example every
+  pickup shares one clip and every large explosion another. Refuelling is silent, as no XPilot server
+  plays its sound.
+* Two things differ from XPilot: the engine sound is a loop that keeps playing while you thrust (XPilot
+  replays a short sound every frame), and XPilot has no mute key.
+* If there is no audio device, or the audio library cannot load, the client prints
+  `no sound: REASON` and plays on silently.
+* The sound effects are public domain (CC0), by Juhani Junkala and Kenney
+  (<<09-appendices.adoc#third-party,Third-party components>>).
+
 [[hud]]
 == The screen and the HUD
 
 image::demo-hud.png[The --demo viewer: radar, scoreboard, HUD and messages,align=center]
+
+Every map feature, object and HUD element is pictured, with its meaning, in
+<<gallery.adoc#on-screen,What you see on screen>>.
 
 The picture shows the `--demo` viewer, which draws fake data with the real painters. In a game you see:
 
@@ -121,7 +194,12 @@ HUD (around your ship):: Dashed HUD lines, your fuel gauge and fuel meter, the i
 their counts, the player you have locked on (name and distance), time left in the round, weapon
 modifiers and an "Autopilot" note when it is on.
 Messages (bottom left):: Game events ("pilot04 crashed into a wall.") and chat, which fade after a
-while.
+while. Crash messages say what you hit: a wall, a target, a treasure, a cannon, the edge of the world
+or another ship.
+Score popups (on the map):: When your score changes, the points appear on the map where you made or
+lost them, with a label such as the victim's name, `[Wall]`, `[Shove]` or `[Deadliest]`.
+Shots:: Shots that cannot hurt you (your team mates' shots when team immunity is on, shots of a
+paused player, your own shots with `selfImmunity`) are drawn in a different colour.
 Talk line (middle):: Opens with kbd:[M] for typing a chat message.
 
 [[scoring]]
@@ -135,43 +213,76 @@ Scoring follows XPilot's rules (the server's `Scoring` is a port of XPilot's `sc
   `runoverKillScoreMult`, and so on. Crashing into a wall costs points (`crashScoreMult`), as does
   killing yourself.
 * In team play, scores can be shared within a team (`teamShareScore`); killing a team mate earns
-  nothing.
+  nothing. When a player leaves, their share is taken back and shared among the rest of the team.
+* When a player leaves the game, their shots in flight disappear, unless the server sets `keepShots`.
+* A paused player slowly loses points (0.01 per frame).
+
+[[rounds]]
+== Rounds, lives and game over
+
+Without limits, the game never ends: you die, restart at your base and play on. The server options
+below turn it into rounds. They are ported from XPilot and run in the server simulation today.
+
+Limited lives:: With `limitedLives` on, each player has `worldLives` lives per round. Each death costs
+one; after the last you are out of the round (marked `D` in the scoreboard) until it ends.
+End of a round:: Without teams, the round ends when only one of several players is still alive (the
+winner), when nobody is (a draw), or when the round time `maxRoundTime` (seconds) runs out (a draw).
+In team play, a team is out when all its members are; the last team alive wins "by staying alive", and
+when the time runs out the team that saved more treasures, then the team with the higher total score,
+wins.
+Bonuses:: At the end of a round the player with the best kills/(deaths+1) ratio gets a bonus as the
+"Deadliest Player" (several tied players share it), and the winner, or the winning team's members, get
+a winner's bonus.
+Next round:: Everyone gets their lives back. With `reset` on (the default), every ship restarts at its base and all
+shots and objects are cleared. The next round starts after `roundDelay` seconds ("Delaying N seconds
+until start of next round."). With `roundsToPlay` set, the server announces "Round N out of M" and
+after the last round declares "Game over..." with the best and worst players (and teams).
+Joining during a round:: With limited lives, if a player (outside team play) has already lost a life
+in this round, a newcomer waits for the next round, marked `W` in the scoreboard. With `resetOnHuman`
+set to N, while at most N human players are in the game a newcomer ends the current round so that they
+can play at once.
+
+All of these options are in <<05-server-options.adoc#opts-race,Races, rounds and game length>> and
+<<05-server-options.adoc#opts-ships,Ships and players>>.
+
+NOTE: Race mode (checkpoints and laps) and treasure rules do not end rounds yet; they come with
+milestone M2. On race maps the game currently runs without rounds.
+
+[[pausing]]
+== Pausing
+
+* kbd:[Pause] pauses you only when you are on your own home base and nearly stopped (slower than
+  3 plus the local gravity). Anywhere else the key does nothing.
+* A paused ship is taken out of play and marked `P` in the scoreboard. You lose 0.01 points per frame
+  while paused.
+* You can unpause only after a 10-second countdown. Press kbd:[Pause] again; you restart at your home
+  base. With limited lives, outside team play, if you had already lost a life this round you wait for
+  the next round instead (`W`).
+* If you press no keys for 60 seconds while another human is playing, you are paused automatically.
+* A player paused for longer than `maxPauseTime` seconds (default 3600; 0 disables it) is removed from
+  the server.
 
 All multipliers are in <<05-server-options.adoc#opts-scoring,Scoring options>>.
 
 [[items]]
 == Items
 
-NOTE: *Planned* (milestone M2). Items are parsed and drawn, but cannot be picked up or used yet.
+NOTE: Items are server rules. When the JXPilot client plays on an original C XPilot server, every
+item works: the C server handles pickup and use, and the client draws the items and sends their keys.
+The JXPilot (Java) server does not have items yet; they are being added (milestone M2). The "Works on" column
+shows both.
 
 Items float around the map (more around item concentrators, the `%` map symbol); fly over one to pick
-it up. These are XPilot's 21 item types, which JXPilot will support:
+it up. On the map an item is a blue triangle with the item's symbol inside it, as in the "In play"
+column; the HUD shows the symbols of the items you carry. These are XPilot's 21 items. The pictures
+are drawn from the same bitmaps the client uses (ported from the XPilot client), and the descriptions
+are the XPilot client's own.
 
-[cols="1,3",options="header"]
-|===
-|Item |Effect in XPilot
-|Fuel |More fuel.
-|Wide-angle shot |Extra shots fired at an angle.
-|Rear shot |Extra shots fired backwards.
-|Afterburner |More thrust for the same fuel.
-|Cloak |Makes you invisible to players without sensors.
-|Sensor |Lets you see cloaked players.
-|Transporter |Steals an item from a nearby player.
-|Tank |An extra fuel tank, which you can detach as a decoy.
-|Mine |Mines to drop.
-|Missile |Smart missiles, heat seekers and torpedoes.
-|ECM |Electronic countermeasures: confuses nearby missiles, mines and players.
-|Laser |A laser weapon.
-|Emergency thrust |Full thrust for a while without the usual limits.
-|Tractor beam |Pulls (or, as a pressor beam, pushes) other objects.
-|Autopilot |Brings your ship to a stop.
-|Emergency shield |A shield that does not drain fuel, for a while.
-|Deflector |Deflects incoming shots.
-|Hyperjump |Teleports you to a random place.
-|Phasing |Lets you fly through walls for a while.
-|Mirror |Reflects lasers.
-|Armor |Absorbs hits.
-|===
+ifdef::env-github[]
+On GitHub, see link:generated/items.adoc[generated/items.adoc] for the table with the pictures.
+endif::[]
+
+include::generated/items.adoc[]
 
 How often each item appears, how many you start with and how many you may carry are server options
 (<<05-server-options.adoc#opts-items,Items and fuel>>).

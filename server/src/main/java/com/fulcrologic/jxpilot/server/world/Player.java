@@ -113,6 +113,8 @@ public final class Player {
     public int deaths;
     public int life;
     public final int[] items = new int[Item.COUNT];
+    /** Sounds for this player's next snapshot (C {@code pl->audio}); see {@code sim.Sounds}. */
+    public final AudioQueue audio = new AudioQueue();
 
     public final int[] shovePusher = new int[MAX_SHOVES];
     public final long[] shoveTime = new long[MAX_SHOVES];

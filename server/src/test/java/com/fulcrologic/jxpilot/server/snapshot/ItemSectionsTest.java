@@ -105,7 +105,7 @@ class ItemSectionsTest {
             buf.flip();
             assertTrue(r.begin(buf), "part header");
             while (r.nextSection()) {
-                if (r.type() != type) {
+                if (r.type() != (type == SELF_LOCK ? Section.SELF : type)) {
                     continue;
                 }
                 for (int i = 0; i < r.count(); i++) {
@@ -115,6 +115,9 @@ class ItemSectionsTest {
         }
         return out;
     }
+
+    /** Pseudo section type for {@link #describe}: the lock and modifier fields of SELF. */
+    static final int SELF_LOCK = -1;
 
     static int res(float radians) {
         return Math.round(radians * Const.RES / (float) (2 * Math.PI)) & (Const.RES - 1);
@@ -130,15 +133,15 @@ class ItemSectionsTest {
                 }
                 return sb.toString();
             }
-            case Section.SELF_STATUS -> {
-                Records.SelfStatus s = new Records.SelfStatus().wrap(r, i);
-                return s.lockDist() + " " + s.lockDir() + " f" + s.flags() + " m" + s.mods() + " t" + s.thrustLeft() + "/"
-                    + s.thrustMax() + " s" + s.shieldLeft() + "/" + s.shieldMax() + " p" + s.phasingLeft() + "/"
-                    + s.phasingMax();
+            case SELF_LOCK -> {
+                Records.Self s = new Records.Self().wrap(r, i);
+                return s.lockDist() + " " + s.lockDir() + " m" + s.mods();
             }
             case Section.TIMERS -> {
                 Records.Timers t = new Records.Timers().wrap(r, i);
-                return t.damaged() + " " + t.roundDelay() + " " + t.timeLeft();
+                return t.damaged() + " " + t.roundDelay() + " " + t.timeLeft() + " d" + t.destruct() + " t"
+                    + t.thrustLeft() + "/" + t.thrustMax() + " s" + t.shieldLeft() + "/" + t.shieldMax() + " p"
+                    + t.phasingLeft() + "/" + t.phasingMax() + " x" + t.shutdownCount();
             }
             case Section.ITEM -> {
                 Records.ItemObj t = new Records.ItemObj().wrap(r, i);
@@ -219,33 +222,58 @@ class ItemSectionsTest {
         }
 
         @Test
-        @DisplayName("SELF_STATUS: lock distance/direction only when LOCK_VISIBLE, autopilot light, mods, used timers")
-        void status() {
+        @DisplayName("SELF: lock distance/direction only when LOCK_VISIBLE; the modifiers in SELF's layout")
+        void lockAndMods() {
             a.lockTagged = Player.LOCK_PLAYER | Player.LOCK_VISIBLE;
             a.lockPlId = b.id;
             a.lockDistance = 200.7f;
-            a.used |= Has.AUTOPILOT | Has.EMERGENCY_THRUST;
+            a.mods = Mods.withNuclear(Mods.withMini(Obj.MOD_CLUSTER, 2), Mods.NUCLEAR | Mods.FULLNUCLEAR);
+            String on = records(a, SELF_LOCK, false).get(0);
+            a.lockTagged = Player.LOCK_PLAYER;
+            String off = records(a, SELF_LOCK, false).get(0);
+            int mods = Records.Self.MOD_NUCLEAR | Records.Self.MOD_FULL_NUCLEAR | Records.Self.MOD_CLUSTER
+                | (2 << Records.Self.MOD_MINI_SHIFT);
+            assertAll(
+                () -> assertEquals("200 1 m" + mods, on, "B is 200 px right and 10 up (dir 1): the lock is shown"),
+                () -> assertEquals("0 0 m" + mods, off, "no LOCK_VISIBLE: no distance or direction"));
+        }
+
+        @Test
+        @DisplayName("SELF mods: warhead and nuclear fields swap places, the other fields keep theirs")
+        void selfMods() {
+            assertAll(
+                () -> assertEquals(Records.Self.MOD_CLUSTER, ItemSections.selfMods(Mods.withWarhead(0, Obj.MOD_CLUSTER)),
+                    "cluster"),
+                () -> assertEquals(Records.Self.MOD_IMPLOSION,
+                    ItemSections.selfMods(Mods.withWarhead(0, Obj.MOD_IMPLOSION)), "implosion"),
+                () -> assertEquals(Records.Self.MOD_NUCLEAR, ItemSections.selfMods(Mods.withNuclear(0, Mods.NUCLEAR)),
+                    "nuclear"),
+                () -> assertEquals(Records.Self.MOD_LASER_BLIND | (3 << Records.Self.MOD_POWER_SHIFT)
+                    | (1 << Records.Self.MOD_SPREAD_SHIFT) | (2 << Records.Self.MOD_VELOCITY_SHIFT),
+                    ItemSections.selfMods(Mods.withLaser(Mods.withPower(Mods.withSpread(Mods.withVelocity(0, 2), 1), 3),
+                        Mods.BLIND)), "velocity, spread, power and laser in place"));
+        }
+
+        @Test
+        @DisplayName("TIMERS meters: emergency thrust/shield and phasing only while in use; self-destruct countdown")
+        void meters() {
+            a.used |= Has.EMERGENCY_THRUST;
             a.emergencyThrustLeft = 30;
             a.emergencyThrustMax = 48;
             a.emergencyShieldLeft = 5;
+            a.emergencyShieldMax = 6;
             a.phasingLeft = 9;
-            a.mods = Mods.withMini(Obj.MOD_CLUSTER, 2);
-            w.frames = 8;
-            String on = records(a, Section.SELF_STATUS, false).get(0);
-            w.frames = 12;
-            a.lockTagged = Player.LOCK_PLAYER;
-            String off = records(a, Section.SELF_STATUS, false).get(0);
-            a.used &= ~Has.AUTOPILOT;
-            a.status |= Obj.HOVERPAUSE;
-            a.count = 0;
-            String hover = records(a, Section.SELF_STATUS, false).get(0);
+            a.phasingMax = 12;
+            w.roundTime = -1;
+            String thrust = records(a, Section.TIMERS, false).get(0);
+            a.used ^= Has.EMERGENCY_THRUST | Has.EMERGENCY_SHIELD | Has.PHASING_DEVICE;
+            a.status |= Obj.SELF_DESTRUCT;
+            a.count = 36;
+            String others = records(a, Section.TIMERS, false).get(0);
             assertAll(
-                () -> assertEquals("200 1 f3 m" + (1 | (2 << 6)) + " t30/48 s0/0 p0/0", on,
-                    "B is 200 px right and 10 up (dir 1): visible lock, light on at frame 8 % 8 < 4, the thrust timer"),
-                () -> assertEquals("0 0 f0 m" + (1 | (2 << 6)) + " t30/48 s0/0 p0/0", off,
-                    "no LOCK_VISIBLE: no distance; frame 12: light off"),
-                () -> assertEquals("0 0 f2 m" + (1 | (2 << 6)) + " t30/48 s0/0 p0/0", hover,
-                    "hover pause with its count run out: steady light"));
+                () -> assertEquals("0 0 -1 d0 t30/48 s0/0 p0/0 x-1", thrust, "only the thrust meter is in use"),
+                () -> assertEquals("0 0 -1 d36 t0/0 s5/6 p9/12 x-1", others,
+                    "shield and phasing meters, 36 frames to self-destruct"));
         }
 
         @Test
@@ -259,8 +287,8 @@ class ItemSectionsTest {
             w.roundDelay = 24;
             String limited = records(a, Section.TIMERS, false).get(0);
             assertAll(
-                () -> assertEquals("40 0 -1", none, "damaged 40, no delay, no limit"),
-                () -> assertEquals("40 24 10", limited, "120 frames at 12 fps = 10 s"));
+                () -> assertEquals("40 0 -1 d0 t0/0 s0/0 p0/0 x-1", none, "damaged 40, no delay, no limit"),
+                () -> assertEquals("40 24 10 d0 t0/0 s0/0 p0/0 x-1", limited, "120 frames at 12 fps = 10 s"));
         }
     }
 

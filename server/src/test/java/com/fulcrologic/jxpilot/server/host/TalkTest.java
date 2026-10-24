@@ -129,13 +129,14 @@ class TalkTest {
     @DisplayName("say: god and players")
     class Players {
         @Test
-        @DisplayName("\"god\" (any case) is the server log: dropped")
+        @DisplayName("\"god\" (any case) is the admin log; without one GOD is not listening")
         void god() {
             Simulation s = sim("", THREE);
             Player ann = s.ships.join("Ann", 0);
             Talk t = new Talk(s.world);
             assertAll(
-                () -> assertEquals(List.of(), say(s.world, t, ann, "GoD:help"), "nothing is sent"),
+                () -> assertEquals(List.of("MESSAGE " + SERVER + " -1 1  < GOD doesn't seem to be listening>"),
+                    say(s.world, t, ann, "GoD:help"), "no admin log file"),
                 () -> assertEquals(List.of("MESSAGE " + SERVER + " -1 1 Message not sent, gods does not match any player!"),
                     say(s.world, t, ann, "gods:help"), "\"gods\" is a player name"));
         }

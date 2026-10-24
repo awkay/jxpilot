@@ -1,0 +1,28 @@
+# JXPilot guide gallery fixture for race checkpoints (race mode cannot be combined with team play,
+# so they live apart from features.xp). Written for docs/guide/tools/capture-gallery.sh; not a playable map.
+# GPL-2.0-or-later, as JXPilot.
+mapName:      Gallery race fixture
+mapAuthor:    JXPilot contributors
+mapWidth:     32
+mapHeight:    16
+timing:       yes
+edgeWrap:     no
+framesPerSecond: 14
+mapData: \multiline: EndOfMapdata
+
+
+
+
+
+
+
+
+          A   B   C         _
+
+
+
+
+
+
+
+EndOfMapdata

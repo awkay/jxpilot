@@ -77,6 +77,84 @@ class HudBuildTest {
         return g;
     }
 
+    /** A game whose SELF reports power 50 / turn speed 40 and whose TIMERS have every meter. */
+    static ClientGame gameWithMeters(int destruct, int shutdown) {
+        Options o = new Options();
+        ConfigParser.parse("mapWidth: 4\nmapHeight: 4\nframesPerSecond: 14\nmapData: \\multiline: E\n    \n    \n    \n    \nE\n",
+            "t", OptionOrigin.MAP, o);
+        WorldMap m = WorldMap.fromOptions(o);
+        Msg.Welcome w = new Msg.Welcome();
+        w.simHz = 60;
+        w.snapshotHz = 30;
+        w.gameFps = 14;
+        ClientGame g = new ClientGame(8, 8, 64, 8);
+        g.onAccepted(7);
+        g.onWelcome(w);
+        g.onConfig(w, o, m);
+        g.onStateChange(ConnectionState.PLAYING, "Playing");
+        ByteBuffer b = ByteBuffer.allocate(Protocol.MAX_PACKET);
+        SnapshotWriter sw = new SnapshotWriter();
+        sw.setWorld(140, 140, false);
+        sw.begin(b, 100, 0, 0, 1, 0, 70, 70);
+        sw.beginSection(Section.SELF);
+        Records.Self.put(sw, 7, 0, 70, 70, 0, 0, 0, 300, 1000, Protocol.NO_ID, 0, 0, 0, 50, 40, 0.12, 0, 0, 0, 0);
+        sw.endSection();
+        sw.beginSection(Section.TIMERS);
+        Records.Timers.put(sw, 0, 0, -1, destruct, 30, 60, 90, 60, 5, 10, shutdown, 120);
+        sw.endSection();
+        b.flip();
+        g.onSnapshot(b, T0);
+        g.frame(T0, 0);
+        return g;
+    }
+
+    @Nested
+    @DisplayName("meters (C Paint_meters)")
+    class Meters {
+        @Test
+        @DisplayName("power and turn speed while the control count runs or with their options; timer meters by their maxima")
+        void meters() {
+            ClientGame g = gameWithMeters(75, 40);
+            Hud h = new Hud();
+            HudFrame quiet = new HudFrame();
+            h.build(quiet, g, new TalkLine(), 800, 600, M, 0);
+            h.showControls();
+            HudFrame shown = new HudFrame();
+            h.build(shown, g, new TalkLine(), 800, 600, M, 10);
+            double left = h.controlCount();
+            HudFrame later = new HudFrame();
+            h.build(later, g, new TalkLine(), 800, 600, M, 95);
+            Hud opts = new Hud();
+            opts.powerMeter = true;
+            opts.turnSpeedMeter = true;
+            HudFrame optsF = new HudFrame();
+            opts.build(optsF, g, new TalkLine(), 800, 600, M, 0);
+            HudFrame none = new HudFrame();
+            new Hud().build(none, gameWithMeters(0, -1), new TalkLine(), 800, 600, M, 0);
+            assertAll(
+                () -> assertFalse(texts(quiet).contains("550,49 Power"), "no Power meter by default (C powerMeter off)"),
+                () -> assertTrue(texts(shown).contains("550,49 Power"), "Power meter at (-10, 40) after a settings key"),
+                () -> assertTrue(rects(shown).contains("fill 592,42 179x5"), "bar = 197 * 50 / 55 (SELF power)"),
+                () -> assertTrue(texts(shown).contains("522,69 Turnspeed"), "Turnspeed meter at (-10, 60)"),
+                () -> assertTrue(rects(shown).contains("fill 592,62 123x5"), "bar = 197 * 40 / 64 (SELF turn speed)"),
+                () -> assertEquals(90.0, left, "the count runs down by the frames"),
+                () -> assertFalse(texts(later).contains("550,49 Power"), "gone after CONTROL_DELAY frames"),
+                () -> assertTrue(texts(optsF).contains("550,49 Power"), "powerMeter option"),
+                () -> assertTrue(texts(optsF).contains("522,69 Turnspeed"), "turnSpeedMeter option"),
+                () -> assertTrue(texts(quiet).contains("423,409 Thrust Left"), "thrust meter at ((800-300)/2-32, 400)"),
+                () -> assertTrue(rects(quiet).contains("fill 220,402 98x5"), "thrust bar 197 * 30 / 60"),
+                () -> assertTrue(texts(quiet).contains("423,429 Shields Left"), "shield meter 20 lower"),
+                () -> assertTrue(rects(quiet).contains("fill 220,422 197x5"), "shield left is capped at its max"),
+                () -> assertTrue(texts(quiet).contains("423,449 Phasing left"), "phasing meter 40 lower"),
+                () -> assertTrue(texts(quiet).contains("423,469 Self destructing"), "destruct meter 60 lower"),
+                () -> assertTrue(rects(quiet).contains("fill 220,462 98x5"), "destruct bar 197 * 75 / 150"),
+                () -> assertTrue(texts(quiet).contains("423,489 SHUTDOWN"), "shutdown meter 80 lower"),
+                () -> assertTrue(rects(quiet).contains("fill 220,482 65x5"), "shutdown bar 197 * 40 / 120"),
+                () -> assertFalse(texts(none).contains("423,469 Self destructing"), "no destruct meter at 0"),
+                () -> assertFalse(texts(none).contains("423,489 SHUTDOWN"), "no shutdown meter at -1"));
+        }
+    }
+
     @Nested
     @DisplayName("build")
     class Build {
@@ -181,10 +259,7 @@ class HudBuildTest {
             ByteBuffer sb = ByteBuffer.allocate(20);
             s.write(sb);
             g.onReliable(com.fulcrologic.jxpilot.common.net.ReliableType.SCORE, sb.flip());
-            s.score = 4;
-            sb.clear();
-            s.write(sb);
-            g.onReliable(com.fulcrologic.jxpilot.common.net.ReliableType.SCORE, sb.flip());
+            g.scoreObjects().add(3, null, false, 0, 0);
             Hud h = new Hud();
             h.ptrMoveFact = 2;
             h.fuelMeter = true;

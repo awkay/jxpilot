@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.Base;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.FuelStation;
@@ -187,6 +188,10 @@ public final class Ships {
             if (enterListener != null) {
                 enterListener.entered(pl);
             }
+            // C Handle_login: sound_play_all(START_SOUND) before the newcomer's PKT_REQUEST_AUDIO sets its
+            // WANT_AUDIO, so everyone but the newcomer hears it
+            Sounds.playAll(w, SoundEvent.START);
+            pl.audio.clear();
             sim.rounds.playerEntered(pl);
         }
         return true;
@@ -1054,6 +1059,7 @@ public final class Ships {
         } else {
             j = nearestAhead(pl, hit, n);
         }
+        Sounds.play(w, pl.px, pl.py, SoundEvent.WORM_HOLE);
         Wormhole dest = w.map.wormholes().get(j);
         pl.wormHoleDest = j;
         pl.initPixels((dest.bx() + 0.5) * Const.BLOCK_SZ, (dest.by() + 0.5) * Const.BLOCK_SZ);
@@ -1064,6 +1070,7 @@ public final class Ships {
         }
         pl.status &= ~Obj.WARPING;
         pl.status |= Obj.WARPED;
+        Sounds.play(w, pl.px, pl.py, SoundEvent.WORM_HOLE);
     }
 
     /** The RANDOM_REAR_WORM choice of update.c:1065-1110 (note: C wraps the y offset with WRAP_DX). */
@@ -1097,10 +1104,12 @@ public final class Ships {
     // ================================================================ death
 
     /**
-     * C {@code Kill_player}: explosion debris, then {@link #deathReset}.
+     * C {@code Kill_player}: C {@code Explode_fighter} (debris, then wreckage for a KILLED ship), then
+     * {@link #deathReset}.
      */
     public void kill(Player pl) {
         sim.debris.explodeShip(pl);
+        sim.wreckage.ship(pl); // Explode_fighter's Make_wreckage (ship.c:669-687)
         deathReset(pl);
     }
 
@@ -1111,7 +1120,8 @@ public final class Ships {
      * respawn count = max(3*FPS, count).
      * BEHAVIOR: fuel = max((long)(fuel*0.9), initialFuel*256 + (int)(rfrac*(1+that)*0.2)), capped at the tank.
      * BEHAVIOR: unless paused: deaths++; with limited lives a life is lost and the last one ends the game
-     * (GAME_OVER, mychar 'D'), without limited lives life counts up (C).
+     * (GAME_OVER, mychar 'D'), without limited lives life counts up (C). A robot losing its last life may
+     * leave the game instead ({@code RobotManager.leaveOutOfLives}); then nothing else is reset.
      * BEHAVIOR: abilities reset to DEF_HAVE / DEF_USED minus USED_KILL.
      * BEHAVIOR: a tank is deleted instead ({@link #leave}); an autopilot (or hover pause) is switched off first;
      * the item timers, ECM count, forced visibility and lock distance are reset.
@@ -1154,6 +1164,9 @@ public final class Ships {
             if (p.limitedLives) {
                 pl.life--;
                 if (pl.life == -1) {
+                    if (pl.robot && sim.robots.leaveOutOfLives(pl)) {
+                        return;
+                    }
                     pl.life = 0;
                     pl.status |= Obj.GAME_OVER;
                     pl.mychar = 'D';

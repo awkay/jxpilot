@@ -45,7 +45,7 @@ import com.fulcrologic.jxpilot.server.world.World;
 /**
  * The item sections of a snapshot (C {@code Frame_shots}, {@code Frame_ships} and {@code Frame_status} in
  * {@code src/server/frame.c}): ITEM, MINE, MISSILE, LASER, ECM, CONNECTOR (tractor beams), TRANSPORTER,
- * SELF_ITEMS, SELF_STATUS and TIMERS, written through the {@link SnapshotBuilder}'s part and culling logic.
+ * SELF_ITEMS and TIMERS, written through the {@link SnapshotBuilder}'s part and culling logic.
  * The random parts of C's frame code (random items, confused mines) use a snapshot-local RNG seeded from the
  * tick, never the simulation's.
  */
@@ -71,7 +71,6 @@ final class ItemSections {
     void write(Player v) {
         rng.seed(w.tick * 0x9E3779B9 + v.id);
         writeSelfItems(v);
-        writeSelfStatus(v);
         writeTimers(v);
         writeObjects(v);
         writeLasers(v);
@@ -97,52 +96,48 @@ final class ItemSections {
     }
 
     /**
-     * The extra HUD state C's {@code Send_self} and the item timer packets carry (SELF_STATUS, type 23).
-     * <p>
-     * BEHAVIOR: the lock distance and direction when the lock is shown on the HUD (LOCK_VISIBLE), else 0; flag 1
-     * lock visible, flag 2 the autopilot light (blinking 4 of 8 frames with the autopilot, steady at the end of a
-     * hover pause); the modifiers; emergency thrust, emergency shield and phasing time left and maximum when in
-     * use (0 otherwise).
+     * BEHAVIOR: the lock distance (px) for SELF when the lock is shown on the HUD (C Frame_status LOCK_VISIBLE), else
+     * 0 (the lock is not shown).
      */
-    void writeSelfStatus(Player v) {
-        if (!b.need(Section.SELF_STATUS, 0)) {
-            return;
-        }
-        int dist = 0;
-        int dir = 0;
-        int flags = 0;
+    int lockDist(Player v) {
         Player t = w.byId(v.lockPlId);
-        if ((v.lockTagged & Player.LOCK_VISIBLE) != 0 && t != null) {
-            flags |= Records.SelfStatus.FLAG_LOCK_VISIBLE;
-            dist = (int) v.lockDistance;
-            dir = (int) com.fulcrologic.jxpilot.common.math.XMath.findDir(w.wrapDx(t.px - v.px),
-                w.wrapDy(t.py - v.py)) & (Const.RES - 1);
+        return (v.lockTagged & Player.LOCK_VISIBLE) != 0 && t != null ? (int) v.lockDistance : 0;
+    }
+
+    /** BEHAVIOR: the direction (RES) from {@code v} to the shown lock, else 0. */
+    int lockDir(Player v) {
+        Player t = w.byId(v.lockPlId);
+        if ((v.lockTagged & Player.LOCK_VISIBLE) == 0 || t == null) {
+            return 0;
         }
-        boolean light;
-        if ((v.status & Obj.HOVERPAUSE) != 0) {
-            light = v.count <= 0 || (w.frames % 8) < 4;
-        } else {
-            light = (v.used & Has.AUTOPILOT) != 0 && (w.frames % 8) < 4;
-        }
-        if (light) {
-            flags |= Records.SelfStatus.FLAG_AUTOPILOT;
-        }
-        boolean et = (v.used & Has.EMERGENCY_THRUST) != 0;
-        boolean es = (v.used & Has.EMERGENCY_SHIELD) != 0;
-        boolean ph = (v.used & Has.PHASING_DEVICE) != 0;
-        Records.SelfStatus.put(b.writer(), dist, dir, flags, v.mods, et ? v.emergencyThrustLeft : 0,
-            et ? v.emergencyThrustMax : 0, es ? v.emergencyShieldLeft : 0, es ? v.emergencyShieldMax : 0,
-            ph ? v.phasingLeft : 0, ph ? v.phasingMax : 0);
+        return (int) com.fulcrologic.jxpilot.common.math.XMath.findDir(w.wrapDx(t.px - v.px), w.wrapDy(t.py - v.py))
+            & (Const.RES - 1);
     }
 
     /**
-     * BEHAVIOR: one TIMERS record: frames of blindness ({@code damaged}), the round delay, and the round time left
-     * in seconds (-1 without a round limit).
+     * BEHAVIOR: the viewer's modifiers in SELF's layout ({@link Records.Self#MOD_NUCLEAR} etc.): the server's
+     * {@code Mods} packing with the warhead (bits 0-1) and nuclear (bits 2-3) fields swapped; the other fields line up.
+     */
+    static int selfMods(int m) {
+        return ((m >> 2) & 3) | ((m & 3) << 2) | (m & ~0xF);
+    }
+
+    /**
+     * BEHAVIOR: one TIMERS record: frames of blindness ({@code damaged}), the round delay, the round time left in
+     * seconds (-1 without a round limit), self-destruct frames left, and the emergency thrust, emergency shield and
+     * phasing meters (left and maximum while in use, C Send_thrusttime/shieldtime/phasingtime; 0 otherwise).
      */
     void writeTimers(Player v) {
         if (b.need(Section.TIMERS, 0)) {
             int left = w.roundTime >= 0 ? w.roundTime / Math.max(1, w.params.fps) : -1;
-            Records.Timers.put(b.writer(), Math.min(0xFFFF, v.damaged), Math.min(0xFFFF, w.roundDelay), left);
+            boolean et = (v.used & Has.EMERGENCY_THRUST) != 0;
+            boolean es = (v.used & Has.EMERGENCY_SHIELD) != 0;
+            boolean ph = (v.used & Has.PHASING_DEVICE) != 0;
+            Records.Timers.put(b.writer(), Math.min(0xFFFF, v.damaged), Math.min(0xFFFF, w.roundDelay), left,
+                (v.status & Obj.SELF_DESTRUCT) != 0 ? Math.max(0, v.count) : 0,
+                et ? v.emergencyThrustLeft : 0, et ? v.emergencyThrustMax : 0,
+                es ? v.emergencyShieldLeft : 0, es ? v.emergencyShieldMax : 0,
+                ph ? v.phasingLeft : 0, ph ? v.phasingMax : 0, -1, 0);
         }
     }
 

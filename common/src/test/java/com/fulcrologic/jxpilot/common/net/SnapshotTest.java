@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.common.net;
 
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -131,7 +132,8 @@ class SnapshotTest {
             w.begin(b, 1, 2, 0, 1, 0, 1000, 2000);
             w.beginSection(Section.SELF);
             Records.Self.put(w, 5, Records.ShipFlags.SHIELD, 100.25f, 200.5f, 1.5f, -2.5f, 3.0f, 900f, 1000f,
-                Protocol.NO_ID, 2, 1, 70000);
+                Protocol.NO_ID, 2, 1, 70000, 44.6, 300, 0.12, 70000, 130, 3,
+                Records.Self.MOD_NUCLEAR | 3 << Records.Self.MOD_VELOCITY_SHIFT | Records.Self.MOD_LASER_BLIND);
             w.endSection();
             w.beginSection(Section.SHIP);
             Records.Ship.put(w, 9, Records.ShipFlags.THRUSTING | Records.ShipFlags.FRIENDLY, 1200.2, 1500.0, 6.2, -3.3,
@@ -215,7 +217,11 @@ class SnapshotTest {
             Records.TempWormhole.put(w, 899, 3, 2);
             w.endSection();
             w.beginSection(Section.TIMERS);
-            Records.Timers.put(w, 70, 41, -1);
+            Records.Timers.put(w, 70, 41, -1, 90, 70000, 400, 12, 300, 7, 50, 40000, -5);
+            w.endSection();
+            w.beginSection(Section.SOUND);
+            Records.Sound.put(w, SoundEvent.ASTEROID_BREAK.ordinal(), SoundEvent.MAX_VOLUME);
+            Records.Sound.put(w, SoundEvent.START.ordinal(), SoundEvent.MIN_VOLUME);
             w.endSection();
             SnapshotReader r = readerFor(b);
             r.setWorld(31500, 31500, false);
@@ -241,7 +247,15 @@ class SnapshotTest {
                             () -> assertEquals(Protocol.NO_ID, s.lockId(), "keeps lock id"),
                             () -> assertEquals(2, s.numTanks(), "keeps tank count"),
                             () -> assertEquals(1, s.currentTank(), "keeps current tank"),
-                            () -> assertEquals(0xFFFF, s.respawnFrames(), "clamps respawn frames to u16"));
+                            () -> assertEquals(0xFFFF, s.respawnFrames(), "clamps respawn frames to u16"),
+                            () -> assertEquals(45, s.power(), "rounds power"),
+                            () -> assertEquals(255, s.turnSpeed(), "clamps turn speed to a byte"),
+                            () -> assertEquals(31, s.turnResistance255(), "sends turn resistance as round(r * 255)"),
+                            () -> assertEquals(0xFFFF, s.lockDist(), "clamps lock distance to u16"),
+                            () -> assertEquals(2, s.lockDir(), "takes the lock direction mod RES"),
+                            () -> assertEquals(3, s.check(), "keeps the checkpoint"),
+                            () -> assertEquals(Records.Self.MOD_NUCLEAR | 3 << Records.Self.MOD_VELOCITY_SHIFT
+                                | Records.Self.MOD_LASER_BLIND, s.mods(), "keeps the modifier bits"));
                     }
                     case Section.SHIP -> {
                         Records.Ship s = new Records.Ship().wrap(r, 0);
@@ -440,14 +454,35 @@ class SnapshotTest {
                         assertAll("timers",
                             () -> assertEquals(70, s.damaged(), "keeps damaged frames"),
                             () -> assertEquals(41, s.roundDelay(), "keeps round delay frames"),
-                            () -> assertEquals(-1, s.timeLeft(), "keeps a negative (none) time left"));
+                            () -> assertEquals(-1, s.timeLeft(), "keeps a negative (none) time left"),
+                            () -> assertEquals(90, s.destruct(), "keeps the self-destruct count"),
+                            () -> assertEquals(0xFFFF, s.thrustLeft(), "clamps thrust left to u16"),
+                            () -> assertEquals(400, s.thrustMax(), "keeps thrust max"),
+                            () -> assertEquals(12, s.shieldLeft(), "keeps shield left"),
+                            () -> assertEquals(300, s.shieldMax(), "keeps shield max"),
+                            () -> assertEquals(7, s.phasingLeft(), "keeps phasing left"),
+                            () -> assertEquals(50, s.phasingMax(), "keeps phasing max"),
+                            () -> assertEquals(32767, s.shutdownCount(), "clamps the shutdown count to i16"),
+                            () -> assertEquals(0, s.shutdownDelay(), "clamps a negative shutdown delay to 0"));
+                    }
+                    case Section.SOUND -> {
+                        Records.Sound s0 = new Records.Sound().wrap(r, 0);
+                        Records.Sound s1 = new Records.Sound().wrap(r, 1);
+                        assertAll("sound",
+                            () -> assertEquals(2, r.count(), "keeps both sound events"),
+                            () -> assertEquals(SoundEvent.ASTEROID_BREAK.ordinal(), s0.event(), "keeps the highest event id"),
+                            () -> assertEquals(SoundEvent.MAX_VOLUME, s0.volume(), "keeps the full volume"),
+                            () -> assertEquals(SoundEvent.START.ordinal(), s1.event(), "keeps event id 0"),
+                            () -> assertEquals(SoundEvent.MIN_VOLUME, s1.volume(), "keeps the minimum volume"));
                     }
                     default -> throw new AssertionError("unexpected section " + r.type());
                 }
             }
             List<Integer> expected = new ArrayList<>();
             for (int t = 1; t <= Section.MAX_TYPE; t++) {
-                expected.add(t);
+                if (Section.recordSize(t) > 0) {
+                    expected.add(t);
+                }
             }
             assertAll(
                 () -> assertEquals(expected, types, "visits every written section once, in order"),
@@ -462,6 +497,7 @@ class SnapshotTest {
                 () -> assertEquals(27, Records.Burst.SIZE, "bursts are 27 bytes"),
                 () -> assertEquals(3, Records.Radar.SIZE, "radar blips are 3 bytes"),
                 () -> assertEquals(14, Records.Ship.SIZE, "ships are 14 bytes"),
+                () -> assertEquals(2, Records.Sound.SIZE, "sound events are 2 bytes"),
                 () -> assertEquals(5, Section.HEADER_SIZE, "section headers are 5 bytes"),
                 () -> assertEquals(15, SnapshotWriter.HEADER_SIZE, "snapshot headers are 15 bytes"),
                 () -> assertEquals(0, Section.recordSize(0), "type 0 is unassigned"),
@@ -530,17 +566,17 @@ class SnapshotTest {
             int radarHeavy = scene(8, 0, 0, 332);
             int radarHeavyAll = scene(31, 0, 0, 332);
             assertAll(
-                () -> assertEquals(8 + 15 + (5 + 38) + (5 + 15 * 14) + 3 * 5 + 150 * 6 + (5 + 5 * 27) + (5 + 15 * 3),
-                    fight, "fight = 1386 bytes"),
-                () -> assertEquals(1386, fight, "fight size in bytes"),
+                () -> assertEquals(8 + 15 + (5 + 47) + (5 + 15 * 14) + 3 * 5 + 150 * 6 + (5 + 5 * 27) + (5 + 15 * 3),
+                    fight, "fight = 1395 bytes"),
+                () -> assertEquals(1395, fight, "fight size in bytes"),
                 () -> assertTrue(fight <= 1800, "the fight with thrusting ships is within the 1.8 KB target"),
-                () -> assertEquals(1336, fightNoRadar, "the fight without radar (2 of 3 snapshots) is 1336 bytes"),
-                () -> assertEquals(410, typical, "typical scene is 410 bytes"),
+                () -> assertEquals(1345, fightNoRadar, "the fight without radar (2 of 3 snapshots) is 1345 bytes"),
+                () -> assertEquals(419, typical, "typical scene is 419 bytes"),
                 () -> assertTrue(typical <= Protocol.MAX_PACKET, "a typical scene fits one datagram"),
-                () -> assertEquals(8 + 15 + 43 + (5 + 8 * 14) + (5 + 332 * 3), radarHeavy,
-                    "radar-heavy: 332 blips at 3 bytes plus 8 ships = 1184 bytes"),
+                () -> assertEquals(8 + 15 + 52 + (5 + 8 * 14) + (5 + 332 * 3), radarHeavy,
+                    "radar-heavy: 332 blips at 3 bytes plus 8 ships = 1193 bytes"),
                 () -> assertTrue(radarHeavy <= Protocol.MAX_PACKET, "radar-heavy with 8 ships in view fits one datagram"),
-                () -> assertEquals(1506, radarHeavyAll, "radar-heavy with all 31 ships in view is 1506 bytes (2 parts)"));
+                () -> assertEquals(1515, radarHeavyAll, "radar-heavy with all 31 ships in view is 1515 bytes (2 parts)"));
         }
     }
 
@@ -788,6 +824,99 @@ class SnapshotTest {
                 () -> assertTrue(biggerKnown, "accepts records larger than expected (appended fields)"),
                 () -> assertTrue(emptySectionOk, "a section header with count 0 at the very end is valid"),
                 () -> assertTrue(exactFit, "a section fits when header + one record exactly fill the buffer"));
+        }
+    }
+
+    @Nested
+    @DisplayName("older, shorter records")
+    class ShortRecords {
+        /** A snapshot with one SELF of 38 bytes and one TIMERS of 8 bytes (the sizes before fields were appended). */
+        ByteBuffer oldSnapshot() {
+            ByteBuffer b = ByteBuffer.allocate(256);
+            SnapshotWriter w = new SnapshotWriter();
+            w.setWorld(31500, 31500, false);
+            w.begin(b, 1, 0, 0, 1, SnapshotWriter.FLAG_LAST_PART, 1000, 2000);
+            b.put((byte) Section.SELF).put((byte) 38).put((byte) 0).putShort((short) 1);
+            b.putShort((short) 5).putShort((short) 0);
+            for (int i = 0; i < 7; i++) {
+                b.putFloat(1);
+            }
+            b.putShort((short) 7).put((byte) 0).put((byte) 0).putShort((short) 0);
+            b.put((byte) Section.TIMERS).put((byte) 8).put((byte) 0).putShort((short) 1);
+            b.putShort((short) 3).putShort((short) 0).putInt(-1);
+            return b;
+        }
+
+        @Test
+        @DisplayName("appended fields read as their 'none' values from a shorter record")
+        void appendedFieldsDefault() {
+            SnapshotReader r = readerFor(oldSnapshot());
+            r.setWorld(31500, 31500, false);
+            assertTrue(r.nextSection(), "has the SELF section");
+            Records.Self s = new Records.Self().wrap(r, 0);
+            int lockId = s.lockId();
+            int power = s.power();
+            int turn = s.turnSpeed();
+            int res = s.turnResistance255();
+            int dist = s.lockDist();
+            int dir = s.lockDir();
+            int check = s.check();
+            int mods = s.mods();
+            assertTrue(r.nextSection(), "has the TIMERS section");
+            Records.Timers t = new Records.Timers().wrap(r, 0);
+            assertAll(
+                () -> assertEquals(7, lockId, "reads the old fields"),
+                () -> assertEquals(0, power, "power is 0"),
+                () -> assertEquals(0, turn, "turn speed is 0"),
+                () -> assertEquals(0, res, "turn resistance is 0"),
+                () -> assertEquals(0, dist, "lock distance is 0 (no visible lock)"),
+                () -> assertEquals(0, dir, "lock direction is 0"),
+                () -> assertEquals(0, check, "checkpoint is 0"),
+                () -> assertEquals(0, mods, "no modifiers"),
+                () -> assertEquals(3, t.damaged(), "reads the old timer fields"),
+                () -> assertEquals(0, t.destruct(), "no self-destruct"),
+                () -> assertEquals(0, t.thrustLeft(), "no thrust left"),
+                () -> assertEquals(0, t.thrustMax(), "no thrust meter"),
+                () -> assertEquals(0, t.shieldLeft(), "no shield left"),
+                () -> assertEquals(0, t.shieldMax(), "no shield meter"),
+                () -> assertEquals(0, t.phasingLeft(), "no phasing left"),
+                () -> assertEquals(0, t.phasingMax(), "no phasing meter"),
+                () -> assertEquals(-1, t.shutdownCount(), "no shutdown"),
+                () -> assertEquals(0, t.shutdownDelay(), "no shutdown delay"));
+        }
+
+        @Test
+        @DisplayName("the short puts write the appended fields as their 'none' values")
+        void shortPuts() {
+            ByteBuffer b = ByteBuffer.allocate(256);
+            SnapshotWriter w = new SnapshotWriter();
+            w.setWorld(31500, 31500, false);
+            w.begin(b, 1, 0, 0, 1, SnapshotWriter.FLAG_LAST_PART, 1000, 2000);
+            w.beginSection(Section.SELF);
+            Records.Self.put(w, 5, 0, 1, 1, 0, 0, 0, 0, 0, 9, 0, 0, 0);
+            w.endSection();
+            w.beginSection(Section.TIMERS);
+            Records.Timers.put(w, 4, 0, -1);
+            w.endSection();
+            SnapshotReader r = readerFor(b);
+            r.setWorld(31500, 31500, false);
+            r.nextSection();
+            Records.Self s = new Records.Self().wrap(r, 0);
+            int sSize = r.recordSize();
+            int power = s.power();
+            int dist = s.lockDist();
+            int mods = s.mods();
+            r.nextSection();
+            Records.Timers t = new Records.Timers().wrap(r, 0);
+            assertAll(
+                () -> assertEquals(Records.Self.SIZE, sSize, "SELF records are full size"),
+                () -> assertEquals(0, power, "power 0"),
+                () -> assertEquals(0, dist, "lock distance 0"),
+                () -> assertEquals(0, mods, "modifiers 0"),
+                () -> assertEquals(Records.Timers.SIZE, r.recordSize(), "TIMERS records are full size"),
+                () -> assertEquals(4, t.damaged(), "keeps damaged"),
+                () -> assertEquals(0, t.thrustMax(), "no thrust meter"),
+                () -> assertEquals(-1, t.shutdownCount(), "no shutdown"));
         }
     }
 }

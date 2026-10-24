@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
 import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Has;
@@ -504,6 +505,7 @@ public final class Mover {
         }
         if (cost != 0) {
             sim.debris.wallSparks(pl, wallDir, (int) (cost * p.wallBounceExplosionMult));
+            Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_BOUNCED);
         }
         return false;
     }

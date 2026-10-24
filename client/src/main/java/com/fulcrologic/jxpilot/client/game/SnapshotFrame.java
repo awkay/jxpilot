@@ -50,6 +50,13 @@ final class SnapshotFrame {
     int selfNumTanks;
     int selfCurrentTank;
     int selfRespawnFrames;
+    int selfPower;
+    int selfTurnSpeed;
+    int selfTurnRes255;
+    int selfLockDist;
+    int selfLockDir;
+    int selfCheck;
+    int selfMods;
 
     final int shipCap;
     int ships;
@@ -71,6 +78,8 @@ final class SnapshotFrame {
     /** Velocity (px per original frame) estimated from the shot's predecessor (shots sent without one). */
     final float[] shotEstVx;
     final float[] shotEstVy;
+    /** {@link Tracker} velocity state of each shot (KNOWN from the wire or a link, GUESSED seed, UNKNOWN). */
+    final byte[] shotState;
     /** Index of the same shot in the next frame of the last association, or -1. */
     final int[] shotNext;
     /** Point particles sent as positions only (C debris on the XPilot path), drawn tracked like shots. */
@@ -81,6 +90,7 @@ final class SnapshotFrame {
     final int[] pointColor;
     final float[] pointEstVx;
     final float[] pointEstVy;
+    final byte[] pointState;
     final int[] pointNext;
     /** The frame and parts this frame was last associated with (see {@code ClientWorld#associate}). */
     int assocTick;
@@ -108,6 +118,7 @@ final class SnapshotFrame {
         shotEstVx = new float[shotCap];
         shotEstVy = new float[shotCap];
         shotNext = new int[shotCap];
+        shotState = new byte[shotCap];
         pointCap = shotCap;
         pointX = new float[pointCap];
         pointY = new float[pointCap];
@@ -115,6 +126,7 @@ final class SnapshotFrame {
         pointEstVx = new float[pointCap];
         pointEstVy = new float[pointCap];
         pointNext = new int[pointCap];
+        pointState = new byte[pointCap];
         objs = new ObjectLists(OBJECT_CAP);
     }
 

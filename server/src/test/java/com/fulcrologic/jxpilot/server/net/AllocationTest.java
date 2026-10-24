@@ -186,16 +186,28 @@ class AllocationTest {
         for (int i = 0; i < 5; i++) {
             flood.run();
         }
+        // A late JIT install can allocate ~2 KB once on the measured thread (seen on CI). Measure several
+        // rounds: one allocation per packet would show as >= 30000 B in every round, so require a clean
+        // round and bound the worst one well below that.
         long malformedBefore = h.net.malformed();
-        long before = MX.getCurrentThreadAllocatedBytes();
-        flood.run();
-        long allocated = MX.getCurrentThreadAllocatedBytes() - before;
+        long cleanest = Long.MAX_VALUE;
+        long worst = 0;
+        for (int round = 0; round < 4; round++) {
+            long before = MX.getCurrentThreadAllocatedBytes();
+            flood.run();
+            long allocated = MX.getCurrentThreadAllocatedBytes() - before;
+            cleanest = Math.min(cleanest, allocated);
+            worst = Math.max(worst, allocated);
+        }
+        long clean = cleanest;
+        long worstRound = worst;
         long malformed = h.net.malformed() - malformedBefore;
         assertAll(
-            () -> assertEquals(0, allocated, "30000 malformed, other-version and stray packets allocate nothing"),
-            () -> assertEquals(10_000, malformed, "every bad CONNECT was parsed and refused"),
+            () -> assertEquals(0, clean, "a round of 30000 malformed, other-version and stray packets allocates nothing"),
+            () -> assertTrue(worstRound <= 4096, "no round allocates per packet (worst " + worstRound + " B)"),
+            () -> assertEquals(40_000, malformed, "every bad CONNECT was parsed and refused"),
             () -> assertEquals(0, h.net.rateLimited(), "nothing was rate limited (all were parsed)"),
-            () -> assertEquals(60_000, h.net.versionRejects(), "other-version CONNECTs were answered (all six rounds)"));
+            () -> assertEquals(90_000, h.net.versionRejects(), "other-version CONNECTs were answered (all nine rounds)"));
     }
 
     @Test
@@ -255,7 +267,7 @@ class AllocationTest {
         java.util.concurrent.atomic.AtomicReference<com.fulcrologic.jxpilot.server.host.SimGameHost> hostRef =
             new java.util.concurrent.atomic.AtomicReference<>();
         com.fulcrologic.jxpilot.server.host.SimGameHostFactory real =
-            new com.fulcrologic.jxpilot.server.host.SimGameHostFactory(() -> 77);
+            new com.fulcrologic.jxpilot.server.host.SimGameHostFactory(() -> 77, line -> { }); // robot log is I/O
         s.factory = (o, m) -> {
             com.fulcrologic.jxpilot.server.host.SimGameHost h =
                 (com.fulcrologic.jxpilot.server.host.SimGameHost) real.create(o, m);

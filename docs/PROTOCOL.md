@@ -123,7 +123,7 @@ Server → client:
 | 3 | PLAYER_JOIN | u16 id, u8 team, u8 flags (1 robot, 2 tank, 4 self, 8 paused), f32 power, u8 afterburners, str8 name, str16 shape (empty = default). A detached fuel tank is a pseudo player with flag 2, the name "NAME's tank" and the `tankShipShape` (with `allowShipShapes`); it owns no base |
 | 4 | PLAYER_LEAVE | u16 id |
 | 5 | PLAYER_TEAM | u16 id, u8 team |
-| 6 | SCORE | u16 id, f32 score, i16 lives (-1 = unlimited), u8 status (1 dead, 2 paused, 4 waiting, 8 out of lives). The first SCORE after PLAYER_JOIN is the starting value; a change of the own score is shown as a C score object, a change to exactly 0 is a reset and shows nothing |
+| 6 | SCORE | u16 id, f32 score, i16 lives (-1 = unlimited), u8 status (1 dead, 2 paused, 4 waiting, 8 out of lives). Only updates the score table: the client's HUD score popups come from SCORE_OBJECT (12), never from SCORE changes |
 | 7 | TEAM_SCORE | u8 team, f32 score |
 | 8 | MESSAGE | u8 kind (chat, team chat, private, server, game), u16 from (NO_ID = server), str16 text |
 | 9 | BASE_OWNER | u16 baseIndex (`WorldMap.bases()`), u16 playerId. A player owns one base: the client releases any other base of that player (C `Handle_base`); playerId NO_ID releases the base (the server sends BASE_OWNER(oldBase, NO_ID) when a player leaves or changes home) |
@@ -137,7 +137,7 @@ Client → server:
 |---|---|---|
 | 64 | READY | empty |
 | 65 | CHAT | same as MESSAGE (kind/from ignored); XPilot "name:"/"team:" prefixes in the text |
-| 66 | SETTINGS | f32 power, turnSpeed, turnResistance, altPower, altTurnSpeed, altTurnResistance, u8 flags (1 autoShield) |
+| 66 | SETTINGS | f32 power, turnSpeed, turnResistance, altPower, altTurnSpeed, altTurnResistance, u8 flags (1 autoShield). The client sends it before READY on every join (C sends the settings with PKT_PLAY) and again whenever a power or turn-speed key changes them (C Send_power ...); those keys themselves are never sent |
 | 67 | CHANGE_TEAM | u8 team |
 | 68 | SHAPE | str16 shape |
 
@@ -168,7 +168,7 @@ u16 viewX, u16 viewY` — the receiver's view centre in half pixels. `tick` T is
 one C frame, whose result the snapshot shows: the number the network layer passed to `GameHost.tick(T)`
 and on to the simulation, so bursts' `age` and thrust-spark seeds use the same numbers. Parts are numbered
 0..63; the client treats a higher part as malformed. If a tick does not fit one datagram it is split into
-self-contained parts. Sections are written SELF, SHIP, CANNON, FUEL, RADAR, BURST, then SHOT, which fills
+self-contained parts. Sections are written SELF, SOUND, SHIP, CANNON, FUEL, RADAR, BURST, then SHOT, which fills
 the remaining room nearest first; a record that does not fit drops only itself, smaller records of later
 sections are still sent.
 
@@ -190,7 +190,7 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 
 | type | section | bytes | layout |
 |---|---|---|---|
-| 1 | SELF | 38 | u16 id, u16 flags, f32 x, y, vx, vy, heading, fuel, fuelMax, u16 lockId, u8 numTanks, u8 currentTank, u16 respawnFrames (absolute, full precision) |
+| 1 | SELF | 47 | u16 id, u16 flags, f32 x, y, vx, vy, heading, fuel, fuelMax, u16 lockId, u8 numTanks, u8 currentTank, u16 respawnFrames (absolute, full precision), u8 power, u8 turnSpeed, u8 turnResistance*255 (C PKT_SELF rounding), u16 lockDist (px, 0 = lock not shown), u8 lockDir (RES), u8 check (next checkpoint), u16 mods (weapon modifier bits: 0 nuclear, 1 full nuclear, 2 cluster, 3 implosion, 4-5 velocity, 6-7 mini, 8-9 spread, 10-11 power, 12 laser stun, 13 laser blind). Fields from power on were appended; a reader of an older 38-byte record gets 0 |
 | 2 | SHIP | 14 | u16 id, u16 flags (`ShipFlags`), rel x, rel y, ang heading, vel16 vx, vel16 vy |
 | 3 | SHOT | 6 | rel x, rel y, i8 vx, i8 vy (whole px/frame). **variant = harmless << 7 \| kind << 4 \| colour** *(S1 fix round: bit 7 `ShotKind.FLAG_HARMLESS` = this shot cannot hurt the receiver, C frame.c's friendly colour: team immune owner, paused owner, an unowned shot of the receiver's team in team play, or the receiver's own shot with selfImmunity; kinds are 3 bits)* |
 | 4 | BURST | 27 | rel x, rel y, vel16 vx, vy, u32 seed, u8 kind, u8 colour, u16 count, u8 minDir, u8 dirSpan (RES), u16 minSpeed, maxSpeed (1/16), u16 minLife, maxLife (frames), u8 age (sim ticks since spawn) |
@@ -204,20 +204,23 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 | 12 | BALL | 9 | u16 id, rel x, rel y, u8 team, u16 holder |
 | 13 | LASER | 9 | rel x, rel y, ang heading, u16 length, u8 colour |
 | 14 | ASTEROID | 7 | rel x, rel y, u8 size, ang rotation |
-| 15 | WRECKAGE | 8 | rel x, rel y, u8 shape, u8 size, ang rotation |
+| 15 | WRECKAGE | 8 | rel x, rel y, u8 shape, u8 size, ang rotation *(server-batch2: the Java server sends wreckage in view every snapshot; shape is C's `info & 0x7F`, size C's 0..255, rotation C's RES rotation in radians)* |
 | 16 | ECM | 6 | rel x, rel y, u16 radius |
-| 17 | CONNECTOR | 9 | rel x0, y0, x1, y1, u8 kind (ball, tractor, pressor) |
+| 17 | CONNECTOR | 9 | rel x0, y0, x1, y1, u8 kind (0 ball, 1 tractor, 2 pressor, 3 refuel: station to ship, 4 repair: ship to target) |
 | 18 | TRANSPORTER | 8 | rel x0, y0, x1, y1 |
 | 19 | SELF_ITEMS | 21 | u8 count per `Item` |
 | 20 | TREASURE | 3 | u16 index, u8 flags (has ball) |
 | 21 | TEMP_WORMHOLE | 5 | u16 bx, u16 by, u8 type |
-| 22 | TIMERS | 8 | u16 damaged (frames of ECM damage left), u16 roundDelay (frames, 0 none), i32 timeLeft (seconds, -1 none) — the receiver's HUD timers |
-| 23 | SELF_STATUS | 18 | u16 lockDist (px), u8 lockDir (RES), u8 flags (1 lock shown on the HUD, 2 autopilot light on), u16 mods (packed modifiers, below), u16 emergency thrust left, u16 max, u16 emergency shield left, u16 max, u16 phasing left, u16 max (frames; 0 when not in use) — the parts of C's `Send_self`, `Send_thrusttime`, `Send_shieldtime` and `Send_phasingtime` that SELF lacks (server-items block 23-29) |
+| 22 | TIMERS | 26 | u16 damaged (frames of ECM damage left), u16 roundDelay (frames, 0 none), i32 timeLeft (seconds, -1 none), u16 destruct (self-destruct frames left, 0 none), u16 thrustLeft, thrustMax, shieldLeft, shieldMax, phasingLeft, phasingMax (C meters; max 0 = no meter), i16 shutdownCount (-1 none), u16 shutdownDelay — the receiver's HUD timers. Fields from destruct on were appended; an older 8-byte record reads as none |
+| 37 | SOUND | 2 | u8 event (`SoundEvent` ordinal = C `*_SOUND` index, src/common/audio.h), u8 volume (10..100) — the sounds the receiver hears (below) |
 
-M1 uses 1-8; 9-23 are used by M2. Item sections as the server fills them (C `Frame_shots`/`Frame_ships`/`Frame_status`):
+M1 uses 1-8; 9-22 are defined for M2; 37 is SOUND. Item sections as the server fills them (C `Frame_shots`/`Frame_ships`/`Frame_status`):
 
 - SELF: `lockId` is the locked player when the lock and the compass are on (else NO_ID); `numTanks` and `currentTank`
-  are the receiver's extra tanks and the tank fuel is taken from (0 = main).
+  are the receiver's extra tanks and the tank fuel is taken from (0 = main); `lockDist`/`lockDir` are set while the lock
+  is shown on the HUD (C LOCK_VISIBLE), `mods` are the receiver's modifiers.
+- TIMERS: sent every snapshot; the emergency thrust, emergency shield and phasing meters while each is in use, the
+  self-destruct countdown while self-destructing.
 - SELF_ITEMS: one record per snapshot with the receiver's item counts (TANK = its tank count).
 - ITEM: floating items in view; a random item (`randomItemProb`) shows a random kind each snapshot.
 - MINE: flags ARMED (no longer owner-immune), FRIENDLY (C `laid_by_team`: the controller is paused, team-immune with
@@ -238,10 +241,28 @@ M1 uses 1-8; 9-23 are used by M2. Item sections as the server fills them (C `Fra
 - SHIP: cloaked opponents the receiver cannot see are not sent; flags CLOAKED, PHASING, EMERGENCY_SHIELD, DEFLECTOR,
   AUTOPILOT (or hover pause), EMERGENCY_THRUST are set from the ship's state.
 
-SELF_STATUS `mods` packing (the server's `Mods`): bits 0-1 warhead (1 cluster, 2 implosion), 2-3 nuclear (1 nuclear,
-2 full), 4-5 velocity, 6-7 mini, 8-9 spread, 10-11 power, 12-13 laser (1 stun, 2 blind). A BURST of one particle with no speed and no life is a
+A BURST of one particle with no speed and no life is a
 position-only point particle (C debris on the XPilot path) that the client tracks across frames. Indices refer to the `WorldMap` lists, which both sides build
 identically from the same config text.
+
+### Sounds (SOUND, C `saudio.c`)
+
+The server keeps a queue per human player (`Player.audio`, C `pl->audio`): each event at most once, in the
+order first queued, at the loudest volume queued (C `queue_audio`). Simulation code fills it through
+`server.sim.Sounds`, at the places C calls `sound_play_*`:
+- `Sounds.play(world, x, y, event)` (C `sound_play_sensors`): every human whose larger axis distance
+  `max(|dx|, |dy|)` (pixels, not wrapped, as C) is within `range = 525 + 262.5 * sensors` px hears it at
+  `(int) max(100 - 100 * dist / range, 10)`;
+- `Sounds.playAll(world, event)` (C `sound_play_all`): every human at 100;
+- `Sounds.playPlayer(player, event)` (C `sound_play_player`): one human at 100.
+
+Robots never hear sounds, and a player entering the game does not hear its own START (C plays it before
+the newcomer's audio request). Part 0 of the player's next snapshot carries the queue as the SOUND section right
+after SELF, and the queue is then emptied (C `sound_play_queued` after the frame's objects), so each sound is
+sent once; a lost snapshot loses its sounds, as a lost C frame does. A player's queue is emptied when it
+enters the game (C `sound_player_init`). The client plays SOUND records only from the newest tick it has
+received. On the XPilot path the client asks for audio with `PKT_REQUEST_AUDIO 1` (when its sound is on) and
+turns each `PKT_AUDIO` (type, volume) into the same SOUND record.
 
 ### Sparks and debris
 

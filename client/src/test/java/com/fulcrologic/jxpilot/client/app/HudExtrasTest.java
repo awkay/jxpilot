@@ -28,6 +28,7 @@ import com.fulcrologic.jxpilot.client.paint.HudPainter;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
 import com.fulcrologic.jxpilot.common.net.Msg;
+import com.fulcrologic.jxpilot.common.net.Protocol;
 import com.fulcrologic.jxpilot.common.net.Records;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -81,6 +82,28 @@ class HudExtrasTest {
                 () -> assertEquals((float) d.ptY[1], e.lockShipY[1], "point y at heading 0"),
                 () -> assertArrayEquals(expectedItems, e.itemCounts, "counts above 0, else -1"),
                 () -> assertTrue(e.autopilot, "AUTOPILOT flag"));
+        }
+
+        @Test
+        @DisplayName("the server's lock distance and direction (SELF) win when non-zero; modifiers as C's string")
+        void serverLockAndMods() {
+            int mods = Records.Self.MOD_CLUSTER | 2 << Records.Self.MOD_MINI_SHIFT;
+            AppFixture f = new AppFixture(true).players().twice(x -> x
+                .selfControls(45, 40, FOE, 777, 32, mods)
+                .ship(FOE, 0, 400, 100, 0));
+            e.fill(f.game, hud, 800, 600, 1, 350, 175, 100);
+            AppFixture g = new AppFixture(true).players().twice(x -> x
+                .selfControls(45, 40, FOE, 0, 0, 0)
+                .ship(FOE, 0, 650, 175, 0));
+            HudExtras e2 = new HudExtras();
+            e2.fill(g.game, hud, 800, 600, 1, 350, 175, 100);
+            assertAll(
+                () -> assertEquals(777, e.lockDist, "SELF lock distance (C lock_dist)"),
+                () -> assertEquals(32, e.lockDir, "SELF lock direction"),
+                () -> assertEquals("C X3", e.mods.toString(), "modifier string"),
+                () -> assertEquals(300, e2.lockDist, "no server distance: computed from the ships"),
+                () -> assertEquals(0, e2.lockDir, "and the direction"),
+                () -> assertEquals("", e2.mods.toString(), "no modifiers: empty"));
         }
 
         @Test
@@ -149,12 +172,12 @@ class HudExtrasTest {
         AppFixture crashed() {
             AppFixture f = new AppFixture(true).players().score(SELF, 1, -1)
                 .twice(x -> x.self(0, 100, 100, 0, 0xFFFF));
-            f.event(Msg.GameEvent.CRASH, SELF, 0).score(SELF, -4, -1);
+            f.event(Msg.GameEvent.CRASH, SELF, Protocol.NO_ID).scoreObject(-5, 2, 2, "[Wall]").score(SELF, -4, -1);
             return f;
         }
 
         @Test
-        @DisplayName("an own score change at a block is placed at C's X()/Y() of the block centre")
+        @DisplayName("a SCORE_OBJECT at a block is placed at C's X()/Y() of the block centre")
         void placed() {
             AppFixture f = crashed();
             e.fill(f.game, hud, 800, 600, 1, 100, 100, 0);

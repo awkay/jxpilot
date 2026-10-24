@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.snapshot;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.common.net.Section;
@@ -93,6 +94,16 @@ class SnapshotBuilderTest {
             parts[i] = ByteBuffer.allocate(1200);
         }
         w.tick = 42;
+        // joining queued START for everyone; the sound tests queue their own
+        a.audio.clear();
+        b.audio.clear();
+        c.audio.clear();
+    }
+
+    void clearParts() {
+        for (ByteBuffer p : parts) {
+            p.clear();
+        }
     }
 
     /** Decoded content of all parts. */
@@ -100,12 +111,18 @@ class SnapshotBuilderTest {
         int partCount;
         final List<int[]> headers = new ArrayList<>();
         final List<String> self = new ArrayList<>();
+        final List<String> selfControls = new ArrayList<>();
         final List<String> ships = new ArrayList<>();
         final Map<Integer, List<String>> shots = new TreeMap<>();
         final List<String> bursts = new ArrayList<>();
         final List<String> cannons = new ArrayList<>();
         final List<String> fuel = new ArrayList<>();
         final List<String> radar = new ArrayList<>();
+        final List<float[]> connectors = new ArrayList<>();
+        final List<String> sounds = new ArrayList<>();
+        /** Section types in order of appearance (all parts). */
+        final List<Integer> types = new ArrayList<>();
+        final List<String> wrecks = new ArrayList<>();
     }
 
     Decoded decode(int n) {
@@ -120,6 +137,9 @@ class SnapshotBuilderTest {
         Records.CannonState cs = new Records.CannonState();
         Records.FuelState fs = new Records.FuelState();
         Records.Radar rd = new Records.Radar();
+        Records.Connector cn = new Records.Connector();
+        Records.Sound snd = new Records.Sound();
+        Records.Wreckage wk = new Records.Wreckage();
         DebrisBurst db = new DebrisBurst();
         for (int p = 0; p < n; p++) {
             ByteBuffer buf = parts[p].duplicate();
@@ -127,6 +147,7 @@ class SnapshotBuilderTest {
             assertTrue(r.begin(buf), "part " + p + " has a header");
             d.headers.add(new int[] {r.tick(), r.lastInputSeq(), r.part(), r.partCount(), r.flags()});
             while (r.nextSection()) {
+                d.types.add(r.type());
                 for (int i = 0; i < r.count(); i++) {
                     switch (r.type()) {
                         case Section.SELF -> {
@@ -134,6 +155,8 @@ class SnapshotBuilderTest {
                             d.self.add(self.id() + " " + self.flags() + " " + self.x() + "," + self.y() + " v"
                                 + self.vx() + "," + self.vy() + " h" + self.heading() + " f" + self.fuel() + "/"
                                 + self.fuelMax());
+                            d.selfControls.add("p" + self.power() + " t" + self.turnSpeed() + " r"
+                                + self.turnResistance255() + " d" + self.lockDist() + " m" + self.mods());
                         }
                         case Section.SHIP -> {
                             ship.wrap(r, i);
@@ -163,7 +186,20 @@ class SnapshotBuilderTest {
                             rd.wrap(r, i);
                             d.radar.add(rd.cellX() + "," + rd.cellY() + ":" + rd.flags());
                         }
-                        case Section.SELF_ITEMS, Section.SELF_STATUS, Section.TIMERS -> {
+                        case Section.CONNECTOR -> {
+                            cn.wrap(r, i);
+                            d.connectors.add(new float[] {cn.x0(), cn.y0(), cn.x1(), cn.y1(), cn.kind()});
+                        }
+                        case Section.SOUND -> {
+                            snd.wrap(r, i);
+                            d.sounds.add(SoundEvent.of(snd.event()) + ":" + snd.volume());
+                        }
+                        case Section.WRECKAGE -> {
+                            wk.wrap(r, i);
+                            d.wrecks.add(wk.x() + "," + wk.y() + " s" + wk.shape() + " z" + wk.size() + " r"
+                                + Math.round(wk.rotation() * Const.RES / (2 * Math.PI)));
+                        }
+                        case Section.SELF_ITEMS, Section.TIMERS -> {
                             // the receiver's HUD records (server-items), checked in ItemSectionsTest
                         }
                         default -> throw new AssertionError("unexpected section " + r.type());
@@ -173,6 +209,34 @@ class SnapshotBuilderTest {
             assertTrue(!r.malformed(), "part " + p + " parses cleanly");
         }
         return d;
+    }
+
+    @Nested
+    @DisplayName("sounds (C sound_play_queued)")
+    class Sounds {
+        @Test
+        @DisplayName("the viewer's queue is the SOUND section right after SELF, in queue order, and is left for the caller")
+        void queue() {
+            a.audio.queue(SoundEvent.THRUST.ordinal(), 40);
+            a.audio.queue(SoundEvent.FIRE_SHOT.ordinal(), 100);
+            b.audio.queue(SoundEvent.START.ordinal(), 100);
+            int n = new SnapshotBuilder(w).build(a, 0, w.events.burstSeq(), false, parts);
+            Decoded d = decode(n);
+            clearParts();
+            int again = new SnapshotBuilder(w).build(b, 0, w.events.burstSeq(), false, parts);
+            Decoded db = decode(again);
+            clearParts();
+            int none = new SnapshotBuilder(w).build(c, 0, w.events.burstSeq(), false, parts);
+            Decoded dc = decode(none);
+            assertAll(
+                () -> assertEquals(List.of("THRUST:40", "FIRE_SHOT:100"), d.sounds, "writes the viewer's sounds in queue order"),
+                () -> assertEquals(Section.SOUND, d.types.get(1), "the SOUND section follows SELF"),
+                () -> assertEquals(Section.SELF, d.types.get(0), "SELF stays first"),
+                () -> assertEquals(2, a.audio.count(), "the builder leaves the queue for the network layer to clear"),
+                () -> assertEquals(List.of("START:100"), db.sounds, "another viewer gets only its own queue"),
+                () -> assertEquals(List.of(), dc.sounds, "an empty queue writes no SOUND section"),
+                () -> assertFalse(dc.types.contains(Section.SOUND), "no empty section is left in the snapshot"));
+        }
     }
 
     @Nested
@@ -187,6 +251,9 @@ class SnapshotBuilderTest {
             int farShot = sim.shots.fire(c, c.team, false, 1800, 140, Obj.SHOT, 0, 0);
             a.vx = 0;
             a.fuel = 500.5 * 256;
+            a.power = 50.4f;
+            a.turnSpeed = 40f;
+            a.turnResistance = 0.12f;
             b.vx = 2.5f;
             b.vy = -1.0f;
             long burstFrom = w.events.burstSeq();
@@ -217,6 +284,8 @@ class SnapshotBuilderTest {
                 () -> assertEquals(List.of(a.id + " " + (Records.ShipFlags.SHIELD | Records.ShipFlags.FRIENDLY) + " "
                     + ax + "," + ay + " v0.0,0.0 h" + (float) (10 * 2 * Math.PI / Const.RES) + " f500.5/2600.0"),
                     d.self, "SELF has full-precision position, heading dir*2pi/RES and fuel in units"),
+                () -> assertEquals(List.of("p50 t40 r31 d0 m0"), d.selfControls,
+                    "SELF carries the rounded power, turn speed and turn resistance * 255 (no lock or modifiers yet)"),
                 () -> assertEquals(List.of(b.id + " 0 " + bx + "," + by + " v2.5,-1.0 h40"), d.ships,
                     "SHIP lists only the other ship in view (C is 1600 px away), without shield"),
                 () -> assertEquals(1, d.shots.get(own).size(), "the viewer's shot is OWN"),
@@ -231,6 +300,7 @@ class SnapshotBuilderTest {
                 () -> assertTrue(d.bursts.get(1).contains(" k" + Records.BurstKind.DEBRIS + " c" + Records.ObjColor.RED
                     + " age0 "), "the dying cannon burst of this tick follows with age 0"),
                 () -> assertEquals(List.of("0:" + Records.CannonState.FLAG_DEAD), d.cannons, "the dead cannon is flagged"),
+                () -> assertEquals(wrecks(), d.wrecks, "the dead cannon's wreckage: position, shape, size, rotation"),
                 () -> assertEquals(1, d.fuel.size(), "the fuel station in view is sent"),
                 () -> assertEquals(0.5, Float.parseFloat(d.fuel.get(0).substring(2)), 1.0 / 65535,
                     "fuel station level as a fraction of 500 (u16 precision)"),
@@ -309,6 +379,43 @@ class SnapshotBuilderTest {
                 () -> assertEquals(1, n, "one buffer gives one part"),
                 () -> assertEquals(SnapshotWriter.FLAG_LAST_PART, d.headers.get(0)[4], "which is the last part"),
                 () -> assertTrue(total > 100 && total < 400, "the shots that fit are sent (" + total + ")"));
+        }
+    }
+
+    @Nested
+    @DisplayName("refuel beams")
+    class Refuel {
+        @Test
+        @DisplayName("a CONNECTOR of kind REFUEL from the station to each refuelling ship in view; paused, far and "
+            + "not refuelling ships have none")
+        void beams() {
+            com.fulcrologic.jxpilot.common.map.FuelStation f = w.map.fuels().get(0);
+            a.used |= Has.REFUEL;
+            a.fs = 0;
+            b.used |= Has.REFUEL;
+            b.fs = 0;
+            b.status |= Obj.PAUSE;
+            c.used |= Has.REFUEL;
+            c.fs = 0;
+            int n = new SnapshotBuilder(w).build(a, 1, w.events.burstSeq(), false, parts);
+            Decoded d = decode(n);
+            b.status &= ~Obj.PAUSE;
+            b.used &= ~Has.REFUEL;
+            a.used &= ~Has.REFUEL;
+            c.used &= ~Has.REFUEL;
+            for (ByteBuffer p : parts) {
+                p.clear();
+            }
+            Decoded none = decode(new SnapshotBuilder(w).build(a, 1, w.events.burstSeq(), false, parts));
+            float[] k = d.connectors.isEmpty() ? new float[5] : d.connectors.get(0);
+            assertAll(
+                () -> assertEquals(1, d.connectors.size(), "only A's beam (B is paused, C out of view)"),
+                () -> assertEquals(Records.Connector.KIND_REFUEL, (int) k[4], "kind REFUEL"),
+                () -> assertEquals(f.x(), k[0], 0.25, "from the station x"),
+                () -> assertEquals(f.y(), k[1], 0.25, "from the station y"),
+                () -> assertEquals(200.5, k[2], 0.25, "to the ship x"),
+                () -> assertEquals(120.25, k[3], 0.25, "to the ship y"),
+                () -> assertEquals(0, none.connectors.size(), "no refuelling: no beams"));
         }
     }
 
@@ -551,6 +658,21 @@ class SnapshotBuilderTest {
                     "SELF (38 bytes) did not fit, but a later 3-byte record (cannon) still did"),
                 () -> assertEquals(Section.CANNON, small.get(SnapshotWriter.HEADER_SIZE), "the cannon section"));
         }
+    }
+
+    /** The live wreckage of {@link #w} as the WRECKAGE records should decode. */
+    List<String> wrecks() {
+        List<String> out = new ArrayList<>();
+        com.fulcrologic.jxpilot.server.world.Objects o = w.objects;
+        for (int k = 0; k < o.count(); k++) {
+            int h = o.active[k];
+            if (o.type[h] == Obj.WRECKAGE) {
+                out.add(o.cx[h] / 64f + "," + o.cy[h] / 64f + " s" + (o.info[h] & 0x7F) + " z" + o.size[h] + " r"
+                    + o.rotation[h]);
+            }
+        }
+        assertTrue(!out.isEmpty(), "the dying cannon made wreckage");
+        return out;
     }
 
     int shotAt(World wd, int owner, double x, double y) {

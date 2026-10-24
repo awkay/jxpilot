@@ -90,7 +90,43 @@ class AppOptionsTest {
                 () -> assertEquals(2.0, o.altScaleFactor(), "altScaleFactor 2"),
                 () -> assertNull(o.swapScaleKey(), "swap key unbound"),
                 () -> assertNull(o.fontFile(), "bundled font"),
-                () -> assertEquals(13.0, o.fontSize(), "font size 13"));
+                () -> assertEquals(13.0, o.fontSize(), "font size 13"),
+                () -> assertNull(o.keysFile(), "keys from ~/.xpilotrc"),
+                () -> assertTrue(o.sound(), "sound on"),
+                () -> assertEquals(100, o.maxVolume(), "maxVolume 100 (C default)"));
+        }
+
+        @Test
+        @DisplayName("--keys names the key file; --list-keys selects LIST_KEYS whatever else is given")
+        void keys() {
+            AppOptions c = parse("--connect", "h", "--keys", "my.rc");
+            AppOptions l = parse("--list-keys", "--keys", "k.rc", "--swap-scale-key", "F12");
+            AppOptions both = parse("--connect", "h", "--list-keys");
+            assertAll(
+                () -> assertEquals("my.rc", c.keysFile(), "--keys"),
+                () -> assertEquals(AppOptions.Mode.CONNECT, c.mode(), "still connecting"),
+                () -> assertEquals(AppOptions.Mode.LIST_KEYS, l.mode(), "--list-keys alone"),
+                () -> assertEquals("k.rc", l.keysFile(), "keeps --keys"),
+                () -> assertEquals("F12", l.swapScaleKey(), "keeps the swap key"),
+                () -> assertEquals(AppOptions.Mode.LIST_KEYS, both.mode(), "--list-keys wins over --connect"),
+                () -> assertTrue(error("--keys").contains("--keys needs a value"), "--keys needs a file"));
+        }
+
+        @Test
+        @DisplayName("sound: --no-sound / --sound (the last wins) and --volume 0..255")
+        void sound() {
+            AppOptions off = parse("--connect", "h", "--no-sound", "--volume", "0");
+            AppOptions on = parse("--local", "--map", "m.xp", "--no-sound", "--sound", "--volume", "255");
+            assertAll(
+                () -> assertFalse(off.sound(), "--no-sound turns it off"),
+                () -> assertEquals(0, off.maxVolume(), "volume 0 is allowed (no sound, as C)"),
+                () -> assertTrue(on.sound(), "a later --sound turns it back on"),
+                () -> assertEquals(255, on.maxVolume(), "255 is the largest"),
+                () -> assertEquals("--volume must be 0..255: 256", error("--connect", "h", "--volume", "256"), "too loud"),
+                () -> assertEquals("--volume must be 0..255: -1", error("--connect", "h", "--volume", "-1"), "negative"),
+                () -> assertEquals("--volume expects an integer: x", error("--connect", "h", "--volume", "x"), "not a number"),
+                () -> assertTrue(parse("--view-map", "m.xp").sound(), "the viewer's options default to sound on"),
+                () -> assertEquals(100, parse().maxVolume(), "help defaults to maxVolume 100"));
         }
 
         @Test

@@ -320,12 +320,18 @@ public final class XpFrameDecoder {
         return OK;
     }
 
-    /** C {@code Receive_audio}: {@code %c%c%c} (no sound in JXPilot: counted only). */
+    /** C {@code Receive_audio}: {@code %c%c%c} sound type and volume; the first {@link XpFrame#AUDIO_CAP} are kept. */
     private int audio(XpReader r, XpFrame f) {
         if (!r.has(3)) {
             return INCOMPLETE;
         }
-        r.skip(3);
+        r.skip(1);
+        int type = r.u8();
+        int vol = r.u8();
+        if (f.audioCount < XpFrame.AUDIO_CAP) {
+            f.audioType[f.audioCount] = type;
+            f.audioVolume[f.audioCount] = vol;
+        }
         f.audioCount++;
         return OK;
     }

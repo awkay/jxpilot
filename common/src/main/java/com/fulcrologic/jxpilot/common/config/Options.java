@@ -410,6 +410,16 @@ public final class Options {
      * Used to ship the effective configuration and map to clients.
      */
     public String toConfigText() {
+        return toConfigText(mapData());
+    }
+
+    /**
+     * {@link #toConfigText()} with another map text in place of mapData (null: no map), e.g. the map as clients
+     * may see it.
+     * <p>
+     * BEHAVIOR: identical to toConfigText() except for the mapData value.
+     */
+    public String toConfigText(String clientMapData) {
         StringBuilder sb = new StringBuilder(8192);
         for (Opt o : OPTS) {
             int i = o.ordinal();
@@ -425,9 +435,8 @@ public final class Options {
                 appendValue(sb, u.name, u.value);
             }
         }
-        String md = mapData();
-        if (md != null) {
-            appendValue(sb, Opt.MAP_DATA.optionName(), md);
+        if (clientMapData != null) {
+            appendValue(sb, Opt.MAP_DATA.optionName(), clientMapData);
         }
         return sb.toString();
     }

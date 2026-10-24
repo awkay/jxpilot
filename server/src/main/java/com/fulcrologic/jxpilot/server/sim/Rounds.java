@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Target;
 import com.fulcrologic.jxpilot.common.map.Treasure;
@@ -389,10 +390,13 @@ public final class Rounds {
         endOfRoundValues();
         if (winner == -1) {
             message().append(" < We have a draw! >");
+            Sounds.playAll(w, SoundEvent.PLAYER_DRAW);
         } else if (winner == -2) {
             message().append(" < The robots have won the game! >");
+            Sounds.playAll(w, SoundEvent.PLAYER_WIN);
         } else {
             message().append(" < ").append(w.playerAt(winner).name).append(" has won the game! >");
+            Sounds.playAll(w, SoundEvent.PLAYER_WIN);
         }
         bestPlayerBonus();
         if (winner >= 0) {
@@ -421,8 +425,10 @@ public final class Rounds {
         if (winningTeam != -1) {
             message().append(" < Team ").append(winningTeam).append(" has won the game").append(reason)
                 .append("! >");
+            Sounds.playAll(w, SoundEvent.TEAM_WIN);
         } else {
             message().append(" < We have a draw").append(reason).append("! >");
+            Sounds.playAll(w, SoundEvent.TEAM_DRAW);
         }
         bestPlayerBonus();
         if (winningTeam != -1) {
@@ -532,7 +538,8 @@ public final class Rounds {
     /**
      * C {@code Reset_all_players}.
      * <p>
-     * BEHAVIOR: with endOfRoundReset (option {@code reset}) every ship is killed (paused ones only reset)
+     * BEHAVIOR: with endOfRoundReset (option {@code reset}) every ship is killed (paused ones only reset; a
+     * robot that loses its last life this way may leave, and the loop goes on with the player moved into its place)
      * and every shot, mine, debris, spark, cannon shot, missile and item dies (explosives lose their mass, so
      * nothing explodes); targets are repaired in team play.
      * BEHAVIOR: every player leaves GAME_OVER with kills and deaths 0; players that are not paused are busy
@@ -549,8 +556,8 @@ public final class Rounds {
                     sim.ships.deathReset(pl);
                 } else {
                     sim.ships.kill(pl);
-                    if (!pl.spawned) {
-                        k--;
+                    if (!pl.inUse) {
+                        k--; // a tank or a robot out of lives was deleted (player.c:690-694)
                         continue;
                     }
                 }

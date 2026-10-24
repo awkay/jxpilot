@@ -46,15 +46,16 @@ public final class GameConnector {
     /**
      * Open (not start) a connection over UDP.
      *
-     * @param bind local source address, null for any
+     * @param bind  local source address, null for any
+     * @param audio ask an XPilot server for sound events (the native server always sends them)
      */
     public static GameConnection open(ConnectTarget target, Endpoint bind, ConnectionListener listener, String name,
-                                      int team, String shape, int seed) throws IOException {
+                                      int team, String shape, boolean audio, int seed) throws IOException {
         Endpoint ep = target.endpoint();
         String label = ep.toString();
         if (target.protocol() == ConnectTarget.Protocol.XPILOT) {
             return new XpConnection(port -> UdpTransport.open(new Endpoint(ep.host(), port), bind), listener, label,
-                xpLogin(name, team, shape, System.getProperty("user.name", "")));
+                xpLogin(name, team, shape, audio, System.getProperty("user.name", "")));
         }
         UdpTransport t = UdpTransport.open(ep, bind);
         return new NativeGameConnection(nativeConnection(t, label, listener, name, team, shape), t);
@@ -66,10 +67,11 @@ public final class GameConnector {
      * BEHAVIOR: nick, team and shape as given; debris colours = the client's spark colours (temperature
      * levels, as the C client asks) and spark probability 1 (every particle every frame, so particles can be
      * tracked across frames; the painter does C's sparkle); the real name is {@code userName} reduced to ASCII letters,
-     * digits, '-', '_' and '.' ("jxpilot" when nothing is left).
+     * digits, '-', '_' and '.' ("jxpilot" when nothing is left); audio (PKT_REQUEST_AUDIO) as given.
      */
-    static XpConnection.Login xpLogin(String name, int team, String shape, String userName) {
+    static XpConnection.Login xpLogin(String name, int team, String shape, boolean audio, String userName) {
         XpConnection.Login login = new XpConnection.Login();
+        login.audio = audio;
         login.nick = name;
         login.team = team;
         login.shape = shape;

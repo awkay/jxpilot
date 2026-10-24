@@ -161,10 +161,11 @@ one "XPECM ..." line per active ECM and one "XPITEMS ..." line per player
      fflush(stderr);
  }
  
-@@ -330,6 +467,7 @@
+@@ -330,7 +467,8 @@
  
  	Update_objects();
  	Trace_players();
+ 	Trace_wreckage();
 +	Trace_objects();
  
  	if ((main_loops % UPDATES_PR_FRAME) == 0) {
