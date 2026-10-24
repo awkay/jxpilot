@@ -124,6 +124,7 @@ public final class ClientConnection {
     private int attempts;
     private boolean sentThisFrame;
     private ConfigTransfer.Receiver config;
+    private LobbyClient lobby;
     private boolean haveTick;
     private int latestTick;
     private long now;
@@ -210,6 +211,12 @@ public final class ClientConnection {
      * one-second windows of snapshotHz slots; lag is the INPUT round trip in snapshot intervals.
      */
     public PacketStats packetStats() { return stats; }
+
+    /**
+     * The lobby dialogue while the state is {@link ConnectionState#LOBBY}, else null: the map list to show and
+     * the way to choose one.
+     */
+    public LobbyClient lobby() { return state == ConnectionState.LOBBY ? lobby : null; }
 
     /** Times an established session was lost and the connection restarted. */
     public int reconnects() { return reconnects; }
@@ -346,6 +353,12 @@ public final class ClientConnection {
             && nowNanos - lastConnectSend >= (queuePosition > 0 ? QUEUE_RESEND_NANOS : CONNECT_RESEND_NANOS)) {
             sendConnect(nowNanos);
         }
+        if (state == ConnectionState.LOBBY) {
+            lobby.tick(nowNanos);
+            if (lobby.takeJoined()) {
+                start(nowNanos); // the lobby routed this address to the map's game: connect as usual
+            }
+        }
     }
 
     private void onTimeout(long nowNanos) {
@@ -469,6 +482,19 @@ public final class ClientConnection {
             return;
         }
         int type = header.type();
+        if (state == ConnectionState.LOBBY) {
+            if (lobby.onPacket(type, in, now)) {
+                packetsReceived++;
+                lastReceive = now;
+                ioBackoff = false;
+                if (lobby.takeJoined()) {
+                    start(now);
+                }
+            } else if (type == PacketType.REJECT) {
+                onReject(in); // a lobby that restarted refuses again; the nonce check ignores a stale one
+            }
+            return;
+        }
         if (state == ConnectionState.CONNECTING) {
             if (type == PacketType.ACCEPT) {
                 onAccept(in);
@@ -529,6 +555,10 @@ public final class ClientConnection {
             return;
         }
         packetsReceived++;
+        if (reject.reason == com.fulcrologic.jxpilot.common.net.Msg.Reject.REASON_LOBBY) {
+            enterLobby();
+            return;
+        }
         if (reject.reason == com.fulcrologic.jxpilot.common.net.Msg.Reject.REASON_QUEUED) {
             // server-commands: C's "... queued at position N"; keep asking (same nonce) until admitted
             queuePosition = Math.max(1, reject.position);
@@ -543,6 +573,25 @@ public final class ClientConnection {
         status.append("Rejected by ").append(serverLabel).append(": ");
         appendCapped(reject.text);
         setState(ConnectionState.CLOSED);
+    }
+
+    /**
+     * A lobby server answered the CONNECT: show its maps instead of waiting for ACCEPT.
+     * <p>
+     * BEHAVIOR: the state becomes LOBBY, the lobby dialogue starts afresh (HELLO goes out at once) and the status
+     * line names the server; the connection's timeout restarts, so a lobby that goes silent for
+     * {@link Protocol#TIMEOUT_MS} ms is handled like a game server that does (reconnect).
+     */
+    private void enterLobby() {
+        if (lobby == null) {
+            lobby = new LobbyClient(transport);
+        }
+        lastReceive = now;
+        queuePosition = 0;
+        lobby.begin(now, connect.nonce);
+        status.setLength(0);
+        status.append("Lobby on ").append(serverLabel).append(": choose a map");
+        setState(ConnectionState.LOBBY);
     }
 
     /** server-commands: the login queue position while waiting (REJECT QUEUED), else 0. */

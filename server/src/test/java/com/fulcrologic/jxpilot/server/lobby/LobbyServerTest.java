@@ -280,11 +280,20 @@ class LobbyServerTest {
         }
 
         @Test
-        @DisplayName("a client that already has the current version gets nothing")
+        @DisplayName("a client that already has the current version gets one empty page of it, as a keep-alive")
         void upToDate() {
             long c = cookieOf(ALICE);
             send(ALICE, listRequest(c, registry.version()));
-            assertTrue(wire.sent.isEmpty(), "nothing to send");
+            ByteBuffer b = wire.of(PacketType.LOBBY_LIST).get(0).data().duplicate();
+            b.position(PacketHeader.SIZE);
+            LobbyMsg.ListPage p = new LobbyMsg.ListPage();
+            p.read(b);
+            assertAll(
+                () -> assertEquals(1, wire.sent.size(), "exactly one datagram"),
+                () -> assertEquals(registry.version(), p.version, "of the current version"),
+                () -> assertEquals(1, p.pageCount, "a single page"),
+                () -> assertTrue(p.entries.isEmpty(), "with no entries"),
+                () -> assertTrue(wire.sent.get(0).data().remaining() < 30, "small: no amplification"));
         }
 
         @Test
@@ -355,7 +364,7 @@ class LobbyServerTest {
             wire.sent.clear();
             now += LobbyServer.TICK_NANOS;
             lobby.tick(now);
-            assertTrue(wire.sent.isEmpty(), "nothing changed, nothing sent");
+            assertTrue(wire.sent.isEmpty(), "nothing changed, nothing pushed");
         }
 
         @Test
@@ -376,10 +385,11 @@ class LobbyServerTest {
             for (int i = 0; i < LobbyServer.MAX_PEERS; i++) {
                 SocketAddress who = new InetSocketAddress("10.1." + (i / 250) + "." + (i % 250 + 1), 7000);
                 long c = cookieOf(who);
-                send(who, listRequest(c, registry.version())); // confirms: becomes a peer, nothing sent
+                send(who, listRequest(c, registry.version())); // confirms: becomes a peer
             }
             SocketAddress extra = new InetSocketAddress("10.9.9.9", 7000);
             long c = cookieOf(extra);
+            wire.sent.clear();
             send(extra, listRequest(c, 0));
             assertTrue(wire.of(PacketType.LOBBY_LIST).isEmpty(), "no list for the 1025th peer");
         }

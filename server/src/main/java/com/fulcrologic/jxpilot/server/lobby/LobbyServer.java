@@ -395,8 +395,9 @@ public final class LobbyServer implements AutoCloseable {
      * (counted in {@link #stray()}).
      * BEHAVIOR: an address with a route that sends a valid LIST_REQUEST or SELECT is back in the lobby: its route
      * is dropped first.
-     * BEHAVIOR: LIST_REQUEST makes the sender a peer and gets the list when its version is not the current one;
-     * SELECT is answered with JOIN, and on OK the address is routed to the map's game.
+     * BEHAVIOR: LIST_REQUEST makes the sender a peer and gets the list when its version is not the current one,
+     * else one empty page of that version (a keep-alive: the client times out a silent server); SELECT is
+     * answered with JOIN, and on OK the address is routed to the map's game.
      */
     void onDatagram(int channel, SocketAddress from, ByteBuffer data, long now) {
         int start = data.position();
@@ -506,6 +507,7 @@ public final class LobbyServer implements AutoCloseable {
         int version = registry.version();
         if (listRequest.haveVersion == version) {
             p.sentVersion = version;
+            sendKeepAlive(p, version); // the client times out a server that stays silent
         } else if (now - p.lastSend >= RESEND_GAP_NANOS || p.lastSend == 0) {
             sendList(p, now);
         }
@@ -541,6 +543,13 @@ public final class LobbyServer implements AutoCloseable {
         }
         p.sentVersion = version;
         p.lastSend = now;
+    }
+
+    /** An empty page of the version the client already holds: it changes nothing there, and proves we are alive. */
+    private void sendKeepAlive(Peer p, int version) {
+        begin(PacketType.LOBBY_LIST);
+        out.put(LobbyMsg.ListPage.encode(version, List.of(), LobbyMsg.MAX_PAGE_BODY).get(0));
+        transmit(p.channel, p.addr);
     }
 
     private void sendReject(int channel, SocketAddress to, int nonce, int reason, String text, int maxBytes) {

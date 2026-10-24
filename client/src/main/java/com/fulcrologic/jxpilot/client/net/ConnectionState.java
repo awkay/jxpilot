@@ -29,6 +29,11 @@ public enum ConnectionState {
     IDLE,
     /** Sending CONNECT until ACCEPT or REJECT arrives. */
     CONNECTING,
+    /**
+     * A lobby server refused the CONNECT with REJECT LOBBY: the player is choosing a map from its list
+     * ({@link LobbyClient}). A chosen map starts the handshake again (CONNECTING).
+     */
+    LOBBY,
     /** Accepted; receiving WELCOME and the config/map. */
     JOINING,
     /** Map built and READY sent; snapshots are delivered and input is sent. */

@@ -43,6 +43,7 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  *   --local --map MAP          play on an embedded server for MAP (loopback only); MAP is a bundled map name,
  *                              or a file when it has a path in it (see MapLocator)
  *   --bind ADDR[:PORT]         local source address for --connect
+ *   --lobby-map NAME           when the server is a lobby, pick this map by name at once instead of showing the list
  *   --name NAME                player name (default: the user name)
  *   --team T                   team 0..9 (default: none, the server picks)
  *   --shape SHAPE              ship shape string, or a name in the shape file (C shipShape; default: the
@@ -86,6 +87,7 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  * @param keysFile   key file given with {@code --keys}, or null for {@code ~/.xpilotrc}
  * @param shipShapeFile shape file given with {@code --shipShapeFile}, or null when not given
  * @param connectText the {@code --connect} argument as given (the port resource fills in a missing port), or null
+ * @param lobbyMap   {@code --lobby-map}: the map to pick by itself when the server turns out to be a lobby, or null
  * @param resources  command-line resources in order, applied after the resource file: every
  *                   {@code --RESOURCE VALUE}, plus name, team, geometry (from {@code --size}), scaleFactor and
  *                   altScaleFactor for their JXPilot flags
@@ -94,7 +96,8 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                          String shape, String localMap, String screenshot, int frames, int width, int height,
                          boolean vsync, double scaleFactor, double altScaleFactor, String swapScaleKey,
                          String fontFile, double fontSize, boolean sound, int maxVolume, String keysFile,
-                         String shipShapeFile, java.util.List<XpilotRc.Entry> resources, String connectText) {
+                         String shipShapeFile, java.util.List<XpilotRc.Entry> resources, String connectText,
+                         String lobbyMap) {
     /** Launch modes. */
     public enum Mode {
         /** No mode chosen: print usage. */
@@ -131,7 +134,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
 
     public static final String USAGE = """
         usage: ClientMain --connect HOST[:PORT] [--protocol xpilot|jxpilot] [--bind ADDR[:PORT]] [--name NAME]
-                          [--team T] [--shape|--shipShape SHAPE|NAME] [--shipShapeFile FILE]
+                          [--team T] [--shape|--shipShape SHAPE|NAME] [--shipShapeFile FILE] [--lobby-map NAME]
                           [--size WxH] [--scale-factor F] [--alt-scale-factor F]
                           [--swap-scale-key KEYSYM] [--font FILE|NAME] [--font-size PX] [--screenshot FILE.png]
                           [--frames N] [--no-vsync] [--sound | --no-sound] [--volume 0..255] [--keys FILE]
@@ -150,6 +153,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
      * {@link LaunchOptions#parse} (its errors propagate); no arguments is {@link Mode#HELP}.
      * BEHAVIOR: {@code --connect} selects CONNECT, {@code --local} LOCAL (needs {@code --map}); both, or
      * neither with other arguments, is an error; {@code --map} without {@code --local} is an error.
+     * BEHAVIOR: {@code --lobby-map NAME} (only with {@code --connect}) is kept as {@link #lobbyMap()}.
      * BEHAVIOR: {@code --protocol} and {@code --bind} only with {@code --connect}; the protocol of a
      * scheme in the target wins over {@code --protocol}.
      * BEHAVIOR: the name defaults to {@link #defaultName(String)}; a given name must have 1..{@link #MAX_NAME}
@@ -175,15 +179,16 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
             if (a.equals("--view-map")) {
                 return new AppOptions(Mode.VIEW_MAP, LaunchOptions.parse(args), null, null, null, Protocol.NO_TEAM,
                     "", null, null, DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, FONT_SIZE_UNSET, true,
-                    VOLUME_UNSET, null, null, java.util.List.of(), null);
+                    VOLUME_UNSET, null, null, java.util.List.of(), null, null);
             }
         }
         if (args.length == 0) {
             return new AppOptions(Mode.HELP, null, null, null, null, Protocol.NO_TEAM, "", null, null,
                 DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, FONT_SIZE_UNSET, true, VOLUME_UNSET,
-                null, null, java.util.List.of(), null);
+                null, null, java.util.List.of(), null, null);
         }
         String connect = null;
+        String lobbyMap = null;
         String protocol = null;
         boolean local = false;
         String map = null;
@@ -217,6 +222,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                 case "--local" -> local = true;
                 case "--map" -> map = value(args, ++i, a);
                 case "--bind" -> bind = endpoint(value(args, ++i, a), a);
+                case "--lobby-map" -> lobbyMap = value(args, ++i, a);
                 case "--name" -> {
                     name = value(args, ++i, a);
                     if (name.isEmpty() || name.length() > MAX_NAME) {
@@ -294,17 +300,17 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         if (version) {
             return new AppOptions(Mode.VERSION, null, null, null, null, Protocol.NO_TEAM, "", null, null,
                 DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, VOLUME_UNSET, null, null,
-                java.util.List.of(), null);
+                java.util.List.of(), null, null);
         }
         if (listKeys) {
             return new AppOptions(Mode.LIST_KEYS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
                 DEFAULT_FRAMES, 1280, 800, true, 1, 2, swapKey, null, FONT_SIZE_UNSET, sound, maxVolume, keys, null,
-                java.util.List.copyOf(resources), null);
+                java.util.List.copyOf(resources), null, null);
         }
         if (listMaps) {
             return new AppOptions(Mode.LIST_MAPS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
                 DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, FONT_SIZE_UNSET, true, SoundPlayer.DEFAULT_MAX_VOLUME,
-                null, null, java.util.List.of(), null);
+                null, null, java.util.List.of(), null, null);
         }
         if (connect != null && local) {
             throw new IllegalArgumentException("--connect and --local exclude each other");
@@ -315,6 +321,8 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
             if (map != null) {
                 throw new IllegalArgumentException("--map is only used with --local");
             }
+        } else if (lobbyMap != null) {
+            throw new IllegalArgumentException("--lobby-map is only used with --connect");
         } else if (local) {
             mode = Mode.LOCAL;
             if (map == null) {
@@ -328,7 +336,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         }
         return new AppOptions(mode, null, target, bind, name != null ? name : defaultName(userName), team, shape,
             map, screenshot, frames, width, height, vsync, scale, alt, swapKey, font, fontSize, sound, maxVolume, keys,
-            shipShapeFile, java.util.List.copyOf(resources), connect);
+            shipShapeFile, java.util.List.copyOf(resources), connect, lobbyMap);
     }
 
     /** C's options that take no argument on the command line (default.c {@code "Yes"} noArg value). */
