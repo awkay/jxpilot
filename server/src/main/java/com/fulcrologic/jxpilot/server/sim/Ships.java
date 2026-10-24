@@ -150,6 +150,9 @@ public final class Ships {
             char c = name.charAt(i);
             pl.name.append(c > 0xFF ? '?' : c);
         }
+        pl.realName.setLength(0);
+        pl.hostName.setLength(0);
+        pl.address.setLength(0);
         return pl;
     }
 

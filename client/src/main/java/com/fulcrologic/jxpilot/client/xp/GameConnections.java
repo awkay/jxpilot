@@ -62,12 +62,44 @@ public final class GameConnections {
         ClientConnection c = new ClientConnection(t, listener, label, seed);
         c.connect.name.append(nick);
         c.connect.team = team;
+        c.connect.realName.append(realName());
+        c.connect.hostName.append(hostName());
         return new NativeGameConnection(c, t);
     }
 
-    /** BEHAVIOR: the user name with only letters, digits, '-', '_' and '.', "jxpilot" when empty. */
-    static String realName() {
-        String u = System.getProperty("user.name", "");
+    /** The real name given with {@code --user} (C {@code -user}), or null for the login name. */
+    private static volatile String user;
+
+    /** BEHAVIOR: from now on {@link #realName} is {@code name} (null: the login name again). */
+    public static void setUser(String name) {
+        user = name;
+    }
+
+    /**
+     * BEHAVIOR: the local host's name (C {@code gethostname}): HOSTNAME or COMPUTERNAME from the environment, else
+     * the name the system reports, else "localhost"; the server cleans it (C {@code Fix_host_name}).
+     */
+    public static String hostName() {
+        String h = System.getenv("HOSTNAME");
+        if (h == null || h.isEmpty()) {
+            h = System.getenv("COMPUTERNAME");
+        }
+        if (h == null || h.isEmpty()) {
+            try {
+                h = java.net.InetAddress.getLocalHost().getHostName();
+            } catch (java.io.IOException e) {
+                h = "localhost";
+            }
+        }
+        return h;
+    }
+
+    /**
+     * BEHAVIOR: the {@code --user} name, else the user name; only letters, digits, '-', '_' and '.', "jxpilot" when
+     * empty.
+     */
+    public static String realName() {
+        String u = user != null ? user : System.getProperty("user.name", "");
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < u.length() && sb.length() < XpProto.MAX_NAME_LEN - 1; i++) {
             char c = u.charAt(i);

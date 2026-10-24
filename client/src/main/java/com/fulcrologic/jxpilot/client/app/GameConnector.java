@@ -101,6 +101,8 @@ public final class GameConnector {
         c.connect.name.append(name);
         c.connect.team = team;
         c.connect.shape.append(ShipShape.convert(shape).toWireString());
+        c.connect.realName.append(com.fulcrologic.jxpilot.client.xp.GameConnections.realName());
+        c.connect.hostName.append(com.fulcrologic.jxpilot.client.xp.GameConnections.hostName());
         return c;
     }
 }

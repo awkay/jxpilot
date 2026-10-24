@@ -49,6 +49,7 @@ public final class ClientMain {
             System.exit(2);
             return;
         }
+        com.fulcrologic.jxpilot.client.xp.GameConnections.setUser(opts.user()); // C -user
         System.exit(AppLauncher.run(opts));
     }
 }

@@ -3,7 +3,7 @@
 // by dist/src/test/java/com/fulcrologic/jxpilot/dist/docs/GuideTables.java. Do not edit:
 // run `make -C docs/guide generate` instead. The build fails when this file is stale.
 
-The server knows *301* options: 290 implemented, 1 not yet, 3 not supported, 2 no effect, 5 not applicable. In these groups:
+The server knows *301* options: 292 implemented, 2 not supported, 2 no effect, 5 not applicable. In these groups:
 
 * <<opts-files,Command line and server files>> (11)
 * <<opts-network,Server and network>> (23)
@@ -236,7 +236,7 @@ Where and how the server listens, who may connect and how much traffic it accept
 |boolean
 |`+true+`
 |command line, config file
-|*Not applicable:* the native protocol has no client maxFPS request; snapshots run at the map's framesPerSecond. Ignore client maxFPS request if it is 20 (the default setting).
+|*Not applicable:* C uses it to ignore the 20 fps cap old C clients request; JXPilot clients ask for no frame rate (snapshots follow the map's framesPerSecond). Ignore client maxFPS request if it is 20 (the default setting).
 
 |[[opt-pLockServer]]`+pLockServer+`
 |
@@ -1734,7 +1734,7 @@ Computer-controlled players and detached fuel tanks.
 |text
 |`+xpilot.org+`
 |command line, map, config file
-|*Not supported:* the native protocol carries no real or host names (C shows them in the player list); robotRealName is only used in the logRobots line. What is the robots' apparent host name?
+|*Implemented.* What is the robots' apparent host name?
 
 |[[opt-tankRealName]]`+tankRealName+`
 |
@@ -2281,7 +2281,7 @@ Ship shapes, shields, lives, visibility and other per-player rules.
 |integer
 |`+1000+`
 |command line, map, config file
-|*Not yet:* the snapshot byte budget (nearest first) limits objects instead. What is the maximum number of objects a player can see.
+|*Implemented.* What is the maximum number of objects a player can see.
 
 |===
 

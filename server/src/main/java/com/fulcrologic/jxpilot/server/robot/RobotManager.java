@@ -93,6 +93,7 @@ public final class RobotManager {
     public java.util.TimeZone logZone = java.util.TimeZone.getDefault();
     boolean logRobots;
     String robotRealName;
+    String robotHostName;
 
     final boolean allowShipShapes;
     int robotLeaveLife;
@@ -126,6 +127,7 @@ public final class RobotManager {
     public void reloadOptions() {
         logRobots = w.options.getBool(Opt.LOG_ROBOTS);
         robotRealName = w.options.getString(Opt.ROBOT_REAL_NAME);
+        robotHostName = w.options.getString(Opt.ROBOT_HOST_NAME);
         robotLeaveLife = w.options.getInt(Opt.ROBOT_LEAVE_LIFE);
         robotLeaveScore = w.options.getInt(Opt.ROBOT_LEAVE_SCORE);
         robotLeaveRatio = w.options.getInt(Opt.ROBOT_LEAVE_RATIO);
@@ -641,6 +643,9 @@ public final class RobotManager {
             return null;
         }
         roster.used[num]++;
+        // robot.c:784-785: the options as they are (their tuners clean them when an operator sets them)
+        com.fulcrologic.jxpilot.common.Names.copy(pl.realName, robotRealName);
+        com.fulcrologic.jxpilot.common.Names.copy(pl.hostName, robotHostName);
         if (allowShipShapes) {
             pl.ship = roster.ship(num); // else Init_player's defaultShipShape (robot.c:776)
         }

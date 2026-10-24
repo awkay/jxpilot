@@ -365,6 +365,9 @@ public final class ServerNet {
             sendReject(channel, from, connect.nonce, -id, rejectText(-id), size);
             return;
         }
+        host.identity(id, connect.realName, connect.hostName,
+            from instanceof java.net.InetSocketAddress isa && isa.getAddress() != null ? isa.getAddress().getHostAddress()
+                : String.valueOf(from));
         if (existing != null && existing.addr != null) {
             drop(existing, Msg.Disconnect.REASON_QUIT, "reconnected", false);
         }

@@ -42,6 +42,7 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  *                              or a file when it has a path in it (see MapLocator)
  *   --bind ADDR[:PORT]         local source address for --connect
  *   --name NAME                player name (default: the user name)
+ *   --user NAME                real name sent to the server (C -user; default: the login name)
  *   --team T                   team 0..9 (default: none, the server picks)
  *   --shape SHAPE              ship shape string, or a name in the shape file (C shipShape; default: the
  *                              shipShape resource of ~/.xpilotrc, else the standard ship); alias --shipShape
@@ -74,12 +75,13 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  * @param maxVolume  {@code --volume} (C {@code maxVolume}), 0..{@value SoundPlayer#MAX_MAX_VOLUME}, or {@link #VOLUME_UNSET}
  * @param keysFile   key file given with {@code --keys}, or null for {@code ~/.xpilotrc}
  * @param shipShapeFile shape file given with {@code --shipShapeFile}, or null when not given
+ * @param user       the real name to send (C {@code -user}), or null for the login name
  */
 public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, Endpoint bind, String name, int team,
                          String shape, String localMap, String screenshot, int frames, int width, int height,
                          boolean vsync, double scaleFactor, double altScaleFactor, String swapScaleKey,
                          String fontFile, double fontSize, boolean sound, int maxVolume, String keysFile,
-                         String shipShapeFile) {
+                         String shipShapeFile, String user) {
     /** Launch modes. */
     public enum Mode {
         /** No mode chosen: print usage. */
@@ -106,7 +108,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
     public static final double DEFAULT_FONT_SIZE = 13;
 
     public static final String USAGE = """
-        usage: ClientMain --connect HOST[:PORT] [--protocol xpilot|jxpilot] [--bind ADDR[:PORT]] [--name NAME]
+        usage: ClientMain --connect HOST[:PORT] [--protocol xpilot|jxpilot] [--bind ADDR[:PORT]] [--name NAME] [--user NAME]
                           [--team T] [--shape|--shipShape SHAPE|NAME] [--shipShapeFile FILE]
                           [--size WxH] [--scale-factor F] [--alt-scale-factor F]
                           [--swap-scale-key KEYSYM] [--font FILE] [--font-size PX] [--screenshot FILE.png]
@@ -144,13 +146,13 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
             if (a.equals("--view-map")) {
                 return new AppOptions(Mode.VIEW_MAP, LaunchOptions.parse(args), null, null, null, Protocol.NO_TEAM,
                     "", null, null, DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true,
-                    VOLUME_UNSET, null, null);
+                    VOLUME_UNSET, null, null, null);
             }
         }
         if (args.length == 0) {
             return new AppOptions(Mode.HELP, null, null, null, null, Protocol.NO_TEAM, "", null, null,
                 DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, VOLUME_UNSET,
-                null, null);
+                null, null, null);
         }
         String connect = null;
         String protocol = null;
@@ -158,6 +160,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         String map = null;
         Endpoint bind = null;
         String name = null;
+        String user = null;
         int team = Protocol.NO_TEAM;
         String shape = null;
         String shipShapeFile = null;
@@ -188,6 +191,12 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                     name = value(args, ++i, a);
                     if (name.isEmpty() || name.length() > MAX_NAME) {
                         throw new IllegalArgumentException(a + " needs 1.." + MAX_NAME + " characters: '" + name + "'");
+                    }
+                }
+                case "--user" -> {
+                    user = value(args, ++i, a);
+                    if (user.isEmpty()) {
+                        throw new IllegalArgumentException(a + " needs a name");
                     }
                 }
                 case "--team" -> {
@@ -243,12 +252,12 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         ConnectTarget target = null;
         if (listKeys) {
             return new AppOptions(Mode.LIST_KEYS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
-                DEFAULT_FRAMES, 1280, 800, true, 1, 2, swapKey, null, DEFAULT_FONT_SIZE, sound, maxVolume, keys, null);
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, swapKey, null, DEFAULT_FONT_SIZE, sound, maxVolume, keys, null, null);
         }
         if (listMaps) {
             return new AppOptions(Mode.LIST_MAPS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
                 DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, SoundPlayer.DEFAULT_MAX_VOLUME,
-                null, null);
+                null, null, null);
         }
         if (connect != null && local) {
             throw new IllegalArgumentException("--connect and --local exclude each other");
@@ -272,7 +281,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         }
         return new AppOptions(mode, null, target, bind, name != null ? name : defaultName(userName), team, shape,
             map, screenshot, frames, width, height, vsync, scale, alt, swapKey, font, fontSize, sound, maxVolume, keys,
-            shipShapeFile);
+            shipShapeFile, user);
     }
 
     /**

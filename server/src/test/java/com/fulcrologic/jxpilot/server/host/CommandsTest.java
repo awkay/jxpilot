@@ -331,7 +331,8 @@ class CommandsTest {
             List<String> real = f.say(ann, "/kick zo");
             assertAll(
                 () -> assertEquals(List.of(reply(ann, "Name matches several players.")), both, "both robots are 'robot'"),
-                () -> assertEquals(List.of(reply(ann, "Name matches several players.")), real, "both are 'Zork' now"));
+                () -> assertEquals(List.of(reply(ann, "Name does not match any player.")), real,
+                    "robots keep the real name they joined with (robot.c:784)"));
         }
     }
 

@@ -662,8 +662,8 @@ final class Commands {
      * C {@code Get_player_index_by_name}.
      * <p>
      * BEHAVIOR: empty: none. Starting with a digit: the player in the game with that id (C {@code atoi}), else
-     * none. Otherwise an exact name (any case), else the only player whose name, or a robot's real name
-     * (robotRealName; humans have none on our protocol), starts with it (any case); several: SEVERAL.
+     * none. Otherwise an exact name (any case), else the only player whose name or real name starts with it
+     * (any case); several: SEVERAL.
      *
      * @param code receives NO_MATCH or SEVERAL when the result is null
      */
@@ -687,12 +687,11 @@ final class Commands {
                 return p;
             }
         }
-        String realName = w.options.getString(Opt.ROBOT_REAL_NAME);
         Player found = null;
         for (int k = 0; k < w.numPlayers; k++) {
             Player p = w.playerAt(k);
             if (Talk.equalsIgnoreCase(name, p.name, 0, name.length())
-                || (p.robot && realName != null && Talk.equalsIgnoreCase(name, realName, 0, name.length()))) {
+                || Talk.equalsIgnoreCase(name, p.realName, 0, name.length())) {
                 if (found != null) {
                     code[0] = SEVERAL;
                     return null;

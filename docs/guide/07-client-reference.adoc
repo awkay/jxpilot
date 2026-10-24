@@ -90,6 +90,11 @@ over a VPN.
 |Player name, 1 to 16 characters. The default keeps the letters, digits, `-`, `_` and `.` of your login
 name, with a capital first letter (`Pilot` if nothing is left).
 
+|`--user NAME`
+|your login name
+|The real name sent to JXPilot servers with your host name (C's `-user`). The server shows it in its
+welcome line and log and matches it in its player-name commands; it keeps at most 15 characters.
+
 |`--team T`
 |none
 |Team 0 to 9 to join in team play. Without it the server picks one.

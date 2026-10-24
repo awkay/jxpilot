@@ -105,10 +105,10 @@ follow C; the alias is the C command-line name.
 | `robotTeam` |  | int | `0` | ANY+VIS | implemented (Params) |
 | `restrictRobots` |  | bool | `true` | ANY+VIS | implemented (Params) |
 | `reserveRobotTeam` |  | bool | `true` | ANY+VIS | implemented (Params) |
-| `robotRealName` |  | string | `robot` | ANY+VIS | used in the logRobots line only (no real names on the wire) |
-| `robotHostName` |  | string | `xpilot.org` | ANY+VIS | unsupported: the native protocol carries no real or host names (C shows them in the player list); robotRealName is only used in the logRobots line |
-| `tankRealName` |  | string | `tank` | ANY+VIS | implemented (server-items): tanks are pseudo-players named "NAME's tank"; the real/host name part is unsupported like robotRealName/robotHostName |
-| `tankHostName` |  | string | `tanks.org` | ANY+VIS | implemented (server-items): tanks are pseudo-players named "NAME's tank"; the real/host name part is unsupported like robotRealName/robotHostName |
+| `robotRealName` |  | string | `robot` | ANY+VIS | implemented (server-batch2): a robot's real name (C robot.c:784), sent in PLAYER_JOIN, shown in ID mode and the logRobots line, matched by player-name commands |
+| `robotHostName` |  | string | `xpilot.org` | ANY+VIS | implemented (server-batch2): a robot's host name (C robot.c:785), sent in PLAYER_JOIN and shown in ID mode |
+| `tankRealName` |  | string | `tank` | ANY+VIS | implemented (server-items, server-batch2): tanks are pseudo-players named "NAME's tank" with this real name (C ship.c:439), sent in PLAYER_JOIN |
+| `tankHostName` |  | string | `tanks.org` | ANY+VIS | implemented (server-items, server-batch2): tanks are pseudo-players named "NAME's tank" with this host name (C ship.c:440), sent in PLAYER_JOIN |
 | `tankScoreDecrement` | tankDecrement | int | `500` | ANY+VIS | implemented (server-items) |
 | `turnThrust` | turnFuel | bool | `false` | ANY+VIS | implemented (Params) |
 | `selfImmunity` |  | bool | `false` | ANY+VIS | implemented (Params) |

@@ -219,7 +219,7 @@ class SimGameHostEventsTest {
             h.leave(bob);
             h.drainEvents(ann, a.out);
             assertEquals(List.of("BASE " + base + " 2", "EVENT 3 2 " + base + " 0.0",
-                    "MSG 3 from=65535 Bob has entered \"Arena\", made by Bob.", "BASE " + base + " 65535", "LEAVE 2"),
+                    "MSG 3 from=65535 Bob (X) has entered \"Arena\", made by Bob.", "BASE " + base + " 65535", "LEAVE 2"),
                 a.take(), "no PLAYER_JOIN for Bob, who is gone");
         }
 

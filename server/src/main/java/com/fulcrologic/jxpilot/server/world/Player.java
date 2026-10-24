@@ -52,6 +52,14 @@ public final class Player {
     /** A computer-controlled player (C {@code IS_ROBOT_PTR}); set at join, shown as 'R' on scoreboards. */
     public boolean robot;
     public final StringBuilder name = new StringBuilder(Const.MAX_CHARS);
+    /**
+     * C {@code realname} and {@code hostname} (server-batch2): what the client sent (cleaned as C
+     * {@code Fix_real_name}/{@code Fix_host_name}), or robotRealName/robotHostName, tankRealName/tankHostName.
+     */
+    public final StringBuilder realName = new StringBuilder(Const.MAX_CHARS);
+    public final StringBuilder hostName = new StringBuilder(Const.MAX_CHARS);
+    /** The client's address as text (C {@code Get_player_addr}); empty for robots and tanks. */
+    public final StringBuilder address = new StringBuilder(48);
     public int team = Const.TEAM_NOT_SET;
     /**
      * The slot was used before (C: the reused player struct still holds its last occupant's team; a never-used

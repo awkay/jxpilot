@@ -64,6 +64,37 @@ public final class Msg {
     }
 
     /**
+     * The shape (u16 length) followed by the real and host names (u8 lengths), the shape cut first when the
+     * buffer is short, so the names always fit.
+     */
+    static void putShapeAndNames(ByteBuffer b, CharSequence shape, CharSequence realName, CharSequence hostName) {
+        int names = 2 + Math.min(255, realName.length()) + Math.min(255, hostName.length());
+        int lim = b.limit();
+        b.limit(Math.max(b.position() + 2, lim - names));
+        Wire.putString16(b, shape);
+        b.limit(lim);
+        Wire.putString8(b, realName);
+        Wire.putString8(b, hostName);
+    }
+
+    /**
+     * An optional trailing 8-bit-length string: empty when the body has ended, or when what is left is too short
+     * for the length it declares (then the rest is skipped).
+     */
+    static void readOptional8(ByteBuffer b, StringBuilder out) {
+        out.setLength(0);
+        if (!b.hasRemaining()) {
+            return;
+        }
+        int len = b.get(b.position()) & 0xFF;
+        if (b.remaining() - 1 < len) {
+            b.position(b.limit());
+            return;
+        }
+        Wire.getString8(b, out);
+    }
+
+    /**
      * Ship shape strings are capped to this many chars on decode: C {@code 2 * MSG_LEN} (netserver.c
      * Receive_shape's {@code str[2*MSG_LEN]}), room for a canonical shape's buf + ext.
      */
@@ -82,12 +113,18 @@ public final class Msg {
         public final StringBuilder name = new StringBuilder();
         /** Ship shape string; empty = default ship. */
         public final StringBuilder shape = new StringBuilder();
+        /**
+         * server-batch2: the user's real (login) name and the client's host name, as C's contact packet carries them
+         * (optional trailing fields: older clients send neither, older servers ignore them). Empty when absent.
+         */
+        public final StringBuilder realName = new StringBuilder();
+        public final StringBuilder hostName = new StringBuilder();
 
         public void write(ByteBuffer b) {
             b.putInt(nonce);
             b.put((byte) team);
             Wire.putString8(b, name);
-            Wire.putString16(b, shape);
+            putShapeAndNames(b, shape, realName, hostName);
         }
 
         public void read(ByteBuffer b) {
@@ -96,6 +133,8 @@ public final class Msg {
             Wire.getString8(b, name);
             Wire.getString16(b, shape);
             Wire.cap(shape, MAX_SHAPE_LEN);
+            readOptional8(b, realName);
+            readOptional8(b, hostName);
         }
 
         /**
@@ -361,6 +400,12 @@ public final class Msg {
         public final StringBuilder name = new StringBuilder();
         /** Ship shape string; empty = default ship. */
         public final StringBuilder shape = new StringBuilder();
+        /**
+         * server-batch2: the player's real and host names (C {@code PKT_PLAYER}'s real and host), for the score
+         * list's ID mode; optional trailing fields, empty when an older server sends none.
+         */
+        public final StringBuilder realName = new StringBuilder();
+        public final StringBuilder hostName = new StringBuilder();
 
         public void write(ByteBuffer b) {
             b.putShort((short) id);
@@ -369,7 +414,7 @@ public final class Msg {
             b.putFloat(power);
             b.put((byte) afterburners);
             Wire.putString8(b, name);
-            Wire.putString16(b, shape);
+            putShapeAndNames(b, shape, realName, hostName);
         }
 
         public void read(ByteBuffer b) {
@@ -381,6 +426,8 @@ public final class Msg {
             Wire.getString8(b, name);
             Wire.getString16(b, shape);
             Wire.cap(shape, MAX_SHAPE_LEN);
+            readOptional8(b, realName);
+            readOptional8(b, hostName);
         }
 
         public void send(ReliableChannel ch) {

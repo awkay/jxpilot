@@ -93,6 +93,9 @@ class AppOptionsTest {
                 () -> assertNull(o.fontFile(), "bundled font"),
                 () -> assertEquals(13.0, o.fontSize(), "font size 13"),
                 () -> assertNull(o.keysFile(), "keys from ~/.xpilotrc"),
+                () -> assertNull(o.user(), "real name from the login name"),
+                () -> assertEquals("Ann", parse("--connect", "h", "--user", "Ann").user(), "--user"),
+                () -> assertEquals("--user needs a name", error("--connect", "h", "--user", ""), "empty --user"),
                 () -> assertTrue(o.sound(), "sound on"),
                 () -> assertEquals(AppOptions.VOLUME_UNSET, o.maxVolume(), "no --volume (the key file or 100 decide)"));
         }
