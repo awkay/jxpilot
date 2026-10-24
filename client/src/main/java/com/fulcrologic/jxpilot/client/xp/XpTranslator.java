@@ -941,16 +941,11 @@ public final class XpTranslator {
     /**
      * C {@code Handle_leave}.
      * <p>
-     * BEHAVIOR: PLAYER_LEAVE; for players other than robots and tanks also the C message
-     * "NAME left this world."; unknown ids only produce the leave.
+     * BEHAVIOR: PLAYER_LEAVE (ClientGame adds C's "NAME left this world."); the name table forgets the id.
      */
     public void leave(int id) {
         int s = nameSlot(id);
         if (s >= 0) {
-            if (nameChar[s] != 'R' && nameChar[s] != 'T') {
-                clientMessage().append(names[s]).append(" left this world.");
-                deliver(text, ReliableType.MESSAGE);
-            }
             nameCount--;
             nameId[s] = nameId[nameCount];
             StringBuilder t = names[s];

@@ -183,13 +183,13 @@ class XpReliableDecoderTest {
         }
 
         @Test
-        void leaveSaysGoodbyeForHumansOnly() {
+        void leaveIsDeliveredForEveryId() {
             decode(new CPackets().player(5, 0, ' ', "Human", "r", "h", "", "").player(6, 0, 'R', "Robot", "r", "h", "", "")
                 .player(7, 0, 'T', "Tank", "r", "h", "", ""));
             rec.events.clear();
             decode(new CPackets().leave(5).leave(6).leave(7).leave(9));
-            assertEquals(List.of("message kind=4 from=65535 Human left this world.", "leave id=5", "leave id=6",
-                "leave id=7", "leave id=9"), rec.events, "C Handle_leave");
+            assertEquals(List.of("leave id=5", "leave id=6", "leave id=7", "leave id=9"), rec.events,
+                "C Handle_leave (ClientGame says goodbye, on both protocols)");
             prefixesIncomplete(new CPackets().leave(1));
         }
 

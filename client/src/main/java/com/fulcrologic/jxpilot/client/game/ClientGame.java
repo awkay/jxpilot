@@ -141,7 +141,8 @@ public final class ClientGame implements ConnectionListener {
      * BEHAVIOR: PLAYER_JOIN/LEAVE/TEAM/THRUST/ALLIANCE and SCORE update {@link Players}; TEAM_SCORE the
      * scoreboard; MESSAGE the message log; BASE_OWNER the world; GAME_EVENT the event ring (sub-types in
      * {@code value} kept as sent). Unknown types are ignored.
-     * BEHAVIOR: SEEK adds C's "has programmed ... to seek ..." message ({@link #seek}).
+     * BEHAVIOR: SEEK adds C's "has programmed ... to seek ..." message ({@link #seek}); PLAYER_LEAVE C's
+     * "NAME left this world." ({@link #leftThisWorld}) before the player is removed.
      * BEHAVIOR: SCORE_OBJECT (C {@code Handle_score_object}; the server sends it only to the player whose
      * score changed) becomes a {@link ScoreObjects} entry with its points, label and block; an empty label
      * makes no HUD text. SCORE itself never makes one.
@@ -159,6 +160,7 @@ public final class ClientGame implements ConnectionListener {
             }
             case ReliableType.PLAYER_LEAVE -> {
                 leave.read(p);
+                leftThisWorld(leave.id);
                 players.leave(leave.id);
             }
             case ReliableType.PLAYER_TEAM -> {
@@ -211,6 +213,26 @@ public final class ClientGame implements ConnectionListener {
             }
             default -> { } // newer message types are ignored (PROTOCOL.md "Extending")
         }
+    }
+
+    /**
+     * C {@code Handle_leave} (client.c:1023): "NAME left this world." as a game message, silent about tanks and
+     * robots ({@code mychar} 'T' / 'R', so a paused or dead robot is announced, as in C).
+     * <p>
+     * BEHAVIOR: nothing for an unknown id or a player whose {@link Players#statusChar} is 'T' or 'R'.
+     */
+    void leftThisWorld(int id) {
+        int s = players.slotOf(id);
+        if (s < 0) {
+            return;
+        }
+        char c = players.statusChar(s);
+        if (c == 'T' || c == 'R') {
+            return;
+        }
+        seekText.setLength(0);
+        seekText.append(players.name(s)).append(" left this world.");
+        messages.add(Msg.Text.KIND_GAME, seekText);
     }
 
     /**

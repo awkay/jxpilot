@@ -193,9 +193,12 @@ class XpTranslatorEdgeTest {
     void renamedPlayersLeaveWithTheNewName() {
         tr.player(5, 0, ' ', "Longname", "");
         tr.player(5, 0, ' ', "Bo", "");
-        rec.events.clear();
         tr.leave(5);
-        assertEquals("message kind=4 from=65535 Bo left this world.", rec.events.get(0), "name replaced");
+        tr.player(6, 0, ' ', "Cy", "");
+        rec.events.clear();
+        tr.seek(6, 6, 6);
+        assertEquals("message kind=4 from=65535 Cy has programmed Cy to seek Cy.", rec.events.get(0),
+            "the left player's slot holds the next player");
     }
 
     @Test

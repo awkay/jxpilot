@@ -91,6 +91,40 @@ class ClientGameTest {
     }
 
     @Test
+    @DisplayName("PLAYER_LEAVE logs C's \"NAME left this world.\" except for robots and tanks (client.c:1023)")
+    void leftThisWorld() {
+        ClientGame g = configured();
+        Msg.PlayerJoin human = join(5, 1, "Human");
+        Msg.PlayerJoin robot = join(6, 1, "Robot");
+        robot.flags = Msg.PlayerJoin.FLAG_ROBOT;
+        Msg.PlayerJoin tank = join(7, 1, "Tank");
+        tank.flags = Msg.PlayerJoin.FLAG_TANK;
+        Msg.PlayerJoin paused = join(8, 1, "Napper");
+        paused.flags = Msg.PlayerJoin.FLAG_ROBOT;
+        for (Msg.PlayerJoin j : List.of(human, robot, tank, paused)) {
+            g.onReliable(ReliableType.PLAYER_JOIN, payload(j));
+        }
+        Msg.Score napping = score(8, 0);
+        napping.status = Msg.Score.STATUS_PAUSED;
+        g.onReliable(ReliableType.SCORE, payload(napping));
+        Msg.PlayerJoin renamed = join(5, 1, "Bo");
+        g.onReliable(ReliableType.PLAYER_JOIN, payload(renamed));
+        int before = g.messages().gameCount();
+        for (int id : new int[] {5, 6, 7, 8, 42}) {
+            g.onReliable(ReliableType.PLAYER_LEAVE, payload(leaveOf(id)));
+        }
+        List<String> said = new java.util.ArrayList<>();
+        for (int i = 0; i < g.messages().gameCount() - before; i++) {
+            said.add(g.messages().game(i).text().toString());
+        }
+        assertAll(
+            () -> assertEquals(java.util.Set.of("Bo left this world.", "Napper left this world."),
+                java.util.Set.copyOf(said), "the human (by its current name) and the paused robot ('P', as C)"),
+            () -> assertEquals(2, said.size(), "nothing for the robot, the tank or an unknown id"),
+            () -> assertEquals(-1, g.players().slotOf(5), "the player is still removed"));
+    }
+
+    @Test
     @DisplayName("TIMING sets a known player's race progress (check, round); unknown ids and new joins start at 0")
     void timing() {
         ClientGame g = configured();
