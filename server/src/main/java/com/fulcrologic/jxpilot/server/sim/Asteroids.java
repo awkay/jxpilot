@@ -134,8 +134,8 @@ public final class Asteroids {
      * be in the world.
      * BEHAVIOR: C tests the block <em>type</em> against block <em>bits</em> here, so it refuses a position whose
      * block type has bit 2 set (types 4-7, 12-15, 20-23, 28: REC_LD, REC_RU, REC_RD, FUEL, rotating gravity,
-     * WORMHOLE, TREASURE, ...), and for the four diagonal wall types a position in their solid half; walls
-     * (FILLED) and targets are not refused (C quirk, kept).
+     * WORMHOLE, TREASURE, ...), and in a REC_LU block a position in its solid half; walls (FILLED) and targets
+     * are not refused (C quirk, kept).
      * BEHAVIOR: the asteroid gets velocity (tcos, tsin)(dir) * speed, mass ASTEROID_MASS(size), life 1000
      * (fuse 999), spin 0.02-0.07, a random rotation and shape, radius 0.8*SHIP_SZ*size, GRAVITY; it joins the
      * asteroid list and the count grows by 2^(size-1).
@@ -171,37 +171,13 @@ public final class Asteroids {
             | BlockType.bit(BlockType.TREASURE);
         if ((type & cMask) != 0) {
             return -1;
-        } else if ((type & (BlockType.REC_LU | BlockType.REC_RU | BlockType.REC_LD | BlockType.REC_RD)) != 0) {
-            float xin = fx - bx * Const.BLOCK_SZ;
-            float yin = fy - by * Const.BLOCK_SZ;
-            switch (type) {
-                case BlockType.REC_LU -> {
-                    if (xin < yin) {
-                        return -1;
-                    }
-                }
-                case BlockType.REC_RU -> {
-                    if (xin + yin > Const.BLOCK_SZ) {
-                        return -1;
-                    }
-                }
-                case BlockType.REC_LD -> {
-                    if (xin + yin < Const.BLOCK_SZ) {
-                        return -1;
-                    }
-                }
-                case BlockType.REC_RD -> {
-                    if (xin > yin) {
-                        return -1;
-                    }
-                }
-                default -> { }
-            }
         }
-        int h = o.alloc();
-        if (h < 0) {
+        // C then checks the four diagonal types; REC_LD, REC_RU and REC_RD were already refused above (their
+        // type values have bit 2 set), so only REC_LU remains: its solid half is below the diagonal.
+        if (type == BlockType.REC_LU && fx - bx * Const.BLOCK_SZ < fy - by * Const.BLOCK_SZ) {
             return -1;
         }
+        int h = o.alloc();
         ModeState m = w.modes;
         o.color[h] = Records.ObjColor.WHITE;
         o.owner[h] = Obj.NO_ID;
@@ -221,12 +197,9 @@ public final class Asteroids {
         o.plRadius[h] = r;
         o.fuseLife[h] = o.life[h] - 1;
         o.status[h] = Obj.GRAVITY;
-        if (m.addAsteroid(h)) {
-            m.asteroidNum += 1 << (size - 1);
-        } else {
-            o.free(h);
-            return -1;
-        }
+        // the list holds the whole pool, so (unlike C's list malloc) adding cannot fail
+        m.addAsteroid(h);
+        m.asteroidNum += 1 << (size - 1);
         return h;
     }
 
