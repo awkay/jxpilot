@@ -33,7 +33,7 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
 | 4 | RELIABLE | both | reliable channel body (below). |
 | 5 | INPUT | C→S | input with redundancy (below). |
 | 6 | SNAPSHOT | S→C | world snapshot (below). |
-| 7 | DISCONNECT | both | `Msg.Disconnect`: u8 reason (0 quit, 1 timeout, 2 kicked, 3 shutdown), str8 text. Send 3 times; also timeout after 10 s of silence. The server never sends it to an unverified session. The server kicks (reason 2) a player paused longer than `maxPauseTime` ("auto-kicked: paused too long"), paused players when a newcomer needs room ("no pause with full game" / "no pause with full team", C `Kick_paused_players`), and a player READY finds no base for ("no free base"). |
+| 7 | DISCONNECT | both | `Msg.Disconnect`: u8 reason (0 quit, 1 timeout, 2 kicked, 3 shutdown), str8 text. Send 3 times; also timeout after 10 s of silence. The server never sends it to an unverified session. After a gameDuration game over the server stops 30 * FPS frames later and every peer gets reason 3 (C `End_game`). The server kicks (reason 2) a player paused longer than `maxPauseTime` ("auto-kicked: paused too long"), paused players when a newcomer needs room ("no pause with full game" / "no pause with full team", C `Kick_paused_players`), and a player READY finds no base for ("no free base"). |
 | 8 | ACK | both | empty. |
 | 9/10 | PING/PONG | both | `Msg.Ping`: u32 id, u64 nanos; PONG echoes exactly these 12 bytes (anything after them is ignored). |
 
@@ -120,16 +120,17 @@ Server → client:
 |---|---|---|
 | 1 | WELCOME | u16 playerId, u8 team, u8 simHz, u8 snapshotHz, u8 flags (1 teamPlay, 2 edgeWrap, 4 timing), f32 gameFps, u32 configLength, u32 configCompressedLength, u32 configCrc32, str8 serverName. *(Server S1 fix round: the server simulates at the map's framesPerSecond, so simHz = gameFps; one tick is one C frame.)* |
 | 2 | DATA_CHUNK | u32 offset, raw bytes (≤ 1024) to the end of the message |
-| 3 | PLAYER_JOIN | u16 id, u8 team, u8 flags (1 robot, 2 tank, 4 self, 8 paused), f32 power, u8 afterburners, str8 name, str16 shape (empty = default) |
+| 3 | PLAYER_JOIN | u16 id, u8 team, u8 flags (1 robot, 2 tank, 4 self, 8 paused), f32 power, u8 afterburners, str8 name, str16 shape (empty = default). A detached fuel tank is a pseudo player with flag 2, the name "NAME's tank" and the `tankShipShape` (with `allowShipShapes`); it owns no base |
 | 4 | PLAYER_LEAVE | u16 id |
 | 5 | PLAYER_TEAM | u16 id, u8 team |
 | 6 | SCORE | u16 id, f32 score, i16 lives (-1 = unlimited), u8 status (1 dead, 2 paused, 4 waiting, 8 out of lives). Only updates the score table: the client's HUD score popups come from SCORE_OBJECT (12), never from SCORE changes |
 | 7 | TEAM_SCORE | u8 team, f32 score |
 | 8 | MESSAGE | u8 kind (chat, team chat, private, server, game), u16 from (NO_ID = server), str16 text |
 | 9 | BASE_OWNER | u16 baseIndex (`WorldMap.bases()`), u16 playerId. A player owns one base: the client releases any other base of that player (C `Handle_base`); playerId NO_ID releases the base (the server sends BASE_OWNER(oldBase, NO_ID) when a player leaves or changes home) |
-| 10 | GAME_EVENT | u8 kind (kill, crash, spawn, round end, target/treasure destroyed, checkpoint), u16 a, u16 b, f32 value. CRASH: a = the player who crashed, b = the other ship in a two-ship crash or NO_ID, value = crash sub-type `Msg.GameEvent.CRASH_*`: 1 wall, 2 target, 3 treasure, 4 cannon, 5 universe, 6 ships, 7 unknown. A shove into a wall is a KILL by the last pusher with the sub-type in value. SPAWN: a = player, b = base index. A KILL or CRASH is always sent before the SCORE_OBJECT / SCORE it causes, in the same tick |
+| 10 | GAME_EVENT | u8 kind (kill, crash, spawn, round end, target/treasure destroyed, checkpoint), u16 a, u16 b, f32 value. TARGET_DESTROYED: a = the player credited, b = target index. TREASURE_DESTROYED: a = the player who cashed the ball, b = the destroyed treasure's index. CHECKPOINT: a = player, b = the next checkpoint, value = the last lap time in frames (0 before a lap completes). A ball, asteroid or (unowned) explosion kill is a KILL with a = NO_ID unless the ball had an owner. CRASH: a = the player who crashed, b = the other ship in a two-ship crash or NO_ID, value = crash sub-type `Msg.GameEvent.CRASH_*`: 1 wall, 2 target, 3 treasure, 4 cannon, 5 universe, 6 ships, 7 unknown. A shove into a wall is a KILL by the last pusher with the sub-type in value. SPAWN: a = player, b = base index. A KILL or CRASH is always sent before the SCORE_OBJECT / SCORE it causes, in the same tick |
 | 11 | PLAYER_THRUST | u16 id, f32 power, u8 afterburners — sent when they change (thrust sparks are generated client-side). `afterburners` is the effective value (C forces MAX_AFTERBURNER for emergency thrust, ship.c:75-77); the server seeds with the f32 power the client receives |
 | 12 | SCORE_OBJECT | f32 score (points gained, negative when lost), u16 bx, u16 by (block where they were made), str8 label (C `Send_score_object`: a player name, "[Wall]", "[Shove]", "Cannon", "[Deadliest]"...). Sent only to the player whose score changed; drives the HUD score popups (the client's ScoreObjects stack) |
+| 20 | TIMING | race mode only (C `Send_timing`): u16 id, u8 check (the next checkpoint the player must pass, C `pl->check`), u16 round (laps started, 0 before the first checkpoint). Sent for every player in the initial state and whenever a player passes a checkpoint or race progress is reset. The last checkpoint passed is check - 1 (wrapping); the own player's check is the checkpoint the client highlights. Ids 20-26 are the game-mode block |
 | 28 | MOTD | u32 offset, u32 total size, bytes: a piece of the server's message of the day (C `motdFileName`, Latin-1, at most 30 KB). *(server-batch2 block 28-30.)* The server sends all pieces once, with the first event drain after the initial state, when it has a MOTD; the client shows it (C's MOTD viewer) once every piece is in. Old clients skip it |
 
 Client → server:
@@ -169,7 +170,7 @@ u16 viewX, u16 viewY` — the receiver's view centre in half pixels. `tick` T is
 one C frame, whose result the snapshot shows: the number the network layer passed to `GameHost.tick(T)`
 and on to the simulation, so bursts' `age` and thrust-spark seeds use the same numbers. Parts are numbered
 0..63; the client treats a higher part as malformed. If a tick does not fit one datagram it is split into
-self-contained parts. Sections are written SELF, SOUND, SHIP, CANNON, FUEL, RADAR, BURST, then SHOT, which fills
+self-contained parts. Sections are written SELF, SOUND, SHIP, CANNON, FUEL, TARGET, TREASURE, TEMP_WORMHOLE, RADAR, the item sections (TIMERS first), BURST, WRECKAGE, BALL/ASTEROID/CONNECTOR, then SHOT, which fills
 the remaining room nearest first; a record that does not fit drops only itself, smaller records of later
 sections are still sent.
 
@@ -193,7 +194,7 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 |---|---|---|---|
 | 1 | SELF | 47 | u16 id, u16 flags, f32 x, y, vx, vy, heading, fuel, fuelMax, u16 lockId, u8 numTanks, u8 currentTank, u16 respawnFrames (absolute, full precision), u8 power, u8 turnSpeed, u8 turnResistance*255 (C PKT_SELF rounding), u16 lockDist (px, 0 = lock not shown), u8 lockDir (RES), u8 check (next checkpoint), u16 mods (weapon modifier bits: 0 nuclear, 1 full nuclear, 2 cluster, 3 implosion, 4-5 velocity, 6-7 mini, 8-9 spread, 10-11 power, 12 laser stun, 13 laser blind). Fields from power on were appended; a reader of an older 38-byte record gets 0 |
 | 2 | SHIP | 14 | u16 id, u16 flags (`ShipFlags`), rel x, rel y, ang heading, vel16 vx, vel16 vy |
-| 3 | SHOT | 6 | rel x, rel y, i8 vx, i8 vy (whole px/frame). **variant = harmless << 7 \| kind << 4 \| colour** *(S1 fix round: bit 7 `ShotKind.FLAG_HARMLESS` = this shot cannot hurt the receiver, C frame.c's friendly colour: team immune owner, paused owner, an unowned shot of the receiver's team in team play, or the receiver's own shot with selfImmunity; kinds are 3 bits)* |
+| 3 | SHOT | 6 | rel x, rel y, i8 vx, i8 vy (whole px/frame). **variant = harmless << 7 \| kind << 4 \| colour** *(S1 fix round: bit 7 `ShotKind.FLAG_HARMLESS` = this shot cannot hurt the receiver, C frame.c's friendly colour: team immune owner, paused owner, an unowned shot of the receiver's team in team play, or the receiver's own shot with selfImmunity; kinds are 3 bits: 0 SHOT, 1 CANNON_SHOT, 2 CLUSTER, 3 PULSE, 4 NUCLEAR = any shot with nuclear modifiers, which the client draws as a red X/+ teamshot when the tick has bit 1 set, C frame.c:830)* |
 | 4 | BURST | 27 | rel x, rel y, vel16 vx, vy, u32 seed, u8 kind, u8 colour, u16 count, u8 minDir, u8 dirSpan (RES), u16 minSpeed, maxSpeed (1/16), u16 minLife, maxLife (frames), u8 age (sim ticks since spawn) |
 | 5 | CANNON | 3 | u16 index, u8 flags (dead, phasing, shield) |
 | 6 | FUEL | 4 | u16 index, frac level (of 500) |
@@ -212,10 +213,50 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 | 19 | SELF_ITEMS | 21 | u8 count per `Item` |
 | 20 | TREASURE | 3 | u16 index, u8 flags (has ball) |
 | 21 | TEMP_WORMHOLE | 5 | u16 bx, u16 by, u8 type |
-| 22 | TIMERS | 26 | u16 damaged (frames of ECM damage left), u16 roundDelay (frames, 0 none), i32 timeLeft (seconds, -1 none), u16 destruct (self-destruct frames left, 0 none), u16 thrustLeft, thrustMax, shieldLeft, shieldMax, phasingLeft, phasingMax (C meters; max 0 = no meter), i16 shutdownCount (-1 none), u16 shutdownDelay — the receiver's HUD timers. Fields from destruct on were appended; an older 8-byte record reads as none |
+| 22 | TIMERS | 26 | u16 damaged (frames of ECM damage left), u16 roundDelay (frames, 0 none), i32 timeLeft (seconds, -1 none), u16 destruct (self-destruct frames left, 0 none), u16 thrustLeft, thrustMax, shieldLeft, shieldMax, phasingLeft, phasingMax (C meters; max 0 = no meter), i16 shutdownCount (frames until the server stops after a gameDuration game over, C `ShutdownServer`; -1 none), u16 shutdownDelay (C `ShutdownDelay`, 1000) — the receiver's HUD timers. Fields from destruct on were appended; an older 8-byte record reads as none |
 | 37 | SOUND | 2 | u8 event (`SoundEvent` ordinal = C `*_SOUND` index, src/common/audio.h), u8 volume (10..100) — the sounds the receiver hears (below) |
 
-M1 uses 1-8; 9-22 are defined for M2; 37 is SOUND. A BURST of one particle with no speed and no life is a
+M1 uses 1-8; 9-22 are defined for M2; 37 is SOUND. Item sections as the server fills them (C `Frame_shots`/`Frame_ships`/`Frame_status`):
+
+- SELF: `lockId` is the locked player when the lock and the compass are on (else NO_ID); `numTanks` and `currentTank`
+  are the receiver's extra tanks and the tank fuel is taken from (0 = main); `lockDist`/`lockDir` are set while the lock
+  is shown on the HUD (C LOCK_VISIBLE), `mods` are the receiver's modifiers; the AUTOPILOT flag of SELF is C's
+  autopilot light (`showautopilot`: blinking 4 of 8 frames, steady once a hover pause has run out).
+- TIMERS: sent every snapshot; the round delay while C's `round_delay_send` runs (one second past the delay, so the
+  client sees 0); the time left: the `gameDuration` timer's wall-clock seconds while it runs, else with `maxRoundTime`
+  the round time rounded up to seconds, else -1; the emergency thrust, emergency shield and phasing meters while each
+  is in use, the self-destruct countdown while self-destructing; the shutdown countdown after a `gameDuration` game
+  over.
+- SELF_ITEMS: one record per snapshot with the receiver's item counts (TANK = its tank count).
+- ITEM: floating items in view; a random item (`randomItemProb`) shows a random kind each snapshot.
+- MINE: flags ARMED (no longer owner-immune), FRIENDLY (C `laid_by_team`: the controller is paused, team-immune with
+  the receiver, or it is the receiver's own fused mine; random for a confused identified mine), NUCLEAR, OWN (the
+  receiver controls it); ownerId is the controller when `identifyMines` and the receiver is within mine-sensing range
+  (SHIP_SZ + 130 px + 30 px per sensor), else NO_ID.
+- MISSILE: id = owner (NO_ID unowned), kind SMART/HEAT/TORPEDO (+NUCLEAR), length 12/15/18 with `distinguishMissiles`,
+  else 15.
+- LASER: from the pulse start when in view, else from its end backwards; colour BLUE when harmless to the receiver
+  (team immune, or its own with `selfImmunity`), else RED.
+- ECM: centre and current radius (it halves every tick).
+- CONNECTOR: tractor/pressor beams of players and cannons, three lines from the beam source to the target's first three
+  hull points.
+- TRANSPORTER: from the victim to the thief (or where the cannon fired it), for 5 ticks.
+- RADAR: missiles and mines within the receiver's sensor range (FLAG_MISSILE/FLAG_MINE, FLAG_NUKE for nuclear ones with
+  `nukesOnRadar`); players follow C's visibility rules (cloaked opponents only when seen, sensor range with
+  `limitedVisibility`, the locked player blinks).
+- SHIP: cloaked opponents the receiver cannot see are not sent; flags CLOAKED, PHASING, EMERGENCY_SHIELD, DEFLECTOR,
+  AUTOPILOT (or hover pause), EMERGENCY_THRUST are set from the ship's state.
+
+The game-mode sections are sent as follows (server-modes):
+TARGET and TREASURE for map objects in view (target strength left, dead flag; treasure HAS_BALL while its ball
+rests in it); BALL (id = the server's object handle, team = the team of the ball's
+treasure, holder = the connected ship or NO_ID: the client draws the ball connector from it); CONNECTOR kind
+BALL only for a ship still *reaching* for a ball with its connector (C `pl->ball`); ASTEROID (size 1-4,
+rotation) and WRECKAGE (shape, size 0-255, rotation); RADAR blips with FLAG_BALL (`treasuresOnRadar`) and
+FLAG_ASTEROID (`asteroidsOnRadar`) within the receiver's sensor range; TEMP_WORMHOLE for every temporary (hyperjump) wormhole, whole world,
+type = `Wormhole.Type` ordinal (1 IN, 2 OUT). SHIP flags carry HAS_BALL and REPAIRING. Game-mode snapshot section ids
+30-36 are reserved for future mode sections (none used yet).
+A BURST of one particle with no speed and no life is a
 position-only point particle (C debris on the XPilot path) that the client tracks across frames. Indices refer to the `WorldMap` lists, which both sides build
 identically from the same config text.
 

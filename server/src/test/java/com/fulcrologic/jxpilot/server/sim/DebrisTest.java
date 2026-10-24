@@ -269,9 +269,9 @@ class DebrisTest {
             DebrisBurst c = lastBurst(w);
             assertAll(
                 () -> assertEquals(494.0f, a.hypotenuse, "the small world's diagonal"),
-                // 494/30 = 16.4667 and 494/20 = 24.7, quantized to 1/16
-                () -> assertEquals(263 / 16f, a.minSpeed, "min speed = hypotenuse / max life"),
-                () -> assertEquals(395 / 16f, a.maxSpeed, "max speed = hypotenuse / min life"),
+                // C divides the int hypotenuse by the int lives: 494/30 = 16 and 494/20 = 24
+                () -> assertEquals(16f, a.minSpeed, "min speed = hypotenuse / max life (int division)"),
+                () -> assertEquals(24f, a.maxSpeed, "max speed = hypotenuse / min life (int division)"),
                 () -> assertEquals(30.0f, b.minSpeed, "min speed within the limit is kept"),
                 () -> assertEquals(30.0f, b.maxSpeed, "max speed below min speed is raised to it"),
                 () -> assertEquals(263 / 16f, c.minSpeed, "speeds exactly at the limit are kept"));

@@ -14,6 +14,7 @@ works today.
 | `jxpilot-maps-@VERSION@.zip` | The 19 original XPilot maps (unmodified, GPL) |
 | `JXPilot-@VERSION@-<platform>.zip` / `.tar.gz` | Client app with its own Java runtime and the maps: no Java install needed. Opened without arguments it starts a game against robots |
 | `jxpilot-guide-@VERSION@.zip` | The user guide as HTML |
+| `openal-soft-source-<commit>.tar.gz` | Source of OpenAL Soft, the LGPL sound library inside the client (see `META-INF/NOTICE.txt` in the client jar) |
 | `SHA256SUMS.txt` | Checksums: `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 
 macOS: the apps are not signed. After unzipping, run `xattr -dr com.apple.quarantine JXPilot.app` once, or

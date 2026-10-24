@@ -56,6 +56,11 @@ public final class ReliableType {
     /** {@link Msg.ScoreObject}: a score popup for the receiver's HUD (C score objects). */
     public static final int SCORE_OBJECT = 12;
     /**
+     * {@link Msg.Timing}: race progress of a player (C {@code Send_timing}). Game-mode messages use ids 20-26
+     * (server-modes block).
+     */
+    public static final int TIMING = 20;
+    /**
      * {@link Msg.Motd}: a piece of the server's message of the day (C motdFileName). Sent once after the initial
      * state when the server has one; older clients skip it.
      */

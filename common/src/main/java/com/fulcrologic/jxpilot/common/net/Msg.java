@@ -577,6 +577,33 @@ public final class Msg {
         }
     }
 
+    /**
+     * {@link ReliableType#TIMING}: race progress of a player (C {@code Send_timing}): u16 id, u8 check (the next
+     * checkpoint the player must pass, C {@code pl->check}), u16 round (laps started, C {@code pl->round}).
+     * The last checkpoint passed is check - 1 (wrapping), or none while round is 0.
+     */
+    public static final class Timing implements Payload {
+        public int id;
+        public int check;
+        public int round;
+
+        public void write(ByteBuffer b) {
+            b.putShort((short) id);
+            b.put((byte) check);
+            b.putShort((short) round);
+        }
+
+        public void read(ByteBuffer b) {
+            id = b.getShort() & 0xFFFF;
+            check = b.get() & 0xFF;
+            round = b.getShort() & 0xFFFF;
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.TIMING);
+        }
+    }
+
     /** {@link ReliableType#GAME_EVENT}: generic event with two ids and a value. */
     public static final class GameEvent implements Payload {
         /**

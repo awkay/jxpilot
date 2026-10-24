@@ -29,3 +29,31 @@ gravity field, a 25 px/frame wall bounce, coast.
   tools/xpilot-ref/trace.sh --map default --seed 42 --after 1
     --server-opt -gravity --server-opt -0.14 --server-opt +sparksWallBounce
     --keys "down:Shift_L sleep:0.5 down:a sleep:0.3 up:a sleep:0.4 up:Shift_L sleep:9"
+
+Game-mode traces (ModeTraceTest) use xpilot-ref patch 0005 (trace.sh --modes) and a map from this
+directory (--map-file); the image is built with that patch (XPREF_IMAGE=xpilot-ref:server-modes build.sh).
+The maps pin the options C's lib/defaults would otherwise set (gravity -0.25, no random items).
+
+ball-tow.txt (75 frames): reach for the treasure ball with the connector (Control_L) while thrusting
+up, connect at ballConnectorLength, tow and swing it on the spring connector.
+  XPREF_IMAGE=xpilot-ref:server-modes tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/ball-tow.xp --seed 42 --after 1 --modes
+    --keys "down:Control_L down:Shift_L sleep:0.6 up:Shift_L sleep:3 up:Control_L sleep:0.5"
+
+race-climb.txt (213 frames): pass checkpoint A on the base (lap 1 starts), climb through B, fall back
+through A (lap 1 completed in 171 frames), bounce off the floor.
+  XPREF_IMAGE=xpilot-ref:server-modes tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/race-climb.xp --seed 42 --after 1 --modes
+    --keys "down:Shift_L sleep:0.8 up:Shift_L sleep:13"
+
+asteroid-box.txt (210 frames): asteroids appear (C RNG), fall, bounce off walls and wall blocks, spin and
+break. ModeTraceTest injects each asteroid C creates into the Java world and compares motion, wall bounces
+(with the life and brake factors), spin and life until the first one breaks.
+  XPREF_IMAGE=xpilot-ref:server-modes tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/asteroid-box.xp --seed 42 --after 1 --modes --keys "sleep:14"
+
+ball-drop.txt (112 frames): as ball-tow, then the ball is dropped ('d') and flies free, bouncing off the
+floor and the right wall (balls keep their life on bounces).
+  XPREF_IMAGE=xpilot-ref:server-modes tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/ball-tow.xp --seed 42 --after 1 --modes
+    --keys "down:Control_L down:Shift_L sleep:0.6 up:Shift_L sleep:0.8 up:Control_L key:d sleep:5"

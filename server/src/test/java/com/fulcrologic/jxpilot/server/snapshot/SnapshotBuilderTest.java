@@ -34,6 +34,7 @@ import com.fulcrologic.jxpilot.server.TestWorlds;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.server.world.Mods;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -118,6 +119,8 @@ class SnapshotBuilderTest {
         final List<String> cannons = new ArrayList<>();
         final List<String> fuel = new ArrayList<>();
         final List<String> radar = new ArrayList<>();
+        /** Types of the game-mode sections (tested in SnapshotModesTest). */
+        final List<Integer> modes = new ArrayList<>();
         final List<float[]> connectors = new ArrayList<>();
         final List<String> sounds = new ArrayList<>();
         /** Section types in order of appearance (all parts). */
@@ -186,6 +189,8 @@ class SnapshotBuilderTest {
                             rd.wrap(r, i);
                             d.radar.add(rd.cellX() + "," + rd.cellY() + ":" + rd.flags());
                         }
+                        case Section.TARGET, Section.TREASURE, Section.BALL, Section.ASTEROID,
+                             Section.TEMP_WORMHOLE -> d.modes.add(r.type());
                         case Section.CONNECTOR -> {
                             cn.wrap(r, i);
                             d.connectors.add(new float[] {cn.x0(), cn.y0(), cn.x1(), cn.y1(), cn.kind()});
@@ -198,6 +203,9 @@ class SnapshotBuilderTest {
                             wk.wrap(r, i);
                             d.wrecks.add(wk.x() + "," + wk.y() + " s" + wk.shape() + " z" + wk.size() + " r"
                                 + Math.round(wk.rotation() * Const.RES / (2 * Math.PI)));
+                        }
+                        case Section.SELF_ITEMS, Section.TIMERS -> {
+                            // the receiver's HUD records (server-items), checked in ItemSectionsTest
                         }
                         default -> throw new AssertionError("unexpected section " + r.type());
                     }
@@ -462,6 +470,28 @@ class SnapshotBuilderTest {
                     "an opponent's shot is ENEMY"),
                 () -> assertEquals(Records.ShotKind.variant(0, Records.ObjColor.NEUTRAL), sb.shotVariant(unowned, p1),
                     "an unowned shot of another team is NEUTRAL"));
+        }
+
+        @Test
+        @DisplayName("a shot with nuclear modifiers is kind NUCLEAR (C frame.c:830 blinks it), cluster or cannon")
+        void nuclear() {
+            Simulation ts = TestWorlds.sim("framesPerSecond: 60\ngravity: 0\nteamPlay: yes", "xxxxxxxxxx",
+                "x 1 1 2  x", "x        x", "xxxxxxxxxx");
+            World tw = ts.world;
+            Player p1 = TestWorlds.join(ts, "p1", 1);
+            Player p3 = TestWorlds.join(ts, "p3", 2);
+            SnapshotBuilder sb = new SnapshotBuilder(tw);
+            int frag = ts.shots.fire(p3, p3.team, false, 100, 60, Obj.SHOT, 0, 0);
+            tw.objects.mods[frag] = Mods.withNuclear(Obj.MOD_CLUSTER, Mods.NUCLEAR);
+            int cannon = tw.objects.alloc();
+            tw.objects.type[cannon] = Obj.CANNON_SHOT;
+            tw.objects.owner[cannon] = Obj.NO_ID;
+            tw.objects.mods[cannon] = Mods.withNuclear(0, Mods.NUCLEAR | Mods.FULLNUCLEAR);
+            assertAll(
+                () -> assertEquals(Records.ShotKind.variant(Records.ShotKind.NUCLEAR, Records.ObjColor.ENEMY),
+                    sb.shotVariant(frag, p1), "an opponent's nuclear cluster fragment"),
+                () -> assertEquals(Records.ShotKind.NUCLEAR, Records.ShotKind.kindOf(sb.shotVariant(cannon, p1)),
+                    "a full-nuclear cannon shot"));
         }
 
         @Test

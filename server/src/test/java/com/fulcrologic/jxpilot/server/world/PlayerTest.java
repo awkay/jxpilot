@@ -128,25 +128,48 @@ class PlayerTest {
     }
 
     @Nested
-    @DisplayName("addFuel")
+    @DisplayName("addFuel (ship.c Add_fuel)")
     class AddFuel {
         @Test
+        @DisplayName("the change is truncated to a C long, then clamped so the sum stays in [0, max]")
         void fuelIsClampedToTheTank() {
             Player p = new Player(0);
             p.fuelMax = 1000;
             p.fuel = 500;
+            p.tankFuel[0] = 500;
             p.addFuel(250.5);
             double up = p.fuel;
             p.addFuel(600);
             double full = p.fuel;
-            p.addFuel(-400);
+            p.addFuel(-400.75);
             double down = p.fuel;
             p.addFuel(-2000);
             assertAll(
-                () -> assertEquals(750.5, up, "fuel is added"),
-                () -> assertEquals(1000.0, full, "at most the tank"),
-                () -> assertEquals(600.0, down, "fuel is taken"),
-                () -> assertEquals(0.0, p.fuel, "at least 0"));
+                () -> assertEquals(750.0, up, "250.5 is added as (long) 250"),
+                () -> assertEquals(1000.0, full, "at most the maximum"),
+                () -> assertEquals(600.0, down, "-400.75 is taken as (long) -400"),
+                () -> assertEquals(0.0, p.fuel, "at least 0"),
+                () -> assertEquals(0.0, p.tankFuel[0], "the main tank follows the sum"));
+        }
+
+        @Test
+        @DisplayName("the change goes to the current tank only")
+        void currentTank() {
+            Player p = new Player(0);
+            p.fuelMax = 3000;
+            p.fuel = 1500;
+            p.numTanks = 2;
+            p.tankFuel[0] = 1000;
+            p.tankFuel[1] = 300;
+            p.tankFuel[2] = 200;
+            p.currentTank = 2;
+            p.addFuel(-150);
+            p.addFuel(2000);
+            assertAll(
+                () -> assertEquals(3000.0, p.fuel, "sum: 1500 - 150, then up to the maximum 3000"),
+                () -> assertEquals(1000.0, p.tankFuel[0], "the main tank is not touched"),
+                () -> assertEquals(300.0, p.tankFuel[1], "tank 1 is not touched"),
+                () -> assertEquals(200 - 150 + 1650.0, p.tankFuel[2], "tank 2 takes both changes (the second clamped)"));
         }
     }
 }

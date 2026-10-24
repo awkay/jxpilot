@@ -124,6 +124,11 @@ public final class Records {
         /** Cluster / nuke fragments that are dangerous. */
         public static final int CLUSTER = 2;
         public static final int PULSE = 3;
+        /**
+         * A dangerous shot with nuclear modifiers (nuclear cluster fragments): C frame.c:830 draws it RED as a
+         * teamshot every other two frames ({@code frame_loops & 2}), else like any shot. The client blinks it.
+         */
+        public static final int NUCLEAR = 4;
 
         /**
          * Variant bit: the shot cannot hurt the receiver (C frame.c draws it in the friendly colour):
@@ -906,7 +911,7 @@ public final class Records {
      * 10 u16 thrustLeft  12 u16 thrustMax (emergency thrust, max 0 = none)
      * 14 u16 shieldLeft  16 u16 shieldMax (emergency shield, max 0 = none)
      * 18 u16 phasingLeft 20 u16 phasingMax (phasing device, max 0 = none)
-     * 22 i16 shutdownCount (seconds until server shutdown, -1 none)  24 u16 shutdownDelay
+     * 22 i16 shutdownCount (frames until server shutdown, C ShutdownServer, -1 none)  24 u16 shutdownDelay (C ShutdownDelay)
      * </pre>
      * Readers of a shorter (older) record get 0 for the appended fields (-1 for shutdownCount).
      */

@@ -108,6 +108,7 @@ public final class ServerNet {
     private final ByteBuffer[] parts = new ByteBuffer[MAX_SNAPSHOT_PARTS];
 
     private int tick;
+    private boolean shutdownDue;
     private long malformed;
     private long rateLimited;
     private long stray;
@@ -425,7 +426,8 @@ public final class ServerNet {
     /**
      * Advance one simulation tick and service every peer.
      * <p>
-     * BEHAVIOR: increments the tick and runs {@link GameHost#tick} with it.
+     * BEHAVIOR: increments the tick and runs {@link GameHost#tick} with it; when the host then wants the server
+     * to stop ({@link GameHost#shutdownDue}) nothing else happens this tick and {@link #shutdownDue} is true.
      * BEHAVIOR: an unverified session gets ACCEPT again when its resend time comes, with the interval
      * doubling each time, at most acceptResends times; one doubled interval after the last it is dropped
      * silently (the host gets {@link GameHost#leave}). It gets nothing else.
@@ -443,6 +445,10 @@ public final class ServerNet {
     public void tick(long now) {
         tick++;
         host.tick(tick);
+        if (host.shutdownDue()) {
+            shutdownDue = true;
+            return;
+        }
         boolean snapshot = tick % cfg.snapshotDivisor == 0;
         boolean radar = snapshot && (tick / cfg.snapshotDivisor) % cfg.radarDivisor == 0;
         for (int i = activeCount - 1; i >= 0; i--) {
@@ -531,6 +537,11 @@ public final class ServerNet {
             b.flip();
             out.send(c.channel, c.addr, b);
         }
+    }
+
+    /** BEHAVIOR: true once the host asked for the server to stop; ticks then do nothing more. */
+    public boolean shutdownDue() {
+        return shutdownDue;
     }
 
     // ------------------------------------------------------------------ leaving

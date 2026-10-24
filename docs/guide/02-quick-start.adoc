@@ -45,6 +45,10 @@ release number, for example `0.2.0`.
 |This guide as HTML.
 |-
 
+|`openal-soft-source-COMMIT.tar.gz`
+|The source of OpenAL Soft, the sound library inside the client (its LGPL licence asks us to offer it).
+|-
+
 |`SHA256SUMS.txt`
 |SHA-256 checksums of all the files above.
 |-

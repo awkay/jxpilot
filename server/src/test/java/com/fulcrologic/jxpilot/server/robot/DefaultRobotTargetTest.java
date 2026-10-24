@@ -27,6 +27,7 @@ import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.server.robot.RobotFixture.SpyItems;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.server.world.Mods;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -399,8 +400,8 @@ class DefaultRobotTargetTest {
             Player h = RobotFixture.human(t.s, "H", 800, 700);
             t.r.aimLaser(t.p, t.d);
             int noTarget = t.p.used & Has.LASER;
-            t.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            t.d.lockPlId = h.id;
+            t.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            t.p.lockPlId = h.id;
             t.r.aimLaser(t.p, t.d);
             int locked = t.p.used & Has.LASER;
             t.p.used &= ~Has.LASER;
@@ -424,26 +425,26 @@ class DefaultRobotTargetTest {
             W t = new W().spy(it);
             Player h = RobotFixture.human(t.s, "H", 750, 700);
             t.p.have |= Has.TRACTOR_BEAM;
-            t.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            t.d.lockPlId = h.id;
-            t.d.lockDistance = 50;
+            t.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            t.p.lockPlId = h.id;
+            t.p.lockDistance = 50;
             t.d.robotCount = 501;
             t.r.checkTarget(t.p, t.d, 750, 700, DefaultRobot.RM_ATTACK);
             int close = t.p.used & Has.TRACTOR_BEAM;
-            boolean pressor = t.d.tractorIsPressor;
-            int visible = t.d.lockTagged & DefaultRobot.LOCK_VISIBLE;
+            boolean pressor = t.p.tractorIsPressor;
+            int visible = t.p.lockTagged & DefaultRobot.LOCK_VISIBLE;
             RobotFixture.place(h, 850, 700);
             RobotFixture.velocity(h, 10, 0);
-            t.d.lockDistance = 150;
-            t.d.lockTagged = DefaultRobot.LOCK_PLAYER;
+            t.p.lockDistance = 150;
+            t.p.lockTagged = DefaultRobot.LOCK_PLAYER;
             t.r.tractorBeam(t.p, t.d);
             int pull = t.p.used & Has.TRACTOR_BEAM;
-            boolean pullPressor = t.d.tractorIsPressor;
+            boolean pullPressor = t.p.tractorIsPressor;
             RobotFixture.velocity(t.p, 7, 0);
             t.r.tractorBeam(t.p, t.d);
             int fast = t.p.used & Has.TRACTOR_BEAM;
             RobotFixture.velocity(t.p, 0, 0);
-            t.d.lockDistance = 200;
+            t.p.lockDistance = 200;
             t.r.tractorBeam(t.p, t.d);
             assertAll(
                 () -> assertEquals(Has.TRACTOR_BEAM, close, "50 px: beam on"),
@@ -461,13 +462,13 @@ class DefaultRobotTargetTest {
             SpyItems it = new SpyItems();
             W t = new W().spy(it);
             Player h = RobotFixture.human(t.s, "H", 850, 700);
-            t.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            t.d.lockPlId = h.id;
-            t.d.lockDistance = 150;
+            t.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            t.p.lockPlId = h.id;
+            t.p.lockDistance = 150;
             RobotFixture.velocity(h, -18, 0);
             t.r.tractorBeam(t.p, t.d);
             int closing = t.p.used & Has.TRACTOR_BEAM;
-            boolean pressor = t.d.tractorIsPressor;
+            boolean pressor = t.p.tractorIsPressor;
             RobotFixture.velocity(h, -5, 0);
             t.r.tractorBeam(t.p, t.d);
             int slow = t.p.used & Has.TRACTOR_BEAM;
@@ -517,7 +518,7 @@ class DefaultRobotTargetTest {
             W t = new W("allowSmartMissiles: no\n", -1, 0).spy(it);
             Player h = RobotFixture.human(t.s, "H", 800, 700);
             h.used |= Has.SHOT;
-            t.d.lockPlId = h.id;
+            t.p.lockPlId = h.id;
             t.d.robotCount = 500;
             t.d.lastFiredMissile = 100;
             t.p.status |= Obj.THRUSTING;
@@ -600,19 +601,19 @@ class DefaultRobotTargetTest {
             t.w.rng.seed(2);
             double[] f = RobotFixture.rfracs(2, 2);
             t.r.chooseWeaponModifier(t.p, t.d, Has.LASER);
-            int laser = t.d.modLaser;
+            int laser = Mods.laser(t.p.mods);
             t.r.chooseWeaponModifier(t.p, t.d, Obj.SHOT);
-            int spread = t.d.modSpread;
+            int spread = Mods.spread(t.p.mods);
             t.r.chooseWeaponModifier(t.p, t.d, Has.TRACTOR_BEAM);
-            int afterTractor = t.d.modSpread;
+            int afterTractor = Mods.spread(t.p.mods);
             t.d.robotCount = 9;
-            t.d.modLaser = 5;
+            t.p.mods = Mods.withLaser(t.p.mods, 5);
             t.r.chooseWeaponModifier(t.p, t.d, Has.LASER);
             assertAll(
                 () -> assertEquals((int) (f[0] * 3), laser, "laser 0..2"),
                 () -> assertEquals((int) (f[1] * 4), spread, "spread 0..3"),
                 () -> assertEquals(0, afterTractor, "tractor clears"),
-                () -> assertEquals(0, t.d.modLaser, "count 9: laser 0"));
+                () -> assertEquals(0, Mods.laser(t.p.mods), "count 9: laser 0"));
         }
 
         @Test
@@ -626,26 +627,26 @@ class DefaultRobotTargetTest {
             double[] f = RobotFixture.rfracs(4, 4);
             t.r.chooseWeaponModifier(t.p, t.d, Obj.MINE);
             assertAll(
-                () -> assertEquals(DefaultRobot.NUCLEAR | DefaultRobot.FULLNUCLEAR, t.d.modNuclear,
+                () -> assertEquals(DefaultRobot.NUCLEAR | DefaultRobot.FULLNUCLEAR, Mods.nuclear(t.p.mods),
                     "40 % 100 <= 50; 5 > 4 mines and < 8: full nuclear"),
-                () -> assertEquals(DefaultRobot.CLUSTER, t.d.modWarhead, "fuel above level 3, even count: cluster"),
-                () -> assertEquals((int) (f[0] * 3) + 1, t.d.modVelocity, "every 8th: velocity 1..3"),
-                () -> assertEquals((int) (f[1] * 4), t.d.modMini, "every 10th: mini"),
-                () -> assertEquals((int) (f[2] * 4), t.d.modSpread, "and spread"));
+                () -> assertEquals(DefaultRobot.CLUSTER, Mods.warhead(t.p.mods), "fuel above level 3, even count: cluster"),
+                () -> assertEquals((int) (f[0] * 3) + 1, Mods.velocity(t.p.mods), "every 8th: velocity 1..3"),
+                () -> assertEquals((int) (f[1] * 4), Mods.mini(t.p.mods), "every 10th: mini"),
+                () -> assertEquals((int) (f[2] * 4), Mods.spread(t.p.mods), "and spread"));
             t.d.robotCount = 63;
             t.p.fuel = t.d.fuelL3;
             t.r.chooseWeaponModifier(t.p, t.d, Obj.HEAT_SHOT);
             assertAll(
-                () -> assertEquals(0, t.d.modNuclear, "63 % 100 > 50: no nuke"),
-                () -> assertEquals(DefaultRobot.IMPLOSION, t.d.modWarhead, "low fuel, count % 3 == 0: implosion"),
-                () -> assertEquals(0, t.d.modPower, "no power pick on 63"));
+                () -> assertEquals(0, Mods.nuclear(t.p.mods), "63 % 100 > 50: no nuke"),
+                () -> assertEquals(DefaultRobot.IMPLOSION, Mods.warhead(t.p.mods), "low fuel, count % 3 == 0: implosion"),
+                () -> assertEquals(0, Mods.power(t.p.mods), "no power pick on 63"));
             t.d.robotCount = 4;
             t.w.rng.seed(4);
             t.r.chooseWeaponModifier(t.p, t.d, Obj.SMART_SHOT);
             assertAll(
-                () -> assertEquals((int) (f[0] * 4), t.d.modPower, "count % 4 == 0: power"),
-                () -> assertEquals(DefaultRobot.NUCLEAR, t.d.modNuclear, "7 smarts = the minimum: nuclear, not full"),
-                () -> assertEquals(0, t.d.modWarhead, "low fuel, 4 % 3 != 0: no warhead"));
+                () -> assertEquals((int) (f[0] * 4), Mods.power(t.p.mods), "count % 4 == 0: power"),
+                () -> assertEquals(DefaultRobot.NUCLEAR, Mods.nuclear(t.p.mods), "7 smarts = the minimum: nuclear, not full"),
+                () -> assertEquals(0, Mods.warhead(t.p.mods), "low fuel, 4 % 3 != 0: no warhead"));
         }
 
         @Test
@@ -656,16 +657,16 @@ class DefaultRobotTargetTest {
             t.d.attack = 99;
             t.d.robotCount = 41;
             t.r.chooseWeaponModifier(t.p, t.d, Obj.MINE);
-            int odd = t.d.modNuclear;
+            int odd = Mods.nuclear(t.p.mods);
             it.with(Item.MINE, 4);
             t.r.chooseWeaponModifier(t.p, t.d, Obj.MINE);
-            int min = t.d.modNuclear;
+            int min = Mods.nuclear(t.p.mods);
             it.with(Item.MINE, 3);
             t.r.chooseWeaponModifier(t.p, t.d, Obj.MINE);
             assertAll(
                 () -> assertEquals(DefaultRobot.NUCLEAR, odd, "8 = twice the minimum, odd count: nuclear only"),
                 () -> assertEquals(DefaultRobot.NUCLEAR, min, "exactly the minimum: nuclear only"),
-                () -> assertEquals(0, t.d.modNuclear, "below the minimum: none"));
+                () -> assertEquals(0, Mods.nuclear(t.p.mods), "below the minimum: none"));
         }
 
         @Test
@@ -676,17 +677,17 @@ class DefaultRobotTargetTest {
             t.d.robotCount = 40;
             t.r.chooseWeaponModifier(t.p, t.d, Obj.MINE);
             assertAll(
-                () -> assertEquals(0, t.d.modNuclear, "no nukes"),
-                () -> assertEquals(0, t.d.modWarhead, "no clusters"),
-                () -> assertEquals(0, t.d.modVelocity + t.d.modMini + t.d.modSpread, "no modifiers"));
-            t.r.setModifiers(t.d, 1, 3, 1, 1, 1, 1, 1);
+                () -> assertEquals(0, Mods.nuclear(t.p.mods), "no nukes"),
+                () -> assertEquals(0, Mods.warhead(t.p.mods), "no clusters"),
+                () -> assertEquals(0, Mods.velocity(t.p.mods) + Mods.mini(t.p.mods) + Mods.spread(t.p.mods), "no modifiers"));
+            t.r.setModifiers(t.p, 1, 3, 1, 1, 1, 1, 1);
             assertAll(
-                () -> assertEquals(0, t.d.modWarhead, "cluster needs clusters, implosion needs modifiers"),
-                () -> assertEquals(0, t.d.modLaser, "no laser modifiers"),
-                () -> assertEquals(0, t.d.modPower, "no power"));
-            t.d.modMini = 7;
+                () -> assertEquals(0, Mods.warhead(t.p.mods), "cluster needs clusters, implosion needs modifiers"),
+                () -> assertEquals(0, Mods.laser(t.p.mods), "no laser modifiers"),
+                () -> assertEquals(0, Mods.power(t.p.mods), "no power"));
+            t.p.mods = Mods.withMini(t.p.mods, 2);
             t.r.chooseWeaponModifier(t.p, t.d, Obj.DEBRIS);
-            assertEquals(7, t.d.modMini, "an unknown weapon leaves the modifiers");
+            assertEquals(2, Mods.mini(t.p.mods), "an unknown weapon leaves the modifiers");
         }
     }
 }
