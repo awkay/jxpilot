@@ -85,7 +85,7 @@ class ServerSimTest {
                 () -> assertEquals("unknown argument --x", error("--map", "m", "--x", "1"), "unknown flag"),
                 () -> assertEquals(-7, ServerSim.Args.parse(new String[] {"--map", "m", "--seed", "-7"}).seed(),
                     "a negative seed is fine"),
-                () -> assertEquals("usage: ServerSim --map FILE [--ticks N] [--seed S] [--players P] [--every K]",
+                () -> assertEquals("usage: ServerSim --map NAME|FILE [--ticks N] [--seed S] [--players P] [--every K]",
                     ServerSim.USAGE, "usage line"));
         }
     }

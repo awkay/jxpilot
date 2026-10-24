@@ -28,21 +28,24 @@ import com.fulcrologic.jxpilot.client.map.StaticMap;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.client.render.VertexBatch;
 import com.fulcrologic.jxpilot.client.viewer.MapCatalog;
+import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.map.BlockType;
+import com.fulcrologic.jxpilot.common.map.BundledMaps;
+import com.fulcrologic.jxpilot.common.map.MapSource;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
 import org.junit.jupiter.api.Test;
 
-import java.nio.file.Path;
-
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Every shipped map builds its static geometry and radar picture. */
+/** Every bundled map (read from the class path, as the jars do) builds its static geometry and radar picture. */
 class ShippedMapsTest {
     @Test
     void everyMapBuildsWallsFeaturesAndRadar() throws Exception {
         Palette p = Palette.xpilotDefault();
-        for (Path file : MapCatalog.scan(Fixtures.MAPS).maps()) {
-            WorldMap m = WorldMap.load(file);
+        for (MapSource source : MapCatalog.bundled(BundledMaps.standard()).maps()) {
+            Options o = new Options();
+            source.parseInto(o);
+            WorldMap m = WorldMap.fromOptions(o);
             VertexBatch outline = StaticMap.build(m, p, false, true);
             VertexBatch filled = StaticMap.build(m, p, true, true);
             int[] radar = RadarImage.build(m, p, true);
@@ -58,7 +61,7 @@ class ShippedMapsTest {
                     wallPixels++;
                 }
             }
-            String n = file.getFileName().toString();
+            String n = source.fileName();
             int w = walls;
             int wp = wallPixels;
             assertAll(n,

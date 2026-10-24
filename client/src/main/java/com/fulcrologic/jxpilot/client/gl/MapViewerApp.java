@@ -45,11 +45,12 @@ import com.fulcrologic.jxpilot.client.viewer.LaunchOptions;
 import com.fulcrologic.jxpilot.client.viewer.MapCatalog;
 import com.fulcrologic.jxpilot.client.viewer.ViewerController;
 import com.fulcrologic.jxpilot.client.viewer.ViewerOverlay;
-import com.fulcrologic.jxpilot.common.config.ConfigParser;
-import com.fulcrologic.jxpilot.common.config.OptionOrigin;
 import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.map.Base;
 import com.fulcrologic.jxpilot.common.Item;
+import com.fulcrologic.jxpilot.common.map.BundledMaps;
+import com.fulcrologic.jxpilot.common.map.MapLocator;
+import com.fulcrologic.jxpilot.common.map.MapSource;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
 import org.lwjgl.system.MemoryUtil;
@@ -123,8 +124,12 @@ public final class MapViewerApp {
     private final float[] lockShipX = new float[ShipShape.MAX_SHIP_PTS];
     private final float[] lockShipY = new float[ShipShape.MAX_SHIP_PTS];
 
-    public MapViewerApp(LaunchOptions opts) {
+    private final MapSource first;
+
+    /** A viewer on {@code first} (resolved from {@code opts.viewMap()} by {@link MapLocator}). */
+    public MapViewerApp(LaunchOptions opts, MapSource first) {
         this.opts = opts;
+        this.first = first;
         this.filled = opts.filled();
     }
 
@@ -153,10 +158,9 @@ public final class MapViewerApp {
             dynPt = MemoryUtil.memAlloc(Math.min(DYNAMIC_POINTS, gl.maxPoints()) * VertexBatch.POINT_STRIDE);
             dyn = VertexBatch.fixed(dynTri, dynSeg, dynPt, 256, gl);
             overlay = new ViewerOverlay(palette);
-            Path file = Path.of(opts.viewMap()).toAbsolutePath().normalize();
-            catalog = MapCatalog.scan(file.getParent());
-            mapIndex = catalog.indexOf(file);
-            loadMap(file, opts.hasCentre());
+            catalog = MapCatalog.around(first, BundledMaps.standard());
+            mapIndex = catalog.indexOf(first);
+            loadMap(first, opts.hasCentre());
             installInput();
             loop(shot);
         } finally {
@@ -169,9 +173,9 @@ public final class MapViewerApp {
         return (float) (opts.fontSize() * window.pixelRatio());
     }
 
-    private void loadMap(Path file, boolean keepCentre) throws IOException {
+    private void loadMap(MapSource source, boolean keepCentre) throws IOException {
         Options mapOptions = new Options();
-        ConfigParser.parseFile(file, OptionOrigin.MAP, mapOptions);
+        source.parseInto(mapOptions);
         WorldMap m = WorldMap.fromOptions(mapOptions);
         fps = mapOptions.framesPerSecond();
         gl.delete(outlineMesh);
@@ -201,7 +205,7 @@ public final class MapViewerApp {
             ctl.reset(m.pixelWidth() / 2.0, m.pixelHeight() / 2.0, opts.zoom());
         }
         ctl.setAltScaleFactor(opts.altScaleFactor());
-        mapLabel = file.getFileName() + "  " + m.width() + "x" + m.height() + "  " + fps + " fps"
+        mapLabel = source.fileName() + "  " + m.width() + "x" + m.height() + "  " + fps + " fps"
             + (m.edgeWrap() ? "  wrap" : "") + (m.name() != null ? "  \"" + m.name() + "\"" : "");
         System.out.println("map " + mapLabel + ": outline mesh " + outlineMesh.describe()
             + "; filled mesh " + filledMesh.describe());

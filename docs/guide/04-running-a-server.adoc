@@ -20,13 +20,16 @@ Alliances and the `/` commands are not on it yet (<<01-introduction.adoc#status,
 
 [source,shell]
 ----
-java [JVM options] -jar jxpilot-server-VERSION.jar --map MAPFILE [--port N] [--bind SELECTOR ...] [--bindWait]
+java [JVM options] -jar jxpilot-server-VERSION.jar [--map MAP] [--port N] [--bind SELECTOR ...] [--bindWait]
      [--defaults FILE|none] [-OPTION VALUE ...] [CONFIGFILE]
+java -jar jxpilot-server-VERSION.jar --list-maps
 java -jar jxpilot-server-VERSION.jar -help | -version | -dump | -dumpMan | -dumpWindows | -dumpFlags
 ----
 
-`--map MAPFILE`:: The map to serve, an XPilot `.xp` file (required, here or in the config file). A
-relative path is relative to the directory the server is started in.
+`--map MAP`:: The map to serve (here or as `mapFileName` in the config file): the name of a map built
+into the jar, such as `default` or `tourmination`, or the path of an XPilot `.xp` file. Without it the
+server plays the built-in `default`, as the C server plays its `default.xp`. See <<map-selection>>.
+`--list-maps`:: Print the maps built into the jar, with their size, title and author, and exit.
 `--port N`:: The UDP port to listen on, default 15345 (option `contactPort`).
 `--bind SELECTOR`:: Which local addresses to listen on, default `all`. Repeat it or give a comma list:
 `--bind tailscale0 --bind loopback` is the same as `--bind tailscale0,loopback`. See <<binding>>.
@@ -114,11 +117,27 @@ found by the interface rescan as `listening on ...`, `unbound ...` or `interface
 [[map-selection]]
 == Choosing the map
 
-The map comes from `--map` (or `mapFileName: FILE` in the config file). A map file holds the map
+The map comes from `--map` (or `mapFileName: MAP` in the config file); with neither, it is the built-in
+`default` ("The Newbie Globe"). A map file holds the map
 itself (`mapData`) and usually options for it, such as `gravity` or `teamPlay`
 (<<06-config-and-maps.adoc#config-and-maps,Config and map files>>). The 19 maps that come with
-JXPilot are listed in <<06-config-and-maps.adoc#shipped-maps,Shipped maps>>; any XPilot 4.5.5
-block-based map should work.
+JXPilot are built into the jar and listed in <<06-config-and-maps.adoc#shipped-maps,Shipped maps>>
+(and by `--list-maps`); any XPilot 4.5.5 block-based map file should work too.
+
+[[map-names]]
+The value of `--map` is read like this:
+
+* A plain name, without `/` or `\` (and no drive letter such as `C:`), is a map built into the jar.
+  `tourmination`, `tourmination.xp` and `Tourmination` are the same map. Nothing on disk is needed.
+* A plain name that is not built in is a file in the directory the server was started in: the name as
+  given, then with `.xp`, then with `.map` added, as the C server does. So `--map mymap` finds
+  `./mymap.xp`.
+* A value with a path in it is a file, and only a file: `./default.xp`, `maps/mymap.xp`,
+  `/opt/jxpilot/maps/war.xp`. A relative path is relative to the directory the server was started
+  in. `.xp` and `.map` are tried here too when the name has no extension.
+
+A built-in name wins over a file of the same name in the current directory: to play your own edited
+`default.xp`, give `--map ./default.xp`. When nothing is found, the error lists the built-in names.
 
 The server simulates at the map's `framesPerSecond` (default 14; many maps set their own). One
 simulation step is one XPilot frame, so the game runs at the same speed as on an original server.
@@ -403,7 +422,7 @@ marked as command-line only in the option reference. Pass the file as the last a
 
 [source,shell]
 ----
-java -jar jxpilot-server-VERSION.jar --map maps/teamball.xp /etc/jxpilot/server.conf
+java -jar jxpilot-server-VERSION.jar --map teamball /etc/jxpilot/server.conf
 ----
 
 An example:
@@ -514,7 +533,7 @@ A minimal setup on a fresh Linux VM:
 
 [source,shell]
 ----
-java -XX:+UseZGC -Xmx128m -jar jxpilot-server-VERSION.jar --map maps/default.xp -robots 4
+java -XX:+UseZGC -Xmx128m -jar jxpilot-server-VERSION.jar --map default -robots 4
 ----
 
 [[service]]
@@ -527,7 +546,6 @@ On Linux, run the server as a systemd service under its own user. Set it up once
 sudo useradd --system --home /opt/jxpilot --shell /usr/sbin/nologin jxpilot
 sudo mkdir -p /opt/jxpilot /etc/jxpilot
 sudo cp jxpilot-server-VERSION.jar /opt/jxpilot/jxpilot-server.jar
-sudo cp -R jxpilot-maps-VERSION/maps /opt/jxpilot/maps
 sudo cp server.conf /etc/jxpilot/server.conf
 ----
 
@@ -547,7 +565,7 @@ User=jxpilot
 Group=jxpilot
 WorkingDirectory=/opt/jxpilot
 ExecStart=/usr/bin/java -XX:+UseZGC -Xmx256m -jar /opt/jxpilot/jxpilot-server.jar \
-    --map /opt/jxpilot/maps/default.xp /etc/jxpilot/server.conf
+    --map default /etc/jxpilot/server.conf
 # Java exits with 143 after SIGTERM (systemctl stop): that is a clean stop.
 SuccessExitStatus=143
 Restart=on-failure

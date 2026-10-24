@@ -9,6 +9,10 @@ Public License, version 2 or later (see `../LICENSE`). Each map names its author
 The files are Latin-1 encoded and must stay byte-for-byte identical to the originals.
 Changed or new maps belong in a separate directory, with their changes noted.
 
+The build copies these files, unchanged, and this README into the server and client jars as the
+class path directory `xpilot/maps/` (listed by `xpilot/maps/index.txt`), so `--map NAME` works
+without this directory. In the jars the licence is `META-INF/LICENSE`.
+
 | File | Map author (from the file) |
 |---|---|
 | `blood-music2.xp` | Blood, TIMID, DR.DEATH |
