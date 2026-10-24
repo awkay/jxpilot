@@ -25,11 +25,16 @@ package com.fulcrologic.jxpilot.server;
 
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.OptionType;
+import com.fulcrologic.jxpilot.common.map.BundledMaps;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
 
 /**
  * The server's information requests, C {@code Parse_check_info_request} (parser.c): {@code -help}/{@code -h},
  * {@code -version}/{@code -v}, {@code -dump}, {@code -dumpMan}, {@code -dumpWindows} and {@code -dumpFlags}
- * (also with two dashes). The server prints the text and exits instead of starting.
+ * (also with two dashes), plus JXPilot's {@code --list-maps}. The server prints the text and exits instead of
+ * starting.
  */
 public final class ServerInfo {
     private ServerInfo() {}
@@ -63,6 +68,9 @@ public final class ServerInfo {
                 case "-dumpFlags" -> {
                     return dumpFlags();
                 }
+                case "-list-maps" -> {
+                    return listMaps();
+                }
                 case "-version", "-v" -> {
                     return "JXPilot server " + version + " (a port of XPilot 4.5.5)\n";
                 }
@@ -72,6 +80,15 @@ public final class ServerInfo {
             }
         }
         return null;
+    }
+
+    /** BEHAVIOR: {@code --list-maps}: {@link BundledMaps#listing} of every bundled map. */
+    static String listMaps() {
+        try {
+            return BundledMaps.listing(BundledMaps.standard().infos());
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /** The server version from the jar manifest, "dev" when not running from a jar. */

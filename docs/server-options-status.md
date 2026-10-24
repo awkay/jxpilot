@@ -101,7 +101,7 @@ follow C; the alias is the C command-line name.
 | `logRobots` |  | bool | `true` | CMD+DEF+VIS | implemented (server-batch2): "NAME (n, robotRealName) starts at startpos B." on the server log |
 | `mapWidth` |  | int | `100` | ANY+VIS | implemented (MapLoader) |
 | `mapHeight` |  | int | `100` | ANY+VIS | implemented (MapLoader) |
-| `mapFileName` | map | string | `(none)` | CMD+DEF | implemented (Server.readOptions): --map FILE, a path to the map file; required (C falls back to its default map and searches its map directory: bundled-maps, in progress) |
+| `mapFileName` | map | string | `(none)` | CMD+DEF | implemented (Server.readOptions, MapLocator): --map NAME or FILE, a built-in map by name (`--list-maps`) or a path; without it the built-in `default`, like C's default map |
 | `mapName` |  | string | `unknown` | ANY+VIS | implemented (SimGameHost, MapLoader) |
 | `mapAuthor` |  | string | `anonymous` | ANY+VIS | implemented (SimGameHost, MapLoader) |
 | `contactPort` | port | int | `15345` | CMD+DEF+VIS | implemented (Server) |

@@ -30,8 +30,9 @@ import com.fulcrologic.jxpilot.client.app.AppOptions;
  * Client entry point (see {@link AppOptions} for the arguments):
  * <pre>
  *   ClientMain --connect HOST[:PORT] | xp://HOST:PORT [--name N] [--team T] ...   play on a server
- *   ClientMain --local --map FILE                                                  play on an embedded server
- *   ClientMain --view-map FILE [--demo] [--screenshot out.png --frames N] ...      the map viewer
+ *   ClientMain --local --map MAP                                                   play on an embedded server
+ *   ClientMain --view-map MAP [--demo] [--screenshot out.png --frames N] ...       the map viewer
+ *   ClientMain --list-maps                                                         print the bundled maps
  * </pre>
  * On macOS the JVM needs {@code -XstartOnFirstThread}.
  */

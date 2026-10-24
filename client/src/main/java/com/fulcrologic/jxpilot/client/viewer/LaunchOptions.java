@@ -26,7 +26,8 @@ package com.fulcrologic.jxpilot.client.viewer;
 /**
  * Parsed command line of {@code ClientMain}.
  * <pre>
- *   --view-map FILE        free-flying map viewer on FILE (Tab cycles maps in FILE's directory)
+ *   --view-map MAP         free-flying map viewer on MAP, a bundled map name or a map file (Tab cycles the
+ *                          bundled maps, or the maps in the file's directory)
  *   --screenshot FILE.png  render, save a PNG of the framebuffer and exit
  *   --frames N             frames to render before the screenshot (default 3)
  *   --warmup N             frames excluded from the reported statistics and allocation (default frames / 2)
@@ -44,7 +45,7 @@ package com.fulcrologic.jxpilot.client.viewer;
  *   --demo-damaged N       demo: N frames of ECM damage on the own ship from the start
  * </pre>
  *
- * @param viewMap    map file, or null
+ * @param viewMap    map name or file (resolved by MapLocator), or null
  * @param screenshot PNG path, or null
  */
 public record LaunchOptions(String viewMap, String screenshot, int frames, int width, int height,
