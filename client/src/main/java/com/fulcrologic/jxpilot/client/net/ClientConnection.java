@@ -143,6 +143,9 @@ public final class ClientConnection {
     private long ioErrors;
 
     private long packetsReceived;
+    /** C's packet meter measurements (client-ui-look), in snapshot slots: one slot per snapshot interval. */
+    private final PacketStats stats = new PacketStats();
+    private int slotTicks = 1;
     private long packetsSent;
     private long malformed;
     private long snapshots;
@@ -201,6 +204,12 @@ public final class ClientConnection {
     public long inputIntervalNanos() { return inputIntervalNanos; }
 
     public long snapshotsReceived() { return snapshots; }
+
+    /**
+     * The packet meters' measurements: snapshots per slot of one snapshot interval (simHz / snapshotHz ticks),
+     * one-second windows of snapshotHz slots; lag is the INPUT round trip in snapshot intervals.
+     */
+    public PacketStats packetStats() { return stats; }
 
     /** Times an established session was lost and the connection restarted. */
     public int reconnects() { return reconnects; }
@@ -398,6 +407,7 @@ public final class ClientConnection {
             return 0;
         }
         int seq = input.record(keys, pendingAim);
+        stats.keyboardSent(seq, latestTick / slotTicks);
         begin(PacketType.INPUT);
         input.write(tx, latestTick, inputRedundancy());
         transmit();
@@ -577,14 +587,20 @@ public final class ClientConnection {
         }
         int tick = in.getInt(in.position());
         if (!haveTick || tick - latestTick > 0) {
+            int drawn = latestTick / slotTicks;
             latestTick = tick;
             haveTick = true;
+            stats.measure(tick / slotTicks, PacketStats.DRAW);
+            stats.frameSize(in.limit());
             if (in.remaining() >= 8) {
                 int seq = in.getInt(in.position() + 4);
                 if (seq - ackedInputSeq > 0 && seq - input.latestSeq() <= 0) {
                     ackedInputSeq = seq;
+                    stats.keyboardAck(seq, drawn);
                 }
             }
+        } else {
+            stats.measure(tick / slotTicks, PacketStats.DROP);
         }
         snapshots++;
         listener.onSnapshot(in, now);
@@ -622,6 +638,10 @@ public final class ClientConnection {
     private void onWelcome(ByteBuffer payload) {
         welcome.read(payload);
         inputIntervalNanos = 1_000_000_000L / (welcome.simHz > 0 ? welcome.simHz : 60);
+        int simHz = welcome.simHz > 0 ? welcome.simHz : 60;
+        int snapHz = welcome.snapshotHz > 0 ? welcome.snapshotHz : simHz;
+        slotTicks = Math.max(1, simHz / snapHz);
+        stats.reset(Math.max(1, simHz / slotTicks));
         try {
             config = new ConfigTransfer.Receiver(welcome);
         } catch (RuntimeException e) {

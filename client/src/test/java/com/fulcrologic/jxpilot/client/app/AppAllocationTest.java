@@ -154,6 +154,16 @@ class AppAllocationTest {
         NativeGameConnection conn = new NativeGameConnection(cc, sw);
         ClientFrame cf = new ClientFrame(game, conn, new InputState(KeyRouter.bindings(null)), new SceneData(),
             new RadarBlips(1024));
+        // client-ui-look: every per-frame look option on (packet meters, clock, title flip, look options)
+        for (com.fulcrologic.jxpilot.client.game.options.ClientOption o : new com.fulcrologic.jxpilot.client.game.options
+            .ClientOption[] {com.fulcrologic.jxpilot.client.game.options.ClientOption.PACKET_SIZE_METER,
+            com.fulcrologic.jxpilot.client.game.options.ClientOption.PACKET_LOSS_METER,
+            com.fulcrologic.jxpilot.client.game.options.ClientOption.PACKET_DROP_METER,
+            com.fulcrologic.jxpilot.client.game.options.ClientOption.PACKET_LAG_METER,
+            com.fulcrologic.jxpilot.client.game.options.ClientOption.CLOCK,
+            com.fulcrologic.jxpilot.client.game.options.ClientOption.SHOW_NASTY_SHOTS}) {
+            cf.options().setFlag(o, true);
+        }
         RoleFontSet m = roleFonts();
         long serverPeriod = 1_000_000_000L / server.fps;
         long now = 1_000_000_000L;
@@ -225,6 +235,7 @@ class AppAllocationTest {
                 cf.scroll(-1, t[0]);
             }
             cf.cursor(600 + (f % 9) * 7, 400 + (f % 5)); // pointer steering every frame
+            ui(cf, f);
             cf.step(t[0], 1200, 800, 1, m, 256, 200);
             ring.frame++;
         };
@@ -270,6 +281,9 @@ class AppAllocationTest {
             () -> assertTrue(cf.play().pointer().on(), "pointer control was on while measured"),
             () -> assertTrue(cf.viewHud().textCount() > 3, "HUD built"),
             () -> assertTrue(cf.panelHud().textCount() >= 5, "score list built"),
+            () -> assertTrue(ClientFrameLookTest.find(cf.viewHud(), "Lag") != null, "packet meters drawn while measured"),
+            () -> assertTrue(ClientFrameLookTest.find(cf.panelHud(), "\\d\\d:\\d\\d") != null, "clock drawn"),
+            () -> assertTrue(conn.packetStats().size() > 0, "frame sizes measured"),
             () -> assertTrue(lockSeen[0] && lockSeen[1], "R7: the lock target changed while measured"),
             () -> assertTrue(reliable >= 9, "R7: robot leaves and rejoins were received while measured (" + reliable
                 + " reliable messages)"),
@@ -292,5 +306,44 @@ class AppAllocationTest {
         }
         into.put(a);
         return a.length;
+    }
+
+    /**
+     * client-ui: the C windows every 400 frames: MENU held and moved onto CONFIG, released (CONFIG opens), NEXT and
+     * PREV, ABOUT opened, paged (NEXT) and closed (CLOSE), CONFIG closed, a selection dragged over the messages and
+     * cleared.
+     */
+    static void ui(ClientFrame cf, int f) {
+        int top = cf.ui().bar().top();
+        int bh = cf.ui().bar().buttonHeight();
+        int vx = GameApp.PANEL_W + GameApp.PANEL_GAP;
+        int entry = top + 1 + bh + (bh + 1) + 5;
+        int next = 800 - 6 - 4;
+        int about = (1200 - (com.fulcrologic.jxpilot.client.game.ui.AboutWindow.WIDTH + 4)) / 2 + 2;
+        int aboutButtons = (800 - (com.fulcrologic.jxpilot.client.game.ui.AboutWindow.HEIGHT + 4)) / 2 + 2 + 665 + 5;
+        switch (f % 400) {
+            case 0 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 200, top + 5, vx);
+            case 5 -> cf.mouseMove(200, entry, vx);
+            case 10 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 200, entry, vx);
+            case 20 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 128, next, vx);
+            case 21 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 128, next, vx);
+            case 25 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 230, next, vx);
+            case 26 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 230, next, vx);
+            case 30 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 128, top + 5, vx);
+            case 31 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 128, top + 5, vx);
+            case 40 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, vx + about + 282 + 5, aboutButtons, vx);
+            case 41 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, vx + about + 282 + 5, aboutButtons, vx);
+            case 60 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, vx + about + 10 + 5, aboutButtons, vx);
+            case 61 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, vx + about + 10 + 5, aboutButtons, vx);
+            case 100 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 10, next, vx);
+            case 101 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 10, next, vx);
+            case 150 -> cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 12, 800 - 20);
+            case 200 -> cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 600, 400);
+            default -> {
+                if (f % 400 > 150 && f % 400 < 200) {
+                    cf.viewMouseMove(12 + (f % 400 - 150), 800 - 20);
+                }
+            }
+        }
     }
 }

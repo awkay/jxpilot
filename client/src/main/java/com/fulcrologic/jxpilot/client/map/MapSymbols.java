@@ -24,6 +24,9 @@
 package com.fulcrologic.jxpilot.client.map;
 
 import com.fulcrologic.jxpilot.client.render.Camera;
+import com.fulcrologic.jxpilot.client.paint.BlockBitmap;
+import com.fulcrologic.jxpilot.client.paint.BlockBitmaps;
+import com.fulcrologic.jxpilot.client.paint.PaintStyle;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.client.render.Shapes;
 import com.fulcrologic.jxpilot.client.render.TextWriter;
@@ -31,6 +34,7 @@ import com.fulcrologic.jxpilot.client.render.Trig;
 import com.fulcrologic.jxpilot.client.render.VertexBatch;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.map.Base;
+import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Cannon;
 import com.fulcrologic.jxpilot.common.map.Checkpoint;
 import com.fulcrologic.jxpilot.common.map.Concentrator;
@@ -81,12 +85,20 @@ public final class MapSymbols {
 
     private final WorldMap map;
     private final Palette palette;
+    private final PaintStyle style;
     private final float[] px = new float[4];
     private final float[] py = new float[4];
 
+    /** With C's default look options. */
     public MapSymbols(WorldMap map, Palette palette) {
+        this(map, palette, new PaintStyle());
+    }
+
+    /** @param style the live look options ({@code backgroundPointDist}, {@code backgroundPointSize}) */
+    public MapSymbols(WorldMap map, Palette palette, PaintStyle style) {
         this.map = map;
         this.palette = palette;
+        this.style = style;
     }
 
     /** Draw all symbols but the arcs for the camera's visible world copies. */
@@ -97,7 +109,11 @@ public final class MapSymbols {
         }
         for (int k = 0; k < cam.offsetCount(); k++) {
             cam.applyTo(b, k);
-            fills(b, cam, k, st);
+            if (style.texturedObjects) {
+                bitmaps(b, cam, k, st);
+            } else {
+                fills(b, cam, k, st);
+            }
         }
         for (int k = 0; k < cam.offsetCount(); k++) {
             cam.applyTo(b, k);
@@ -122,15 +138,16 @@ public final class MapSymbols {
         int wormCount = (int) (st.loops() & 7);
         for (int k = 0; k < cam.offsetCount(); k++) {
             cam.applyTo(b, k);
+            boolean bm = style.texturedObjects;
             for (int i = 0; i < gravs.size(); i++) {
                 com.fulcrologic.jxpilot.common.map.GravitySource g = gravs.get(i);
-                if (visible(cam, g.bx(), g.by(), k)) {
+                if (!(bm && StaticMap.bitmapGravity(g.type())) && visible(cam, g.bx(), g.by(), k)) {
                     StaticMap.gravityArcs(b, g.type(), g.bx() * S, g.by() * S, red);
                 }
             }
             for (int i = 0; i < worms.size(); i++) {
                 Wormhole w = worms.get(i);
-                if (w.type() != Wormhole.Type.OUT && visible(cam, w.bx(), w.by(), k)) {
+                if (!bm && w.type() != Wormhole.Type.OUT && visible(cam, w.bx(), w.by(), k)) {
                     wormhole(b, w.bx() * S, w.by() * S, wormCount, red);
                 }
             }
@@ -145,7 +162,7 @@ public final class MapSymbols {
             }
             for (int i = 0; i < treasures.size(); i++) {
                 Treasure t = treasures.get(i);
-                if (visible(cam, t.bx(), t.by(), k)) {
+                if (!bm && visible(cam, t.bx(), t.by(), k)) {
                     treasureArc(b, t.bx() * S, t.by() * S, own(t.team(), st) ? blue : red);
                 }
             }
@@ -162,16 +179,21 @@ public final class MapSymbols {
 
     /**
      * A dead cannon on a background-dot position shows the dot instead (C {@code Paint_world}: the
-     * cannon case falls through to {@code Gui_paint_decor_dot} when the cannon is dead and has a dot).
+     * cannon case falls through to {@code Gui_paint_decor_dot} when the cannon is dead and has a dot), at the
+     * live {@code backgroundPointDist}; no dots with {@code backgroundPointSize} 0.
      */
     private void deadCannonDots(VertexBatch b, Camera cam, int k, MapState st, double zoom) {
+        int size = style.pointSize;
+        if (size <= 0) {
+            return;
+        }
         List<Cannon> cannons = map.cannons();
         int blue = palette.color(Palette.BLUE);
         for (int i = 0; i < cannons.size(); i++) {
             Cannon c = cannons.get(i);
-            if (!st.cannonAlive(i) && StaticMap.dotPosition(c.bx(), c.by(), map.edgeWrap())
+            if (!st.cannonAlive(i) && StaticMap.dotPosition(c.bx(), c.by(), map.edgeWrap(), style.pointDist)
                 && visible(cam, c.bx(), c.by(), k)) {
-                StaticMap.dot(b, c.bx() * S, c.by() * S, blue, zoom);
+                StaticMap.sizedDot(b, c.bx() * S, c.by() * S, size, blue, zoom);
             }
         }
     }
@@ -200,6 +222,10 @@ public final class MapSymbols {
     }
 
     private void lines(VertexBatch b, Camera cam, int k, MapState st) {
+        if (style.texturedObjects) {
+            targetLines(b, cam, k, st);
+            return;
+        }
         int white = palette.color(Palette.WHITE);
         int red = palette.color(Palette.RED);
         int blue = palette.color(Palette.BLUE);
@@ -210,14 +236,7 @@ public final class MapSymbols {
                 cannon(b, c.dir(), c.bx() * S, c.by() * S, white);
             }
         }
-        List<Target> targets = map.targets();
-        for (int i = 0; i < targets.size(); i++) {
-            Target t = targets.get(i);
-            if (st.targetAlive(i) && visible(cam, t.bx(), t.by(), k)) {
-                int c = own(t.team(), st) ? blue : red;
-                target(b, t.bx() * S, t.by() * S, st.targetDamage(i), c, red);
-            }
-        }
+        targetLines(b, cam, k, st);
         List<Treasure> treasures = map.treasures();
         for (int i = 0; i < treasures.size(); i++) {
             Treasure t = treasures.get(i);
@@ -248,6 +267,149 @@ public final class MapSymbols {
         }
     }
 
+    /** Live targets (no bitmap in C, so drawn in both looks). */
+    private void targetLines(VertexBatch b, Camera cam, int k, MapState st) {
+        int red = palette.color(Palette.RED);
+        int blue = palette.color(Palette.BLUE);
+        List<Target> targets = map.targets();
+        for (int i = 0; i < targets.size(); i++) {
+            Target t = targets.get(i);
+            if (st.targetAlive(i) && visible(cam, t.bx(), t.by(), k)) {
+                int c = own(t.team(), st) ? blue : red;
+                target(b, t.bx() * S, t.by() * S, st.targetDamage(i), c, red);
+            }
+        }
+    }
+
+    /**
+     * {@code texturedObjects} (C {@code blockBitmaps}): the map symbols C draws as block bitmaps, in place of the fills
+     * and lines: fuel cells with their animated level, checkpoints (picture 1 for the next one), live cannons, bases,
+     * treasures, + and - gravity, wormholes and both kinds of concentrators (the last two turning).
+     */
+    private void bitmaps(VertexBatch b, Camera cam, int k, MapState st) {
+        List<FuelStation> fuels = map.fuels();
+        for (int i = 0; i < fuels.size(); i++) {
+            FuelStation f = fuels.get(i);
+            if (visible(cam, f.bx(), f.by(), k)) {
+                fuelBitmap(b, f.bx() * S, f.by() * S, st.fuel(i), st.loops());
+            }
+        }
+        List<Checkpoint> checks = map.checkpoints();
+        for (int i = 0; i < checks.size(); i++) {
+            Checkpoint c = checks.get(i);
+            if (visible(cam, c.bx(), c.by(), k)) {
+                BlockBitmaps.draw(b, BlockBitmap.CHECKPOINT, i == st.nextCheckpoint() ? 1 : 0, c.bx() * S,
+                    c.by() * S + S, S, S);
+            }
+        }
+        List<Cannon> cannons = map.cannons();
+        for (int i = 0; i < cannons.size(); i++) {
+            Cannon c = cannons.get(i);
+            if (st.cannonAlive(i) && visible(cam, c.bx(), c.by(), k)) {
+                directed(b, c.dir(), c.bx() * S, c.by() * S, BlockBitmap.CANNON_DOWN, BlockBitmap.CANNON_UP,
+                    BlockBitmap.CANNON_RIGHT, BlockBitmap.CANNON_LEFT);
+            }
+        }
+        List<Base> bases = map.bases();
+        for (int i = 0; i < bases.size(); i++) {
+            Base base = bases.get(i);
+            if (visible(cam, base.bx(), base.by(), k)) {
+                directed(b, base.dir(), base.bx() * S, base.by() * S, BlockBitmap.BASE_DOWN, BlockBitmap.BASE_UP,
+                    BlockBitmap.BASE_RIGHT, BlockBitmap.BASE_LEFT);
+            }
+        }
+        List<Treasure> treasures = map.treasures();
+        for (int i = 0; i < treasures.size(); i++) {
+            Treasure t = treasures.get(i);
+            if (visible(cam, t.bx(), t.by(), k)) {
+                BlockBitmaps.draw(b, own(t.team(), st) ? BlockBitmap.HOLDER_FRIEND : BlockBitmap.HOLDER_ENEMY, 0,
+                    t.bx() * S, t.by() * S + S, S, S);
+            }
+        }
+        List<com.fulcrologic.jxpilot.common.map.GravitySource> gravs = map.gravitySources();
+        for (int i = 0; i < gravs.size(); i++) {
+            com.fulcrologic.jxpilot.common.map.GravitySource g = gravs.get(i);
+            if (StaticMap.bitmapGravity(g.type()) && visible(cam, g.bx(), g.by(), k)) {
+                BlockBitmaps.draw(b, g.type() == BlockType.POS_GRAV ? BlockBitmap.PLUSGRAVITY : BlockBitmap.MINUSGRAVITY,
+                    0, g.bx() * S, g.by() * S + S, S, S);
+            }
+        }
+        List<Wormhole> worms = map.wormholes();
+        int wormFrame = (int) (st.loops() & 7);
+        for (int i = 0; i < worms.size(); i++) {
+            Wormhole w = worms.get(i);
+            if (w.type() != Wormhole.Type.OUT && visible(cam, w.bx(), w.by(), k)) {
+                turning(b, BlockBitmap.WORMHOLE, w.bx() * S, w.by() * S, wormFrame);
+            }
+        }
+        List<Concentrator> items = map.itemConcentrators();
+        for (int i = 0; i < items.size(); i++) {
+            Concentrator c = items.get(i);
+            if (visible(cam, c.bx(), c.by(), k)) {
+                turning(b, BlockBitmap.CONCENTRATOR, c.bx() * S, c.by() * S, concentratorFrame(c.bx(), c.by(), st.loops()));
+            }
+        }
+        List<Concentrator> asteroids = map.asteroidConcentrators();
+        for (int i = 0; i < asteroids.size(); i++) {
+            Concentrator c = asteroids.get(i);
+            if (visible(cam, c.bx(), c.by(), k)) {
+                turning(b, BlockBitmap.ASTEROIDCONC, c.bx() * S, c.by() * S,
+                    concentratorFrame(c.bx(), c.by(), st.loops()));
+            }
+        }
+    }
+
+    /**
+     * C {@code Gui_paint_cannon} / {@code Gui_paint_base} with bitmaps: facing up the "down" picture at the block,
+     * facing down the "up" picture a pixel lower, facing left the "right" picture, facing right the "left" picture a
+     * pixel left.
+     */
+    static void directed(VertexBatch b, int dir, int x, int y, BlockBitmap up, BlockBitmap down, BlockBitmap left,
+                         BlockBitmap right) {
+        switch (dir) {
+            case Dir.UP -> BlockBitmaps.draw(b, up, 0, x, y + S, S, S);
+            case Dir.DOWN -> BlockBitmaps.draw(b, down, 0, x, y + S - 1, S, S);
+            case Dir.LEFT -> BlockBitmaps.draw(b, left, 0, x, y + S, S, S);
+            default -> BlockBitmaps.draw(b, right, 0, x - 1, y + S, S, S);
+        }
+    }
+
+    /** A rotating bitmap's {@code frame} of its images over the block (turned by frame * 128 / images RES). */
+    static void turning(VertexBatch b, BlockBitmap bm, int x, int y, int frame) {
+        BlockBitmaps.drawTurned(b, bm, x + S / 2f, y + S / 2f, S, frame * 128 / bm.images());
+    }
+
+    /** BEHAVIOR: C's concentrator frame {@code (loops + x + x * y) % 32} for the block's world pixel position. */
+    static int concentratorFrame(int bx, int by, long loops) {
+        long x = (long) bx * S;
+        long y = (long) by * S;
+        return (int) Math.floorMod(loops + x + x * y, 32L);
+    }
+
+    /**
+     * BEHAVIOR: C's fuel animation picture: {@code (loops + x + x * y) % 32} for the block's world pixel position,
+     * played 0..15 and back 15..0.
+     */
+    static int fuelFrame(int x, int y, long loops) {
+        int n = BlockBitmap.FUEL.pictures();
+        int image = (int) Math.floorMod(loops + x + (long) x * y, 2L * n);
+        return image >= n ? 2 * n - 1 - image : image;
+    }
+
+    /**
+     * C {@code Gui_paint_fuel} with bitmaps: the fuel cell over the block, then the top rows of the level picture
+     * ({@code (BLOCK_SZ - 6) * fuel / MAX_STATION_FUEL} of 29) from 3 pixels inside the block's bottom left up.
+     */
+    static void fuelBitmap(VertexBatch b, int x, int y, double fuel, long loops) {
+        BlockBitmaps.draw(b, BlockBitmap.FUELCELL, 0, x, y + S, S, S);
+        int size = (int) ((S - 2 * BITMAP_FUEL_BORDER) * fuel / Const.MAX_STATION_FUEL);
+        BlockBitmaps.drawRows(b, BlockBitmap.FUEL, fuelFrame(x, y, loops), x + BITMAP_FUEL_BORDER,
+            y + BITMAP_FUEL_BORDER + size, S - 2 * BITMAP_FUEL_BORDER, size, size);
+    }
+
+    /** C {@code BITMAP_FUEL_BORDER}. */
+    static final int BITMAP_FUEL_BORDER = 3;
+
     private void texts(VertexBatch b, TextWriter text, Camera cam, int k, MapState st) {
         boolean team = map.teamPlay();
         int black = palette.color(Palette.BLACK);
@@ -257,7 +419,7 @@ public final class MapSymbols {
         List<FuelStation> fuels = map.fuels();
         for (int i = 0; i < fuels.size(); i++) {
             FuelStation f = fuels.get(i);
-            if (visible(cam, f.bx(), f.by(), k)) {
+            if (!style.texturedObjects && visible(cam, f.bx(), f.by(), k)) {
                 int c = fuelCoversCentre(st.fuel(i)) ? black : red;
                 centredChar(b, text, 'F', cam.screenX(f.bx() * S + HALF, k), cam.screenY(f.by() * S + HALF, k), c);
             }

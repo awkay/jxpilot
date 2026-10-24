@@ -324,6 +324,15 @@ public final class VertexBatch {
         put(x3, y3, SOLID_U, SOLID_V, rgba);
     }
 
+    /** One textured triangle: texture coordinates (u, v) per corner. */
+    public void texTriangle(float x1, float y1, float u1, float v1, float x2, float y2, float u2, float v2,
+                            float x3, float y3, float u3, float v3, int rgba) {
+        begin(TRIANGLES, 3);
+        put(x1, y1, unorm16(u1), unorm16(v1), rgba);
+        put(x2, y2, unorm16(u2), unorm16(v2), rgba);
+        put(x3, y3, unorm16(u3), unorm16(v3), rgba);
+    }
+
     /** Filled axis-aligned rectangle with corners (x0,y0) and (x1,y1), as two triangles. */
     public void fillRect(float x0, float y0, float x1, float y1, int rgba) {
         quad(x0, y0, x1, y1, SOLID_U, SOLID_V, SOLID_U, SOLID_V, rgba);

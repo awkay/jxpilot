@@ -196,6 +196,107 @@ class ClientFrameTest {
         }
 
         @Test
+        @DisplayName("maxFPS reaches the server on the first step and on each change; sparkProb stays client-side")
+        void connectionOptions() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = frame(f);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            cf.step(T0 + 1000, 800, 600, 1, M, 256, 100);
+            List<String> first = List.copyOf(conn.requests);
+            int displays = conn.displays.size();
+            cf.options().setReal(com.fulcrologic.jxpilot.client.game.options.ClientOption.SPARK_PROB, 0.25);
+            cf.options().setInteger(com.fulcrologic.jxpilot.client.game.options.ClientOption.MAX_FPS, 30);
+            cf.step(T0 + 2000, 800, 600, 1, M, 256, 100);
+            assertAll(
+                () -> assertEquals(List.of("fps 0"), first, "the default once"),
+                () -> assertEquals(List.of("fps 0", "fps 30"), conn.requests, "then the change"),
+                () -> assertEquals(displays, conn.displays.size(),
+                    "a sparkProb change sends nothing (the server sends every spark; the client thins them)"));
+        }
+
+        @Test
+        @DisplayName("a server-side close prints C's text to stderr once and quits after CLOSE_LINGER (M10)")
+        void serverClose() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = frame(f);
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            cf.setErrorStream(new java.io.PrintStream(bytes, true, java.nio.charset.StandardCharsets.UTF_8));
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            boolean openBefore = cf.closedByServer();
+            conn.state = ConnectionState.CLOSED;
+            conn.status = "Your nick is already used";
+            cf.step(T0 + 1000, 800, 600, 1, M, 256, 100);
+            boolean quitAtOnce = cf.quitRequested();
+            cf.step(T0 + 1000 + ClientFrame.CLOSE_LINGER_NANOS - 1, 800, 600, 1, M, 256, 100);
+            boolean quitEarly = cf.quitRequested();
+            cf.step(T0 + 1000 + ClientFrame.CLOSE_LINGER_NANOS, 800, 600, 1, M, 256, 100);
+            assertAll(
+                () -> assertFalse(openBefore, "not closed while connected"),
+                () -> assertTrue(cf.closedByServer(), "closed by the server"),
+                () -> assertEquals("Your nick is already used" + System.lineSeparator(),
+                    bytes.toString(java.nio.charset.StandardCharsets.UTF_8), "printed once"),
+                () -> assertFalse(quitAtOnce, "the window shows the text first"),
+                () -> assertFalse(quitEarly, "for CLOSE_LINGER"),
+                () -> assertTrue(cf.quitRequested(), "then the client quits"),
+                () -> assertEquals("Your nick is already used", f.game.status().toString(), "the status line shows it"));
+        }
+
+        @Test
+        @DisplayName("cut and paste: drag over a message copies it; the paste key and the middle button paste into the talk line")
+        void cutAndPaste() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = frame(f);
+            String[] clip = {null};
+            cf.setClipboard(new ClientFrame.Clipboard() {
+                public String get() { return clip[0]; }
+
+                public void set(String t) { clip[0] = t; }
+            });
+            boolean before = cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 10, 10);
+            f.game.messages().add(com.fulcrologic.jxpilot.common.net.Msg.Text.KIND_CHAT, "hello there [x]");
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            int base = 10 + M.ascent();
+            boolean pressed = cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 10, base - 2);
+            boolean dragged = cf.viewMouseMove(10 + 5 * M.width("x", 1), base - 2);
+            boolean released = cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 10, base - 2);
+            String copied = clip[0];
+            boolean idleMove = cf.viewMouseMove(10, 10);
+            cf.key(GLFW_KEY_M, GLFW_PRESS, 0, T0);
+            cf.character('m');
+            cf.key(GLFW_KEY_V, GLFW_PRESS, GLFW_MOD_CONTROL, T0);
+            String afterKey = cf.talk().text().toString();
+            cf.step(T0 + 1000, 800, 600, 1, M, 256, 100);
+            boolean middle = cf.viewMouse(GLFW_MOUSE_BUTTON_MIDDLE, GLFW_PRESS, 0, 0);
+            boolean elsewhere = cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 400, 300);
+            cf.options().setFlag(com.fulcrologic.jxpilot.client.game.options.ClientOption.SELECTION_AND_HISTORY, false);
+            boolean off = cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 10, base - 2);
+            assertAll(
+                () -> assertFalse(before, "nothing before the first step (no fonts yet)"),
+                () -> assertTrue(pressed, "a press on a message starts a selection"),
+                () -> assertTrue(dragged, "dragging extends it"),
+                () -> assertTrue(released, "release ends it"),
+                () -> assertEquals("hello", copied, "the selected text went to the clipboard"),
+                () -> assertFalse(idleMove, "motion without a drag is not used"),
+                () -> assertEquals("hello", afterKey, "Control-V pasted into the talk line"),
+                () -> assertTrue(middle, "the middle button pastes while talking"),
+                () -> assertEquals("hellohello", cf.talk().text().toString(), "pasted again at the cursor"),
+                () -> assertFalse(elsewhere, "a press on nothing clears and is not used"),
+                () -> assertFalse(off, "selectionAndHistory off: no cut and paste"));
+        }
+
+        @Test
+        @DisplayName("MENU / MOTD: asks the server when refreshing or when no MOTD came yet, and reopens a closed panel")
+        void motdMenu() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = frame(f);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            conn.requests.clear();
+            cf.ui().act(com.fulcrologic.jxpilot.client.game.ui.UiAction.MOTD);
+            List<String> none = List.copyOf(conn.requests);
+            assertEquals(List.of("motd"), none, "no MOTD yet: ask for it");
+        }
+
+        @Test
         @DisplayName("the score list goes into the panel under the radar and the button bar; the HUD zoom is set")
         void panel() {
             AppFixture f = new AppFixture(true).players().score(SELF, 5, 3);

@@ -49,7 +49,7 @@ public final class LiveOptions {
     /**
      * BEHAVIOR: when the options' version differs from the last applied one, copies them into the consumers:
      * Hud showHUD, horizontalHUDLine, verticalHUDLine, fuelGauge, fuelMeter, powerMeter, turnSpeedMeter,
-     * fuelNotify/fuelWarning/fuelCritical, showMessages, speedFactHUD, speedFactPTR; messages maxMessages and
+     * fuelNotify/fuelWarning/fuelCritical, showMessages, reverseScroll, speedFactHUD, speedFactPTR; messages maxMessages and
      * charsPerSecond; score list showScoreDecimals; HUD items showItems and showItemsTime; talk
      * maxLinesInHistory. Returns whether it applied.
      */
@@ -78,6 +78,7 @@ public final class LiveOptions {
         hud.fuelWarning = options.integer(FUEL_WARNING);
         hud.fuelCritical = options.integer(FUEL_CRITICAL);
         hud.showMessages = options.flag(SHOW_MESSAGES);
+        hud.reverseScroll = options.flag(REVERSE_SCROLL);
         hud.hudMoveFact = options.real(SPEED_FACT_HUD);
         hud.ptrMoveFact = options.real(SPEED_FACT_PTR);
         game.messages().setMaxMessages(options.integer(MAX_MESSAGES));

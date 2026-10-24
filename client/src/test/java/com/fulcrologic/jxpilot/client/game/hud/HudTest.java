@@ -303,8 +303,46 @@ class HudTest {
             assertAll(
                 () -> assertEquals(List.of("fill 50,443 700x19", "box 48,441 704x23"), rects(f),
                     "inner window and border"),
-                () -> assertEquals(List.of("53,456 hey"), texts(f), "text inside the borders"),
-                () -> assertEquals(List.of("67,446-67,459"), lines(f), "cursor after 2 chars"));
+                () -> assertEquals(List.of("53,456 hey", "67,456 _"), texts(f),
+                    "text inside the borders, then C's '_' cursor after 2 chars"),
+                () -> assertEquals(List.of(), lines(f), "no cursor line"));
+        }
+
+        @Test
+        @DisplayName("the talk cursor blinks every FPS / 2 frames; on an '_' it is emphasized; a selection is emphasized")
+        void talkCursorAndSelection() {
+            Hud h = new Hud();
+            TalkLine t = new TalkLine();
+            t.open();
+            for (char c : "a_bc".toCharArray()) {
+                t.type(c);
+            }
+            t.setCursor(1);
+            HudFrame on = new HudFrame();
+            h.talk(on, t, 800, 600, M);
+            h.advance(6, 0, 14, false);
+            HudFrame stillOn = new HudFrame();
+            h.talk(stillOn, t, 800, 600, M);
+            h.advance(1, 0, 14, false);
+            HudFrame off = new HudFrame();
+            h.talk(off, t, 800, 600, M);
+            boolean blinkOff = !h.cursorVisible();
+            h.advance(7, 0, 14, false);
+            boolean backOn = h.cursorVisible();
+            h.selection.start(TextSelection.TALK_LINE, 0, 2);
+            h.selection.drag(TextSelection.TALK_LINE, 0, 4);
+            HudFrame sel = new HudFrame();
+            h.talk(sel, t, 800, 600, M);
+            assertAll(
+                () -> assertEquals(List.of("53,456 a_bc", "60,456 _"), texts(on), "cursor on the '_' at char 1"),
+                () -> assertEquals(HudColor.EMPHASIZED, on.textColor(1), "an '_' under the cursor: inverse cursor"),
+                () -> assertEquals(2, stillOn.textCount(), "6 of 14 frames: still in the first half"),
+                () -> assertTrue(blinkOff, "at FPS / 2 = 7 frames the cursor goes off"),
+                () -> assertEquals(1, off.textCount(), "only the text then"),
+                () -> assertTrue(backOn, "and back on 7 frames later"),
+                () -> assertEquals(List.of("53,456 a_", "67,456 bc"), texts(sel).subList(0, 2),
+                    "the selected 'bc' is its own run"),
+                () -> assertEquals(HudColor.EMPHASIZED, sel.textColor(1), "drawn emphasized"));
         }
 
         @Test

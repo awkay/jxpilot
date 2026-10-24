@@ -87,38 +87,77 @@ public final class MapEdges {
         return familySides(m.blockAt(bx, by), decor);
     }
 
+    /** {@link #drawn} bits: the block's left, down, right and up side, its open (/) and closed (\) diagonal. */
+    public static final int LEFT = 1;
+    public static final int DOWN = 2;
+    public static final int RIGHT = 4;
+    public static final int UP = 8;
+    public static final int OPEN = 16;
+    public static final int CLOSED = 32;
+
+    /**
+     * The parts of block (bx, by) that are drawn, by the rules in the class comment (C {@code Map_blue}).
+     * <p>
+     * BEHAVIOR: 0 for a block outside the family; LEFT/DOWN unless the neighbour has the facing side; RIGHT/UP
+     * always, or with {@code outline} unless the neighbour has the facing side; OPEN for REC_LU/REC_RD shapes (the
+     * diagonal from the lower left to the upper right), CLOSED for REC_RU/REC_LD.
+     */
+    public static int drawn(WorldMap m, boolean outline, boolean decor, int bx, int by) {
+        int t = m.block(bx, by);
+        int s = familySides(t, decor);
+        if (s == 0) {
+            return 0;
+        }
+        int d = 0;
+        if ((s & WallGeometry.SIDE_LEFT) != 0 && (neighbour(m, bx - 1, by, decor) & WallGeometry.SIDE_RIGHT) == 0) {
+            d |= LEFT;
+        }
+        if ((s & WallGeometry.SIDE_DOWN) != 0 && (neighbour(m, bx, by - 1, decor) & WallGeometry.SIDE_UP) == 0) {
+            d |= DOWN;
+        }
+        if ((s & WallGeometry.SIDE_RIGHT) != 0
+            && (!outline || (neighbour(m, bx + 1, by, decor) & WallGeometry.SIDE_LEFT) == 0)) {
+            d |= RIGHT;
+        }
+        if ((s & WallGeometry.SIDE_UP) != 0
+            && (!outline || (neighbour(m, bx, by + 1, decor) & WallGeometry.SIDE_DOWN) == 0)) {
+            d |= UP;
+        }
+        int shape = BlockType.decorShape(t);
+        if (shape == BlockType.REC_LU || shape == BlockType.REC_RD) {
+            d |= OPEN;
+        } else if (shape == BlockType.REC_RU || shape == BlockType.REC_LD) {
+            d |= CLOSED;
+        }
+        return d;
+    }
+
     private static void edges(WorldMap m, boolean outline, boolean decor, VertexBatch b, int rgba) {
         for (int by = 0; by < m.height(); by++) {
             for (int bx = 0; bx < m.width(); bx++) {
-                int t = m.block(bx, by);
-                int s = familySides(t, decor);
-                if (s == 0) {
+                int d = drawn(m, outline, decor, bx, by);
+                if (d == 0) {
                     continue;
                 }
                 float x0 = bx * S;
                 float y0 = by * S;
                 float x1 = x0 + S;
                 float y1 = y0 + S;
-                if ((s & WallGeometry.SIDE_LEFT) != 0
-                    && (neighbour(m, bx - 1, by, decor) & WallGeometry.SIDE_RIGHT) == 0) {
+                if ((d & LEFT) != 0) {
                     b.line(x0, y0, x0, y1, rgba);
                 }
-                if ((s & WallGeometry.SIDE_DOWN) != 0
-                    && (neighbour(m, bx, by - 1, decor) & WallGeometry.SIDE_UP) == 0) {
+                if ((d & DOWN) != 0) {
                     b.line(x0, y0, x1, y0, rgba);
                 }
-                if ((s & WallGeometry.SIDE_RIGHT) != 0
-                    && (!outline || (neighbour(m, bx + 1, by, decor) & WallGeometry.SIDE_LEFT) == 0)) {
+                if ((d & RIGHT) != 0) {
                     b.line(x1, y0, x1, y1, rgba);
                 }
-                if ((s & WallGeometry.SIDE_UP) != 0
-                    && (!outline || (neighbour(m, bx, by + 1, decor) & WallGeometry.SIDE_DOWN) == 0)) {
+                if ((d & UP) != 0) {
                     b.line(x0, y1, x1, y1, rgba);
                 }
-                int shape = BlockType.decorShape(t);
-                if (shape == BlockType.REC_LU || shape == BlockType.REC_RD) {
+                if ((d & OPEN) != 0) {
                     b.line(x0, y0, x1, y1, rgba);
-                } else if (shape == BlockType.REC_RU || shape == BlockType.REC_LD) {
+                } else if ((d & CLOSED) != 0) {
                     b.line(x0, y1, x1, y0, rgba);
                 }
             }

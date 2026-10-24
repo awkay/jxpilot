@@ -67,11 +67,19 @@ public final class ShipPainter {
     static final int RIGHT_LIGHT_COLOR = 4;
 
     private final Palette palette;
+    private final PaintStyle style;
     private final float[] xs = new float[Math.max(ShipShape.MAX_SHIP_PTS, CIRCLE_SEGMENTS)];
     private final float[] ys = new float[Math.max(ShipShape.MAX_SHIP_PTS, CIRCLE_SEGMENTS)];
 
+    /** With C's default look options. */
     public ShipPainter(Palette palette) {
+        this(palette, new PaintStyle());
+    }
+
+    /** @param style the live look options ({@code maxColors} picks the right light colour) */
+    public ShipPainter(Palette palette, PaintStyle style) {
         this.palette = palette;
+        this.style = style;
     }
 
     /**
@@ -184,6 +192,38 @@ public final class ShipPainter {
     }
 
     /**
+     * C {@code Gui_paint_ship} with {@code blockBitmaps} (uncloaked, not phasing): the friend picture for a blue ship,
+     * the own picture for the viewer's ship, the enemy picture otherwise, {@code WINSCALE(32)} pixels square centred
+     * on the ship and turned by its heading.
+     */
+    public void bitmapShip(VertexBatch b, float x, float y, double heading, int colorIndex, boolean self, double zoom) {
+        BlockBitmap bm = colorIndex == Palette.BLUE ? BlockBitmap.SHIP_FRIEND
+            : self ? BlockBitmap.SHIP_SELF : BlockBitmap.SHIP_ENEMY;
+        int dir = (int) Math.round(heading * 128 / (2 * Math.PI)) & 127;
+        BlockBitmaps.drawTurned(b, bm, x, y, (float) (WinScale.of(32, zoom) / zoom), dir);
+    }
+
+    /** BEHAVIOR: C draws the ship picture iff neither cloaked nor phasing. */
+    public static boolean bitmapShown(int flags) {
+        return (flags & (CLOAKED | PHASING)) == 0;
+    }
+
+    /**
+     * The ship's lines with {@code blockBitmaps}: the dashed hull only when cloaked or phasing (the picture replaces the
+     * solid hull, {@link #bitmapShip}), then shields and deflector as {@link #ship}.
+     */
+    public void shipWithoutHull(VertexBatch b, ShipShape s, float x, float y, double heading, int colorIndex, int flags,
+                                long loops, double zoom) {
+        if (!bitmapShown(flags)) {
+            int n = outline(s, x, y, heading);
+            Dashes.polyline(b, xs, ys, n, true, WinScale.of(PaintConfig.DASH_ON, zoom),
+                WinScale.of(PaintConfig.DASH_OFF, zoom), dashOffset(loops, zoom), (float) (1 / zoom),
+                palette.color(colorIndex));
+        }
+        shields(b, s, x, y, colorIndex, flags, loops, zoom);
+    }
+
+    /**
      * The filled hull C draws over a locked ship (non-useErase {@code fillPolygon}), as a triangle fan
      * from the ship's position (ship outlines are star-shaped about it). C fills only the solid hull
      * ({@code Gui_paint_ship_uncloaked}), so callers skip cloaked or phasing ships ({@link #lockedFillShown}).
@@ -206,7 +246,7 @@ public final class ShipPainter {
 
     /**
      * C {@code Gui_paint_marking_lights}: on frames where {@code (loops + id) & 15} is 0 the left
-     * lights flash red, where it is 2 the right lights flash in colour 4; each light is a 6x6 square
+     * lights flash red, where it is 2 the right lights flash in colour 4 (blue with {@code maxColors} 4); each light is a 6x6 square
      * from (-2,-2) screen pixels and a cross of 8-pixel arms, both scaled.
      * <p>
      * BEHAVIOR: other frames draw nothing; squares first (one points command), then the crosses.
@@ -228,7 +268,7 @@ public final class ShipPainter {
             return;
         }
         int n = lights(s, x, y, heading, phase);
-        int rgba = palette.color(phase == 0 ? Palette.RED : RIGHT_LIGHT_COLOR);
+        int rgba = palette.color(phase == 0 ? Palette.RED : style.rightLightColor());
         int side = WinScale.of(LIGHT_SQUARE, zoom);
         for (int i = 0; i < n; i++) {
             b.point(ObjectPainter.squareCentreX(xs[i], -2, LIGHT_SQUARE, zoom),
@@ -244,7 +284,7 @@ public final class ShipPainter {
             return;
         }
         int n = lights(s, x, y, heading, phase);
-        int rgba = palette.color(phase == 0 ? Palette.RED : RIGHT_LIGHT_COLOR);
+        int rgba = palette.color(phase == 0 ? Palette.RED : style.rightLightColor());
         float arm = (float) (WinScale.of(LIGHT_ARM, zoom) / zoom);
         for (int i = 0; i < n; i++) {
             b.line(xs[i] - arm, ys[i], xs[i] + arm, ys[i], rgba);

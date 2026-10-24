@@ -93,6 +93,16 @@ public interface GameConnection extends AutoCloseable {
     default void setModifierBanks(String[] banks) { }
 
     /**
+     * C {@code maxFPS} changed (CONFIG): ask the server for that frame rate (0: its full rate). Protocols without a
+     * frame-rate request ignore it.
+     *
+     * @return true when the request went out
+     */
+    default boolean sendFps(int maxFps, long nowNanos) {
+        return false;
+    }
+
+    /**
      * The player whose view the server sends (C {@code eyesId}; another player while spectating), or
      * {@link com.fulcrologic.jxpilot.common.net.Protocol#NO_ID} when the protocol does not say (the native protocol).
      */
@@ -126,6 +136,15 @@ public interface GameConnection extends AutoCloseable {
 
     /** Snapshots delivered to the listener. */
     long snapshotsReceived();
+
+    /**
+     * The packet meters' measurements (C {@code packet_size}, {@code packet_loss}, {@code packet_drop},
+     * {@code packet_lag}): the connection feeds them, the HUD reads them every frame. Never null; a connection
+     * that measures nothing returns one that stays at zero.
+     */
+    default com.fulcrologic.jxpilot.client.net.PacketStats packetStats() {
+        return com.fulcrologic.jxpilot.client.net.PacketStats.NONE;
+    }
 
     /** Release sockets (after {@link #disconnect}). */
     @Override

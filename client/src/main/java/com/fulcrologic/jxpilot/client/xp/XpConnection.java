@@ -88,6 +88,8 @@ public final class XpConnection implements GameConnection {
         public double sparkProb = 0.5;
         /** Ask for PKT_AUDIO (C {@code Send_audio_request(1)} in a client built with sound). */
         public boolean audio;
+        /** C {@code maxFPS}: 0 asks for the server's full rate (JXPilot), else limited to FPS/2..FPS (C). */
+        public int maxFps;
         /** C {@code modBankStr}: the modifier banks sent with every play request (PKT_MODIFIERBANK). */
         public final String[] modifierBanks = {"", "", "", ""};
     }
@@ -133,6 +135,9 @@ public final class XpConnection implements GameConnection {
     private final XpFrameDecoder frames = new XpFrameDecoder(keyboard);
     private final XpReliableReceiver reliable = new XpReliableReceiver(64 * 1024);
     private final XpSetup setup = new XpSetup();
+    /** C's packet meter measurements (client-ui-look). */
+    private final com.fulcrologic.jxpilot.client.net.PacketStats stats =
+        new com.fulcrologic.jxpilot.client.net.PacketStats();
     private final XpTranslator translator;
     private final XpReliableDecoder events;
     private final Msg.Welcome welcome = new Msg.Welcome();
@@ -240,6 +245,9 @@ public final class XpConnection implements GameConnection {
     public XpTranslator translator() { return translator; }
 
     public XpReliableDecoder reliableDecoder() { return events; }
+
+    @Override
+    public com.fulcrologic.jxpilot.client.net.PacketStats packetStats() { return stats; }
 
     /** Newest frame number (C {@code last_loops}). */
     public int lastLoops() { return frames.lastLoops(); }
@@ -612,7 +620,7 @@ public final class XpConnection implements GameConnection {
         }
         lastReceive = now;
         if (st != XpProto.SUCCESS) {
-            fail("Server " + label + " refused: " + XpProto.statusText(st));
+            fail(XpProto.statusText(st, login.team));
             return;
         }
         if (phase == Phase.CONTACT && to == XpProto.CONTACT_PACK) {
@@ -701,8 +709,83 @@ public final class XpConnection implements GameConnection {
         XpWriter.u8(tx, XpProto.PKT_REQUEST_AUDIO);
         XpWriter.u8(tx, login.audio ? 1 : 0);
         XpWriter.u8(tx, XpProto.PKT_ASYNC_FPS);
-        XpWriter.u8(tx, fps());
+        XpWriter.u8(tx, requestedFps(login.maxFps, fps()));
         transmit(player);
+    }
+
+    /**
+     * The frame rate asked for (C {@code Check_client_fps}).
+     * <p>
+     * BEHAVIOR: maxFps 0 (JXPilot's default, a documented deviation) asks for the server's rate; otherwise maxFps
+     * limited to serverFps / 2 .. serverFps, as C.
+     */
+    static int requestedFps(int maxFps, int serverFps) {
+        return maxFps <= 0 ? serverFps : Math.max(serverFps / 2, Math.min(serverFps, maxFps));
+    }
+
+    /**
+     * C {@code Send_display} after a resize or a scale change ({@code xinit.c} {@code Resize},
+     * {@code configure.c}): PKT_DISPLAY with the view size (limited to C's 384..1024), the debris colours and the
+     * spark chance.
+     * <p>
+     * BEHAVIOR: the size becomes the login's (sent with every later play request); while playing it is sent now
+     * and the call returns true.
+     */
+    @Override
+    public boolean sendDisplay(int viewWidth, int viewHeight, long nowNanos) {
+        now = nowNanos;
+        login.viewWidth = viewWidth;
+        login.viewHeight = viewHeight;
+        if (phase != Phase.PLAYING) {
+            return false;
+        }
+        ensureRoom(7);
+        XpWriter.u8(tx, XpProto.PKT_DISPLAY);
+        XpWriter.s16(tx, clampView(login.viewWidth));
+        XpWriter.s16(tx, clampView(login.viewHeight));
+        XpWriter.u8(tx, login.debrisColors);
+        XpWriter.u8(tx, (int) Math.round(Math.max(0, Math.min(1, login.sparkProb)) * XpProto.MAX_SPARK_RAND));
+        flushPending();
+        return true;
+    }
+
+    /**
+     * C {@code Net_ask_for_motd(0, MAX_MOTD_SIZE)} (the MOTD menu entry with refreshMotd).
+     * <p>
+     * BEHAVIOR: while playing, PKT_MOTD for offset 0 and the whole size goes out and the call returns true.
+     */
+    @Override
+    public boolean requestMotd(long nowNanos) {
+        now = nowNanos;
+        if (phase != Phase.PLAYING) {
+            return false;
+        }
+        ensureRoom(9);
+        XpWriter.u8(tx, XpProto.PKT_MOTD);
+        XpWriter.s32(tx, 0);
+        XpWriter.s32(tx, XpProto.MAX_MOTD_SIZE);
+        flushPending();
+        return true;
+    }
+
+    /**
+     * C {@code Send_fps_request} after a maxFPS change ({@code configure.c} {@code Config_update_maxFPS}).
+     * <p>
+     * BEHAVIOR: maxFps becomes the login's; while playing PKT_ASYNC_FPS with {@link #requestedFps} goes out and the
+     * call returns true.
+     */
+    @Override
+    public boolean sendFps(int maxFps, long nowNanos) {
+        now = nowNanos;
+        login.maxFps = maxFps;
+        if (phase != Phase.PLAYING) {
+            return false;
+        }
+        ensureRoom(2);
+        XpWriter.u8(tx, XpProto.PKT_ASYNC_FPS);
+        XpWriter.u8(tx, requestedFps(maxFps, fps()));
+        flushPending();
+        return true;
     }
 
     private void power(int type, double v) {
@@ -753,14 +836,25 @@ public final class XpConnection implements GameConnection {
                     scratch.setLength(0);
                     scratch.append("unknown reason");
                 }
-                fail("Server " + label + " closed the connection: " + scratch);
+                fail(XpProto.quitText(scratch));
                 return;
             }
             if (built == null) {
                 unknown++;
                 return;
             }
+            // packet meters (C Receive_start: Net_measurement DROP of a stale frame, Net_lag_measurement)
+            boolean start = type == XpProto.PKT_START && reader.has(5);
+            int startLoops = start ? reader.buffer().getInt(reader.pos() + 1) : 0;
+            int drawnLoops = frames.lastLoops();
             int res = frames.decode(reader, frame);
+            if (start) {
+                if (res == XpFrameDecoder.STALE) {
+                    stats.measure(startLoops, com.fulcrologic.jxpilot.client.net.PacketStats.DROP);
+                } else if (res == XpFrameDecoder.OK) {
+                    stats.keyboardAck(frame.keyAck, drawnLoops);
+                }
+            }
             if (res != XpFrameDecoder.OK) {
                 switch (res) {
                     case XpFrameDecoder.STALE -> stale++;
@@ -773,6 +867,8 @@ public final class XpConnection implements GameConnection {
                 frame.started = false;
                 framesDone++;
                 newFrame = true;
+                stats.measure(frame.loops, com.fulcrologic.jxpilot.client.net.PacketStats.DRAW);
+                stats.frameSize(n);
                 translator.frame(frame, now);
             }
         }
@@ -855,6 +951,7 @@ public final class XpConnection implements GameConnection {
         }
         translator.configure(built, setup.mode, version);
         frames.setMap(setup.width, setup.height);
+        stats.reset(fps());
         events.setVersion(version);
         welcome.playerId = Protocol.NO_ID;
         welcome.team = login.team;
@@ -918,7 +1015,7 @@ public final class XpConnection implements GameConnection {
 
         @Override
         public void quit(CharSequence reason) {
-            fail("Server " + label + " closed the connection: " + reason);
+            fail(XpProto.quitText(reason));
         }
 
         @Override
@@ -961,6 +1058,7 @@ public final class XpConnection implements GameConnection {
         if (phase == Phase.PLAYING) {
             if (withKeyboard || keyboard.unacked()) {
                 keyboard.write(tx, loops);
+                stats.keyboardSent(keyboard.change(), loops);
             }
             if (talk.due(loops) && tx.remaining() >= talk.size()) {
                 talk.write(tx, loops);

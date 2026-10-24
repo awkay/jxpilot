@@ -76,11 +76,19 @@ public final class ObjectPainter {
     static final int MINE_NAME_OFFSET = 4;
 
     private final Palette palette;
+    private final PaintStyle style;
     private final float[] xs = new float[MINE_MOVES.length + 1];
     private final float[] ys = new float[MINE_MOVES.length + 1];
 
+    /** With C's default look options. */
     public ObjectPainter(Palette palette) {
+        this(palette, new PaintStyle());
+    }
+
+    /** @param style the live look options ({@code shotSize}) */
+    public ObjectPainter(Palette palette, PaintStyle style) {
         this.palette = palette;
+        this.style = style;
     }
 
     // ------------------------------------------------------------------ C squares
@@ -109,24 +117,30 @@ public final class ObjectPainter {
 
     /**
      * Own/enemy shot (C {@code Paint_fastshots}, {@code Gui_paint_fastshot}): {@code Rectangle_add} of
-     * a {@link PaintConfig#SHOT_SIZE} square from {@code -shotSize/2}, scaled.
+     * a {@code shotSize} ({@link PaintStyle#shotSize}) square from {@code -shotSize/2}, scaled.
      * <p>
      * BEHAVIOR: only white or blue are used; any other colour index draws white.
      */
     public void shot(VertexBatch b, float x, float y, int colorIndex, double zoom) {
-        int c = colorIndex == Palette.BLUE ? Palette.BLUE : Palette.WHITE;
-        int z = -(PaintConfig.SHOT_SIZE / 2);
-        b.point(squareCentreX(x, z, PaintConfig.SHOT_SIZE, zoom), squareCentreY(y, z, PaintConfig.SHOT_SIZE, zoom),
-            WinScale.of(PaintConfig.SHOT_SIZE, zoom), palette.color(c));
+        int size = style.shotSize;
+        int z = -(size / 2);
+        b.point(squareCentreX(x, z, size, zoom), squareCentreY(y, z, size, zoom), WinScale.of(size, zoom),
+            palette.color(fastShotColor(colorIndex)));
+    }
+
+    /** BEHAVIOR: C {@code Paint_fastshots} colours: blue stays blue, every other colour index is white. */
+    public static int fastShotColor(int colorIndex) {
+        return colorIndex == Palette.BLUE ? Palette.BLUE : Palette.WHITE;
     }
 
     /**
-     * Team (or blinking nuclear) shot (C {@code Gui_paint_teamshot} → {@code Gui_paint_nastyshot}
-     * with arms of {@code shotSize / 2} pixels, scaled): an X when {@code diagonal}, else a +. C picks
+     * Team (or blinking nuclear) shot, and with {@code showNastyShots} every fast shot (C
+     * {@code Gui_paint_teamshot}, {@code Gui_paint_fastshot} → {@code Gui_paint_nastyshot} with arms of
+     * {@code shotSize / 2} pixels, scaled): an X when {@code diagonal}, else a +. C picks
      * {@code diagonal} at random per shot per frame ({@code rfrac() < 0.5}); the caller supplies it.
      */
     public void teamShot(VertexBatch b, float x, float y, int colorIndex, boolean diagonal, double zoom) {
-        float z = (float) (WinScale.of(PaintConfig.SHOT_SIZE / 2, zoom) / zoom);
+        float z = (float) (WinScale.of(style.shotSize / 2, zoom) / zoom);
         int rgba = palette.color(colorIndex);
         if (diagonal) {
             b.line(x - z, y + z, x + z, y - z, rgba);
@@ -225,6 +239,55 @@ public final class ObjectPainter {
     /** Ball (C {@code Gui_paint_ball}): a white circle of radius {@code BALL_RADIUS} world units. */
     public void ball(VertexBatch b, float x, float y) {
         circle(b, x, y, Const.BALL_RADIUS, palette.color(Palette.WHITE));
+    }
+
+    /** UI atlas cell of the ball texture ({@code texturedBalls}): its corner and side, in atlas pixels. */
+    public static final int BALL_TEXTURE_X = 768;
+    public static final int BALL_TEXTURE_Y = 32;
+    public static final int BALL_TEXTURE_SIZE = 64;
+
+    /**
+     * Textured ball (C {@code Gui_paint_ball} with {@code texturedBalls}): a disc of radius {@code BALL_RADIUS}
+     * filled with the ball texture, tiled unscaled from the disc's top-left corner ({@code XSetTSOrigin}); the
+     * texture sits in the UI atlas cell {@link #BALL_TEXTURE_X}, tiled to {@link #BALL_TEXTURE_SIZE} pixels.
+     * <p>
+     * BEHAVIOR: a fan of {@code CIRCLE_SEGMENTS} triangles from the centre; a point {@code (wx, wy)} samples
+     * atlas texel {@code (BALL_TEXTURE_X + (wx - x + R) * zoom, BALL_TEXTURE_Y + (y + R - wy) * zoom)}, clamped to the
+     * cell; untinted (white).
+     */
+    public void texturedBall(VertexBatch b, float x, float y, double zoom) {
+        float r = Const.BALL_RADIUS;
+        float cu = ballU(r, zoom);
+        float cv = ballV(r, zoom);
+        float px0 = x + r;
+        float py0 = y;
+        float pu0 = ballU(2 * r, zoom);
+        float pv0 = cv;
+        int white = palette.color(Palette.WHITE);
+        for (int i = 1; i <= CIRCLE_SEGMENTS; i++) {
+            double a = 360.0 * i / CIRCLE_SEGMENTS;
+            float dx = (float) (r * Trig.cosDeg(a));
+            float dy = (float) (r * Trig.sinDeg(a));
+            float qu = ballU(r + dx, zoom);
+            float qv = ballV(r - dy, zoom);
+            b.texTriangle(x, y, cu, cv, px0, py0, pu0, pv0, x + dx, y + dy, qu, qv, white);
+            px0 = x + dx;
+            py0 = y + dy;
+            pu0 = qu;
+            pv0 = qv;
+        }
+    }
+
+    /** Atlas u of a point {@code fromLeft} world units right of the ball's left edge. */
+    static float ballU(float fromLeft, double zoom) {
+        double t = Math.max(0, Math.min(BALL_TEXTURE_SIZE, fromLeft * zoom));
+        return (float) ((BALL_TEXTURE_X + t) / ATLAS_SIZE);
+    }
+
+    /** Atlas v of a point {@code fromTop} world units below the ball's top edge. */
+    static float ballV(float fromTop, double zoom) {
+        double t = Math.max(0, Math.min(BALL_TEXTURE_SIZE, fromTop * zoom));
+        return (float) ((BALL_TEXTURE_Y + t) / ATLAS_SIZE);
     }
 
     /** Ball to carrier (C {@code Gui_paint_ball_connecter}): a solid white line. */
@@ -377,6 +440,77 @@ public final class ObjectPainter {
         float vTop = (float) ItemBitmaps.atlasY(item) / ATLAS_SIZE;
         float vBottom = (float) (ItemBitmaps.atlasY(item) + ItemBitmaps.SIZE) / ATLAS_SIZE;
         b.texRect(left, top - side, left + side, top, u0, vBottom, u1, vTop, rgba);
+    }
+
+    // ------------------------------------------------------------------ block bitmaps (texturedObjects)
+
+    /**
+     * C {@code Gui_paint_ball} with {@code blockBitmaps}: the ball picture, {@code 2 * BALL_RADIUS + 1} world pixels
+     * square, its top-left corner at {@code (x - BALL_RADIUS, y + BALL_RADIUS)}.
+     */
+    public void bitmapBall(VertexBatch b, float x, float y) {
+        int r = Const.BALL_RADIUS;
+        BlockBitmaps.draw(b, BlockBitmap.BALL, 0, x - r, y + r, 2 * r + 1, 2 * r + 1);
+    }
+
+    /**
+     * C {@code Gui_paint_mine} with {@code blockBitmaps}: the team or enemy mine picture, 21 x 15 world pixels, its
+     * top-left corner at {@code (x - 10, y + 7)}.
+     */
+    public void bitmapMine(VertexBatch b, float x, float y, boolean teamMine) {
+        BlockBitmaps.draw(b, teamMine ? BlockBitmap.MINE_TEAM : BlockBitmap.MINE_OTHER, 0, x - 10, y + 7, 21, 15);
+    }
+
+    /**
+     * C {@code Gui_paint_fastshot} / {@code Gui_paint_teamshot} with {@code blockBitmaps}: picture
+     * {@code s - 1} (a dot of that size) of the bullet bitmap ({@code BULLET_OWN} for team shots), 8 x 8 window pixels
+     * unscaled, from {@code s / 2} pixels left of and above the shot, with {@code s = min(shotSize, 8)} (C uses
+     * {@code shotSize} for team shots too).
+     */
+    public void bullet(VertexBatch b, float x, float y, boolean team, double zoom) {
+        int size = Math.min(style.shotSize, 8);
+        float px = (float) (1 / zoom);
+        float z = size / 2 * px;
+        BlockBitmaps.draw(b, team ? BlockBitmap.BULLET_OWN : BlockBitmap.BULLET, size - 1, x - z, y + z, 8 * px, 8 * px);
+    }
+
+    /**
+     * C {@code Gui_paint_paused} with {@code blockBitmaps}: the paused picture, 35 world pixels square from
+     * {@code (x - 17, y + 17)}; picture 1 while the marker shows ({@link #pausedBlinkOn}), else 0.
+     */
+    public void bitmapPaused(VertexBatch b, float x, float y, int count, long loops) {
+        int h = Const.BLOCK_SZ / 2;
+        BlockBitmaps.draw(b, BlockBitmap.PAUSED, pausedBlinkOn(count, loops) ? 1 : 0, x - h, y + h, 35, 35);
+    }
+
+    /** C {@code Gui_paint_refuel}'s fuel pictures along the beam, by position and frame. */
+    static final int[] REFUEL_FRAMES = {1, 2, 3, 3, 2, 1, 0, 1, 2, 3, 2, 1, 2, 3, 3, 2};
+
+    /**
+     * C {@code Gui_paint_refuel} with {@code blockBitmaps}: 16 refuel pictures, {@code WINSCALE(8)} pixels square,
+     * centred on the points {@code i/16} of the way from the ship to the station, picture
+     * {@code REFUEL_FRAMES[(loops + 16 - i) % 16]}.
+     */
+    public void bitmapRefuel(VertexBatch b, float x0, float y0, float x1, float y1, long loops, double zoom) {
+        float side = (float) (WinScale.of(8, zoom) / zoom);
+        float dx = (x1 - x0) / 16;
+        float dy = (y1 - y0) / 16;
+        for (int i = 0; i < 16; i++) {
+            float cx = x0 + dx * i;
+            float cy = y0 + dy * i;
+            BlockBitmaps.draw(b, BlockBitmap.REFUEL, REFUEL_FRAMES[(int) Math.floorMod(loops + 16 - i, 16L)],
+                cx - side / 2, cy + side / 2, side, side);
+        }
+    }
+
+    /**
+     * C {@code Paint_item_symbol} with {@code blockBitmaps}: picture {@code item} of {@code ALL_ITEMS}, 16 x 16 window
+     * pixels, top-left at screen (x - 8, y - S + 2) as {@link #itemSymbol} (untinted).
+     */
+    public void bitmapItemSymbol(VertexBatch b, int item, float x, float y, double zoom) {
+        float px = (float) (1 / zoom);
+        BlockBitmaps.draw(b, BlockBitmap.ALL_ITEMS, item, x - 8 * px, y + (PaintConfig.ITEM_TRIANGLE_SIZE - 2) * px,
+            ItemBitmaps.SIZE * px, ItemBitmaps.SIZE * px);
     }
 
     // ------------------------------------------------------------------ helpers

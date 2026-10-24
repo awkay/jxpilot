@@ -70,6 +70,10 @@ public final class AppLauncher {
                 System.err.println(AppOptions.USAGE);
                 return 2;
             }
+            case VERSION -> {
+                System.out.println(versionText());
+                return 0;
+            }
             case LIST_MAPS -> {
                 System.out.print(BundledMaps.listing(BundledMaps.standard().infos()));
                 return 0;
@@ -86,7 +90,7 @@ public final class AppLauncher {
                 return 0;
             }
             case CONNECT -> {
-                return play(o, o.target(), keys);
+                return play(o, target(o, keys), keys);
             }
             case LOCAL -> {
                 EmbeddedServer server;
@@ -119,15 +123,47 @@ public final class AppLauncher {
             conn = GameConnector.open(target, o.bind(), game, name(o, keys), team(o, keys), shape,
                 o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime(), GameConnector.environmentIdentity(
                     keys.options().text(ClientOption.USER), keys.options().text(ClientOption.HOST),
-                    keys.options().text(ClientOption.DISPLAY)));
+                    keys.options().text(ClientOption.DISPLAY)),
+                keys.options().integer(ClientOption.CLIENT_PORT_START), keys.options().integer(ClientOption.CLIENT_PORT_END),
+                GameConnector.debrisColors(keys.options()));
         } catch (IOException e) {
             // C xpilot.c: an unknown host or a socket that cannot open is an error message and exit 1
             System.err.println("Cannot connect to " + target + ": " + e.getMessage());
             return 1;
         }
-        new GameApp(o, game, conn, target.toString(), null, keys).saveTarget(rcFile(o,
+        return new GameApp(o, game, conn, target.toString(), null, keys).saveTarget(rcFile(o,
             Path.of(System.getProperty("user.home", "."))), name(o, keys)).run();
-        return 0;
+    }
+
+    /**
+     * C {@code -version}'s line.
+     * <p>
+     * BEHAVIOR: "JXPilot client VERSION (a Java port of the XPilot 4.5.5 client)", VERSION from the jar manifest or
+     * "development" when run from classes.
+     */
+    static String versionText() {
+        String v = AppLauncher.class.getPackage().getImplementationVersion();
+        return "JXPilot client " + (v != null ? v : "development") + " (a Java port of the XPilot 4.5.5 client)";
+    }
+
+    /**
+     * The server of a {@code --connect} launch.
+     * <p>
+     * BEHAVIOR: the parsed target; when the argument names no port and the {@code port} resource was given (C
+     * {@code -port}), that port instead of 15345.
+     */
+    static ConnectTarget target(AppOptions o, KeyConfig keys) {
+        ConnectTarget t = o.target();
+        if (o.connectText() == null || !keys.options().given(ClientOption.PORT)) {
+            return t;
+        }
+        ConnectTarget probe = ConnectTarget.parse(o.connectText(), t.protocol() == ConnectTarget.Protocol.XPILOT
+            ? "xpilot" : "jxpilot", 0);
+        if (probe.endpoint().port() != 0) {
+            return t;
+        }
+        return new ConnectTarget(t.protocol(), new Endpoint(t.endpoint().host(),
+            keys.options().integer(ClientOption.PORT)));
     }
 
     /** BEHAVIOR: the resource file of a launch: {@code --keys FILE}, else {@code HOME/.xpilotrc}. */

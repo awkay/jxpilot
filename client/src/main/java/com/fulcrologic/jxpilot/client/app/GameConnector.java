@@ -28,7 +28,10 @@ import com.fulcrologic.jxpilot.client.net.ConnectionListener;
 import com.fulcrologic.jxpilot.client.net.Endpoint;
 import com.fulcrologic.jxpilot.client.net.Transport;
 import com.fulcrologic.jxpilot.client.net.UdpTransport;
+import com.fulcrologic.jxpilot.client.game.options.ClientOption;
+import com.fulcrologic.jxpilot.client.game.options.ClientOptions;
 import com.fulcrologic.jxpilot.client.paint.PaintConfig;
+import com.fulcrologic.jxpilot.client.paint.PaintStyle;
 import com.fulcrologic.jxpilot.client.xp.ConnectTarget;
 import com.fulcrologic.jxpilot.client.xp.GameConnection;
 import com.fulcrologic.jxpilot.client.xp.NativeGameConnection;
@@ -53,7 +56,7 @@ public final class GameConnector {
      */
     public static GameConnection open(ConnectTarget target, Endpoint bind, ConnectionListener listener, String name,
                                       int team, String shape, boolean audio, int seed) throws IOException {
-        return open(target, bind, listener, name, team, shape, audio, seed, null);
+        return open(target, bind, listener, name, team, shape, audio, seed, null, 0, 0);
     }
 
     /**
@@ -62,14 +65,37 @@ public final class GameConnector {
     public static GameConnection open(ConnectTarget target, Endpoint bind, ConnectionListener listener, String name,
                                       int team, String shape, boolean audio, int seed, XpIdentity identity)
         throws IOException {
+        return open(target, bind, listener, name, team, shape, audio, seed, identity, 0, 0);
+    }
+
+    /**
+     * As above with C's {@code clientPortStart}/{@code clientPortEnd}: without {@code bind}, each socket takes the
+     * first free local UDP port of that range (C {@code CreateDgramSocket} over the range, for firewalls); a range
+     * starting at 0 means any port.
+     */
+    public static GameConnection open(ConnectTarget target, Endpoint bind, ConnectionListener listener, String name,
+                                      int team, String shape, boolean audio, int seed, XpIdentity identity,
+                                      int portStart, int portEnd) throws IOException {
+        return open(target, bind, listener, name, team, shape, audio, seed, identity, portStart, portEnd,
+            PaintConfig.SPARK_COLORS.length);
+    }
+
+    /**
+     * As above, asking an XPilot server for {@code debrisColors} debris temperature levels ({@link #debrisColors}:
+     * as many as {@code sparkColors} names).
+     */
+    public static GameConnection open(ConnectTarget target, Endpoint bind, ConnectionListener listener, String name,
+                                      int team, String shape, boolean audio, int seed, XpIdentity identity,
+                                      int portStart, int portEnd, int debrisColors)
+        throws IOException {
         Endpoint ep = target.endpoint();
         String label = ep.toString();
         if (target.protocol() == ConnectTarget.Protocol.XPILOT) {
             XpIdentity id = identity != null ? identity : environmentIdentity("", "", "");
-            return new XpConnection(port -> UdpTransport.open(new Endpoint(ep.host(), port), bind), listener, label,
-                xpLogin(name, team, shape, audio, id));
+            return new XpConnection(port -> openUdp(new Endpoint(ep.host(), port), bind, portStart, portEnd), listener,
+                label, xpLogin(name, team, shape, audio, id, debrisColors));
         }
-        UdpTransport t = UdpTransport.open(ep, bind);
+        UdpTransport t = openUdp(ep, bind, portStart, portEnd);
         return new NativeGameConnection(identity != null
             ? nativeConnection(t, label, listener, name, team, shape, identity)
             : nativeConnection(t, label, listener, name, team, shape), t);
@@ -90,6 +116,39 @@ public final class GameConnector {
         }
     }
 
+    /** A UDP socket to {@code to}: from {@code bind}, else from the first free port of the range, else any port. */
+    static UdpTransport openUdp(Endpoint to, Endpoint bind, int portStart, int portEnd) throws IOException {
+        if (bind != null || portStart <= 0) {
+            return UdpTransport.open(to, bind);
+        }
+        IOException last = null;
+        for (int p : portRange(portStart, portEnd)) {
+            try {
+                return UdpTransport.open(to, new Endpoint("0.0.0.0", p));
+            } catch (IOException e) {
+                last = e;
+            }
+        }
+        throw new IOException("no free UDP port in clientPortStart..clientPortEnd " + portStart + ".." + portEnd
+            + (last != null ? ": " + last.getMessage() : ""));
+    }
+
+    /**
+     * C's client port range.
+     * <p>
+     * BEHAVIOR: start..end inclusive; an end below the start (C's default 0) means the start only; ports are
+     * limited to 1..65535.
+     */
+    static int[] portRange(int start, int end) {
+        int a = Math.max(1, Math.min(65535, start));
+        int b = Math.max(a, Math.min(65535, end));
+        int[] r = new int[b - a + 1];
+        for (int i = 0; i < r.length; i++) {
+            r[i] = a + i;
+        }
+        return r;
+    }
+
     /**
      * The XPilot login.
      * <p>
@@ -99,17 +158,32 @@ public final class GameConnector {
      * (PKT_REQUEST_AUDIO) as given.
      */
     static XpConnection.Login xpLogin(String name, int team, String shape, boolean audio, XpIdentity id) {
+        return xpLogin(name, team, shape, audio, id, PaintConfig.SPARK_COLORS.length);
+    }
+
+    /** {@link #xpLogin(String, int, String, boolean, XpIdentity)} with {@code debrisColors} temperature levels. */
+    static XpConnection.Login xpLogin(String name, int team, String shape, boolean audio, XpIdentity id,
+                                      int debrisColors) {
         XpConnection.Login login = new XpConnection.Login();
         login.audio = audio;
         login.nick = name;
         login.team = team;
         login.shape = shape == null ? "" : shape;
-        login.debrisColors = PaintConfig.SPARK_COLORS.length;
+        login.debrisColors = debrisColors;
         login.sparkProb = 1.0;
         login.realName = id.realName();
         login.host = id.host();
         login.display = id.display();
         return login;
+    }
+
+    /**
+     * C {@code num_spark_colors}, what the XPilot login asks for as {@code debris_colors}: the number of colours
+     * {@code sparkColors} names under {@code maxColors} ({@link LookOptions#sparkColors}).
+     */
+    public static int debrisColors(ClientOptions options) {
+        return LookOptions.sparkColors(options.text(ClientOption.SPARK_COLORS),
+            LookOptions.maxColors(options.integer(ClientOption.MAX_COLORS)), new int[PaintStyle.MAX_SPARK_COLORS]);
     }
 
     /**

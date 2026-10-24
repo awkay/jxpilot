@@ -49,6 +49,10 @@ final class FakeConnection implements GameConnection {
     /** Every sendSettings call as "power turnSpeed turnResistance altPower altTurnSpeed altTurnResistance". */
     final List<String> settings = new ArrayList<>();
     boolean settingsSent = true;
+    /** The packet meters' stats this fake reports. */
+    final com.fulcrologic.jxpilot.client.net.PacketStats stats = new com.fulcrologic.jxpilot.client.net.PacketStats();
+
+    @Override public com.fulcrologic.jxpilot.client.net.PacketStats packetStats() { return stats; }
 
     @Override public ConnectTarget.Protocol protocol() { return ConnectTarget.Protocol.JXPILOT; }
 
@@ -92,6 +96,21 @@ final class FakeConnection implements GameConnection {
     }
 
     /** Every sendDisplay call as "width x height" (not in {@link #calls}, so the step order stays as it was). */
+    /** sendFps / requestMotd calls, in order. */
+    final List<String> requests = new ArrayList<>();
+
+    @Override
+    public boolean sendFps(int maxFps, long nowNanos) {
+        requests.add("fps " + maxFps);
+        return true;
+    }
+
+    @Override
+    public boolean requestMotd(long nowNanos) {
+        requests.add("motd");
+        return true;
+    }
+
     final List<String> displays = new ArrayList<>();
 
     @Override

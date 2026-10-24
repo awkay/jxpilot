@@ -30,6 +30,7 @@ import com.fulcrologic.jxpilot.client.game.hud.Hud;
 import com.fulcrologic.jxpilot.client.game.hud.HudFrame;
 import com.fulcrologic.jxpilot.client.game.hud.KeyHelp;
 import com.fulcrologic.jxpilot.client.game.hud.TalkLine;
+import com.fulcrologic.jxpilot.client.game.hud.TextSelection;
 import com.fulcrologic.jxpilot.client.game.hud.TextMetrics;
 import com.fulcrologic.jxpilot.client.game.input.ControlSettings;
 import com.fulcrologic.jxpilot.client.game.input.InputState;
@@ -84,9 +85,19 @@ public final class ClientFrame {
     /** The C client options (client-ui): pushed into the HUD, messages and talk line when they change. */
     private final LiveOptions liveOptions;
     private final PlayActions play;
+    // ---- client-ui-look: the look options, live (palette, painter style, extras)
+    private final com.fulcrologic.jxpilot.client.render.Palette palette =
+        com.fulcrologic.jxpilot.client.render.Palette.xpilotDefault();
+    private final com.fulcrologic.jxpilot.client.paint.PaintStyle style =
+        new com.fulcrologic.jxpilot.client.paint.PaintStyle();
+    private final LookOptions lookOptions;
+    private final LookFrame look;
+    // ---- end client-ui-look
     /** The button bar, CONFIG panel and information window (client-ui). */
     private final ClientUi ui;
     private String[] modifierBanks;
+    /** The MOTD was asked for from the menu: show it when it arrives even without autoServerMotdPopup. */
+    private boolean motdAsked;
     /** The resource file "Save Configuration" writes (C {@code Get_xpilotrc_file}). */
     private java.nio.file.Path rcFile = java.nio.file.Path.of(System.getProperty("user.home", "."), ".xpilotrc");
 
@@ -105,6 +116,13 @@ public final class ClientFrame {
     private FontRole.Metrics single;
     /** World view size last given to {@link GameConnection#sendDisplay} (-1: never). */
     private int displayW = -1;
+    /** When the server ended the session (refusal, quit packet, timeout), or -1. */
+    private long closedAt = -1;
+    /** Where C's error texts go (C {@code error()} prints to stderr). */
+    private java.io.PrintStream errors = System.err;
+    /** How long the window shows the server's last word before the client ends (C exits at once). */
+    public static final long CLOSE_LINGER_NANOS = 5_000_000_000L;
+    private int sentMaxFps = Integer.MIN_VALUE;
     private int displayH = -1;
 
     /** With the default key configuration and the given input (tests). */
@@ -128,6 +146,9 @@ public final class ClientFrame {
         this.router = new KeyRouter(input, talk, settings);
         this.mapState = new WorldMapState(game);
         this.liveOptions = new LiveOptions(keys.options());
+        this.lookOptions = new LookOptions(keys.options(), System.out);
+        this.look = new LookFrame(keys.options());
+        filler.setStyle(style);
         this.ui = new ClientUi(new UiHost(), keys.options(), settings, keys.maxVolume() >= 0 ? keys.maxVolume()
             : com.fulcrologic.jxpilot.client.sound.SoundPlayer.DEFAULT_MAX_VOLUME);
         this.ui.saveContext("", input.bindings(), keys.modifierBanks());
@@ -170,8 +191,11 @@ public final class ClientFrame {
         double dt = started ? (nowNanos - lastNow) / 1e9 : 0;
         started = true;
         liveOptions.apply(hud, game, extras, talk, filler, input);
+        lookOptions.apply(palette, style);
+        hud.bitmapMeters = style.texturedObjects;
         lastNow = nowNanos;
         conn.update(nowNanos);
+        serverClosed(nowNanos);
         game.frame(nowNanos, dt);
         WorldMap map = game.map();
         if (map != lastMap) {
@@ -184,6 +208,7 @@ public final class ClientFrame {
         ClientWorld w = game.world();
         boolean inPlay = w.selfPlaying();
         input.setPlaying(inPlay);
+        connectionOptions(nowNanos);
         sendDisplayIfChanged(viewW, viewH, zoom, nowNanos);
         play.pointer().setWindow(viewW, viewH);
         conn.sendInput(input.takeKeys(), play.takeAim(), nowNanos);
@@ -212,14 +237,21 @@ public final class ClientFrame {
         extras.fill(game, hud, viewW, viewH, zoom, centreX, centreY, scene.loops);
         extras.loseItem(router.loseSelection(), dt);
         panelHud.clear();
+        lastViewW = viewW;
+        lastViewH = viewH;
+        messageFont = fonts.of(FontRole.MESSAGE);
+        talkFont = fonts.of(FontRole.TALK);
+        talkHeightFont = fonts.of(FontRole.TEXT);
         TextMetrics textFont = fonts.of(FontRole.TEXT);
         TextMetrics buttonFont = fonts.of(FontRole.BUTTON);
         ui.layout(radarHeight, viewH, viewW, viewH, map != null && map.edgeWrap(), textFont, buttonFont);
         int scoreTop = ui.scoreTop();
         if (!ui.coversScores()) {
-            hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, Math.max(0, viewH - scoreTop),
+            hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW,
+                style.texturedObjects ? 0 : Math.max(0, viewH - scoreTop), // texturedObjects: bitmaps (GameApp)
                 fonts.of(FontRole.SCORE_LIST));
         }
+        lookExtras(viewW, fonts.of(FontRole.GAME), fonts.of(FontRole.SCORE_LIST), scoreTop, panelW);
         ui.draw(panelHud, textFont, buttonFont, 0);
         String motdText = game.takeMotd();
         if (motdText != null) {
@@ -232,6 +264,30 @@ public final class ClientFrame {
         }
     }
 
+    /**
+     * client-ui-look: the packet meters in the view HUD (while PLAYING), the clock over the score window (unless a panel covers it), the
+     * bell and the title flip of this frame ({@link LookFrame}).
+     */
+    private void lookExtras(int viewW, TextMetrics gameFont, TextMetrics scoreFont, int scoreTop, int panelW) {
+        if (game.state() == ConnectionState.PLAYING) {
+            look.packetMeters(viewHud, hud, hud.extent(viewW), conn.packetStats(), gameFont);
+        }
+        if (!ui.coversScores()) {
+            look.clock(panelHud, 0, scoreTop, panelW, scoreFont, scene.loops, scene.fps);
+        }
+        bell = look.bell(extras.timeLeft);
+        titleChange = look.title(scene.loops);
+    }
+
+    private boolean bell;
+    private int titleChange;
+
+    /** True when this frame rings the bell (last 10 s of game time, {@link LookFrame#bell}). */
+    public boolean bell() { return bell; }
+
+    /** This frame's window title change ({@link LookFrame#title}: KEEP, NORMAL or COPYRIGHT). */
+    public int titleChange() { return titleChange; }
+
     /** {@link #step(long, int, int, double, FontRole.Metrics, int, int)} with one metrics for every role (tests). */
     public void step(long nowNanos, int viewW, int viewH, double zoom, TextMetrics m, int panelW, int radarHeight) {
         if (m != singleFor) {
@@ -241,7 +297,11 @@ public final class ClientFrame {
         step(nowNanos, viewW, viewH, zoom, single, panelW, radarHeight);
     }
 
-    /** C's MOTD viewer ("XPilot motd from SERVER"), open until the help key closes it. */
+    /**
+     * C's MOTD viewer ("XPilot motd from SERVER"), open until the help key closes it.
+     * <p>
+     * BEHAVIOR: it opens by itself iff autoServerMotdPopup is on (C default) or the MOTD menu entry asked for it.
+     */
     private KeyHelp motdPanel(String text) {
         java.util.List<String[]> lines = new java.util.ArrayList<>();
         for (String line : text.replace("\t", "        ").split("\r?\n", -1)) {
@@ -249,8 +309,46 @@ public final class ClientFrame {
         }
         KeyHelp k = new KeyHelp("XPilot motd from " + game.serverName() + (helpHint != null
             ? " - " + helpHint.substring(0, helpHint.indexOf(':')) + " closes" : ""), lines, FontRole.MOTD);
-        k.toggle();
+        if (motdAsked || liveOptions.options().flag(ClientOption.AUTO_SERVER_MOTD_POPUP)) {
+            k.toggle();
+        }
+        motdAsked = false;
         return k;
+    }
+
+    /**
+     * M10, C's error presentation: when the connection closes on the server's side (a refusal, a quit packet, a
+     * timeout) its status (C's text) is printed to stderr once, as C's {@code error()}; the window keeps showing it
+     * for {@link #CLOSE_LINGER_NANOS}, then the client quits (C exits at once).
+     */
+    private void serverClosed(long nowNanos) {
+        if (closedAt < 0 && conn.state() == ConnectionState.CLOSED) {
+            closedAt = nowNanos;
+            errors.println(conn.status());
+        }
+        if (closedAt >= 0 && nowNanos - closedAt >= CLOSE_LINGER_NANOS) {
+            quit = true;
+        }
+    }
+
+    /** True once the server ended the session (the launcher then exits with status 1, as C). */
+    public boolean closedByServer() { return closedAt >= 0; }
+
+    /** Where C's error texts are printed (tests). */
+    public void setErrorStream(java.io.PrintStream err) { errors = err; }
+
+    /**
+     * The options the server hears about: a maxFPS change is a frame-rate request (C {@code Config_update_maxFPS}),
+     * also passed on the first step. (sparkProb is not sent: JXPilot asks the server for every spark and does C's
+     * sparkle itself, so C's {@code Config_update_sparkProb} display resend has nothing to change.)
+     */
+    private void connectionOptions(long nowNanos) {
+        com.fulcrologic.jxpilot.client.game.options.ClientOptions o = liveOptions.options();
+        int fps = o.integer(ClientOption.MAX_FPS);
+        if (fps != sentMaxFps) {
+            sentMaxFps = fps;
+            conn.sendFps(fps, nowNanos);
+        }
     }
 
     /**
@@ -344,6 +442,9 @@ public final class ClientFrame {
                 help.toggle();
             }
         }
+        if ((ev & KeyRouter.PASTE) != 0) {
+            paste();
+        }
         if ((ev & KeyRouter.CHAT) != 0) {
             conn.sendChat(router.chat(), nowNanos);
         }
@@ -400,6 +501,106 @@ public final class ClientFrame {
         return ui.mouseMove(x, y, viewX);
     }
 
+    /** The system clipboard (C's X selection): GLFW's in the game, a fake in tests. */
+    public interface Clipboard {
+        /** The clipboard text, or null. */
+        String get();
+
+        void set(String text);
+    }
+
+    private Clipboard clipboard = new Clipboard() {
+        private String text;
+
+        @Override
+        public String get() { return text; }
+
+        @Override
+        public void set(String t) { text = t; }
+    };
+    private final int[] hit = new int[3];
+    private int lastViewW;
+    private int lastViewH;
+    private TextMetrics messageFont;
+    private TextMetrics talkFont;
+    private TextMetrics talkHeightFont;
+
+    /** BEHAVIOR: the clipboard cut and paste use from now on. */
+    public void setClipboard(Clipboard c) { clipboard = c; }
+
+    /**
+     * C's cut and paste with the mouse in the game view ({@code selectionAndHistory}; {@code xeventhandlers.c}
+     * {@code ButtonPress_event}/{@code ButtonRelease_event}), for events the windows did not take; (x, y) in view
+     * coordinates.
+     * <p>
+     * BEHAVIOR: nothing (false) unless selectionAndHistory is on. Left press: in the open talk window starts a
+     * talk-line selection, on a message a message selection, elsewhere clears the selection; motion with the button
+     * down extends it; release ends it and puts its text on the clipboard when not empty. Middle press while the
+     * talk line is open: the cursor moves to the char under the pointer when inside the talk window, then the
+     * clipboard is pasted. Returns whether the event was used.
+     */
+    public boolean viewMouse(int button, int action, int x, int y) {
+        if (!liveOptions.options().flag(ClientOption.SELECTION_AND_HISTORY) || messageFont == null) {
+            return false;
+        }
+        TextSelection sel = hud.selection;
+        if (button == org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            if (action == org.lwjgl.glfw.GLFW.GLFW_PRESS) {
+                int c = talk.isOpen() ? hud.talkCharAt(x, y, talk, lastViewW, lastViewH, talkFont, talkHeightFont) : -1;
+                if (c >= 0) {
+                    sel.start(TextSelection.TALK_LINE, 0, c);
+                } else if (hud.messageAt(x, y, game.messages(), lastViewH, messageFont, hit)) {
+                    sel.start(hit[0], hit[1], hit[2]);
+                } else {
+                    sel.clear();
+                    return false;
+                }
+                return true;
+            }
+            if (action == org.lwjgl.glfw.GLFW.GLFW_RELEASE && sel.dragging()) {
+                sel.finish();
+                String text = sel.text(talk, game.messages());
+                if (!text.isEmpty()) {
+                    clipboard.set(text);
+                }
+                return true;
+            }
+            return false;
+        }
+        if (button == org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_MIDDLE && action == org.lwjgl.glfw.GLFW.GLFW_PRESS
+            && talk.isOpen()) {
+            int c = hud.talkCharAt(x, y, talk, lastViewW, lastViewH, talkFont, talkHeightFont);
+            if (c >= 0) {
+                talk.setCursor(c);
+            }
+            paste();
+            return true;
+        }
+        return false;
+    }
+
+    /** BEHAVIOR: pointer motion in the view extends a selection being dragged (view coordinates). */
+    public boolean viewMouseMove(int x, int y) {
+        TextSelection sel = hud.selection;
+        if (!sel.dragging() || messageFont == null) {
+            return false;
+        }
+        if (sel.area() == TextSelection.TALK_LINE) {
+            sel.drag(TextSelection.TALK_LINE, 0, Hud.charAt(talk.text(), x - (Hud.TALK_WINDOW_X
+                + Hud.TALK_OUTSIDE_BORDER + Hud.TALK_INSIDE_BORDER), talkFont));
+        } else if (hud.messageAt(x, y, game.messages(), lastViewH, messageFont, hit)) {
+            sel.drag(hit[0], hit[1], hit[2]);
+        }
+        return true;
+    }
+
+    private void paste() {
+        String text = clipboard.get();
+        if (text != null && talk.isOpen()) {
+            talk.paste(text);
+        }
+    }
+
     /** The client frame as the C windows' {@link ClientUi.Host}. */
     private final class UiHost implements ClientUi.Host {
         @Override
@@ -415,7 +616,7 @@ public final class ClientFrame {
         @Override
         public void showMotd(boolean refresh) {
             if (refresh || motd == null) {
-                conn.requestMotd(lastNow);
+                motdAsked = conn.requestMotd(lastNow) || motd == null;
             }
             if (motd != null && !motd.visible()) {
                 motd.toggle();
@@ -545,6 +746,15 @@ public final class ClientFrame {
     public com.fulcrologic.jxpilot.client.game.options.ClientOptions options() { return liveOptions.options(); }
 
     public SceneData scene() { return scene; }
+
+    /** The live palette ({@code color0..15}, {@code maxColors}). */
+    public com.fulcrologic.jxpilot.client.render.Palette palette() { return palette; }
+
+    /** The live look options the painters read. */
+    public com.fulcrologic.jxpilot.client.paint.PaintStyle style() { return style; }
+
+    /** The look extras of this frame: packet meters, clock, bell, title flip ({@link LookFrame}). */
+    public LookFrame look() { return look; }
 
     public RadarBlips radar() { return radar; }
 }

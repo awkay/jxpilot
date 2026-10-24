@@ -126,6 +126,36 @@ public final class TalkLine {
     }
 
     /**
+     * C {@code Talk_paste} (not overwriting): the text goes in at the cursor as far as the line takes it.
+     * <p>
+     * BEHAVIOR: newlines and tabs become blanks, other unprintable chars are dropped; chars are inserted as
+     * {@link #type} does until the line refuses one (full or too wide); returns how many went in; nothing while the
+     * line is closed.
+     */
+    public int paste(CharSequence text) {
+        int n = 0;
+        for (int i = 0; i < text.length() && open; i++) {
+            char c = text.charAt(i);
+            if (c == '\n' || c == '\r' || c == '\t') {
+                c = ' ';
+            }
+            if (c < 32 || c > 255 || (c > 126 && c < 160)) {
+                continue;
+            }
+            if (!type(c)) {
+                break;
+            }
+            n++;
+        }
+        return n;
+    }
+
+    /** BEHAVIOR: C {@code Talk_place_cursor}: the cursor goes to {@code index}, clamped to 0..length. */
+    public void setCursor(int index) {
+        cursor = Math.max(0, Math.min(line.length(), index));
+    }
+
+    /**
      * BEHAVIOR: inserts a printable Latin-1 char (32..126, 160..255) at the cursor, marking the line as
      * typed; refused (false) when the line has {@link #MAX_LEN} chars or, with a width limit, is already
      * that wide; other codes are ignored.
