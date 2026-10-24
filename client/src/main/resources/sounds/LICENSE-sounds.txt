@@ -1,0 +1,56 @@
+JXPilot sound effects: client/src/main/resources/sounds/*.wav
+======================================================================
+
+All clips are dedicated to the public domain under Creative Commons CC0 1.0 Universal
+(https://creativecommons.org/publicdomain/zero/1.0/), which the FSF lists as GPL-compatible. They
+were downloaded on 2026-10-23 from the two packs below, verified against the sha256 shown, and
+processed reproducibly by tools/sounds/build-sounds.sh (clip list: tools/sounds/clips.tsv). The
+historical XPilot sound packs were not used.
+
+Pack 1: "The Essential Retro Video Game Sound Effects Collection [512 sounds]"
+  Author:   Juhani Junkala
+  Source:   https://opengameart.org/content/512-sound-effects-8-bit-style
+  Download: https://opengameart.org/sites/default/files/The%20Essential%20Retro%20Video%20Game%20Sound%20Effects%20Collection%20%5B512%20sounds%5D.zip
+  sha256:   6d4519229c6e2c9e09502cd4967940052f68664140549a467615b56bdfd1d031
+  License:  CC0 1.0. The pack's INFO.txt: "These sound effects have been released under CC0
+            creative commons license. You can do anything you want with these sounds."
+  Paths below are relative to the pack's root folder.
+
+Pack 2: "Sci-Fi Sounds" (1.0)
+  Author:   Kenney (www.kenney.nl)
+  Source:   https://kenney.nl/assets/sci-fi-sounds
+  Download: https://kenney.nl/media/pages/assets/sci-fi-sounds/6b296f9ecf-1677589334/kenney_sci-fi-sounds.zip
+  sha256:   119340f351a5098ad814f78719438c0da355a9ce8a4c8a3af6a8d48aa3d49e04
+  License:  CC0 1.0. The pack's License.txt: "License: (Creative Commons Zero, CC0)
+            http://creativecommons.org/publicdomain/zero/1.0/"
+  Paths below are relative to the zip root.
+
+Modifications (tools/sounds/process_sounds.py), all clips 16-bit 44.1 kHz mono WAV:
+  Junkala clips: a 5 ms linear fade-out at the end, then peak-normalized to -6 dBFS.
+  thrust_loop.wav: the OGG decoded with ffmpeg to 44.1 kHz mono; 2.0 s cut starting at 0.3 s; the
+    first 0.25 s crossfaded (equal-power sin/cos) with the 0.25 s following the cut, so it loops
+    without a click; normalized to -24 dBFS RMS.
+
+Clip                 Pack     Original file
+shot.wav             Junkala  Weapons/Lasers/sfx_wpn_laser8.wav
+cannon.wav           Junkala  Weapons/Cannon/sfx_wpn_cannon4.wav
+laser.wav            Junkala  Weapons/Lasers/sfx_wpn_laser5.wav
+missile.wav          Junkala  Weapons/Grenade Whistles/sfx_wpn_missilelaunch.wav
+explode_small.wav    Junkala  Explosions/Short/sfx_exp_short_hard2.wav
+explode_large.wav    Junkala  Explosions/Medium Length/sfx_exp_medium3.wav
+explode_nuke.wav     Junkala  Explosions/Long/sfx_exp_long1.wav
+hit.wav              Junkala  General Sounds/Simple Damage Sounds/sfx_damage_hit3.wav
+bounce.wav           Junkala  General Sounds/Impacts/sfx_sounds_impact5.wav
+pickup.wav           Junkala  General Sounds/Positive Sounds/sfx_sounds_powerup3.wav
+drop.wav             Junkala  General Sounds/Interactions/sfx_sounds_interaction7.wav
+ball_connect.wav     Junkala  General Sounds/Coins/sfx_coin_double1.wav
+warp.wav             Junkala  Movement/Portals and Transitions/sfx_movement_portal5.wav
+fail.wav             Junkala  General Sounds/Negative Sounds/sfx_sounds_error1.wav
+beam.wav             Junkala  General Sounds/Weird Sounds/sfx_sound_mechanicalnoise4.wav
+toggle_on.wav        Junkala  General Sounds/Pause Sounds/sfx_sounds_pause1_in.wav
+toggle_off.wav       Junkala  General Sounds/Pause Sounds/sfx_sounds_pause1_out.wav
+blip.wav             Junkala  General Sounds/Simple Bleeps/sfx_sounds_Blip7.wav
+win.wav              Junkala  General Sounds/Fanfares/sfx_sounds_fanfare1.wav
+draw.wav             Junkala  General Sounds/Negative Sounds/sfx_sounds_negative2.wav
+start.wav            Junkala  General Sounds/Weird Sounds/sfx_sound_poweron.wav
+thrust_loop.wav      Kenney   Audio/thrusterFire_004.ogg
