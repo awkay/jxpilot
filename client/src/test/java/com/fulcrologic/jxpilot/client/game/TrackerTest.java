@@ -141,6 +141,156 @@ class TrackerTest {
         }
     }
 
+    /** The documented link rules by brute force over all pairs (no grid): the oracle for the grid search. */
+    @SuppressWarnings("checkstyle:ParameterNumber")
+    static int[] reference(int n, float[] ax, float[] ay, float[] avx, float[] avy, byte[] st, int[] aKey, int m,
+                           float[] bx, float[] by, int[] bKey, double frames, double maxSpeed, double ratio,
+                           double minSpeed, double w, double h, boolean wrap) {
+        int[] claim = new int[m];
+        double[] claimD = new double[m];
+        java.util.Arrays.fill(claim, -1);
+        int[] out = new int[n];
+        java.util.Arrays.fill(out, -1);
+        double min2 = minSpeed * frames * minSpeed * frames;
+        double[] res = new double[2];
+        for (int pass = 0; pass < 2; pass++) {
+            for (int i = 0; i < n; i++) {
+                if (pass == 1 && out[i] >= 0) {
+                    continue;
+                }
+                double vx = st[i] == Tracker.UNKNOWN ? 0 : avx[i];
+                double vy = st[i] == Tracker.UNKNOWN ? 0 : avy[i];
+                double px = ax[i] + vx * frames;
+                double py = ay[i] + vy * frames;
+                if (wrap) {
+                    px = com.fulcrologic.jxpilot.common.math.XMath.wrap(px, w);
+                    py = com.fulcrologic.jxpilot.common.math.XMath.wrap(py, h);
+                }
+                double travel = Math.sqrt(vx * vx + vy * vy) * frames;
+                double r = st[i] == Tracker.KNOWN ? Tracker.KNOWN_SLACK_PX + Tracker.KNOWN_SLACK_FRACTION * travel
+                    : st[i] == Tracker.GUESSED ? Tracker.KNOWN_SLACK_PX + Tracker.GUESS_SLACK_FRACTION * travel
+                    : maxSpeed * frames + Tracker.KNOWN_SLACK_PX;
+                int best = -1;
+                double bestD = Double.MAX_VALUE;
+                double second = Double.MAX_VALUE;
+                for (int j = 0; j < m; j++) {
+                    if (bKey[j] != aKey[i] || pass == 1 && claim[j] >= 0) {
+                        continue;
+                    }
+                    double dx = com.fulcrologic.jxpilot.common.math.XMath.wrapDelta(bx[j] - px, w, wrap);
+                    double dy = com.fulcrologic.jxpilot.common.math.XMath.wrapDelta(by[j] - py, h, wrap);
+                    double d = dx * dx + dy * dy;
+                    if (d > r * r || st[i] == Tracker.UNKNOWN && d < min2) {
+                        continue;
+                    }
+                    if (d < bestD) {
+                        second = bestD;
+                        bestD = d;
+                        best = j;
+                    } else if (d < second) {
+                        second = d;
+                    }
+                }
+                boolean ok = best >= 0 && (st[i] == Tracker.KNOWN || second == Double.MAX_VALUE
+                    || second >= ratio * ratio * bestD);
+                if (!ok) {
+                    continue;
+                }
+                if (pass == 0) {
+                    if (claim[best] < 0 || bestD < claimD[best]) {
+                        claim[best] = i;
+                        claimD[best] = (float) bestD;
+                    }
+                } else {
+                    out[i] = best;
+                    claim[best] = i;
+                }
+            }
+            if (pass == 0) {
+                for (int j = 0; j < m; j++) {
+                    if (claim[j] >= 0) {
+                        out[claim[j]] = j;
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    @Test
+    @DisplayName("the grid search links exactly what a brute-force search over all pairs links, at the world "
+        + "edges and across the wrap seam of worlds that are not a whole number of cells")
+    void matchesBruteForce() {
+        java.util.Random rnd = new java.util.Random(7);
+        Tracker big = new Tracker(128);
+        int[] got = new int[128];
+        int mismatches = 0;
+        int links = 0;
+        String first = null;
+        for (int trial = 0; trial < 3000; trial++) {
+            double w = 35 * (3 + rnd.nextInt(60)) + rnd.nextInt(3) * 0.5;
+            double h = 35 * (3 + rnd.nextInt(60));
+            boolean wrap = rnd.nextBoolean();
+            double frames = new double[] {1, 2, 0.5, 3}[rnd.nextInt(4)];
+            double maxSpeed = 16 + rnd.nextInt(48);
+            double ratio = rnd.nextBoolean() ? 1 : 2;
+            double minSpeed = rnd.nextInt(4);
+            int n = 1 + rnd.nextInt(40);
+            int m = 1 + rnd.nextInt(60);
+            float[] ax = new float[n];
+            float[] ay = new float[n];
+            float[] avx = new float[n];
+            float[] avy = new float[n];
+            byte[] st = new byte[n];
+            int[] aKey = new int[n];
+            for (int i = 0; i < n; i++) {
+                // half of them within 40 px of an edge
+                ax[i] = (float) (rnd.nextBoolean() ? rnd.nextDouble() * w : (rnd.nextBoolean() ? 0 : w - 40)
+                    + rnd.nextDouble() * 40);
+                ay[i] = (float) (rnd.nextBoolean() ? rnd.nextDouble() * h : (rnd.nextBoolean() ? 0 : h - 40)
+                    + rnd.nextDouble() * 40);
+                avx[i] = (float) (rnd.nextGaussian() * 15);
+                avy[i] = (float) (rnd.nextGaussian() * 15);
+                st[i] = (byte) rnd.nextInt(3);
+                aKey[i] = 1 + rnd.nextInt(3);
+            }
+            float[] bx = new float[m];
+            float[] by = new float[m];
+            int[] bKey = new int[m];
+            for (int j = 0; j < m; j++) {
+                int i = rnd.nextInt(n);
+                double x = j < n ? ax[i] + avx[i] * frames + rnd.nextGaussian() * 4 : rnd.nextDouble() * w;
+                double y = j < n ? ay[i] + avy[i] * frames + rnd.nextGaussian() * 4 : rnd.nextDouble() * h;
+                // without wrap a continuation outside the world is replaced by a random one (no clamped duplicates)
+                bx[j] = (float) (wrap ? com.fulcrologic.jxpilot.common.math.XMath.wrap(x, w)
+                    : x >= 0 && x < w ? x : rnd.nextDouble() * w);
+                by[j] = (float) (wrap ? com.fulcrologic.jxpilot.common.math.XMath.wrap(y, h)
+                    : y >= 0 && y < h ? y : rnd.nextDouble() * h);
+                bKey[j] = j < n ? aKey[i] : 1 + rnd.nextInt(3);
+            }
+            int[] want = reference(n, ax, ay, avx, avy, st, aKey, m, bx, by, bKey, frames, maxSpeed, ratio,
+                minSpeed, w, h, wrap);
+            big.link(n, ax, ay, avx, avy, st, aKey, m, bx, by, bKey, frames, maxSpeed, ratio, minSpeed, w, h, wrap,
+                got);
+            for (int i = 0; i < n; i++) {
+                links += want[i] >= 0 ? 1 : 0;
+                if (got[i] != want[i]) {
+                    mismatches++;
+                    if (first == null) {
+                        first = "trial " + trial + " w " + w + " h " + h + " wrap " + wrap + " i " + i + " state "
+                            + st[i] + " at " + ax[i] + "," + ay[i] + ": got " + got[i] + " want " + want[i];
+                    }
+                }
+            }
+        }
+        int total = links;
+        String detail = first;
+        int bad = mismatches;
+        assertAll(
+            () -> assertTrue(total > 20000, "the trials link plenty (" + total + ")"),
+            () -> assertEquals(0, bad, "no differences; first: " + detail));
+    }
+
     @Test
     @DisplayName("estimate: linked later objects get the displacement / frames and KNOWN; others 0 and UNKNOWN")
     void estimate() {

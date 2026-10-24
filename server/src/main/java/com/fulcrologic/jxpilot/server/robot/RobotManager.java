@@ -393,6 +393,7 @@ public final class RobotManager {
                 w.events.add(Events.BASE_OWNER, old, Obj.NO_ID, 0, 0f);
             }
             w.events.add(Events.BASE_OWNER, pl.homeBase, pl.id, 0, 0f);
+            sim.ships.startPosPicked(pl); // Pick_startpos's tail (player.c:131-145)
         }
     }
 

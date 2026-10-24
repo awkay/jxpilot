@@ -90,19 +90,25 @@ over a VPN.
 |Player name, 1 to 16 characters. The default keeps the letters, digits, `-`, `_` and `.` of your login
 name, with a capital first letter (`Pilot` if nothing is left).
 
-|`--user NAME`
-|your login name
-|The real name sent to JXPilot servers with your host name (C's `-user`). The server shows it in its
-welcome line and log and matches it in its player-name commands; it keeps at most 15 characters.
+|`--user NAME`, `--host NAME`
+|your login name, this computer's name
+|The real and host names sent to JXPilot servers (C's `user` and `host` resources; also settable in
+`~/.xpilotrc`). The server shows the real name in its welcome line and log and matches it in its
+player-name commands; it keeps at most 15 characters of it and 63 of the host name.
 
 |`--team T`
 |none
 |Team 0 to 9 to join in team play. Without it the server picks one.
 
-|`--shape SHAPE`
-|the standard ship
-|Your ship shape, in XPilot's shape format (as in a robots file, <<04-running-a-server.adoc#robot-file,Robot
-personalities>>). The server uses it if it allows ship shapes.
+|`--shape SHAPE`, `--shipShape SHAPE`
+|`shipShape` from the keys file, else the standard ship
+|Your ship shape: a shape in XPilot's format (as in a robots file,
+<<04-running-a-server.adoc#robot-file,Robot personalities>>), or the name of a shape in the shape file
+(<<03-playing.adoc#ship-shapes,Ship shapes>>). The server uses it if it allows ship shapes.
+
+|`--shipShapeFile FILE`
+|`shipShapeFile` from the keys file
+|A file of named ship shapes, one per line, for `--shape NAME`.
 
 |`--size WxH`
 |`1280x800`

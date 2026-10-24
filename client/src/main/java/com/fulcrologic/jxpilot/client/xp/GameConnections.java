@@ -67,19 +67,30 @@ public final class GameConnections {
         return new NativeGameConnection(c, t);
     }
 
-    /** The real name given with {@code --user} (C {@code -user}), or null for the login name. */
+    /** The {@code user} resource (C {@code -user}), or null for the login name. */
     private static volatile String user;
+    /** The {@code host} resource (C {@code -host}), or null for the local host name. */
+    private static volatile String host;
 
     /** BEHAVIOR: from now on {@link #realName} is {@code name} (null: the login name again). */
     public static void setUser(String name) {
         user = name;
     }
 
+    /** BEHAVIOR: from now on {@link #hostName} is {@code name} (null: the local host name again). */
+    public static void setHost(String name) {
+        host = name;
+    }
+
     /**
-     * BEHAVIOR: the local host's name (C {@code gethostname}): HOSTNAME or COMPUTERNAME from the environment, else
-     * the name the system reports, else "localhost"; the server cleans it (C {@code Fix_host_name}).
+     * BEHAVIOR: the {@code host} resource, else the local host's name (C {@code gethostname}): HOSTNAME or
+     * COMPUTERNAME from the environment, else the name the system reports, else "localhost"; the server cleans it
+     * (C {@code Fix_host_name}).
      */
     public static String hostName() {
+        if (host != null) {
+            return host;
+        }
         String h = System.getenv("HOSTNAME");
         if (h == null || h.isEmpty()) {
             h = System.getenv("COMPUTERNAME");
@@ -95,7 +106,7 @@ public final class GameConnections {
     }
 
     /**
-     * BEHAVIOR: the {@code --user} name, else the user name; only letters, digits, '-', '_' and '.', "jxpilot" when
+     * BEHAVIOR: the {@code user} resource, else the user name; only letters, digits, '-', '_' and '.', "jxpilot" when
      * empty.
      */
     public static String realName() {

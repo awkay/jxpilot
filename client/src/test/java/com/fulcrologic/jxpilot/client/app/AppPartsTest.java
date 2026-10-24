@@ -75,21 +75,30 @@ class AppPartsTest {
                 () -> assertEquals(Const.TARGET_DAMAGE, t.targetDamage(0), "fresh: intact"),
                 () -> assertEquals(1, s.selfTeam(), "own team"),
                 () -> assertEquals(42L, s.loops(), "loops as set"),
-                () -> assertEquals(0, s.nextCheckpoint(), "no TIMING yet: checkpoint 0"));
+                () -> assertEquals(0, s.nextCheckpoint(), "SELF checkpoint 0"));
         }
 
         @Test
-        @DisplayName("the next checkpoint is the own player's check from TIMING")
-        void nextCheckpoint() {
-            AppFixture f = new AppFixture(true).players();
-            com.fulcrologic.jxpilot.common.net.Msg.Timing t = new com.fulcrologic.jxpilot.common.net.Msg.Timing();
-            t.id = f.game.players().selfId();
-            t.check = 3;
-            t.round = 1;
-            java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(16);
-            t.write(b);
-            f.game.onReliable(com.fulcrologic.jxpilot.common.net.ReliableType.TIMING, b.flip());
-            assertEquals(3, new WorldMapState(f.game).nextCheckpoint(), "TIMING check of the own player");
+        @DisplayName("F4/F12: the next checkpoint from SELF; base owner names from BASE_OWNER and the player list")
+        void checkpointAndOwners() {
+            AppFixture f = new AppFixture(true).players().twice(x -> {
+                x.w.beginSection(com.fulcrologic.jxpilot.common.net.Section.SELF);
+                Records.Self.put(x.w, AppFixture.SELF, 0, 100, 100, 0, 0, 0, 700, 1000,
+                    com.fulcrologic.jxpilot.common.net.Protocol.NO_ID, 0, 0, 0, 45, 40, 0.12, 0, 0, 3, 0);
+                x.w.endSection();
+            });
+            f.game.world().setBaseOwner(0, AppFixture.SELF);
+            WorldMapState s = new WorldMapState(f.game);
+            CharSequence owned = s.baseOwnerName(0);
+            f.game.world().setBaseOwner(0, 99);
+            CharSequence unknown = s.baseOwnerName(0);
+            f.game.world().setBaseOwner(0, com.fulcrologic.jxpilot.common.net.Protocol.NO_ID);
+            CharSequence free = s.baseOwnerName(0);
+            assertAll(
+                () -> assertEquals(3, s.nextCheckpoint(), "SELF check 3"),
+                () -> assertEquals("Me", owned == null ? null : owned.toString(), "the owner's name"),
+                () -> assertNull(unknown, "an owner the player list does not know: no name"),
+                () -> assertNull(free, "a free base: no name"));
         }
 
         @Test
@@ -281,6 +290,62 @@ class AppPartsTest {
                     + "keyDetonateMines keyIdMode"), "conflicts are printed"),
                 () -> assertThrows(java.io.IOException.class, () -> AppLauncher.keyConfig(missing, home, err),
                     "a missing --keys file is an error"));
+        }
+
+        @Test
+        @DisplayName("command-line resources win over ~/.xpilotrc; name and team come from the resources, else the flags' defaults")
+        void resources(@org.junit.jupiter.api.io.TempDir Path home) throws Exception {
+            java.io.PrintStream err = new java.io.PrintStream(java.io.OutputStream.nullOutputStream());
+            java.nio.file.Files.writeString(home.resolve(".xpilotrc"), "xpilot.clock: yes\nxpilot.name: Filer\n"
+                + "xpilot.team: 3\n");
+            AppOptions cli = AppOptions.parse(new String[] {"--connect", "h", "--clock", "no"}, "u");
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig k = AppLauncher.keyConfig(cli, home, err);
+            AppOptions named = AppOptions.parse(new String[] {"--connect", "h", "--name", "Cli", "--team", "5"}, "u");
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig kn = AppLauncher.keyConfig(named, home, err);
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig long32 =
+                com.fulcrologic.jxpilot.client.game.input.KeyConfig.load("name: " + "x".repeat(40) + "\nteam: 12\n",
+                    "rc", null);
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig blank =
+                com.fulcrologic.jxpilot.client.game.input.KeyConfig.load("name:   \n", "rc", null);
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig none =
+                com.fulcrologic.jxpilot.client.game.input.KeyConfig.defaults(null);
+            assertAll(
+                () -> assertFalse(k.options().flag(com.fulcrologic.jxpilot.client.game.options.ClientOption.CLOCK),
+                    "--clock no wins over the file's yes"),
+                () -> assertEquals("Filer", AppLauncher.name(cli, k), "the file's name"),
+                () -> assertEquals(3, AppLauncher.team(cli, k), "the file's team"),
+                () -> assertEquals("Cli", AppLauncher.name(named, kn), "--name wins over the file"),
+                () -> assertEquals(5, AppLauncher.team(named, kn), "--team wins over the file"),
+                () -> assertEquals("x".repeat(AppOptions.MAX_NAME), AppLauncher.name(cli, long32),
+                    "a long resource name is cut"),
+                () -> assertEquals(cli.team(), AppLauncher.team(cli, long32), "a team outside 0..9 is ignored"),
+                () -> assertEquals("U", AppLauncher.name(cli, blank), "a blank name falls back to the login name"),
+                () -> assertEquals("U", AppLauncher.name(cli, none), "no name resource: the login name"),
+                () -> assertEquals(com.fulcrologic.jxpilot.common.net.Protocol.NO_TEAM, AppLauncher.team(cli, none),
+                    "no team resource: no team"));
+        }
+
+        @Test
+        @DisplayName("the user and host resources (--user, --host, ~/.xpilotrc) give the real and host names; blank or absent is null")
+        void userAndHost(@org.junit.jupiter.api.io.TempDir Path home) throws Exception {
+            java.io.PrintStream err = new java.io.PrintStream(java.io.OutputStream.nullOutputStream());
+            java.nio.file.Files.writeString(home.resolve(".xpilotrc"), "xpilot.user: filer\nxpilot.host:   \n");
+            AppOptions file = AppOptions.parse(new String[] {"--connect", "h"}, "u");
+            AppOptions cli = AppOptions.parse(new String[] {"--connect", "h", "--user", " Ann ", "--host", "box.org"}, "u");
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig kf = AppLauncher.keyConfig(file, home, err);
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig kc = AppLauncher.keyConfig(cli, home, err);
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig none =
+                com.fulcrologic.jxpilot.client.game.input.KeyConfig.defaults(null);
+            com.fulcrologic.jxpilot.client.game.options.ClientOption user =
+                com.fulcrologic.jxpilot.client.game.options.ClientOption.USER;
+            com.fulcrologic.jxpilot.client.game.options.ClientOption host =
+                com.fulcrologic.jxpilot.client.game.options.ClientOption.HOST;
+            assertAll(
+                () -> assertEquals("filer", AppLauncher.resource(kf, user), "the file's user"),
+                () -> assertNull(AppLauncher.resource(kf, host), "a blank host: the local host name"),
+                () -> assertEquals("Ann", AppLauncher.resource(kc, user), "--user wins, trimmed"),
+                () -> assertEquals("box.org", AppLauncher.resource(kc, host), "--host"),
+                () -> assertNull(AppLauncher.resource(none, user), "no resource: the login name"));
         }
 
         @Test

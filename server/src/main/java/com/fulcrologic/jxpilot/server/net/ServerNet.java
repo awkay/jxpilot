@@ -351,7 +351,9 @@ public final class ServerNet {
             return;
         }
         if (cfg.maxPerIp > 0 && sessionsFrom(source, existing) >= cfg.maxPerIp) {
-            sendReject(channel, from, connect.nonce, Msg.Reject.REASON_FULL, "too many players from your address", size);
+            // C Check_max_clients_per_IP answers E_GAME_LOCKED (contact.c:743-751); the lock itself is the host's,
+            // checked in join after a queued player's own request (C Queue_player keeps its place when locked)
+            sendReject(channel, from, connect.nonce, Msg.Reject.REASON_LOCKED, "too many players from your address", size);
             return;
         }
         int id = host.join(connect.name, connect.team, connect.shape, source);

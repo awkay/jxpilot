@@ -40,6 +40,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -174,6 +175,23 @@ class ServerOptionsTest {
             () -> assertEquals("fromDefaults", none.getString(Opt.PASSWORD), "without the option no password file is read"),
             () -> assertThrows(IOException.class, () -> Server.readOptions(new String[] {"--map", map,
                 "-passwordFileName", dir.resolve("missing").toString()}), "a named file that cannot be read"));
+    }
+
+    @Test
+    @DisplayName("passwordFileName warnings: an unknown name without its value; an empty password")
+    void passwordFileWarnings() throws IOException {
+        Path pw = file("password2", "pasword: Sesame\n");
+        String map = bareMap("");
+        Options o = Server.readOptions(new String[] {"--map", map, "-passwordFileName", pw.toString()});
+        Options e = Server.readOptions(new String[] {"--map", map, "-password", ""});
+        String unknown = "Unknown option 'pasword' in the password file " + pw + " (its value is not shown).";
+        String emptyWarning = "The password is empty: '/password' without an argument gives operator status (as C).";
+        assertAll(
+            () -> assertTrue(o.warnings().contains(unknown), "the unknown name is warned about: " + o.warnings()),
+            () -> assertTrue(o.warnings().stream().noneMatch(w -> w.contains("Sesame")), "its value is never shown"),
+            () -> assertFalse(o.warnings().contains(emptyWarning), "no password: no empty-password warning"),
+            () -> assertEquals("", e.getString(Opt.PASSWORD), "an empty password"),
+            () -> assertTrue(e.warnings().contains(emptyWarning), "is warned about: " + e.warnings()));
     }
 
     @Test

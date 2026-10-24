@@ -186,6 +186,10 @@ public final class Player {
     public int invite = Obj.NO_ID;
     /** C {@code isoperator}: operator status, given by {@code /password}. */
     public boolean isOperator;
+    /** JXPilot {@code /password} brute-force guard: wrong tries since the last cooldown, its end (frames), its length. */
+    public int passwordFails;
+    public long passwordLockedUntil;
+    public int passwordLockFrames;
 
     // ================================================================ items (server-items, C player fields)
     /** C {@code MAX_TANKS}. */

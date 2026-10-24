@@ -73,7 +73,7 @@ option's status is in <<05-server-options.adoc#server-options,the option referen
 |All 21 items and the weapons and devices they give: missiles, mines, lasers, nuclear and cluster
 weapons and the other modifiers, cloak and sensors, ECM, tractor and pressor beams, transporter,
 deflector, phasing, hyperjump, emergency thrust and shield, autopilot, tanks; cannon weapons and
-defences; player locks and viewing through a lock. Checked against 12 recorded reference games of the
+defences; player locks and viewing through a lock. Checked against 21 recorded reference games of the
 C server (<<03-playing.adoc#items,Items and weapons>>).
 
 |Java server: robots
@@ -86,11 +86,20 @@ C server (<<03-playing.adoc#items,Items and weapons>>).
 |One UDP port, flexible address binding for VPNs and multi-homed hosts, abuse limits
 (<<04-running-a-server.adoc#running-a-server,Running a server>>).
 
-|Balls and treasures, targets, race mode, asteroids, alliances
-|In progress (M2)
-|Not yet on the Java server: balls cannot be carried, targets cannot be destroyed, race maps play
-without races, and there are no asteroids or alliances. They all work when the client plays on an
-original XPilot server.
+|Java server: game modes
+|Works
+|Ball games and treasures (<<03-playing.adoc#ball-games,Ball games>>), targets, races, asteroids,
+temporary wormholes and `gameDuration`. Checked against 4 more recorded reference games of the C server.
+
+|Java server: commands and alliances
+|Works
+|The `/` commands (`/team`, `/ally`, `/get`, ...), operator commands with a password (`/set` and more),
+alliances, custom ship shapes, the login queue and the message of the day
+(<<03-playing.adoc#commands,Commands>>, <<04-running-a-server.adoc#operators,Operator commands>>).
+
+|Temporary wormholes in the client
+|In progress
+|The client does not yet draw temporary (hyperjump) wormholes.
 
 |Map viewer
 |Works
@@ -98,9 +107,11 @@ original XPilot server.
 (<<07-client-reference.adoc#viewer-flags,Viewer flags>>).
 
 |Lag hiding
-|Planned
-|Your own ship responds after a full network round trip plus about 135 ms. Client-side prediction is
-designed (`docs/latency-fixes.md` in the source) but not built.
+|In progress
+|Your own ship is no longer drawn a frame behind: the client predicts it forward from the newest frame
+the server sent and blends corrections in over a few screen frames. Your keys still take a round trip
+to the server, plus the wait for its next frame. Predicting your keys, shots and exhaust on the client
+(`docs/latency-fixes.md` in the source) is future work.
 
 |Sound
 |Works
@@ -116,7 +127,8 @@ The development plan has three milestones:
 
 M1, playable core:: map rendering, ship movement, gravity and walls, shields, fuel, shots, cannons,
 wormholes, death and respawn, scores, chat, robots, radar, HUD, basic team play. Done.
-M2:: items (done), balls and treasures, targets, checkpoints and races, asteroids. In progress.
+M2:: items, balls and treasures, targets, checkpoints and races, asteroids, alliances and the `/`
+commands. Done.
 M3:: polish: a configurable keys file and sound. Done.
 
 Out of scope: the XPilot map editor, replay recording, the metaserver and server browser, and the

@@ -23,7 +23,9 @@
  */
 package com.fulcrologic.jxpilot.client.app;
 
+import com.fulcrologic.jxpilot.client.game.input.KeyConfig;
 import com.fulcrologic.jxpilot.client.game.input.KeySyms;
+import com.fulcrologic.jxpilot.client.game.input.XpilotRc;
 import com.fulcrologic.jxpilot.client.game.Players;
 import com.fulcrologic.jxpilot.client.net.Endpoint;
 import com.fulcrologic.jxpilot.client.sound.SoundPlayer;
@@ -42,7 +44,6 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  *                              or a file when it has a path in it (see MapLocator)
  *   --bind ADDR[:PORT]         local source address for --connect
  *   --name NAME                player name (default: the user name)
- *   --user NAME                real name sent to the server (C -user; default: the login name)
  *   --team T                   team 0..9 (default: none, the server picks)
  *   --shape SHAPE              ship shape string, or a name in the shape file (C shipShape; default: the
  *                              shipShape resource of ~/.xpilotrc, else the standard ship); alias --shipShape
@@ -60,6 +61,9 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  *   --keys FILE                key bindings and control settings in ~/.xpilotrc format (default: ~/.xpilotrc)
  *   --list-keys                print the effective key bindings and exit
  *   --list-maps                print the bundled maps and exit
+ *   --RESOURCE VALUE           any C client resource (also -RESOURCE, C's form): the same as a line
+ *                              "RESOURCE: VALUE" in ~/.xpilotrc, and winning over it (join, noLocalMotd, text, list,
+ *                              mono and erase take no value, as in C)
  * </pre>
  *
  * @param viewer     the viewer's options in {@link Mode#VIEW_MAP}, else null
@@ -75,13 +79,15 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  * @param maxVolume  {@code --volume} (C {@code maxVolume}), 0..{@value SoundPlayer#MAX_MAX_VOLUME}, or {@link #VOLUME_UNSET}
  * @param keysFile   key file given with {@code --keys}, or null for {@code ~/.xpilotrc}
  * @param shipShapeFile shape file given with {@code --shipShapeFile}, or null when not given
- * @param user       the real name to send (C {@code -user}), or null for the login name
+ * @param resources  command-line resources in order, applied after the resource file: every
+ *                   {@code --RESOURCE VALUE}, plus name, team, geometry (from {@code --size}), scaleFactor and
+ *                   altScaleFactor for their JXPilot flags
  */
 public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, Endpoint bind, String name, int team,
                          String shape, String localMap, String screenshot, int frames, int width, int height,
                          boolean vsync, double scaleFactor, double altScaleFactor, String swapScaleKey,
                          String fontFile, double fontSize, boolean sound, int maxVolume, String keysFile,
-                         String shipShapeFile, String user) {
+                         String shipShapeFile, java.util.List<XpilotRc.Entry> resources) {
     /** Launch modes. */
     public enum Mode {
         /** No mode chosen: print usage. */
@@ -108,11 +114,12 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
     public static final double DEFAULT_FONT_SIZE = 13;
 
     public static final String USAGE = """
-        usage: ClientMain --connect HOST[:PORT] [--protocol xpilot|jxpilot] [--bind ADDR[:PORT]] [--name NAME] [--user NAME]
+        usage: ClientMain --connect HOST[:PORT] [--protocol xpilot|jxpilot] [--bind ADDR[:PORT]] [--name NAME]
                           [--team T] [--shape|--shipShape SHAPE|NAME] [--shipShapeFile FILE]
                           [--size WxH] [--scale-factor F] [--alt-scale-factor F]
                           [--swap-scale-key KEYSYM] [--font FILE] [--font-size PX] [--screenshot FILE.png]
                           [--frames N] [--no-vsync] [--sound | --no-sound] [--volume 0..255] [--keys FILE]
+                          [--RESOURCE VALUE ...]  (any ~/.xpilotrc resource, e.g. --showHUDRadar yes)
                ClientMain --local --map MAP [same options as --connect, except --protocol and --bind]
                ClientMain --list-keys [--keys FILE] [--swap-scale-key KEYSYM]
                ClientMain --list-maps
@@ -139,6 +146,10 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
      * wins when both are given).
      * BEHAVIOR: sound is on unless {@code --no-sound} (the last of --sound/--no-sound wins); {@code --volume}
      * is an integer 0..{@value SoundPlayer#MAX_MAX_VOLUME}, {@link #VOLUME_UNSET} when not given.
+     * BEHAVIOR: {@code --RESOURCE VALUE} / {@code -RESOURCE VALUE} for a resource {@link KeyConfig#knownResource}
+     * knows adds it to {@link #resources()} (a {@link #NO_ARG} resource takes no value and is "Yes"); --name,
+     * --team, --size, --scale-factor and --alt-scale-factor also add name, team, geometry ("WxH"), scaleFactor and
+     * altScaleFactor, so they win over the resource file.
      * BEHAVIOR: unknown options and missing values throw IllegalArgumentException naming the option.
      */
     public static AppOptions parse(String[] args, String userName) {
@@ -146,13 +157,13 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
             if (a.equals("--view-map")) {
                 return new AppOptions(Mode.VIEW_MAP, LaunchOptions.parse(args), null, null, null, Protocol.NO_TEAM,
                     "", null, null, DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true,
-                    VOLUME_UNSET, null, null, null);
+                    VOLUME_UNSET, null, null, java.util.List.of());
             }
         }
         if (args.length == 0) {
             return new AppOptions(Mode.HELP, null, null, null, null, Protocol.NO_TEAM, "", null, null,
                 DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, VOLUME_UNSET,
-                null, null, null);
+                null, null, java.util.List.of());
         }
         String connect = null;
         String protocol = null;
@@ -160,7 +171,6 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         String map = null;
         Endpoint bind = null;
         String name = null;
-        String user = null;
         int team = Protocol.NO_TEAM;
         String shape = null;
         String shipShapeFile = null;
@@ -179,6 +189,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         String keys = null;
         boolean listKeys = false;
         boolean listMaps = false;
+        java.util.List<XpilotRc.Entry> resources = new java.util.ArrayList<>();
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
             switch (a) {
@@ -192,18 +203,14 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                     if (name.isEmpty() || name.length() > MAX_NAME) {
                         throw new IllegalArgumentException(a + " needs 1.." + MAX_NAME + " characters: '" + name + "'");
                     }
-                }
-                case "--user" -> {
-                    user = value(args, ++i, a);
-                    if (user.isEmpty()) {
-                        throw new IllegalArgumentException(a + " needs a name");
-                    }
+                    resources.add(new XpilotRc.Entry("name", name, i + 1));
                 }
                 case "--team" -> {
                     team = integer(value(args, ++i, a), a);
                     if (team < 0 || team > 9) {
                         throw new IllegalArgumentException(a + " must be 0..9: " + team);
                     }
+                    resources.add(new XpilotRc.Entry("team", Integer.toString(team), i + 1));
                 }
                 case "--shape", "--shipShape" -> {
                     shape = value(args, ++i, a);
@@ -222,10 +229,17 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                     }
                     width = positiveInt(v.substring(0, x), a);
                     height = positiveInt(v.substring(x + 1), a);
+                    resources.add(new XpilotRc.Entry("geometry", width + "x" + height, i + 1));
                 }
                 case "--no-vsync" -> vsync = false;
-                case "--scale-factor" -> scale = positive(value(args, ++i, a), a);
-                case "--alt-scale-factor" -> alt = positive(value(args, ++i, a), a);
+                case "--scale-factor" -> {
+                    scale = positive(value(args, ++i, a), a);
+                    resources.add(new XpilotRc.Entry("scaleFactor", args[i], i + 1));
+                }
+                case "--alt-scale-factor" -> {
+                    alt = positive(value(args, ++i, a), a);
+                    resources.add(new XpilotRc.Entry("altScaleFactor", args[i], i + 1));
+                }
                 case "--swap-scale-key" -> {
                     swapKey = value(args, ++i, a);
                     if (KeySyms.glfwKey(swapKey) == KeySyms.NONE) {
@@ -245,19 +259,27 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                 case "--keys" -> keys = value(args, ++i, a);
                 case "--list-keys" -> listKeys = true;
                 case "--list-maps" -> listMaps = true;
-                default -> throw new IllegalArgumentException("Unknown option: " + a);
+                default -> {
+                    String res = resourceName(a);
+                    if (res == null) {
+                        throw new IllegalArgumentException("Unknown option: " + a);
+                    }
+                    String v = NO_ARG.contains(res) ? "Yes" : value(args, ++i, a);
+                    resources.add(new XpilotRc.Entry(res, v, i + 1));
+                }
             }
         }
         Mode mode;
         ConnectTarget target = null;
         if (listKeys) {
             return new AppOptions(Mode.LIST_KEYS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
-                DEFAULT_FRAMES, 1280, 800, true, 1, 2, swapKey, null, DEFAULT_FONT_SIZE, sound, maxVolume, keys, null, null);
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, swapKey, null, DEFAULT_FONT_SIZE, sound, maxVolume, keys, null,
+                java.util.List.copyOf(resources));
         }
         if (listMaps) {
             return new AppOptions(Mode.LIST_MAPS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
                 DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, SoundPlayer.DEFAULT_MAX_VOLUME,
-                null, null, null);
+                null, null, java.util.List.of());
         }
         if (connect != null && local) {
             throw new IllegalArgumentException("--connect and --local exclude each other");
@@ -281,7 +303,28 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         }
         return new AppOptions(mode, null, target, bind, name != null ? name : defaultName(userName), team, shape,
             map, screenshot, frames, width, height, vsync, scale, alt, swapKey, font, fontSize, sound, maxVolume, keys,
-            shipShapeFile, user);
+            shipShapeFile, java.util.List.copyOf(resources));
+    }
+
+    /** C's options that take no argument on the command line (default.c {@code "Yes"} noArg value). */
+    static final java.util.Set<String> NO_ARG = java.util.Set.of("join", "noLocalMotd", "text", "list", "mono", "erase");
+
+    /**
+     * BEHAVIOR: {@code -resource} or {@code --resource} (C's command-line form of every resource) gives the
+     * resource name when {@link KeyConfig#knownResource} knows it (the case of a {@link #NO_ARG} name is
+     * normalised), else null.
+     */
+    static String resourceName(String arg) {
+        String n = arg.startsWith("--") ? arg.substring(2) : arg.startsWith("-") ? arg.substring(1) : null;
+        if (n == null || n.isEmpty() || !KeyConfig.knownResource(n)) {
+            return null;
+        }
+        for (String s : NO_ARG) {
+            if (s.equalsIgnoreCase(n)) {
+                return s;
+            }
+        }
+        return n;
     }
 
     /**

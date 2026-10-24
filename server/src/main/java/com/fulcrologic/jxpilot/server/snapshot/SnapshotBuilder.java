@@ -381,7 +381,7 @@ public final class SnapshotBuilder {
             (v.lockTagged & Player.LOCK_PLAYER) != 0 && (v.used & Has.COMPASS) != 0 ? v.lockPlId : Protocol.NO_ID,
             v.numTanks, v.currentTank,
             (v.status & Obj.PLAYING) == 0 && v.count > 0 ? v.count : 0, v.power, v.turnSpeed, v.turnResistance,
-            itemSections.lockDist(v), itemSections.lockDir(v), 0, ItemSections.selfMods(v.mods));
+            itemSections.lockDist(v), itemSections.lockDir(v), v.check, ItemSections.selfMods(v.mods));
     }
 
     private void writeSounds(Player v) {

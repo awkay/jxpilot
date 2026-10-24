@@ -75,6 +75,7 @@ public final class XpTranslator {
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
     private final Msg.Text text = new Msg.Text();
     private final Msg.BaseOwner baseOwner = new Msg.BaseOwner();
+    private final Msg.Timing timing = new Msg.Timing();
 
     // configuration
     private XpMap.Built map;
@@ -175,8 +176,8 @@ public final class XpTranslator {
      * BEHAVIOR: sections: SELF (with PKT_SELF), SHIP (ships, paused ships), SHOT (fast shots by colour),
      * BURST (debris), CANNON/FUEL/TARGET (updates, C numbers mapped to WorldMap indices), RADAR,
      * SELF_ITEMS (with PKT_SELF; its loseItem is the last PKT_LOSEITEM of any frame, which the C client keeps),
-     * the M2 object sections and TIMERS (with PKT_SELF: damaged, round delay
-     * (none = 0) and the time left of a PKT_TIME_LEFT in this frame, else -1).
+     * the M2 object sections and TIMERS in every frame (C sends an ECM-damaged player only PKT_DAMAGED: damaged,
+     * round delay (none = 0), the time left of a PKT_TIME_LEFT in this frame, else -1, and the meters).
      * BEHAVIOR: the frame's PKT_AUDIO become the SOUND section (C {@code Handle_audio}: type and volume as
      * sent), with or without PKT_SELF.
      * BEHAVIOR: does nothing before {@link #configure}.
@@ -214,7 +215,7 @@ public final class XpTranslator {
             w.endSection();
         }
         writeObjects(f);
-        if (f.hasSelf && w.beginSection(Section.TIMERS)) {
+        if (w.beginSection(Section.TIMERS)) {
             Records.Timers.put(w, Math.max(0, f.damaged), Math.max(0, f.roundDelay), f.timeLeft, Math.max(0, f.destruct),
                 meterLeft(f.thrustTime, f.thrustMax), meterMax(f.thrustTime, f.thrustMax),
                 meterLeft(f.shieldTime, f.shieldMax), meterMax(f.shieldTime, f.shieldMax),
@@ -267,7 +268,8 @@ public final class XpTranslator {
 
     /**
      * BEHAVIOR: flags from the own PKT_SHIP (shield, cloak...), DEAD when the own ship is not in the
-     * frame (C {@code selfVisible}), PAUSED / SELF_DESTRUCT from the status byte; fuel in C units; power,
+     * frame (C {@code selfVisible}) or the status is not PLAYING (C {@code Game_over_action}: PLAYING without
+     * PAUSE or GAME_OVER), PAUSED / SELF_DESTRUCT from the status byte; fuel in C units; power,
      * turn speed, turn resistance, lock distance/direction and checkpoint as sent; the PKT_MODIFIERS string
      * as {@link Modifiers#parse} bits.
      */
@@ -276,6 +278,10 @@ public final class XpTranslator {
             return;
         }
         int flags = selfShip >= 0 ? shipFlags(f.shipFlags[selfShip]) : Records.ShipFlags.DEAD;
+        if ((f.selfStat & (XpProto.STATUS_PLAYING | XpProto.STATUS_PAUSE | XpProto.STATUS_GAME_OVER))
+            != XpProto.STATUS_PLAYING) {
+            flags |= Records.ShipFlags.DEAD; // C Game_over_action: not in play
+        }
         if ((f.selfStat & XpProto.STATUS_PAUSE) != 0) {
             flags |= Records.ShipFlags.PAUSED;
         }
@@ -317,7 +323,7 @@ public final class XpTranslator {
     /**
      * BEHAVIOR: one SHIP record per PKT_SHIP with the derived velocity; a PKT_REFUEL ending at a ship
      * marks it REFUELING, one starting at a ship marks it REPAIRING; paused ships (no id on the wire)
-     * are SHIP records with id NO_ID and PAUSED.
+     * are SHIP records with id NO_ID and PAUSED, carrying C's pause count as vx (px/frame units).
      */
     private void writeShips(XpFrame f) {
         if (f.ships + f.paused == 0 || !w.beginSection(Section.SHIP)) {
@@ -337,7 +343,8 @@ public final class XpTranslator {
             double x = wrapX(f.pausedX[i]);
             double y = wrapY(f.pausedY[i]);
             if (visible(x, y)) {
-                Records.Ship.put(w, Protocol.NO_ID, Records.ShipFlags.PAUSED, x, y, 0, 0, 0);
+                // no id on the wire; C's pause count (the P blinks while it is above 0) rides in vx
+                Records.Ship.put(w, Protocol.NO_ID, Records.ShipFlags.PAUSED, x, y, 0, f.pausedCount[i], 0);
             }
         }
         w.endSection();
@@ -682,7 +689,9 @@ public final class XpTranslator {
                 double x = wrapX(f.astX[k]);
                 double y = wrapY(f.astY[k]);
                 if (visible(x, y)) {
-                    Records.Asteroid.put(w, x, y, f.astSize[k], f.astRot[k] * RAD_PER_DIR);
+                    // the C shape type rides in the high nibble of the size byte (sizes are 1..4)
+                    Records.Asteroid.put(w, x, y, (f.astType[k] & 0x0F) << 4 | f.astSize[k] & 0x0F,
+                        f.astRot[k] * RAD_PER_DIR);
                 }
             }
             w.endSection();
@@ -692,7 +701,8 @@ public final class XpTranslator {
                 double x = wrapX(f.wreckX[k]);
                 double y = wrapY(f.wreckY[k]);
                 if (visible(x, y)) {
-                    Records.Wreckage.put(w, x, y, f.wreckType[k] & 0x7F, f.wreckSize[k], f.wreckRot[k] * RAD_PER_DIR);
+                    // C wreck type: bit 7 = deadly (drawn red), the rest the shape
+                    Records.Wreckage.put(w, x, y, f.wreckType[k] & 0xFF, f.wreckSize[k], f.wreckRot[k] * RAD_PER_DIR);
                 }
             }
             w.endSection();
@@ -874,11 +884,42 @@ public final class XpTranslator {
         deliver(scoreObject, ReliableType.SCORE_OBJECT);
     }
 
+    /** C {@code Handle_timing}: BEHAVIOR: a TIMING with the player's next checkpoint and rounds. */
+    public void timing(int id, int check, int round) {
+        timing.id = id & 0xFFFF;
+        timing.check = check;
+        timing.round = round;
+        deliver(timing, ReliableType.TIMING);
+    }
+
     /** C {@code Handle_team_score}. */
     public void teamScore(int team, double value) {
         teamScore.team = team & 0xFF;
         teamScore.score = (float) value;
         deliver(teamScore, ReliableType.TEAM_SCORE);
+    }
+
+    /**
+     * The server's message of the day (C {@code Handle_motd}; C's autoServerMotdPopup opens its MOTD viewer).
+     * <p>
+     * BEHAVIOR: delivered as MOTD pieces (offset, total size, Latin-1 bytes; the text cut to
+     * {@link Msg.Motd#MAX_SIZE}), so the client opens the same MOTD panel as for the JXPilot server; an empty
+     * MOTD delivers nothing.
+     */
+    public void motd(CharSequence motdText) {
+        int total = Math.min(motdText.length(), Msg.Motd.MAX_SIZE);
+        int off = 0;
+        while (off < total) {
+            pay.clear();
+            int len = Math.min(total - off, pay.capacity() - 8);
+            pay.putInt(off).putInt(total);
+            for (int i = 0; i < len; i++) {
+                pay.put((byte) motdText.charAt(off + i));
+            }
+            pay.flip();
+            listener.onReliable(ReliableType.MOTD, pay);
+            off += len;
+        }
     }
 
     /** C {@code Handle_message}: BEHAVIOR: a server MESSAGE; talk vs game is decided by the text (MessageLog). */

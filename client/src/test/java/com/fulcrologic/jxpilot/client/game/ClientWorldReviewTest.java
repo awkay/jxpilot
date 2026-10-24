@@ -245,7 +245,7 @@ class ClientWorldReviewTest {
     @DisplayName("own ship exhaust")
     class OwnExhaust {
         @Test
-        @DisplayName("own sparks step at the render tick like every other particle (the own ship is drawn there)")
+        @DisplayName("own sparks step at the own ship's drawn tick (the present, F1); others at the render tick")
         void ownAtPresent() {
             WorldFixture f = new WorldFixture(true);
             Msg.PlayerJoin j = new Msg.PlayerJoin();
@@ -283,7 +283,7 @@ class ClientWorldReviewTest {
             assertAll(
                 () -> assertTrue(fOwnBlue, "the own afterburner (blue) sparks are own exhaust too"),
                 () -> assertTrue(fOwn > 0 && fOther > 0, "both ships sparked"),
-                () -> assertEquals(0, fOwnVisible, "own sparks of ticks 99-100 are not yet visible at render tick 96.8"),
+                () -> assertEquals(fOwn, fOwnVisible, "own sparks of ticks 99-100 are visible at the drawn tick 100"),
                 () -> assertEquals(0, fOtherVisible, "the other ship's are not yet at render tick 96.8"));
         }
 

@@ -158,6 +158,8 @@ public final class Server implements AutoCloseable {
      * BEHAVIOR: the map is {@code mapFileName} (from {@code --map} or the config file) as {@link MapLocator} resolves
      * it: a bundled map by name, else a file. Without one it is {@link MapLocator#DEFAULT_MAP} (C's default map,
      * cmdline.c {@code Conf_default_map()}).
+     * BEHAVIOR: unknown names in the password file are warned about without their values; an empty password is
+     * warned about.
      *
      * @throws IllegalArgumentException for two config files (unknown options are warnings)
      * @throws java.io.FileNotFoundException when the map is neither bundled nor a file (the message lists the
@@ -179,6 +181,16 @@ public final class Server implements AutoCloseable {
             } catch (IOException e) {
                 throw new IOException("cannot read password file " + passwordFile + " (" + e + ")", e);
             }
+            for (Options.Unknown u : opts.unknownOptions().values()) {
+                if (u.origin == OptionOrigin.PASSWORD) {
+                    opts.warn("Unknown option '" + u.name + "' in the password file " + passwordFile
+                        + " (its value is not shown).");
+                }
+            }
+        }
+        String password = opts.getString(Opt.PASSWORD);
+        if (password != null && password.isEmpty()) {
+            opts.warn("The password is empty: '/password' without an argument gives operator status (as C).");
         }
         String mapFile = opts.getString(Opt.MAP_FILE_NAME);
         MapLocator.resolve(mapFile == null ? MapLocator.DEFAULT_MAP : mapFile).parseInto(opts);
