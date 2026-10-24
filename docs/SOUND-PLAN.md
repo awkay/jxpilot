@@ -97,15 +97,24 @@ docs/PROTOCOL.md "Sounds".
 
   The gain is C's `MIN(volume, maxVolume)/100`. The server has already attenuated the volume by distance.
 - **Deviations from C:**
-  - Thrust: C replays `thrust` every frame. JXPilot plays a 2 s loop instead, and holds it for 2.5 game
-    frames after the last thrust event.
+  - Thrust: C replays `thrust` every frame. JXPilot plays a 2 s loop instead and holds it after the last
+    thrust event for max(2.5 game frames, 1.5 x the interval at which snapshots really arrive). That interval
+    is WELCOME's snapshot interval (snapshotDivisor) or, when longer, the smallest recent tick step (a C
+    server sends paused players every 4th frame and players out of the game every 2nd, frame.c).
   - Mute key: C has no mute key; JXPilot adds one.
   - Out of range: sounds outside the sensor range are not heard, and distances do not wrap, as C. On
     wrapping maps a nearby sound across the seam is silent, as C.
-- **Options:**
-  - `--sound` / `--no-sound` (C resource `sound`; default on);
-  - `--volume 0..255` (C `maxVolume`; default 100; 0 means no sound);
+- **Options:** C's sound resources are `sounds` (the sound file), `maxVolume` and `audioServer`; whether a
+  C client has sound at all is a build-time choice (SOUND).
+  - `--sound` / `--no-sound` (JXPilot only, standing in for C's build choice; default on);
+  - `--volume 0..255` (C `maxVolume`; 0 means no sound). Without it, `maxVolume` from the key file
+    (`~/.xpilotrc` or `--keys FILE`, C default.c) applies, else 100. `sounds` and `audioServer` are not
+    used (the clips are bundled; OpenAL picks the output);
   - the key `minus` (`ClientAction.TOGGLE_SOUND`, resource keyToggleSound; C leaves it unbound) mutes and unmutes, with a "Sound off." / "Sound on." message.
 - **No device:** without an audio device, if the OpenAL library cannot load, or if a clip cannot be read,
-  the client logs `no sound: <reason>` and plays silently. Against a C server, `PKT_REQUEST_AUDIO` is 1
-  only while sound is on.
+  the client logs `no sound: <reason>` and plays silently.
+- **C servers:** the client sends `PKT_REQUEST_AUDIO` once, with PKT_PLAY at `Net_start`: 1 when sound is
+  enabled at startup (a C client built with SOUND always sends 1), 0 with `--no-sound` or volume 0. The mute
+  key does not change it. Stock C builds have SOUND off, so most C servers send no `PKT_AUDIO`.
+- **START:** a player entering the game hears its own START too (C `Handle_login` plays it to everyone; the
+  newcomer's `PKT_REQUEST_AUDIO` in the same datagram then plays it to the newcomer).

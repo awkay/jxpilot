@@ -45,6 +45,7 @@ import static com.fulcrologic.jxpilot.server.sim.SimFixture.ready;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.sim;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Every C {@code sound_play_*} call site the Java server ports (saudio.c via {@link Sounds}): which event, at
@@ -164,15 +165,18 @@ class SoundSitesTest {
         }
 
         @Test
-        @DisplayName("leaving the world plays PLAYER_HIT_WALL at the ship (walls.c CrashUniverse)")
+        @DisplayName("leaving the world in the collision check plays nothing (collision.c PlayerCollision; the "
+            + "CrashUniverse sound is Player_crash's, see crashes())")
         void universe() {
             Simulation s = sim(FRAME, 20, 20, "__");
             Player a = ready(s, "A", 0, -5, 200);
             Player b = ready(s, "B", 0, 30, 200);
             quiet(a, b);
             CollisionsTest.check(s);
-            // 35 px: 100 - 100*35/525 = 93.3
-            assertEquals(List.of("PLAYER_HIT_WALL:93"), heard(b), "a ship 35 px away hears it at 93");
+            assertAll(
+                () -> assertTrue((a.status & Obj.KILLED) != 0, "(the ship left the world and is killed)"),
+                () -> assertEquals(List.of(), heard(b), "a ship 35 px away hears nothing"),
+                () -> assertEquals(List.of(), heard(a), "nor does the ship itself"));
         }
 
         @Test
@@ -302,7 +306,8 @@ class SoundSitesTest {
         }
 
         @Test
-        @DisplayName("a human joining plays START to the other humans; robots neither play nor hear it (netserver.c Handle_login)")
+        @DisplayName("a human joining plays START to every human, itself included; robots neither play nor hear it "
+            + "(netserver.c Handle_login, then Receive_audio_request's sound_player_onoff)")
         void start() {
             Simulation s = sim(FRAME, 20, 20, "___");
             Player a = TestWorlds.join(s, "A", 0);
@@ -311,7 +316,7 @@ class SoundSitesTest {
             Player b = TestWorlds.join(s, "B", 0);
             assertAll(
                 () -> assertEquals(List.of("START:100"), heard(a), "a player already in the game hears the human newcomer only"),
-                () -> assertEquals(List.of(), heard(b), "the newcomer does not hear its own start (no WANT_AUDIO yet in C)"),
+                () -> assertEquals(List.of("START:100"), heard(b), "the newcomer hears its own start at full volume"),
                 () -> assertEquals(List.of(), heard(r), "robots hear nothing"));
         }
 
