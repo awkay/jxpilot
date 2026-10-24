@@ -228,14 +228,10 @@ class AppAllocationTest {
         long worst = 0;
         boolean[] lockSeen = new boolean[2];
         for (int i = 0; i < 1500; i++) {
-            long rc0 = game.reliableCount();
-            int lock0 = game.world().selfLockId();
             long b0 = mx.getCurrentThreadAllocatedBytes();
             frame.run();
             long d = mx.getCurrentThreadAllocatedBytes() - b0;
             if (d > 0) {
-                System.out.println("DBGALLOC frame " + i + " bytes " + d + " reliable+" + (game.reliableCount() - rc0)
-                    + " lock " + lock0 + "->" + game.world().selfLockId());
                 allocatingFrames++;
                 worst = Math.max(worst, d);
             }
