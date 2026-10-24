@@ -76,6 +76,16 @@ public final class Simulation {
     public final Rounds rounds;
     /** Robot players (C {@code Robot_update}); off until {@link RobotManager#setEnabled enabled}. */
     public final RobotManager robots;
+    // ---- items (server-items)
+    public final Items items;
+    public final Tanks tanks;
+    public final Devices devices;
+    public final Mines mines;
+    public final Missiles missiles;
+    public final Lasers lasers;
+    public final Ecm ecm;
+    public final Locks locks;
+    public final CannonWeapons cannonWeapons;
 
     public Simulation(World world) {
         this.world = world;
@@ -90,9 +100,24 @@ public final class Simulation {
         this.cannons = new Cannons(world, this);
         this.keys = new Keys(world, this);
         this.rounds = new Rounds(world, this);
+        this.items = new Items(world, this);
+        this.tanks = new Tanks(world);
+        this.devices = new Devices(world, this);
+        this.mines = new Mines(world, this);
+        this.missiles = new Missiles(world, this);
+        this.lasers = new Lasers(world, this);
+        this.ecm = new Ecm(world, this);
+        this.locks = new Locks(world);
+        this.cannonWeapons = new CannonWeapons(world, this);
         com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder.initRecordClasses();
         Sounds.initClasses();
         this.robots = new RobotManager(world, this);
+        this.ecm.robotProgrammer = robots::program;
+        this.tanks.sim = this;
+        // load the item classes used only in rare branches now: the tick must not allocate when they first run
+        Items.warmSwitches();
+        Devices.warmSwitches();
+        ShotNames.warm();
     }
 
     /**
@@ -120,24 +145,36 @@ public final class Simulation {
             keys.apply(pl, input[pl.slot]);
         }
         robots.update();
+        tanks.play();
         autofire();
+        items.spawn();
         regenerateFuel();
         moveObjects();
+        ecm.update();
         cannons.update();
         for (int k = 0; k < w.numPlayers; k++) {
             ships.update(w.playerAt(k));
         }
         countDownWormholes();
+        devices.afterMove();
         w.grid.rebuild(w.objects);
+        mines.collide();
         if (w.roundDelay == 0) {
             collisions.check();
         }
+        lasers.collide();
         killPlayers();
         expireObjects();
         if (w.gameDuration >= 0 || w.params.maxRoundTime > 0) {
             rounds.computeGameStatus();
         }
         emitScores();
+        for (int k = 0; k < w.numPlayers; k++) {
+            Player pl = w.playerAt(k);
+            if (!pl.robot && !pl.tank) {
+                locks.hudLock(pl);
+            }
+        }
         w.frames++;
     }
 
@@ -172,7 +209,8 @@ public final class Simulation {
 
     /**
      * Object speed and movement (update.c:551-582, C {@code update_object_speed} in float):
-     * wreckage turns first ({@link Wreckage#rotate}), then {@code vel += acc + gravity} (gravity only with
+     * wreckage turns first ({@link Wreckage#rotate}), mines and missiles steer ({@link Mines#move},
+     * {@link Missiles#move}), then {@code vel += acc + gravity} (gravity only with
      * GRAVITY), then move.
      */
     void moveObjects() {
@@ -180,8 +218,13 @@ public final class Simulation {
         Objects o = w.objects;
         for (int k = 0; k < o.count(); k++) {
             int h = o.active[k];
-            if (o.type[h] == Obj.WRECKAGE) {
+            int type = o.type[h];
+            if (type == Obj.WRECKAGE) {
                 wreckage.rotate(h);
+            } else if ((type & Obj.MINE) != 0) {
+                mines.move(h);
+            } else if ((type & (Obj.SMART_SHOT | Obj.HEAT_SHOT | Obj.TORPEDO)) != 0) {
+                missiles.move(h);
             }
             if ((o.status[h] & Obj.GRAVITY) != 0) {
                 int bx = o.px[h] / Const.BLOCK_SZ;
@@ -218,7 +261,12 @@ public final class Simulation {
         World w = world;
         for (int k = w.numPlayers - 1; k >= 0; k--) {
             Player pl = w.playerAt(k);
+            if (pl.isAlive()) {
+                tanks.update(pl);
+            }
             if ((pl.status & Obj.KILLED) != 0) {
+                items.throwItems(pl);
+                items.detonate(pl);
                 ships.kill(pl);
                 if (!pl.inUse) {
                     continue; // a robot out of lives left the game (player.c:1951)
@@ -240,7 +288,7 @@ public final class Simulation {
     int humans() {
         int n = 0;
         for (int k = 0; k < world.numPlayers; k++) {
-            if (!world.playerAt(k).robot) {
+            if (!world.playerAt(k).robot && !world.playerAt(k).tank) {
                 n++;
             }
         }

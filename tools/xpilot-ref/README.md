@@ -36,6 +36,7 @@ untested.
 | `patches/0001-client-rename-getline.patch` | The only change needed to build. |
 | `patches/0002-server-physics-trace.patch` | Opt-in trace and seed hooks. Inert unless their environment variables are set. |
 | `patches/0003-server-wreckage-trace.patch` | Opt-in wreckage trace (`XPILOT_TRACE_WRECK`). Inert unless set. |
+| `patches/0004-server-object-trace.patch` | Opt-in object, laser pulse, ECM and player item trace. Inert unless `XPILOT_TRACE_OBJS` is set. |
 | `build.sh` | Builds image `xpilot-ref:4.5.5`. |
 | `server.sh` | Runs a headless server and prints its log. |
 | `screenshot.sh` | Runs server and client on Xvfb and saves one PNG. |
@@ -49,6 +50,8 @@ Environment variables used by all scripts:
 
 - `XPILOT_SRC`: the source tree, used only by `build.sh`.
 - `XPREF_IMAGE`: the image tag. Default `xpilot-ref:4.5.5`.
+- `XPREF_CNAME_PREFIX`: container name prefix. Default `xpilot-ref`. Lets
+  parallel users keep their containers apart, e.g. `server-items`.
 - `DOCKER`: the docker CLI. The default is `docker` on PATH, then
   `/Users/tonykay/.docker/bin/docker`.
 
@@ -139,7 +142,7 @@ relies on patch 0002.
 
 ```sh
 trace.sh --map NAME --out FILE.txt [--after S] [--keys "ACTIONS"] [--robots N]
-         [--all-players] [--seed N] [--png FILE.png] [--server-opt OPT]...
+         [--all-players] [--objs] [--seed N] [--png FILE.png] [--server-opt OPT]...
 
 tools/xpilot-ref/trace.sh --map default --seed 42 --after 1 \
     --keys "down:Shift_L sleep:1 up:Shift_L sleep:1" --out /tmp/thrust-trace.txt
@@ -175,6 +178,22 @@ tools/xpilot-ref/trace.sh --map default --seed 42 --after 1 \
 - `--seed N` sets `XPILOT_SEED`, which fixes the server's random number
   generator. With the same seed, robot names and start positions repeat.
   For example, seed 42 on default.xp always puts the ship at 4252,1452.
+
+`--objs` sets `XPILOT_TRACE_OBJS` and needs an image built with patch 0004
+(every image built from this directory has it). Each tick then also prints,
+after the XPTRACE lines: one `XPOBJ` line per object in `Obj[]` except
+sparks and debris, one `XPPULSE` line per laser pulse, one `XPECM` line per
+active ECM, and one `XPITEMS` line per traced player (items, used/have
+bits, fuel tanks, device timers, lock). The column lists are in the
+`*_HDR` lines at the top of the output and in
+`server/src/test/resources/ctrace/items/README.txt`.
+
+```sh
+XPREF_IMAGE=xpilot-ref:items tools/xpilot-ref/build.sh
+XPREF_IMAGE=xpilot-ref:items tools/xpilot-ref/trace.sh --objs --map default --seed 42 \
+    --after 1 --server-opt -initialMissiles --server-opt 4 \
+    --keys "sleep:0.5 down:quoteright sleep:0.15 up:quoteright sleep:2" --out /tmp/torp.txt
+```
 
 You can also run the server in raw mode with only robots and trace them:
 `server.sh --trace --seed 1 ...`.
@@ -259,6 +278,10 @@ GPL-2.0-or-later, and why.
    ```
 
    Images built before this patch lack it; rebuild with `build.sh`.
+4. `0004-server-object-trace.patch`, in `src/server/server.c` only, on top of
+   0003: adds `Trace_objects()`, called right after `Trace_wreckage()`. It
+   does nothing unless `XPILOT_TRACE_OBJS` is set; `XPILOT_TRACE_NAME`
+   filters the XPITEMS lines like the XPTRACE lines.
 
 ## Known quirks
 
@@ -306,8 +329,8 @@ GPL-2.0-or-later, and why.
 
 ## Safety conventions
 
-- Every container is named `xpilot-ref-<kind>-<pid>-<rand>` and runs with
-  `--rm`.
+- Every container is named `<prefix>-<kind>-<pid>-<rand>` (prefix
+  `$XPREF_CNAME_PREFIX`, default `xpilot-ref`) and runs with `--rm`.
 - There are two timeouts:
   - inside the container, `timeout` wraps the server or scenario;
   - on the host, a deadline stops that container by name and then kills
