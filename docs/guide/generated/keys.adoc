@@ -394,6 +394,10 @@
 |`+F1+`
 |Show or hide this key help (JXPilot). _XPilot's default: none._
 
+|`+keyToggleNetStats+`
+|`+Insert+`
+|Show or hide the network diagnostics line (JXPilot).
+
 |`+keyQuit+`
 |-
 |Quit the game (JXPilot).

@@ -76,6 +76,8 @@ public final class ClientConnection {
     public static final int MAX_RELIABLE_PER_FLUSH = 8;
     /** Number of DISCONNECT copies sent on quit (PROTOCOL.md). */
     public static final int DISCONNECT_COPIES = 3;
+    /** A PING for the round trip time goes out this often while PLAYING ({@link #netDiagnostics()}). */
+    public static final long PING_INTERVAL_NANOS = 1_000_000_000L;
 
     private static final long CONNECT_RESEND_NANOS = Protocol.CONNECT_RESEND_MS * 1_000_000L;
     private static final long TIMEOUT_NANOS = Protocol.TIMEOUT_MS * 1_000_000L;
@@ -94,6 +96,11 @@ public final class ClientConnection {
     private final Msg.Disconnect disconnectMsg = new Msg.Disconnect();
     private final Msg.Welcome welcome = new Msg.Welcome();
     private final Msg.Ping ping = new Msg.Ping();
+    /** Our own RTT probe, and the PONG that echoes it. */
+    private final Msg.Ping probe = new Msg.Ping();
+    private final NetDiagnostics diagnostics = new NetDiagnostics();
+    private boolean pingArmed;
+    private long nextPingAt;
     private final StringBuilder status = new StringBuilder(256);
     private final ReliableHandler rxHandler = this::onReliable;
 
@@ -214,6 +221,9 @@ public final class ClientConnection {
      */
     public PacketStats packetStats() { return stats; }
 
+    /** RTT, snapshot jitter and loss for the HUD's net diagnostics line. */
+    public NetDiagnostics netDiagnostics() { return diagnostics; }
+
     /**
      * The lobby dialogue while the state is {@link ConnectionState#LOBBY}, else null: the map list to show and
      * the way to choose one.
@@ -255,6 +265,7 @@ public final class ClientConnection {
         pendingAim = 0;
         ackedInputSeq = input.latestSeq();
         ioBackoff = false;
+        pingArmed = false;
     }
 
     /**
@@ -458,11 +469,29 @@ public final class ClientConnection {
      * <p>
      * BEHAVIOR: nothing is sent unless a session exists (JOINING or PLAYING), nor during the
      * transport-error pause.
+     * BEHAVIOR: while PLAYING a PING (id, send time) goes out {@link #PING_INTERVAL_NANOS} after the first PLAYING
+     * flush and every interval after that; its PONG is an RTT sample ({@link #netDiagnostics()}).
      */
     public void flush(long nowNanos) {
         now = nowNanos;
         if (state != ConnectionState.JOINING && state != ConnectionState.PLAYING || inIoBackoff(nowNanos)) {
             return;
+        }
+        if (state == ConnectionState.PLAYING) {
+            if (!pingArmed) {
+                pingArmed = true;
+                nextPingAt = nowNanos + PING_INTERVAL_NANOS;
+            } else if (nowNanos - nextPingAt >= 0) {
+                nextPingAt += PING_INTERVAL_NANOS;
+                if (nextPingAt - nowNanos <= 0) {
+                    nextPingAt = nowNanos + PING_INTERVAL_NANOS;
+                }
+                probe.id++;
+                probe.timeNanos = nowNanos;
+                begin(PacketType.PING);
+                probe.write(tx);
+                transmit();
+            }
         }
         for (int i = 0; i < MAX_RELIABLE_PER_FLUSH; i++) {
             begin(PacketType.RELIABLE);
@@ -522,13 +551,14 @@ public final class ClientConnection {
             }
             case PacketType.SNAPSHOT -> onSnapshot(in);
             case PacketType.PING -> onPing(in);
+            case PacketType.PONG -> onPong(in);
             case PacketType.DISCONNECT -> onDisconnect(in);
             case PacketType.ACCEPT -> {
                 if (state == ConnectionState.JOINING) {
                     proveSession();
                 }
             }
-            default -> { } // ACK, PONG: header already processed
+            default -> { } // ACK: header already processed
         }
     }
 
@@ -638,6 +668,22 @@ public final class ClientConnection {
         transmit();
     }
 
+    /**
+     * BEHAVIOR: a PONG echoing our newest PING (its id) is an RTT sample of now minus its send time; a PONG of an
+     * older or unknown PING is ignored; a body shorter than {@link #PING_SIZE} counts as malformed.
+     */
+    private void onPong(ByteBuffer in) {
+        if (in.remaining() < PING_SIZE) {
+            malformed++;
+            return;
+        }
+        int id = in.getInt(in.position());
+        long sent = in.getLong(in.position() + 4);
+        if (id == probe.id && sent == probe.timeNanos) {
+            diagnostics.rttSample(now - sent);
+        }
+    }
+
     private void onSnapshot(ByteBuffer in) {
         if (state != ConnectionState.PLAYING) {
             return;
@@ -651,6 +697,7 @@ public final class ClientConnection {
             int drawn = latestTick / slotTicks;
             latestTick = tick;
             haveTick = true;
+            diagnostics.snapshot(tick, now);
             stats.measure(tick / slotTicks, PacketStats.DRAW);
             stats.frameSize(in.limit());
             if (in.remaining() >= 8) {
@@ -703,6 +750,7 @@ public final class ClientConnection {
         int snapHz = welcome.snapshotHz > 0 ? welcome.snapshotHz : simHz;
         slotTicks = Math.max(1, simHz / snapHz);
         stats.reset(Math.max(1, simHz / slotTicks));
+        diagnostics.reset(simHz, slotTicks);
         try {
             config = new ConfigTransfer.Receiver(welcome);
         } catch (RuntimeException e) {

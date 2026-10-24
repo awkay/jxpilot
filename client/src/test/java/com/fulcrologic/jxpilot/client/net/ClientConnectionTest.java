@@ -564,6 +564,70 @@ class ClientConnectionTest {
         }
 
         @Test
+        @DisplayName("our PING goes out 1 s after the first PLAYING flush and every second; a matching PONG is an RTT sample")
+        void rttProbe() {
+            playing(0);
+            c.flush(0); // arms the probe
+            c.flush(999 * MS);
+            boolean early = t.types().contains(PacketType.PING);
+            c.flush(1000 * MS);
+            ByteBuffer p = t.last();
+            PacketHeader h = new PacketHeader();
+            h.read(p);
+            int id = p.getInt();
+            long sentAt = p.getLong();
+            int pings = (int) t.types().stream().filter(x -> x == PacketType.PING).count();
+            t.in.add(pkt(PacketType.PONG, SESSION, 0, b -> b.putInt(id).putLong(sentAt)));
+            c.update(1180 * MS);
+            double rtt = c.netDiagnostics().rttMs();
+            c.flush(1500 * MS);
+            int stillOne = (int) t.types().stream().filter(x -> x == PacketType.PING).count();
+            c.flush(2000 * MS);
+            int two = (int) t.types().stream().filter(x -> x == PacketType.PING).count();
+            assertAll(
+                () -> assertFalse(early, "no PING before 1 s"),
+                () -> assertEquals(PacketType.PING, h.type(), "a PING at 1 s"),
+                () -> assertEquals(1, pings, "one"),
+                () -> assertEquals(1000 * MS, sentAt, "carrying its send time"),
+                () -> assertEquals(180, rtt, 1e-9, "the PONG 180 ms later is a 180 ms RTT"),
+                () -> assertEquals(1, stillOne, "none at 1.5 s"),
+                () -> assertEquals(2, two, "the next at 2 s"));
+        }
+
+        @Test
+        @DisplayName("a PONG of an older PING, a forged time or a short body is no RTT sample (short: malformed)")
+        void stalePong() {
+            playing(0);
+            c.flush(0);
+            c.flush(1000 * MS);
+            ByteBuffer p = t.last();
+            new PacketHeader().read(p);
+            int id = p.getInt();
+            long sentAt = p.getLong();
+            t.in.add(pkt(PacketType.PONG, SESSION, 0, b -> b.putInt(id - 1).putLong(sentAt)));
+            t.in.add(pkt(PacketType.PONG, SESSION, 0, b -> b.putInt(id).putLong(sentAt - 5 * MS)));
+            t.in.add(pkt(PacketType.PONG, SESSION, 0, b -> b.putInt(id)));
+            long bad = c.malformed();
+            c.update(1100 * MS);
+            assertAll(
+                () -> assertTrue(Double.isNaN(c.netDiagnostics().rttMs()), "no sample from an older id or another time"),
+                () -> assertEquals(bad + 1, c.malformed(), "the 4-byte body is malformed"));
+        }
+
+        @Test
+        @DisplayName("snapshots feed the diagnostics; WELCOME sets their tick length")
+        void snapshotDiagnostics() {
+            playing(0);
+            NetDiagnostics d = c.netDiagnostics();
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(10)));
+            c.update(100 * MS);
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(11)));
+            c.update(100 * MS + 1_000_000_000L / 60 + 4 * MS);
+            // tolerance: 1e9/60 is not a whole number of nanoseconds
+            assertEquals(4, d.jitterMs(), 1e-5, "one tick (1/60 s, the WELCOME's simHz) late by 4 ms: jitter 4 ms");
+        }
+
+        @Test
         @DisplayName("a server DISCONNECT closes with its text")
         void serverDisconnect() {
             playing(0);

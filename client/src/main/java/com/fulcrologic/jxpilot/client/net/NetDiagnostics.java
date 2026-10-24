@@ -1,0 +1,157 @@
+/*
+ * JXPilot, a Java reimplementation of XPilot, a multiplayer gravity war game.
+ * Copyright (C) 2026 Tony Kay and the JXPilot contributors.
+ *
+ * Derived from XPilot 4.5.5, Copyright (C) 1991-2002 by Bjørn Stabell,
+ * Ken Ronny Schouten, Bert Gijsbers and Dick Balaska. JXPilot is an
+ * independent derivative port: the original XPilot authors were not involved
+ * in it and do not endorse it. Ported to Java and modified starting in 2026;
+ * see the git history for the changes.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ */
+package com.fulcrologic.jxpilot.client.net;
+
+/**
+ * Live network measurements for the HUD's net diagnostics line (docs/latency-fixes.md §7.6): round trip time
+ * from PING/PONG, snapshot inter-arrival jitter and snapshot loss, plus the fields the phase 1 predictor will fill
+ * (input lead, input slack, corrections), NaN until then. Fed by {@link ClientConnection}; pure and allocation
+ * free (time is a parameter).
+ */
+public final class NetDiagnostics {
+    /** Weight of a new RTT sample in the smoothed RTT (RFC 6298's alpha). */
+    public static final double RTT_GAIN = 1 / 8.0;
+    /** Weight of a new transit-time difference in the jitter estimate (RFC 3550 §6.4.1). */
+    public static final double JITTER_GAIN = 1 / 16.0;
+    /** Snapshot intervals per loss window (2 s at 14 Hz). */
+    public static final int LOSS_WINDOW = 28;
+    /** A tick jump of more than this many windows restarts the loss window without a reading (server reset). */
+    public static final int LOSS_RESTART_WINDOWS = 4;
+    /** RTT samples outside [0, this) are ignored (a stale or forged PONG). */
+    public static final long MAX_RTT_NANOS = 10_000_000_000L;
+
+    private double srttNanos = Double.NaN;
+    private long lastRttNanos = -1;
+    private double tickNanos = 1e9 / 60;
+    private int divisor = 1;
+    private boolean haveSnapshot;
+    private int lastTick;
+    private long lastArrival;
+    private double jitterNanos = Double.NaN;
+    private int windowStart;
+    private int windowReceived;
+    private double lossPercent = Double.NaN;
+
+    /** Input lead of the predicted clock in ticks (phase 1b/1c); NaN until something measures it. */
+    public double leadTicks = Double.NaN;
+    /** The server's input slack report in ticks (phase 1b); NaN until then. */
+    public double inputSlackTicks = Double.NaN;
+    /** Prediction corrections per second (phase 1c); NaN until then. */
+    public double correctionsPerSecond = Double.NaN;
+    /** Size of the last prediction correction in pixels (phase 1c); NaN until then. */
+    public double lastCorrectionPx = Double.NaN;
+
+    /**
+     * A new game's timing (from WELCOME).
+     * <p>
+     * BEHAVIOR: forgets the snapshot jitter and loss (the RTT survives: same path); ticks last 1/simHz s and a
+     * snapshot comes every {@code snapshotDivisor} ticks (both at least 1).
+     */
+    public void reset(int simHz, int snapshotDivisor) {
+        tickNanos = 1e9 / Math.max(1, simHz);
+        divisor = Math.max(1, snapshotDivisor);
+        haveSnapshot = false;
+        jitterNanos = Double.NaN;
+        lossPercent = Double.NaN;
+    }
+
+    /**
+     * A PONG came back {@code nanos} after its PING.
+     * <p>
+     * BEHAVIOR: the first sample sets the smoothed RTT, later ones move it by {@link #RTT_GAIN} of the difference;
+     * samples below 0 or from {@link #MAX_RTT_NANOS} up are ignored.
+     */
+    public void rttSample(long nanos) {
+        if (nanos < 0 || nanos >= MAX_RTT_NANOS) {
+            return;
+        }
+        lastRttNanos = nanos;
+        srttNanos = Double.isNaN(srttNanos) ? nanos : srttNanos + RTT_GAIN * (nanos - srttNanos);
+    }
+
+    /**
+     * A snapshot for {@code tick}, newer than every one before it, arrived at {@code nowNanos}.
+     * <p>
+     * BEHAVIOR: jitter (RFC 3550): D = (arrival gap) - (tick gap) * tick length; J moves by
+     * {@link #JITTER_GAIN} of (|D| - J), starting at |D| on the second snapshot.
+     * BEHAVIOR: loss: the first snapshot opens a window; each later one counts as received; once the window spans
+     * {@link #LOSS_WINDOW} snapshot intervals the loss reading is 100 * (1 - received / expected), expected being
+     * the intervals spanned (each received snapshot is a distinct newer tick, so at most expected), and the next
+     * window starts at this snapshot. A jump of more than
+     * {@link #LOSS_RESTART_WINDOWS} windows restarts the window with no reading.
+     * BEHAVIOR: a tick not newer than the previous one changes nothing.
+     */
+    public void snapshot(int tick, long nowNanos) {
+        if (!haveSnapshot) {
+            haveSnapshot = true;
+            lastTick = tick;
+            lastArrival = nowNanos;
+            windowStart = tick;
+            windowReceived = 0;
+            return;
+        }
+        int ticks = tick - lastTick;
+        if (ticks <= 0) {
+            return;
+        }
+        double d = Math.abs((nowNanos - lastArrival) - ticks * tickNanos);
+        jitterNanos = Double.isNaN(jitterNanos) ? d : jitterNanos + JITTER_GAIN * (d - jitterNanos);
+        lastTick = tick;
+        lastArrival = nowNanos;
+        int span = tick - windowStart;
+        int window = LOSS_WINDOW * divisor;
+        if (span > LOSS_RESTART_WINDOWS * window) {
+            windowStart = tick;
+            windowReceived = 0;
+            return;
+        }
+        windowReceived++;
+        if (span >= window) {
+            double expected = span / (double) divisor;
+            lossPercent = 100 * (1 - windowReceived / expected);
+            windowStart = tick;
+            windowReceived = 0;
+        }
+    }
+
+    /** Smoothed round trip time in milliseconds, NaN before the first PONG. */
+    public double rttMs() {
+        return srttNanos / 1e6;
+    }
+
+    /** The newest RTT sample in milliseconds, NaN before the first PONG. */
+    public double lastRttMs() {
+        return lastRttNanos < 0 ? Double.NaN : lastRttNanos / 1e6;
+    }
+
+    /** Snapshot inter-arrival jitter in milliseconds, NaN before two snapshots. */
+    public double jitterMs() {
+        return jitterNanos / 1e6;
+    }
+
+    /** Snapshot loss of the last full window in percent, NaN before one. */
+    public double lossPercent() {
+        return lossPercent;
+    }
+}

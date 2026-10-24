@@ -214,6 +214,9 @@ class AppAllocationTest {
         // client-play: pointer control on (keyPointerControl), so pointer movement and buttons run every frame
         cf.key(GLFW_KEY_KP_ENTER, GLFW_PRESS, 0, now);
         cf.key(GLFW_KEY_KP_ENTER, GLFW_RELEASE, 0, now);
+        // the net diagnostics line (keyToggleNetStats) is laid out every frame
+        cf.key(GLFW_KEY_INSERT, GLFW_PRESS, 0, now);
+        cf.key(GLFW_KEY_INSERT, GLFW_RELEASE, 0, now);
         long[] t = {now};
         Runnable frame = () -> {
             t[0] += frameNs;
@@ -282,6 +285,8 @@ class AppAllocationTest {
             () -> assertTrue(cf.viewHud().textCount() > 3, "HUD built"),
             () -> assertTrue(cf.panelHud().textCount() >= 5, "score list built"),
             () -> assertTrue(ClientFrameLookTest.find(cf.viewHud(), "Lag") != null, "packet meters drawn while measured"),
+            () -> assertTrue(ClientFrameLookTest.find(cf.viewHud(), "rtt .* interp .*") != null,
+                "the net diagnostics line drawn while measured"),
             () -> assertTrue(ClientFrameLookTest.find(cf.panelHud(), "\\d\\d:\\d\\d") != null, "clock drawn"),
             () -> assertTrue(conn.packetStats().size() > 0, "frame sizes measured"),
             () -> assertTrue(lockSeen[0] && lockSeen[1], "R7: the lock target changed while measured"),

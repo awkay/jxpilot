@@ -154,6 +154,14 @@ public interface GameConnection extends AutoCloseable {
         return com.fulcrologic.jxpilot.client.net.PacketStats.NONE;
     }
 
+    /**
+     * The JXPilot connection's RTT, snapshot jitter and loss for the HUD's net diagnostics line; null for a
+     * connection that does not measure them (the XPilot-protocol one), which the line shows as unknown.
+     */
+    default com.fulcrologic.jxpilot.client.net.NetDiagnostics netDiagnostics() {
+        return null;
+    }
+
     /** Release sockets (after {@link #disconnect}). */
     @Override
     void close();

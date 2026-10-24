@@ -578,6 +578,34 @@ class ClientFrameTest {
         }
 
         @Test
+        @DisplayName("Insert toggles the net diagnostics line in the view HUD (unknown values without a JXPilot connection)")
+        void netStats() {
+            AppFixture f = new AppFixture(true).players();
+            f.game.onStateChange(ConnectionState.PLAYING, "Playing");
+            ClientFrame cf = frame(f);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            long before = netLines(cf);
+            cf.key(GLFW_KEY_INSERT, GLFW_PRESS, 0, T0);
+            cf.step(T0 + 1000, 800, 600, 1, M, 256, 100);
+            long shown = netLines(cf);
+            String line = cf.netStats().text().toString();
+            cf.key(GLFW_KEY_INSERT, GLFW_RELEASE, 0, T0);
+            cf.key(GLFW_KEY_INSERT, GLFW_PRESS, 0, T0);
+            cf.step(T0 + 2000, 800, 600, 1, M, 256, 100);
+            assertAll(
+                () -> assertEquals(0, before, "hidden at first"),
+                () -> assertEquals(1, shown, "shown after Insert"),
+                () -> assertTrue(line.startsWith("rtt -  interp "), "no RTT from a connection that does not measure it: "
+                    + line),
+                () -> assertEquals(0, netLines(cf), "Insert again hides it"));
+        }
+
+        static long netLines(ClientFrame cf) {
+            return java.util.stream.IntStream.range(0, cf.viewHud().textCount())
+                .filter(i -> cf.viewHud().text(i).toString().startsWith("rtt ")).count();
+        }
+
+        @Test
         @DisplayName("with keyHelp unbound there is no hint and the key does nothing")
         void noHelpKey() {
             AppFixture f = new AppFixture(true).players();

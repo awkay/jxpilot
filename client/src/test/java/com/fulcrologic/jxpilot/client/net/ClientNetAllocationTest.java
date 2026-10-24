@@ -232,6 +232,8 @@ class ClientNetAllocationTest {
             () -> assertEquals(ConnectionState.PLAYING, sim.connection().state(), "still playing"),
             () -> assertTrue(sim.connection().snapshotsReceived() > total / 2 - 100, "snapshots flowed"),
             () -> assertTrue(server.inputPackets > 0, "INPUT reached the server"),
+            () -> assertTrue(server.pongs > 10, "RTT probes went out and came back while measured: " + server.pongs),
+            () -> assertTrue(sim.connection().netDiagnostics().rttMs() >= 0, "an RTT was measured"),
             () -> assertTrue(sim.game().world().particles().count() > 0, "particles alive"),
             () -> assertTrue(sim.game().messages().talkCount() > 0, "chat arrived"),
             () -> assertTrue(hudFrame.textCount() > 3, "HUD built"),
