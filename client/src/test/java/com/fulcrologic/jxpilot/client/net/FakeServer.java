@@ -354,6 +354,10 @@ public final class FakeServer {
             Records.PredictKeys.put(writer, predictBody);
             writer.endSection();
         }
+        writer.beginSection(Section.OWN_SHOTS);
+        Records.OwnShot.put(writer, 200, 150, 2, 0);
+        Records.OwnShot.put(writer, 210, 150, 2, 1);
+        writer.endSection();
         writer.beginSection(Section.SHIP);
         Records.Ship.put(writer, OTHER_ID, otherThrusting ? Records.ShipFlags.THRUSTING : 0, otherX, otherY, 0,
             otherVx, 0);

@@ -4,8 +4,8 @@ Our own UDP protocol (no XPilot client compatibility). All code lives in
 `com.fulcrologic.jxpilot.common.net`; everything below has an allocation-free codec there.
 
 Version 2 (`Protocol.VERSION`, latency phase 1b, docs/latency-fixes.md §4.3/§4.4) tags every input with the
-tick it is for, adds the input slack and starvation to the snapshot header, the owner's PREDICT sections and
-the kernel world transfer (KERNEL_CONFIG, KERNEL_CHUNK, KERNEL_STATE). A version 1 peer's CONNECT gets
+tick it is for, adds the input slack and starvation to the snapshot header, the owner's PREDICT and OWN_SHOTS
+sections and the kernel world transfer (KERNEL_CONFIG, KERNEL_CHUNK, KERNEL_STATE). A version 1 peer's CONNECT gets
 REJECT VERSION ("incompatible version"). The C-server path (`client.xp`, the XPilot protocol) is untouched.
 
 - Byte order: big-endian (Java `ByteBuffer` default).
@@ -285,7 +285,7 @@ u16 viewY`.
 one C frame, whose result the snapshot shows: the number the network layer passed to `GameHost.tick(T)`
 and on to the simulation, so bursts' `age` and thrust-spark seeds use the same numbers. Parts are numbered
 0..63; the client treats a higher part as malformed. If a tick does not fit one datagram it is split into
-self-contained parts. Sections are written SELF, PREDICT, PREDICT_RARE, PREDICT_KEYS, SOUND, SHIP, CANNON, FUEL, TARGET, TREASURE, TEMP_WORMHOLE, RADAR, the item sections (TIMERS first), BURST, WRECKAGE, BALL/ASTEROID/CONNECTOR, then SHOT, which fills
+self-contained parts. Sections are written SELF, PREDICT, PREDICT_RARE, PREDICT_KEYS, SOUND, SHIP, CANNON, FUEL, TARGET, TREASURE, TEMP_WORMHOLE, RADAR, the item sections (TIMERS first), BURST, WRECKAGE, BALL/ASTEROID/CONNECTOR, OWN_SHOTS (owner only), then SHOT, which fills
 the remaining room nearest first; a record that does not fit drops only itself, smaller records of later
 sections are still sent.
 
@@ -464,6 +464,22 @@ the hull (it comes with PLAYER_JOIN). The canonical encoding (core + rare + keys
 (`ByteBuffer.mismatch`); a round trip through the real net path is bit-equal every tick
 (`PredictRoundTripTest`).
 
+### OWN_SHOTS (section 26, owner only)
+
+The receiving player's own bullets in view, for the own-shot predictor (latency-fixes.md §4.7), with PREDICT
+(not while watching another player), written just before SHOT: per bullet 6 bytes, `i16 relX, i16 relY`
+(view-relative half pixels, as SHOT), `u8 age` (snapshot tick minus the net tick it was fired in, saturating
+at 255), `u8 ordinal` (its index among the ship's bullets fired in that tick, 0, 1, 2 ... in ShipShooter order:
+main gun, wide-angle shots left/right, rear shots). The server tags every bullet a ship fires
+(`Shots.playerShot`: the pooled object's `spawnTick`/`shotOrdinal`); cannon shots, cluster fragments and other
+objects are untagged and never listed. A provisional client shot keyed (tick, ordinal) is confirmed by the
+entry with the same key.
+
+Own bullets also stay in the anonymous SHOT section: SHOT carries the velocity and colour the client draws
+and extrapolates with, and the 1b client draws own bullets from it; the predictor (1c) skips them by
+association with OWN_SHOTS. Excluding them would make OWN_SHOTS a full SHOT record plus the key and move the
+drawing of own bullets to the predictor in the same step.
+
 ### Size budget (asserted in `SnapshotTest.WireSize`, sizes include the 8-byte packet header)
 
 | scene | bytes | datagrams |
@@ -475,6 +491,8 @@ the hull (it comes with PLAYER_JOIN). The canonical encoding (core + rare + keys
 
 The owner's snapshot adds PREDICT (5 + 77 = 82 bytes): typical **502**, fight **1478**; PREDICT_RARE adds
 68 bytes in the snapshots that carry it (typical 570) and PREDICT_KEYS 21 when the key masks differ.
+OWN_SHOTS adds 5 + 6 bytes per own bullet in view: typical with 10 of the 30 bullets the owner's **567**,
+the fight with 50 own bullets **1783**.
 
 At 30 Hz the fight is ≈ 330 kbit/s per client (at the default 14 Hz tick rate ≈ 155 kbit/s). The original per-particle layout needed ~4.7 KB per snapshot.
 

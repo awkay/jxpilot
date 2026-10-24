@@ -763,11 +763,12 @@ public final class ClientConnection {
                     diagnostics.inputSlackTicks = slack / 16.0;
                 }
                 clock.feedback(tick, slack, starved, diagnostics.jitterMs() * 1e6, now);
-                if ((in.get(p + 9) & 0xFF) == 0) {
-                    kernel.onSnapshot(in, input);
-                }
+                kernel.onSnapshot(in, input);
             }
         } else {
+            if (tick == latestTick && in.remaining() >= SnapshotWriter.HEADER_SIZE) {
+                kernel.onSnapshot(in, input); // another part of the newest tick: its OWN_SHOTS
+            }
             stats.measure(tick / slotTicks, PacketStats.DROP);
             if (tick - latestTick < 0) {
                 diagnostics.lateSnapshot(tick); // an older tick; the same tick again is just another part
@@ -845,7 +846,7 @@ public final class ClientConnection {
             return;
         }
         config = null;
-        kernel.onConfig(opts);
+        kernel.onConfig(opts, map);
         listener.onConfig(welcome, opts, map);
         settings.send(channel);
         display.send(channel);

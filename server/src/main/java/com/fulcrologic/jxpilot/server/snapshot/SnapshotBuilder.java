@@ -170,6 +170,8 @@ public final class SnapshotBuilder {
     }
 
     private boolean predict;
+    /** This build writes OWN_SHOTS (set with the PREDICT sections). */
+    private boolean ownShots;
     private long predictKeys;
     private int predictVersion;
     private boolean predictRare;
@@ -267,6 +269,7 @@ public final class SnapshotBuilder {
         writeBursts(burstFrom);
         writeWreckage();
         writeModeObjects();
+        writeOwnShots(viewer);
         writeShots(viewer);
         closeSection();
         int count = part + 1;
@@ -428,6 +431,7 @@ public final class SnapshotBuilder {
      * {@link #build} needs its own {@link #setPredict}: it is switched off after use.
      */
     private void writePredict(Player v) {
+        ownShots = predict;
         if (!predict) {
             return;
         }
@@ -541,6 +545,29 @@ public final class SnapshotBuilder {
     }
 
     /** Shots in view, nearest cells first, up to the room left; then grouped by variant. */
+    /**
+     * BEHAVIOR: with the PREDICT sections, the viewer's own bullets in view (those tagged with a spawn tick and
+     * ordinal, {@code Shots.playerShot}) as OWN_SHOTS: position as SHOT, age = this tick minus the spawn tick, the
+     * ordinal; in object order. They stay in SHOT as well (the 1b client draws them from there).
+     */
+    private void writeOwnShots(Player v) {
+        if (!ownShots) {
+            return;
+        }
+        Objects o = w.objects;
+        for (int k = 0; k < o.count(); k++) {
+            int h = o.active[k];
+            if (o.type[h] != Obj.SHOT || o.owner[h] != v.id || o.shotOrdinal[h] < 0) {
+                continue;
+            }
+            double x = o.cx[h] / (double) Click.CLICK;
+            double y = o.cy[h] / (double) Click.CLICK;
+            if (visible(x, y, 0) && need(Section.OWN_SHOTS, 0)) {
+                Records.OwnShot.put(wr, x, y, tick - o.spawnTick[h], o.shotOrdinal[h]);
+            }
+        }
+    }
+
     private void writeShots(Player v) {
         int cap = shotRoom();
         ShotHash hs = hash;

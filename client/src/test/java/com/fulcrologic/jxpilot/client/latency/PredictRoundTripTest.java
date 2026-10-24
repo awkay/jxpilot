@@ -45,7 +45,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * ClientConnection and {@link KernelSync}): after every tick of a scripted flight on globe.xp with no other ship
  * (no robots: nothing the kernel does not model; it does graze the map's walls under gravity, which the kernel
  * models), the ship the client decodes is bit-equal ({@link ShipBody#sameState}) to the server's player after that
- * tick, and the frame clock matches.
+ * tick, and the frame clock matches. OWN_SHOTS too: every decoded own bullet is one of the server's own bullets
+ * after that tick, with its spawn tick, ordinal and position (to the half pixel), and every own bullet within
+ * 300 px of the ship is in the list.
  */
 @DisplayName("PREDICT round trip")
 class PredictRoundTripTest {
@@ -55,20 +57,24 @@ class PredictRoundTripTest {
     static final long LEFT = ControlKey.TURN_LEFT.mask();
     static final long RIGHT = ControlKey.TURN_RIGHT.mask();
     static final long FIRE = ControlKey.FIRE_SHOT.mask();
+    static final long SHIELD = ControlKey.SHIELD.mask();
 
-    /** Thrust, turns both ways, a few shots, coasting: keys change every few ticks for 4 s after the spawn. */
+    /** Thrust, turns both ways and firing in four of six phases: keys change every few ticks for 4 s after the spawn. */
     static long keys(long sinceSpawn) {
         long ms = sinceSpawn / MS;
+        if (ms >= 100 && ms < 200) {
+            return SHIELD; // pressed and released: the ship starts with its shield up (C DEF_USED) and cannot fire
+        }
         if (ms < 300 || ms > 4300) {
             return 0;
         }
         long phase = (ms / 230) % 6;
         return switch ((int) phase) {
-            case 0 -> THRUST;
+            case 0 -> THRUST | FIRE;
             case 1 -> THRUST | LEFT;
-            case 2 -> LEFT;
+            case 2 -> LEFT | FIRE;
             case 3 -> RIGHT | FIRE;
-            case 4 -> 0;
+            case 4 -> FIRE;
             default -> THRUST | RIGHT;
         };
     }
@@ -87,6 +93,8 @@ class PredictRoundTripTest {
         long[] truthFrames = new long[ring];
         int[] truthTick = new int[ring];
         ByteBuffer enc = ByteBuffer.allocate(ShipBody.WIRE_SIZE);
+        @SuppressWarnings("unchecked")
+        List<double[]>[] shots = new List[ring];
         long touches0 = rig.server.world().byId(id).lastWallTouch;
         rig.onTick = (r, t) -> {
             int tick = r.server.net.currentTick();
@@ -99,10 +107,24 @@ class PredictRoundTripTest {
             truth[slot] = enc.array().clone();
             truthFrames[slot] = r.server.world().frames;
             truthTick[slot] = tick;
+            List<double[]> own = new ArrayList<>();
+            com.fulcrologic.jxpilot.server.world.Objects o = r.server.world().objects;
+            for (int k = 0; k < o.count(); k++) {
+                int h = o.active[k];
+                if (o.type[h] == com.fulcrologic.jxpilot.common.sim.Obj.SHOT && o.owner[h] == id && o.shotOrdinal[h] >= 0) {
+                    double dx = r.server.world().wrapDx(o.cx[h] / 64.0 - p.cx / 64.0);
+                    double dy = r.server.world().wrapDy(o.cy[h] / 64.0 - p.cy / 64.0);
+                    own.add(new double[] {o.spawnTick[h], o.shotOrdinal[h], o.cx[h] / 64.0, o.cy[h] / 64.0,
+                        Math.hypot(dx, dy)});
+                }
+            }
+            shots[slot] = own;
         };
         int[] compared = {0};
         int[] last = {-1};
         List<String> mismatches = new ArrayList<>();
+        List<String> shotMismatches = new ArrayList<>();
+        int[] ownSeen = {0};
         ByteBuffer mine = ByteBuffer.allocate(ShipBody.WIRE_SIZE);
         rig.setKeys(t -> keys(t - spawn));
         rig.onFrame = (r, t) -> {
@@ -117,6 +139,33 @@ class PredictRoundTripTest {
             }
             k.body().encode(mine, 0, truthFrames[slot]);
             compared[0]++;
+            if (k.shotsTick() == k.tick()) {
+                List<double[]> own = shots[slot];
+                int near = 0;
+                for (double[] sh : own) {
+                    near += sh[4] < 300 ? 1 : 0;
+                }
+                int matched = 0;
+                for (int i = 0; i < k.ownShots(); i++) {
+                    boolean found = false;
+                    for (double[] sh : own) {
+                        double ex = r.server.world().wrapDx(k.shotX(i) - sh[2]);
+                        double ey = r.server.world().wrapDy(k.shotY(i) - sh[3]);
+                        if (sh[0] == k.shotSpawnTick(i) && sh[1] == k.shotOrdinal(i) && Math.abs(ex) <= 0.5
+                            && Math.abs(ey) <= 0.5) {
+                            found = true;
+                            matched += sh[4] < 300 ? 1 : 0;
+                        }
+                    }
+                    if (!found && shotMismatches.size() < 5) {
+                        shotMismatches.add("tick " + k.tick() + " shot " + k.shotSpawnTick(i) + ":" + k.shotOrdinal(i));
+                    }
+                }
+                ownSeen[0] += k.ownShots();
+                if (matched < near && shotMismatches.size() < 5) {
+                    shotMismatches.add("tick " + k.tick() + ": " + near + " own shots near the ship, " + matched + " sent");
+                }
+            }
             if (mine.mismatch(ByteBuffer.wrap(truth[slot])) >= 0 || k.frames() != truthFrames[slot]) {
                 if (mismatches.size() < 5) {
                     mismatches.add("tick " + k.tick() + " byte " + mine.mismatch(ByteBuffer.wrap(truth[slot]))
@@ -127,9 +176,12 @@ class PredictRoundTripTest {
         rig.runUntil(spawn + 5 * SEC);
         Player p = rig.server.world().byId(id);
         int n = compared[0];
+        System.out.printf("[predict round trip] %d ticks compared, %d own shots decoded%n", n, ownSeen[0]);
         assertAll(
             () -> assertTrue(n > 60, "most ticks of 5 s at 14 Hz were compared (" + n + ")"),
             () -> assertEquals(List.of(), mismatches, "every decoded PREDICT is the server's state"),
+            () -> assertEquals(List.of(), shotMismatches, "every decoded own shot is the server's, and none near is missing"),
+            () -> assertTrue(ownSeen[0] > 20, "own shots were decoded (" + ownSeen[0] + " in all)"),
             () -> assertEquals(1, rig.server.world().numPlayers, "no other ship"),
             () -> assertTrue(p.lastWallTouch > touches0, "the flight touched a wall too (frame " + p.lastWallTouch + ")"),
             () -> assertTrue(rig.client.connection().kernel().predicts() >= n, "PREDICTs arrived"));

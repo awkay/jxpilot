@@ -127,12 +127,24 @@ public final class Shots {
      * with mass shotMass, life shotLife, GRAVITY with shotsGravity, the player's id and team.
      * <p>
      * BEHAVIOR: as {@link #spawn}; returns the handle, or -1 outside a flat world.
+     * BEHAVIOR: the shot is tagged with the net tick and its ordinal: 0 for the ship's first bullet of the tick, then
+     * 1, 2, ... in firing order (one outside a flat world still takes its ordinal, as the kernel fired it).
      */
     int playerShot(Player pl, float x, float y, int dir, float vx, float vy, boolean outside) {
         Params p = w.params;
         Sounds.play(w, pl.px, pl.py, SoundEvent.FIRE_SHOT);
         int status = p.shotsGravity ? Obj.GRAVITY : 0;
-        return spawn(pl.id, pl.team, x, y, Obj.SHOT, dir, 0, p.shotLife, p.shotMass, status, outside, vx, vy);
+        if (pl.shotOrdinalTick != w.tick) {
+            pl.shotOrdinalTick = w.tick;
+            pl.shotOrdinal = 0;
+        }
+        int ordinal = pl.shotOrdinal++;
+        int h = spawn(pl.id, pl.team, x, y, Obj.SHOT, dir, 0, p.shotLife, p.shotMass, status, outside, vx, vy);
+        if (h >= 0) {
+            w.objects.spawnTick[h] = w.tick;
+            w.objects.shotOrdinal[h] = ordinal;
+        }
+        return h;
     }
 
     /**

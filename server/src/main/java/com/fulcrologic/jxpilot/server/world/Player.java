@@ -38,6 +38,10 @@ import com.fulcrologic.jxpilot.common.sim.ShipBody;
  * state) is declared by {@link ShipBody}; this class adds the rest of the server's player.
  */
 public final class Player extends ShipBody {
+    /** Protocol v2 (OWN_SHOTS): the net tick of {@link #shotOrdinal} and the next bullet ordinal in that tick. */
+    public int shotOrdinalTick = Integer.MIN_VALUE;
+    public int shotOrdinal;
+
     /** C {@code MAX_RECORDED_SHOVES}. */
     public static final int MAX_SHOVES = 4;
 

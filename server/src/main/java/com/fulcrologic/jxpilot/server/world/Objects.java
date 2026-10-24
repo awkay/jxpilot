@@ -93,6 +93,12 @@ public final class Objects {
     public final int[] newInfo;
     /** C mine {@code owner}: who laid the mine ({@link #owner} is who controls it after ECM reprogramming). */
     public final int[] mineOwner;
+    /**
+     * Protocol v2 (OWN_SHOTS): a player's bullet's net tick of spawn and its index among the shots its ship fired
+     * that tick (ShipShooter order); -1 for every other object. Not C state: nothing in the simulation reads it.
+     */
+    public final int[] spawnTick;
+    public final int[] shotOrdinal;
 
     /** Dense list of live handles, {@code active[0..count)}. */
     public final int[] active;
@@ -138,6 +144,8 @@ public final class Objects {
         ecmRange = new float[capacity];
         newInfo = new int[capacity];
         mineOwner = new int[capacity];
+        spawnTick = new int[capacity];
+        shotOrdinal = new int[capacity];
         active = new int[capacity];
         slot = new int[capacity];
         freeStack = new int[capacity];
@@ -182,6 +190,7 @@ public final class Objects {
         version++;
         type[h] = Obj.DEBRIS;
         life[h] = 0;
+        shotOrdinal[h] = -1;
         return h;
     }
 
@@ -232,6 +241,7 @@ public final class Objects {
         ecmRange[h] = 0;
         newInfo[h] = 0;
         mineOwner[h] = Obj.NO_ID;
+        shotOrdinal[h] = -1;
         return h;
     }
 

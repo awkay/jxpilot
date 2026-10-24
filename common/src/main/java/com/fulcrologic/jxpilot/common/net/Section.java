@@ -97,6 +97,11 @@ public final class Section {
     /** {@link Records.PredictKeys}: the ShipBody key masks, when they differ from the applied input. */
     public static final int PREDICT_KEYS = 25;
     /**
+     * {@link Records.OwnShot}: the receiving player's own bullets in view, with the tick and ordinal they were fired
+     * in (protocol v2, owner only, for the predictor's provisional shots). They are in SHOT too.
+     */
+    public static final int OWN_SHOTS = 26;
+    /**
      * {@link Records.Sound}: sound events the receiving player hears, with their volume (C
      * {@code sound_play_queued}: {@code PKT_AUDIO} after the frame's objects). Not view culled.
      */
@@ -136,6 +141,7 @@ public final class Section {
         SIZES[PREDICT] = Records.Predict.SIZE;
         SIZES[PREDICT_RARE] = Records.PredictRare.SIZE;
         SIZES[PREDICT_KEYS] = Records.PredictKeys.SIZE;
+        SIZES[OWN_SHOTS] = Records.OwnShot.SIZE;
     }
 
     /** Record size this implementation writes for a type, 0 if unknown. */

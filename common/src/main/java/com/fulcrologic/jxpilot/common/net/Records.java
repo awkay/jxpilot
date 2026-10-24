@@ -956,6 +956,36 @@ public final class Records {
         }
     }
 
+    /**
+     * One of the receiving player's own bullets (OWN_SHOTS): {@code 0 i16 relX, 2 i16 relY} (as {@link Shot}),
+     * {@code 4 u8 age} (snapshot tick minus the net tick it was fired in, saturating at {@link #MAX_AGE}),
+     * {@code 5 u8 ordinal} (its index among the ship's bullets of that tick, in ShipShooter order).
+     */
+    public static final class OwnShot extends Fly {
+        public static final int SIZE = 6;
+        /** Ages from this up mean "this old or older". */
+        public static final int MAX_AGE = 255;
+
+        /** BEHAVIOR: the age is clamped to 0..MAX_AGE, the ordinal to 0..255. */
+        public static void put(SnapshotWriter w, double x, double y, int age, int ordinal) {
+            w.buffer().putShort((short) w.relX(x)).putShort((short) w.relY(y))
+                .put((byte) Math.clamp(age, 0, MAX_AGE)).put((byte) Math.clamp(ordinal, 0, 255));
+        }
+
+        public OwnShot wrap(SnapshotReader r, int i) {
+            bind(r, i);
+            return this;
+        }
+
+        public float x() { return relX(0); }
+
+        public float y() { return relY(2); }
+
+        public int age() { return u8(4); }
+
+        public int ordinal() { return u8(5); }
+    }
+
     /** {@code 0 u8 version, 1 ShipBody rare block} ({@link ShipBody#encodeRare}). */
     public static final class PredictRare extends Fly {
         public static final int SIZE = 1 + ShipBody.RARE_SIZE;

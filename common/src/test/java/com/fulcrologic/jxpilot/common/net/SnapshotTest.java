@@ -262,6 +262,10 @@ class SnapshotTest {
             w.beginSection(Section.PREDICT_KEYS);
             Records.PredictKeys.put(w, pb);
             w.endSection();
+            w.beginSection(Section.OWN_SHOTS);
+            Records.OwnShot.put(w, 1020.5, 2030, 3, 2);
+            Records.OwnShot.put(w, 1000, 2000, 400, 300);
+            w.endSection();
             w.beginSection(Section.SOUND);
             Records.Sound.put(w, SoundEvent.ASTEROID_BREAK.ordinal(), SoundEvent.MAX_VOLUME);
             Records.Sound.put(w, SoundEvent.START.ordinal(), SoundEvent.MIN_VOLUME);
@@ -538,6 +542,17 @@ class SnapshotTest {
                             () -> assertEquals(6L, pd.prevKeys, "prevKeys"),
                             () -> assertEquals(7L, pd.lastReceivedKeys, "lastReceivedKeys"));
                     }
+                    case Section.OWN_SHOTS -> {
+                        Records.OwnShot s0 = new Records.OwnShot().wrap(r, 0);
+                        Records.OwnShot s1 = new Records.OwnShot().wrap(r, 1);
+                        assertAll("own shots",
+                            () -> assertEquals(1020.5f, s0.x(), "keeps x to the half pixel"),
+                            () -> assertEquals(2030f, s0.y(), "keeps y"),
+                            () -> assertEquals(3, s0.age(), "keeps the age"),
+                            () -> assertEquals(2, s0.ordinal(), "keeps the ordinal"),
+                            () -> assertEquals(Records.OwnShot.MAX_AGE, s1.age(), "the age saturates at 255"),
+                            () -> assertEquals(255, s1.ordinal(), "the ordinal clamps to 255"));
+                    }
                     case Section.SOUND -> {
                         Records.Sound s0 = new Records.Sound().wrap(r, 0);
                         Records.Sound s1 = new Records.Sound().wrap(r, 1);
@@ -589,6 +604,11 @@ class SnapshotTest {
 
         /** As above, with the owner's PREDICT core (protocol v2), and optionally its rare block too. */
         int scene(int ships, int shots, int bursts, int radar, boolean predict, boolean rare) {
+            return scene(ships, shots, bursts, radar, predict, rare, 0);
+        }
+
+        /** As above, with {@code own} of the shots also in OWN_SHOTS. */
+        int scene(int ships, int shots, int bursts, int radar, boolean predict, boolean rare, int own) {
             ByteBuffer b = ByteBuffer.allocate(64 * 1024);
             SnapshotWriter w = new SnapshotWriter();
             w.setWorld(7000, 7000, true);
@@ -607,6 +627,13 @@ class SnapshotTest {
                     Records.PredictRare.put(w, body, 1);
                     w.endSection();
                 }
+            }
+            if (own > 0) {
+                w.beginSection(Section.OWN_SHOTS);
+                for (int i = 0; i < own; i++) {
+                    Records.OwnShot.put(w, 3000 + i * 5, 3300 + i, i % 9, i % 3);
+                }
+                w.endSection();
             }
             w.beginSection(Section.SHIP);
             for (int i = 0; i < ships; i++) {
@@ -657,8 +684,10 @@ class SnapshotTest {
             int typicalPredict = scene(4, 30, 2, 8, true, false);
             int typicalRare = scene(4, 30, 2, 8, true, true);
             int fightPredict = scene(15, 150, 5, 15, true, false);
-            System.out.printf("[wire size] typical %d, + PREDICT %d, + rare %d; fight %d, + PREDICT %d%n", typical,
-                typicalPredict, typicalRare, fight, fightPredict);
+            int typicalOwn = scene(4, 30, 2, 8, true, false, 10);
+            int fightOwn = scene(15, 150, 5, 15, true, false, 50);
+            System.out.printf("[wire size] typical %d, + PREDICT %d, + rare %d, + 10 own shots %d; fight %d, + PREDICT %d,"
+                + " + 50 own shots %d%n", typical, typicalPredict, typicalRare, typicalOwn, fight, fightPredict, fightOwn);
             assertAll(
                 () -> assertEquals(8 + 16 + (5 + 47) + (5 + 15 * 14) + 3 * 5 + 150 * 6 + (5 + 5 * 27) + (5 + 15 * 3),
                     fight, "fight = 1396 bytes"),
@@ -677,6 +706,9 @@ class SnapshotTest {
                 () -> assertEquals(420 + 5 + 77, typicalPredict, "the owner's typical snapshot carries PREDICT: 502 bytes"),
                 () -> assertEquals(502 + 5 + 63, typicalRare, "and with the rare block 570 bytes"),
                 () -> assertEquals(1396 + 82, fightPredict, "the fight with PREDICT: 1478 bytes"),
+                () -> assertEquals(6, Records.OwnShot.SIZE, "OWN_SHOTS records are 6 bytes"),
+                () -> assertEquals(502 + 5 + 60, typicalOwn, "typical with 10 of the 30 shots our own: 567 bytes"),
+                () -> assertEquals(1478 + 5 + 300, fightOwn, "the fight with 50 own shots: 1783 bytes"),
                 () -> assertTrue(fightPredict + 68 + 21 <= 1800, "with every PREDICT block still within the 1.8 KB target"),
                 () -> assertTrue(typicalRare + 21 <= Protocol.MAX_PACKET, "a typical scene with every block fits one datagram"));
         }
