@@ -876,6 +876,26 @@ class ServerNetTest {
         }
 
         @Test
+        @DisplayName("a viewer the host says is not due gets no snapshot that tick (C's paused/dead frame skipping)")
+        void notDue() {
+            Harness h = new Harness();
+            TestClient c = new TestClient(1);
+            h.in(0, A, c.connect("a", 255, ""));
+            h.deliver(c, A);
+            confirm(h, c, 0, A);
+            h.join(c, 0, A, "a");
+            c.snapshotTicks.clear();
+            h.host.evenTicksOnly = true;
+            for (int i = 0; i < 12; i++) {
+                h.step(c, 0, A, 0);
+            }
+            boolean allEven = c.snapshotTicks.stream().allMatch(t -> (t & 1) == 0);
+            assertAll(
+                () -> assertEquals(6, c.snapshotTicks.size(), "12 ticks, every other one due: 6 snapshots"),
+                () -> assertTrue(allEven, "only on the ticks the host called due"));
+        }
+
+        @Test
         @DisplayName("radar every radarDivisor-th snapshot also with another snapshot divisor")
         void divisor3() {
             ServerNetConfig cfg = new ServerNetConfig();

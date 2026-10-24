@@ -23,6 +23,8 @@
  */
 package com.fulcrologic.jxpilot.server.net;
 
+import com.fulcrologic.jxpilot.common.config.Opt;
+import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.net.ConfigTransfer;
 import com.fulcrologic.jxpilot.common.net.InputReader;
 import com.fulcrologic.jxpilot.common.net.Msg;
@@ -195,7 +197,31 @@ public final class ServerNet {
             parts[i] = ByteBuffer.allocateDirect(Protocol.MAX_PACKET);
         }
         writer.setWorld(cfg.worldWidth, cfg.worldHeight, cfg.edgeWrap);
-        host.attach(this::kick);
+        host.attach(new GameHost.Sessions() {
+            @Override
+            public void kick(int playerId, CharSequence reason) {
+                ServerNet.this.kick(playerId, reason);
+            }
+
+            @Override
+            public void optionChanged(Opt o, Options options) {
+                ServerNet.this.optionChanged(o, options);
+            }
+        });
+    }
+
+    /**
+     * server-commands: an operator changed an option at run time ({@link GameHost.Sessions#optionChanged}).
+     * <p>
+     * BEHAVIOR: denyHosts (C tuner {@code Set_deny_hosts}) and maxClientsPerIP take their new values for the
+     * next CONNECTs; other options are not the network layer's.
+     */
+    void optionChanged(Opt o, Options options) {
+        if (o == Opt.DENY_HOSTS) {
+            cfg.denyHosts = DenyList.parse(options.getString(Opt.DENY_HOSTS));
+        } else if (o == Opt.MAX_CLIENTS_PER_IP) {
+            cfg.maxPerIp = options.getInt(Opt.MAX_CLIENTS_PER_IP);
+        }
     }
 
     /**
@@ -504,7 +530,7 @@ public final class ServerNet {
             out.send(c.channel, c.addr, outBuf);
             sent = true;
         }
-        if (snapshot && c.snapshotsOn) {
+        if (snapshot && c.snapshotsOn && host.snapshotDue(c.playerId)) {
             sendSnapshot(c, radar);
             sent = true;
         }
@@ -635,6 +661,7 @@ public final class ServerNet {
             case Msg.Reject.REASON_FULL -> "server is full";
             case Msg.Reject.REASON_VERSION -> "incompatible version";
             case Msg.Reject.REASON_BAD_NAME -> "name not accepted";
+            case Msg.Reject.REASON_LOCKED -> "game locked";
             default -> "join refused";
         };
     }
@@ -697,16 +724,6 @@ public final class ServerNet {
     /** Non-CONNECT packets from unknown peers or with a wrong session. */
     public long stray() { return stray; }
 
-    /**
-     * C's denyHosts tuner ({@code Set_deny_hosts}, contact.c:1225-1260): a new deny list at runtime, e.g. from
-     * {@code /set denyHosts}.
-     * <p>
-     * BEHAVIOR: parsed exactly like the option at startup ({@link DenyList#parse}): networks with prefix /0 or a
-     * zero mask are skipped, as C skips mask 0 (contact.c:1242-1247); null or empty clears the list.
-     */
-    public void denyHosts(String list) {
-        cfg.denyHosts = DenyList.parse(list);
-    }
 
     /** Packets outside a session ignored because their source is in denyHosts (C contact.c Check_address). */
     public long denied() { return denied; }

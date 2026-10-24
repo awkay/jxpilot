@@ -52,6 +52,14 @@ public interface GameHost {
          * only, never while a client message is being delivered.
          */
         void kick(int playerId, CharSequence reason);
+
+        /**
+         * server-commands: an operator changed option {@code o} at run time ({@code /set}); the network layer
+         * re-reads what it keeps (denyHosts, maxClientsPerIP).
+         */
+        default void optionChanged(com.fulcrologic.jxpilot.common.config.Opt o,
+                                   com.fulcrologic.jxpilot.common.config.Options options) {
+        }
     }
 
     /** Called once by the network layer, before any other method, with its session control. */
@@ -147,6 +155,16 @@ public interface GameHost {
      */
     default boolean humanEntered() {
         return false;
+    }
+
+    /**
+     * Whether this tick's snapshot goes to this viewer at all (C {@code Frame_update} skips some frames for
+     * paused and dead players). The network layer asks once per due snapshot, before {@link #fillSnapshot}.
+     * <p>
+     * BEHAVIOR: true unless the host says otherwise.
+     */
+    default boolean snapshotDue(int viewerId) {
+        return true;
     }
 
     /**

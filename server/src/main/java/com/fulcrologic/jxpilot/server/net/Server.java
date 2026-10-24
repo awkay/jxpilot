@@ -152,8 +152,9 @@ public final class Server implements AutoCloseable {
      * Every option source of {@link #start}, in C {@code Parser}'s order (edge: reads files).
      * <p>
      * BEHAVIOR: command line, then the defaults file ({@link DefaultsFile#apply}), then the positional config
-     * file (origin DEFAULTS), then the map (origin MAP), then the {@code expand} list; precedence per
-     * {@link Options#setValue}.
+     * file (origin DEFAULTS), then the password file named by {@code passwordFileName} (origin PASSWORD, C
+     * {@code parsePasswordFile}; none without the option), then the map (origin MAP), then the {@code expand}
+     * list; precedence per {@link Options#setValue}.
      * BEHAVIOR: the map is {@code mapFileName} (from {@code --map} or the config file) as {@link MapLocator} resolves
      * it: a bundled map by name, else a file. Without one it is {@link MapLocator#DEFAULT_MAP} (C's default map,
      * cmdline.c {@code Conf_default_map()}).
@@ -161,6 +162,7 @@ public final class Server implements AutoCloseable {
      * @throws IllegalArgumentException for two config files (unknown options are warnings)
      * @throws java.io.FileNotFoundException when the map is neither bundled nor a file (the message lists the
      *                                       bundled maps)
+     * @throws IOException when a named password file cannot be read (as a named defaults file)
      */
     public static Options readOptions(String[] args) throws IOException {
         Options opts = new Options();
@@ -169,6 +171,14 @@ public final class Server implements AutoCloseable {
         DefaultsFile.apply(opts);
         if (config != null) {
             ConfigParser.parseFile(config, OptionOrigin.DEFAULTS, opts);
+        }
+        String passwordFile = opts.getString(Opt.PASSWORD_FILE_NAME);
+        if (passwordFile != null && !passwordFile.isEmpty()) {
+            try {
+                ConfigParser.parseFile(Path.of(passwordFile), OptionOrigin.PASSWORD, opts);
+            } catch (IOException e) {
+                throw new IOException("cannot read password file " + passwordFile + " (" + e + ")", e);
+            }
         }
         String mapFile = opts.getString(Opt.MAP_FILE_NAME);
         MapLocator.resolve(mapFile == null ? MapLocator.DEFAULT_MAP : mapFile).parseInto(opts);

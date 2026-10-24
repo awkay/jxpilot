@@ -63,8 +63,11 @@ public final class Msg {
         }
     }
 
-    /** Ship shape strings are capped to this many chars on decode (C {@code MSG_LEN}). */
-    public static final int MAX_SHAPE_LEN = 256;
+    /**
+     * Ship shape strings are capped to this many chars on decode: C {@code 2 * MSG_LEN} (netserver.c
+     * Receive_shape's {@code str[2*MSG_LEN]}), room for a canonical shape's buf + ext.
+     */
+    public static final int MAX_SHAPE_LEN = 512;
     /** C {@code MSG_LEN}: initial capacity of the text builders, so normal messages never grow them. */
     public static final int MSG_LEN = 256;
 
@@ -140,6 +143,8 @@ public final class Msg {
         public static final int REASON_VERSION = 2;
         public static final int REASON_BAD_NAME = 3;
         public static final int REASON_OTHER = 4;
+        /** The game is locked by an operator ({@code /lock 1}, C {@code E_GAME_LOCKED}). */
+        public static final int REASON_LOCKED = 5;
 
         public int nonce;
         public int reason;
@@ -468,6 +473,34 @@ public final class Msg {
         }
     }
 
+    /**
+     * {@link ReliableType#PLAYER_ALLIANCE}: the alliance mark of player {@code id} for the receiver (C
+     * {@code Send_score}'s alliance character): {@link #NONE} ' ' not in an alliance (or, when alliances are not
+     * announced, not in the receiver's), {@link #ALLY} '+' in the receiver's alliance, '0'..'9' the alliance
+     * number when alliances are announced.
+     */
+    public static final class PlayerAlliance implements Payload {
+        public static final char NONE = ' ';
+        public static final char ALLY = '+';
+
+        public int id;
+        public char mark = NONE;
+
+        public void write(ByteBuffer b) {
+            b.putShort((short) id);
+            b.put((byte) (mark > 0xFF ? '?' : mark));
+        }
+
+        public void read(ByteBuffer b) {
+            id = b.getShort() & 0xFFFF;
+            mark = (char) (b.get() & 0xFF);
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.PLAYER_ALLIANCE);
+        }
+    }
+
     /** {@link ReliableType#SCORE}. Status flags mirror XPilot's scoreboard markers. */
     public static final class Score implements Payload {
         public static final int STATUS_DEAD = 1;
@@ -702,6 +735,91 @@ public final class Msg {
 
         public void send(ReliableChannel ch) {
             Msg.send(ch, this, ReliableType.SETTINGS);
+        }
+    }
+
+    /**
+     * {@link ReliableType#DISPLAY}: the world area the client shows, in world pixels (C {@code PKT_DISPLAY}'s
+     * {@code view_width}, {@code view_height}; the C client sends its draw size times its scale factor).
+     * The server limits each to [{@link #MIN_VIEW_SIZE}, {@link #MAX_VIEW_SIZE}] (C {@code Receive_display}).
+     */
+    public static final class Display implements Payload {
+        /** C {@code MIN_VIEW_SIZE}, {@code MAX_VIEW_SIZE}, {@code DEF_VIEW_SIZE} (common/draw.h). */
+        public static final int MIN_VIEW_SIZE = 384;
+        public static final int MAX_VIEW_SIZE = 1024;
+        public static final int DEF_VIEW_SIZE = 768;
+
+        public int viewWidth = DEF_VIEW_SIZE;
+        public int viewHeight = DEF_VIEW_SIZE;
+
+        /** BEHAVIOR: u16 width, u16 height; values outside 0..65535 are saturated, never wrapped. */
+        public void write(ByteBuffer b) {
+            b.putShort((short) u16(viewWidth));
+            b.putShort((short) u16(viewHeight));
+        }
+
+        public void read(ByteBuffer b) {
+            viewWidth = b.getShort() & 0xFFFF;
+            viewHeight = b.getShort() & 0xFFFF;
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.DISPLAY);
+        }
+
+        private static int u16(int v) {
+            return Math.max(0, Math.min(0xFFFF, v));
+        }
+    }
+
+    /**
+     * {@link ReliableType#MODIFIER_BANK}: u8 bank (0..3), str8 text (C {@code "%c%c%s"}, PKT_MODIFIERBANK, bank,
+     * {@code modBankStr[bank]}). The text is C's modifier string ("FN C V2 X4 LS"); the server parses it.
+     */
+    public static final class ModifierBank implements Payload {
+        /** C {@code NUM_MODBANKS}. */
+        public static final int BANKS = 4;
+
+        public int bank;
+        public final StringBuilder text = new StringBuilder(com.fulcrologic.jxpilot.common.Const.MAX_CHARS);
+
+        /** BEHAVIOR: u8 bank, then the text with a u8 length (at most 255 chars, see {@link Wire#putString8}). */
+        public void write(ByteBuffer b) {
+            b.put((byte) bank);
+            Wire.putString8(b, text);
+        }
+
+        /** BEHAVIOR: reads the bank (0..255, unchecked) and the whole text. */
+        public void read(ByteBuffer b) {
+            bank = b.get() & 0xFF;
+            Wire.getString8(b, text);
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.MODIFIER_BANK);
+        }
+    }
+
+    /** {@link ReliableType#SEEK}: u16 programmerId, u16 robotId, u16 soughtId (C {@code "%c%hd%hd%hd"}). */
+    public static final class Seek implements Payload {
+        public int programmerId;
+        public int robotId;
+        public int soughtId;
+
+        public void write(ByteBuffer b) {
+            b.putShort((short) programmerId);
+            b.putShort((short) robotId);
+            b.putShort((short) soughtId);
+        }
+
+        public void read(ByteBuffer b) {
+            programmerId = b.getShort() & 0xFFFF;
+            robotId = b.getShort() & 0xFFFF;
+            soughtId = b.getShort() & 0xFFFF;
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.SEEK);
         }
     }
 

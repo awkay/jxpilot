@@ -205,7 +205,7 @@ class ShotsTest {
             int hy = ws.shots.fire(q, 0, false, 10, 705, Obj.SHOT, 0, 0);
             assertAll(
                 () -> assertEquals(-1, r, "no shot outside a flat world"),
-                () -> assertEquals(0, w.objects.count(), "nothing allocated"),
+                () -> assertEquals(1, w.objects.count(), "C's unpositioned shot object stays allocated (shot.c:950-994)"),
                 () -> assertEquals(FUEL0 - 51, p.fuel, EPS, "the fuel is spent before the position check (C)"),
                 () -> assertEquals(1, p.shots, "and the shot counted (C)"),
                 () -> assertEquals(Click.fromPixels(690), ws.world.objects.cx[h], "x wraps to width - 10"),
@@ -222,7 +222,7 @@ class ShotsTest {
                 () -> assertEquals(-1, s.shots.fire(null, 0, true, 700, 300, Obj.CANNON_SHOT, 0, 0), "x = width is outside"),
                 () -> assertEquals(-1, s.shots.fire(null, 0, true, 300, 700, Obj.CANNON_SHOT, 0, 0), "y = height is outside"),
                 () -> assertEquals(-1, s.shots.fire(null, 0, true, 300, -0.5f, Obj.CANNON_SHOT, 0, 0), "y < 0 is outside"),
-                () -> assertEquals(2, w.objects.count(), "only the two inside shots exist"));
+                () -> assertEquals(5, w.objects.count(), "the two inside shots and C's three unpositioned ones"));
         }
 
         @Test

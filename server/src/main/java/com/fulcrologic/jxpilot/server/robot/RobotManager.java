@@ -23,10 +23,12 @@
  */
 package com.fulcrologic.jxpilot.server.robot;
 
+import com.fulcrologic.jxpilot.server.sim.Texts;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.net.Msg;
+import com.fulcrologic.jxpilot.server.sim.Alliances;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.sim.Sounds;
 import com.fulcrologic.jxpilot.server.world.Events;
@@ -56,6 +58,16 @@ import com.fulcrologic.jxpilot.server.world.World;
  * {@code -rawMode}). Allocation free per tick.
  */
 public final class RobotManager {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_LEFT_OUT_OF_DISAPPOINTMENT = Texts.of(" left out of disappointment.");
+    private static final String T_PLAYED_TOO_BADLY = Texts.of(" played too badly.");
+    private static final String T_PUNCT = Texts.of(" (");
+    private static final String T_PUNCT_2 = Texts.of(", ");
+    private static final String T_RETIRED = Texts.of(" retired.");
+    private static final String T_STARTS_AT_STARTPOS = Texts.of(") starts at startpos ");
+    private static final String T_UPSET_THE_GODS_AND_WAS = Texts.of("\" upset the gods and was kicked out of the game.");
+
     private final World w;
     private final Simulation sim;
     private final RobotData[] data;
@@ -76,13 +88,13 @@ public final class RobotManager {
     public java.util.function.Consumer<CharSequence> log;
     /** The log line, reused (robots join during play: no allocation here). */
     private final StringBuilder logLine = new StringBuilder(80);
-    final boolean logRobots;
-    final String robotRealName;
+    boolean logRobots;
+    String robotRealName;
 
     final boolean allowShipShapes;
-    final int robotLeaveLife;
-    final int robotLeaveScore;
-    final int robotLeaveRatio;
+    int robotLeaveLife;
+    int robotLeaveScore;
+    int robotLeaveRatio;
 
     public RobotManager(World w, Simulation sim) {
         this.w = w;
@@ -96,16 +108,27 @@ public final class RobotManager {
         this.items = new RobotItems(sim);
         this.robot = new DefaultRobot(w, sim, items);
         allowShipShapes = w.options.getBool(Opt.ALLOW_SHIP_SHAPES);
-        logRobots = w.options.getBool(Opt.LOG_ROBOTS);
-        robotRealName = w.options.getString(Opt.ROBOT_REAL_NAME);
-        robotLeaveLife = w.options.getInt(Opt.ROBOT_LEAVE_LIFE);
-        robotLeaveScore = w.options.getInt(Opt.ROBOT_LEAVE_SCORE);
-        robotLeaveRatio = w.options.getInt(Opt.ROBOT_LEAVE_RATIO);
+        reloadOptions();
         // C Robot_init: an out-of-range robotTeam becomes team 0 (for humans too).
         if (w.params.robotTeam < 0 || w.params.robotTeam >= Const.MAX_TEAMS) {
             w.params.robotTeam = 0;
         }
         this.cursor = w.events.seq();
+    }
+
+    /**
+     * server-commands: (re)read the run-time options this class keeps (at construction, and after an
+     * operator's {@code /set}); the robot type's too.
+     */
+    public void reloadOptions() {
+        logRobots = w.options.getBool(Opt.LOG_ROBOTS);
+        robotRealName = w.options.getString(Opt.ROBOT_REAL_NAME);
+        robotLeaveLife = w.options.getInt(Opt.ROBOT_LEAVE_LIFE);
+        robotLeaveScore = w.options.getInt(Opt.ROBOT_LEAVE_SCORE);
+        robotLeaveRatio = w.options.getInt(Opt.ROBOT_LEAVE_RATIO);
+        if (robot != null) {
+            robot.reloadOptions();
+        }
     }
 
     /** Turn robot management on or off (the server's "running" state: humans present or rawMode). */
@@ -389,7 +412,7 @@ public final class RobotManager {
      * BEHAVIOR: nothing for a self kill.
      * BEHAVIOR: a robot killer gloats (KILL talk) and ends any war on the victim.
      * BEHAVIOR: a robot victim declares war on the killer (WAR talk) when (int)(rfrac*100) is below the
-     * killer's score lead and they are not team mates; the rfrac is drawn only for robot victims.
+     * killer's score lead and they are neither team mates nor allies; the rfrac is drawn only for robot victims.
      */
     public void war(Player victim, Player killer) {
         if (killer == victim) {
@@ -399,13 +422,74 @@ public final class RobotManager {
             talk.says(RobotTalk.KILL, killer.name, victim.name);
             DefaultRobot.setWar(data[killer.slot], Obj.NO_ID);
         }
-        if (victim.robot && (int) (w.rfrac() * 100) < killer.score - victim.score && !w.sameTeam(victim, killer)) {
+        if (victim.robot && (int) (w.rfrac() * 100) < killer.score - victim.score && !w.sameTeam(victim, killer)
+            && !w.allied(victim, killer)) {
             talk.says(RobotTalk.WAR, victim.name, killer.name);
             RobotData d = data[victim.slot];
             if (DefaultRobot.warOnPlayer(d) != killer.id) {
                 Sounds.playAll(w, SoundEvent.DECLARE_WAR);
                 DefaultRobot.setWar(d, killer.id);
             }
+        }
+    }
+
+    /**
+     * server-commands: C {@code Robot_invite} for the default robot ({@code Robot_default_invite}, robotdef.c:319):
+     * {@code inviter} asks robot {@code pl} into an alliance; the robot accepts or refuses at once
+     * ({@code Alliances.accept}/{@code refuse}).
+     * <p>
+     * BEHAVIOR: a robot already in an alliance with a human refuses (the human decides).
+     * BEHAVIOR: limit = max(|score / max(attack / 10, 10)|, defense). An inviter outside alliances is refused when
+     * the robot is at war with it, when it is not playing (dead, paused or out of the game), or when its score
+     * is below the robot's score minus limit. An inviter in an alliance is refused when the robot is at war with
+     * one of its members, or when the members' average score is below the robot's score minus limit.
+     * BEHAVIOR: otherwise the robot accepts.
+     */
+    public void invite(Player pl, Player inviter) {
+        Alliances a = sim.alliances;
+        if (pl.alliance != Player.ALLIANCE_NOT_SET) {
+            for (int k = 0; k < w.numPlayers; k++) {
+                Player o = w.playerAt(k);
+                if (!o.robot && !o.tank && w.allied(pl, o)) {
+                    a.refuse(pl, inviter);
+                    return;
+                }
+            }
+        }
+        RobotData d = data[pl.slot];
+        int warId = DefaultRobot.warOnPlayer(d);
+        double limit = Math.max(Math.abs(pl.score / Math.max(d.attack / 10, 10)), d.defense);
+        boolean accept = true;
+        if (inviter.alliance == Player.ALLIANCE_NOT_SET) {
+            if (inviter.id == warId) {
+                accept = false;
+            }
+            if ((inviter.status & (Obj.PLAYING | Obj.GAME_OVER | Obj.PAUSE)) != Obj.PLAYING) {
+                accept = false;
+            } else if (inviter.score < pl.score - limit) {
+                accept = false;
+            }
+        } else {
+            double avg = 0;
+            int members = a.memberCount(inviter.alliance);
+            for (int k = 0; k < w.numPlayers; k++) {
+                Player o = w.playerAt(k);
+                if (o.alliance == inviter.alliance) {
+                    if (o.id == warId) {
+                        accept = false;
+                        break;
+                    }
+                    avg += o.score;
+                }
+            }
+            if (accept && avg / members < pl.score - limit) {
+                accept = false;
+            }
+        }
+        if (accept) {
+            a.accept(pl, inviter);
+        } else {
+            a.refuse(pl, inviter);
         }
     }
 
@@ -554,7 +638,9 @@ public final class RobotManager {
             return null;
         }
         roster.used[num]++;
-        pl.ship = allowShipShapes ? roster.ship(num) : ShipGeom.defaultShip();
+        if (allowShipShapes) {
+            pl.ship = roster.ship(num); // else Init_player's defaultShipShape (robot.c:776)
+        }
         pl.turnSpeed = (float) Const.MAX_PLAYER_TURNSPEED;
         pl.turnSpeedS = (float) Const.MAX_PLAYER_TURNSPEED;
         pl.turnResistance = 0.12f;
@@ -574,8 +660,8 @@ public final class RobotManager {
         talk.says(RobotTalk.ENTER, pl.name, null);
         if (logRobots && log != null) {
             logLine.setLength(0);
-            logLine.append(pl.name).append(" (").append(w.numPlayers).append(", ").append(robotRealName)
-                .append(") starts at startpos ").append(pl.homeBase).append('.');
+            logLine.append(pl.name).append(T_PUNCT).append(w.numPlayers).append(T_PUNCT_2).append(robotRealName)
+                .append(T_STARTS_AT_STARTPOS).append(pl.homeBase).append('.');
             log.accept(logLine);
         }
         sim.rounds.robotEntered();
@@ -606,7 +692,7 @@ public final class RobotManager {
         }
         if (kicked) {
             w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append('"').append(pl.name)
-                .append("\" upset the gods and was kicked out of the game.");
+                .append(T_UPSET_THE_GODS_AND_WAS);
         }
         int id = pl.id;
         data[pl.slot].clear();
@@ -615,6 +701,11 @@ public final class RobotManager {
         pl.robot = false;
         pl.ship = ShipGeom.defaultShip();
         playerLeft(id);
+    }
+
+    /** server-commands: C {@code Delete_player} of a robot ({@code /kick}): it leaves without the kick notice. */
+    public void remove(Player pl) {
+        delete(pl, false);
     }
 
     /**
@@ -632,11 +723,11 @@ public final class RobotManager {
         }
         String reason;
         if (robotLeaveLife > 0 && pl.life >= robotLeaveLife) {
-            reason = " retired.";
+            reason = T_RETIRED;
         } else if (robotLeaveScore != 0 && pl.score < robotLeaveScore) {
-            reason = " left out of disappointment.";
+            reason = T_LEFT_OUT_OF_DISAPPOINTMENT;
         } else if (robotLeaveRatio != 0 && pl.score / (pl.life + 1) < robotLeaveRatio) {
-            reason = " played too badly.";
+            reason = T_PLAYED_TOO_BADLY;
         } else {
             return false;
         }

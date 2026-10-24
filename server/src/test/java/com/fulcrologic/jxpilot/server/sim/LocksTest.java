@@ -144,20 +144,20 @@ class LocksTest {
         @DisplayName("everyone is seen without a cloak; a forced-visible player is seen by all")
         void uncloaked() {
             two();
-            p.canSee[o.slot] = false;
-            p.canSee[p.slot] = false;
-            o.canSee[p.slot] = false;
+            p.canSee[o.ind] = false;
+            p.canSee[p.ind] = false;
+            o.canSee[p.ind] = false;
             int before = w.rng.state();
             l.updateVisibility(p);
-            boolean oSeesP = o.canSee[p.slot];
+            boolean oSeesP = o.canSee[p.ind];
             p.forceVisible = 3;
             p.used |= Has.CLOAKING_DEVICE;
             l.updateVisibility(p);
             assertAll(
-                () -> assertTrue(p.canSee[o.slot], "P sees the uncloaked O"),
-                () -> assertTrue(p.canSee[p.slot], "P sees itself"),
+                () -> assertTrue(p.canSee[o.ind], "P sees the uncloaked O"),
+                () -> assertTrue(p.canSee[p.ind], "P sees itself"),
                 () -> assertFalse(oSeesP, "O's view of P is not P's update"),
-                () -> assertTrue(o.canSee[p.slot], "a forced-visible P is seen by O"),
+                () -> assertTrue(o.canSee[p.ind], "a forced-visible P is seen by O"),
                 () -> assertEquals(before, w.rng.state(), "nothing is drawn for uncloaked players"));
         }
 
@@ -175,7 +175,7 @@ class LocksTest {
                 o.updateVisibility = !p.updateVisibility;
                 w.rng.seed(sd);
                 l.updateVisibility(p);
-                got[sd] = p.canSee[o.slot];
+                got[sd] = p.canSee[o.ind];
                 Rng r = new Rng(sd);
                 want[sd] = (r.nextFloat() * 2.0) > (r.nextFloat() * 3.0);
             }
@@ -191,7 +191,7 @@ class LocksTest {
                 () -> assertEquals(java.util.Arrays.toString(want), java.util.Arrays.toString(got),
                     "each decision follows the two rolls (P's flag or O's flag)"),
                 () -> assertTrue(anyTrue && !allTrue, "both outcomes occur over the seeds"),
-                () -> assertEquals(w.frames, p.visLastChange[o.slot], "the change time is now"));
+                () -> assertEquals(w.frames, p.visLastChange[o.ind], "the change time is now"));
         }
 
         @Test
@@ -200,7 +200,7 @@ class LocksTest {
             two();
             o.used |= Has.CLOAKING_DEVICE;
             w.frames = 51;
-            p.visLastChange[o.slot] = 1;                      // 50 frames since
+            p.visLastChange[o.ind] = 1;                      // 50 frames since
             int redo = -1;
             int keep = -1;
             for (int sd = 0; redo < 0 || keep < 0; sd++) {
@@ -213,10 +213,10 @@ class LocksTest {
             }
             int redoSeed = redo;
             int keepSeed = keep;
-            p.canSee[o.slot] = true;
+            p.canSee[o.ind] = true;
             w.rng.seed(keepSeed);
             l.updateVisibility(p);
-            long keptChange = p.visLastChange[o.slot];
+            long keptChange = p.visLastChange[o.ind];
             Rng afterKeep = new Rng(keepSeed);
             afterKeep.nextFloat();
             int keptState = w.rng.state();
@@ -225,7 +225,7 @@ class LocksTest {
             assertAll(
                 () -> assertEquals(1, keptChange, "roll 50 (not < 50): no change, the time stays"),
                 () -> assertEquals(afterKeep.state(), keptState, "only the chance roll was drawn"),
-                () -> assertEquals(51, p.visLastChange[o.slot], "roll 49 < 50: re-decided now"));
+                () -> assertEquals(51, p.visLastChange[o.ind], "roll 49 < 50: re-decided now"));
         }
 
         @Test
@@ -234,14 +234,14 @@ class LocksTest {
             two();
             o.used |= Has.CLOAKING_DEVICE;
             w.frames = 1;
-            p.visLastChange[o.slot] = 51;                     // a change "in the future": still 50
+            p.visLastChange[o.ind] = 51;                     // a change "in the future": still 50
             int sd = 0;
             while ((int) (new Rng(sd).nextFloat() * 100) != 49) {
                 sd++;
             }
             w.rng.seed(sd);
             l.updateVisibility(p);
-            assertEquals(1, p.visLastChange[o.slot], "roll 49 < |1 - 51|: re-decided");
+            assertEquals(1, p.visLastChange[o.ind], "roll 49 < |1 - 51|: re-decided");
         }
 
         @Test
@@ -249,30 +249,32 @@ class LocksTest {
         void departed() {
             two();
             Player g = add("G", 0, 50, 0);
+            int gi = g.ind;
             w.removePlayer(g);
-            p.canSee[g.slot] = false;
-            p.visLastChange[g.slot] = 5;
+            p.canSee[gi] = false;
+            p.visLastChange[gi] = 5;
             l.updateVisibility(p);
-            boolean seen = p.canSee[g.slot];
+            boolean seen = p.canSee[gi];
             l.resetVisibility(p);
             assertAll(
-                () -> assertFalse(seen, "the departed G is not marked seen"),
-                () -> assertEquals(5, p.visLastChange[g.slot], "nor its change time reset"));
+                () -> assertEquals(-1, g.ind, "G has no player index any more"),
+                () -> assertFalse(seen, "the departed G's old index is not marked seen"),
+                () -> assertEquals(5, p.visLastChange[gi], "nor its change time reset"));
         }
 
         @Test
         @DisplayName("resetVisibility asks for an update and zeroes the change times to and from the player")
         void reset() {
             two();
-            p.visLastChange[o.slot] = 5;
-            o.visLastChange[p.slot] = 6;
-            o.visLastChange[o.slot] = 7;
+            p.visLastChange[o.ind] = 5;
+            o.visLastChange[p.ind] = 6;
+            o.visLastChange[o.ind] = 7;
             l.resetVisibility(p);
             assertAll(
                 () -> assertTrue(p.updateVisibility, "an update is requested"),
-                () -> assertEquals(0, p.visLastChange[o.slot], "P's time for O is 0"),
-                () -> assertEquals(0, o.visLastChange[p.slot], "O's time for P is 0"),
-                () -> assertEquals(7, o.visLastChange[o.slot], "O's other times stay"));
+                () -> assertEquals(0, p.visLastChange[o.ind], "P's time for O is 0"),
+                () -> assertEquals(0, o.visLastChange[p.ind], "O's time for P is 0"),
+                () -> assertEquals(7, o.visLastChange[o.ind], "O's other times stay"));
         }
 
         @Test
@@ -284,12 +286,12 @@ class LocksTest {
             Player tank = add("T", 2, 30, 0);
             tank.tank = true;
             tank.lockPlId = p.id;
-            p.canSee[mate.slot] = false;
-            p.canSee[foe.slot] = false;
-            p.canSee[tank.slot] = false;
-            p.canSee[p.slot] = false;
+            p.canSee[mate.ind] = false;
+            p.canSee[foe.ind] = false;
+            p.canSee[tank.ind] = false;
+            p.canSee[p.ind] = false;
             boolean foeUnseen = l.sees(p, foe);
-            p.canSee[foe.slot] = true;
+            p.canSee[foe.ind] = true;
             assertAll(
                 () -> assertTrue(l.sees(p, mate), "a team mate"),
                 () -> assertFalse(foeUnseen, "an unseen foe is not"),
@@ -786,7 +788,7 @@ class LocksTest {
             p.lockPlId = t.id;
             p.lockDistance = (float) Math.hypot(dx, dy);
             p.sensorRange = 1000;
-            p.canSee[t.slot] = true;
+            p.canSee[t.ind] = true;
         }
 
         boolean visible() {
@@ -837,7 +839,7 @@ class LocksTest {
         @DisplayName("an unseen target is visible only as a team mate or own tank")
         void unseen() {
             hud("", 100, 0);
-            p.canSee[t.slot] = false;
+            p.canSee[t.ind] = false;
             boolean unseen = visible();
             t.tank = true;
             t.lockPlId = p.id;
@@ -848,7 +850,7 @@ class LocksTest {
             p.lockTagged = Player.LOCK_PLAYER;
             p.lockPlId = t.id;
             p.lockDistance = 100;
-            p.canSee[t.slot] = false;
+            p.canSee[t.ind] = false;
             assertAll(
                 () -> assertFalse(unseen, "unseen: not visible"),
                 () -> assertTrue(tank, "an unseen own tank: visible"),
@@ -867,24 +869,45 @@ class LocksTest {
                 () -> assertFalse(visible(), "not playing: not visible"));
         }
 
+        /** {@link #hud} without playersOnRadar, the view {@code vw x vh}, the target at (dx, dy): LOCK_VISIBLE? */
+        boolean inView(int vw, int vh, double dx, double dy) {
+            hud("playersOnRadar: no\n", dx, dy);
+            p.viewWidth = vw;
+            p.viewHeight = vh;
+            return visible();
+        }
+
         @Test
-        @DisplayName("without playersOnRadar the target must be in view (|dx| < 512, |dy| < 384)")
+        @DisplayName("without playersOnRadar the target must be in the client's view: C inview, offsets in (-(w/2), w - w/2)")
         void inView() {
-            hud("playersOnRadar: no\n", 511, 383);
-            boolean in = visible();
-            hud("playersOnRadar: no\n", 512, 0);
-            boolean outX = visible();
-            hud("playersOnRadar: no\n", 0, -384);
-            boolean outY = visible();
-            hud("playersOnRadar: no\n", -511, 0);
-            boolean inLeft = visible();
-            hud("", 900, 0);
+            hud("playersOnRadar: no\n", 383, 383);
+            boolean defaultIn = visible();
+            hud("playersOnRadar: no\n", 384, 0);
+            boolean defaultOut = visible();
+            hud("", 900, 900);
+            boolean onRadar = visible();
             assertAll(
-                () -> assertTrue(in, "(511, 383): in view"),
-                () -> assertFalse(outX, "dx 512: out of view"),
-                () -> assertFalse(outY, "dy -384: out of view"),
-                () -> assertTrue(inLeft, "dx -511: in view"),
-                () -> assertTrue(visible(), "with playersOnRadar the distance in view does not matter"));
+                () -> assertTrue(defaultIn, "default 768x768 (C DEF_VIEW_SIZE): (383, 383) is in view"),
+                () -> assertFalse(defaultOut, "default 768x768: dx 384 is out"),
+                () -> assertTrue(onRadar, "with playersOnRadar the distance does not matter"),
+                // a small view: 384 x 400
+                () -> assertTrue(inView(384, 400, 191, 199), "384x400: (191, 199) is in"),
+                () -> assertTrue(inView(384, 400, -191, -199), "384x400: (-191, -199) is in"),
+                () -> assertFalse(inView(384, 400, 192, 0), "384x400: dx 192 is out"),
+                () -> assertFalse(inView(384, 400, -192, 0), "384x400: dx -192 is out"),
+                () -> assertFalse(inView(384, 400, 0, 200), "384x400: dy 200 is out"),
+                () -> assertFalse(inView(384, 400, 0, -200), "384x400: dy -200 is out"),
+                // a large view: 1024 x 1000 (dy is limited to the 2100 px map)
+                () -> assertTrue(inView(1024, 1000, 511, 499), "1024x1000: (511, 499) is in"),
+                () -> assertTrue(inView(1024, 1000, -511, -499), "1024x1000: (-511, -499) is in"),
+                () -> assertFalse(inView(1024, 1000, 512, 0), "1024x1000: dx 512 is out"),
+                () -> assertFalse(inView(1024, 1000, 0, -500), "1024x1000: dy -500 is out"),
+                // an odd size: the view starts w/2 = 192 before the player and ends 193 after it
+                () -> assertTrue(inView(385, 385, 192, 192), "385x385: +192 is in (the far side is w - w/2 = 193)"),
+                () -> assertFalse(inView(385, 385, 193, 0), "385x385: dx +193 is out"),
+                () -> assertFalse(inView(385, 385, 0, 193), "385x385: dy +193 is out"),
+                () -> assertFalse(inView(385, 385, -192, 0), "385x385: dx -192 is out (the near side is w/2)"),
+                () -> assertFalse(inView(385, 385, 0, -192), "385x385: dy -192 is out"));
         }
 
         @Test

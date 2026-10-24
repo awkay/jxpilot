@@ -162,7 +162,7 @@ public final class Scoreboard {
             rowSlot[rows] = s;
             rowLine[rows] = i;
             rowDim[rows] = c == 'D' || c == 'P' || c == 'W';
-            format(labels[rows], c, teamPlay ? p.team(s) : -1, p.score(s), p.lives(s), p.name(s));
+            format(labels[rows], c, teamPlay ? p.team(s) : -1, p.alliance(s), p.score(s), p.lives(s), p.name(s));
             rows++;
         }
         if (teamPlay && !timing) {
@@ -239,14 +239,14 @@ public final class Scoreboard {
      * column (digit and blank in team play, else the alliance blank), score, lives (limited lives only),
      * name.
      */
-    void format(CharBuf b, char statusChar, int team, float score, int lives, CharSequence name) {
+    void format(CharBuf b, char statusChar, int team, char alliance, float score, int lives, CharSequence name) {
         b.clear();
         b.append(statusChar).append(' ');
         appendRace(b);
         if (team >= 0) {
             b.append((char) ('0' + (team % 10))).append(' ');
         } else {
-            b.append(' ');
+            b.append(alliance); // C paint.c: outside team play the column is the alliance mark
         }
         appendScoreAndLife(b, score, lives);
         b.append("  ").append(name);

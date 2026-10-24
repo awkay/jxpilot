@@ -129,19 +129,26 @@ class DenyListTest {
             () -> assertEquals(1, h.net.denied(), "counted"));
     }
 
+    /** {@code /set denyHosts VALUE}: the option changes and the network layer is told (server-commands' Tuning). */
+    private static void set(Harness h, String value) {
+        Options o = new Options();
+        o.setValue("denyHosts", value, false, OptionOrigin.COMMAND);
+        h.net.optionChanged(com.fulcrologic.jxpilot.common.config.Opt.DENY_HOSTS, o);
+    }
+
     @Test
     @DisplayName("denyHosts set at runtime (/set denyHosts) parses like the option: /0 and zero masks are skipped")
     void runtime() {
         Harness h = new Harness(new ServerNetConfig(), "mapName: test\n");
         InetSocketAddress bad = Harness.addr("10.9.9.9", 4000);
         InetSocketAddress other = Harness.addr("192.0.2.1", 4000);
-        h.net.denyHosts("0.0.0.0/0, ::/0, 0.0.0.0/0.0.0.0, 10.9.9.9");
+        set(h, "0.0.0.0/0, ::/0, 0.0.0.0/0.0.0.0, 10.9.9.9");
         h.in(0, bad, new TestClient(1).connect("Bad", 255, ""));
         h.in(0, other, new TestClient(2).connect("Other", 255, ""));
         long deniedAfterSet = h.net.denied();
         boolean otherJoined = h.isConnected(0, other);
         int listed = h.cfg.denyHosts.size();
-        h.net.denyHosts("");
+        set(h, "");
         InetSocketAddress bad2 = Harness.addr("10.9.9.9", 4001);
         h.in(0, bad2, new TestClient(3).connect("Back", 255, ""));
         assertAll(

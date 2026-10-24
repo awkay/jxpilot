@@ -101,6 +101,14 @@ public final class ClientConnection {
     public final Msg.Connect connect = new Msg.Connect();
     /** Control settings sent (reliable SETTINGS) before READY on every join, as C sends them with PKT_PLAY. */
     public final Msg.Settings settings = new Msg.Settings();
+    /** View size in world pixels sent (reliable DISPLAY) before READY on every join, as C Net_start's PKT_DISPLAY. */
+    public final Msg.Display display = new Msg.Display();
+    /**
+     * The four modifier bank texts sent (reliable MODIFIER_BANK, banks 0..3, empty ones too) after DISPLAY and
+     * before READY on every join, as C sends {@code modBankStr} at login ({@code Send_modifier_bank}, items-2).
+     */
+    public final String[] modifierBanks = {"", "", "", ""};
+    private final Msg.ModifierBank bankMsg = new Msg.ModifierBank();
     /** Reconnect automatically when an established session times out (default true). */
     private boolean autoReconnect = true;
 
@@ -617,6 +625,13 @@ public final class ClientConnection {
         config = null;
         listener.onConfig(welcome, opts, map);
         settings.send(channel);
+        display.send(channel);
+        for (int i = 0; i < Msg.ModifierBank.BANKS; i++) {
+            bankMsg.bank = i;
+            bankMsg.text.setLength(0);
+            bankMsg.text.append(modifierBanks[i]);
+            bankMsg.send(channel);
+        }
         Msg.sendReady(channel);
         status.setLength(0);
         status.append("Playing on ").append(serverLabel);

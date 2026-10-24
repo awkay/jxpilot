@@ -58,7 +58,7 @@ class SimGameHostEventsTest {
 
     static String join(Player p, int flags) {
         return "JOIN " + p.id + " team=" + (p.team < 0 ? 255 : p.team) + " flags=" + flags + " power=" + p.power
-            + " ab=0 name=" + p.name + " shape=";
+            + " ab=0 name=" + p.name + " shape=" + p.ship.wire;
     }
 
     @Nested
@@ -183,6 +183,7 @@ class SimGameHostEventsTest {
             e.add(Events.THRUST, 1, 2, 0, 40f);
             e.text[e.add(Events.SCORE_OBJECT, 1, 3, 4, -2f)].append("kill");
             e.text[e.add(Events.SCORE_OBJECT, 2, 5, 6, 1f)].append("bob's");
+            e.add(Events.SEEK, 1, 2, Obj.NO_ID, 0f);
             e.add(99, 1, 1, 1, 1f);
             h.drainEvents(ann.id, a.out);
             List<String> annGot = a.take();
@@ -194,11 +195,12 @@ class SimGameHostEventsTest {
                 () -> assertEquals(List.of(
                     join(bob, 0), "LEAVE 7", "TEAM 2 3", "TEAM 2 255", "SCORE 1 12.5 lives=3 status=2", "TEAM_SCORE 1 7.5",
                     "MSG 4 from=65535 all", "MSG 2 from=2 to ann", "BASE 2 65535", "BASE 1 2", "EVENT 1 65535 2 3.0",
-                    "EVENT 3 1 0 0.0", "THRUST 1 40.0 ab=2", "SCORE_OBJECT -2.0 3,4 kill"), annGot,
+                    "EVENT 3 1 0 0.0", "THRUST 1 40.0 ab=2", "SCORE_OBJECT -2.0 3,4 kill", "SEEK 1 2 65535"), annGot,
                     "JOIN as the player is now (reserved and unknown ids skipped); Bob's private line and score object skipped"),
                 () -> assertEquals(List.of(), again, "the cursor moved past everything"),
-                () -> assertEquals(List.of("MSG 4 from=65535 all", "MSG 2 from=1 to bob", "SCORE_OBJECT 1.0 5,6 bob's"),
-                    HostFx.only(bobGot, "MSG", "SCORE_OBJECT"), "Bob gets his own private line and score object"),
+                () -> assertEquals(List.of("MSG 4 from=65535 all", "MSG 2 from=1 to bob", "SCORE_OBJECT 1.0 5,6 bob's",
+                    "SEEK 1 2 65535"), HostFx.only(bobGot, "MSG", "SCORE_OBJECT", "SEEK"),
+                    "Bob gets his own private line and score object; SEEK goes to everyone (C Send_seek)"),
                 () -> assertEquals(join(bob, Msg.PlayerJoin.FLAG_SELF), bobGot.get(0), "Bob's own JOIN has SELF"));
         }
 
@@ -246,7 +248,8 @@ class SimGameHostEventsTest {
             assertAll(
                 () -> assertEquals(bob, res, "Res holds Bob's id but is not in the game"),
                 () -> assertEquals(List.of("LEAVE 2", "LEAVE 3", join(ann, Msg.PlayerJoin.FLAG_SELF), "BASE " + ann.homeBase + " 1",
-                    "SCORE 1 0.0 lives=-1 status=0"), got, "leaves for Bob and Cid, then the state; no lost event is replayed"),
+                    "SCORE 1 0.0 lives=-1 status=0", "ALLIANCE 1 ' '"), got,
+                    "leaves for Bob and Cid, then the state (every alliance mark); no lost event is replayed"),
                 () -> assertEquals(List.of(), after, "the cursor continues from the newest event"));
         }
 
@@ -267,7 +270,8 @@ class SimGameHostEventsTest {
                 w.events.add(Events.TEAM_SCORE, 1, 0, 0, i);
             }
             h.drainEvents(ann.id, a.out);
-            assertEquals(List.of(join(ann, Msg.PlayerJoin.FLAG_SELF), "BASE " + ann.homeBase + " 1", "SCORE 1 0.0 lives=-1 status=0"),
+            assertEquals(List.of(join(ann, Msg.PlayerJoin.FLAG_SELF), "BASE " + ann.homeBase + " 1", "SCORE 1 0.0 lives=-1 status=0",
+                    "ALLIANCE 1 ' '"),
                 a.take(), "only the state: Bob was already announced as gone");
         }
 
@@ -295,7 +299,8 @@ class SimGameHostEventsTest {
             assertAll(
                 () -> assertEquals(ann, cid, "Cid has Ann's old viewer id"),
                 () -> assertEquals(List.of(join(cp, Msg.PlayerJoin.FLAG_SELF), "BASE " + cp.homeBase + " " + cid,
-                    "SCORE " + cid + " 0.0 lives=-1 status=0"), c.take(), "no PLAYER_LEAVE for Bob, whom Cid never saw"));
+                    "SCORE " + cid + " 0.0 lives=-1 status=0", "ALLIANCE " + cid + " ' '"), c.take(),
+                    "no PLAYER_LEAVE for Bob, whom Cid never saw"));
         }
 
         @Test

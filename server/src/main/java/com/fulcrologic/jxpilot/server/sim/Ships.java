@@ -51,6 +51,11 @@ import com.fulcrologic.jxpilot.server.world.WormTable;
  * One sim tick is one C frame: every rule is C's per-frame rule, with C's float ({@code DFLOAT}) arithmetic.
  */
 public final class Ships {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_HAS_COMMITTED_SUICIDE = Texts.of(" has committed suicide.");
+    private static final String T_SELF_DESTRUCT = Texts.of("Self-Destruct");
+
     /** C {@code ED_SHIELD} after the {@code (long)} cast in update.c: fuel per frame with shields up. */
     static final long ED_SHIELD = (long) (-0.20 * 256);
     /** C {@code REFUEL_RATE} (fixed point). */
@@ -89,11 +94,29 @@ public final class Ships {
      * null for none.
      */
     public EnterListener enterListener;
+    /**
+     * server-commands: C {@code Parse_shape_str(defaultShipShape)} (the built-in ship when it is invalid): the
+     * ship of every player and robot without allowShipShapes (C {@code Init_player}).
+     */
+    public final com.fulcrologic.jxpilot.server.world.ShipGeom defaultShipShape;
+    /**
+     * server-commands: the ship of a detached fuel tank (C ship.c:416-418: {@code Parse_shape_str(tankShipShape)}
+     * with allowShipShapes, else Init_player's {@link #defaultShipShape}); for the tank code (server-items).
+     */
+    public final com.fulcrologic.jxpilot.server.world.ShipGeom tankShipShape;
+    private final boolean allowShipShapes;
 
     public Ships(World w, Simulation sim) {
         this.w = w;
         this.sim = sim;
         this.baseOrder = w.map.baseOrder();
+        this.defaultShipShape = com.fulcrologic.jxpilot.server.world.ShipGeom.parse(
+            w.options.getString(com.fulcrologic.jxpilot.common.config.Opt.DEFAULT_SHIP_SHAPE));
+        this.allowShipShapes = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.ALLOW_SHIP_SHAPES);
+        this.tankShipShape = allowShipShapes
+            ? com.fulcrologic.jxpilot.server.world.ShipGeom.parse(
+                w.options.getString(com.fulcrologic.jxpilot.common.config.Opt.TANK_SHIP_SHAPE))
+            : defaultShipShape;
     }
 
     // ================================================================ join / leave / home
@@ -231,6 +254,7 @@ public final class Ships {
      * BEHAVIOR: a reserved player that never spawned just frees its slot (no events).
      * BEHAVIOR: a ball connected to the player is deleted at once (it explodes and returns to its treasure);
      * balls the player owned lose their owner.
+     * BEHAVIOR: the player leaves its alliance ({@link Alliances#leave}).
      * BEHAVIOR: the player's debris and sparks lose their owner and keep flying; its other objects lose their
      * owner and, without keepShots, die (life 0) and cannon shots lose their mass so they do not explode;
      * without keepShots EVERY cannon shot in the world dies the same way (a C quirk, kept).
@@ -249,6 +273,7 @@ public final class Ships {
             w.removePlayer(pl);
             return;
         }
+        sim.alliances.leave(pl); // server-commands: C Delete_player calls Leave_alliance first (player.c:1689)
         int id = pl.id;
         Objects o = w.objects;
         boolean keep = w.params.keepShots;
@@ -466,7 +491,9 @@ public final class Ships {
         Params p = w.params;
         pl.team = Const.TEAM_NOT_SET;
         pl.homeBase = -1;
-        pl.ship = com.fulcrologic.jxpilot.server.world.ShipGeom.defaultShip();
+        // server-commands: C Init_player with a client's (empty) shape: the built-in ship with allowShipShapes, else
+        // defaultShipShape; the host puts the CONNECT shape, the robot manager the robot's, after the spawn
+        pl.ship = allowShipShapes ? com.fulcrologic.jxpilot.server.world.ShipGeom.defaultShip() : defaultShipShape;
         pl.vx = pl.vy = 0;
         pl.accX = pl.accY = 0;
         pl.dir = DIR_UP;
@@ -514,6 +541,9 @@ public final class Ships {
         pl.frameLastBusy = w.frames;
         pl.scoreDirty = false;
         initItemState(pl);
+        pl.alliance = Player.ALLIANCE_NOT_SET; // server-commands: C Init_player (player.c:527-529, 554)
+        pl.invite = Obj.NO_ID;
+        pl.isOperator = false;
         setMass(pl);
     }
 
@@ -539,10 +569,6 @@ public final class Ships {
         pl.loseItem = 0;
         pl.loseItemState = 0;
         pl.tractorIsPressor = false;
-        for (int i = 0; i < w.players.length; i++) {
-            pl.canSee[i] = true;
-            w.players[i].canSee[pl.slot] = true;
-        }
         sim.locks.sensorRange(pl);
     }
 
@@ -1065,10 +1091,10 @@ public final class Ships {
         w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, pl.id, pl.id, 0f);
         if (w.params.selfDestructScoreMult != 0) {
             sim.scoring.score(pl, -Scoring.rate(0, pl.score) * w.params.selfDestructScoreMult, pl.bx, pl.by,
-                "Self-Destruct");
+                T_SELF_DESTRUCT);
         }
         pl.status |= Obj.KILLED;
-        w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" has committed suicide.");
+        w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(T_HAS_COMMITTED_SUICIDE);
         sim.items.throwItems(pl);
         kill(pl);
     }
