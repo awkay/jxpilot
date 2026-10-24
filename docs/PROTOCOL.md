@@ -218,7 +218,8 @@ M1 uses 1-8; 9-22 are defined for M2; 37 is SOUND. Item sections as the server f
 
 - SELF: `lockId` is the locked player when the lock and the compass are on (else NO_ID); `numTanks` and `currentTank`
   are the receiver's extra tanks and the tank fuel is taken from (0 = main); `lockDist`/`lockDir` are set while the lock
-  is shown on the HUD (C LOCK_VISIBLE), `mods` are the receiver's modifiers.
+  is shown on the HUD (C LOCK_VISIBLE), `mods` are the receiver's modifiers; the AUTOPILOT flag of SELF is C's
+  autopilot light (`showautopilot`: blinking 4 of 8 frames, steady once a hover pause has run out).
 - TIMERS: sent every snapshot; the emergency thrust, emergency shield and phasing meters while each is in use, the
   self-destruct countdown while self-destructing.
 - SELF_ITEMS: one record per snapshot with the receiver's item counts (TANK = its tank count).

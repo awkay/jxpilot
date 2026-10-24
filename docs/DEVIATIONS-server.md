@@ -40,7 +40,6 @@ are deliberate.
 | Hyperjump with wormTime | makes a pair of temporary wormholes (`add_temp_wormholes`) | no temporary wormholes; the jump itself is C's | Not ported yet. |
 | Visibility of a new player | stale `canSee` entries of the slot until the next visibility update | everyone sees and is seen at join until the first update | Avoids an invisible first frame. |
 | ECM reprogramming a robot | `Send_seek` tells every client | the robot goes to war; no message | Our protocol has no seek message. |
-| Autopilot HUD light (`Frame_status`) | blinks 4 of 8 frames with the autopilot on, steady at the end of a hover pause | not sent; the ship's AUTOPILOT flag (also set during hover pause) is | SELF has no light bit; the client draws the autopilot from the flag. |
 | Snapshot rate of paused / game-over players (frame.c:1275-1294) | without allowViewing, paused players get every 4th frame and game-over players every 2nd | every snapshot | A bandwidth saving only; our snapshot rate is set by the network layer. |
 | Modifier banks | the C client sends its configured banks at login (PKT_MODIFIERBANK) | banks start empty; REPROGRAM + LOAD_MODIFIERS fills them in game | Our protocol has no bank message. |
 | Lose-item selection HUD (`Send_loseitem`) | sent while selecting | not sent | Our protocol; the client shows the item counts. |

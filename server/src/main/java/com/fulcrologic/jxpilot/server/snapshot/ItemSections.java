@@ -104,6 +104,20 @@ final class ItemSections {
         return (v.lockTagged & Player.LOCK_VISIBLE) != 0 && t != null ? (int) v.lockDistance : 0;
     }
 
+    /**
+     * C {@code showautopilot} (frame.c:424-429), sent as SELF's AUTOPILOT flag like the XPilot path's
+     * {@code autopilotLight}.
+     * <p>
+     * BEHAVIOR: in a hover pause, on when its count has run out or in the first 4 of every 8 frames; with the
+     * autopilot, on in the first 4 of every 8 frames; else off.
+     */
+    boolean autopilotLight(Player v) {
+        if ((v.status & Obj.HOVERPAUSE) != 0) {
+            return v.count <= 0 || (w.frames % 8) < 4;
+        }
+        return (v.used & Has.AUTOPILOT) != 0 && (w.frames % 8) < 4;
+    }
+
     /** BEHAVIOR: the direction (RES) from {@code v} to the shown lock, else 0. */
     int lockDir(Player v) {
         Player t = w.byId(v.lockPlId);

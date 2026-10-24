@@ -105,7 +105,7 @@ class ItemSectionsTest {
             buf.flip();
             assertTrue(r.begin(buf), "part header");
             while (r.nextSection()) {
-                if (r.type() != (type == SELF_LOCK ? Section.SELF : type)) {
+                if (r.type() != (type < 0 ? Section.SELF : type)) {
                     continue;
                 }
                 for (int i = 0; i < r.count(); i++) {
@@ -118,6 +118,8 @@ class ItemSectionsTest {
 
     /** Pseudo section type for {@link #describe}: the lock and modifier fields of SELF. */
     static final int SELF_LOCK = -1;
+    /** Pseudo section type for {@link #describe}: the flags of SELF. */
+    static final int SELF_FLAGS = -2;
 
     static int res(float radians) {
         return Math.round(radians * Const.RES / (float) (2 * Math.PI)) & (Const.RES - 1);
@@ -132,6 +134,9 @@ class ItemSectionsTest {
                     sb.append(s.count(k)).append(k < Item.COUNT - 1 ? "," : "");
                 }
                 return sb.toString();
+            }
+            case SELF_FLAGS -> {
+                return Integer.toString(new Records.Self().wrap(r, i).flags());
             }
             case SELF_LOCK -> {
                 Records.Self s = new Records.Self().wrap(r, i);

@@ -306,7 +306,9 @@ public final class SnapshotBuilder {
         if (!need(Section.SELF, 0)) {
             return;
         }
-        Records.Self.put(wr, v.id, shipFlags(v, v), (float) cx, (float) cy, (float) v.vx, (float) v.vy,
+        int flags = (shipFlags(v, v) & ~Records.ShipFlags.AUTOPILOT)
+            | (itemSections.autopilotLight(v) ? Records.ShipFlags.AUTOPILOT : 0);
+        Records.Self.put(wr, v.id, flags, (float) cx, (float) cy, (float) v.vx, (float) v.vy,
             (float) heading(v), (float) (v.fuel / 256), (float) (v.fuelMax / 256),
             (v.lockTagged & Player.LOCK_PLAYER) != 0 && (v.used & Has.COMPASS) != 0 ? v.lockPlId : Protocol.NO_ID,
             v.numTanks, v.currentTank,
