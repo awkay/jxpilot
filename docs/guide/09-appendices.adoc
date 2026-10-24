@@ -153,9 +153,9 @@ Is JXPilot related to the XPilot developers?::
 No. It is an independent port; they were not involved and do not endorse it
 (<<01-introduction.adoc#disclaimer,Relationship to XPilot>>).
 
-Why is the client jar about 5 MB?::
-It carries the native libraries for every supported system, so one file runs on Windows, macOS and
-Linux. The application downloads are larger (about 20 MB zipped) because they include a Java runtime.
+Why is the client jar about 10 MB?::
+It carries the native libraries (graphics and sound) for every supported system, so one file runs on
+Windows, macOS and Linux, and the sound effects. The application downloads are larger because they include a Java runtime.
 
 Does it run on Intel Macs, Linux on ARM, Windows on ARM?::
 The jar includes native libraries for macOS on Intel and Apple Silicon, Linux on x64 and arm64, and
