@@ -17,7 +17,7 @@ case "$(uname -s)-$(uname -m)" in
     *) NAT=natives-windows; JOPT=;;
 esac
 CP="$ROOT/client/target/classes:$ROOT/client/target/test-classes:$ROOT/common/target/classes:$ROOT/server/target/classes"
-for a in lwjgl lwjgl-glfw lwjgl-opengl lwjgl-stb; do
+for a in lwjgl lwjgl-glfw lwjgl-opengl lwjgl-openal lwjgl-stb; do
     CP="$CP:$M2/org/lwjgl/$a/$V/$a-$V.jar:$M2/org/lwjgl/$a/$V/$a-$V-$NAT.jar"
 done
 cd "$ROOT"
