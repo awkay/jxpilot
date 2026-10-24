@@ -29,7 +29,7 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
 
 | id | name | dir | body |
 |---|---|---|---|
-| 1 | CONNECT | C→S | `Msg.Connect`: u32 nonce, u8 team (0-9 or 255), str8 name, str16 shape. Resent every 250 ms until answered. The shape is the ship the player wears for the whole session (C takes PKT_SHAPE only at login); the JXPilot client sends it in C's canonical form (`ShipShape.toWireString`, C `Convert_ship_2_string`). The server applies C's shape limits (`Parse_shape_str`); an empty or invalid shape gives the built-in ship, and without `allowShipShapes` everyone wears `defaultShipShape`. |
+| 1 | CONNECT | C→S | `Msg.Connect`: u32 nonce, u8 team (0-9 or 255), str8 name, str16 shape, then optionally str8 real name and str8 host name (C `Connect_param` real/host; the JXPilot client sends the login name, or `--user`, and the local host name; absent or cut short reads as empty). Resent every 250 ms until answered. The shape is the ship the player wears for the whole session (C takes PKT_SHAPE only at login); the JXPilot client sends it in C's canonical form (`ShipShape.toWireString`, C `Convert_ship_2_string`). The server applies C's shape limits (`Parse_shape_str`); an empty or invalid shape gives the built-in ship, and without `allowShipShapes` everyone wears `defaultShipShape`. |
 | 2 | ACCEPT | S→C | `Msg.Accept`: u32 nonce, u16 playerId. Header session = new random session id. Re-sent for duplicate CONNECTs and on a backoff schedule until the session is verified (below). |
 | 3 | REJECT | S→C | `Msg.Reject`: u32 nonce, u8 reason, str8 text. Header session 0. Never larger than the CONNECT it answers (the text is cut to fit). Reasons: 1 FULL (no slot after kicking a robot, else paused players; or the requested team is full), 2 VERSION, 3 BAD_NAME (empty, or already in use: compared without case after trailing blanks are cut and the name is clamped to 16 Latin-1 chars), 4 OTHER (team play with `teamAssign: no` and no valid team requested, or no team can be picked; C contact.c `Check_queue`), 5 LOCKED ("game locked": an operator locked the game with `/lock 1`, C `E_GAME_LOCKED`; checked first), 6 QUEUED (the game is full: the player waits in the login queue, C contact.c; the text is "queued at position N" and a u16 position (1 = next) follows it). A queued client keeps its place by resending its CONNECT (same nonce) every second; each is answered with QUEUED and the current position, a place nobody asks for in 30 seconds is dropped, and when a base frees up the first waiting player is admitted (a slot is reserved for 30 seconds) and its next CONNECT is accepted. Players also wait while others are queued, the queue holds 20, two per address. |
 | 4 | RELIABLE | both | reliable channel body (below). |
@@ -123,7 +123,7 @@ Server → client:
 |---|---|---|
 | 1 | WELCOME | u16 playerId, u8 team, u8 simHz, u8 snapshotHz, u8 flags (1 teamPlay, 2 edgeWrap, 4 timing, 8 radarBlinked: radar records are already blinked; only the XPilot-protocol client sets it for itself), f32 gameFps, u32 configLength, u32 configCompressedLength, u32 configCrc32, str8 serverName. *(Server S1 fix round: the server simulates at the map's framesPerSecond, so simHz = gameFps; one tick is one C frame.)* |
 | 2 | DATA_CHUNK | u32 offset, raw bytes (≤ 1024) to the end of the message |
-| 3 | PLAYER_JOIN | u16 id, u8 team, u8 flags (1 robot, 2 tank, 4 self, 8 paused), f32 power, u8 afterburners, str8 name, str16 shape (C's canonical form, `Convert_ship_2_string`; empty = the built-in default ship). A detached fuel tank is a pseudo player with flag 2, the name "NAME's tank" and the `tankShipShape` (with `allowShipShapes`, else `defaultShipShape`); it owns no base |
+| 3 | PLAYER_JOIN | u16 id, u8 team, u8 flags (1 robot, 2 tank, 4 self, 8 paused), f32 power, u8 afterburners, str8 name, str16 shape (C's canonical form, `Convert_ship_2_string`; empty = the built-in default ship), str8 real name, str8 host name (C `Fix_real_name` / `Fix_host_name` applied: "X" / "xxx.xxx" when the client sent none; robots and tanks get `robotRealName`/`robotHostName` and `tankRealName`/`tankHostName`; a long shape is cut so the names fit; old readers stop after the shape). A detached fuel tank is a pseudo player with flag 2, the name "NAME's tank" and the `tankShipShape` (with `allowShipShapes`, else `defaultShipShape`); it owns no base |
 | 4 | PLAYER_LEAVE | u16 id |
 | 5 | PLAYER_TEAM | u16 id, u8 team |
 | 6 | SCORE | u16 id, f32 score, i16 lives (-1 = unlimited), u8 status (1 dead, 2 paused, 4 waiting, 8 out of lives). Only updates the score table: the client's HUD score popups come from SCORE_OBJECT (12), never from SCORE changes |
@@ -137,6 +137,7 @@ Server → client:
 | 20 | TIMING | race mode only (C `Send_timing`): u16 id, u8 check (the next checkpoint the player must pass, C `pl->check`), u16 round (laps started, 0 before the first checkpoint). Sent for every player in the initial state and whenever a player passes a checkpoint or race progress is reset. The last checkpoint passed is check - 1 (wrapping); the own player's check is the checkpoint the client highlights. Ids 20-26 are the game-mode block |
 | 28 | MOTD | u32 offset, u32 total size, bytes: a piece of the server's message of the day (C `motdFileName`, Latin-1, at most 30 KB). *(server-batch2 block 28-30.)* The server sends all pieces once, with the first event drain after the initial state, when it has a MOTD; the client shows it (C's MOTD viewer) once every piece is in. Old clients skip it |
 | 31 | PLAYER_ALLIANCE | u16 id, u8 mark (Latin-1): the alliance mark of player id as this receiver sees it, C `Send_score`'s alliance character (netserver.c:1670-1678): ' ' not in an alliance, '+' in the receiver's own alliance (when `announceAlliances` is off; other alliances then show ' '), '0'-'9' the alliance number (when `announceAlliances` is on). Sent when a player's alliance changes (C resends the score then); when the receiver's own alliance changes it gets every player's mark again (its '+' marks may all have changed), and after an operator changes `announceAlliances` every player's mark goes to everyone. Also in the initial state for players in alliances (every player after a resync). The client shows it in the score list's team column outside team play and treats equal non-blank marks as friends (blue ship, friendly lock). Ids 32-33 are reserved for server-commands |
+| 40 | WAR | u16 robotId, u16 killerId: a robot's war target changed (C `Send_war`, the id is C's PKT_WAR); killerId NO_ID ends the war. The client keeps the target (C `war_id`, also set by SEEK, cleared when the target leaves), shows it in the score list as " (NAME)" after the robot's name and, for a new target, logs "ROBOT declares war on KILLER." (C `Handle_war`). Sent to everyone as C `Robot_war` does: when a robot declares war on its killer, and (NO_ID) when a robot kills the player it was at war with; the initial state sends it for every robot already at war |
 
 Client → server:
 
@@ -165,7 +166,10 @@ header's `lastInputSeq` (the newest the server applied), at least 1 and at most 
 (VPN drop, ICMP port unreachable) INPUT, reliable data and ACKs pause for 250 ms.
 `keys` is a `ControlKey` mask: bit = `keys_t` value − 1 (KEY_LOCK_NEXT … KEY_DEFLECTOR = 64 keys).
 The server applies entries newer than the last applied sequence, oldest first, and derives press/release
-edges by comparing consecutive masks. `aimTurn` is a pointer-control turn in u16 angle units (0 = none).
+edges by comparing consecutive masks. `aimTurn` is pointer control's horizontal mouse movement in window
+pixels (C `PKT_POINTER_MOVE`, 0 = none); held frames' movements are summed into the next INPUT. The server
+applies each entry when it reads it, as C `Receive_pointer_move`: ignored in hover pause, the autopilot switched off,
+`turnVel -= sign * clamp(|movement| * turnSpeed / 64)` with the clamp 4..64 under a turn resistance, else 0..5 * RES.
 `ackTick` is the newest snapshot tick received.
 
 ## SNAPSHOT — `SnapshotWriter` / `SnapshotReader` / `Records`
@@ -208,13 +212,13 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 | 5 | CANNON | 3 | u16 index, u8 flags (dead, phasing, shield) |
 | 6 | FUEL | 4 | u16 index, frac level (of 500) |
 | 7 | TARGET | 5 | u16 index, u8 flags (dead), frac strength left |
-| 8 | RADAR | 3 | u8 x, u8 y (1/256 of the world size, decoded to the cell centre), u8 flags (friendly, self, missile, mine, ball, nuke, asteroid, locked) — whole world |
+| 8 | RADAR | 3 | u8 x, u8 y (1/256 of the world size, decoded to the cell centre), u8 flags (friendly, self, missile, mine, ball, nuke, asteroid, locked) — whole world. Section variant: 0, or for a section of asteroid blips their size (C `Frame_radar` draws an asteroid size + 1 pixels; one section per size, so ordinary blips cost nothing extra). Readers that ignore the variant draw every asteroid at size 1 |
 | 9 | ITEM | 5 | rel x, rel y, u8 item (`Item`) |
 | 10 | MINE | 7 | rel x, rel y, u8 flags, u16 owner |
 | 11 | MISSILE | 10 | u16 id, rel x, rel y, ang heading, u8 kind (smart/heat/torpedo, 0x80 nuclear), u8 length |
 | 12 | BALL | 9 | u16 id, rel x, rel y, u8 team, u16 holder |
 | 13 | LASER | 9 | rel x, rel y, ang heading, u16 length, u8 colour |
-| 14 | ASTEROID | 7 | rel x, rel y, u8 size, ang rotation |
+| 14 | ASTEROID | 7 | rel x, rel y, u8 type_size (C `Send_asteroid`: outline type << 4 \| size), ang rotation |
 | 15 | WRECKAGE | 8 | rel x, rel y, u8 shape, u8 size, ang rotation *(server-batch2: the Java server sends wreckage in view every snapshot; shape is C's `info & 0x7F`, size C's 0..255, rotation C's RES rotation in radians)* |
 | 16 | ECM | 6 | rel x, rel y, u16 radius |
 | 17 | CONNECTOR | 9 | rel x0, y0, x1, y1, u8 kind (0 ball, 1 tractor, 2 pressor, 3 refuel: station to ship, 4 repair: ship to target) |
@@ -248,7 +252,8 @@ M1 uses 1-8; 9-22 are defined for M2; 37 is SOUND. Item sections as the server f
   else 15.
 - LASER: from the pulse start when in view, else from its end backwards; colour BLUE when harmless to the receiver
   (team immune, or its own with `selfImmunity`), else RED.
-- ECM: centre and current radius (it halves every tick).
+- ECM: centre and current radius (it halves every tick): C's `ecm->size`, also on the XPilot path (PKT_ECM's size
+  as sent). The client draws it as C does, a circle `size` pixels across (`Gui_paint_ecm`), i.e. half the blast radius.
 - CONNECTOR: tractor/pressor beams of players and cannons, three lines from the beam source to the target's first three
   hull points.
 - TRANSPORTER: from the victim to the thief (or where the cannon fired it), for 5 ticks.
@@ -264,8 +269,10 @@ rests in it); BALL (id = the server's object handle, team = the team of the ball
 treasure, holder = the connected ship or NO_ID: the client draws the ball connector from it); CONNECTOR kind
 BALL only for a ship still *reaching* for a ball with its connector (C `pl->ball`); ASTEROID (size 1-4,
 rotation) and WRECKAGE (shape, size 0-255, rotation); RADAR blips with FLAG_BALL (`treasuresOnRadar`) and
-FLAG_ASTEROID (`asteroidsOnRadar`) within the receiver's sensor range; TEMP_WORMHOLE for every temporary (hyperjump) wormhole, whole world,
-type = `Wormhole.Type` ordinal (1 IN, 2 OUT). SHIP flags carry HAS_BALL and REPAIRING. Game-mode snapshot section ids
+FLAG_ASTEROID (`asteroidsOnRadar`) within the receiver's sensor range; TEMP_WORMHOLE for the IN end of every temporary (hyperjump) wormhole in view, only with
+`wormholeVisible` (C frame.c:611-636; type = `Wormhole.Type` ordinal, so always 1). The client draws each like a map
+wormhole half a block up and right of its block, as C's client does with the block centre the C server sends.
+TIMING carries race progress; in timing mode the client's score list follows the race (C `Client_score_table`). SHIP flags carry HAS_BALL and REPAIRING. Game-mode snapshot section ids
 30-36 are reserved for future mode sections (none used yet).
 A BURST of one particle with no speed and no life is a
 position-only point particle (C debris on the XPilot path) that the client tracks across frames. Indices refer to the `WorldMap` lists, which both sides build

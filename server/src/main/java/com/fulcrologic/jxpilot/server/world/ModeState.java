@@ -67,8 +67,6 @@ public final class ModeState {
     public final int[] targetTeam;
     /** C {@code target_t.damage}: strength left, {@link #TARGET_DAMAGE} when intact. */
     public final int[] targetDamage;
-    /** Frame of the last change (C {@code last_change}). */
-    public final long[] targetLastChange;
 
     // ---- asteroids (C Asteroid_list, World.asteroids.num)
     /** Asteroid handles in creation order, {@code asteroidList[0..asteroidCount)}. */
@@ -104,7 +102,6 @@ public final class ModeState {
             targetTeam[t.index()] = map.teamPlay() ? t.team() : 0;
         }
         targetDamage = new int[map.targets().size()];
-        targetLastChange = new long[map.targets().size()];
         Arrays.fill(targetDamage, TARGET_DAMAGE);
     }
 

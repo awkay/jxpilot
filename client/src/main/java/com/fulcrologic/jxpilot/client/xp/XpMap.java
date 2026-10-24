@@ -25,6 +25,8 @@ package com.fulcrologic.jxpilot.client.xp;
 
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.Options;
+import com.fulcrologic.jxpilot.common.map.Base;
+import com.fulcrologic.jxpilot.common.map.Dir;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
 
 import java.util.ArrayList;
@@ -183,6 +185,8 @@ public final class XpMap {
      * <p>
      * BEHAVIOR: options carry the map size, name, author, data, edge wrap, team play, timing, limited
      * lives (and the lives count) and frames per second from the setup's mode bits.
+     * BEHAVIOR: each base faces the way its setup code says ({@link #baseDir}; C guimap.c draws from it), not
+     * the way the map loader re-derives it without the server's gravity and {@code $} attractors.
      * BEHAVIOR: the C-number tables order each WorldMap list by (x, y), the C scan order.
      * BEHAVIOR: throws IllegalArgumentException for undecodable map data.
      */
@@ -204,12 +208,34 @@ public final class XpMap {
         o.force(Opt.FRAMES_PER_SECOND, Integer.toString(Math.max(1, s.fps)));
         o.force(Opt.MAP_DATA, text);
         WorldMap m = WorldMap.fromOptions(o);
+        for (int i = 0; i < m.bases().size(); i++) {
+            Base b = m.bases().get(i);
+            m.setBaseDir(i, baseDir(blocks[b.bx() * s.height + b.by()] & 0xFF, b.dir()));
+        }
         return new Built(m, o,
             cOrder(m.cannons(), c -> c.bx(), c -> c.by()),
             cOrder(m.fuels(), f -> f.bx(), f -> f.by()),
             cOrder(m.targets(), t -> t.bx(), t -> t.by()),
             cOrder(m.bases(), b -> b.bx(), b -> b.by()),
             unknown[0]);
+    }
+
+    /**
+     * The heading of a base setup code (common/setup.h: SETUP_BASE_UP + team, then RIGHT, DOWN, LEFT by tens).
+     * <p>
+     * BEHAVIOR: 30..39 up, 40..49 right, 50..59 down, 60..69 left (RES units, {@link Dir}); any other code keeps
+     * {@code fallback}.
+     */
+    static int baseDir(int code, int fallback) {
+        if (code < XpProto.SETUP_BASE_LOWEST || code > XpProto.SETUP_BASE_HIGHEST) {
+            return fallback;
+        }
+        return switch ((code - XpProto.SETUP_BASE_LOWEST) / 10) {
+            case 0 -> Dir.UP;
+            case 1 -> Dir.RIGHT;
+            case 2 -> Dir.DOWN;
+            default -> Dir.LEFT;
+        };
     }
 
     private static String yes(boolean b) {

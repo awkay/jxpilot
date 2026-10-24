@@ -43,7 +43,7 @@ public final class Scoreboard {
     /** C {@code MAX_TEAMS}. */
     public static final int MAX_TEAMS = 10;
     /** Label capacity (C {@code MSG_LEN}). */
-    public static final int LABEL_LEN = 80;
+    public static final int LABEL_LEN = 128;
 
     private final CharBuf heading = new CharBuf(LABEL_LEN);
     private final CharBuf[] labels = new CharBuf[Players.CAPACITY + MAX_TEAMS];
@@ -91,6 +91,24 @@ public final class Scoreboard {
         this.decimals = showScoreDecimals;
         builtVersion = -1;
         java.util.Arrays.fill(teamScore, 0);
+    }
+
+    private boolean idMode;
+
+    /** C {@code showRealName} (keyIdMode): rows show "NAME=REAL@HOST" instead of the score line. */
+    public boolean idMode() { return idMode; }
+
+    /** BEHAVIOR: flips ID mode (C {@code Key_press_id_mode}); the next {@link #update} rebuilds. */
+    public void toggleIdMode() {
+        setIdMode(!idMode);
+    }
+
+    /** BEHAVIOR: sets ID mode (C MENU / SCORE off, PLAYER on); a change makes the next {@link #update} rebuild. */
+    public void setIdMode(boolean on) {
+        if (on != idMode) {
+            idMode = on;
+            builtVersion = -1;
+        }
     }
 
     /** BEHAVIOR: TEAM_SCORE; teams outside 0..9 are ignored. */
@@ -174,12 +192,29 @@ public final class Scoreboard {
             rowSlot[rows] = s;
             rowLine[rows] = i;
             rowDim[rows] = c == 'D' || c == 'P' || c == 'W';
-            format(labels[rows], c, teamPlay ? p.team(s) : -1, p.alliance(s), p.score(s), p.lives(s), p.name(s),
-                p.round(s), p.check(s));
+            if (idMode) {
+                labels[rows].clear().append(p.name(s)).append('=').append(p.realName(s)).append('@').append(p.host(s));
+            } else {
+                format(labels[rows], c, teamPlay ? p.team(s) : -1, p.alliance(s), p.score(s), p.lives(s), p.name(s),
+                    p.round(s), p.check(s));
+                appendWar(labels[rows], p, s);
+            }
             rows++;
         }
         if (teamPlay && !timing) {
             teamRows(n);
+        }
+    }
+
+    /**
+     * C {@code Paint_score_entry}: a robot's war or seek target, " (NAME)" after its name.
+     * <p>
+     * BEHAVIOR: appended iff the player's war id is a player in the table.
+     */
+    static void appendWar(CharBuf b, Players p, int slot) {
+        int w = p.slotOf(p.warId(slot));
+        if (w >= 0) {
+            b.append(" (").append(p.name(w)).append(')');
         }
     }
 
@@ -262,6 +297,10 @@ public final class Scoreboard {
 
     private void buildHeading() {
         heading.clear();
+        if (idMode) {
+            heading.append("NICK=USER@HOST"); // C Paint_score_start with showRealName
+            return;
+        }
         heading.append(teamPlay ? " TM " : " AL ");
         heading.append("  SCORE  ");
         if (limitedLives) {

@@ -113,6 +113,9 @@ class AppAllocationTest {
         return s;
     }
 
+    /** Most warm-up frames before measuring (the recorded server stream covers them). */
+    static final int WARM_MAX = 30_000;
+
     @Test
     void steadyStateFrameWithoutGlAllocatesZeroBytes() throws Exception {
         com.sun.management.ThreadMXBean mx = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
@@ -193,7 +196,7 @@ class AppAllocationTest {
                 return 0;
             }
         });
-        int frames = 26000;
+        int frames = WARM_MAX + 1500 + 4500; // the warm-up, the measured frames and slack: the ring must not run dry
         long genNow = now;
         long genTick = nextTick;
         for (int f = 0; f < frames; f++) {
@@ -208,6 +211,9 @@ class AppAllocationTest {
         }
         Ring ring = new Ring(packets, due);
         sw.target = ring;
+        // client-play: pointer control on (keyPointerControl), so pointer movement and buttons run every frame
+        cf.key(GLFW_KEY_KP_ENTER, GLFW_PRESS, 0, now);
+        cf.key(GLFW_KEY_KP_ENTER, GLFW_RELEASE, 0, now);
         long[] t = {now};
         Runnable frame = () -> {
             t[0] += frameNs;
@@ -220,25 +226,27 @@ class AppAllocationTest {
                 cf.key(GLFW_KEY_RIGHT_SHIFT, GLFW_RELEASE, 0, t[0]);
                 cf.key(GLFW_KEY_A, GLFW_RELEASE, 0, t[0]);
                 cf.key(GLFW_KEY_ENTER, GLFW_RELEASE, 0, t[0]);
+            } else if (f % 40 == 5) {
+                cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, t[0]);
+                cf.key(GLFW_KEY_U, GLFW_PRESS, 0, t[0]); // keyIdMode: the score list rebuilds
+            } else if (f % 40 == 25) {
+                cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, t[0]);
+                cf.key(GLFW_KEY_U, GLFW_RELEASE, 0, t[0]);
+                cf.scroll(-1, t[0]);
             }
+            cf.cursor(600 + (f % 9) * 7, 400 + (f % 5)); // pointer steering every frame
+            ui(cf, f);
             cf.step(t[0], 1200, 800, 1, m, 256, 200);
             ring.frame++;
         };
-        // R7: warm up until the JIT is done (no compile time added over 1000 frames), at most 20000 frames
-        java.lang.management.CompilationMXBean jit = ManagementFactory.getCompilationMXBean();
-        long lastCompile = -1;
-        int warm = 0;
-        while (warm < 20_000) {
-            for (int i = 0; i < 1000; i++) {
-                frame.run();
-            }
-            warm += 1000;
-            long ct = jit.isCompilationTimeMonitoringSupported() ? jit.getTotalCompilationTime() : 0;
-            if (ct == lastCompile && warm >= 4000) {
-                break;
-            }
-            lastCompile = ct;
+        // R7: warm up until the JIT is done: no compilation (JFR jdk.Compilation) in 2 chunks of 1000 frames in a row
+        // (see JitQuiet: a late C2 request resolves its class's String constants on this thread)
+        int warm;
+        try (com.fulcrologic.jxpilot.client.JitQuiet jit = new com.fulcrologic.jxpilot.client.JitQuiet()) {
+            warm = jit.warm(frame, 1000, 4000, WARM_MAX, 2);
+            System.out.println("AppAllocationTest: warm-up " + warm + " frames, " + jit.compiles() + " compilations");
         }
+        int warmFrames = warm;
         long reliableBefore = game.reliableCount();
         long snapshotsBefore = conn.snapshotsReceived();
         // per frame (as XpNetAllocationTest): a bracket around the whole loop also catches the occasional
@@ -270,6 +278,7 @@ class AppAllocationTest {
             () -> assertTrue(game.world().particles().count() > 0, "particles alive"),
             () -> assertTrue(cf.radar().count() > 0, "radar blips"),
             () -> assertTrue(cf.extras().lock, "lock shown"),
+            () -> assertTrue(cf.play().pointer().on(), "pointer control was on while measured"),
             () -> assertTrue(cf.viewHud().textCount() > 3, "HUD built"),
             () -> assertTrue(cf.panelHud().textCount() >= 5, "score list built"),
             () -> assertTrue(ClientFrameLookTest.find(cf.viewHud(), "Lag") != null, "packet meters drawn while measured"),
@@ -281,7 +290,7 @@ class AppAllocationTest {
             () -> assertTrue(uzi >= 0 && game.players().shape(uzi).numPoints() == 4,
                 "the rejoining robot has its custom shape"),
             () -> assertEquals(0, nz, "no frame allocates in steady state, joins, leaves and lock changes included"
-                + " (worst " + w + " bytes)"));
+                + " (worst " + w + " bytes, after " + warmFrames + " warm-up frames)"));
     }
 
     static byte[] copy(ByteBuffer b) {
@@ -297,5 +306,44 @@ class AppAllocationTest {
         }
         into.put(a);
         return a.length;
+    }
+
+    /**
+     * client-ui: the C windows every 400 frames: MENU held and moved onto CONFIG, released (CONFIG opens), NEXT and
+     * PREV, ABOUT opened, paged (NEXT) and closed (CLOSE), CONFIG closed, a selection dragged over the messages and
+     * cleared.
+     */
+    static void ui(ClientFrame cf, int f) {
+        int top = cf.ui().bar().top();
+        int bh = cf.ui().bar().buttonHeight();
+        int vx = GameApp.PANEL_W + GameApp.PANEL_GAP;
+        int entry = top + 1 + bh + (bh + 1) + 5;
+        int next = 800 - 6 - 4;
+        int about = (1200 - (com.fulcrologic.jxpilot.client.game.ui.AboutWindow.WIDTH + 4)) / 2 + 2;
+        int aboutButtons = (800 - (com.fulcrologic.jxpilot.client.game.ui.AboutWindow.HEIGHT + 4)) / 2 + 2 + 665 + 5;
+        switch (f % 400) {
+            case 0 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 200, top + 5, vx);
+            case 5 -> cf.mouseMove(200, entry, vx);
+            case 10 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 200, entry, vx);
+            case 20 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 128, next, vx);
+            case 21 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 128, next, vx);
+            case 25 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 230, next, vx);
+            case 26 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 230, next, vx);
+            case 30 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 128, top + 5, vx);
+            case 31 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 128, top + 5, vx);
+            case 40 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, vx + about + 282 + 5, aboutButtons, vx);
+            case 41 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, vx + about + 282 + 5, aboutButtons, vx);
+            case 60 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, vx + about + 10 + 5, aboutButtons, vx);
+            case 61 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, vx + about + 10 + 5, aboutButtons, vx);
+            case 100 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 10, next, vx);
+            case 101 -> cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 10, next, vx);
+            case 150 -> cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 12, 800 - 20);
+            case 200 -> cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 600, 400);
+            default -> {
+                if (f % 400 > 150 && f % 400 < 200) {
+                    cf.viewMouseMove(12 + (f % 400 - 150), 800 - 20);
+                }
+            }
+        }
     }
 }

@@ -51,6 +51,7 @@ import static com.fulcrologic.jxpilot.server.host.HostFx.sim;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** SimGameHost reliable state: initialState and drainEvents decoded from a real ReliableChannel. */
 @DisplayName("SimGameHost: initial state and events")
@@ -76,7 +77,7 @@ class SimGameHostEventsTest {
             Player robot = w.playerAt(2);
             h.join("Res", 0, "");
             s.ships.pause(bob, true);
-            ann.score = 12.5;
+            ann.score = 12.5f;
             HostFx.Wire wire = new HostFx.Wire();
             h.initialState(bob.id, wire.out);
             List<String> got = wire.take();
@@ -86,6 +87,28 @@ class SimGameHostEventsTest {
                 "SCORE 2 0.0 lives=-1 status=" + (Msg.Score.STATUS_DEAD | Msg.Score.STATUS_PAUSED),
                 join(robot, Msg.PlayerJoin.FLAG_ROBOT), "BASE " + robot.homeBase + " 3", "SCORE 3 0.0 lives=-1 status=0"),
                 got, "C Handle_login's sends: each player in game order (a robot's power is its 55)");
+        }
+
+        @Test
+        @DisplayName("robots at war: WAR after the players (C Handle_login's Send_war); robots at peace: none")
+        void wars() {
+            Simulation s = sim("maxRobots: 2\nminRobots: 2\n", HostFx.FOUR);
+            World w = s.world;
+            SimGameHost h = new SimGameHost(s);
+            Player ann = w.byId(enter(h, "Ann", 0));
+            addRobots(s, 2);
+            Player r1 = w.playerAt(1);
+            Player r2 = w.playerAt(2);
+            s.robots.program(r2, ann.id); // an ECM reprogrammed it: at war with Ann
+            int bob = enter(h, "Bob", 0);
+            HostFx.Wire wire = new HostFx.Wire();
+            h.initialState(bob, wire.out);
+            List<String> got = wire.take();
+            assertAll(
+                () -> assertEquals(List.of("WAR " + r2.id + " " + ann.id), HostFx.only(got, "WAR"),
+                    "only the robot at war, with its target (" + r1.name + " is at peace)"),
+                () -> assertTrue(got.indexOf("WAR " + r2.id + " " + ann.id) > got.lastIndexOf(
+                    HostFx.only(got, "SCORE").get(HostFx.only(got, "SCORE").size() - 1)), "after every player's state"));
         }
 
         @Test
@@ -184,6 +207,8 @@ class SimGameHostEventsTest {
             e.text[e.add(Events.SCORE_OBJECT, 1, 3, 4, -2f)].append("kill");
             e.text[e.add(Events.SCORE_OBJECT, 2, 5, 6, 1f)].append("bob's");
             e.add(Events.SEEK, 1, 2, Obj.NO_ID, 0f);
+            e.add(Events.WAR, 2, 1, 0, 0f);
+            e.add(Events.WAR, 2, Obj.NO_ID, 0, 0f);
             e.add(99, 1, 1, 1, 1f);
             h.drainEvents(ann.id, a.out);
             List<String> annGot = a.take();
@@ -195,12 +220,13 @@ class SimGameHostEventsTest {
                 () -> assertEquals(List.of(
                     join(bob, 0), "LEAVE 7", "TEAM 2 3", "TEAM 2 255", "SCORE 1 12.5 lives=3 status=2", "TEAM_SCORE 1 7.5",
                     "MSG 4 from=65535 all", "MSG 2 from=2 to ann", "BASE 2 65535", "BASE 1 2", "EVENT 1 65535 2 3.0",
-                    "EVENT 3 1 0 0.0", "THRUST 1 40.0 ab=2", "SCORE_OBJECT -2.0 3,4 kill", "SEEK 1 2 65535"), annGot,
+                    "EVENT 3 1 0 0.0", "THRUST 1 40.0 ab=2", "SCORE_OBJECT -2.0 3,4 kill", "SEEK 1 2 65535", "WAR 2 1", "WAR 2 65535"),
+                    annGot,
                     "JOIN as the player is now (reserved and unknown ids skipped); Bob's private line and score object skipped"),
                 () -> assertEquals(List.of(), again, "the cursor moved past everything"),
                 () -> assertEquals(List.of("MSG 4 from=65535 all", "MSG 2 from=1 to bob", "SCORE_OBJECT 1.0 5,6 bob's",
-                    "SEEK 1 2 65535"), HostFx.only(bobGot, "MSG", "SCORE_OBJECT", "SEEK"),
-                    "Bob gets his own private line and score object; SEEK goes to everyone (C Send_seek)"),
+                    "SEEK 1 2 65535", "WAR 2 1", "WAR 2 65535"), HostFx.only(bobGot, "MSG", "SCORE_OBJECT", "SEEK", "WAR"),
+                    "Bob gets his own private line and score object; SEEK and WAR go to everyone (C Send_seek, Send_war)"),
                 () -> assertEquals(join(bob, Msg.PlayerJoin.FLAG_SELF), bobGot.get(0), "Bob's own JOIN has SELF"));
         }
 
@@ -219,7 +245,7 @@ class SimGameHostEventsTest {
             h.leave(bob);
             h.drainEvents(ann, a.out);
             assertEquals(List.of("BASE " + base + " 2", "EVENT 3 2 " + base + " 0.0",
-                    "MSG 3 from=65535 Bob has entered \"Arena\", made by Bob.", "BASE " + base + " 65535", "LEAVE 2"),
+                    "MSG 3 from=65535 Bob (X) has entered \"Arena\", made by Bob.", "BASE " + base + " 65535", "LEAVE 2"),
                 a.take(), "no PLAYER_JOIN for Bob, who is gone");
         }
 

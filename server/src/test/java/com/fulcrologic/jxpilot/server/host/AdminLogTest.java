@@ -62,10 +62,13 @@ class AdminLogTest {
         Path f = Files.createFile(dir.resolve("log"));
         Simulation s = sim("", THREE);
         Player ann = s.ships.join("Ann", 0);
+        ann.realName.append("ann");
+        ann.hostName.append("box.local");
+        ann.address.append("10.0.0.7");
         Talk t = new Talk(s.world, log(f, 20202));
         List<String> ev = TalkTest.say(s.world, t, ann, "god:the server is laggy");
         assertAll(
-            () -> assertEquals("04 Mar 05:06:07[Ann]{@()|}:\n\tthe server is laggy\n",
+            () -> assertEquals("04 Mar 05:06:07[Ann]{ann@box.local(10.0.0.7)|}:\n\tthe server is laggy\n",
                 Files.readString(f, StandardCharsets.ISO_8859_1), "appended entry"),
             () -> assertEquals(List.of("MESSAGE " + Msg.Text.KIND_PRIVATE + " 1 1 the server is laggy [Ann]:[GOD]"), ev,
                 "echo to the sender only"));
@@ -75,15 +78,16 @@ class AdminLogTest {
     @DisplayName("nothing is written without a file, with a limit <= 0, or once size + 80 or the text no longer fits")
     void limits() throws IOException {
         Path f = Files.writeString(dir.resolve("log"), "x".repeat(100));
+        Player a = sim("", THREE).ships.join("A", 0);
         assertAll(
-            () -> assertFalse(log(null, 20202).log("A", "god:hi", 4), "no file name"),
-            () -> assertFalse(log(dir.resolve("missing"), 20202).log("A", "god:hi", 4), "the file must already exist"),
-            () -> assertFalse(log(dir, 20202).log("A", "god:hi", 4), "a directory is no log file"),
-            () -> assertFalse(log(f, 0).log("A", "god:hi", 4), "limit 0"),
-            () -> assertFalse(log(f, 180).log("A", "god:hi", 4), "size + 80 = 180 is not below 180"),
-            () -> assertFalse(log(f, 183).log("A", "god:abc", 4), "room 3 does not exceed the length 3"),
+            () -> assertFalse(log(null, 20202).log(a, "god:hi", 4), "no file name"),
+            () -> assertFalse(log(dir.resolve("missing"), 20202).log(a, "god:hi", 4), "the file must already exist"),
+            () -> assertFalse(log(dir, 20202).log(a, "god:hi", 4), "a directory is no log file"),
+            () -> assertFalse(log(f, 0).log(a, "god:hi", 4), "limit 0"),
+            () -> assertFalse(log(f, 180).log(a, "god:hi", 4), "size + 80 = 180 is not below 180"),
+            () -> assertFalse(log(f, 183).log(a, "god:abc", 4), "room 3 does not exceed the length 3"),
             () -> assertEquals(100, Files.size(f), "untouched"),
-            () -> assertTrue(log(f, 184).log("A", "god:abc", 4), "room 4 > 3: written"));
+            () -> assertTrue(log(f, 184).log(a, "god:abc", 4), "room 4 > 3: written"));
     }
 
     @Test

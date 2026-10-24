@@ -150,6 +150,9 @@ public final class Ships {
             char c = name.charAt(i);
             pl.name.append(c > 0xFF ? '?' : c);
         }
+        pl.realName.setLength(0);
+        pl.hostName.setLength(0);
+        pl.address.setLength(0);
         return pl;
     }
 
@@ -163,7 +166,8 @@ public final class Ships {
      * Robot_create picks its own team), baseless or full team is replaced by C {@code Pick_team}.
      * BEHAVIOR: Init_player runs (start values, the client default power 45, turnspeed 35, turnresistance
      * 0.12 and alternates 35/25/0.12 until {@link #applySettings}); with limitedLives a joiner arriving after
-     * a non-team player lost a life waits ('W', GAME_OVER, no lives), judged after the team is chosen.
+     * a player lost a life waits ('W', GAME_OVER, no lives), judged with the slot's stale team as C
+     * ({@link #initPlayer}).
      * BEHAVIOR: emits JOIN (b = {@code Msg.PlayerJoin.FLAG_ROBOT} for robots, else 0), BASE_OWNER and SCORE,
      * and the ship starts at home.
      * BEHAVIOR: with teamShareScore the first member resets the team score; the share is redistributed to the
@@ -191,7 +195,6 @@ public final class Ships {
         if (!pickStartPos(pl)) {
             return false;
         }
-        tooLate(pl);
         goHome(pl);
         if (pl.team != Const.TEAM_NOT_SET) {
             w.teamMembers[pl.team]++;
@@ -258,8 +261,9 @@ public final class Ships {
      * BEHAVIOR: the player's debris and sparks lose their owner and keep flying; its other objects lose their
      * owner and, without keepShots, die (life 0) and cannon shots lose their mass so they do not explode;
      * without keepShots EVERY cannon shot in the world dies the same way (a C quirk, kept).
-     * BEHAVIOR: team membership drops; with teamShareScore the leaver's score is taken back from the team
-     * (C TEAM_SCORE(team, -score)) and the rest is shared among the remaining members.
+     * BEHAVIOR: team membership drops; with teamShareScore the leaver's score is taken back from the team (C
+     * TEAM_SCORE(team, -score)) and the rest is shared among the members, in C's order: while the leaver still
+     * holds its place, so the last player in the game order keeps its old score unless it is the leaver.
      * BEHAVIOR: shove records, locks and lock banks naming the player are cleared (locks with their tractor
      * beam); the home base is released (BASE_OWNER(base, NO_ID)) and LEAVE is emitted; its laser pulses go.
      * BEHAVIOR: tanks are not team members and own no base; the tanks a player released leave with it (with
@@ -317,13 +321,16 @@ public final class Ships {
         }
         int team = pl.team;
         boolean tank = pl.tank;
-        w.removePlayer(pl);
         if (team != Const.TEAM_NOT_SET && !tank) {
             w.teamMembers[team]--;
             if (w.params.teamShareScore) {
-                sim.scoring.teamScore(team, -pl.score);
+                // C order (player.c:1765-1773, a C bug kept for parity): NumPlayers-- comes before TEAM_SCORE and
+                // the pointer swap after it, so the re-share still sees the leaver in its place and misses the
+                // last player in the game order (unless the leaver is that last player)
+                sim.scoring.teamScore(team, -pl.score, pl.spawned ? w.numPlayers - 1 : w.numPlayers);
             }
         }
+        w.removePlayer(pl);
         for (int k = 0; k < w.numPlayers; k++) {
             Player other = w.playerAt(k);
             for (int i = 0; i < Player.MAX_SHOVES; i++) {
@@ -486,9 +493,19 @@ public final class Ships {
         return false;
     }
 
-    /** C {@code Init_player} (the parts that exist in S1), before the team is set. */
+    /**
+     * C {@code Init_player} (the parts that exist in S1), before the team is set.
+     * <p>
+     * BEHAVIOR: with limitedLives, Init_player's "too late" check (player.c:505-521) runs with the slot's STALE
+     * team, as C does: the struct still holds its previous occupant's team (0 for a never-used one) because
+     * {@code pl->team = TEAM_NOT_SET} comes after the check (a C bug kept for parity). If an in-game player lost a
+     * life and is not on that stale team, the joiner waits: mychar 'W', life 0, GAME_OVER. Tanks get the check
+     * too (C's tank detach runs Init_player).
+     */
     void initPlayer(Player pl) {
         Params p = w.params;
+        int staleTeam = pl.structUsed ? pl.team : 0;
+        pl.structUsed = true;
         pl.team = Const.TEAM_NOT_SET;
         pl.homeBase = -1;
         // server-commands: C Init_player with a client's (empty) shape: the built-in ship with allowShipShapes, else
@@ -528,6 +545,7 @@ public final class Ships {
         pl.life = p.worldLives;
         pl.kills = 0;
         pl.deaths = 0;
+        tooLate(pl, staleTeam);
         pl.shoveNext = 0;
         for (int i = 0; i < Player.MAX_SHOVES; i++) {
             pl.shovePusher[i] = Obj.NO_ID;
@@ -576,18 +594,19 @@ public final class Ships {
     }
 
     /**
-     * Init_player's limited-lives check, run once the team is known: if a non-team player has already lost a
-     * life it is too late to join this round.
+     * Init_player's limited-lives check (player.c:505-521): if a player in the game who is not on {@code team}
+     * (C's {@code TEAM(ind, i)} with the joiner's stale team) has already lost a life, it is too late to join.
      * <p>
      * BEHAVIOR: such a joiner waits: mychar 'W', life 0, GAME_OVER.
      */
-    void tooLate(Player pl) {
+    void tooLate(Player pl, int team) {
         if (!w.params.limitedLives) {
             return;
         }
         for (int k = 0; k < w.numPlayers; k++) {
             Player o = w.playerAt(k);
-            if (o != pl && o.life < w.params.worldLives && !w.sameTeam(pl, o)) {
+            boolean sameTeam = w.params.teamPlay && o.team == team && team != Const.TEAM_NOT_SET;
+            if (o != pl && o.life < w.params.worldLives && !sameTeam) {
                 pl.mychar = 'W';
                 pl.life = 0;
                 pl.status |= Obj.GAME_OVER;
@@ -794,8 +813,11 @@ public final class Ships {
      * fuel exhaustion drops shields and thrust, thrust sets the acceleration and uses fuel, mass is updated,
      * a warping ship goes through its wormhole, gravity and acceleration change the velocity, the ship
      * moves and thrust/turn sparks are made.
+     * BEHAVIOR: returns true when C's {@code break} ends the whole player loop for this frame (a warp to a
+     * wormhole index past the current wormholes, update.c:1068-1074): the rest of this ship's update and the
+     * ships after it are skipped.
      */
-    public void update(Player pl) {
+    public boolean update(Player pl) {
         Params p = w.params;
         pl.power = clamp(pl.power, Const.MIN_PLAYER_POWER, Const.MAX_PLAYER_POWER);
         pl.turnSpeed = clamp(pl.turnSpeed, Const.MIN_PLAYER_TURNSPEED, Const.MAX_PLAYER_TURNSPEED);
@@ -809,7 +831,7 @@ public final class Ships {
             if ((pl.status & Obj.PLAYING) == 0) {
                 transportToHome(pl);
                 sim.mover.movePlayer(pl);
-                return;
+                return false;
             }
         }
         if (pl.count == 0) {
@@ -830,10 +852,10 @@ public final class Ships {
                     pl.scoreDirty = true;
                 }
             }
-            return;
+            return false;
         }
         if (w.roundDelay > 0) {
-            return;
+            return false;
         }
         if (pl.stunned > 0) {
             pl.stunned--;
@@ -862,8 +884,8 @@ public final class Ships {
         }
         thrustAcceleration(pl);
         setMass(pl);
-        if ((pl.status & Obj.WARPING) != 0) {
-            warp(pl);
+        if ((pl.status & Obj.WARPING) != 0 && warp(pl)) {
+            return true;
         }
         if ((pl.status & Obj.PAUSE) == 0) {
             if ((pl.status & Obj.GRAVITY) != 0) {
@@ -885,6 +907,7 @@ public final class Ships {
         }
         sim.locks.sensorRange(pl);
         pl.used &= pl.have;
+        return false;
     }
 
     /** C {@code LIMIT} of a float field against double bounds. */
@@ -1120,7 +1143,8 @@ public final class Ships {
     /**
      * Wormhole travel and hyperjumps (update.c:1041-1188).
      * <p>
-     * BEHAVIOR: a wormhole index past the current wormholes (a temporary one that went away) ends the warp.
+     * BEHAVIOR: a wormhole index past the current wormholes (a temporary one that went away) ends the warp
+     * and returns true: C's {@code break} there ends the whole player loop for the frame.
      * BEHAVIOR: through a wormhole: one still counting down sends to its last destination; otherwise 10% of the
      * time a random other wormhole that is neither IN nor temporary, else the non-IN, non-temporary wormhole
      * closest to the line of flight ahead (or a random non-IN one if none is ahead); the ship appears at its
@@ -1133,13 +1157,19 @@ public final class Ships {
      * BEHAVIOR: a hyperjump plays HYPERJUMP where the ship was and WORM_HOLE where it lands; a wormhole trip
      * plays WORM_HOLE before and after.
      */
-    void warp(Player pl) {
+    boolean warp(Player pl) {
         WormTable worms = w.worms;
         int hit = pl.wormHoleHit;
         int n = worms.count();
-        if (hit >= n || hit < -1) {
+        if (hit >= n) {
+            // a temporary wormhole that went away while the ship was warping: C clears WARPING and its
+            // break leaves the whole player loop (update.c:1068-1074)
             pl.status &= ~Obj.WARPING;
-            return;
+            return true;
+        }
+        if (hit < -1) {
+            pl.status &= ~Obj.WARPING;
+            return false;
         }
         int j;
         float wx;
@@ -1195,6 +1225,7 @@ public final class Ships {
         pl.status &= ~Obj.WARPING;
         pl.status |= Obj.WARPED;
         Sounds.play(w, pl.px, pl.py, SoundEvent.WORM_HOLE);
+        return false;
     }
 
     /**
@@ -1220,6 +1251,7 @@ public final class Ships {
                 o.life[h] = 0;
             } else {
                 o.initPixels(h, bx, by);
+                o.touchCell(h);
             }
         }
     }

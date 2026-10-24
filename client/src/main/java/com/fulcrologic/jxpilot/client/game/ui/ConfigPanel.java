@@ -211,7 +211,9 @@ public final class ConfigPanel {
         if (!open || pages.isEmpty()) {
             return null;
         }
-        for (Widget w : pages.get(page)) {
+        List<Widget> ws = pages.get(page);
+        for (int i = 0; i < ws.size(); i++) {
+            Widget w = ws.get(i);
             if (w.type != Type.LABEL && w.type != Type.INPUT && UiDraw.inside(x, y - formY, w.x, w.y, w.w, w.h)) {
                 return w;
             }
@@ -287,7 +289,9 @@ public final class ConfigPanel {
             return;
         }
         out.rect(0, formY, ButtonBar.FORM_WIDTH, formH, true, HudColor.WINDOW);
-        for (Widget w : pages.get(page)) {
+        List<Widget> ws = pages.get(page);
+        for (int i = 0; i < ws.size(); i++) {
+            Widget w = ws.get(i);
             int y = formY + w.y;
             boolean down = w == pressed && inside;
             switch (w.type) {

@@ -86,6 +86,12 @@ public final class ReliableType {
      * it (C {@code Send_score}'s alliance character).
      */
     public static final int PLAYER_ALLIANCE = 31;
+    /**
+     * {@link Msg.War}: a robot's war target changed (C {@code PKT_WAR}, {@code Send_war}; the id is C's packet
+     * number). The client shows it in the score list ("NAME (TARGET)") and, for a new target, C's
+     * "ROBOT declares war on KILLER." message.
+     */
+    public static final int WAR = 40;
 
     // ---- client -> server
     /** Empty body: client has the config/map and is ready to play. */

@@ -44,16 +44,19 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 class RobotLogTest {
 
     @Test
-    @DisplayName("each robot that joins is logged as \"NAME (players, robotRealName) starts at startpos BASE.\"")
+    @DisplayName("each robot that joins is logged as \"DD Mon HH:MM:SS NAME (players, robotRealName) starts at startpos BASE.\"")
     void logs() {
         Simulation s = RobotFixture.sim("robotRealName: droid\n", RobotFixture.open(20, 20, "___"));
         List<String> log = new ArrayList<>();
         s.robots.log = l -> log.add(l.toString());
+        s.robots.wallClock = () -> 1_792_825_509_000L; // 2026-10-24 07:05:09 UTC
+        s.robots.logZone = java.util.TimeZone.getTimeZone("GMT-05:00");
         TestWorlds.join(s, "H", 0);
         Player r = s.robots.create();
         Player r2 = s.robots.create();
-        assertEquals(List.of(r.name + " (2, droid) starts at startpos " + r.homeBase + ".",
-            r2.name + " (3, droid) starts at startpos " + r2.homeBase + "."), log, "one line per robot");
+        assertEquals(List.of("24 Oct 02:05:09 " + r.name + " (2, droid) starts at startpos " + r.homeBase + ".",
+            "24 Oct 02:05:09 " + r2.name + " (3, droid) starts at startpos " + r2.homeBase + "."), log,
+            "one line per robot, stamped with C's showtime() in the local zone");
     }
 
     @Test

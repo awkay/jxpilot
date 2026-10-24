@@ -89,6 +89,8 @@ public final class SimGameHost implements GameHost {
     private int lastQueuePosition;
     /** C {@code RawMode} (idleRun; an operator may change it). */
     private boolean rawMode;
+    /** The server log (C {@code xpprintf}), or null. */
+    public java.util.function.Consumer<CharSequence> log;
     /** C motdFileName. */
     private final MotdFile motd;
     /** Viewers whose MOTD goes out with their next event drain (after the initial state). */
@@ -147,6 +149,7 @@ public final class SimGameHost implements GameHost {
     private final Msg.PlayerThrust thrust = new Msg.PlayerThrust();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
     private final Msg.Seek seek = new Msg.Seek();
+    private final Msg.War war = new Msg.War();
     private final Msg.Timing timing = new Msg.Timing();
     private final Msg.Settings settingsMsg = new Msg.Settings();
     private final Msg.Display displayMsg = new Msg.Display();
@@ -298,6 +301,28 @@ public final class SimGameHost implements GameHost {
         return bind(pl, t, shape);
     }
 
+    /**
+     * server-batch2: the CONNECT's real and host names, cleaned as C (contact.c:351, 423), and the address.
+     * <p>
+     * BEHAVIOR: an unknown id is ignored; a client that sent no names gets C's "X" and "xxx.xxx".
+     */
+    @Override
+    public void identity(int playerId, CharSequence realName, CharSequence hostName, CharSequence address) {
+        Player pl = w.byId(playerId);
+        if (pl == null) {
+            return;
+        }
+        // contact.c:351, 423: C cleans what the client sent (Fix_real_name, Fix_host_name)
+        pl.realName.setLength(0);
+        pl.realName.append(realName);
+        com.fulcrologic.jxpilot.common.Names.fixRealName(pl.realName);
+        pl.hostName.setLength(0);
+        pl.hostName.append(hostName);
+        com.fulcrologic.jxpilot.common.Names.fixHostName(pl.hostName);
+        pl.address.setLength(0);
+        pl.address.append(address);
+    }
+
     /** The queue position of the last REASON_QUEUED answer of {@link #join}. */
     @Override
     public int queuePosition() {
@@ -319,6 +344,7 @@ public final class SimGameHost implements GameHost {
         cursor[id] = w.events.seq();
         burstCursor[id] = w.events.burstSeq();
         java.util.Arrays.fill(announced[id], 0L);
+        identity(id, "", "", ""); // C's names for a client that sends none; the network layer's identity follows
         return id;
     }
 
@@ -437,11 +463,11 @@ public final class SimGameHost implements GameHost {
         if (w.numPlayers == 1) {
             msg.append("Welcome to \"").append(mapName).append("\", made by ").append(mapAuthor).append('.');
         } else if (w.params.teamPlay) {
-            msg.append(pl.name).append(" (team ").append(pl.team).append(") has entered \"").append(mapName)
-                .append("\", made by ").append(mapAuthor).append('.');
+            msg.append(pl.name).append(" (").append(pl.realName).append(", team ").append(pl.team)
+                .append(") has entered \"").append(mapName).append("\", made by ").append(mapAuthor).append('.');
         } else {
-            msg.append(pl.name).append(" has entered \"").append(mapName).append("\", made by ").append(mapAuthor)
-                .append('.');
+            msg.append(pl.name).append(" (").append(pl.realName).append(") has entered \"").append(mapName)
+                .append("\", made by ").append(mapAuthor).append('.');
         }
     }
 
@@ -625,13 +651,18 @@ public final class SimGameHost implements GameHost {
 
     /**
      * BEHAVIOR: a spawned player's mask is queued for the next tick (the newest replaces the last entry when
-     * {@link #INPUT_QUEUE} are waiting); input before READY and for unbound ids is dropped; aimTurn is unused.
+     * {@link #INPUT_QUEUE} are waiting); input before READY and for unbound ids is dropped.
+     * BEHAVIOR: a non-zero aimTurn is pointer control's movement: applied at once, as C applies PKT_POINTER_MOVE
+     * when it reads it ({@link com.fulcrologic.jxpilot.server.sim.Keys#pointerMove}).
      */
     @Override
     public void input(int playerId, int seq, long keys, int aimTurn) {
         Player p = boundPlayer(playerId);
         if (p == null || !p.spawned) {
             return;
+        }
+        if (aimTurn != 0) {
+            sim.keys.pointerMove(p, aimTurn);
         }
         int n = queued[playerId];
         if (n == INPUT_QUEUE) {
@@ -654,7 +685,7 @@ public final class SimGameHost implements GameHost {
      * BEHAVIOR: a connected human the sim removed during the tick (maxPauseTime) is kicked.
      * BEHAVIOR: first the shutdown countdown after a gameDuration game over (C Main_loop): once it ran out
      * nothing else happens and {@link #shutdownDue} is true. The first running tick with a human starts the
-     * gameDuration clock.
+     * gameDuration clock and logs "DD Mon HH:MM:SS Server will stop in N minutes." (C server.c:265).
      */
     @Override
     public void tick(int tick) {
@@ -678,10 +709,29 @@ public final class SimGameHost implements GameHost {
             return;
         }
         applyQueuedInput();
-        sim.rounds.startGameDuration(humans > 0);
+        if (sim.rounds.startGameDuration(humans > 0) && log != null) {
+            // C server.c:265, once per game
+            log.accept(AdminLog.showtime(java.time.ZonedDateTime.now()) + " Server will stop in "
+                + formatG(w.gameDuration) + " minutes.");
+        }
         long from = w.events.seq();
         sim.tick(tick, keysBySlot);
         kickRemoved(from);
+    }
+
+    /**
+     * C {@code printf("%g")} of a positive number: 6 significant digits without trailing zeros, in exponent
+     * form ({@code 1.5e+07}) when the exponent is below -4 or at least 6.
+     */
+    static String formatG(double v) {
+        java.math.BigDecimal d = new java.math.BigDecimal(v).round(new java.math.MathContext(6));
+        int exp = d.precision() - d.scale() - 1;
+        if (exp < -4 || exp >= 6) {
+            String m = d.movePointLeft(exp).stripTrailingZeros().toPlainString();
+            return m + "e" + (exp < 0 ? "-" : "+") + (Math.abs(exp) < 10 ? "0" : "") + Math.abs(exp);
+        }
+        String s = d.stripTrailingZeros().toPlainString();
+        return s;
     }
 
     /** BEHAVIOR: true once the shutdown countdown after a gameDuration game over has run out (C End_game). */
@@ -935,7 +985,8 @@ public final class SimGameHost implements GameHost {
      * BEHAVIOR: for each player in the game, in order: PLAYER_JOIN (SELF for the viewer, ROBOT, PAUSED; power,
      * afterburners, name, its ship's shape), BASE_OWNER (its home), SCORE (score, lives with limitedLives else
      * -1, status), for a player in an alliance PLAYER_ALLIANCE with the viewer's mark, and in race mode TIMING
-     * (check, round); then in team play TEAM_SCORE for every team with members. The event cursor starts at the
+     * (check, round); then WAR for every robot at war (C Handle_login's Send_war); then in team play TEAM_SCORE for
+     * every team with members. The event cursor starts at the
      * newest event (the burst cursor at the newest burst).
      */
     @Override
@@ -971,6 +1022,15 @@ public final class SimGameHost implements GameHost {
                 timing.send(out);
             }
         }
+        for (int k = 0; k < w.numPlayers; k++) {
+            Player p = w.playerAt(k);
+            int target = sim.robots.warOnPlayer(p);
+            if (target != Obj.NO_ID) { // C Handle_login: "tell him about the relationships others have"
+                war.robotId = p.id;
+                war.killerId = target;
+                war.send(out);
+            }
+        }
         if (w.params.teamPlay) {
             for (int t = 0; t < Const.MAX_TEAMS; t++) {
                 if (w.teamMembers[t] > 0) {
@@ -994,6 +1054,10 @@ public final class SimGameHost implements GameHost {
         join.name.append(p.name);
         join.shape.setLength(0);
         join.shape.append(p.ship.wire);
+        join.realName.setLength(0);
+        join.realName.append(p.realName);
+        join.hostName.setLength(0);
+        join.hostName.append(p.hostName);
         join.send(out);
         announced[viewerId][p.id >> 6] |= 1L << (p.id & 63);
     }
@@ -1009,6 +1073,7 @@ public final class SimGameHost implements GameHost {
      * <p>
      * BEHAVIOR: a viewer whose cursor fell out of the ring gets PLAYER_LEAVE for every announced id no longer
      * in the game, then the full state (PLAYER_ALLIANCE for every player), and continues from the newest event.
+     * BEHAVIOR: SEEK and WAR go to everyone.
      * BEHAVIOR: JOIN: PLAYER_JOIN of the player as it is now (none when it already left); LEAVE: PLAYER_LEAVE;
      * TEAM: PLAYER_TEAM; SCORE / TEAM_SCORE; MESSAGE for everyone or this viewer (from mapped); BASE_OWNER
      * (NO_ID = released); GAME_EVENT (ids mapped, value kept); THRUST: PLAYER_THRUST; TIMING (race progress);
@@ -1135,6 +1200,11 @@ public final class SimGameHost implements GameHost {
                 seek.robotId = wireId(e.b[i]);
                 seek.soughtId = wireId(e.c[i]);
                 seek.send(out);
+            }
+            case Events.WAR -> {
+                war.robotId = wireId(e.a[i]);
+                war.killerId = wireId(e.b[i]);
+                war.send(out);
             }
             default -> { }
         }

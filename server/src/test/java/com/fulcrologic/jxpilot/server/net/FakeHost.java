@@ -41,6 +41,8 @@ import java.util.List;
  */
 final class FakeHost implements GameHost {
     final List<String> calls = new ArrayList<>();
+    /** server-batch2: every identity call, "id real@host address". */
+    final List<String> identities = new ArrayList<>();
     boolean record = true;
     /** Next join answer; negative = reject. When null, ids are handed out from 0 upward. */
     Integer joinAnswer;
@@ -113,6 +115,11 @@ final class FakeHost implements GameHost {
     /** server-commands: the queue position {@link #queuePosition} reports, and the last join's source. */
     int queuePos;
     long lastSource;
+
+    @Override
+    public void identity(int playerId, CharSequence realName, CharSequence hostName, CharSequence address) {
+        identities.add(playerId + " " + realName + "@" + hostName + " " + address);
+    }
 
     @Override
     public int join(CharSequence name, int t, CharSequence shape, long source) {

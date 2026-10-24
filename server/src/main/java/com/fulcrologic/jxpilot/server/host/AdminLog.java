@@ -55,13 +55,13 @@ final class AdminLog {
      * <p>
      * BEHAVIOR: only into a file that already exists and is writable, with a positive size limit, while
      * size + 80 is below the limit and the room left (limit - size - 80) exceeds the message length.
-     * BEHAVIOR: the entry is {@code "DD Mon HH:MM:SS[name]{@()|}:\n\ttext\n"} (C writes real name, host, address
-     * and display between the braces; JXPilot knows none of them). Returns whether it was written.
+     * BEHAVIOR: the entry is {@code "DD Mon HH:MM:SS[name]{real@host(address)|}:\n\ttext\n"} as C (the X display
+     * after '|' is always empty: JXPilot clients have none). Returns whether it was written.
      * BEHAVIOR: without a file name nothing is allocated (chat stays allocation free).
      *
      * @param line the chat line; the message is {@code line[start..]}
      */
-    boolean log(CharSequence name, CharSequence line, int start) {
+    boolean log(com.fulcrologic.jxpilot.server.world.Player pl, CharSequence line, int start) {
         if (file == null || sizeLimit <= 0 || !Files.isRegularFile(file) || !Files.isWritable(file)) {
             return false;
         }
@@ -70,8 +70,8 @@ final class AdminLog {
             if (size + 80 >= sizeLimit || sizeLimit - size - 80 <= line.length() - start) {
                 return false;
             }
-            String entry = showtime(clock.get()) + "[" + name + "]{@()|}:\n\t" + line.subSequence(start, line.length())
-                + "\n";
+            String entry = showtime(clock.get()) + "[" + pl.name + "]{" + pl.realName + "@" + pl.hostName + "("
+                + pl.address + ")|}:\n\t" + line.subSequence(start, line.length()) + "\n";
             Files.writeString(file, entry, StandardCharsets.ISO_8859_1, StandardOpenOption.APPEND);
             return true;
         } catch (IOException e) {

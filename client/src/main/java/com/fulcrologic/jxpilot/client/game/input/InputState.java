@@ -90,12 +90,21 @@ public final class InputState {
         if (glfwKey < 0 || glfwKey >= KeyBindings.SIZE) {
             return 0;
         }
-        long acts = bindings.actionMask(glfwKey);
+        return pressFunctions(bindings.gameMask(glfwKey), bindings.actionMask(glfwKey));
+    }
+
+    /**
+     * Functions went down without a key (C {@code Key_press} of a pointer button's {@code buttonDefs}).
+     * <p>
+     * BEHAVIOR: as {@link #press(int)} for a key bound to exactly the game functions {@code game} and the client
+     * actions {@code acts}.
+     */
+    public long pressFunctions(long game, long acts) {
         long cursor = cursorMask();
         if (talking) {
             return acts & cursor;
         }
-        long m = bindings.gameMask(glfwKey);
+        long m = game;
         if ((m & FIRE_KEYS) != 0 && autoShield) {
             keys &= ~SHIELD;
         }
@@ -130,10 +139,22 @@ public final class InputState {
      * BEHAVIOR: a function pressed since the last {@link #takeKeys} is remembered as tapped.
      */
     public void release(int glfwKey) {
-        if (talking || glfwKey < 0 || glfwKey >= KeyBindings.SIZE) {
+        if (glfwKey < 0 || glfwKey >= KeyBindings.SIZE) {
             return;
         }
-        long m = bindings.gameMask(glfwKey);
+        releaseFunctions(bindings.gameMask(glfwKey));
+    }
+
+    /**
+     * Functions went up without a key (C {@code Key_release} of a pointer button's {@code buttonDefs}).
+     * <p>
+     * BEHAVIOR: as {@link #release(int)} for a key bound to exactly the game functions {@code game}.
+     */
+    public void releaseFunctions(long game) {
+        if (talking) {
+            return;
+        }
+        long m = game;
         tapped |= keys & m & pressedSince;
         if ((m & FIRE_KEYS) != 0 && autoShield && shields && (keys & SHIELD) == 0) {
             keys &= ~m;

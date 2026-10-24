@@ -29,19 +29,19 @@ import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 
 /**
- * Score rules, a port of {@code src/server/score.c}. Changed players and
+ * Score rules, a port of {@code src/server/score.c}, in float like C's DFLOAT scores. Changed players and
  * teams are marked dirty; {@link Simulation} emits SCORE/TEAM_SCORE events once per tick for them. Every
  * player score change also emits a SCORE_OBJECT event for that player's HUD (C {@code Send_score_object}).
  */
 public final class Scoring {
     /** C {@code CANNON_SCORE}. */
-    public static final double CANNON_SCORE = -1436;
+    public static final float CANNON_SCORE = -1436;
     /** C {@code WALL_SCORE}. */
-    public static final double WALL_SCORE = 2000;
-    /** C {@code RATE_SIZE}. */
-    static final double RATE_SIZE = 20;
-    /** C {@code RATE_RANGE}. */
-    static final double RATE_RANGE = 1024;
+    public static final float WALL_SCORE = 2000;
+    /** C {@code RATE_SIZE} (an int). */
+    static final int RATE_SIZE = 20;
+    /** C {@code RATE_RANGE} (an int). */
+    static final int RATE_RANGE = 1024;
 
     private final World w;
 
@@ -54,9 +54,10 @@ public final class Scoring {
      * <p>
      * BEHAVIOR: t = (RATE_SIZE/2 * RATE_RANGE) / (|loser - winner| + RATE_RANGE); equal scores give 10.
      * BEHAVIOR: when the loser has the higher score the result is RATE_SIZE - t (more than 10).
+     * BEHAVIOR: float arithmetic, as C's DFLOAT (the constant part is C's int 10240).
      */
-    public static double rate(double winner, double loser) {
-        double t = ((RATE_SIZE / 2) * RATE_RANGE) / (Math.abs(loser - winner) + RATE_RANGE);
+    public static float rate(float winner, float loser) {
+        float t = ((RATE_SIZE / 2) * RATE_RANGE) / (Math.abs(loser - winner) + RATE_RANGE);
         if (loser > winner) {
             t = RATE_SIZE - t;
         }
@@ -73,7 +74,7 @@ public final class Scoring {
      * BEHAVIOR: a human player gets a SCORE_OBJECT event (a = id, b = block x, c = block y, value = points,
      * text = the label).
      */
-    public void score(Player pl, double points, int bx, int by, CharSequence msg) {
+    public void score(Player pl, float points, int bx, int by, CharSequence msg) {
         if (w.params.teamPlay) {
             if (!w.params.teamShareScore) {
                 pl.score += points;
@@ -86,7 +87,7 @@ public final class Scoring {
         }
         pl.scoreDirty = true;
         if (!pl.robot) {
-            w.events.text[w.events.add(Events.SCORE_OBJECT, pl.id, bx, by, (float) points)].append(msg);
+            w.events.text[w.events.add(Events.SCORE_OBJECT, pl.id, bx, by, points)].append(msg);
         }
     }
 
@@ -95,15 +96,23 @@ public final class Scoring {
      * <p>
      * BEHAVIOR: no-op for TEAM_NOT_SET; with teamShareScore every member's score becomes team score / members.
      */
-    public void teamScore(int team, double points) {
+    public void teamScore(int team, float points) {
+        teamScore(team, points, w.numPlayers);
+    }
+
+    /**
+     * {@link #teamScore(int, float)} that shares among the first {@code n} players of the game order only (C's
+     * loop runs to NumPlayers, which {@code Delete_player} has already decremented, see {@link Ships#leave}).
+     */
+    void teamScore(int team, float points, int n) {
         if (team == Const.TEAM_NOT_SET || team < 0 || team >= Const.MAX_TEAMS) {
             return;
         }
         w.teamScore[team] += points;
         w.teamScoreDirty[team] = true;
         if (w.params.teamShareScore && w.teamMembers[team] > 0) {
-            double share = w.teamScore[team] / w.teamMembers[team];
-            for (int k = 0; k < w.numPlayers; k++) {
+            float share = w.teamScore[team] / w.teamMembers[team];
+            for (int k = 0; k < n; k++) {
                 Player p = w.playerAt(k);
                 if (p.team == team) {
                     p.score = share;
@@ -118,14 +127,14 @@ public final class Scoring {
      * <p>
      * BEHAVIOR: every member of alliance {@code id} gets points / (number of members) and is marked dirty.
      */
-    void allianceScore(int id, double points) {
+    void allianceScore(int id, float points) {
         int members = 0;
         for (int k = 0; k < w.numPlayers; k++) {
             if (w.playerAt(k).alliance == id) {
                 members++;
             }
         }
-        double share = points / members;
+        float share = points / members;
         for (int k = 0; k < w.numPlayers; k++) {
             Player p = w.playerAt(k);
             if (p.alliance == id) {
@@ -142,8 +151,8 @@ public final class Scoring {
      * (score.c:128-140: no profit from killing your own side), then each gets their score via {@link #score} at the
      * loser's block position with their own label.
      */
-    public void scorePlayers(Player winner, double winnerScore, CharSequence winnerMsg, Player loser,
-                             double loserScore, CharSequence loserMsg) {
+    public void scorePlayers(Player winner, float winnerScore, CharSequence winnerMsg, Player loser,
+                             float loserScore, CharSequence loserMsg) {
         if (w.sameTeam(winner, loser) || w.allied(winner, loser)
             || (loser.tank && loser.lockPlId == winner.id)) {
             if (winnerScore > 0) {

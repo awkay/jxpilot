@@ -29,6 +29,7 @@ import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.OptionOrigin;
 import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.map.Cannon;
+import com.fulcrologic.jxpilot.common.map.Dir;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -303,6 +304,29 @@ class XpMapTest {
                     "base teams from the setup codes"),
                 () -> assertEquals(0, b.map().checkpoints().size(), "letters are not checkpoints without timing"),
                 () -> assertEquals(1, b.map().targets().size(), "target"));
+        }
+
+        @Test
+        void basesFaceTheWaySetupCodesSay() {
+            // C guimap.c draws SETUP_BASE_UP/RIGHT/DOWN/LEFT; the server derived them from gravity and $ attractors
+            XpSetup s = setupFor(new String[] {"____", "    "}, 0, 12, "B", false);
+            int h = 2;
+            s.mapData()[0 * h + 1] = (byte) (XpProto.SETUP_BASE_LEFT + 3);
+            s.mapData()[1 * h + 1] = (byte) XpProto.SETUP_BASE_RIGHT;
+            s.mapData()[2 * h + 1] = (byte) (XpProto.SETUP_BASE_DOWN + 9);
+            s.mapData()[3 * h + 1] = (byte) XpProto.SETUP_BASE_UP;
+            WorldMap m = XpMap.build(s).map();
+            assertAll(
+                () -> assertEquals(List.of(Dir.LEFT, Dir.RIGHT, Dir.DOWN, Dir.UP),
+                    m.bases().stream().sorted(java.util.Comparator.comparingInt(b -> b.bx())).map(b -> b.dir()).toList(),
+                    "left, right, down, up from codes 63, 40, 59, 30"),
+                () -> assertEquals(List.of(0, 1, 2, 3),
+                    m.bases().stream().sorted(java.util.Comparator.comparingInt(b -> b.bx())).map(b -> b.bx()).toList(),
+                    "positions unchanged"),
+                () -> assertEquals(Dir.LEFT, XpMap.baseDir(XpProto.SETUP_BASE_HIGHEST, Dir.UP), "69 is still left"),
+                () -> assertEquals(Dir.DOWN, XpMap.baseDir(XpProto.SETUP_BASE_LOWEST - 1, Dir.DOWN), "29 keeps the fallback"),
+                () -> assertEquals(Dir.DOWN, XpMap.baseDir(XpProto.SETUP_BASE_HIGHEST + 1, Dir.DOWN), "70 keeps the fallback"),
+                () -> assertEquals(Dir.UP, XpMap.baseDir(XpProto.SETUP_BASE_RIGHT - 1, Dir.LEFT), "39 is still up"));
         }
 
         @Test

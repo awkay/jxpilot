@@ -1,0 +1,29 @@
+# JXPilot golden-trace map (GPL-2.0-or-later, see LICENSE): team play, the team 1
+# base at the bottom shoots straight up at a team 2 target (team 2's base is nearer
+# to it); for the target damage, repair, destroy and revive trace.
+mapName: target-shoot
+mapAuthor: JXPilot
+mapWidth: 11
+mapHeight: 12
+teamPlay: yes
+edgeWrap: no
+targetDeadTime: 3
+# the C server also reads lib/defaults: pin what it sets there
+gravity: -0.25
+maxItemDensity: 0
+movingItemProb: 0
+framesPerSecond: 14
+mapData: \multiline: EndOfMapdata
+xxxxxxxxxxx
+x         x
+x    2    x
+x         x
+x    !    x
+x         x
+x         x
+x         x
+x         x
+x         x
+x    1    x
+xxxxxxxxxxx
+EndOfMapdata

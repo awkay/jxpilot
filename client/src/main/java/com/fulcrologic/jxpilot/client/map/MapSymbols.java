@@ -151,6 +151,15 @@ public final class MapSymbols {
                     wormhole(b, w.bx() * S, w.by() * S, wormCount, red);
                 }
             }
+            // temporary wormholes (C Paint_wormholes): C sends the block centre and draws it with the
+            // block-corner routine, so they appear half a block up and right of their block
+            for (int i = 0; i < st.tempWormholes(); i++) {
+                int bx = st.tempWormholeBx(i);
+                int by = st.tempWormholeBy(i);
+                if (visible(cam, bx, by, k)) {
+                    wormhole(b, bx * S + HALF, by * S + HALF, wormCount, red);
+                }
+            }
             for (int i = 0; i < treasures.size(); i++) {
                 Treasure t = treasures.get(i);
                 if (!bm && visible(cam, t.bx(), t.by(), k)) {

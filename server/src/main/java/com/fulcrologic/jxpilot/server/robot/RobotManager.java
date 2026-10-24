@@ -88,8 +88,12 @@ public final class RobotManager {
     public java.util.function.Consumer<CharSequence> log;
     /** The log line, reused (robots join during play: no allocation here). */
     private final StringBuilder logLine = new StringBuilder(80);
+    /** Wall clock (epoch ms) and zone of the log lines' C {@code showtime()} stamp (tests replace them). */
+    public java.util.function.LongSupplier wallClock = System::currentTimeMillis;
+    public java.util.TimeZone logZone = java.util.TimeZone.getDefault();
     boolean logRobots;
     String robotRealName;
+    String robotHostName;
 
     final boolean allowShipShapes;
     int robotLeaveLife;
@@ -123,6 +127,7 @@ public final class RobotManager {
     public void reloadOptions() {
         logRobots = w.options.getBool(Opt.LOG_ROBOTS);
         robotRealName = w.options.getString(Opt.ROBOT_REAL_NAME);
+        robotHostName = w.options.getString(Opt.ROBOT_HOST_NAME);
         robotLeaveLife = w.options.getInt(Opt.ROBOT_LEAVE_LIFE);
         robotLeaveScore = w.options.getInt(Opt.ROBOT_LEAVE_SCORE);
         robotLeaveRatio = w.options.getInt(Opt.ROBOT_LEAVE_RATIO);
@@ -411,9 +416,11 @@ public final class RobotManager {
      * C {@code Robot_war}: {@code victim} was killed by {@code killer}.
      * <p>
      * BEHAVIOR: nothing for a self kill.
-     * BEHAVIOR: a robot killer gloats (KILL talk) and ends any war on the victim.
+     * BEHAVIOR: a robot killer gloats (KILL talk) and ends any war; a war on the victim is announced over
+     * ({@link Events#WAR} with NO_ID, C {@code Send_war}).
      * BEHAVIOR: a robot victim declares war on the killer (WAR talk) when (int)(rfrac*100) is below the
-     * killer's score lead and they are neither team mates nor allies; the rfrac is drawn only for robot victims.
+     * killer's score lead and they are neither team mates nor allies; the rfrac is drawn only for robot victims. A new
+     * war is announced ({@link Events#WAR}) with C's declare-war sound.
      */
     public void war(Player victim, Player killer) {
         if (killer == victim) {
@@ -421,6 +428,9 @@ public final class RobotManager {
         }
         if (killer.robot) {
             talk.says(RobotTalk.KILL, killer.name, victim.name);
+            if (DefaultRobot.warOnPlayer(data[killer.slot]) == victim.id) {
+                w.events.add(Events.WAR, killer.id, Obj.NO_ID, 0, 0f); // C Send_war(kp->id, NO_ID)
+            }
             DefaultRobot.setWar(data[killer.slot], Obj.NO_ID);
         }
         if (victim.robot && (int) (w.rfrac() * 100) < killer.score - victim.score && !w.sameTeam(victim, killer)
@@ -428,6 +438,7 @@ public final class RobotManager {
             talk.says(RobotTalk.WAR, victim.name, killer.name);
             RobotData d = data[victim.slot];
             if (DefaultRobot.warOnPlayer(d) != killer.id) {
+                w.events.add(Events.WAR, victim.id, killer.id, 0, 0f); // C Send_war(pl->id, kp->id)
                 Sounds.playAll(w, SoundEvent.DECLARE_WAR);
                 DefaultRobot.setWar(d, killer.id);
             }
@@ -639,6 +650,9 @@ public final class RobotManager {
             return null;
         }
         roster.used[num]++;
+        // robot.c:784-785: the options as they are (their tuners clean them when an operator sets them)
+        com.fulcrologic.jxpilot.common.Names.copy(pl.realName, robotRealName);
+        com.fulcrologic.jxpilot.common.Names.copy(pl.hostName, robotHostName);
         if (allowShipShapes) {
             pl.ship = roster.ship(num); // else Init_player's defaultShipShape (robot.c:776)
         }
@@ -661,6 +675,7 @@ public final class RobotManager {
         talk.says(RobotTalk.ENTER, pl.name, null);
         if (logRobots && log != null) {
             logLine.setLength(0);
+            com.fulcrologic.jxpilot.server.world.ShowTime.append(logLine, wallClock.getAsLong(), logZone).append(' ');
             logLine.append(pl.name).append(T_PUNCT).append(w.numPlayers).append(T_PUNCT_2).append(robotRealName)
                 .append(T_STARTS_AT_STARTPOS).append(pl.homeBase).append('.');
             log.accept(logLine);

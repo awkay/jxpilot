@@ -99,6 +99,13 @@ final class WorldFixture {
         return this;
     }
 
+    WorldFixture tempWormhole(int bx, int by) {
+        w.beginSection(Section.TEMP_WORMHOLE);
+        Records.TempWormhole.put(w, bx, by, 1);
+        w.endSection();
+        return this;
+    }
+
     WorldFixture treasure(int index, int flags) {
         w.beginSection(Section.TREASURE);
         Records.TreasureState.put(w, index, flags);

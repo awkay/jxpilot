@@ -674,7 +674,7 @@ class LasersTest {
             p.score = 100;
             s.lasers.collide();
             // Rate(100, 0) = 10 * 1024 / (100 + 1024); loser 0 is not above the winner (score.c Rate)
-            double sc = 10 * 1024 / 1124.0 * 2;
+            float sc = 10 * 1024 / 1124.0f * 2;
             assertAll(
                 () -> assertTrue((v.status & Obj.KILLED) != 0, "the victim is KILLED"),
                 () -> assertEquals(FUEL0 - 25600, v.fuel, EPS, "it pays ED_LASER_HIT = 100 fuel"),
@@ -710,7 +710,7 @@ class LasersTest {
         void cannon() {
             hit("laserKillScoreMult: 2\n", true);
             s.lasers.collide();
-            double sc = (20 - 10 * 1024 / (1436.0 + 1024)) / 4;
+            float sc = (20 - 10 * 1024 / (1436.0f + 1024)) / 4;
             assertAll(
                 () -> assertTrue((v.status & Obj.KILLED) != 0, "the victim is KILLED"),
                 () -> assertEquals(List.of("V got roasted alive by cannonfire."), messages(w, ev), "the cannonfire message"),
@@ -738,7 +738,7 @@ class LasersTest {
             int m = pulseAt(null, 300, 300, 0);
             pu.team[m] = 1;
             s.lasers.collide();
-            double sc = (20 - 10 * 1024 / (1436.0 + 1024)) / 4;
+            float sc = (20 - 10 * 1024 / (1436.0f + 1024)) / 4;
             assertAll(
                 () -> assertEquals(sc, other, 1e-9, "another team's victim: the cannon's team gains Rate / 4"),
                 () -> assertTrue((same.status & Obj.KILLED) != 0, "the cannon's own team is roasted (no team immunity)"),

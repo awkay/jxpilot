@@ -46,7 +46,7 @@ class GameConnectorLookTest {
             () -> assertEquals(4, def, "C's default 5,6,7,3"),
             () -> assertEquals(2, two, "two colours"),
             () -> assertEquals(1, four, "with 4 colours 5 and 6 are dropped: the red default"),
-            () -> assertEquals(2, GameConnector.xpLogin("A", 1, "", false, "u", 2).debrisColors, "the login carries it"),
-            () -> assertEquals(4, GameConnector.xpLogin("A", 1, "", false, "u").debrisColors, "default login: 4"));
+            () -> assertEquals(2, GameConnector.xpLogin("A", 1, "", false, new XpIdentity("u", "h", ":0"), 2).debrisColors, "the login carries it"),
+            () -> assertEquals(4, GameConnector.xpLogin("A", 1, "", false, new XpIdentity("u", "h", ":0")).debrisColors, "default login: 4"));
     }
 }

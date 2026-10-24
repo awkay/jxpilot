@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.List;
 
 import static com.fulcrologic.jxpilot.client.app.AppFixture.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -43,6 +44,12 @@ import static org.junit.jupiter.api.Assertions.*;
 class HudExtrasTest {
     final HudExtras e = new HudExtras();
     final Hud hud = new Hud();
+
+    /** One HUD frame's item count: {@link HudExtras#step} then {@link HudExtras#itemCount}. */
+    static int counted(HudExtras e, int item, int num, double frames, double fps) {
+        e.step(frames, fps);
+        return e.itemCount(item, num);
+    }
 
     static int[] items(int item, int count) {
         int[] c = new int[Item.COUNT];
@@ -54,7 +61,8 @@ class HudExtrasTest {
     @DisplayName("fill")
     class Fill {
         @Test
-        @DisplayName("lock on a foe in view: name, lives, distance, direction, shape, not a friend; items; autopilot")
+        @DisplayName("lock on a foe in view without a SELF distance: name, lives, shape, not a friend, no distance "
+            + "(C lock_dist 0); items; autopilot")
         void lockFoe() {
             AppFixture f = new AppFixture(true).players().score(FOE, 0, 2).twice(x -> x
                 .self(Records.ShipFlags.AUTOPILOT, 100, 100, 0, FOE)
@@ -73,8 +81,8 @@ class HudExtrasTest {
                 () -> assertEquals("Foe", e.lockName.toString(), "name"),
                 () -> assertTrue(e.limitedLives, "limitedLives from the options"),
                 () -> assertEquals(2, e.lockLives, "lives from SCORE"),
-                () -> assertEquals(300, e.lockDist, "300 px to the right"),
-                () -> assertEquals(0, e.lockDir, "direction 0 (east)"),
+                () -> assertEquals(0, e.lockDist, "SELF lock distance 0: none, though the foe is drawn 300 px away"),
+                () -> assertEquals(0, e.lockDir, "SELF lock direction"),
                 () -> assertFalse(e.lockFriend, "other team"),
                 () -> assertTrue(e.warningPhase, "loops 102 even"),
                 () -> assertEquals(HudPainter.mapDiag(20, 10), e.mapDiag, "map diagonal"),
@@ -86,7 +94,7 @@ class HudExtrasTest {
         }
 
         @Test
-        @DisplayName("the server's lock distance and direction (SELF) win when non-zero; modifiers as C's string")
+        @DisplayName("the lock distance and direction are SELF's, also 0; modifiers as C's string")
         void serverLockAndMods() {
             int mods = Records.Self.MOD_CLUSTER | 2 << Records.Self.MOD_MINI_SHIFT;
             AppFixture f = new AppFixture(true).players().twice(x -> x
@@ -102,21 +110,21 @@ class HudExtrasTest {
                 () -> assertEquals(777, e.lockDist, "SELF lock distance (C lock_dist)"),
                 () -> assertEquals(32, e.lockDir, "SELF lock direction"),
                 () -> assertEquals("C X3", e.mods.toString(), "modifier string"),
-                () -> assertEquals(300, e2.lockDist, "no server distance: computed from the ships"),
+                () -> assertEquals(0, e2.lockDist, "SELF distance 0 stays 0 with the target drawn 300 px away (C)"),
                 () -> assertEquals(0, e2.lockDir, "and the direction"),
                 () -> assertEquals("", e2.mods.toString(), "no modifiers: empty"));
         }
 
         @Test
-        @DisplayName("lock across the wrap seam on a team mate; odd loops; no autopilot")
+        @DisplayName("lock on a team mate across the wrap seam: SELF's distance and direction; odd loops; no autopilot")
         void lockMateWrapped() {
             AppFixture f = new AppFixture(true).players().twice(x -> x
-                .self(0, 50, 100, 0, MATE)
-                .ship(MATE, 0, 650, 100, 0));
-            e.fill(f.game, hud, 800, 600, 1, 50, 100, 103);
+                .selfControls(45, 40, MATE, 100, 64, 0)
+                .ship(MATE, 0, 650, 175, 0));
+            e.fill(f.game, hud, 800, 600, 1, 350, 175, 103);
             assertAll(
-                () -> assertEquals(100, e.lockDist, "wrapped: 100 px to the left"),
-                () -> assertEquals(64, e.lockDir, "west is RES 64"),
+                () -> assertEquals(100, e.lockDist, "SELF distance as sent"),
+                () -> assertEquals(64, e.lockDir, "SELF direction as sent"),
                 () -> assertTrue(e.lockFriend, "same team in team play"),
                 () -> assertFalse(e.warningPhase, "odd loops"),
                 () -> assertFalse(e.autopilot, "no autopilot"));
@@ -213,15 +221,79 @@ class HudExtrasTest {
         }
     }
 
-    @Test
-    @DisplayName("direction rounds to RES and wraps into 0..127")
-    void direction() {
-        assertAll(
-            () -> assertEquals(0, HudExtras.direction(1, 0), "east"),
-            () -> assertEquals(32, HudExtras.direction(0, 1), "north"),
-            () -> assertEquals(96, HudExtras.direction(0, -1), "south: -32 wraps to 96"),
-            () -> assertEquals(1, HudExtras.direction(Math.cos(0.04), Math.sin(0.04)), "0.815 rounds up to 1"),
-            () -> assertEquals(0, HudExtras.direction(Math.cos(0.02), Math.sin(0.02)), "0.41 rounds down to 0"));
+    @Nested
+    @DisplayName("items (C Paint_HUD showItems / showItemsTime, painthud.c:527-546)")
+    class Items {
+        static final int MINE = Item.MINE.ordinal();
+        static final int ECM = Item.ECM.ordinal();
+        static final int FUEL = Item.FUEL.ordinal();
+
+        @Test
+        @DisplayName("showItems on: counts above 0 are listed, others and fuel are not")
+        void permanent() {
+            assertAll(
+                () -> assertEquals(3, counted(e, MINE, 3, 1, 50), "count above 0: listed"),
+                () -> assertEquals(-1, counted(e, MINE, 0, 1, 50), "count 0: not listed"),
+                () -> assertEquals(-1, counted(e, FUEL, 500, 1, 50), "fuel is never listed"));
+        }
+
+        @Test
+        @DisplayName("showItems off: a changed count (0 too) shows for (int)(showItemsTime * fps) frames")
+        void timed() {
+            e.showItems = false;
+            e.showItemsTime = 0.1; // 5 frames at 50 fps
+            int[] shown = new int[7];
+            for (int k = 0; k < shown.length; k++) {
+                shown[k] = counted(e, MINE, 2, 1, 50);
+            }
+            int unchangedOther = counted(e, ECM, 0, 1, 50);
+            int dropped = counted(e, MINE, 0, 1, 50);
+            int halfFrames = counted(e, MINE, 0, 2.5, 50);
+            int afterHalf = counted(e, MINE, 0, 2.5, 50);
+            int expired = counted(e, MINE, 0, 2.5, 50);
+            assertAll(
+                () -> assertArrayEquals(new int[] {2, 2, 2, 2, 2, -1, -1}, shown,
+                    "a new count shows on 5 frames, then disappears"),
+                () -> assertEquals(-1, unchangedOther, "a count that never changed (0) is not shown"),
+                () -> assertEquals(0, dropped, "a count that changed to 0 shows as 0"),
+                () -> assertEquals(0, halfFrames, "the timer runs down by the frames elapsed (4 left)"),
+                () -> assertEquals(0, afterHalf, "1.5 left"),
+                () -> assertEquals(-1, expired, "used up: hidden"));
+        }
+
+        @Test
+        @DisplayName("turning showItems off after a permanent listing shows nothing until a count changes")
+        void toggled() {
+            counted(e, MINE, 3, 1, 50);
+            e.showItems = false;
+            int same = counted(e, MINE, 3, 1, 50);
+            int changed = counted(e, MINE, 4, 1, 50);
+            assertAll(
+                () -> assertEquals(-1, same, "the remembered count did not change: hidden"),
+                () -> assertEquals(4, changed, "a change shows it"));
+        }
+
+        @Test
+        @DisplayName("fill uses the timers, aged by the step's frames")
+        void viaFill() {
+            AppFixture f = new AppFixture(true).players().twice(x -> x.self(0, 100, 100, 0, FOE)
+                .items(items(MINE, 3)));
+            e.showItems = false;
+            e.showItemsTime = 1;
+            e.step(1, f.game.gameFps());
+            e.fill(f.game, hud, 800, 600, 1, 100, 100, 0);
+            int first = e.itemCounts[MINE];
+            e.step(1000, f.game.gameFps());
+            e.fill(f.game, hud, 800, 600, 1, 100, 100, 0);
+            int second = e.itemCounts[MINE];
+            e.step(1, f.game.gameFps());
+            e.fill(f.game, hud, 800, 600, 1, 100, 100, 0);
+            int third = e.itemCounts[MINE];
+            assertAll(
+                () -> assertEquals(3, first, "the new count shows"),
+                () -> assertEquals(3, second, "still above 0 before this frame's ageing"),
+                () -> assertEquals(-1, third, "aged out by the 1000 frames"));
+        }
     }
 
     @Nested

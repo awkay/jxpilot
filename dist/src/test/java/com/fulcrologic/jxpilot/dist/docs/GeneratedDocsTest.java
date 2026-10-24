@@ -203,9 +203,8 @@ class GeneratedDocsTest {
                     "a game key lists its resource, keys and help, with no note when it matches XPilot"),
                 () -> assertTrue(doc.contains("|`+keyToggleSound+`\n|`+minus+` (pass:c[-])\n"),
                     "the JXPilot mute key is listed with its default"),
-                () -> assertTrue(doc.contains("_XPilot's default: `+Escape+` (pass:c[Esc])._"),
-                    "swap settings notes XPilot's Escape, which JXPilot keeps for quitting"),
-                () -> assertTrue(doc.contains("|`+keySwapSettings+`\n|-\n"), "swap settings has no JXPilot default"),
+                () -> assertTrue(doc.contains("|`+keySwapSettings+`\n|`+Escape+` (pass:c[Esc])\n|Swap control settings.\n"),
+                    "swap settings keeps XPilot's Escape, with no note since it matches XPilot"),
                 () -> assertTrue(doc.contains("_Not in JXPilot._"), "unimplemented client functions are marked"),
                 () -> assertTrue(doc.contains("Default control settings: power 45, turnSpeed 40, turnResistance 0.12"),
                     "the control settings follow the table"));

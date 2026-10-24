@@ -60,6 +60,25 @@ public final class KeyRouter {
     public static final int SHOW_CONTROLS = 32;
     /** Toggle the key help overlay (JXPilot keyHelp). */
     public static final int HELP = 64;
+    /** Toggle the permanent owned-items list (C {@code Key_press_show_items}: KEY_TOGGLE_OWNED_ITEMS, showItems). */
+    public static final int TOGGLE_ITEMS = 128;
+    /**
+     * Show the fuel on the HUD (C {@code fuelCount = FUEL_NOTIFY}): a refuel, repair or tank next/prev key pressed
+     * ({@code Key_press_fuel}), or a refuel or repair key released ({@code Key_release}).
+     */
+    public static final int FUEL_NOTIFY = 256;
+    /** Toggle the game messages (C {@code Key_press_show_messages}: KEY_TOGGLE_MESSAGES, showMessages). */
+    public static final int TOGGLE_MESSAGES = 512;
+    /** keyIdMode: toggle real names in the score list (C {@code Key_press_id_mode}). */
+    public static final int ID_MODE = 1024;
+    /** keyPointerControl: toggle pointer control (C {@code Key_press_pointer_control}). */
+    public static final int POINTER_CONTROL = 2048;
+    /** keyPrintMessagesStdout: print the messages (C {@code Key_press_msgs_stdout}). */
+    public static final int PRINT_MESSAGES = 4096;
+    /** keySendMsg1..20: talk macros to send, {@link #takeMacros()} (C {@code Key_check_talk_macro}). */
+    public static final int TALK_MACRO = 8192;
+    /** Paste the clipboard into the talk line (JXPilot: Control-V or Command-V; C pastes with mouse button 2). */
+    public static final int PASTE = 16384;
 
     private final InputState input;
     private final TalkLine talk;
@@ -67,6 +86,8 @@ public final class KeyRouter {
     private final StringBuilder chat = new StringBuilder(TalkLine.MAX_CHARS);
     private final LoseItemSelection loseSelection = new LoseItemSelection();
     private boolean swallowChar;
+    /** Talk macros pressed (bit = macro number) since {@link #takeMacros()}. */
+    private int macros;
     /** Command-Q quits (the macOS application quit shortcut). */
     private final boolean commandQuits;
 
@@ -124,10 +145,13 @@ public final class KeyRouter {
      * keySwapSettings);
      * a TALK action opens the talk line (game keys released, the key's character is not typed); a
      * SWAP_SCALEFACTOR action is {@link #SWAP_SCALE}, a TOGGLE_SOUND action {@link #TOGGLE_SOUND}, a HELP action
-     * {@link #HELP}; releases go to {@link InputState#release}; repeats are ignored.
+     * {@link #HELP}, a TOGGLE_OWNED_ITEMS action {@link #TOGGLE_ITEMS}, a TOGGLE_MESSAGES action {@link #TOGGLE_MESSAGES};
+     * releases go to {@link InputState#release}; repeats are ignored.
      * BEHAVIOR (playing): increase/decrease power and turn speed change the {@link ControlSettings} as C's
      * key handlers do and are {@link #SETTINGS} | {@link #SHOW_CONTROLS}; swap settings swaps them and is
      * {@link #SHOW_CONTROLS} only (the key goes to the server, which swaps its copy, as in C).
+     * BEHAVIOR (playing): a press of a key bound to REFUEL, REPAIR, TANK_NEXT or TANK_PREV, and a release of one bound
+     * to REFUEL or REPAIR, is {@link #FUEL_NOTIFY} (C xevent.c:523-527, 634-636); the keys still go to the server.
      * BEHAVIOR (playing): each SELECT_ITEM and LOSE_ITEM function bound to a pressed or released key is a
      * {@link LoseItemSelection#press} / {@link LoseItemSelection#release} (C {@code Key_press_select_lose_item},
      * {@code Key_release}); the keys still go to the server.
@@ -144,7 +168,7 @@ public final class KeyRouter {
             for (int i = loseKeys(key); i > 0; i--) {
                 loseSelection.release();
             }
-            return NONE;
+            return fuelKey(key, FUEL_RELEASE);
         }
         if (action != GLFW_PRESS) {
             return NONE;
@@ -156,6 +180,50 @@ public final class KeyRouter {
             loseSelection.press();
         }
         long acts = input.press(key);
+        return actions(acts) | controls(input.bindings().gameMask(key)) | fuelKey(key, FUEL_PRESS);
+    }
+
+    /**
+     * A pointer button of pointer control (C {@code ButtonPress_event} / {@code ButtonRelease_event} with its
+     * {@code buttonDefs}): the button's game functions and client actions.
+     * <p>
+     * BEHAVIOR: ignored while talking. A press is a key press bound to exactly these functions ({@link
+     * InputState#pressFunctions}, the lose-item outline, the client actions and the power/turn-speed keys as
+     * {@link #key}, the fuel notice too); a release releases the game functions (refuel/repair: the fuel notice).
+     */
+    public int pointerButton(boolean press, long game, long acts) {
+        if (talk.isOpen()) {
+            return NONE;
+        }
+        int lose = ((game & ControlKey.SELECT_ITEM.mask()) != 0 ? 1 : 0) + ((game & ControlKey.LOSE_ITEM.mask()) != 0 ? 1 : 0);
+        if (!press) {
+            input.releaseFunctions(game);
+            for (int i = lose; i > 0; i--) {
+                loseSelection.release();
+            }
+            return fuel(game, FUEL_RELEASE);
+        }
+        for (int i = lose; i > 0; i--) {
+            loseSelection.press();
+        }
+        return actions(input.pressFunctions(game, acts)) | controls(game) | fuel(game, FUEL_PRESS);
+    }
+
+    /** BEHAVIOR: the talk macros pressed since the last call, bit n = keySendMsg(n + 1); cleared. */
+    public int takeMacros() {
+        int m = macros;
+        macros = 0;
+        return m;
+    }
+
+    /**
+     * The client actions of a press (C {@code Key_press}).
+     * <p>
+     * BEHAVIOR: TALK opens the talk line (game keys released, the key's character is not typed); SWAP_SCALEFACTOR,
+     * TOGGLE_SOUND, HELP, ID_MODE, TOGGLE_OWNED_ITEMS, TOGGLE_MESSAGES, POINTER_CONTROL and PRINT_MSGS_STDOUT
+     * are their events; keySendMsgN marks macro N-1 and is {@link #TALK_MACRO}.
+     */
+    private int actions(long acts) {
         int ev = NONE;
         if (KeyBindings.has(acts, ClientAction.TALK)) {
             talk.open();
@@ -171,10 +239,49 @@ public final class KeyRouter {
         if (KeyBindings.has(acts, ClientAction.HELP)) {
             ev |= HELP;
         }
+        if (KeyBindings.has(acts, ClientAction.ID_MODE)) {
+            ev |= ID_MODE;
+        }
         if (KeyBindings.has(acts, ClientAction.QUIT)) {
             ev |= QUIT;
         }
-        return ev | controls(input.bindings().gameMask(key));
+        if (KeyBindings.has(acts, ClientAction.TOGGLE_OWNED_ITEMS)) {
+            ev |= TOGGLE_ITEMS;
+        }
+        if (KeyBindings.has(acts, ClientAction.TOGGLE_MESSAGES)) {
+            ev |= TOGGLE_MESSAGES;
+        }
+        if (KeyBindings.has(acts, ClientAction.POINTER_CONTROL)) {
+            ev |= POINTER_CONTROL;
+        }
+        if (KeyBindings.has(acts, ClientAction.PRINT_MSGS_STDOUT)) {
+            ev |= PRINT_MESSAGES;
+        }
+        int m = (int) (acts >>> ClientAction.MSG_1.ordinal()) & ((1 << com.fulcrologic.jxpilot.client.game.TalkMacros.COUNT) - 1);
+        if (m != 0) {
+            macros |= m;
+            ev |= TALK_MACRO;
+        }
+        return ev;
+    }
+
+    /** Refuel, repair and tank next/prev: a press shows the fuel (C {@code Key_press_fuel}). */
+    private static final long FUEL_PRESS = ControlKey.REFUEL.mask() | ControlKey.REPAIR.mask()
+        | ControlKey.TANK_NEXT.mask() | ControlKey.TANK_PREV.mask();
+    /** Refuel and repair: a release shows the fuel too (C {@code Key_release}). */
+    private static final long FUEL_RELEASE = ControlKey.REFUEL.mask() | ControlKey.REPAIR.mask();
+
+    /** {@link #FUEL_NOTIFY} when the key is bound to one of the {@code keys}; NONE otherwise and for out-of-range codes. */
+    private int fuelKey(int key, long keys) {
+        if (key < 0 || key >= KeyBindings.SIZE) {
+            return NONE;
+        }
+        return fuel(input.bindings().gameMask(key), keys);
+    }
+
+    /** {@link #FUEL_NOTIFY} when {@code game} has one of the {@code keys}. */
+    private static int fuel(long game, long keys) {
+        return (game & keys) != 0 ? FUEL_NOTIFY : NONE;
     }
 
     /** How many of SELECT_ITEM and LOSE_ITEM the key is bound to (0..2); 0 for out-of-range codes. */
@@ -217,7 +324,8 @@ public final class KeyRouter {
      * BEHAVIOR: Return/keypad Enter submits: a non-empty line is copied to {@link #chat()} and is
      * {@link #CHAT}; the line closes and game keys work again either way.
      * BEHAVIOR: Escape cancels (text cleared, line closed). Backspace and Delete erase; Home/End move to
-     * the ends; with Control, a letter key is a {@link TalkLine#control} edit.
+     * the ends; Control-V or Command-V is {@link #PASTE}; with Control, another letter key is a
+     * {@link TalkLine#control} edit.
      * BEHAVIOR: the talk cursor actions (default Left/Right/Up/Down) move the cursor or browse history.
      */
     int talkKey(int key, int mods) {
@@ -249,6 +357,9 @@ public final class KeyRouter {
                 return NONE;
             }
             default -> { }
+        }
+        if (key == GLFW_KEY_V && (mods & (GLFW_MOD_CONTROL | GLFW_MOD_SUPER)) != 0) {
+            return PASTE;
         }
         if ((mods & GLFW_MOD_CONTROL) != 0 && key >= GLFW_KEY_A && key <= GLFW_KEY_Z) {
             talk.control((char) ('A' + key - GLFW_KEY_A));

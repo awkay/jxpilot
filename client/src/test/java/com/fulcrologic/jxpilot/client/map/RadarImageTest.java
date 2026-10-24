@@ -152,6 +152,21 @@ class RadarImageTest {
     @Nested
     class NarrowMap {
         @Test
+        void aDestroyedTargetIsNotWalked() {
+            // C Paint_world_radar: vis = Target_alive(x, y) == 0, so a dead target is space, not a wall-like blip
+            int[] dead = RadarImage.build(map(false, "!.", ".."), P, true, i -> false);
+            int[] alive = RadarImage.build(map(false, "!.", ".."), P, true, i -> true);
+            int[] wide = RadarImage.build(map(false, "!" + repeat('.', 511), repeat('.', 512)), P, true, i -> false);
+            assertAll(
+                () -> assertEquals(BLACK, px(dead, 0, 0), "dead target: black"),
+                () -> assertEquals(BLACK, px(dead, 127, 127), "its whole sampled area"),
+                () -> assertEquals(TARGET, px(alive, 0, 0), "live target: target colour"),
+                () -> assertEquals(TARGET, px(alive, 127, 127), "over its whole sampled area"),
+                () -> assertEquals(BLACK, px(wide, 0, 0), "a wide map's dead target is black too"),
+                () -> assertEquals(-1, RadarImage.targetAt(map(false, "!.", ".."), 1, 1), "no target on space"));
+        }
+
+        @Test
         void eachPixelSamplesTheNearestBlockWithRowZeroAtTheTop() {
             int[] img = RadarImage.build(map(false, "x.", ".."), P, true);
             assertAll(
@@ -213,7 +228,7 @@ class RadarImageTest {
             assertAll(
                 () -> assertEquals(1, RadarImage.height(map(false, middle, wallTopTargetMiddle, targetBottom)), "one row"),
                 () -> assertEquals(WALL, px(a, 0, 0), "wall below target: the walk's last-cell change is not repainted (C quirk)"),
-                () -> assertEquals(TARGET, px(b, 0, 0), "target below wall: likewise keeps the target colour"),
+                () -> assertEquals(WALL, px(b, 0, 0), "dead target below wall: not walked, the wall stays"),
                 () -> assertEquals(TARGET, px(live, 0, 0), "a live target is repainted after the walk, as C does"));
         }
     }

@@ -46,6 +46,29 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("Protocol messages")
 class MessagesTest {
+    @Test
+    @DisplayName("names after a shape: a short buffer cuts the shape so both names fit; a name cut short reads as empty")
+    void namesFit() {
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(40);
+        Msg.putShapeAndNames(b, "s".repeat(100), "ann", "box");
+        b.flip();
+        StringBuilder shape = new StringBuilder();
+        StringBuilder real = new StringBuilder();
+        StringBuilder host = new StringBuilder();
+        Wire.getString16(b, shape);
+        Msg.readOptional8(b, real);
+        Msg.readOptional8(b, host);
+        java.nio.ByteBuffer cut = java.nio.ByteBuffer.wrap(new byte[] {5, 'a', 'b', 'c', 'd'});
+        StringBuilder partial = new StringBuilder("old");
+        Msg.readOptional8(cut, partial);
+        assertAll(
+            () -> assertEquals(40 - 2 - 8, shape.length(), "the shape takes what the names leave"),
+            () -> assertEquals("ann", real.toString(), "real name"),
+            () -> assertEquals("box", host.toString(), "host name"),
+            () -> assertEquals("", partial.toString(), "5 declared, 4 left: empty"),
+            () -> assertEquals(0, cut.remaining(), "and the rest is skipped"));
+    }
+
 
     static ByteBuffer buf() {
         return ByteBuffer.allocate(Protocol.MAX_PACKET);
@@ -181,6 +204,48 @@ class MessagesTest {
         }
 
         @Test
+        @DisplayName("real and host names: round trip, absent from older peers, a short last field is ignored")
+        void names() {
+            Msg.Connect c = new Msg.Connect();
+            c.name.append("Ace");
+            c.realName.append("tony");
+            c.hostName.append("box.local");
+            ByteBuffer b = ByteBuffer.allocate(64);
+            c.write(b);
+            b.flip();
+            Msg.Connect r = new Msg.Connect();
+            r.realName.append("stale");
+            boolean ok = r.tryRead(b);
+            ByteBuffer old = ByteBuffer.allocate(64).putInt(1).put((byte) 0).put((byte) 1).put((byte) 'N')
+                .putShort((short) 0).flip();
+            Msg.Connect o = new Msg.Connect();
+            o.realName.append("stale");
+            o.tryRead(old);
+            ByteBuffer cut = ByteBuffer.allocate(64).putInt(1).put((byte) 0).put((byte) 1).put((byte) 'N')
+                .putShort((short) 0).put((byte) 9).put((byte) 'x').flip();
+            Msg.Connect k = new Msg.Connect();
+            k.tryRead(cut);
+            Msg.PlayerJoin j = new Msg.PlayerJoin();
+            j.name.append("n");
+            j.realName.append("real");
+            j.hostName.append("host");
+            j.shape.append("(SH: 1,1)".repeat(300));
+            ReliableChannel ch = new ReliableChannel();
+            j.send(ch);
+            ByteBuffer p = buf();
+            ch.write(p, 0);
+            p.flip();
+            Msg.PlayerJoin j2 = new Msg.PlayerJoin();
+            new ReliableChannel().read(p, (type, payload) -> j2.read(payload));
+            assertAll(
+                () -> assertTrue(ok, "read"),
+                () -> assertEquals("tony@box.local", r.realName + "@" + r.hostName, "round trip"),
+                () -> assertEquals("", o.realName.toString(), "an older client's CONNECT has none"),
+                () -> assertEquals("", k.realName + "" + k.hostName, "a name longer than the bytes left is dropped"),
+                () -> assertEquals("real@host", j2.realName + "@" + j2.hostName, "the names fit after a long shape"));
+        }
+
+        @Test
         @DisplayName("Connect.tryRead refuses every truncation without throwing and reads a complete body")
         void connectTryRead() {
             Msg.Connect c = new Msg.Connect();
@@ -209,8 +274,9 @@ class MessagesTest {
             Msg.Connect r = new Msg.Connect();
             boolean ok = r.tryRead(withTrailer);
             assertAll(
-                () -> assertEquals(13, size, "the test body is 13 bytes"),
-                () -> assertEquals(List.of(13), accepted, "only the complete body is accepted (every shorter prefix refused)"),
+                () -> assertEquals(15, size, "the test body is 15 bytes (13 + two empty names)"),
+                () -> assertEquals(List.of(13, 14, 15), accepted,
+                    "the body is accepted once the shape is complete; the trailing names are optional"),
                 () -> assertEquals(List.of(), moved, "a refused body leaves the position unchanged"),
                 () -> assertTrue(ok, "a body followed by extra bytes is read"),
                 () -> assertEquals(77, r.nonce, "tryRead fills the nonce"),

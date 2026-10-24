@@ -1,0 +1,30 @@
+# JXPilot golden-trace map (GPL-2.0-or-later, see LICENSE): target-shoot with
+# one life: when team 1's only ship dies the team round ends.
+mapName: team-rounds
+mapAuthor: JXPilot
+mapWidth: 11
+mapHeight: 12
+teamPlay: yes
+edgeWrap: no
+limitedLives: yes
+worldLives: 0
+targetDeadTime: 3
+# the C server also reads lib/defaults: pin what it sets there
+gravity: -0.25
+maxItemDensity: 0
+movingItemProb: 0
+framesPerSecond: 14
+mapData: \multiline: EndOfMapdata
+xxxxxxxxxxx
+x         x
+x    2    x
+x         x
+x    !    x
+x         x
+x         x
+x         x
+x         x
+x         x
+x    1    x
+xxxxxxxxxxx
+EndOfMapdata

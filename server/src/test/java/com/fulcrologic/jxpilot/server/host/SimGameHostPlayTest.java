@@ -114,9 +114,10 @@ class SimGameHostPlayTest {
             long fromT = t.world.events.seq();
             ht.clientMessage(cid, ReliableType.READY, empty());
             assertAll(
-                () -> assertEquals(List.of("MESSAGE 3 -1 0 Bob has entered \"Arena\", made by Bob."),
-                    HostFx.only(events(s.world, from), "MESSAGE"), "the second player: \"NAME has entered\", no round message"),
-                () -> assertEquals(List.of("MESSAGE 3 -1 0 Cid (team 2) has entered \"Arena\", made by Bob."),
+                () -> assertEquals(List.of("MESSAGE 3 -1 0 Bob (X) has entered \"Arena\", made by Bob."),
+                    HostFx.only(events(s.world, from), "MESSAGE"),
+                    "the second player: \"NAME (REALNAME) has entered\" (X: no real name sent), no round message"),
+                () -> assertEquals(List.of("MESSAGE 3 -1 0 Cid (X, team 2) has entered \"Arena\", made by Bob."),
                     HostFx.only(events(t.world, fromT), "MESSAGE"), "team play names the team"));
         }
 
@@ -357,6 +358,28 @@ class SimGameHostPlayTest {
                 () -> assertEquals(dec(45f, 3), held, "no new input: the last mask (DEC) is held, no new press"),
                 () -> assertEquals(dec(45f, 3), stillHeld, "DEC again after DEC is no press"),
                 () -> assertEquals(DEC, p.prevKeys, "the held mask is the player's"));
+        }
+
+        @Test
+        @DisplayName("aimTurn is C's PKT_POINTER_MOVE: applied at once; 0 and unbound ids do nothing")
+        void pointerMove() {
+            Simulation s = sim("", THREE);
+            World w = s.world;
+            SimGameHost h = new SimGameHost(s);
+            int ann = enter(h, "Ann", 0);
+            Player p = w.byId(ann);
+            p.turnSpeed = 32;
+            p.turnResistance = 0.12f;
+            p.turnVel = 0;
+            h.input(ann, 1, 0, 20);
+            float moved = p.turnVel;
+            h.input(ann, 2, 0, 0);
+            float none = p.turnVel;
+            h.input(63, 3, 0, 20);
+            assertAll(
+                () -> assertEquals(-10f, moved, "20 px at turnSpeed 32 turns by 10 (Keys.pointerMove)"),
+                () -> assertEquals(moved, none, "0: no pointer move"),
+                () -> assertEquals(moved, p.turnVel, "an unbound id: nothing"));
         }
 
         @Test

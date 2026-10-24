@@ -52,8 +52,8 @@ public final class GravityField {
      * BEHAVIOR: clockwise point gravity gives {@code (dy, -dx) * s}; anticlockwise {@code (-dy, dx) * s};
      * clockwise wins if both are set.
      * BEHAVIOR: the block at the point itself gets zero.
-     * Deviation from C (kept on purpose, see docs/DEVIATIONS-server.md): the y offset wraps with the world
-     * height (C used WRAP_DX for y).
+     * BEHAVIOR: as C (map.c:1179, a C bug kept for parity), the y offset wraps with the world WIDTH
+     * ({@code WRAP_DX}), which differs from wrapping with the height only on a non-square wrapping map.
      */
     public static void global(int w, int h, boolean wrap, double gravity, double angleDegrees,
                               boolean pointSource, int pointX, int pointY, boolean clockwise,
@@ -70,11 +70,11 @@ public final class GravityField {
             return;
         }
         int pw = w * Const.BLOCK_SZ;
-        int ph = h * Const.BLOCK_SZ;
         for (int xi = 0; xi < w; xi++) {
             int dx = (int) XMath.wrapDelta((xi - pointX) * Const.BLOCK_SZ, pw, wrap);
             for (int yi = 0; yi < h; yi++) {
-                int dy = (int) XMath.wrapDelta((yi - pointY) * Const.BLOCK_SZ, ph, wrap);
+                // C bug kept for parity: dy = WRAP_DX(dy) wraps the y offset with the world width (map.c:1179)
+                int dy = (int) XMath.wrapDelta((yi - pointY) * Const.BLOCK_SZ, pw, wrap);
                 int i = yi * w + xi;
                 if (dx == 0 && dy == 0) {
                     gx[i] = 0.0;

@@ -296,6 +296,11 @@ public final class Tanks {
         if (dummy.name.length() > max) {
             dummy.name.setLength(max);
         }
+        // ship.c:439-440
+        com.fulcrologic.jxpilot.common.Names.copy(dummy.realName,
+            w.options.getString(com.fulcrologic.jxpilot.common.config.Opt.TANK_REAL_NAME));
+        com.fulcrologic.jxpilot.common.Names.copy(dummy.hostName,
+            w.options.getString(com.fulcrologic.jxpilot.common.config.Opt.TANK_HOST_NAME));
         dummy.homeBase = pl.homeBase;
         dummy.team = pl.team;
         dummy.mychar = 'T';

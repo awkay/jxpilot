@@ -34,6 +34,7 @@ import com.fulcrologic.jxpilot.common.net.Section;
 import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
 import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
+import com.fulcrologic.jxpilot.server.world.Grid;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.ModeState;
 import com.fulcrologic.jxpilot.server.world.Obj;
@@ -85,6 +86,8 @@ public final class SnapshotBuilder {
     /** {@link World#frames} when {@link #hash} was last rebuilt (-1: never). */
     private long hashFrames = -1;
     private final int[] shotList;
+    /** C {@code wormholeVisible}: temporary wormholes are sent. */
+    private final boolean wormholeVisible;
     private final int[] shotVariant;
     private double viewHalfX = DEFAULT_VIEW_HALF;
     private double viewHalfY = DEFAULT_VIEW_HALF;
@@ -106,13 +109,23 @@ public final class SnapshotBuilder {
     private double cy;
     /** The item sections (server-items). */
     private final ItemSections itemSections;
+    /** C {@code maxVisibleObject} (frame.c:648, 739): a viewer is sent at most this many objects, the nearest. */
+    private int maxVisible;
+    /** C's cells as of this round, for the {@link #cVisible} pass (our own: snapshots may run off the sim thread). */
+    private final Grid cells;
+    /** Objects among the viewer's nearest {@link #maxVisible} have {@code visStamp[h] == visRound}. */
+    private final int[] visStamp;
+    private int visRound;
 
     public SnapshotBuilder(World w) {
         this.w = w;
         wr.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
         shotList = new int[w.objects.capacity];
+        wormholeVisible = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.WORMHOLE_VISIBLE);
         shotVariant = new int[w.objects.capacity];
         wrecks = new int[w.objects.capacity];
+        visStamp = new int[w.objects.capacity];
+        cells = new Grid(w.width, w.height, w.wrap, w.objects.capacity);
         hash = new ShotHash(w);
         itemSections = new ItemSections(w, this);
         initRecordClasses();
@@ -143,6 +156,8 @@ public final class SnapshotBuilder {
      */
     public void beginRound() {
         hash.rebuild();
+        cells.rebuild(w.objects);
+        maxVisible = w.options.getInt(com.fulcrologic.jxpilot.common.config.Opt.MAX_VISIBLE_OBJECT);
         hashFrames = w.frames;
         Objects o = w.objects;
         wreckCount = 0;
@@ -198,6 +213,7 @@ public final class SnapshotBuilder {
         part = -1;
         failedSize = Integer.MAX_VALUE;
         curType = -1;
+        markVisible(viewer);
         startPart();
         writeSelf(viewer);
         writeSounds(viewer);
@@ -271,6 +287,29 @@ public final class SnapshotBuilder {
         curType = type;
         curVariant = variant;
         return true;
+    }
+
+    /**
+     * C's {@code Cell_get_objects(viewer block, ..., MIN(NumObjs, maxVisibleObject))} for frame.c's object loop:
+     * mark the viewer's nearest objects of every kind (sparks and debris count), nearest blocks first.
+     * <p>
+     * BEHAVIOR: the blocks searched cover our view (with its margin), so only the count limits; objects not
+     * marked are not sent ({@link #cVisible}) even when there is room. Bursts are unaffected (one record per
+     * explosion, not per particle).
+     */
+    private void markVisible(Player v) {
+        visRound++;
+        int n = Math.min(w.objects.count(), maxVisible);
+        int range = (int) Math.ceil(Math.max(viewHalfX, viewHalfY) / Const.BLOCK_SZ) + 1;
+        cells.query(v.bx, v.by, range, n);
+        for (int i = 0; i < cells.resultCount; i++) {
+            visStamp[cells.result[i]] = visRound;
+        }
+    }
+
+    /** BEHAVIOR: whether object {@code h} is among the viewer's nearest {@code maxVisibleObject} ({@link #markVisible}). */
+    boolean cVisible(int h) {
+        return visStamp[h] == visRound;
     }
 
     boolean visible(double x, double y, double margin) {
@@ -458,7 +497,7 @@ public final class SnapshotBuilder {
                 continue;
             }
             for (int i = hs.start[c], e = hs.start[c + 1]; i < e && n < cap; i++) {
-                if (!visible(hs.x[i], hs.y[i], 0)) {
+                if (!visible(hs.x[i], hs.y[i], 0) || !cVisible(hs.handle[i])) {
                     continue;
                 }
                 shotList[n] = i;
@@ -496,7 +535,7 @@ public final class SnapshotBuilder {
             int h = wrecks[i];
             double x = o.cx[h] / (double) Click.CLICK;
             double y = o.cy[h] / (double) Click.CLICK;
-            if (!visible(x, y, 0) || !need(Section.WRECKAGE, 0)) {
+            if (!visible(x, y, 0) || !cVisible(h) || !need(Section.WRECKAGE, 0)) {
                 continue;
             }
             Records.Wreckage.put(wr, x, y, o.info[h] & 0x7F, o.size[h], o.rotation[h] * (2 * Math.PI / Const.RES));
@@ -593,23 +632,34 @@ public final class SnapshotBuilder {
         }
     }
 
-    /** BEHAVIOR: every temporary wormhole (few, map-like): its block and type (Wormhole.Type ordinal). */
+    /**
+     * C {@code Frame_map} wormholes (frame.c:611-636): with wormholeVisible, the temporary IN ends in view
+     * (the OUT ends are never sent), as their block and type (Wormhole.Type ordinal).
+     */
     private void writeTempWormholes() {
+        if (!wormholeVisible) {
+            return;
+        }
         com.fulcrologic.jxpilot.server.world.WormTable worms = w.worms;
         for (int i = worms.mapCount; i < worms.count(); i++) {
+            int type = worms.type(i);
+            if (type == com.fulcrologic.jxpilot.server.world.WormTable.OUT
+                || !visible((worms.bx(i) + 0.5) * Const.BLOCK_SZ, (worms.by(i) + 0.5) * Const.BLOCK_SZ, 0)) {
+                continue;
+            }
             if (!need(Section.TEMP_WORMHOLE, 0)) {
                 return;
             }
-            Records.TempWormhole.put(wr, worms.bx(i), worms.by(i), worms.type(i));
+            Records.TempWormhole.put(wr, worms.bx(i), worms.by(i), type);
         }
     }
 
     /**
      * Balls, connectors and asteroids in view (C {@code Frame_shots}, {@code Frame_ships}).
      * <p>
-     * BEHAVIOR: a ball: its handle, team (its treasure's), and the ship it is connected to (or NO_ID); a ship
-     * reaching for a ball (C {@code pl->ball}) shows a connector from the ball to the ship; asteroids with size
-     * and rotation.
+     * BEHAVIOR: a ball: its handle, team (its treasure's), and the ship it is connected to (or NO_ID); a playing
+     * ship (not paused, not game over) reaching for a ball (C {@code pl->ball}) shows a connector from the ball
+     * to the ship when both are in view; asteroids with size and rotation.
      */
     private void writeModeObjects() {
         Objects o = w.objects;
@@ -622,7 +672,7 @@ public final class SnapshotBuilder {
             }
             double x = o.cx[h] / (double) Click.CLICK;
             double y = o.cy[h] / (double) Click.CLICK;
-            if (!visible(x, y, 0)) {
+            if (!visible(x, y, 0) || !cVisible(h)) {
                 continue;
             }
             if (type == Obj.BALL) {
@@ -632,29 +682,34 @@ public final class SnapshotBuilder {
                         o.owner[h] == Obj.NO_ID ? Protocol.NO_ID : o.owner[h]);
                 }
             } else if (need(Section.ASTEROID, 0)) {
-                Records.Asteroid.put(wr, x, y, o.size[h], o.rotation[h] * (2 * Math.PI / Const.RES));
+                // C Send_asteroid's type_size: the outline type (info, frame.c:812) above the size (netserver.c:1871)
+                Records.Asteroid.put(wr, x, y, (o.info[h] & 0x0F) << 4 | (o.size[h] & 0x0F),
+                    o.rotation[h] * (2 * Math.PI / Const.RES));
             }
         }
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
             int h = pl.ball;
-            if (h < 0 || !o.isLive(h) || o.type[h] != Obj.BALL || (pl.status & (Obj.PLAYING | Obj.PAUSE)) == 0) {
+            // C Frame_ships (frame.c:1009-1024, 1078-1085): playing ships in view, not paused, not game over
+            if (h < 0 || !o.isLive(h) || o.type[h] != Obj.BALL || (pl.status & Obj.PLAYING) == 0
+                || (pl.status & (Obj.PAUSE | Obj.GAME_OVER)) != 0) {
                 continue;
             }
             double bx = o.cx[h] / (double) Click.CLICK;
             double by = o.cy[h] / (double) Click.CLICK;
-            if (!visible(bx, by, 0) || !wr.inView(pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK)
-                || !need(Section.CONNECTOR, 0)) {
+            double sx = pl.cx / (double) Click.CLICK;
+            double sy = pl.cy / (double) Click.CLICK;
+            if (!visible(bx, by, 0) || !visible(sx, sy, 0) || !need(Section.CONNECTOR, 0)) {
                 continue;
             }
-            Records.Connector.put(wr, bx, by, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK,
-                Records.Connector.KIND_BALL);
+            Records.Connector.put(wr, bx, by, sx, sy, Records.Connector.KIND_BALL);
         }
     }
 
     /**
      * BEHAVIOR: radar blips for balls (with treasuresOnRadar, FLAG_BALL) and asteroids (with asteroidsOnRadar,
-     * FLAG_ASTEROID) within the viewer's sensor range (C Frame_radar).
+     * FLAG_ASTEROID) within the viewer's sensor range (C Frame_radar). Asteroids go in one RADAR section per size,
+     * the size as the section variant (C draws size + 1 pixels); balls in variant 0.
      */
     private void writeModeRadar(Player v) {
         boolean balls = w.modeParams.treasuresOnRadar;
@@ -662,25 +717,44 @@ public final class SnapshotBuilder {
         if (!balls && !asteroids) {
             return;
         }
+        if (balls && !writeModeBlips(v, Obj.BALL, -1)) {
+            return;
+        }
+        // one RADAR section per asteroid size, its variant the size (C size + 1 pixels); a single pass when they
+        // all have one size
+        int sizes = 0;
+        Objects o = w.objects;
+        for (int k = 0; asteroids && k < o.count(); k++) {
+            int h = o.active[k];
+            if (o.type[h] == Obj.ASTEROID) {
+                sizes |= 1 << Math.max(1, Math.min(15, o.size[h]));
+            }
+        }
+        for (int size = 1; size <= 15; size++) {
+            if ((sizes & 1 << size) != 0 && !writeModeBlips(v, Obj.ASTEROID, size)) {
+                return;
+            }
+        }
+    }
+
+    /** Ball (size -1) or asteroid blips of one size; false once the snapshot is full. */
+    private boolean writeModeBlips(Player v, int type, int size) {
         Objects o = w.objects;
         for (int k = 0; k < o.count(); k++) {
             int h = o.active[k];
-            int flag;
-            if (balls && o.type[h] == Obj.BALL) {
-                flag = Records.Radar.FLAG_BALL;
-            } else if (asteroids && o.type[h] == Obj.ASTEROID) {
-                flag = Records.Radar.FLAG_ASTEROID;
-            } else {
+            if (o.type[h] != type || size >= 0 && Math.max(1, Math.min(15, o.size[h])) != size) {
                 continue;
             }
             if (w.wrapLength(v.px - o.px[h], v.py - o.py[h]) > v.sensorRange) {
                 continue;
             }
-            if (!need(Section.RADAR, 0)) {
-                return;
+            if (!need(Section.RADAR, Math.max(0, size))) {
+                return false;
             }
-            Records.Radar.put(wr, o.px[h], o.py[h], flag);
+            Records.Radar.put(wr, o.px[h], o.py[h], type == Obj.BALL ? Records.Radar.FLAG_BALL
+                : Records.Radar.FLAG_ASTEROID);
         }
+        return true;
     }
 
     private void writeRadar(Player v) {

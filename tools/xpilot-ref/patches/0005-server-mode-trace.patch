@@ -1,40 +1,89 @@
 xpilot-ref patch 0005: optional per-tick trace of balls, asteroids, wreckage,
-race progress, treasures and targets.
+race progress, treasures, targets and game messages.
 
 This patch modifies XPilot 4.5.5 (GPL-2.0-or-later, Copyright (C) 1991-2010
 by Bjoern Stabell, Ken Ronny Schouten, Bert Gijsbers, Dick Balaska et al.).
 It is a derivative work distributed under the same license.
 
 Why: to compare the reimplementation's game modes (ball connector physics,
-asteroid motion, race timing, treasure and target state) numerically against
-the original server.  Applies on top of patches 0002, 0003 and 0004.  Adds
-Trace_modes() to src/server/server.c, called right after Trace_objects().  It
-is inert unless the environment variable XPILOT_TRACE_MODES is set.  Game
-logic is unchanged.
+asteroid motion and placement, race timing and respawn, treasure and target
+state, scores and messages) numerically against the original server.
+Applies on top of patches 0002, 0003 and 0004.  Adds Trace_modes() to
+src/server/server.c, called right after Trace_objects(), and a game message
+trace (XPMSG) to Set_message()/Set_player_message() in src/server/frame.c.
+It is inert unless the environment variable XPILOT_TRACE_MODES is set.  The
+random draws come from patch 0006 (XPILOT_TRACE_RAND).  Game logic is
+unchanged.
 
---- a/src/server/server.c
-+++ b/src/server/server.c
-@@ -462,6 +462,83 @@
- 		(long)obj->life, (double)obj->mass,
- 		(int)wr->size, (int)wr->info, (int)wr->rotation,
- 		(double)wr->turnspeed, (int)obj->id);
+--- a/src/server/frame.c	2026-10-24 01:37:46
++++ b/src/server/frame.c	2026-10-24 01:37:46
+@@ -1359,6 +1359,30 @@
+     Frame_radar_buffer_free();
+ }
+ 
++/*
++ * xpilot-ref message trace (not part of upstream XPilot 4.5.5): with
++ * XPILOT_TRACE_MODES set, every game message as "XPMSG loop frame to text"
++ * (to: * for everyone, else the player id).  Game logic is unchanged.
++ */
++static void Trace_message(int to, const char *text)
++{
++    static int	init = 0;
++    static int	on = 0;
++    extern long	main_loops;
++
++    if (!init) {
++	init = 1;
++	on = (getenv("XPILOT_TRACE_MODES") != NULL);
 +    }
-+    fflush(stderr);
++    if (on) {
++	if (to < 0) {
++	    fprintf(stderr, "XPMSG %ld %ld * %s\n", main_loops, frame_loops, text);
++	} else {
++	    fprintf(stderr, "XPMSG %ld %ld %d %s\n", main_loops, frame_loops, to, text);
++	}
++    }
 +}
 +
+ void Set_message(const char *message)
+ {
+     player		*pl;
+@@ -1376,6 +1400,7 @@
+     } else {
+ 	msg = message;
+     }
++    Trace_message(-1, msg);
+     for (i = 0; i < NumPlayers; i++) {
+ 	pl = Players[i];
+ 	if (pl->conn != NOT_CONNECTED) {
+@@ -1401,6 +1426,7 @@
+     } else {
+ 	msg = message;
+     }
++    Trace_message(pl->id, msg);
+     if (pl->conn != NOT_CONNECTED) {
+ 	Send_message(pl->conn, msg);
+     }
+--- a/src/server/server.c	2026-10-24 01:37:46
++++ b/src/server/server.c	2026-10-24 01:38:05
+@@ -466,6 +466,84 @@
+     fflush(stderr);
+ }
+ 
 +/*
 + * xpilot-ref game-mode trace hook (not part of upstream XPilot 4.5.5).
 + * When XPILOT_TRACE_MODES is set, print after each Update_objects():
 + *   XPMOBJ loop frame ptr type cx cy prevx prevy vx vy life id team status mass extra...
 + *          (balls: owner treasure length; asteroids/wreckage: size rotation turnspeed info)
 + *          for every ball, asteroid and wreckage object;
-+ *   XPPL2  loop frame id used have ball check round time best_lap last_lap last_lap_time mychar
++ *   XPPL2  loop frame id used have ball check round time best_lap last_lap last_lap_time mychar score
 + *          for every player;
 + *   XPTRS  loop frame index have destroyed   (every treasure)
 + *   XPTGT  loop frame index damage dead_time (every target)
 + *   XPTEAM loop frame team left destroyed score (teams with treasures)
 + * Has no effect unless XPILOT_TRACE_MODES is set.
 + */
++
 +static void Trace_modes(void)
 +{
 +    static int		init = 0;
@@ -71,12 +120,12 @@ logic is unchanged.
 +    }
 +    for (i = 0; i < NumPlayers; i++) {
 +	player *pl = Players[i];
-+	fprintf(stderr, "XPPL2 %ld %ld %d %#lx %#lx %p %d %d %d %d %d %d %c\n",
++	fprintf(stderr, "XPPL2 %ld %ld %d %#lx %#lx %p %d %d %d %d %d %d %c %.17g\n",
 +		main_loops, frame_loops, (int)pl->id,
 +		(unsigned long)pl->used, (unsigned long)pl->have,
 +		(void *)pl->ball, pl->check, pl->round, pl->time,
 +		pl->best_lap, pl->last_lap, pl->last_lap_time,
-+		pl->mychar > ' ' ? pl->mychar : '_');
++		pl->mychar > ' ' ? pl->mychar : '_', (double)pl->score);
 +    }
 +    for (i = 0; i < World.NumTreasures; i++) {
 +	fprintf(stderr, "XPTRS %ld %ld %d %d %d\n", main_loops, frame_loops,
@@ -95,10 +144,14 @@ logic is unchanged.
 +		frame_loops, i, World.teams[i].TreasuresLeft,
 +		World.teams[i].TreasuresDestroyed,
 +		(double)World.teams[i].score);
-     }
-     fflush(stderr);
- }
-@@ -506,6 +583,7 @@
++    }
++    fflush(stderr);
++}
++
+ void Main_loop(void)
+ {
+     main_loops++;
+@@ -506,6 +584,7 @@
  	Trace_players();
  	Trace_wreckage();
  	Trace_objects();

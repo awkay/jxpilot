@@ -440,7 +440,7 @@ class TanksTest {
                 () -> assertEquals(n0 + 1, w.numPlayers, "one more player"),
                 () -> assertEquals("A's tank", d.name.toString(), "named after the owner"),
                 () -> assertEquals('T', d.mychar, "shown as T"),
-                () -> assertEquals(List.of(0, 1, 100.0 - 500), List.of(d.team, d.homeBase, d.score),
+                () -> assertEquals(List.of(0, 1, 100f - 500), List.of(d.team, d.homeBase, d.score),
                     "the owner's team and home, score - tankScoreDecrement"),
                 () -> assertEquals(p.pseudoTeam, d.pseudoTeam, "the owner's pseudo team"),
                 () -> assertEquals(p.id, d.lockPlId, "the owner is remembered in the lock"),

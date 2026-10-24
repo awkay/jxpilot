@@ -49,16 +49,19 @@ public final class LiveOptions {
     /**
      * BEHAVIOR: when the options' version differs from the last applied one, copies them into the consumers:
      * Hud showHUD, horizontalHUDLine, verticalHUDLine, fuelGauge, fuelMeter, powerMeter, turnSpeedMeter,
-     * fuelNotify/fuelWarning/fuelCritical, showMessages, speedFactHUD, speedFactPTR; messages maxMessages and
+     * fuelNotify/fuelWarning/fuelCritical, showMessages, reverseScroll, speedFactHUD, speedFactPTR; messages maxMessages and
      * charsPerSecond; score list showScoreDecimals; HUD items showItems and showItemsTime; talk
      * maxLinesInHistory. Returns whether it applied.
      */
     public boolean apply(Hud hud, ClientGame game, HudExtras extras, TalkLine talk) {
-        return apply(hud, game, extras, talk, null);
+        return apply(hud, game, extras, talk, null, null);
     }
 
-    /** {@link #apply(Hud, ClientGame, HudExtras, TalkLine)}, plus toggleShield and autoShield into {@code input}. */
-    public boolean apply(Hud hud, ClientGame game, HudExtras extras, TalkLine talk,
+    /**
+     * {@link #apply(Hud, ClientGame, HudExtras, TalkLine)}, plus (each when not null) showMineName into the
+     * {@link SceneFiller} and toggleShield / autoShield into {@code input}.
+     */
+    public boolean apply(Hud hud, ClientGame game, HudExtras extras, TalkLine talk, SceneFiller filler,
                          com.fulcrologic.jxpilot.client.game.input.InputState input) {
         if (options.version() == applied) {
             return false;
@@ -75,6 +78,7 @@ public final class LiveOptions {
         hud.fuelWarning = options.integer(FUEL_WARNING);
         hud.fuelCritical = options.integer(FUEL_CRITICAL);
         hud.showMessages = options.flag(SHOW_MESSAGES);
+        hud.reverseScroll = options.flag(REVERSE_SCROLL);
         hud.hudMoveFact = options.real(SPEED_FACT_HUD);
         hud.ptrMoveFact = options.real(SPEED_FACT_PTR);
         game.messages().setMaxMessages(options.integer(MAX_MESSAGES));
@@ -87,6 +91,19 @@ public final class LiveOptions {
             input.toggleShield = options.flag(TOGGLE_SHIELD);
             input.autoShield = options.flag(AUTO_SHIELD);
         }
+        if (filler != null) {
+            filler.showMineName = options.flag(SHOW_MINE_NAME);
+        }
         return true;
+    }
+
+    /**
+     * {@link #apply(Hud, ClientGame, HudExtras, TalkLine)}, and the scene's item drawing options: showMineName (C
+     * SHOW_MINE_NAME instrument) into the {@link SceneFiller}.
+     * <p>
+     * BEHAVIOR: as the 4-argument apply; when it applies, the filler's showMineName is the option's value.
+     */
+    public boolean apply(Hud hud, ClientGame game, HudExtras extras, TalkLine talk, SceneFiller filler) {
+        return apply(hud, game, extras, talk, filler, null);
     }
 }

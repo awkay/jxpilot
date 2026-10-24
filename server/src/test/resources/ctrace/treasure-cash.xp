@@ -1,0 +1,27 @@
+# JXPilot golden-trace map (GPL-2.0-or-later, see LICENSE): team play, the team 1
+# base, a team 1 treasure and next to it a team 2 treasure (team 2's base is nearer
+# to it); for the treasure capture trace: connect to the team 2 ball and pull it
+# sideways into the own treasure.
+mapName: treasure-cash
+mapAuthor: JXPilot
+mapWidth: 11
+mapHeight: 10
+teamPlay: yes
+edgeWrap: no
+# the C server also reads lib/defaults: pin what it sets there
+gravity: -0.25
+maxItemDensity: 0
+movingItemProb: 0
+framesPerSecond: 14
+mapData: \multiline: EndOfMapdata
+xxxxxxxxxxx
+x         x
+x         x
+x         x
+x         x
+x         x
+x         x
+x         x
+x 1 ** 2  x
+xxxxxxxxxxx
+EndOfMapdata

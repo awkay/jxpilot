@@ -118,6 +118,34 @@ class ConnectionSelectionTest {
                 System.setProperty("user.name", old);
             }
         }
+
+        @Test
+        void userOverridesAndNamesAreSent() throws Exception {
+            try {
+                GameConnections.setUser("Real Name");
+                GameConnections.setHost("box.example.org");
+                String over = GameConnections.realName();
+                GameConnection jx = GameConnections.open(ConnectTarget.parse("127.0.0.1:1", null), new ClientGame(),
+                    "pilot", 3, null, 1);
+                String sentReal = ((NativeGameConnection) jx).connection().connect.realName.toString();
+                String sentHost = ((NativeGameConnection) jx).connection().connect.hostName.toString();
+                jx.close();
+                GameConnections.setUser(null);
+                GameConnections.setHost(null);
+                String back = GameConnections.realName();
+                String hostBack = GameConnections.hostName();
+                assertAll(
+                    () -> assertEquals("RealName", over, "--user replaces the login name (cleaned)"),
+                    () -> assertEquals("RealName", sentReal, "CONNECT carries the real name"),
+                    () -> assertEquals("box.example.org", sentHost, "and the host resource"),
+                    () -> assertFalse(hostBack.isEmpty(), "without it a local host name is always found"),
+                    () -> assertNotEquals("box.example.org", hostBack, "null restores the local host name"),
+                    () -> assertNotEquals("RealName", back, "null restores the login name"));
+            } finally {
+                GameConnections.setUser(null);
+                GameConnections.setHost(null);
+            }
+        }
     }
 
     @Nested

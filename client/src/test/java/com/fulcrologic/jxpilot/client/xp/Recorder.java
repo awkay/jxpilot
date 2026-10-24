@@ -68,8 +68,16 @@ final class Recorder implements ConnectionListener, XpReliableDecoder.Control {
 
     @Override
     public void onReliable(int type, ByteBuffer p) {
+        if (type == ReliableType.PLAYER_JOIN) {
+            Msg.PlayerJoin j = new Msg.PlayerJoin();
+            j.read(p.duplicate());
+            identities.add(j.id + " " + j.realName + "@" + j.hostName);
+        }
         events.add(describe(type, p));
     }
+
+    /** Every PLAYER_JOIN's real name and host as "id real@host" (kept apart from {@link #events}). */
+    final List<String> identities = new ArrayList<>();
 
     static String describe(int type, ByteBuffer p) {
         return switch (type) {
@@ -125,6 +133,16 @@ final class Recorder implements ConnectionListener, XpReliableDecoder.Control {
                 Msg.BaseOwner b = new Msg.BaseOwner();
                 b.read(p);
                 yield "base index=" + b.baseIndex + " player=" + b.playerId;
+            }
+            case ReliableType.WAR -> {
+                Msg.War w = new Msg.War();
+                w.read(p);
+                yield "war robot=" + w.robotId + " killer=" + w.killerId;
+            }
+            case ReliableType.SEEK -> {
+                Msg.Seek k = new Msg.Seek();
+                k.read(p);
+                yield "seek programmer=" + k.programmerId + " robot=" + k.robotId + " sought=" + k.soughtId;
             }
             default -> "reliable " + type;
         };

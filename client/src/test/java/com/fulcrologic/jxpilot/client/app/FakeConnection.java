@@ -38,6 +38,12 @@ final class FakeConnection implements GameConnection {
     String status = "Playing on fake";
     LongConsumer onUpdate = t -> { };
     long lastKeys = -1;
+    /** What {@link #eyesId()} says (C eyesId; NO_ID: not said). */
+    int eyes = com.fulcrologic.jxpilot.common.net.Protocol.NO_ID;
+
+    @Override public int eyesId() { return eyes; }
+    /** The aimTurn of every sendInput. */
+    final List<Integer> aims = new ArrayList<>();
     boolean chatAccepted = true;
     boolean record = true;
     /** Every sendSettings call as "power turnSpeed turnResistance altPower altTurnSpeed altTurnResistance". */
@@ -61,6 +67,7 @@ final class FakeConnection implements GameConnection {
     @Override
     public int sendInput(long keys, int aimTurn, long nowNanos) {
         lastKeys = keys;
+        aims.add(aimTurn);
         log("input");
         return 1;
     }
@@ -89,6 +96,21 @@ final class FakeConnection implements GameConnection {
     }
 
     /** Every sendDisplay call as "width x height" (not in {@link #calls}, so the step order stays as it was). */
+    /** sendFps / requestMotd calls, in order. */
+    final List<String> requests = new ArrayList<>();
+
+    @Override
+    public boolean sendFps(int maxFps, long nowNanos) {
+        requests.add("fps " + maxFps);
+        return true;
+    }
+
+    @Override
+    public boolean requestMotd(long nowNanos) {
+        requests.add("motd");
+        return true;
+    }
+
     final List<String> displays = new ArrayList<>();
 
     @Override

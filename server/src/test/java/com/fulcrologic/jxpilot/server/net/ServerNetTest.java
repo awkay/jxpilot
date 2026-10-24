@@ -108,6 +108,18 @@ class ServerNetTest {
     @DisplayName("CONNECT and session verification")
     class Connect {
         @Test
+        @DisplayName("the CONNECT's real and host names and the address go to the host after a successful join only")
+        void identity() {
+            Harness h = new Harness(new ServerNetConfig(), "mapName: test\n");
+            h.host.nextId = 4;
+            h.in(0, A, new TestClient(1).connect("Ann", 2, "", "tony", "box.local"));
+            h.host.joinAnswer = -Msg.Reject.REASON_FULL;
+            h.in(0, B, new TestClient(2).connect("Bob", 2, "", "bob", "b.local"));
+            assertEquals(List.of("4 tony@box.local " + ((java.net.InetSocketAddress) A).getAddress().getHostAddress()),
+                h.host.identities, "Ann's names and address; nothing for the refused Bob");
+        }
+
+        @Test
         @DisplayName("accepts with ACCEPT only; WELCOME follows once a packet carries the session")
         void accept() {
             ServerNetConfig cfg = new ServerNetConfig();
@@ -358,7 +370,7 @@ class ServerNetTest {
             full.onPacket(fullReply.get(0).data().duplicate(), h.now);
             assertAll(
                 () -> assertEquals(Msg.Reject.REASON_BAD_NAME, empty.rejectReason, "an empty name is refused as a bad name"),
-                () -> assertEquals("em", empty.rejectText, "its text is cut so the 16-byte REJECT fits the 16-byte CONNECT"),
+                () -> assertEquals("empt", empty.rejectText, "its text is cut so the 18-byte REJECT fits the 18-byte CONNECT"),
                 () -> assertEquals(emptySize, emptyReply.get(0).data().remaining(), "the reply is exactly as large as the request"),
                 () -> assertEquals(0, emptyReply.get(0).session(), "REJECT carries session 0"),
                 () -> assertEquals(5, empty.rejectNonce, "REJECT echoes the nonce"),

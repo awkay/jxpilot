@@ -298,8 +298,49 @@ class ScenePainterTest {
                 "200,200-208,200", "212,200-220,200", "224,200-230,200",
                 "200,210-203,210", "212,210-215,210", "224,210-227,210",
                 "204,220-212,220", "216,220-224,220", "228,220-230,220",
-                "204,230-212,230", "216,230-224,230", "228,230-230,230"), segs(b),
-            "connector 8/4 and tractor 3/9 from offset 0; refuel and transporter at the ship offset (loops 4: 8)");
+                "200,230-208,230", "212,230-220,230", "224,230-230,230"), segs(b),
+            "connector 8/4 and tractor 3/9 from offset 0; refuel at the ship offset (loops 4: 8); the transporter "
+                + "after a drawn connector from offset 0 (C XSetDashes reset)");
+    }
+
+    @Test
+    void transportersCrawlUnlessADrawnConnectorResetTheDashOffset() {
+        Camera c = cam(10000, 10000, false, 500, 500);
+        SceneData none = new SceneData(4, 4, 4, 8);
+        none.addLink(500, 530, 530, 530, SceneData.LINK_TRANSPORTER);
+        none.loops = 4;
+        SceneData offScreen = new SceneData(4, 4, 4, 8);
+        offScreen.addLink(500, 500, 900, 500, SceneData.LINK_TRACTOR); // far end off screen: C draws nothing
+        offScreen.addLink(500, 530, 530, 530, SceneData.LINK_TRANSPORTER);
+        offScreen.loops = 4;
+        SceneData refuel = new SceneData(4, 4, 4, 8);
+        refuel.addLink(500, 520, 530, 520, SceneData.LINK_REFUEL);
+        refuel.addLink(500, 530, 530, 530, SceneData.LINK_TRANSPORTER);
+        refuel.loops = 4;
+        VertexBatch b1 = batch();
+        painter().draw(b1, TEXT, c, none);
+        VertexBatch b2 = batch();
+        painter().draw(b2, TEXT, c, offScreen);
+        VertexBatch b3 = batch();
+        painter().draw(b3, TEXT, c, refuel);
+        List<String> crawl = List.of("204,230-212,230", "216,230-224,230", "228,230-230,230");
+        assertAll(
+            () -> assertEquals(crawl, segs(b1), "no connector: the transporter dashes at the ship offset"),
+            () -> assertEquals(crawl, segs(b2), "an undrawn connector (an end off screen) resets nothing"),
+            () -> assertEquals(crawl, segs(b3).subList(3, 6), "a refuel line resets nothing"),
+            () -> assertFalse(ScenePainter.connectorDrawn(c, none), "no connector drawn"),
+            () -> assertFalse(ScenePainter.connectorDrawn(c, offScreen), "the off-screen beam is not drawn"));
+    }
+
+    @Test
+    void linesAreDrawnOnlyWithBothEndsOnScreen() {
+        Camera c = cam(10000, 10000, false, 500, 500); // view x, y 300..700
+        assertAll(
+            () -> assertTrue(ScenePainter.linkShown(c, 400, 400, 600, 600, 0), "both ends inside"),
+            () -> assertTrue(ScenePainter.linkShown(c, 300, 300, 700, 700, 0), "ends on the edges count"),
+            () -> assertFalse(ScenePainter.linkShown(c, 400, 400, 900, 400, 0), "second end off screen"),
+            () -> assertFalse(ScenePainter.linkShown(c, 100, 500, 600, 500, 0), "first end off screen"),
+            () -> assertFalse(ScenePainter.linkShown(c, 100, 500, 900, 500, 0), "crossing the view, ends outside"));
     }
 
     @Test
@@ -433,10 +474,10 @@ class ScenePainterTest {
             if (ScenePainter.visible(cam, 30, 40, sr, k, 0)) sp.ship(e, SHIP, 30, 40, 0.3, Palette.WHITE, ShipPainter.SHIELD, 0, z);
             if (ScenePainter.visible(cam, 985, 990, sr, k, 0)) sp.ship(e, SHIP, 985, 990, 2.0, Palette.BLUE, ShipPainter.CLOAKED, 0, z);
             if (ScenePainter.visible(cam, 150, 30, sr, k, 0)) sp.ship(e, SHIP, 150, 30, 1.0, Palette.WHITE, 0, 0, z);
-            if (cam.isVisible(30, 40, 70, 70, k, 0)) op.ballConnector(e, 30, 40, 70, 70);
-            if (cam.isVisible(30, 40, 985, 990, k, 0)) op.tractorBeam(e, 30, 40, 985, 990, z);
-            if (cam.isVisible(10, 10, 20, 50, k, 0)) op.dashedLink(e, 10, 10, 20, 50, 0, z);
-            if (cam.isVisible(55, 25, 70, 70, k, 0)) op.connector(e, 55, 25, 70, 70, z);
+            if (ScenePainter.linkShown(cam, 30, 40, 70, 70, k)) op.ballConnector(e, 30, 40, 70, 70);
+            if (ScenePainter.linkShown(cam, 30, 40, 985, 990, k)) op.tractorBeam(e, 30, 40, 985, 990, z);
+            if (ScenePainter.linkShown(cam, 10, 10, 20, 50, k)) op.dashedLink(e, 10, 10, 20, 50, 0, z);
+            if (ScenePainter.linkShown(cam, 55, 25, 70, 70, k)) op.connector(e, 55, 25, 70, 70, z);
         }
         for (int k = 0; k < n; k++) { // step 4 points
             cam.applyTo(e, k);

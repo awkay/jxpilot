@@ -120,7 +120,7 @@ class LocksTest {
             float withSensors = range(l, 1000 * 256, 2);
             float moreFuel = range(l, 2000 * 256, 2);
             setup("initialFuel: 0\n");
-            Locks noFuel = new Locks(w);
+            Locks noFuel = l; // C initialises once per process: the simulation's own Locks
             assertAll(
                 () -> assertEquals(1000f, withSensors, 1e-3f, "initial fuel and 2 sensors reach 1000 (float rounding)"),
                 () -> assertEquals(2000f, moreFuel, 2e-3f, "twice the fuel: 2000"),

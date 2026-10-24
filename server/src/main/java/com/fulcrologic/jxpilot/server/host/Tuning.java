@@ -467,54 +467,18 @@ final class Tuning {
         }
     }
 
-    /**
-     * C {@code Fix_real_name}.
-     * <p>
-     * BEHAVIOR: cut to 15 characters; empty becomes "X"; every character that is not a printable non-space
-     * ASCII character becomes 'x'.
-     */
+    /** C {@code Fix_real_name} ({@link com.fulcrologic.jxpilot.common.Names#fixRealName}). */
     static String fixRealName(String name) {
-        String n = name.length() > Const.MAX_NAME_LEN - 1 ? name.substring(0, Const.MAX_NAME_LEN - 1) : name;
-        if (n.isEmpty()) {
-            return "X";
-        }
-        StringBuilder sb = new StringBuilder(n);
-        for (int i = 0; i < sb.length(); i++) {
-            char c = sb.charAt(i);
-            if (c <= ' ' || c >= 127) {
-                sb.setCharAt(i, 'x');
-            }
-        }
+        StringBuilder sb = new StringBuilder(name);
+        com.fulcrologic.jxpilot.common.Names.fixRealName(sb);
         return sb.toString();
     }
 
-    /**
-     * C {@code Fix_host_name}.
-     * <p>
-     * BEHAVIOR: cut to 63 characters; a name not starting with a letter or digit becomes "xxx.xxx"; any other
-     * character that is not a letter or digit becomes 'x', except a '.' or '-' followed by a letter or digit.
-     */
+    /** C {@code Fix_host_name} ({@link com.fulcrologic.jxpilot.common.Names#fixHostName}). */
     static String fixHostName(String name) {
-        String n = name.length() > MAX_HOST_LEN - 1 ? name.substring(0, MAX_HOST_LEN - 1) : name;
-        if (n.isEmpty() || !alnum(n.charAt(0))) {
-            return "xxx.xxx";
-        }
-        StringBuilder sb = new StringBuilder(n);
-        for (int i = 0; i < sb.length(); i++) {
-            char c = sb.charAt(i);
-            if (!alnum(c)) {
-                boolean sep = c == '.' || c == '-';
-                boolean nextOk = i + 1 < sb.length() && sb.charAt(i + 1) != '.' && sb.charAt(i + 1) != '-';
-                if (!sep || !nextOk) {
-                    sb.setCharAt(i, 'x');
-                }
-            }
-        }
+        StringBuilder sb = new StringBuilder(name);
+        com.fulcrologic.jxpilot.common.Names.fixHostName(sb);
         return sb.toString();
-    }
-
-    private static boolean alnum(char c) {
-        return c < 128 && Character.isLetterOrDigit(c);
     }
 
     /**
@@ -727,8 +691,8 @@ final class Tuning {
                 continue;
             }
             int base = mineLife != 0 ? mineLife
-                : mines ? 5000 + (w.rng.nextInt() & 255)
-                : Integer.remainderUnsigned(w.rng.nextInt(), 64 * fps - 1) + 128 * fps;
+                : mines ? 5000 + (w.randomMT() & 255)
+                : Integer.remainderUnsigned(w.randomMT(), 64 * fps - 1) + 128 * fps;
             int life = base / (com.fulcrologic.jxpilot.server.world.Mods.mini(o.mods[h]) + 1);
             o.life[h] = (int) (w.rfrac() * life);
         }

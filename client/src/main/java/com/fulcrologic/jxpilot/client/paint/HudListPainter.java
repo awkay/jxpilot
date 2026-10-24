@@ -52,14 +52,16 @@ public final class HudListPainter {
      * WHITE 1, RED 3, OLD_MESSAGE 1 ({@code oldMessagesColor}), BLACK 0, SCORE 1 (white), SCORE_DIM 0
      * for 'D'/'P'/'W' players (C {@code paint.c} {@code Paint_score_entry}: black on the blue score window; grey
      * 12 with {@code blockBitmaps}, see {@link #setPaletteIndex}), WINDOW 2 (C {@code windowColor} BLUE) and
-     * BUTTON 3 (C {@code buttonColor} RED).
+     * BUTTON 3 (C {@code buttonColor} RED) and EMPHASIZED 2 (C {@code DRAW_EMPHASIZED} BLUE); METER_FULL and METER_EMPTY
+     * are drawn as the meter bitmap ({@link #meterPart}), their entries (white) are never used.
      */
     public static final int[] XPILOT_PALETTE = {
         PaintConfig.HUD_COLOR, Palette.WHITE, Palette.RED, PaintConfig.OLD_MESSAGES_COLOR, Palette.BLACK,
-        Palette.WHITE, Palette.BLACK, Palette.BLUE, Palette.RED
+        Palette.WHITE, Palette.BLACK, Palette.BLUE, Palette.RED, Palette.BLUE, Palette.WHITE, Palette.WHITE
     };
     /** Shadowed text colours of {@code HudColor}: only SCORE (index 5), C's {@code ShadowDrawString} white text. */
-    public static final boolean[] XPILOT_SHADOW = {false, false, false, false, false, true, false, false, false};
+    public static final boolean[] XPILOT_SHADOW = {false, false, false, false, false, true, false, false, false, false,
+        false, false};
 
     /** X11's default dash list {4, 4} (a GC whose dashes were never set). */
     static final int X_DASH = 4;
@@ -122,8 +124,8 @@ public final class HudListPainter {
     }
 
     /** client-ui-look: {@code HudColor.METER_FULL} and {@code METER_EMPTY} (meter bitmaps, {@code texturedObjects}). */
-    static final int METER_FULL = 9;
-    static final int METER_EMPTY = 10;
+    static final int METER_FULL = 10;
+    static final int METER_EMPTY = 11;
 
     /**
      * C {@code Block_bitmap_paint_meter}: part of the meter bitmap over the rect; the full picture from its left end,

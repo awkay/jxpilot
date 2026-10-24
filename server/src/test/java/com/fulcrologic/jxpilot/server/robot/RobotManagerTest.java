@@ -507,6 +507,39 @@ class RobotManagerTest {
         }
 
         @Test
+        @DisplayName("WAR events as C Robot_war's Send_war: a new war, and the killer's war on its victim ending")
+        void warEvents() {
+            Simulation s = sim("", "___");
+            Player v = s.robots.create();
+            Player k = TestWorlds.join(s, "K", 0);
+            k.score = 50;
+            long from = s.world.events.seq();
+            s.world.rng.seed(RobotFixture.seedWithFirst(true, 0.5));
+            s.robots.war(v, k);
+            List<String> declared = RobotFixture.events(s.world, Events.WAR, from);
+            long again = s.world.events.seq();
+            s.world.rng.seed(RobotFixture.seedWithFirst(true, 0.5));
+            s.robots.war(v, k);
+            List<String> already = RobotFixture.events(s.world, Events.WAR, again);
+            Player r2 = s.robots.create();
+            DefaultRobot.setWar(s.robots.data(r2), k.id);
+            long kill = s.world.events.seq();
+            s.robots.war(k, r2);
+            List<String> over = RobotFixture.events(s.world, Events.WAR, kill);
+            DefaultRobot.setWar(s.robots.data(r2), v.id);
+            long other = s.world.events.seq();
+            s.robots.war(k, r2);
+            assertAll(
+                () -> assertEquals(List.of(v.id + ":" + k.id + ":0"), declared, "the robot declares war on its killer"),
+                () -> assertEquals(List.of(), already, "already at war with it: no new WAR"),
+                () -> assertEquals(List.of(r2.id + ":" + Obj.NO_ID + ":0"), over,
+                    "the robot killed its target: war over (NO_ID)"),
+                () -> assertEquals(List.of(), RobotFixture.events(s.world, Events.WAR, other),
+                    "it killed someone else: its war ends silently (C)"),
+                () -> assertEquals(Obj.NO_ID, s.robots.warOnPlayer(r2), "and the war is over"));
+        }
+
+        @Test
         @DisplayName("no war on a self kill or a team mate; a human victim draws no rfrac")
         void noWar() {
             Simulation s = sim("", "___");

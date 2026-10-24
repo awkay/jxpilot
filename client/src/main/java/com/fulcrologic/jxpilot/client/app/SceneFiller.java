@@ -64,6 +64,15 @@ public final class SceneFiller {
     public static final int RADAR_ASTEROID_SIZE = 1;
     /** Radar size byte meaning "not shown this frame" (a blink phase). */
     public static final int HIDDEN = -1;
+    /** C {@code MISSILE_LEN}: the length C draws a missile sent with no length (paintobjects.c:403-406). */
+    public static final int MISSILE_LEN = 15;
+    /** C {@code Paint_mines}: the label of an identified mine nobody owns ({@code EXPIRED_MINE_ID}). */
+    public static final String EXPIRED_MINE_NAME = "Expired";
+    /** C {@code Paint_mines}: the label of a mine whose identified owner the client does not know. */
+    public static final String UNKNOWN_MINE_NAME = "Not of this world!";
+
+    /** C option {@code showMineName} (default yes, SHOW_MINE_NAME): label mines with their owner. */
+    public boolean showMineName = true;
 
     /** The live look options: {@code sparkColors} colour the particles. */
     private PaintStyle style = new PaintStyle();
@@ -82,7 +91,9 @@ public final class SceneFiller {
      * dead; paused ones become paused markers (countdown 0) instead (see {@link #addShip}).
      * BEHAVIOR: adds every shot ({@link #shotColor}, {@link #teamShot}), every visible particle
      * ({@link #particleColor}), every radar blip ({@link #radarSize}, hidden blink phases skipped; when the
-     * server already blinks them {@link #radarSizeUnblinked}) and the own radar ship while visible.
+     * server already blinks them {@link #radarSizeUnblinked}; an asteroid with a size is
+     * {@link RadarPainter#asteroidSizeByte} of it) and the own radar ship while visible.
+     * BEHAVIOR: in race mode the next checkpoint's block ({@link #radarCheckpoint}).
      */
     public void fill(SceneData out, RadarBlips radar, ClientGame g) {
         ClientWorld w = g.world();
@@ -118,7 +129,7 @@ public final class SceneFiller {
             int c = nuclearBlink(w.shotKind(i), w.shotColor(i), harmless, w.renderTick());
             out.addShot(w.shotX(i), w.shotY(i), shotColor(c, harmless), teamShot(c, harmless));
         }
-        objects(out, w);
+        objects(out, w, p);
         particles(out, w, style);
         for (int i = 0; i < w.pointCount(); i++) {
             out.addParticle(w.pointX(i), w.pointY(i), pointColor(w.pointColor(i), style));
@@ -126,10 +137,14 @@ public final class SceneFiller {
         boolean blinked = g.radarBlinked();
         for (int i = 0; i < w.radarCount(); i++) {
             int size = blinked ? radarSizeUnblinked(w.radarFlags(i)) : radarSize(w.radarFlags(i), loops);
+            if ((w.radarFlags(i) & Records.Radar.FLAG_ASTEROID) != 0 && w.radarAsteroidSize(i) > 0) {
+                size = RadarPainter.asteroidSizeByte(w.radarAsteroidSize(i)); // C size + 1 (frame.c Frame_radar)
+            }
             if (size != HIDDEN) {
                 radar.add(w.radarX(i), w.radarY(i), size);
             }
         }
+        radarCheckpoint(radar, g.timing(), map, w.selfCheck());
         if (selfAlive) {
             radar.selfVisible = true;
             radar.selfX = w.selfX();
@@ -169,26 +184,30 @@ public final class SceneFiller {
     /**
      * The M2 objects of {@link ClientWorld#objects()} into the scene.
      * <p>
-     * BEHAVIOR: items with their type; mines (team mine iff FRIENDLY, no name); missiles with their length
-     * and RES direction; balls, each with its tether ({@link #ballTether}); lasers with RES direction and the object colour ({@link #pointColor});
+     * BEHAVIOR: items with their type; mines (team mine iff FRIENDLY, labelled by {@link #mineName}); missiles
+     * with their length ({@link #MISSILE_LEN} when the record has none, C paintobjects.c:403-406) and RES
+     * direction; balls, each with its tether ({@link #ballTether}); lasers with RES direction and the object colour ({@link #pointColor});
      * asteroids (shape type from the size byte's high nibble, RES rotation, size from its low nibble);
      * wreckage (deadly iff its shape byte has bit 7 (C), the shape in the low 7 bits, RES rotation, size); ECM
-     * flashes of diameter 2 * radius; connectors ({@link #linkKind}: ball pick-up lines, refuel/repair beams
+     * flashes of diameter = the record's radius field, which carries C's {@code ecm->size} on both paths (C
+     * {@code Gui_paint_ecm} draws an arc {@code size} wide, guiobjects.c:484-490); connectors ({@link #linkKind}: ball pick-up lines, refuel/repair beams
      * from the server's endpoints, tractor/pressor beams) and transporter beams (LINK_TRANSPORTER), each the
      * short way ({@link #line}).
      */
-    void objects(SceneData out, ClientWorld w) {
+    void objects(SceneData out, ClientWorld w, Players p) {
         ObjectLists o = w.objects();
         for (int i = 0; i < o.count(ObjectLists.ITEM); i++) {
             out.addItem(o.get(ObjectLists.ITEM, i, 0), o.get(ObjectLists.ITEM, i, 1), (int) o.get(ObjectLists.ITEM, i, 2));
         }
         for (int i = 0; i < o.count(ObjectLists.MINE); i++) {
             out.addMine(o.get(ObjectLists.MINE, i, 0), o.get(ObjectLists.MINE, i, 1),
-                ((int) o.get(ObjectLists.MINE, i, 2) & Records.Mine.FLAG_FRIENDLY) != 0, null);
+                ((int) o.get(ObjectLists.MINE, i, 2) & Records.Mine.FLAG_FRIENDLY) != 0,
+                mineName(showMineName, (int) o.get(ObjectLists.MINE, i, 3), p));
         }
         for (int i = 0; i < o.count(ObjectLists.MISSILE); i++) {
+            float len = o.get(ObjectLists.MISSILE, i, 4);
             out.addMissile(o.get(ObjectLists.MISSILE, i, 0), o.get(ObjectLists.MISSILE, i, 1),
-                o.get(ObjectLists.MISSILE, i, 4), res(o.get(ObjectLists.MISSILE, i, 2)));
+                len > 0 ? len : MISSILE_LEN, res(o.get(ObjectLists.MISSILE, i, 2)));
         }
         for (int i = 0; i < o.count(ObjectLists.BALL); i++) {
             float bx = o.get(ObjectLists.BALL, i, 0);
@@ -211,7 +230,7 @@ public final class SceneFiller {
                 shape & 0x7F, res(o.get(ObjectLists.WRECK, i, 4)), (int) o.get(ObjectLists.WRECK, i, 3));
         }
         for (int i = 0; i < o.count(ObjectLists.ECM); i++) {
-            out.addEcm(o.get(ObjectLists.ECM, i, 0), o.get(ObjectLists.ECM, i, 1), 2 * o.get(ObjectLists.ECM, i, 2));
+            out.addEcm(o.get(ObjectLists.ECM, i, 0), o.get(ObjectLists.ECM, i, 1), o.get(ObjectLists.ECM, i, 2));
         }
         for (int i = 0; i < o.count(ObjectLists.CONNECTOR); i++) {
             line(out, w, o.get(ObjectLists.CONNECTOR, i, 0), o.get(ObjectLists.CONNECTOR, i, 1),
@@ -222,6 +241,24 @@ public final class SceneFiller {
             line(out, w, o.get(ObjectLists.TRANSPORTER, i, 0), o.get(ObjectLists.TRANSPORTER, i, 1),
                 o.get(ObjectLists.TRANSPORTER, i, 2), o.get(ObjectLists.TRANSPORTER, i, 3), SceneData.LINK_TRANSPORTER);
         }
+    }
+
+    /**
+     * C {@code Paint_mines} (paintobjects.c:262-283): the name drawn under a mine, or null for none.
+     * <p>
+     * BEHAVIOR: null when {@code show} is off or the owner is not identified ({@link Protocol#NO_ID}, C id 0);
+     * {@link #EXPIRED_MINE_NAME} for {@link Records.Mine#EXPIRED_MINE_ID}; the owner's name when the player is
+     * known; else {@link #UNKNOWN_MINE_NAME}.
+     */
+    static CharSequence mineName(boolean show, int owner, Players p) {
+        if (!show || owner == Protocol.NO_ID) {
+            return null;
+        }
+        if (owner == Records.Mine.EXPIRED_MINE_ID) {
+            return EXPIRED_MINE_NAME;
+        }
+        int slot = p.slotOf(owner);
+        return slot >= 0 ? p.name(slot) : UNKNOWN_MINE_NAME;
     }
 
     /**
@@ -287,6 +324,21 @@ public final class SceneFiller {
      * viewer's own tank ({@link #myTank}, guiobjects.c:687), or in team play on the same team (not
      * {@link Protocol#NO_TEAM}).
      */
+    /**
+     * C {@code Paint_checkpoint_radar}: only in race mode ({@code TIMING}), the checkpoint {@code nextCheckPoint}.
+     * <p>
+     * BEHAVIOR: marks the checkpoint's block iff timing is on, there is a map and {@code next} indexes one of its
+     * checkpoints; otherwise leaves the radar without one.
+     */
+    static void radarCheckpoint(RadarBlips radar, boolean timing, WorldMap m, int next) {
+        if (!timing || m == null || next < 0 || next >= m.checkpoints().size()) {
+            return;
+        }
+        radar.checkpointVisible = true;
+        radar.checkpointBx = m.checkpoints().get(next).bx();
+        radar.checkpointBy = m.checkpoints().get(next).by();
+    }
+
     static boolean friendly(int flags, Players p, int slot, boolean teamPlay) {
         if ((flags & Records.ShipFlags.FRIENDLY) != 0) {
             return true;

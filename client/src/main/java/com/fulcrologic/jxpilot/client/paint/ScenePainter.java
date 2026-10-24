@@ -56,7 +56,8 @@ import com.fulcrologic.jxpilot.common.Const;
  * <p>
  * While {@link SceneData#damaged} is positive the caller draws only {@link #damagedFlash}.
  * Each object is skipped in a copy where its extent (world radius plus a screen-pixel margin for
- * pixel-sized parts) is off-screen. Allocation-free.
+ * pixel-sized parts) is off-screen; a line (connector, beam, ball tether) is drawn only with both ends on
+ * screen, as C's {@code wrap()} of each end ({@link #linkShown}). Allocation-free.
  */
 public final class ScenePainter {
     /** World radius covering a ship with shields, lights and its cull slack. */
@@ -73,6 +74,8 @@ public final class ScenePainter {
     private final PaintStyle style;
     private final ShipPainter ships;
     private final ObjectPainter objects;
+    /** This frame's C dash-offset reset: a connector or tractor beam was drawn ({@link #connectorDrawn}). */
+    private boolean dashReset;
 
     /** With C's default look options. */
     public ScenePainter(Palette palette) {
@@ -132,6 +135,7 @@ public final class ScenePainter {
         for (int k = 0; k < n; k++) {
             texts(b, text, cam, k, s, zoom);
         }
+        dashReset = connectorDrawn(cam, s);
         for (int k = 0; k < n; k++) {
             cam.applyTo(b, k);
             shipLines(b, cam, k, s, zoom);
@@ -397,7 +401,7 @@ public final class ScenePainter {
             }
         }
         for (int i = 0; i < s.linkCount; i++) {
-            if (linkVisible(cam, s, i, k)) {
+            if (linkShown(cam, s.linkX1[i], s.linkY1[i], s.linkX2[i], s.linkY2[i], k)) {
                 link(b, s, i, zoom);
             }
         }
@@ -429,12 +433,39 @@ public final class ScenePainter {
         }
     }
 
-    private static boolean linkVisible(Camera cam, SceneData s, int i, int k) {
-        float x0 = Math.min(s.linkX1[i], s.linkX2[i]);
-        float x1 = Math.max(s.linkX1[i], s.linkX2[i]);
-        float y0 = Math.min(s.linkY1[i], s.linkY2[i]);
-        float y1 = Math.max(s.linkY1[i], s.linkY2[i]);
-        return cam.isVisible(x0, y0, x1, y1, k, 0);
+    /**
+     * C {@code Paint_refuel}/{@code Paint_connectors}/{@code Paint_transporters}/{@code Paint_balls}: a line is drawn
+     * only when {@code wrap()} accepts both of its ends, i.e. each end lies in the view (edges included).
+     * <p>
+     * BEHAVIOR: true iff both endpoints are inside copy k's viewport (touching counts); a line with an end off
+     * screen is not drawn, even when it crosses the view.
+     */
+    static boolean linkShown(Camera cam, float x1, float y1, float x2, float y2, int k) {
+        return cam.isVisible(x1, y1, x1, y1, k, 0) && cam.isVisible(x2, y2, x2, y2, k, 0);
+    }
+
+    /**
+     * C guiobjects.c:527-546: each drawn connector (ball pick-up line or tractor/pressor beam) sets the GC dashes with
+     * {@code XSetDashes(gc, 0, ...)}, which also resets the dash offset to 0; the transporter beams drawn after it in
+     * the frame ({@code Paint_all_connectors}: refuel, then connectors, then transporters) therefore dash from offset
+     * 0 instead of the crawling ship offset. Refuel lines come first and always crawl; the next frame's first dashed
+     * ship or {@code Gui_paint_all_connectors_begin} restores the crawl.
+     * <p>
+     * BEHAVIOR: true iff some LINK_CONNECTOR or LINK_TRACTOR link is {@link #linkShown} in some copy.
+     */
+    static boolean connectorDrawn(Camera cam, SceneData s) {
+        for (int i = 0; i < s.linkCount; i++) {
+            int kind = s.linkKind[i];
+            if (kind != SceneData.LINK_CONNECTOR && kind != SceneData.LINK_TRACTOR) {
+                continue;
+            }
+            for (int k = 0; k < cam.offsetCount(); k++) {
+                if (linkShown(cam, s.linkX1[i], s.linkY1[i], s.linkX2[i], s.linkY2[i], k)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void link(VertexBatch b, SceneData s, int i, double zoom) {
@@ -451,6 +482,8 @@ public final class ScenePainter {
                     objects.dashedLink(b, s.linkX1[i], s.linkY1[i], s.linkX2[i], s.linkY2[i], s.loops, zoom);
                 }
             }
+            case SceneData.LINK_TRANSPORTER -> objects.transporter(b, s.linkX1[i], s.linkY1[i], s.linkX2[i], s.linkY2[i],
+                s.loops, zoom, dashReset);
             default -> objects.dashedLink(b, s.linkX1[i], s.linkY1[i], s.linkX2[i], s.linkY2[i], s.loops, zoom);
         }
     }

@@ -93,6 +93,22 @@ public interface GameConnection extends AutoCloseable {
     default void setModifierBanks(String[] banks) { }
 
     /**
+     * C {@code maxFPS} changed (CONFIG): ask the server for that frame rate (0: its full rate). Protocols without a
+     * frame-rate request ignore it.
+     *
+     * @return true when the request went out
+     */
+    default boolean sendFps(int maxFps, long nowNanos) {
+        return false;
+    }
+
+    /**
+     * The player whose view the server sends (C {@code eyesId}; another player while spectating), or
+     * {@link com.fulcrologic.jxpilot.common.net.Protocol#NO_ID} when the protocol does not say (the native protocol).
+     */
+    default int eyesId() { return com.fulcrologic.jxpilot.common.net.Protocol.NO_ID; }
+
+    /**
      * Ask the server for its message of the day again (C {@code Net_ask_for_motd} from the MOTD menu entry with
      * {@code refreshMotd}, or when none arrived yet). Protocols without it ignore it.
      *

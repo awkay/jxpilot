@@ -73,17 +73,32 @@ class GridTest {
         }
 
         @Test
-        @DisplayName("objects in one block are listed in reverse pool order, as C prepends on Cell_add_object")
-        void reversePoolOrder() {
+        @DisplayName("objects in one block are listed latest join first (created or moved), as C prepends on Cell_add_object")
+        void joinOrder() {
             Grid g = new Grid(5, 5, false, 8);
             Objects o = new Objects(8);
             int a = at(o, 2, 2);
             int b = at(o, 2, 2);
             int c = at(o, 2, 2);
-            o.free(a);                     // c moves into a's slot: active = [c, b]
             g.rebuild(o);
             g.query(2, 2, 0, 100);
-            assertArrayEquals(new int[] {b, c}, result(g), "the last active handle comes first");
+            int[] created = result(g);
+            o.free(a);                     // c moves into a's slot: active = [c, b]; C's cell list is not reordered
+            g.rebuild(o);
+            g.query(2, 2, 0, 100);
+            int[] afterFree = result(g);
+            o.touchCell(b);                // b moved (e.g. an asteroid moved after the other objects)
+            g.rebuild(o);
+            g.query(2, 2, 0, 100);
+            int[] afterMove = result(g);
+            int d = at(o, 2, 2);           // created after the moves
+            g.rebuild(o);
+            g.query(2, 2, 0, 100);
+            assertAll(
+                () -> assertArrayEquals(new int[] {c, b, a}, created, "the last created comes first"),
+                () -> assertArrayEquals(new int[] {c, b}, afterFree, "a swap-remove keeps the others' order"),
+                () -> assertArrayEquals(new int[] {b, c}, afterMove, "the last moved comes first"),
+                () -> assertArrayEquals(new int[] {d, b, c}, result(g), "an object created after it is first"));
         }
     }
 

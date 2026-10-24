@@ -41,6 +41,11 @@ public final class RadarBlips {
     public float selfY;
     /** Radians. */
     public float selfHeading;
+    /** True when the next race checkpoint is marked (C {@code Paint_checkpoint_radar}). */
+    public boolean checkpointVisible;
+    /** Its block (map block coordinates, y up). */
+    public int checkpointBx;
+    public int checkpointBy;
 
     public RadarBlips(int capacity) {
         x = new float[capacity];
@@ -48,10 +53,11 @@ public final class RadarBlips {
         sizeByte = new int[capacity];
     }
 
-    /** BEHAVIOR: no blips and no own ship. */
+    /** BEHAVIOR: no blips, no own ship and no checkpoint. */
     public void clear() {
         count = 0;
         selfVisible = false;
+        checkpointVisible = false;
     }
 
     /** BEHAVIOR: appends a blip; false (nothing added) when full. */

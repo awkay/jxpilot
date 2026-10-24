@@ -32,11 +32,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.lwjgl.glfw.GLFW.*;
 
 class KeyRouterTest {
-    final InputState input = new InputState(KeyRouter.bindings("F12"));
+    final InputState input = new InputState(KeyRouter.bindings("F13"));
     final TalkLine talk = new TalkLine();
     final KeyRouter r = new KeyRouter(input, talk);
 
@@ -57,12 +59,137 @@ class KeyRouterTest {
     }
 
     @Nested
+    @DisplayName("implemented() matches the handlers")
+    class Implemented {
+        /** True when a key bound only to {@code a} does something: an event, a macro, the talk line or its editing. */
+        boolean reacts(ClientAction a) {
+            com.fulcrologic.jxpilot.client.game.input.KeyBindings b = new com.fulcrologic.jxpilot.client.game.input.KeyBindings();
+            b.bind(a, "F13");
+            InputState in = new InputState(b);
+            TalkLine t = new TalkLine();
+            KeyRouter kr = new KeyRouter(in, t);
+            if (a.talkCursor()) {
+                t.open();
+                for (char c : "old".toCharArray()) {
+                    t.type(c);
+                }
+                t.submit(new StringBuilder());
+                t.open();
+                in.setTalking(true);
+                t.type('a');
+                t.type('b');
+                if (a == ClientAction.TALK_CURSOR_RIGHT) {
+                    t.left();
+                }
+                if (a == ClientAction.TALK_CURSOR_DOWN) {
+                    t.historyUp();
+                }
+            }
+            String text = t.text().toString();
+            int cursor = t.cursor();
+            boolean open = t.isOpen();
+            int ev = kr.key(GLFW_KEY_F13, GLFW_PRESS, 0);
+            return ev != KeyRouter.NONE || kr.takeMacros() != 0 || t.isOpen() != open || t.cursor() != cursor
+                || !t.text().toString().equals(text);
+        }
+
+        @Test
+        @DisplayName("every client action with a handler is marked implemented, and only those (no drift)")
+        void noDrift() {
+            List<String> wrong = new java.util.ArrayList<>();
+            for (ClientAction a : ClientAction.values()) {
+                if (reacts(a) != a.implemented()) {
+                    wrong.add(a + (a.implemented() ? " is marked implemented but does nothing" : " works but is not marked"));
+                }
+            }
+            assertAll(
+                () -> assertEquals(List.of(), wrong, "ClientAction.implemented() agrees with KeyRouter"),
+                () -> assertFalse(reacts(ClientAction.TOGGLE_RECORD), "recording has no handler (not in JXPilot)"),
+                () -> assertTrue(reacts(ClientAction.TOGGLE_OWNED_ITEMS) && reacts(ClientAction.MSG_20)
+                    && reacts(ClientAction.TALK_CURSOR_DOWN), "the probe sees handlers"));
+        }
+    }
+
+    @Nested
+    @DisplayName("play keys and pointer buttons (C Key_press)")
+    class PlayKeys {
+        static long act(ClientAction a) {
+            return 1L << a.ordinal();
+        }
+
+        @Test
+        @DisplayName("u, KP_8, KP_9, KP_Enter and Print are their events; F2 and F12 talk macros 1 and 11")
+        void events() {
+            int id = press(GLFW_KEY_U);
+            int items = press(GLFW_KEY_KP_8);
+            int msgs = press(GLFW_KEY_KP_9);
+            int pointer = press(GLFW_KEY_KP_ENTER);
+            int print = press(GLFW_KEY_PRINT_SCREEN);
+            int none = r.takeMacros();
+            int f2 = press(GLFW_KEY_F2);
+            int f12 = press(GLFW_KEY_F12);
+            int macros = r.takeMacros();
+            assertAll(
+                () -> assertEquals(KeyRouter.ID_MODE, id, "keyIdMode u"),
+                () -> assertEquals(KeyRouter.TOGGLE_ITEMS, items, "keyToggleOwnedItems KP_8"),
+                () -> assertEquals(KeyRouter.TOGGLE_MESSAGES, msgs, "keyToggleMessages KP_9"),
+                () -> assertEquals(KeyRouter.POINTER_CONTROL, pointer, "keyPointerControl KP_Enter"),
+                () -> assertEquals(KeyRouter.PRINT_MESSAGES, print, "keyPrintMessagesStdout Print"),
+                () -> assertEquals(0, none, "no macros yet"),
+                () -> assertEquals(KeyRouter.TALK_MACRO, f2, "F2: keySendMsg2"),
+                () -> assertEquals(KeyRouter.TALK_MACRO, f12, "F12: keySendMsg12"),
+                () -> assertEquals(1 << 1 | 1 << 11, macros, "both macros, once"),
+                () -> assertEquals(0, r.takeMacros(), "taken"));
+        }
+
+        @Test
+        @DisplayName("a pointer button presses and releases its game functions and runs its actions")
+        void pointerButton() {
+            long base = input.keys();
+            int fire = r.pointerButton(true, ControlKey.FIRE_SHOT.mask() | ControlKey.THRUST.mask(), 0);
+            long pressed = input.keys();
+            r.pointerButton(false, ControlKey.FIRE_SHOT.mask() | ControlKey.THRUST.mask(), 0);
+            long released = input.keys();
+            int talkEv = r.pointerButton(true, 0, act(ClientAction.TALK));
+            boolean opened = talk.isOpen();
+            int whileTalking = r.pointerButton(true, ControlKey.THRUST.mask(), act(ClientAction.ID_MODE));
+            long talkingKeys = input.keys();
+            assertAll(
+                () -> assertEquals(KeyRouter.NONE, fire, "game functions are no app event"),
+                () -> assertEquals((base & ~ControlKey.SHIELD.mask()) | ControlKey.FIRE_SHOT.mask()
+                    | ControlKey.THRUST.mask(), pressed, "fire and thrust set (autoShield drops the shield)"),
+                () -> assertEquals(base, released, "released, shield back"),
+                () -> assertEquals(KeyRouter.NONE, talkEv, "keyTalk opens the talk line"),
+                () -> assertTrue(opened, "talking"),
+                () -> assertEquals(KeyRouter.NONE, whileTalking, "buttons do nothing while talking"),
+                () -> assertEquals(0, talkingKeys & ControlKey.THRUST.mask(), "no thrust"));
+        }
+
+        @Test
+        @DisplayName("pointer buttons drive the power keys and the lose-item outline like keys")
+        void pointerButtonControls() {
+            double before = r.settings().power;
+            int ev = r.pointerButton(true, ControlKey.INCREASE_POWER.mask() | ControlKey.LOSE_ITEM.mask(),
+                act(ClientAction.MSG_3));
+            boolean outline = r.loseSelection().paint(0);
+            r.pointerButton(false, ControlKey.INCREASE_POWER.mask() | ControlKey.LOSE_ITEM.mask(), 0);
+            assertAll(
+                () -> assertEquals(KeyRouter.SETTINGS | KeyRouter.SHOW_CONTROLS | KeyRouter.TALK_MACRO, ev,
+                    "power up and macro 3"),
+                () -> assertTrue(r.settings().power > before, "power raised"),
+                () -> assertTrue(outline, "lose item outline active"),
+                () -> assertEquals(1 << 2, r.takeMacros(), "macro 3"),
+                () -> assertEquals(0, input.keys() & ControlKey.INCREASE_POWER.mask(), "the power key is not sent"));
+        }
+    }
+
+    @Nested
     @DisplayName("bindings")
     class Bindings {
         @Test
         @DisplayName("XPilot defaults (Escape swaps settings, as in C), keyQuit unbound, the swap key bound only when given")
         void bindings() {
-            KeyBindings b = KeyRouter.bindings("F12");
+            KeyBindings b = KeyRouter.bindings("F13");
             KeyBindings none = KeyRouter.bindings(null);
             assertAll(
                 () -> assertEquals(ControlKey.SWAP_SETTINGS.mask(), b.gameMask(GLFW_KEY_ESCAPE),
@@ -70,9 +197,9 @@ class KeyRouterTest {
                 () -> assertEquals(java.util.List.of(), b.keysyms(com.fulcrologic.jxpilot.client.game.input.KeyFunctions.of(
                     ClientAction.QUIT)), "keyQuit is unbound"),
                 () -> assertEquals(ControlKey.THRUST.mask(), b.gameMask(GLFW_KEY_RIGHT_SHIFT), "defaults kept"),
-                () -> assertTrue(KeyBindings.has(b.actionMask(GLFW_KEY_F12), ClientAction.SWAP_SCALEFACTOR),
+                () -> assertTrue(KeyBindings.has(b.actionMask(GLFW_KEY_F13), ClientAction.SWAP_SCALEFACTOR),
                     "swap key bound"),
-                () -> assertFalse(KeyBindings.has(none.actionMask(GLFW_KEY_F12), ClientAction.SWAP_SCALEFACTOR),
+                () -> assertFalse(KeyBindings.has(none.actionMask(GLFW_KEY_F13), ClientAction.SWAP_SCALEFACTOR),
                     "unbound without a key, as C"));
         }
     }
@@ -106,8 +233,12 @@ class KeyRouterTest {
                 () -> assertEquals(power, r.settings().altPower, "the power went to the alternate"),
                 () -> assertNotEquals(0L, input.keys() & ControlKey.SWAP_SETTINGS.mask(),
                     "and the swap key goes to the server"),
-                () -> assertEquals(KeyRouter.SWAP_SCALE, press(GLFW_KEY_F12), "swap key: swap"),
+                () -> assertEquals(KeyRouter.SWAP_SCALE, press(GLFW_KEY_F13), "swap key: swap"),
                 () -> assertEquals(KeyRouter.TOGGLE_SOUND, press(GLFW_KEY_MINUS), "minus: sound toggle (ClientAction.TOGGLE_SOUND, a key C leaves unbound)"),
+                () -> assertEquals(KeyRouter.TOGGLE_ITEMS, press(GLFW_KEY_KP_8),
+                    "KP_8: toggle the owned items list (C keyToggleOwnedItems)"),
+                () -> assertEquals(KeyRouter.TOGGLE_MESSAGES, press(GLFW_KEY_KP_9),
+                    "KP_9: toggle the game messages (C keyToggleMessages)"),
                 () -> {
                     type("x");
                     assertFalse(talk.isOpen(), "characters do not open talk");
@@ -119,12 +250,12 @@ class KeyRouterTest {
         @DisplayName("keyQuit quits; Command-Q quits iff Command-Q is the platform's quit (and is not sent)")
         void quit() {
             InputState in = new InputState(KeyRouter.bindings(null));
-            in.bindings().bind(ClientAction.QUIT, "F11");
+            in.bindings().bind(ClientAction.QUIT, "F13"); // F2-F12 are talk macro keys
             KeyRouter mac = new KeyRouter(in, new TalkLine(), new com.fulcrologic.jxpilot.client.game.input.ControlSettings(),
                 true);
             KeyRouter other = new KeyRouter(new InputState(KeyRouter.bindings(null)), new TalkLine(),
                 new com.fulcrologic.jxpilot.client.game.input.ControlSettings(), false);
-            int f11 = mac.key(GLFW_KEY_F11, GLFW_PRESS, 0);
+            int f11 = mac.key(GLFW_KEY_F13, GLFW_PRESS, 0);
             int cmdQ = mac.key(GLFW_KEY_Q, GLFW_PRESS, GLFW_MOD_SUPER);
             long sentOnMac = in.keys();
             int plainQ = mac.key(GLFW_KEY_Q, GLFW_PRESS, 0);
@@ -293,8 +424,8 @@ class KeyRouterTest {
             double p2 = st.power;
             long sent = input.keys();
             KeyRouter withSwap = new KeyRouter(new InputState(KeyRouter.bindings(null)), new TalkLine());
-            withSwap.input().bindings().bind(ControlKey.SWAP_SETTINGS, "F8");
-            int swap = withSwap.key(GLFW_KEY_F8, GLFW_PRESS, 0);
+            withSwap.input().bindings().bind(ControlKey.SWAP_SETTINGS, "F13");
+            int swap = withSwap.key(GLFW_KEY_F13, GLFW_PRESS, 0);
             int plain = press(GLFW_KEY_A);
             assertAll(
                 () -> assertEquals(KeyRouter.SETTINGS | KeyRouter.SHOW_CONTROLS, up, "turn speed up: send and show"),
@@ -311,6 +442,27 @@ class KeyRouterTest {
                 () -> assertEquals(ControlKey.SWAP_SETTINGS.mask(), withSwap.input().keys() & ControlKey.SWAP_SETTINGS.mask(),
                     "and the swap key is sent"),
                 () -> assertEquals(KeyRouter.NONE, plain, "a plain game key is no event"));
+        }
+
+        @Test
+        @DisplayName("refuel/repair/tank keys show the fuel (C Key_press_fuel, Key_release); the keys are still sent")
+        void fuelNotify() {
+            int tankNext = press(GLFW_KEY_E);
+            int tankPrev = press(GLFW_KEY_W);
+            int refuel = press(GLFW_KEY_F);
+            long sent = input.keys();
+            int refuelUp = r.key(GLFW_KEY_F, GLFW_RELEASE, 0);
+            int tankUp = r.key(GLFW_KEY_E, GLFW_RELEASE, 0);
+            int plainUp = r.key(GLFW_KEY_A, GLFW_RELEASE, 0);
+            assertAll(
+                () -> assertEquals(KeyRouter.FUEL_NOTIFY, tankNext, "tank next press"),
+                () -> assertEquals(KeyRouter.FUEL_NOTIFY, tankPrev, "tank prev press"),
+                () -> assertEquals(KeyRouter.FUEL_NOTIFY, refuel, "refuel/repair press"),
+                () -> assertEquals(ControlKey.REFUEL.mask() | ControlKey.REPAIR.mask(),
+                    sent & (ControlKey.REFUEL.mask() | ControlKey.REPAIR.mask()), "refuel and repair are sent"),
+                () -> assertEquals(KeyRouter.FUEL_NOTIFY, refuelUp, "refuel/repair release"),
+                () -> assertEquals(KeyRouter.NONE, tankUp, "a tank key release is not"),
+                () -> assertEquals(KeyRouter.NONE, plainUp, "another release is not"));
         }
 
         @Test

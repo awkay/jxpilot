@@ -193,10 +193,23 @@ public final class GameApp {
         return frame;
     }
 
-    /** Open the window, connect and run until quit, window close or the screenshot frame count. */
-    public void run() throws IOException {
+    /**
+     * Open the window, connect and run until quit, window close or the screenshot frame count.
+     *
+     * @return the exit status: 1 when the server ended the session (C exits with an error then), else 0
+     */
+    public int run() throws IOException {
+        Geometry g = geometry();
+        int width = g != null && g.width() > 0 ? g.width() : opts.width();
+        int height = g != null && g.height() > 0 ? g.height() : opts.height();
         normalTitle = "JXPilot - " + label;
-        window = new Window(normalTitle, opts.width(), opts.height(), true, opts.vsync());
+        window = new Window(normalTitle, width, height, true, opts.vsync());
+        if (g != null && g.hasPosition()) {
+            org.lwjgl.glfw.GLFWVidMode mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
+            if (mode != null) {
+                glfwSetWindowPos(window.handle(), g.left(mode.width(), width), g.top(mode.height(), height));
+            }
+        }
         try {
             atlas = new UiAtlas();
             gl = new GlRenderer(atlas.texture());
@@ -210,11 +223,26 @@ public final class GameApp {
             sound = SoundSystem.open(opts.sound(), maxVolume, SoundSystem::openAl, System.out);
             conn.start(System.nanoTime());
             loop();
+            return frame.closedByServer() ? 1 : 0;
         } finally {
             frame.disconnect(System.nanoTime());
             conn.close();
             dispose();
         }
+    }
+
+    /** The geometry resource (C {@code -geometry}; {@code --size} sets it too), or null; a bad one is reported. */
+    private Geometry geometry() {
+        com.fulcrologic.jxpilot.client.game.options.ClientOptions o = frame.options();
+        if (!o.given(com.fulcrologic.jxpilot.client.game.options.ClientOption.GEOMETRY)) {
+            return null;
+        }
+        String text = o.text(com.fulcrologic.jxpilot.client.game.options.ClientOption.GEOMETRY);
+        Geometry g = Geometry.parse(text);
+        if (g == null) {
+            System.err.println("jxpilot: bad geometry '" + text + "' (WxH+X+Y), ignored");
+        }
+        return g;
     }
 
     private void makeText() {
@@ -242,15 +270,51 @@ public final class GameApp {
         glfwSetCursorPosCallback(h, (w, x, y) -> {
             cursorX = x;
             cursorY = y;
-            frame.mouseMove(x, y, PANEL_W + PANEL_GAP);
+            if (!frame.mouseMove(x, y, PANEL_W + PANEL_GAP)) {
+                frame.viewMouseMove((int) x - (PANEL_W + PANEL_GAP), (int) y);
+            }
         });
-        glfwSetMouseButtonCallback(h, (w, button, action, mods) ->
-            frame.mouseButton(button, action, cursorX, cursorY, PANEL_W + PANEL_GAP));
+        glfwSetMouseButtonCallback(h, (w, button, action, mods) -> {
+            if (!frame.mouseButton(button, action, cursorX, cursorY, PANEL_W + PANEL_GAP) && cursorX >= PANEL_W + PANEL_GAP) {
+                frame.viewMouse(button, action, (int) cursorX - (PANEL_W + PANEL_GAP), (int) cursorY);
+            }
+        });
+        frame.setClipboard(new ClientFrame.Clipboard() {
+            @Override
+            public String get() {
+                return glfwGetClipboardString(h);
+            }
+
+            @Override
+            public void set(String text) {
+                glfwSetClipboardString(h, text);
+            }
+        });
         glfwSetWindowFocusCallback(h, (w, focused) -> {
             if (!focused) {
                 frame.focusLost();
+            } else {
+                frame.focusGained();
             }
         });
+        glfwSetScrollCallback(h, (w, dx, dy) -> frame.scroll(dy, System.nanoTime()));
+    }
+
+    /** Left edge of the game view in window coordinates (the panel is on the left). */
+    private double viewLeft;
+    private boolean cursorGrabbed;
+
+    /** Pointer control: grab and hide the pointer while on (C XGrabPointer), and put it where C warps it. */
+    private void applyPointer() {
+        com.fulcrologic.jxpilot.client.game.input.PointerControl pc = frame.play().pointer();
+        long h = window.handle();
+        if (pc.grabbed() != cursorGrabbed) {
+            cursorGrabbed = pc.grabbed();
+            glfwSetInputMode(h, GLFW_CURSOR, cursorGrabbed ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        }
+        if (pc.takeWarp() && cursorGrabbed) {
+            glfwSetCursorPos(h, viewLeft + pc.mouseX(), pc.mouseY());
+        }
     }
 
     private final FramePacer pacer = new FramePacer();
@@ -377,7 +441,9 @@ public final class GameApp {
         int viewFbW = Math.max(1, fbW - panelFb);
         int viewW = (int) (viewFbW / ratio);
         int viewH = (int) (fbH / ratio);
+        viewLeft = panelFb / ratio;
         frame.step(now, viewW, viewH, zoom, fonts, PANEL_W, radarHeight);
+        applyPointer();
         if (frame.mapVersion() != mapVersion) {
             mapVersion = frame.mapVersion();
             loadMap(frame.game().map());
@@ -529,6 +595,11 @@ public final class GameApp {
         }
         radarPainter.picture(dyn, u0, 0, u1, v1, palette.color(Palette.WHITE));
         RadarBlips r = frame.radar();
+        // the next race checkpoint before the own ship (C Paint_checkpoint_radar, paintradar.c:133, 287;
+        // SceneFiller.radarCheckpoint decides it)
+        if (r.checkpointVisible) {
+            radarPainter.checkpoint(dyn, r.checkpointBx, r.checkpointBy);
+        }
         if (r.selfVisible) {
             radarPainter.self(dyn, r.selfX, r.selfY, r.selfHeading, loops);
             radarPainter.selfBlip(dyn, r.selfX, r.selfY);

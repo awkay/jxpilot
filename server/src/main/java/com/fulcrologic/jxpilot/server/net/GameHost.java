@@ -92,6 +92,14 @@ public interface GameHost {
         return join(name, team, shape);
     }
 
+    /**
+     * server-batch2: the real and host names a client sent with the CONNECT that {@link #join} just accepted for
+     * {@code playerId} (empty when the client sent none), and its address (C {@code Get_player_addr}). Valid only
+     * during the call.
+     */
+    default void identity(int playerId, CharSequence realName, CharSequence hostName, CharSequence address) {
+    }
+
     /** server-commands: the queue position of the last REASON_QUEUED answer of {@link #join}. */
     default int queuePosition() {
         return 0;
