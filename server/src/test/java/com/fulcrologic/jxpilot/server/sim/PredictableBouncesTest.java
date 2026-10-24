@@ -49,6 +49,14 @@ class PredictableBouncesTest {
 
     /** A ship whose two hull points hit the wall together (the kernel tests' tie-break case), moved once. */
     static double[] bounce(boolean predictable, int worldSeed) {
+        return bounce(predictable, worldSeed, -1);
+    }
+
+    /**
+     * As {@link #bounce(boolean, int)}; with {@code fly} &gt;= 0 moved by the tick's path (ShipKernel.fly), the
+     * tie-break source first seeded from (fly, 1) instead of the tick's (what an earlier move would leave in it).
+     */
+    static double[] bounce(boolean predictable, int worldSeed, int fly) {
         Simulation s = new Simulation(new com.fulcrologic.jxpilot.server.world.World(TestWorlds.options(
             "framesPerSecond: 60\ngravity: 0\nmaxRobots: 0\npredictableBounces: " + predictable + "\n", LEFT_WALL),
             worldSeed));
@@ -68,9 +76,14 @@ class PredictableBouncesTest {
         s.world.rng.seed(worldSeed);
         double before = s.world.rfrac();
         s.world.rng.seed(worldSeed);
-        s.mover.movePlayer(p);
+        if (fly >= 0) {
+            s.tieBreak.reseed(fly, 1);
+            s.kernel.fly(p, s.effects);
+        } else {
+            s.mover.movePlayer(p);
+        }
         double next = s.world.rfrac();
-        return new double[] {p.cx, p.cy, p.vx, p.vy, before, next};
+        return new double[] {p.cx, p.cy, p.vx, p.vy, before, next, s.tieBreak.getAsDouble(), p.id};
     }
 
     @Test
@@ -85,6 +98,32 @@ class PredictableBouncesTest {
             () -> assertEquals(on1[0], on2[0], "on: the same x whatever the world seed"),
             () -> assertEquals(on1[2], on2[2], "and the same vx"),
             () -> assertEquals(on1[3], on2[3], "and vy"));
+    }
+
+    @Test
+    @DisplayName("on: the tick's fly reseeds too (ShipEffects.begin), whatever the source held: as the wrapper")
+    void flyReseeds() {
+        double[] wrapper = bounce(true, 1);
+        int differ = 0;
+        for (int k = 0; k < 16; k++) {
+            double[] fly = bounce(true, 1, k);
+            if (fly[0] != wrapper[0] || fly[2] != wrapper[2] || fly[3] != wrapper[3] || fly[6] != wrapper[6]) {
+                differ++;
+            }
+        }
+        int differing = differ;
+        SeededTieBreak ref = new SeededTieBreak();
+        ref.reseed(7, (int) wrapper[7]);
+        ref.getAsDouble();
+        double second = ref.getAsDouble();
+        double[] flyOff = bounce(false, 1, 0);
+        double[] off = bounce(false, 1);
+        assertAll(
+            () -> assertEquals(0, differing, "whatever the source held, fly moves (and leaves the source) as the"
+                + " wrapper's reseeded move"),
+            () -> assertEquals(second, wrapper[6], "the move took one draw of the source seeded (7, id)"),
+            () -> assertEquals(off[0], flyOff[0], "off: fly draws C's rfrac like the wrapper"),
+            () -> assertEquals(off[5], flyOff[5], "off: the world RNG moved the same"));
     }
 
     @Test
