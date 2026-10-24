@@ -216,7 +216,7 @@ public final class World {
 
     /** C {@code rfrac()}: uniform in [0, 1). */
     public double rfrac() {
-        return rng.nextFloat();
+        return rng.nextFrac();
     }
 
     /** Player in the k-th position of {@link #order}. */

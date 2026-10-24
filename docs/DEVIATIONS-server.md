@@ -21,7 +21,7 @@ are deliberate.
 | Ball life | `LONG_MAX`, counted down every frame; "loose for N frames" is `LONG_MAX - life` | 2^52 (exact in a double), the same countdown and message | `Objects.life` is a double. |
 | Connector reach (`pl->ball`) | a plain pointer: after the ball is deleted the slot may hold another object, and C can then "connect" to it | the handle is checked to still be a live ball | C undefined behaviour. |
 | Temporary wormholes | unlimited (`realloc`); `remove_temp_wormhole` leaves the moved wormhole's `itemID` stale | at most 64 at a time; the moved wormhole's object index is updated | Fixed pool; C bug. |
-| Race respawn and asteroid placement | `rfrac()` draws (Mersenne Twister) | the world RNG (xorshift) | As "Random numbers" above. |
+| Race respawn and asteroid placement | `rfrac()` draws (Mersenne Twister) | the same draws in C's order from the world RNG (xorshift); golden traces replay C's own generator (`CRandom`, `Rng.useC`) and match C bit for bit, placement and respawn included (`ModeTraceTest`) | Only the generator differs, as "Random numbers" above. |
 | `Give_best_player_bonus` with nobody eligible | reads an unset array entry | announces nothing | C undefined behaviour. |
 | Login messages (`Handle_login`) | "Welcome to ...", "X (realname) has entered ..." | the network layer (`SimGameHost`) sets them in C's place (before the round-delay message), without the real name: "X has entered ..." / "X (team N) has entered ..." | Our CONNECT carries no real name. |
 | Login name check (`Check_names`) | nick must start with 'A'..'Z' (the C client capitalizes it), else E_INVAL | any non-empty name; duplicates are refused case-insensitively | Clients other than C's do not capitalize. |

@@ -90,8 +90,8 @@ cleanup() {
         fi
     done
     if [ -f "$OUT/server.raw" ]; then
-        grep -aE '^XP(TRACE|OBJ|PULSE|ECM|ITEMS|MOBJ|PL2|TRS|TGT|TEAM)' "$OUT/server.raw" > "$OUT/trace.txt" || true
-        grep -avE '^XP(TRACE|OBJ|PULSE|ECM|ITEMS|MOBJ|PL2|TRS|TGT|TEAM)' "$OUT/server.raw" > "$OUT/server.log" || true
+        grep -aE '^XP(TRACE|OBJ|PULSE|ECM|ITEMS|MOBJ|PL2|TRS|TGT|TEAM|MT)' "$OUT/server.raw" > "$OUT/trace.txt" || true
+        grep -avE '^XP(TRACE|OBJ|PULSE|ECM|ITEMS|MOBJ|PL2|TRS|TGT|TEAM|MT)' "$OUT/server.raw" > "$OUT/server.log" || true
         rm -f "$OUT/server.raw"
         [ "$TRACE" = 1 ] || rm -f "$OUT/trace.txt"
     fi

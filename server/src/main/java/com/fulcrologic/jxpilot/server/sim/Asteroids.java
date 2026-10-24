@@ -31,7 +31,6 @@ import com.fulcrologic.jxpilot.common.map.Concentrator;
 import com.fulcrologic.jxpilot.common.math.XMath;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.net.Records;
-import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.ModeParams;
@@ -344,9 +343,9 @@ public final class Asteroids {
         ModeState m = w.modes;
         ModeParams mp = w.modeParams;
         int size = o.size[h];
-        // C passes asteroid->pos (pixels as float) to the wreckage and debris
-        float x = o.cx[h] * (1.0f / Click.CLICK);
-        float y = o.cy[h] * (1.0f / Click.CLICK);
+        // C's asteroid->pos: whole pixels (CLICK_TO_PIXEL shifts), passed on as DFLOAT
+        float x = o.px[h];
+        float y = o.py[h];
         float vx = o.vx[h];
         float vy = o.vy[h];
         if (size == 1) {

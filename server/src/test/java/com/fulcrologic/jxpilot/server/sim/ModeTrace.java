@@ -35,7 +35,7 @@ import java.util.Map;
 
 /**
  * Parsed C golden trace with the game-mode lines of xpilot-ref patch 0005 (XPMOBJ, XPPL2, XPTRS, XPTGT,
- * XPTEAM) next to the XPTRACE player lines of patch 0002, grouped by C frame ({@code frame_loops}).
+ * XPTEAM, and the random generator's XPMTP/XPMTN draw counts and XPMT state) next to the XPTRACE player lines of patch 0002, grouped by C frame ({@code frame_loops}).
  */
 final class ModeTrace {
     /** One XPMOBJ line: a ball, asteroid or wreckage after the frame. */
@@ -55,6 +55,11 @@ final class ModeTrace {
         final List<int[]> treasures = new ArrayList<>();
         final List<int[]> targets = new ArrayList<>();
         final List<String> teams = new ArrayList<>();
+        /** C's random draw count before (XPMTP) and after (XPMTN) the frame's update, -1 when not traced. */
+        long drawsBefore = -1;
+        /** The XPTRACE ship's status bits. */
+        int shipStatus;
+        long drawsAfter = -1;
 
         Frame(long frame) {
             this.frame = frame;
@@ -62,6 +67,12 @@ final class ModeTrace {
     }
 
     final List<Frame> frames = new ArrayList<>();
+    /** XPMT: C's random generator after frame {@link #mtFrame}: draws, left, next index, 625 state words. */
+    long mtFrame = -1;
+    long mtDraws;
+    int mtLeft;
+    int mtNext;
+    final int[] mtState = new int[625];
 
     static ModeTrace load(String name) throws IOException {
         ModeTrace t = new ModeTrace();
@@ -76,7 +87,10 @@ final class ModeTrace {
                 long frame = Long.parseLong(c[2]);
                 Frame f = by.computeIfAbsent(frame, Frame::new);
                 switch (c[0]) {
-                    case "XPTRACE" -> f.ship = CTraceTest.Frame.parse(l);
+                    case "XPTRACE" -> {
+                        f.ship = CTraceTest.Frame.parse(l);
+                        f.shipStatus = Integer.decode(c[21]);
+                    }
                     case "XPMOBJ" -> f.objs.add(new Obj(c[3], Integer.parseInt(c[4]), Integer.parseInt(c[5]),
                         Integer.parseInt(c[6]), Integer.parseInt(c[7]), Integer.parseInt(c[8]),
                         Float.parseFloat(c[9]), Float.parseFloat(c[10]), Long.parseLong(c[11]),
@@ -92,6 +106,17 @@ final class ModeTrace {
                     case "XPTGT" -> f.targets.add(new int[] {Integer.parseInt(c[3]), Integer.parseInt(c[4]),
                         Integer.parseInt(c[5])});
                     case "XPTEAM" -> f.teams.add(c[3] + " " + c[4] + " " + c[5]);
+                    case "XPMTP" -> f.drawsBefore = Long.parseLong(c[3]);
+                    case "XPMTN" -> f.drawsAfter = Long.parseLong(c[3]);
+                    case "XPMT" -> {
+                        t.mtFrame = frame;
+                        t.mtDraws = Long.parseLong(c[3]);
+                        t.mtLeft = Integer.parseInt(c[4]);
+                        t.mtNext = Integer.parseInt(c[5]);
+                        for (int i = 0; i < 625; i++) {
+                            t.mtState[i] = (int) Long.parseLong(c[6 + i]);
+                        }
+                    }
                     default -> { }
                 }
             }

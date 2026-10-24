@@ -206,7 +206,14 @@ XPPL2  loop frame id used have ball check round time best_lap last_lap last_lap_
 XPTRS  loop frame index have destroyed
 XPTGT  loop frame index damage dead_time
 XPTEAM loop frame team treasures_left treasures_destroyed score
+XPMTP  loop frame draws      (randomMT() calls so far, before Update_objects)
+XPMTN  loop frame draws      (the same after it)
+XPMT   loop frame draws left next state[0..624]   (once, the first frame with a player)
 ```
+
+The XPMT* lines let a reimplementation replay the server's random stream: XPilot's generator seeded like
+the server (`--seed`), brought to the XPMTP count before each frame (the frame code between updates draws
+too), must have made exactly the XPMTN count after it.
 
 for every ball, asteroid and wreckage object (balls: `owner treasure length`; asteroids and wreckage:
 `size rotation turnspeed info`), every player, treasure, target and team with treasures. `ptr` is the C
@@ -309,8 +316,10 @@ GPL-2.0-or-later, and why.
    filters the XPITEMS lines like the XPTRACE lines.
 5. `0005-server-mode-trace.patch`, in `src/server/server.c` only, on top of
    0004: adds `Trace_modes()`, called right after `Trace_objects()`, which prints the
-   XPMOBJ/XPPL2/XPTRS/XPTGT/XPTEAM lines when `XPILOT_TRACE_MODES` is set
-   (`trace.sh --modes`). Inert otherwise.
+   XPMOBJ/XPPL2/XPTRS/XPTGT/XPTEAM/XPMTN/XPMT lines when `XPILOT_TRACE_MODES` is set
+   (`trace.sh --modes`), `Trace_modes_pre()` (XPMTP) before `Update_objects()`, and in
+   `src/common/randommt.c` a `randomMT()` call counter with a state dump. Inert otherwise (the
+   counter only counts).
 
 ## Known quirks
 

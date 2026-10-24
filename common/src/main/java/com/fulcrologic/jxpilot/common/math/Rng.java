@@ -30,6 +30,8 @@ package com.fulcrologic.jxpilot.common.math;
  */
 public final class Rng {
     private int state;
+    /** C's generator when replaying a C server's stream ({@link #useC}), else null. */
+    private CRandom c;
 
     public Rng(int seed) {
         seed(seed);
@@ -53,8 +55,33 @@ public final class Rng {
         return state;
     }
 
-    /** Next 32 random bits (xorshift32 13/17/5). */
+    /**
+     * Replay XPilot's own generator from now on (golden-trace tests): {@link #nextInt} is C {@code randomMT()},
+     * {@link #nextFrac} C {@code rfrac()}. Null goes back to the xorshift.
+     */
+    public void useC(CRandom c) {
+        this.c = c;
+    }
+
+    /** The C generator being replayed, or null. */
+    public CRandom c() {
+        return c;
+    }
+
+    /** BEHAVIOR: with a C generator, draw {@code n} values and drop them (C draws Java does not make); else nothing. */
+    public void skip(int n) {
+        if (c != null) {
+            for (int i = 0; i < n; i++) {
+                c.next();
+            }
+        }
+    }
+
+    /** Next 32 random bits (xorshift32 13/17/5; C {@code randomMT()} when replaying C). */
     public int nextInt() {
+        if (c != null) {
+            return c.next();
+        }
         int x = state;
         x ^= x << 13;
         x ^= x >>> 17;
@@ -69,6 +96,16 @@ public final class Rng {
      * BEHAVIOR: uses the top 24 bits, so the result is exactly representable and never 1.
      */
     public float nextFloat() {
+        if (c != null) {
+            return (float) c.rfrac();
+        }
         return (nextInt() >>> 8) * (1.0f / (1 << 24));
+    }
+
+    /**
+     * C {@code rfrac()}: {@link #nextFloat} widened, or C's exact double when replaying C.
+     */
+    public double nextFrac() {
+        return c != null ? c.rfrac() : nextFloat();
     }
 }

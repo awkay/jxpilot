@@ -27,7 +27,6 @@ import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.map.Cannon;
 import com.fulcrologic.jxpilot.common.net.Records;
-import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
@@ -172,7 +171,8 @@ public final class Wreckage {
             return;
         }
         float mass = pl.mass;
-        make(pl.cx * (1.0f / Click.CLICK), pl.cy * (1.0f / Click.CLICK), pl.vx, pl.vy, pl.id, pl.team,
+        // C pl->pos: whole pixels (CLICK_TO_PIXEL shifts)
+        make(pl.px, pl.py, pl.vx, pl.vy, pl.id, pl.team,
             (float) Math.max(mass / 8.0, 0.33), mass, (float) (2.0 * mass), Obj.GRAVITY, Records.ObjColor.WHITE, 10,
             0, Const.RES - 1, 10.0f, 10 + (((int) mass) >> 1), 5, (int) (5 + (mass * 1.5)));
     }

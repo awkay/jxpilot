@@ -146,6 +146,9 @@ public final class Debris implements DebrisBurst.Sink {
         d.vx = vx;
         d.vy = vy;
         d.seed = w.rng.nextInt();
+        // replaying a C server's random stream (tests): C draws dir, offset, speed and life per particle
+        // (play.c:216-235); the seed above stands for the first of them
+        w.rng.skip(4 * num - 1);
         d.count = num;
         d.minDir = minDir & (Const.RES - 1);
         d.dirSpan = maxDir - minDir;
