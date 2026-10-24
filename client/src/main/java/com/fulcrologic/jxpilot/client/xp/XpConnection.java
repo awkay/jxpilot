@@ -780,7 +780,8 @@ public final class XpConnection implements GameConnection {
         welcome.gameFps = welcome.simHz;
         welcome.flags = ((setup.mode & XpProto.MODE_TEAM_PLAY) != 0 ? Msg.Welcome.FLAG_TEAM_PLAY : 0)
             | ((setup.mode & XpProto.MODE_WRAP_PLAY) != 0 ? Msg.Welcome.FLAG_EDGE_WRAP : 0)
-            | ((setup.mode & XpProto.MODE_TIMING) != 0 ? Msg.Welcome.FLAG_TIMING : 0);
+            | ((setup.mode & XpProto.MODE_TIMING) != 0 ? Msg.Welcome.FLAG_TIMING : 0)
+            | Msg.Welcome.FLAG_RADAR_BLINKED;
         welcome.serverName.setLength(0);
         welcome.serverName.append(label);
         listener.onWelcome(welcome);

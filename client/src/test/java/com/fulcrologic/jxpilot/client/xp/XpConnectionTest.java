@@ -199,7 +199,7 @@ class XpConnectionTest {
             run(5);
             assertAll(
                 () -> assertEquals("accepted 65535", rec.events.get(0), "session start"),
-                () -> assertEquals("welcome simHz=12 snapHz=12 fps=12 flags=" + Msg.Welcome.FLAG_EDGE_WRAP
+                () -> assertEquals("welcome simHz=12 snapHz=12 fps=12 flags=" + (Msg.Welcome.FLAG_EDGE_WRAP | Msg.Welcome.FLAG_RADAR_BLINKED)
                     + " server=127.0.0.1:15345", rec.events.get(1), "one tick per C frame"),
                 () -> assertEquals("config Fake Map 100x100", rec.events.get(2), "map"),
                 () -> assertEquals("accepted 3", rec.events.get(3), "self id when the server announces it"),

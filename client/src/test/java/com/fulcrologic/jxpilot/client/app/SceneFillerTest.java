@@ -329,6 +329,31 @@ class SceneFillerTest {
         }
 
         @Test
+        @DisplayName("F11: blips the server already blinked are never blinked again")
+        void radarUnblinked() {
+            AppFixture f = new AppFixture(true, "");
+            f.welcome.flags |= com.fulcrologic.jxpilot.common.net.Msg.Welcome.FLAG_RADAR_BLINKED;
+            f.game.onWelcome(f.welcome);
+            f.players().twice(x -> x.self(0, 100, 100, 0, 0xFFFF).radar(300, 300, Records.Radar.FLAG_MISSILE));
+            fill(f);
+            int missiles = radar.count();
+            assertAll(
+                () -> assertTrue(f.game.radarBlinked(), "the C server's flag is kept"),
+                () -> assertEquals(1, missiles, "the missile is shown whatever the loops"),
+                () -> assertEquals(SceneFiller.HIDDEN, SceneFiller.radarSizeUnblinked(Records.Radar.FLAG_SELF), "self"),
+                () -> assertEquals(0, SceneFiller.radarSizeUnblinked(Records.Radar.FLAG_MISSILE), "missile 0"),
+                () -> assertEquals(0, SceneFiller.radarSizeUnblinked(Records.Radar.FLAG_MINE), "mine 0"),
+                () -> assertEquals(SceneFiller.RADAR_BALL, SceneFiller.radarSizeUnblinked(Records.Radar.FLAG_BALL), "ball"),
+                () -> assertEquals(com.fulcrologic.jxpilot.client.paint.RadarPainter.asteroidSizeByte(
+                    SceneFiller.RADAR_ASTEROID_SIZE), SceneFiller.radarSizeUnblinked(Records.Radar.FLAG_ASTEROID),
+                    "asteroid"),
+                () -> assertEquals(SceneFiller.RADAR_PLAYER, SceneFiller.radarSizeUnblinked(Records.Radar.FLAG_LOCKED),
+                    "a locked player is not blinked either"),
+                () -> assertEquals(SceneFiller.RADAR_PLAYER | 0x80,
+                    SceneFiller.radarSizeUnblinked(Records.Radar.FLAG_FRIENDLY), "friend"));
+        }
+
+        @Test
         @DisplayName("radarSize: C Frame_radar sizes and per-frame blinks")
         void radarSize() {
             int nuke = Records.Radar.FLAG_NUKE;

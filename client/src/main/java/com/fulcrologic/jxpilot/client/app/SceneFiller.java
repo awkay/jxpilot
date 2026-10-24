@@ -72,8 +72,8 @@ public final class SceneFiller {
      * BEHAVIOR: adds the own ship first (unless absent or dead), then every interpolated ship that is not
      * dead; paused ones become paused markers (countdown 0) instead (see {@link #addShip}).
      * BEHAVIOR: adds every shot ({@link #shotColor}, {@link #teamShot}), every visible particle
-     * ({@link #particleColor}), every radar blip ({@link #radarSize}, hidden blink phases skipped) and the
-     * own radar ship while visible.
+     * ({@link #particleColor}), every radar blip ({@link #radarSize}, hidden blink phases skipped; when the
+     * server already blinks them {@link #radarSizeUnblinked}) and the own radar ship while visible.
      */
     public void fill(SceneData out, RadarBlips radar, ClientGame g) {
         ClientWorld w = g.world();
@@ -114,8 +114,9 @@ public final class SceneFiller {
         for (int i = 0; i < w.pointCount(); i++) {
             out.addParticle(w.pointX(i), w.pointY(i), pointColor(w.pointColor(i)));
         }
+        boolean blinked = g.radarBlinked();
         for (int i = 0; i < w.radarCount(); i++) {
-            int size = radarSize(w.radarFlags(i), loops);
+            int size = blinked ? radarSizeUnblinked(w.radarFlags(i)) : radarSize(w.radarFlags(i), loops);
             if (size != HIDDEN) {
                 radar.add(w.radarX(i), w.radarY(i), size);
             }
@@ -357,6 +358,29 @@ public final class SceneFiller {
             case Records.ObjColor.BLUE -> Palette.BLUE;
             default -> Palette.WHITE;
         };
+    }
+
+    /**
+     * F11: the size byte of a blip the server has already blinked (C path: a blip in its dark phase is simply
+     * not sent).
+     * <p>
+     * BEHAVIOR: SELF records {@link #HIDDEN}; missiles and mines 0; balls 2; asteroids as in
+     * {@link #radarSize}; players 3, 0x80 when FRIENDLY; never hidden otherwise.
+     */
+    static int radarSizeUnblinked(int flags) {
+        if ((flags & Records.Radar.FLAG_SELF) != 0) {
+            return HIDDEN;
+        }
+        if ((flags & (Records.Radar.FLAG_MINE | Records.Radar.FLAG_MISSILE)) != 0) {
+            return 0;
+        }
+        if ((flags & Records.Radar.FLAG_BALL) != 0) {
+            return RADAR_BALL;
+        }
+        if ((flags & Records.Radar.FLAG_ASTEROID) != 0) {
+            return RadarPainter.asteroidSizeByte(RADAR_ASTEROID_SIZE);
+        }
+        return (flags & Records.Radar.FLAG_FRIENDLY) != 0 ? RADAR_PLAYER | 0x80 : RADAR_PLAYER;
     }
 
     /**

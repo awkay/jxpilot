@@ -202,6 +202,12 @@ public final class Msg {
         public static final int FLAG_TEAM_PLAY = 1;
         public static final int FLAG_EDGE_WRAP = 2;
         public static final int FLAG_TIMING = 4;
+        /**
+         * The RADAR records are already blinked by the server (the C server omits blips in their dark phase):
+         * the client must not blink them again. Set by the XPilot-protocol client for itself; the JXPilot
+         * server leaves it clear.
+         */
+        public static final int FLAG_RADAR_BLINKED = 8;
 
         public int playerId;
         public int team = Protocol.NO_TEAM;
