@@ -125,6 +125,8 @@ public final class ClientConnection {
     private boolean sentThisFrame;
     private ConfigTransfer.Receiver config;
     private LobbyClient lobby;
+    /** The game being connected to was chosen in a lobby: a refusal returns to the list instead of closing. */
+    private boolean viaLobby;
     private boolean haveTick;
     private int latestTick;
     private long now;
@@ -357,6 +359,7 @@ public final class ClientConnection {
             lobby.tick(nowNanos);
             if (lobby.takeJoined()) {
                 start(nowNanos); // the lobby routed this address to the map's game: connect as usual
+                viaLobby = true;
             }
         }
     }
@@ -489,6 +492,7 @@ public final class ClientConnection {
                 ioBackoff = false;
                 if (lobby.takeJoined()) {
                     start(now);
+                    viaLobby = true;
                 }
             } else if (type == PacketType.REJECT) {
                 onReject(in); // a lobby that restarted refuses again; the nonce check ignores a stale one
@@ -569,6 +573,13 @@ public final class ClientConnection {
             listener.onStateChange(state, status);
             return;
         }
+        if (viaLobby) {
+            // the lobby routed us to a game that refused (full, locked, name taken ...): choose another map
+            String why = reject.text.toString();
+            enterLobby();
+            lobby.notice("Refused: " + why);
+            return;
+        }
         status.setLength(0);
         status.append("Rejected by ").append(serverLabel).append(": ");
         appendCapped(reject.text);
@@ -588,6 +599,7 @@ public final class ClientConnection {
         }
         lastReceive = now;
         queuePosition = 0;
+        viaLobby = false;
         lobby.begin(now, connect.nonce);
         status.setLength(0);
         status.append("Lobby on ").append(serverLabel).append(": choose a map");

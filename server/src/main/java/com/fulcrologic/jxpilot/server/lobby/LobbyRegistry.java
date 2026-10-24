@@ -159,7 +159,8 @@ public final class LobbyRegistry {
      * <p>
      * BEHAVIOR: a map id the catalog does not have is {@link LobbyMsg#JOIN_UNKNOWN_MAP}.
      * BEHAVIOR: a map whose game is running is {@link LobbyMsg#JOIN_OK} with that game's transport; nothing is
-     * started.
+     * started. A game that has ended but was not reaped yet (the next housekeeping tick does that) does not count: it
+     * is closed and the map is started afresh, so a player is never routed to a dead game.
      * BEHAVIOR: an idle map's game is started (on the starter) and the answer is {@link LobbyMsg#JOIN_STARTING};
      * asking again while it starts is the same answer and starts nothing more.
      * BEHAVIOR: a game that could not be started answers {@link LobbyMsg#JOIN_FAILED} with the reason once; asking
@@ -170,10 +171,14 @@ public final class LobbyRegistry {
         if (offer == null) {
             return new Selection(LobbyMsg.JOIN_UNKNOWN_MAP, "no such map", null, mapId);
         }
+        Running stale = null;
         synchronized (this) {
             Running r = running.get(mapId);
-            if (r != null) {
+            if (r != null && r.game().running()) {
                 return new Selection(LobbyMsg.JOIN_OK, "", r.transport(), mapId);
+            }
+            if (r != null) {
+                stale = running.remove(mapId);
             }
             String failure = failures.remove(mapId);
             if (failure != null) {
@@ -182,6 +187,11 @@ public final class LobbyRegistry {
             if (closed || !starting.add(mapId)) {
                 return new Selection(LobbyMsg.JOIN_STARTING, "", null, mapId);
             }
+        }
+        if (stale != null) {
+            stale.transport().close();
+            stale.game().close();
+            log.log("lobby: " + offer.name() + " ended");
         }
         log.log("lobby: starting " + offer.name());
         starter.execute(() -> start(offer));

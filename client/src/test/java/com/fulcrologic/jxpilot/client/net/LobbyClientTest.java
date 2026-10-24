@@ -351,6 +351,19 @@ class LobbyClientTest {
         }
 
         @Test
+        @DisplayName("a notice shows (cut to 80 characters) until the next choice replaces it")
+        void notice() {
+            greet();
+            lobby.notice("Refused: " + "y".repeat(200));
+            String shown = lobby.message();
+            lobby.select(1, "a", now);
+            assertAll(
+                () -> assertEquals(LobbyClient.MAX_TEXT, shown.length(), "cut"),
+                () -> assertTrue(shown.startsWith("Refused: yyy"), "starts as given"),
+                () -> assertEquals("Asking for a...", lobby.message(), "the next choice replaces it"));
+        }
+
+        @Test
         @DisplayName("a JOIN for a map not asked for, or with nothing pending, changes nothing")
         void strayJoin() {
             greet();

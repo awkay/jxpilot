@@ -85,6 +85,12 @@ free port, with the server's defaults (robots included), and stops when you quit
 |With `--connect`: the local address (and port) to send from, for example to make sure the game goes
 over a VPN.
 
+|`--lobby-map NAME`
+|-
+|With `--connect` to a lobby server (<<04-running-a-server.adoc#lobby,Running an always-on lobby server>>):
+pick the map `NAME` (any case) by itself as soon as the list arrives, instead of waiting for you to choose.
+A name the lobby does not offer is reported on the error output and you choose from the list.
+
 |`--name NAME`
 |your login name
 |Player name, 1 to 16 characters. The default keeps the letters, digits, `-`, `_` and `.` of your login

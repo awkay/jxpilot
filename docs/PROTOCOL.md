@@ -31,13 +31,19 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
 |---|---|---|---|
 | 1 | CONNECT | C→S | `Msg.Connect`: u32 nonce, u8 team (0-9 or 255), str8 name, str16 shape, then optionally str8 real name and str8 host name (C `Connect_param` real/host; the JXPilot client sends the login name, or `--user`, and the local host name; absent or cut short reads as empty). Resent every 250 ms until answered. The shape is the ship the player wears for the whole session (C takes PKT_SHAPE only at login); the JXPilot client sends it in C's canonical form (`ShipShape.toWireString`, C `Convert_ship_2_string`). The server applies C's shape limits (`Parse_shape_str`); an empty or invalid shape gives the built-in ship, and without `allowShipShapes` everyone wears `defaultShipShape`. |
 | 2 | ACCEPT | S→C | `Msg.Accept`: u32 nonce, u16 playerId. Header session = new random session id. Re-sent for duplicate CONNECTs and on a backoff schedule until the session is verified (below). |
-| 3 | REJECT | S→C | `Msg.Reject`: u32 nonce, u8 reason, str8 text. Header session 0. Never larger than the CONNECT it answers (the text is cut to fit). Reasons: 1 FULL (no slot after kicking a robot, else paused players; or the requested team is full), 2 VERSION, 3 BAD_NAME (empty, or already in use: compared without case after trailing blanks are cut and the name is clamped to 16 Latin-1 chars), 4 OTHER (team play with `teamAssign: no` and no valid team requested, or no team can be picked; C contact.c `Check_queue`), 5 LOCKED ("game locked": an operator locked the game with `/lock 1`, C `E_GAME_LOCKED`; checked first), 6 QUEUED (the game is full: the player waits in the login queue, C contact.c; the text is "queued at position N" and a u16 position (1 = next) follows it). A queued client keeps its place by resending its CONNECT (same nonce) every second; each is answered with QUEUED and the current position, a place nobody asks for in 30 seconds is dropped, and when a base frees up the first waiting player is admitted (a slot is reserved for 30 seconds) and its next CONNECT is accepted. Players also wait while others are queued, the queue holds 20, two per address. |
+| 3 | REJECT | S→C | `Msg.Reject`: u32 nonce, u8 reason, str8 text. Header session 0. Never larger than the CONNECT it answers (the text is cut to fit). Reasons: 1 FULL (no slot after kicking a robot, else paused players; or the requested team is full), 2 VERSION, 3 BAD_NAME (empty, or already in use: compared without case after trailing blanks are cut and the name is clamped to 16 Latin-1 chars), 4 OTHER (team play with `teamAssign: no` and no valid team requested, or no team can be picked; C contact.c `Check_queue`), 5 LOCKED ("game locked": an operator locked the game with `/lock 1`, C `E_GAME_LOCKED`; checked first), 6 QUEUED (the game is full: the player waits in the login queue, C contact.c; the text is "queued at position N" and a u16 position (1 = next) follows it). A queued client keeps its place by resending its CONNECT (same nonce) every second; each is answered with QUEUED and the current position, a place nobody asks for in 30 seconds is dropped, and when a base frees up the first waiting player is admitted (a slot is reserved for 30 seconds) and its next CONNECT is accepted. Players also wait while others are queued, the queue holds 20, two per address. 7 LOBBY (a lobby server, see "Lobby" below: this address is in no game yet; the client asks for the map list and sends CONNECT again after choosing; the text is cut to fit like any REJECT). |
 | 4 | RELIABLE | both | reliable channel body (below). |
 | 5 | INPUT | C→S | input with redundancy (below). |
 | 6 | SNAPSHOT | S→C | world snapshot (below). |
 | 7 | DISCONNECT | both | `Msg.Disconnect`: u8 reason (0 quit, 1 timeout, 2 kicked, 3 shutdown), str8 text. Send 3 times; also timeout after 10 s of silence. The server never sends it to an unverified session. After a gameDuration game over the server stops 30 * FPS frames later and every peer gets reason 3 (C `End_game`). The server kicks (reason 2) a player paused longer than `maxPauseTime` ("auto-kicked: paused too long"), paused players when a newcomer needs room ("no pause with full game" / "no pause with full team", C `Kick_paused_players`), and a player READY finds no base for ("no free base"). |
 | 8 | ACK | both | empty. |
 | 9/10 | PING/PONG | both | `Msg.Ping`: u32 id, u64 nanos; PONG echoes exactly these 12 bytes (anything after them is ignored). |
+| 11 | LOBBY_HELLO | C→S | `LobbyMsg.Hello`: u32 nonce, zero padded so the whole datagram is at least 64 bytes. See "Lobby". |
+| 12 | LOBBY_INFO | S→C | `LobbyMsg.Info`: u32 nonce (of the HELLO), u64 cookie, str8 lobby name (at most 43 characters: the datagram is never larger than 64 bytes). |
+| 13 | LOBBY_LIST_REQUEST | C→S | `LobbyMsg.ListRequest`: u64 cookie, u32 version of the list the client holds (0 = none). |
+| 14 | LOBBY_LIST | S→C | `LobbyMsg.ListPage`: one page of the map list. |
+| 15 | LOBBY_SELECT | C→S | `LobbyMsg.Select`: u64 cookie, u16 map id. |
+| 16 | LOBBY_JOIN | S→C | `LobbyMsg.Join`: u16 map id, u8 result, str8 text. |
 
 ## Connection flow
 
@@ -88,6 +94,61 @@ Liveness and limits (server side, all in time units, independent of the tick rat
   (CONNECT, strays, garbage) is limited per source (`ipPacketRate` 400/s, burst `ipPacketBurst` 800; a
   CONNECT that creates a session costs 100 more), keyed by a secret 64-bit hash of the IPv4 address or
   IPv6 /64. Clients should send INPUT on every key change and otherwise at about the tick rate.
+
+## Lobby (lobby servers)
+
+A lobby server (`ServerMain --lobby`, `docs/LOBBY-SPEC.md`) offers many maps on **one UDP port**. It runs the games
+of the maps in-process and routes each client to the game it chose, by the client's source address and port, so
+the clients and the games need nothing but this port. The lobby messages exist only in the native protocol; a
+game server that is not a lobby never sends them and drops them as malformed.
+
+### Flow
+
+1. The client sends CONNECT as for any server. A lobby answers a CONNECT from an address it does not route with
+   `REJECT` reason **LOBBY** (7), carrying the CONNECT's nonce (and a text no longer than fits, so the reply is never
+   larger than the request). A client that does not know lobbies shows the text as a refusal.
+2. The client sends `LOBBY_HELLO` (a nonce, padded to 64 bytes) every 250 ms until `LOBBY_INFO` echoes the nonce.
+   INFO carries a **cookie**: the lobby's secret-keyed hash of the sender's address (an IPv4 address or an IPv6 /64,
+   as `SourceKeys`), the same for every port of the address. Only a host that receives at its address can know it.
+3. The client sends `LOBBY_LIST_REQUEST` with the cookie and the version of the list it holds, at once and then every
+   second (keep-alive). The lobby drops requests with a wrong cookie. It answers a request whose version is not
+   current with every page of the list (not more often than every 200 ms per address); one whose version is current
+   with a single empty page of that version, so a silent lobby can be told from a quiet list. Whenever the list
+   changes (a map starts or stops, a human count changes) the lobby pushes all pages to every address that asked in
+   the last 15 seconds; a client that lost a page keeps asking with its old version and gets the list again.
+4. `LOBBY_LIST` pages: `u32 version` (1 and up, bumped on every change; compared as a wrapping counter), `u16 page`,
+   `u16 pageCount`, `u8 count`, then per map `u16 id` (stable while the lobby runs), `u8 flags` (1 = a game of it is
+   running), `u16 humans`, `u16 maxPlayers` (the map's bases), `u16 width`, `u16 height` (blocks), `str8 name`,
+   `str8 title`, `str8 author` (each cut to 60 characters). A page holds at most 1100 bytes; a list is complete
+   when all pages of one version have arrived (`LobbyListAssembler`: any order, duplicates and older versions are
+   ignored). The lobby sends maps in display order (running maps first, then by name ignoring case); the id, not the
+   position, names a map. At most 2048 maps are offered.
+5. The player chooses: `LOBBY_SELECT` with the cookie and the map id, resent every 500 ms until `LOBBY_JOIN`
+   answers (the client sends no LIST_REQUEST meanwhile). JOIN results: 0 OK (the address is routed to the map's
+   game; send CONNECT now), 1 STARTING (the game is being started: keep asking), 2 UNKNOWN_MAP, 3 FAILED (the text
+   says why; the next SELECT tries again). Starting a map loads and encodes it on a worker thread, never on the
+   socket thread.
+6. After OK the client sends CONNECT with a **new nonce** from the same address and port. The lobby forwards it, and
+   every later datagram of that address that is not a lobby message, untouched to the game, whose connection layer
+   (`ServerNet`) answers through the lobby's socket on the channel the client arrived on. From here on the
+   protocol is the one above, and the game sees a client that contacted it directly. A route lasts while the address
+   keeps sending: it is dropped after 20 seconds of silence and when its game ends.
+7. When a game's last human leaves (C quit-when-empty, per map) the game stops: its remaining peers get
+   DISCONNECT (shutdown), the routes go, and the map is idle in the list again. A client whose CONNECT then reaches
+   the lobby unrouted gets REJECT LOBBY again and returns to the list. The lobby process keeps running.
+
+A LIST_REQUEST or SELECT with the right cookie from an address that has a route means the client is back in the
+lobby: the route is dropped first. A HELLO never changes a route (anyone can send one for any address).
+
+### Anti-reflection and limits
+
+- Only HELLO and CONNECT are answered without the cookie, each with a reply no larger than the request; every
+  larger reply (LIST) goes only to an address that quoted its cookie. The keep-alive page is 17 bytes.
+- Datagrams of an address without a route are rate limited per source (`ipPacketRate`/`ipPacketBurst`, the same
+  budget as a game server's strays); `denyHosts` applies to them too. Routed datagrams are the game's business
+  (its per-session limits and `maxClientsPerIP`).
+- At most 1024 addresses are kept as list subscribers; each game queues at most 512 datagrams for its loop thread and
+  drops the rest.
 
 ## Reliable channel — `ReliableChannel`
 

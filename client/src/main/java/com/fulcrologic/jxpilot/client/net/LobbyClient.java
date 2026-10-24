@@ -130,6 +130,14 @@ public final class LobbyClient {
         return selecting;
     }
 
+    /**
+     * BEHAVIOR: shows {@code text} below the list until the next choice (the game refused the player after the
+     * lobby routed it: full, locked, name taken ...). Call it after {@link #begin}.
+     */
+    public void notice(String text) {
+        message = text.length() > MAX_TEXT ? text.substring(0, MAX_TEXT) : text;
+    }
+
     /** BEHAVIOR: true once, after the server answered a select with OK (the caller then connects). */
     public boolean takeJoined() {
         boolean j = joined;

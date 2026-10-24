@@ -269,6 +269,56 @@ class ClientConnectionLobbyTest {
     }
 
     @Test
+    @DisplayName("a game that refuses the player after the lobby routed it (full, locked, name in use) returns to the list with the reason")
+    void refusedAfterLobbyJoin() {
+        intoLobby();
+        greetAndList();
+        c.lobby().select(0, "alpha", now);
+        wire.tell(LobbyWire.join(0, LobbyMsg.JOIN_OK, ""));
+        c.update(now);
+        int nonce = lastNonce();
+        wire.sent.clear();
+        wire.tell(LobbyWire.dg(PacketType.REJECT, b -> {
+            Msg.Reject r = new Msg.Reject();
+            r.nonce = nonce;
+            r.reason = Msg.Reject.REASON_FULL;
+            r.text.append("server is full");
+            r.write(b);
+        }));
+        c.update(now);
+        assertAll(
+            () -> assertEquals(ConnectionState.LOBBY, c.state(), "back in the lobby, not closed"),
+            () -> assertEquals("Refused: server is full", c.lobby().message(), "the reason is on the screen"),
+            () -> assertEquals(1, countOf(PacketType.LOBBY_HELLO), "the dialogue starts again"),
+            () -> assertTrue(c.lobby().entries().isEmpty(), "with a fresh list to come"));
+    }
+
+    @Test
+    @DisplayName("the lobby's own REJECT after a refusal does not loop: a second refusal still returns to the list")
+    void refusedTwice() {
+        intoLobby();
+        greetAndList();
+        for (int round = 0; round < 2; round++) {
+            c.lobby().select(0, "alpha", now);
+            wire.tell(LobbyWire.join(0, LobbyMsg.JOIN_OK, ""));
+            c.update(now);
+            int nonce = lastNonce();
+            wire.tell(LobbyWire.dg(PacketType.REJECT, b -> {
+                Msg.Reject r = new Msg.Reject();
+                r.nonce = nonce;
+                r.reason = Msg.Reject.REASON_LOCKED;
+                r.text.append("game locked");
+                r.write(b);
+            }));
+            c.update(now);
+            assertEquals(ConnectionState.LOBBY, c.state(), "round " + round + ": in the lobby");
+            wire.tell(LobbyWire.info(lastNonce(), 1L, "friends"));
+            wire.tell(LobbyWire.list(1, List.of(entry(0, "alpha", false, 0)), 1000).get(0));
+            c.update(now);
+        }
+    }
+
+    @Test
     @DisplayName("other REJECT reasons still close the connection (the lobby changes nothing for them)")
     void otherRejectsStillClose() {
         c.start(now);

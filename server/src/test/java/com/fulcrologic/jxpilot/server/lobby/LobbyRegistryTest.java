@@ -302,6 +302,23 @@ class LobbyRegistryTest {
         }
 
         @Test
+        @DisplayName("a select that arrives after a game ended but before the next reap starts a fresh game, never routes to the dead one")
+        void selectOnEndedGame() {
+            registry.select(id("doggy"));
+            FakeGame dead = started.get(0);
+            dead.running = false;
+            LobbyRegistry.Selection s = registry.select(id("doggy"));
+            LobbyRegistry.Selection joined = registry.select(id("doggy"));
+            assertAll(
+                () -> assertEquals(LobbyMsg.JOIN_STARTING, s.result(), "a new game is being started"),
+                () -> assertEquals(1, dead.closes, "the dead game was closed"),
+                () -> assertEquals(2, started.size(), "a second game was started"),
+                () -> assertSame(started.get(1).transport, joined.target(), "and that is the one joined"),
+                () -> assertTrue(joined.target() != dead.transport, "not the dead game's"),
+                () -> assertTrue(registry.reap().isEmpty(), "nothing left for reap to remove"));
+        }
+
+        @Test
         @DisplayName("running games are not touched by reap; only the ended one goes")
         void reapSelective() {
             registry.select(id("doggy"));
