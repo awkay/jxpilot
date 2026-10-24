@@ -81,9 +81,9 @@ Notes
 
 ## `common.sim` — the ship kernel (latency phase 1a)
 
-Run as above (the kernel is part of `common`). Result: **1903 mutants in `com.fulcrologic.jxpilot.common.sim`,
-1784 detected (93.7%)**, 116 survived, 3 without coverage; the whole module 4613 / 4848 (95.2%). Per class: Click 11/12,
-KernelWorld 36/36, Mods 53/54, Segment 709/774, ShipBody 152/154, ShipGeom 28/30, ShipKernel 135/138, ShipKeys
+Run as above (the kernel is part of `common`). Result: **1924 mutants in `com.fulcrologic.jxpilot.common.sim`,
+1803 detected (93.7%)**, 118 survived, 3 without coverage; the whole module 4635 / 4869 (95.2%). Per class: Click 11/12,
+KernelWorld 55/57, Mods 53/54, Segment 709/774, ShipBody 152/154, ShipGeom 28/30, ShipKernel 135/138, ShipKeys
 102/102, ShipMover 311/343, ShipParams 11/13, ShipShooter 106/108, ShipWorld 43/44, Trig 6/6, WallDist 81/89.
 
 Segment, WallDist, Click and the player half of Mover (now ShipMover) moved here from `server`; their survivors are the
@@ -94,8 +94,10 @@ ones `PIT-SURVIVORS-server.md` justified before the move (same code, new line nu
 | file:line | mutator | mutated expression | why equivalent |
 |---|---|---|---|
 | ShipKernel.java:103 (2) | Boundary | `limits` clamp `v > hi` / `v < lo` | at equality both branches give the bound. |
-| ShipKernel.java:234 | Boundary | `while (floatDir < 0)` → `<= 0` | 0 becomes RES, and the following `>= RES` loop maps it back to 0. |
+| ShipKernel.java:234 | Boundary | `while (floatDir < 0)` → `<= 0` | for +0.0f, 0 becomes RES and the `>= RES` loop maps it back to +0.0f: same bits. It differs only for **-0.0f**, which would leave as +0.0f (`sameState` compares raw bits). -0.0f is unreachable: a float sum is -0.0 only when both operands are -0.0 (round to nearest), and floatDir starts from an int heading (+0.0 or positive) or from Turn_player's `floatDir = dir`; every later value is such a sum (`+= turnVel`, the wall nudge `+= (1-brake)*delta`) or `+= RES`/`-= RES` from a non-zero value, so floatDir is never -0.0 (a -0.0 turnVel added to +0.0 gives +0.0). The server cannot send one either. |
 | ShipParams.java:137 (2) | Boundary | `clamp` bounds | at equality both give the bound. |
+| KernelWorld.java:234 | Boundary | `ensure` `n <= length` → `<` | at equality the table grows needlessly; every lookup gives the same result. |
+| KernelWorld.java:238 | Math | `ensure` growth `2 * old` → `2 / old` | only how much the table grows: it still holds `n`, and later growth is still on demand. |
 | ShipWorld.java:159 | Boundary | `clampBlock` `b < 0` → `<= 0` | b = 0 gives 0 either way. |
 | ShipShooter.java:96 | Math | rear dir `dir + RES/2 + ...` → `dir - RES/2 + ...` | `Trig.mod` of a value RES apart: +RES/2 and -RES/2 are the same heading. |
 | ShipShooter.java:172 | Boundary | `fuel < SHOT_FUEL_NEEDED` → `<=` | fuel changes by whole units (`addFuel` truncates), so it is never exactly 51.2. |

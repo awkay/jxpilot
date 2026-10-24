@@ -3,6 +3,30 @@
 Run: `MAVEN_OPTS= mvn -o -pl server test-compile org.pitest:pitest-maven:mutationCoverage` (run `test-compile` in the same
 command so PIT does not use stale test classes). `AllocationTest` and `TickBenchmark` are excluded from PIT.
 
+## `server.sim` after the ship kernel extraction (latency phase 1a)
+
+Run with `targetClasses` narrowed to `com.fulcrologic.jxpilot.server.sim.*` (all server tests): **6337 of 6790 mutants
+detected (93.3%)**: 6302 killed, 35 timed out; 422 survived, 31 without coverage. Per class: Alliances 142/158,
+Asteroids 309/348, Balls 278/309, CannonWeapons 321/345, Cannons 98/100, Collisions 445/469, Crashes 97/97, Debris
+164/182, Devices 473/499, Digest 75/75, Ecm 174/181, Items 440/473, Keys 193/205, Lasers 309/334, Locks 198/204, Mines
+210/220, Missiles 423/443, Mover 83/92, ObjPhysics 113/115, Race 188/213, RandomPilot 7/8, Rounds 343/366, Scoring
+47/51, **ShipEffects 31/31**, Ships 517/549, ShotNames 16/27, Shots 98/104, Simulation 131/139, Sounds 21/23, Tanks
+138/153, Targets 160/176, Texts 0/1, Wreckage 95/100. (The cannon branch of `Shots.fire` got a test after this run:
+`ShipEffectsTest.CannonShots`.)
+
+The kernel's code (Move_player, Turn_player, Segment, turning, thrust, mass, key edges, bullets) is in `common.sim`;
+its survivors are in `PIT-SURVIVORS.md`. Survivors in the server code the extraction touched:
+
+| file:line | mutator | mutated expression | why |
+|---|---|---|---|
+| Keys.java:71 (2) | BooleanReturns | `pressed` delegate's return | the delegate (kept for the server's key tests) is only called by tests that do not read its result; the kernel's `ShipKeys.pressed` result is tested in `ShipKeysTest`. |
+| Shots.java:100 | Boundary | cannon `count() >= capacity` → `>` | the pool never holds more than its capacity, so `>` is reached only at equality, where `alloc` would fail. |
+| Simulation.java:214 | Boundary | autofire `k < numPlayers` → `<=` | **not killed**: also runs autofire for `order[numPlayers]`, a slot outside the game (or slot 0 before anyone left, already handled this frame, whose repeat rate blocks a second shot). |
+| Mover.java:68, 92-94, 160, 166 | as above | `moveObject` | the `Mover.java` object rows of the table below, at their new line numbers. |
+| Mover.java:189, 190 (2) | Negate, PrimitiveReturns | `ballTeam` | a ball's target team only matters with `targetTeamCollision` off and a ball owner on the target's team; no ball test sets that up (unchanged code). |
+
+## Earlier rounds
+
 Result (S1 fix round): **3613 of 3824 mutants detected (94.5%)**: 3581 killed, 32 timed out; 194 survived, 17 without
 coverage.
 

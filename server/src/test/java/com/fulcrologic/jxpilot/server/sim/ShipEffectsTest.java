@@ -152,6 +152,36 @@ class ShipEffectsTest {
     }
 
     @Nested
+    @DisplayName("Shots.fire's cannon path (the player path is the kernel's)")
+    class CannonShots {
+        @Test
+        @DisplayName("a cannon shot: FROMCANNON, GRAVITY only with shotsGravity, velocity tcos/tsin * shotSpeed; -1 when the pool is full")
+        void cannon() {
+            setup();
+            w.params.shotsGravity = false;
+            int h = s.shots.fire(null, 2, true, 100, 80, Obj.CANNON_SHOT, 32, 0);
+            int status = w.objects.status[h];
+            float vy = w.objects.vy[h];
+            int owner = w.objects.owner[h];
+            setup();
+            w.params.shotsGravity = true;
+            int g = s.shots.fire(null, 2, true, 100, 80, Obj.CANNON_SHOT, 32, 0);
+            int gStatus = w.objects.status[g];
+            while (w.objects.count() < w.objects.capacity) {
+                w.objects.alloc();
+            }
+            int full = s.shots.fire(null, 2, true, 100, 80, Obj.CANNON_SHOT, 32, 0);
+            assertAll(
+                () -> assertEquals(Obj.FROMCANNON, status, "without shotsGravity: FROMCANNON only"),
+                () -> assertEquals(Obj.FROMCANNON | Obj.GRAVITY, gStatus, "with shotsGravity: and GRAVITY"),
+                () -> assertEquals((float) (0.0 + com.fulcrologic.jxpilot.common.sim.Trig.tsin(32) * w.params.shotSpeed),
+                    vy, "velocity (float)(tsin(dir) * shotSpeed)"),
+                () -> assertEquals(Obj.NO_ID, owner, "no owner"),
+                () -> assertEquals(-1, full, "a full pool: -1"));
+        }
+    }
+
+    @Nested
     @DisplayName("the player loop")
     class Loop {
         @Test
