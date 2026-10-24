@@ -153,6 +153,14 @@ final class Recorder implements ConnectionListener, XpReliableDecoder.Control {
         states.add(state + ": " + status);
     }
 
+    /** onIdentity calls, kept apart from {@link #events}. */
+    final List<String> identities = new ArrayList<>();
+
+    @Override
+    public void onIdentity(int id, CharSequence realName, CharSequence host) {
+        identities.add(id + " " + realName + "@" + host);
+    }
+
     // ---------------------------------------------------------------- Control spy
     @Override
     public void reply(int replyTo, int result) {

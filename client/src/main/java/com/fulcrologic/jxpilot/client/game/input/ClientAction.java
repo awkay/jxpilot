@@ -85,9 +85,9 @@ public enum ClientAction {
         this.help = help;
     }
 
-    /** BEHAVIOR: true for the actions JXPilot implements (talk, talk cursor, scale-factor swap, sound, key help). */
+    /** BEHAVIOR: true for every action except {@link #TOGGLE_RECORD} (recording is not in JXPilot). */
     public boolean implemented() {
-        return this == TALK || talkCursor() || this == SWAP_SCALEFACTOR || this == HELP || this == TOGGLE_SOUND;
+        return this != TOGGLE_RECORD;
     }
 
     /** BEHAVIOR: true for the four talk-line cursor keys (only active while talking, as in C). */

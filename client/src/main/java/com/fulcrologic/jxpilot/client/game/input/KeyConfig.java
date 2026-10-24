@@ -54,6 +54,7 @@ public final class KeyConfig {
 
     private final KeyBindings bindings;
     private final ControlSettings settings = new ControlSettings();
+    private final PlayResources play = new PlayResources();
     /** C {@code modBankStr}: the modifierBank1..4 resources (C default "" each). */
     private final String[] modifierBanks = {"", "", "", ""};
     /** C {@code modBankStr[i]} is MAX_CHARS (80) bytes: Get_resource keeps at most 79 chars. */
@@ -115,6 +116,9 @@ public final class KeyConfig {
     }
 
     private void apply(String src, XpilotRc.Entry e) {
+        if (play.apply(e, (line, msg) -> problem(src, line, msg))) {
+            return;
+        }
         KeyFunctions.Fn f = KeyFunctions.byResource(e.name());
         if (f != null) {
             bindings.set(f, usableKeysyms(src, e));
@@ -256,6 +260,9 @@ public final class KeyConfig {
     }
 
     public KeyBindings bindings() { return bindings; }
+
+    /** The talk macros, pointer and message resources ({@link PlayResources}). */
+    public PlayResources play() { return play; }
 
     public ControlSettings settings() { return settings; }
 

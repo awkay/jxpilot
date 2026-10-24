@@ -202,6 +202,13 @@ class XpReliableDecoderTest {
         }
 
         @Test
+        void playerRealNameAndHostGoToOnIdentity() {
+            rec.identities.clear();
+            decode(new CPackets().player(5, 0, ' ', "Ann", "ann", "box.example", "", ""));
+            assertEquals(List.of("5 ann@box.example"), rec.identities, "C Handle_player's real and host, after the join");
+        }
+
+        @Test
         void warAndSeekBecomeWarAndSeekRecords() {
             rec.events.clear();
             decode(new CPackets().war(1, 2).war(1, -1).seek(3, 1, 2));

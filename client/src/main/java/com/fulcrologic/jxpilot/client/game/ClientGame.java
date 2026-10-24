@@ -221,6 +221,12 @@ public final class ClientGame implements ConnectionListener {
         }
     }
 
+    /** BEHAVIOR: the player's real name and host for ID mode ({@link Players#setIdentity}). */
+    @Override
+    public void onIdentity(int playerId, CharSequence realName, CharSequence host) {
+        players.setIdentity(playerId, realName, host);
+    }
+
     /**
      * C {@code Handle_war} (client.c:1110).
      * <p>

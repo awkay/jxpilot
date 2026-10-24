@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.List;
 
 import static com.fulcrologic.jxpilot.client.app.AppFixture.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -164,6 +165,51 @@ class HudExtrasTest {
                 () -> assertEquals(200, e.hx, "(int)(801 / 2 + 0.5) / 2 = 200"),
                 () -> assertEquals(150, e.hy, "300 / 2"),
                 () -> assertEquals(2.0, hud.zoom, "Hud zoom set"));
+        }
+    }
+
+    @Nested
+    @DisplayName("items (C showItems / showItemsTime)")
+    class Items {
+        final int mines = com.fulcrologic.jxpilot.common.Item.MINE.ordinal();
+        final int fuel = com.fulcrologic.jxpilot.common.Item.FUEL.ordinal();
+
+        @Test
+        @DisplayName("showItems: counts above 0 always, else -1")
+        void shown() {
+            assertAll(
+                () -> assertEquals(3, e.itemCount(mines, 3, 1, 28), "owned"),
+                () -> assertEquals(-1, e.itemCount(mines, 0, 1, 28), "none"),
+                () -> assertEquals(3, e.itemCount(mines, 3, 0, 28), "no paint: same"));
+        }
+
+        @Test
+        @DisplayName("showItems off: a change shows the count for showItemsTime * FPS paints, 0 included")
+        void timed() {
+            e.showItems = false;
+            List<Integer> seen = new java.util.ArrayList<>();
+            seen.add(e.itemCount(mines, 2, 1, 3));
+            seen.add(e.itemCount(mines, 2, 1, 3));
+            seen.add(e.itemCount(mines, 2, 0, 3));
+            seen.add(e.itemCount(mines, 2, 1, 3));
+            seen.add(e.itemCount(mines, 2, 1, 3));
+            seen.add(e.itemCount(mines, 2, 0, 3));
+            seen.add(e.itemCount(mines, 0, 1, 3));
+            seen.add(e.itemCount(mines, 0, 3, 3));
+            seen.add(e.itemCount(mines, 5, 2, 3));
+            seen.add(e.itemCount(mines, 5, 1, 3));
+            seen.add(e.itemCount(mines, 5, 1, 3));
+            assertEquals(List.of(2, 2, 2, 2, -1, -1, 0, -1, 5, 5, -1), seen,
+                "3 paints after the change to 2; the change to 0 shows '0'; n paints at once count n times");
+        }
+
+        @Test
+        @DisplayName("fuel is never timed")
+        void fuelUntimed() {
+            e.showItems = false;
+            assertAll(
+                () -> assertEquals(500, e.itemCount(fuel, 500, 1, 0), "fuel as with showItems"),
+                () -> assertEquals(-1, e.itemCount(fuel, 0, 1, 0), "no fuel"));
         }
     }
 

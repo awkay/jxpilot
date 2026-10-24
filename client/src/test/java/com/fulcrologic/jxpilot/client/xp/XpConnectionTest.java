@@ -95,6 +95,12 @@ class XpConnectionTest {
             a.onStateChange(s, st);
             b.onStateChange(s, st);
         }
+
+        @Override
+        public void onIdentity(int id, CharSequence real, CharSequence host) {
+            a.onIdentity(id, real, host);
+            b.onIdentity(id, real, host);
+        }
     }
 
     @BeforeEach

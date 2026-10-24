@@ -207,8 +207,30 @@ public final class GameApp {
         glfwSetWindowFocusCallback(h, (w, focused) -> {
             if (!focused) {
                 frame.focusLost();
+            } else {
+                frame.focusGained();
             }
         });
+        glfwSetMouseButtonCallback(h, (w, button, action, mods) -> frame.mouseButton(button, action, System.nanoTime()));
+        glfwSetScrollCallback(h, (w, dx, dy) -> frame.scroll(dy, System.nanoTime()));
+        glfwSetCursorPosCallback(h, (w, x, y) -> frame.cursor(x - viewLeft, y));
+    }
+
+    /** Left edge of the game view in window coordinates (the panel is on the left). */
+    private double viewLeft;
+    private boolean cursorGrabbed;
+
+    /** Pointer control: grab and hide the pointer while on (C XGrabPointer), and put it where C warps it. */
+    private void applyPointer() {
+        com.fulcrologic.jxpilot.client.game.input.PointerControl pc = frame.play().pointer();
+        long h = window.handle();
+        if (pc.grabbed() != cursorGrabbed) {
+            cursorGrabbed = pc.grabbed();
+            glfwSetInputMode(h, GLFW_CURSOR, cursorGrabbed ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        }
+        if (pc.takeWarp() && cursorGrabbed) {
+            glfwSetCursorPos(h, viewLeft + pc.mouseX(), pc.mouseY());
+        }
     }
 
     private final FramePacer pacer = new FramePacer();
@@ -310,7 +332,9 @@ public final class GameApp {
         int viewW = (int) (viewFbW / ratio);
         int viewH = (int) (fbH / ratio);
         metrics.set(atlas.font(), ratio);
+        viewLeft = panelFb / ratio;
         frame.step(now, viewW, viewH, zoom, metrics, PANEL_W, radarHeight + ClientFrame.SCORE_GAP);
+        applyPointer();
         if (frame.mapVersion() != mapVersion) {
             mapVersion = frame.mapVersion();
             loadMap(frame.game().map());

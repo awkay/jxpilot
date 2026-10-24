@@ -81,6 +81,17 @@ public final class Scoreboard {
         java.util.Arrays.fill(teamScore, 0);
     }
 
+    private boolean idMode;
+
+    /** C {@code showRealName} (keyIdMode): rows show "NAME=REAL@HOST" instead of the score line. */
+    public boolean idMode() { return idMode; }
+
+    /** BEHAVIOR: flips ID mode (C {@code Key_press_id_mode}); the next {@link #update} rebuilds. */
+    public void toggleIdMode() {
+        idMode = !idMode;
+        builtVersion = -1;
+    }
+
     /** BEHAVIOR: TEAM_SCORE; teams outside 0..9 are ignored. */
     public void setTeamScore(int team, float score) {
         if (team >= 0 && team < MAX_TEAMS) {
@@ -162,9 +173,13 @@ public final class Scoreboard {
             rowSlot[rows] = s;
             rowLine[rows] = i;
             rowDim[rows] = c == 'D' || c == 'P' || c == 'W';
-            format(labels[rows], c, teamPlay ? p.team(s) : -1, p.alliance(s), p.score(s), p.lives(s), p.name(s),
-                p.round(s), p.check(s));
-            appendWar(labels[rows], p, s);
+            if (idMode) {
+                labels[rows].clear().append(p.name(s)).append('=').append(p.realName(s)).append('@').append(p.host(s));
+            } else {
+                format(labels[rows], c, teamPlay ? p.team(s) : -1, p.alliance(s), p.score(s), p.lives(s), p.name(s),
+                    p.round(s), p.check(s));
+                appendWar(labels[rows], p, s);
+            }
             rows++;
         }
         if (teamPlay && !timing) {

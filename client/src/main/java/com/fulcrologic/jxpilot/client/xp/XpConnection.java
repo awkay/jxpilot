@@ -444,12 +444,22 @@ public final class XpConnection implements GameConnection {
      * Keys for this frame.
      * <p>
      * BEHAVIOR: only while PLAYING; a changed key set is a new keyboard change sent at once (C
-     * {@code Net_key_change}); returns the change number when sent, else 0. Pointer turns are not sent.
+     * {@code Net_key_change}); returns the change number when sent, else 0.
+     * BEHAVIOR: a non-zero {@code aimTurn} (pointer movement in window pixels) is C's {@code Send_pointer_move}:
+     * {@code PKT_POINTER_MOVE %hd} queued for this frame's datagram, for servers above version 0x3201 only.
      */
     @Override
     public int sendInput(long keys, int aimTurn, long nowNanos) {
         now = nowNanos;
-        if (phase != Phase.PLAYING || !keyboard.setKeys(keys)) {
+        if (phase != Phase.PLAYING) {
+            return 0;
+        }
+        if (aimTurn != 0 && version > 0x3201) {
+            ensureRoom(3);
+            XpWriter.u8(tx, XpProto.PKT_POINTER_MOVE);
+            XpWriter.s16(tx, Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, aimTurn)));
+        }
+        if (!keyboard.setKeys(keys)) {
             return 0;
         }
         sendDatagram(true);

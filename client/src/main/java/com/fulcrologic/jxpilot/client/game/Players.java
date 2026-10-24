@@ -38,6 +38,8 @@ public final class Players {
     public static final int CAPACITY = 256;
     /** Max name length kept (C {@code MAX_NAME_LEN}). */
     public static final int MAX_NAME = 32;
+    /** C {@code other->real} / {@code host} hold MAX_CHARS (80) bytes: 79 chars. */
+    public static final int MAX_IDENTITY = 79;
 
     private final int[] slotOf = new int[0x10000];
     private final int[] idOf = new int[CAPACITY];
@@ -52,6 +54,9 @@ public final class Players {
     private final int[] engineY = new int[CAPACITY];
     private final ShipShape[] shape = new ShipShape[CAPACITY];
     private final StringBuilder[] name = new StringBuilder[CAPACITY];
+    /** C {@code other->real} and {@code other->host} (ID mode), at most {@link #MAX_IDENTITY} chars each. */
+    private final StringBuilder[] realName = new StringBuilder[CAPACITY];
+    private final StringBuilder[] host = new StringBuilder[CAPACITY];
     private final float[] score = new float[CAPACITY];
     private final int[] lives = new int[CAPACITY];
     private final int[] status = new int[CAPACITY];
@@ -69,6 +74,8 @@ public final class Players {
     public Players() {
         for (int i = 0; i < CAPACITY; i++) {
             name[i] = new StringBuilder(MAX_NAME);
+            realName[i] = new StringBuilder(MAX_IDENTITY);
+            host[i] = new StringBuilder(MAX_IDENTITY);
         }
         java.util.Arrays.fill(slotOf, -1);
     }
@@ -164,7 +171,8 @@ public final class Players {
      * BEHAVIOR: the engine offset comes from the shape read without limits as C client.c Handle_player's
      * {@code Convert_shape_str} (default ship when empty or invalid);
      * score, lives and status reset (0, -1 unlimited, 0), race progress too (C {@code other->timing = 0});
-     * the alliance mark is blank; no war target (C {@code war_id = -1}).
+     * the alliance mark is blank; no war target (C {@code war_id = -1}); no real name or host until
+     * {@link #setIdentity}.
      */
     public int join(Msg.PlayerJoin j) {
         int s = slotOf(j.id);
@@ -197,6 +205,8 @@ public final class Players {
         round[s] = 0;
         timingTick[s] = 0;
         warId[s] = Protocol.NO_ID;
+        realName[s].setLength(0);
+        host[s].setLength(0);
         if ((j.flags & Msg.PlayerJoin.FLAG_SELF) != 0) {
             selfId = j.id;
         }
@@ -254,6 +264,29 @@ public final class Players {
             version++;
         }
     }
+
+    /**
+     * C {@code Handle_player}'s real name and host (shown in ID mode).
+     * <p>
+     * BEHAVIOR: a known id only; each is cut to {@link #MAX_IDENTITY} chars.
+     */
+    public void setIdentity(int id, CharSequence real, CharSequence hostName) {
+        int s = slotOf(id);
+        if (s < 0) {
+            return;
+        }
+        realName[s].setLength(0);
+        realName[s].append(real, 0, Math.min(real.length(), MAX_IDENTITY));
+        host[s].setLength(0);
+        host[s].append(hostName, 0, Math.min(hostName.length(), MAX_IDENTITY));
+        version++;
+    }
+
+    /** The player's real (login) name, empty when unknown. */
+    public CharSequence realName(int slot) { return realName[slot]; }
+
+    /** The player's host, empty when unknown. */
+    public CharSequence host(int slot) { return host[slot]; }
 
     /** The robot's war target id, {@link Protocol#NO_ID} for none. */
     public int warId(int slot) { return warId[slot]; }

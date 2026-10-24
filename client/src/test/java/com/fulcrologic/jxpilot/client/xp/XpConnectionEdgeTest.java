@@ -302,6 +302,54 @@ class XpConnectionEdgeTest {
     }
 
     @Nested
+    @DisplayName("pointer control (C Send_pointer_move)")
+    class PointerMoves {
+        @Test
+        void movesGoOutAsPointerMovePackets() {
+            play();
+            int changes = server.keyboardChanges.size();
+            now += FRAME;
+            conn.update(now);
+            int sent = conn.sendInput(0, -37, now);
+            conn.flush(now);
+            server.step();
+            now += FRAME;
+            conn.update(now);
+            conn.sendInput(0, 0, now);
+            conn.flush(now);
+            server.step();
+            now += FRAME;
+            conn.update(now);
+            conn.sendInput(0, 100_000, now);
+            conn.flush(now);
+            server.step();
+            assertAll(
+                () -> assertEquals(0, sent, "no keyboard change"),
+                () -> assertEquals(List.of(-37, (int) Short.MAX_VALUE), server.pointerMoves,
+                    "each non-zero move once, as %hd (clamped); none for 0"),
+                () -> assertEquals(changes, server.keyboardChanges.size(), "no new keyboard change for a move"),
+                () -> assertEquals(List.of(), server.violations, "fine for the server"));
+        }
+
+        @Test
+        void notBeforePlaying() {
+            server.ignorePlay = true;
+            conn.start(now);
+            server.step();
+            for (int i = 0; i < 30; i++) {
+                now += FRAME;
+                conn.update(now);
+                conn.sendInput(0, 12, now);
+                conn.flush(now);
+                server.step();
+            }
+            assertAll(
+                () -> assertEquals(XpConnection.Phase.START, conn.phase(), "still starting"),
+                () -> assertEquals(List.of(), server.pointerMoves, "no pointer moves"));
+        }
+    }
+
+    @Nested
     @DisplayName("transport errors (C Sockbuf_read / Sockbuf_flush carry on)")
     class TransportErrors {
         @Test

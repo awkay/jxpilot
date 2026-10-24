@@ -71,6 +71,8 @@ public final class MessageLog {
     private int talkCount;
     private int gameCount;
     private int charsPerSecond = DEFAULT_CHARS_PER_SECOND;
+    private java.io.PrintStream stdout;
+    private int toStdout;
 
     /** BEHAVIOR: maxMessages is clamped to 1..{@link #MAX_MSGS}. */
     public MessageLog(int maxMessages) {
@@ -90,6 +92,15 @@ public final class MessageLog {
     public int maxMessages() { return max; }
 
     public void setCharsPerSecond(int cps) { charsPerSecond = cps; }
+
+    /**
+     * C {@code messagesToStdout}: 0 prints nothing, 1 player messages (text ending in ']'), 2 every message; each
+     * added message is printed to {@code out} as it arrives.
+     */
+    public void setStdout(int mode, java.io.PrintStream out) {
+        toStdout = mode;
+        stdout = out;
+    }
 
     public int talkCount() { return talkCount; }
 
@@ -148,10 +159,14 @@ public final class MessageLog {
      * <p>
      * BEHAVIOR: goes to the front of its list with life {@link #MSG_DURATION}; the oldest falls off when
      * the list is full; text is truncated to {@link #MSG_LEN} chars; empty text is ignored.
+     * BEHAVIOR: printed first as {@link #setStdout} says (C {@code Add_message}).
      */
     public void add(int kind, CharSequence text) {
         if (text.length() == 0) {
             return;
+        }
+        if (stdout != null && (toStdout == 2 || toStdout == 1 && text.charAt(text.length() - 1) == ']')) {
+            stdout.append(text).append('\n');
         }
         boolean isTalk = isTalk(kind, text);
         Entry[] set = isTalk ? talk : game;
@@ -166,6 +181,31 @@ public final class MessageLog {
         } else {
             gameCount = Math.min(max, gameCount + 1);
         }
+    }
+
+    /**
+     * C {@code Print_messages_to_stdout} (keyPrintMessagesStdout).
+     * <p>
+     * BEHAVIOR: "[talk messages]", then each live talk message as "  TEXT" in screen order (newest first; oldest
+     * first with {@code reverseScroll}), then "[server messages]" and the live game messages in the opposite order,
+     * then an empty line.
+     */
+    public void print(java.io.PrintStream out, boolean reverseScroll) {
+        out.append("[talk messages]\n");
+        for (int k = 0; k < max; k++) {
+            int i = reverseScroll ? max - 1 - k : k;
+            if (i < talkCount) {
+                out.append("  ").append(talk[i].text).append('\n');
+            }
+        }
+        out.append("[server messages]\n");
+        for (int k = max - 1; k >= 0; k--) {
+            int i = reverseScroll ? max - 1 - k : k;
+            if (i < gameCount) {
+                out.append("  ").append(game[i].text).append('\n');
+            }
+        }
+        out.append('\n');
     }
 
     /**

@@ -798,6 +798,11 @@ public final class XpTranslator {
         deliver(join, ReliableType.PLAYER_JOIN);
     }
 
+    /** C {@code Handle_player}'s real name and host: BEHAVIOR: passed on as is ({@code onIdentity}). */
+    public void identity(int id, CharSequence realName, CharSequence host) {
+        listener.onIdentity(id & 0xFFFF, realName, host);
+    }
+
     static int joinFlags(int mychar) {
         return switch (mychar) {
             case 'R' -> Msg.PlayerJoin.FLAG_ROBOT;

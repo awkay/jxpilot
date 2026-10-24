@@ -59,6 +59,18 @@ public final class KeyRouter {
     public static final int SHOW_CONTROLS = 32;
     /** Toggle the key help overlay (JXPilot keyHelp). */
     public static final int HELP = 64;
+    /** keyIdMode: toggle real names in the score list (C {@code Key_press_id_mode}). */
+    public static final int ID_MODE = 128;
+    /** keyToggleOwnedItems: toggle showItems (C {@code Key_press_show_items}). */
+    public static final int TOGGLE_ITEMS = 256;
+    /** keyToggleMessages: toggle showMessages (C {@code Key_press_show_messages}). */
+    public static final int TOGGLE_MESSAGES = 512;
+    /** keyPointerControl: toggle pointer control (C {@code Key_press_pointer_control}). */
+    public static final int POINTER_CONTROL = 1024;
+    /** keyPrintMessagesStdout: print the messages (C {@code Key_press_msgs_stdout}). */
+    public static final int PRINT_MESSAGES = 2048;
+    /** keySendMsg1..20: talk macros to send, {@link #takeMacros()} (C {@code Key_check_talk_macro}). */
+    public static final int TALK_MACRO = 4096;
 
     private final InputState input;
     private final TalkLine talk;
@@ -66,6 +78,8 @@ public final class KeyRouter {
     private final StringBuilder chat = new StringBuilder(TalkLine.MAX_CHARS);
     private final LoseItemSelection loseSelection = new LoseItemSelection();
     private boolean swallowChar;
+    /** Talk macros pressed (bit = macro number) since {@link #takeMacros()}. */
+    private int macros;
 
     public KeyRouter(InputState input, TalkLine talk) {
         this(input, talk, new ControlSettings());
@@ -143,6 +157,50 @@ public final class KeyRouter {
             loseSelection.press();
         }
         long acts = input.press(key);
+        return actions(acts) | controls(input.bindings().gameMask(key));
+    }
+
+    /**
+     * A pointer button of pointer control (C {@code ButtonPress_event} / {@code ButtonRelease_event} with its
+     * {@code buttonDefs}): the button's game functions and client actions.
+     * <p>
+     * BEHAVIOR: ignored while talking. A press is a key press bound to exactly these functions ({@link
+     * InputState#pressFunctions}, the lose-item outline, the client actions and the power/turn-speed keys as
+     * {@link #key}); a release releases the game functions.
+     */
+    public int pointerButton(boolean press, long game, long acts) {
+        if (talk.isOpen()) {
+            return NONE;
+        }
+        int lose = ((game & ControlKey.SELECT_ITEM.mask()) != 0 ? 1 : 0) + ((game & ControlKey.LOSE_ITEM.mask()) != 0 ? 1 : 0);
+        if (!press) {
+            input.releaseFunctions(game);
+            for (int i = lose; i > 0; i--) {
+                loseSelection.release();
+            }
+            return NONE;
+        }
+        for (int i = lose; i > 0; i--) {
+            loseSelection.press();
+        }
+        return actions(input.pressFunctions(game, acts)) | controls(game);
+    }
+
+    /** BEHAVIOR: the talk macros pressed since the last call, bit n = keySendMsg(n + 1); cleared. */
+    public int takeMacros() {
+        int m = macros;
+        macros = 0;
+        return m;
+    }
+
+    /**
+     * The client actions of a press (C {@code Key_press}).
+     * <p>
+     * BEHAVIOR: TALK opens the talk line (game keys released, the key's character is not typed); SWAP_SCALEFACTOR,
+     * TOGGLE_SOUND, HELP, ID_MODE, TOGGLE_OWNED_ITEMS, TOGGLE_MESSAGES, POINTER_CONTROL and PRINT_MSGS_STDOUT
+     * are their events; keySendMsgN marks macro N-1 and is {@link #TALK_MACRO}.
+     */
+    private int actions(long acts) {
         int ev = NONE;
         if (KeyBindings.has(acts, ClientAction.TALK)) {
             talk.open();
@@ -158,7 +216,27 @@ public final class KeyRouter {
         if (KeyBindings.has(acts, ClientAction.HELP)) {
             ev |= HELP;
         }
-        return ev | controls(input.bindings().gameMask(key));
+        if (KeyBindings.has(acts, ClientAction.ID_MODE)) {
+            ev |= ID_MODE;
+        }
+        if (KeyBindings.has(acts, ClientAction.TOGGLE_OWNED_ITEMS)) {
+            ev |= TOGGLE_ITEMS;
+        }
+        if (KeyBindings.has(acts, ClientAction.TOGGLE_MESSAGES)) {
+            ev |= TOGGLE_MESSAGES;
+        }
+        if (KeyBindings.has(acts, ClientAction.POINTER_CONTROL)) {
+            ev |= POINTER_CONTROL;
+        }
+        if (KeyBindings.has(acts, ClientAction.PRINT_MSGS_STDOUT)) {
+            ev |= PRINT_MESSAGES;
+        }
+        int m = (int) (acts >>> ClientAction.MSG_1.ordinal()) & ((1 << com.fulcrologic.jxpilot.client.game.TalkMacros.COUNT) - 1);
+        if (m != 0) {
+            macros |= m;
+            ev |= TALK_MACRO;
+        }
+        return ev;
     }
 
     /** How many of SELECT_ITEM and LOSE_ITEM the key is bound to (0..2); 0 for out-of-range codes. */

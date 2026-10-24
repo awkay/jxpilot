@@ -101,6 +101,11 @@ public final class XpClientSim {
             System.out.println("state " + s + ": " + status);
             next.onStateChange(s, status);
         }
+
+        @Override
+        public void onIdentity(int id, CharSequence realName, CharSequence host) {
+            next.onIdentity(id, realName, host);
+        }
     }
 
     public static void main(String[] args) throws Exception {

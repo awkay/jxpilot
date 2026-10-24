@@ -396,6 +396,40 @@ class ModelsTest {
         }
 
         @Test
+        @DisplayName("ID mode: rows are C's \"NAME=REAL@HOST\"; toggling rebuilds; a rejoin forgets the identity")
+        void idMode() {
+            Players p = new Players();
+            p.join(join(1, 0, 0, "Ann", ""));
+            p.join(join(3, 0, Msg.PlayerJoin.FLAG_ROBOT, "Cy", ""));
+            p.setScore(1, 30, -1, 0);
+            p.setScore(3, 20, -1, 0);
+            p.setWar(3, 1);
+            p.setIdentity(1, "ann", "box.example");
+            p.setIdentity(99, "x", "y");
+            p.setIdentity(3, "r".repeat(100), "robots");
+            Scoreboard sb = new Scoreboard();
+            sb.configure(false, false, false, 1);
+            sb.update(p);
+            List<String> normal = labels(sb);
+            sb.toggleIdMode();
+            sb.update(p);
+            List<String> ids = labels(sb);
+            boolean on = sb.idMode();
+            p.join(join(1, 0, 0, "Ann", ""));
+            sb.update(p);
+            String rejoined = sb.label(1).toString();
+            sb.toggleIdMode();
+            sb.update(p);
+            assertAll(
+                () -> assertEquals(List.of("      30.0  Ann", "R     20.0  Cy (Ann)"), normal, "normal rows"),
+                () -> assertEquals(List.of("Ann=ann@box.example", "Cy=" + "r".repeat(Players.MAX_IDENTITY) + "@robots"), ids,
+                    "C paint.c showRealName; no war suffix; real name cut to 79 chars"),
+                () -> assertTrue(on, "on"),
+                () -> assertEquals("Ann=@", rejoined, "a rejoin clears real and host until PKT_PLAYER says them again"),
+                () -> assertEquals("R     20.0  Cy (Ann)", sb.label(0).toString(), "off again: the score rows"));
+        }
+
+        @Test
         @DisplayName("a robot's war target follows its name as \" (NAME)\" (C paint.c:553); a gone target shows nothing")
         void warTarget() {
             Players p = new Players();
@@ -538,6 +572,53 @@ class ModelsTest {
     @Nested
     @DisplayName("MessageLog")
     class Messages {
+        String printed(java.util.function.Consumer<java.io.PrintStream> f) {
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            java.io.PrintStream out = new java.io.PrintStream(bytes, true, java.nio.charset.StandardCharsets.UTF_8);
+            f.accept(out);
+            return bytes.toString(java.nio.charset.StandardCharsets.UTF_8);
+        }
+
+        @Test
+        @DisplayName("messagesToStdout: 0 none, 1 messages ending in ']', 2 all, as they arrive (C Add_message)")
+        void toStdout() {
+            String[] outs = new String[3];
+            for (int mode = 0; mode < 3; mode++) {
+                int md = mode;
+                outs[mode] = printed(out -> {
+                    MessageLog log = new MessageLog(4);
+                    log.setStdout(md, out);
+                    log.add(Msg.Text.KIND_GAME, "Ann was killed by Bob.");
+                    log.add(Msg.Text.KIND_CHAT, "hi [Ann]");
+                    log.add(Msg.Text.KIND_CHAT, "");
+                });
+            }
+            assertAll(
+                () -> assertEquals("", outs[0], "0: nothing"),
+                () -> assertEquals("hi [Ann]\n", outs[1], "1: player messages only"),
+                () -> assertEquals("Ann was killed by Bob.\nhi [Ann]\n", outs[2], "2: everything; empty text never"));
+        }
+
+        @Test
+        @DisplayName("print: talk newest first, server messages oldest first, both reversed with reverseScroll")
+        void print() {
+            MessageLog log = new MessageLog(3);
+            log.add(Msg.Text.KIND_CHAT, "t1 [A]");
+            log.add(Msg.Text.KIND_CHAT, "t2 [A]");
+            log.add(Msg.Text.KIND_GAME, "g1");
+            log.add(Msg.Text.KIND_GAME, "g2");
+            String normal = printed(out -> log.print(out, false));
+            String reversed = printed(out -> log.print(out, true));
+            MessageLog empty = new MessageLog(3);
+            assertAll(
+                () -> assertEquals("[talk messages]\n  t2 [A]\n  t1 [A]\n[server messages]\n  g1\n  g2\n\n", normal,
+                    "C Print_messages_to_stdout"),
+                () -> assertEquals("[talk messages]\n[server messages]\n  g2\n  g1\n\n".replace("[talk messages]\n",
+                    "[talk messages]\n  t1 [A]\n  t2 [A]\n"), reversed, "reverseScroll flips both"),
+                () -> assertEquals("[talk messages]\n[server messages]\n\n", printed(out -> empty.print(out, false)),
+                    "no messages: the headers"));
+        }
+
         @Test
         @DisplayName("talk vs game classification follows kind, then C's text rule")
         void classify() {

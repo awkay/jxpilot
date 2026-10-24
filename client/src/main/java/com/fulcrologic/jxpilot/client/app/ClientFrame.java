@@ -78,6 +78,7 @@ public final class ClientFrame {
     private final SceneFiller filler = new SceneFiller();
     private final HudExtras extras = new HudExtras();
     private final WorldMapState mapState;
+    private final PlayActions play;
 
     private WorldMap lastMap;
     private int mapVersion;
@@ -119,6 +120,7 @@ public final class ClientFrame {
             + " closes" : ""), keys.helpLines());
         conn.sendSettings(settings.copyTo(settingsMsg), 0);
         conn.setModifierBanks(keys.modifierBanks());
+        this.play = new PlayActions(game, conn, hud, extras, keys.play(), System.out, System.err, System.nanoTime());
     }
 
     /**
@@ -157,7 +159,8 @@ public final class ClientFrame {
         boolean inPlay = w.selfPlaying();
         input.setPlaying(inPlay);
         sendDisplayIfChanged(viewW, viewH, zoom, nowNanos);
-        conn.sendInput(input.takeKeys(), 0, nowNanos);
+        play.pointer().setWindow(viewW, viewH);
+        conn.sendInput(input.takeKeys(), play.takeAim(), nowNanos);
         conn.flush(nowNanos);
         if (w.hasSelf()) {
             centreX = w.selfX();
@@ -239,9 +242,49 @@ public final class ClientFrame {
      * {@link #quitRequested()}; SWAP_SCALE sets {@link #takeSwapScale()}; TOGGLE_SOUND sets
      * {@link #takeToggleSound()}; SETTINGS sends the control settings ({@link GameConnection#sendSettings});
      * SHOW_CONTROLS shows the power and turn speed meters; HELP closes an open MOTD panel, else toggles the key help.
+     * BEHAVIOR: the play events (ID mode, toggles, talk macros, pointer control) go to {@link PlayActions#handle};
+     * the talk line's state to {@link PlayActions#talk}.
      */
     public void key(int key, int action, int mods, long nowNanos) {
-        int ev = router.key(key, action, mods);
+        events(router.key(key, action, mods), nowNanos);
+    }
+
+    /**
+     * A GLFW mouse button under pointer control (C {@code pointerButton1..3}: left, middle, right).
+     * <p>
+     * BEHAVIOR: as a key bound to the button's functions ({@link PlayActions#button}); nothing without pointer
+     * control.
+     */
+    public void mouseButton(int glfwButton, int action, long nowNanos) {
+        if (action == org.lwjgl.glfw.GLFW.GLFW_PRESS || action == org.lwjgl.glfw.GLFW.GLFW_RELEASE) {
+            events(play.button(router, PlayActions.xButton(glfwButton),
+                action == org.lwjgl.glfw.GLFW.GLFW_PRESS), nowNanos);
+        }
+    }
+
+    /** BEHAVIOR: a wheel step is X button 4 (up) or 5 (down), pressed and released (C {@code pointerButton4/5}). */
+    public void scroll(double dy, long nowNanos) {
+        if (dy == 0) {
+            return;
+        }
+        int b = dy > 0 ? 4 : 5;
+        events(play.button(router, b, true), nowNanos);
+        events(play.button(router, b, false), nowNanos);
+    }
+
+    /** The pointer moved to (x, y) pixels of the game view ({@link com.fulcrologic.jxpilot.client.game.input.PointerControl#moved}). */
+    public void cursor(double x, double y) {
+        play.pointer().moved(x, y, talk.isOpen());
+    }
+
+    /** The window got focus back: a suspended pointer control resumes. */
+    public void focusGained() {
+        play.pointer().focusGained(talk.isOpen());
+    }
+
+    private void events(int ev, long nowNanos) {
+        play.handle(ev, router.takeMacros(), nowNanos);
+        play.talk(talk.isOpen());
         if ((ev & KeyRouter.SETTINGS) != 0) {
             conn.sendSettings(settings.copyTo(settingsMsg), nowNanos);
         }
@@ -274,10 +317,14 @@ public final class ClientFrame {
         router.character(codepoint);
     }
 
-    /** Window focus lost: game keys up. */
+    /** Window focus lost: game keys up, pointer control suspended. */
     public void focusLost() {
         router.focusLost();
+        play.pointer().focusLost();
     }
+
+    /** The play keys and pointer control. */
+    public PlayActions play() { return play; }
 
     /** BEHAVIOR: leave the server (DISCONNECT) unless the connection is already closed. */
     public void disconnect(long nowNanos) {

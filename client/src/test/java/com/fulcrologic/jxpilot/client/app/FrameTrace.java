@@ -85,4 +85,5 @@ final class FrameTrace implements ConnectionListener {
     }
 
     @Override public void onStateChange(ConnectionState s, CharSequence st) { game.onStateChange(s, st); }
+    @Override public void onIdentity(int id, CharSequence r, CharSequence h) { game.onIdentity(id, r, h); }
 }

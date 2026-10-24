@@ -138,6 +138,8 @@ final class FakeCServer implements XpConnection.PortOpener {
     final List<String> talk = new ArrayList<>();
     final List<String> contactRequests = new ArrayList<>();
     final List<Integer> keyboardChanges = new ArrayList<>();
+    /** Every PKT_POINTER_MOVE (C Receive_pointer_move's movement). */
+    final List<Integer> pointerMoves = new ArrayList<>();
     final List<String> loginPackets = new ArrayList<>();
     /** Every PKT_SHAPE received: its shape string and extension (C Receive_shape, version > 0x3200). */
     final List<List<String>> shapes = new ArrayList<>();
@@ -406,6 +408,12 @@ final class FakeCServer implements XpConnection.PortOpener {
                         talk.add(s.toString());
                         streamAppend(new CPackets().talkAck(seq).message(s + " [" + verifiedNick + "]"));
                     }
+                }
+                case XpProto.PKT_POINTER_MOVE -> {
+                    if (!playing) {
+                        violations.add("pointer move in state " + state);
+                    }
+                    pointerMoves.add(r.s16());
                 }
                 case XpProto.PKT_ACK_CANNON, XpProto.PKT_ACK_FUEL, XpProto.PKT_ACK_TARGET -> {
                     if (!playing) {

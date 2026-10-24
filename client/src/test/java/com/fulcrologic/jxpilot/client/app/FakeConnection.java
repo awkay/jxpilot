@@ -38,6 +38,8 @@ final class FakeConnection implements GameConnection {
     String status = "Playing on fake";
     LongConsumer onUpdate = t -> { };
     long lastKeys = -1;
+    /** The aimTurn of every sendInput. */
+    final List<Integer> aims = new ArrayList<>();
     boolean chatAccepted = true;
     boolean record = true;
     /** Every sendSettings call as "power turnSpeed turnResistance altPower altTurnSpeed altTurnResistance". */
@@ -57,6 +59,7 @@ final class FakeConnection implements GameConnection {
     @Override
     public int sendInput(long keys, int aimTurn, long nowNanos) {
         lastKeys = keys;
+        aims.add(aimTurn);
         log("input");
         return 1;
     }
