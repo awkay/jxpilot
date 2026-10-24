@@ -43,13 +43,14 @@ https://github.com/awkay/jxpilot.
 |Sound effects: Juhani Junkala, "The Essential Retro Video Game Sound Effects Collection [512
 sounds]" (21 clips), and Kenney, "Sci-Fi Sounds" `thrusterFire_004` (the engine loop) |Client jar
 (`sounds/`) |CC0 1.0 (public domain). Sources, checksums, the clip each came from and how it was
-processed: `sounds/LICENSE-sounds.txt` in the client jar.
+processed: `sounds/LICENSE-sounds.txt` in the client jar, with the CC0 text in `sounds/CC0-1.0.txt`.
 |LWJGL 3 |Client jar |BSD 3-Clause
 |GLFW, stb, libffi, liburing (in LWJGL's native libraries); Khronos OpenGL headers |Client jar |zlib;
 MIT or public domain; MIT; MIT; Khronos (MIT-style). Texts in `META-INF/licenses/lwjgl/` in the client jar.
 |OpenAL Soft (in LWJGL's OpenAL native libraries) |Client jar |GNU LGPL 2.0 or later
-(`META-INF/licenses/lwjgl/openal_soft_license.txt`). Source: https://github.com/kcat/openal-soft at
-commit `90191edd20bb877c5cbddfdac7ec0fe49ad93727`.
+(`META-INF/licenses/lwjgl/openal_soft_license.txt`). Its source, https://github.com/kcat/openal-soft at
+commit `90191edd20bb877c5cbddfdac7ec0fe49ad93727`, is attached to every release as
+`openal-soft-source-COMMIT.tar.gz`; `META-INF/NOTICE.txt` in the client jar has the details.
 |Java runtime (OpenJDK, Eclipse Temurin build) |Application downloads only (`runtime/`) |GPL v2 with
 the Classpath Exception; texts in the runtime's `legal/` directory
 |JUnit 5, PIT |Build and tests only, not distributed |EPL 2.0 / Apache 2.0
