@@ -132,7 +132,7 @@ public final class ClientGame implements ConnectionListener {
         options = opts;
         world.configure(m, opts, w);
         scoreboard.configure(teamPlay(), (w.flags & Msg.Welcome.FLAG_TIMING) != 0,
-            opts.getBool(Opt.LIMITED_LIVES), 1);
+            opts.getBool(Opt.LIMITED_LIVES), scoreboard.decimals());
     }
 
     /**

@@ -271,4 +271,36 @@ class AppOptionsTest {
                 () -> assertEquals("Pilot", AppOptions.defaultName(null), "no user name"));
         }
     }
+
+    @Nested
+    @DisplayName("command-line resources")
+    class Resources {
+        @Test
+        @DisplayName("--RESOURCE and -RESOURCE values, no-value C flags, and the JXPilot flags that are resources")
+        void resources() {
+            AppOptions o = parse("--connect", "h", "--showHUDRadar", "yes", "-clock", "on", "-noLocalMotd",
+                "--NOLOCALMOTD", "--name", "Ace", "--team", "4", "--size", "640x480", "--scale-factor", "1.5",
+                "--alt-scale-factor", "3", "--keyThrust", "w");
+            assertAll(
+                () -> assertEquals(java.util.List.of(
+                    new com.fulcrologic.jxpilot.client.game.input.XpilotRc.Entry("showHUDRadar", "yes", 4),
+                    new com.fulcrologic.jxpilot.client.game.input.XpilotRc.Entry("clock", "on", 6),
+                    new com.fulcrologic.jxpilot.client.game.input.XpilotRc.Entry("noLocalMotd", "Yes", 7),
+                    new com.fulcrologic.jxpilot.client.game.input.XpilotRc.Entry("noLocalMotd", "Yes", 8),
+                    new com.fulcrologic.jxpilot.client.game.input.XpilotRc.Entry("name", "Ace", 10),
+                    new com.fulcrologic.jxpilot.client.game.input.XpilotRc.Entry("team", "4", 12),
+                    new com.fulcrologic.jxpilot.client.game.input.XpilotRc.Entry("geometry", "640x480", 14),
+                    new com.fulcrologic.jxpilot.client.game.input.XpilotRc.Entry("scaleFactor", "1.5", 16),
+                    new com.fulcrologic.jxpilot.client.game.input.XpilotRc.Entry("altScaleFactor", "3", 18),
+                    new com.fulcrologic.jxpilot.client.game.input.XpilotRc.Entry("keyThrust", "w", 20)),
+                    o.resources(), "every resource in order, with its argument position"),
+                () -> assertEquals("Ace", o.name(), "--name still sets the name"),
+                () -> assertEquals(java.util.List.of(), parse("--connect", "h").resources(), "none by default"),
+                () -> assertEquals("Unknown option: --frobnicate", error("--connect", "h", "--frobnicate", "1"),
+                    "unknown resources are still errors"),
+                () -> assertEquals("--clock needs a value", error("--connect", "h", "--clock"), "a value is required"),
+                () -> assertNull(AppOptions.resourceName("clock"), "a bare word is no flag"),
+                () -> assertNull(AppOptions.resourceName("-"), "a lone dash is no flag"));
+        }
+    }
 }
