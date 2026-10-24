@@ -294,4 +294,79 @@ class ClientUiTest {
                     .filter(x -> x.name().startsWith("modifierBank")).count(), "four banks even without texts"));
         }
     }
+
+    @Nested
+    @DisplayName("mouse paths and re-layout")
+    class Paths {
+        @Test
+        @DisplayName("the bar by mouse: QUIT acts, MENU hover then release picks an entry")
+        void bar() {
+            ui.layout(200, 800, 1000, 800, false, M, M);
+            ui.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 10, 205, 258);
+            ui.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 10, 205, 258);
+            ui.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 200, 205, 258);
+            ui.mouseMove(200, 200 + 22 + 5, 258);
+            ui.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 200, 200 + 22 + 5, 258);
+            assertAll(
+                () -> assertEquals(List.of("quit", "keys"), host.calls, "QUIT, then MENU / KEYS"),
+                () -> assertEquals(223, ui.scoreTop(), "the bar laid out at the radar's bottom"));
+        }
+
+        @Test
+        @DisplayName("ABOUT by mouse in view coordinates; CONFIG arrows by mouse; draw does not accumulate")
+        void aboutAndConfig() {
+            ui.layout(200, 800, 1000, 800, false, M, M);
+            ui.act(UiAction.ABOUT);
+            // the window is centred in the 1000 x 800 view: inside origin (200, 50); NEXT at 282, 665
+            int vx = 258;
+            ui.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, vx + 200 + 285, 50 + 670, vx);
+            ui.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, vx + 200 + 285, 50 + 670, vx);
+            int page = ui.about().page();
+            ui.act(UiAction.CONFIG);
+            double before = settings.power;
+            // the power row's right arrow: form y 223, row at 6; arrow x 256 - 6 - 15
+            ui.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 240, 223 + 10, vx);
+            ui.mouseMove(240, 223 + 11, vx);
+            ui.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 240, 223 + 11, vx);
+            HudFrame panel = new HudFrame(64, 1536, 320, 256);
+            ui.draw(panel, M, M, vx);
+            int aboutTexts = ui.aboutHud().textCount();
+            ui.draw(panel, M, M, vx);
+            assertAll(
+                () -> assertEquals(1, page, "NEXT in the information window"),
+                () -> assertEquals(47.0, settings.power, 1e-4, "power stepped from " + before),
+                () -> assertEquals(List.of("settings true"), host.calls, "and sent with the meters"),
+                () -> assertEquals(aboutTexts, ui.aboutHud().textCount(), "the window's list is rebuilt, not appended"),
+                () -> assertTrue(panel.rectCount() > 3, "the bar drew into the panel"));
+        }
+
+        @Test
+        @DisplayName("CONFIG re-lays out for a new window height and the information window follows the view size")
+        void relayout() {
+            ui.layout(200, 800, 1000, 800, false, M, M);
+            int pagesTall = ui.config().pageCount();
+            ui.layout(200, 400, 1000, 800, false, M, M);
+            int pagesShort = ui.config().pageCount();
+            ui.layout(100, 400, 1000, 800, false, M, M);
+            int pagesLower = ui.config().pageCount();
+            ui.act(UiAction.ABOUT);
+            ui.layout(100, 400, 2000, 1600, false, M, M);
+            boolean coversCentre = ui.about().covers(1000, 800);
+            boolean coversOldCorner = ui.about().covers(198, 48);
+            assertAll(
+                () -> assertTrue(pagesShort > pagesTall, "fewer rows per page in a shorter window"),
+                () -> assertTrue(pagesLower <= pagesShort, "a shorter radar leaves more room"),
+                () -> assertTrue(coversCentre, "centred in the larger view"),
+                () -> assertFalse(coversOldCorner, "no longer where the smaller view put it"));
+        }
+
+        @Test
+        @DisplayName("the volume entry reads the live volume")
+        void volume() {
+            ConfigEntry v = ui.entries(false).get(49);
+            assertAll(
+                () -> assertEquals("maxVolume", v.label, "the entry"),
+                () -> assertEquals(100.0, v.value.get(), "reads the starting volume"));
+        }
+    }
 }
