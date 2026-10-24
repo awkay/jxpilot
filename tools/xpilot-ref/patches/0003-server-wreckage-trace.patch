@@ -1,0 +1,167 @@
+xpilot-ref patch 0003: optional wreckage trace in the server.
+
+This patch modifies XPilot 4.5.5 (GPL-2.0-or-later, Copyright (C) 1991-2010
+by Bjoern Stabell, Ken Ronny Schouten, Bert Gijsbers, Dick Balaska et al.).
+It is a derivative work distributed under the same license.
+
+Why: to compare a reimplementation's wreckage (ship.c Make_wreckage and the
+wreckage objects' flight) numerically against the original server.  Inert
+unless the environment variable XPILOT_TRACE_WRECK is set; then
+Make_wreckage prints its arguments ("XPWMAKE frame ...") and every rfrac()
+value it draws ("XPWRAND <hex double>"), and after each Update_objects()
+every wreckage object is printed ("XPWRECK main_loops frame_loops ptr cx cy
+vx vy life mass size info rotation turnspeed id").  Floats use %a, so they
+are exact.  Game logic and the random sequence are unchanged.  Applies after
+patch 0002.
+
+--- a/src/server/server.c
++++ b/src/server/server.c
+@@ -288,6 +288,43 @@
+ 		pl->fuel.sum,
+ 		BIT(pl->status, THRUSTING) ? 1 : 0,
+ 		(unsigned long)pl->status, pl->name);
++    }
++    fflush(stderr);
++}
++
++/*
++ * xpilot-ref wreckage trace (patch 0003, not part of upstream XPilot 4.5.5).
++ * When XPILOT_TRACE_WRECK is set, print every wreckage object after each
++ * Update_objects() call: "XPWRECK main_loops frame_loops ptr cx cy vx vy
++ * life mass size info rotation turnspeed id".  Floats are exact (%a).
++ */
++static void Trace_wreckage(void)
++{
++    static int		init = 0;
++    static int		on = 0;
++    int			i;
++
++    if (!init) {
++	init = 1;
++	on = (getenv("XPILOT_TRACE_WRECK") != NULL);
++    }
++    if (!on) {
++	return;
++    }
++    for (i = 0; i < NumObjs; i++) {
++	object *obj = Obj[i];
++	wireobject *wr;
++	if (obj->type != OBJ_WRECKAGE) {
++	    continue;
++	}
++	wr = WIRE_PTR(obj);
++	fprintf(stderr, "XPWRECK %ld %ld %p %d %d %a %a %ld %a %d %d %d %a %d\n",
++		main_loops, frame_loops, (void *)obj,
++		obj->pos.cx, obj->pos.cy,
++		(double)obj->vel.x, (double)obj->vel.y,
++		(long)obj->life, (double)obj->mass,
++		(int)wr->size, (int)wr->info, (int)wr->rotation,
++		(double)wr->turnspeed, (int)obj->id);
+     }
+     fflush(stderr);
+ }
+@@ -330,6 +367,7 @@
+ 
+ 	Update_objects();
+ 	Trace_players();
++	Trace_wreckage();
+ 
+ 	if ((main_loops % UPDATES_PR_FRAME) == 0) {
+ 	    Frame_update();
+--- a/src/server/ship.c
++++ b/src/server/ship.c
+@@ -510,7 +510,31 @@
+ 	}
+     }
+ }
++
+ 
++/*
++ * xpilot-ref wreckage trace (patch 0003, not part of upstream XPilot 4.5.5).
++ * With XPILOT_TRACE_WRECK set, Make_wreckage prints its arguments
++ * ("XPWMAKE") and every rfrac() value it draws ("XPWRAND"), exactly (%a).
++ */
++static int xpref_wreck_trace(void)
++{
++    static int init = 0, on = 0;
++    if (!init) {
++	init = 1;
++	on = (getenv("XPILOT_TRACE_WRECK") != NULL);
++    }
++    return on;
++}
++
++static double xpref_wreck_rfrac(void)
++{
++    double v = rfrac();
++    if (xpref_wreck_trace()) {
++	fprintf(stderr, "XPWRAND %a\n", v);
++    }
++    return v;
++}
+ 
+ void Make_wreckage(
+     /* pos.x, pos.y     */ DFLOAT x,            DFLOAT y,
+@@ -532,6 +556,14 @@
+     modifiers		mods;
+     DFLOAT		mass, sum_mass = 0.0;
+ 
++    if (xpref_wreck_trace()) {
++	fprintf(stderr, "XPWMAKE %ld %a %a %a %a %d %d %a %a %a %ld %d %d %d %d %a %a %d %d\n",
++		frame_loops, (double)x, (double)y, (double)velx, (double)vely,
++		id, (int)team, (double)min_mass, (double)max_mass,
++		(double)total_mass, status, color, max_wreckage,
++		min_dir, max_dir, (double)min_speed, (double)max_speed,
++		min_life, max_life);
++    }
+     if (!useWreckage) {
+ 	return;
+     }
+@@ -572,7 +604,7 @@
+ 	int		dir, radius;
+ 
+ 	/* Calculate mass */
+-	mass = min_mass + rfrac() * (max_mass - min_mass);
++	mass = min_mass + xpref_wreck_rfrac() * (max_mass - min_mass);
+ 	if ( sum_mass + mass > total_mass ) {
+ 	    mass = total_mass - sum_mass;
+ 	}
+@@ -595,10 +627,10 @@
+ 	Object_position_init_pixels(OBJ_PTR(wreckage), x, y);
+ 
+ 	/* Direction */
+-	dir = MOD2(min_dir + (int)(rfrac() * MOD2(max_dir - min_dir, RES)), RES);
++	dir = MOD2(min_dir + (int)(xpref_wreck_rfrac() * MOD2(max_dir - min_dir, RES)), RES);
+ 
+ 	/* Velocity and acceleration */
+-	speed = min_speed + rfrac() * (max_speed - min_speed);
++	speed = min_speed + xpref_wreck_rfrac() * (max_speed - min_speed);
+ 	wreckage->vel.x = velx + tcos(dir) * speed;
+ 	wreckage->vel.y = vely + tsin(dir) * speed;
+ 	wreckage->acc.x = 0;
+@@ -609,7 +641,7 @@
+ 	sum_mass += mass;
+ 
+ 	/* Lifespan  */
+-	life = (int)(min_life + rfrac() * (max_life - min_life) + 1);
++	life = (int)(min_life + xpref_wreck_rfrac() * (max_life - min_life) + 1);
+ 	if (life * speed > World.hypotenuse) {
+ 	    life = (long)(World.hypotenuse / speed);
+ 	}
+@@ -617,13 +649,13 @@
+ 	wreckage->fuselife = wreckage->life;
+ 
+ 	/* Wreckage type, rotation, and size */
+-	wreckage->turnspeed = 0.02 + rfrac() * 0.35;
+-	wreckage->rotation = (int)(rfrac() * RES);
++	wreckage->turnspeed = 0.02 + xpref_wreck_rfrac() * 0.35;
++	wreckage->rotation = (int)(xpref_wreck_rfrac() * RES);
+ 	size = (int) ( 256.0 * 1.5 * mass / total_mass );
+ 	if ( size > 255 )
+ 	    size = 255;
+ 	wreckage->size = size;
+-	wreckage->info = (int)(rfrac() * 256);
++	wreckage->info = (int)(xpref_wreck_rfrac() * 256);
+ 
+ 	radius = wreckage->size * 16 / 256;
+ 	if ( radius < 8 ) radius = 8;

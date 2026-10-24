@@ -46,7 +46,7 @@ import java.nio.ByteBuffer;
  * Allocation free; one instance per server thread.
  * <p>
  * Sections in order: SELF, SHIP (other ships in view), CANNON, FUEL, RADAR (whole world, when requested),
- * BURST (bursts made since the viewer's cursor, in view) and last SHOT, which fills the remaining room
+ * BURST (bursts made since the viewer's cursor, in view), WRECKAGE (in view) and last SHOT, which fills the remaining room
  * nearest first ({@link ShotHash}, grouped by kind/colour relative to the viewer). Objects farther than the
  * view half-size from the viewer (or not encodable, {@link SnapshotWriter#inView}) are culled. When a
  * datagram fills up, the snapshot continues in the next buffer as a new self-contained part (same tick,
@@ -66,6 +66,9 @@ public final class SnapshotBuilder {
     static final int SHOT_SECTIONS_PER_PART = 8;
 
     private final World w;
+    /** Wreckage handles of this round ({@link #beginRound}), {@code wrecks[0..wreckCount)}. */
+    private final int[] wrecks;
+    private int wreckCount;
     /** C {@code playersOnRadar}: other teams' ships appear on the radar (frame.c:1152-1170). */
     private final boolean playersOnRadar;
     private final SnapshotWriter wr = new SnapshotWriter();
@@ -99,6 +102,7 @@ public final class SnapshotBuilder {
         wr.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
         shotList = new int[w.objects.capacity];
         shotVariant = new int[w.objects.capacity];
+        wrecks = new int[w.objects.capacity];
         hash = new ShotHash(w);
         initRecordClasses();
     }
@@ -124,6 +128,14 @@ public final class SnapshotBuilder {
     public void beginRound() {
         hash.rebuild();
         hashFrames = w.frames;
+        Objects o = w.objects;
+        wreckCount = 0;
+        for (int k = 0; k < o.count(); k++) {
+            int h = o.active[k];
+            if (o.type[h] == Obj.WRECKAGE && o.life[h] > 0) {
+                wrecks[wreckCount++] = h;
+            }
+        }
     }
 
     /** Set the view half-size in pixels (C view size / 2 plus a margin). */
@@ -167,6 +179,7 @@ public final class SnapshotBuilder {
             writeRadar(viewer);
         }
         writeBursts(burstFrom);
+        writeWreckage();
         writeShots(viewer);
         closeSection();
         int count = part + 1;
@@ -392,6 +405,22 @@ public final class SnapshotBuilder {
                     Records.Shot.put(wr, hs.x[e], hs.y[e], o.vx[h], o.vy[h]);
                 }
             }
+        }
+    }
+
+    /**
+     * Wreckage in view (C frame.c:802-807 Send_wreckage): position, shape (C info, 7 bits), size and rotation.
+     */
+    private void writeWreckage() {
+        Objects o = w.objects;
+        for (int i = 0; i < wreckCount; i++) {
+            int h = wrecks[i];
+            double x = o.cx[h] / (double) Click.CLICK;
+            double y = o.cy[h] / (double) Click.CLICK;
+            if (!visible(x, y, 0) || !need(Section.WRECKAGE, 0)) {
+                continue;
+            }
+            Records.Wreckage.put(wr, x, y, o.info[h] & 0x7F, o.size[h], o.rotation[h] * (2 * Math.PI / Const.RES));
         }
     }
 

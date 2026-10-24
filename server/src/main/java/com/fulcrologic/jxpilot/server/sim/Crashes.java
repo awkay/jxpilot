@@ -226,7 +226,7 @@ public final class Crashes {
     /**
      * C {@code Cannon_dies}: the cannon is dead for cannonDeadTime frames, its block becomes SPACE and it
      * explodes into 20 + (int)(rfrac*20) debris aimed out of its face (dir +- RES*0.2, speed 20-50, life
-     * 8-68 capped by shotLife).
+     * 8-68 capped by shotLife), then into wreckage ({@link Wreckage#cannon}).
      * <p>
      * BEHAVIOR: with cannonPoints &gt; 0 and a killer: in team play with teamCannons the cannon's team loses
      * cannonPoints; the killer gains cannonPoints if their score is at most cannonMaxScore and they are not on
@@ -247,6 +247,7 @@ public final class Crashes {
         sim.debris.make(x, y, 0f, 0f, Obj.NO_ID, c.team(), Obj.DEBRIS, 4.5f, Obj.GRAVITY, Records.ObjColor.RED,
             Records.BurstKind.DEBRIS, 6, 20, 40, (int) (c.dir() - (Const.RES * 0.2)), (int) (c.dir() + (Const.RES * 0.2)),
             20, 50, 8, 68);
+        sim.wreckage.cannon(c, x, y); // walls.c:1582-1596
         Player pl = w.byId(killerId);
         if (pl == null || w.params.cannonPoints <= 0) {
             return;

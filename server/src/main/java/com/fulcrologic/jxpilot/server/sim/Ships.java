@@ -1002,10 +1002,12 @@ public final class Ships {
     // ================================================================ death
 
     /**
-     * C {@code Kill_player}: explosion debris, then {@link #deathReset}.
+     * C {@code Kill_player}: C {@code Explode_fighter} (debris, then wreckage for a KILLED ship), then
+     * {@link #deathReset}.
      */
     public void kill(Player pl) {
         sim.debris.explodeShip(pl);
+        sim.wreckage.ship(pl); // Explode_fighter's Make_wreckage (ship.c:669-687)
         deathReset(pl);
     }
 

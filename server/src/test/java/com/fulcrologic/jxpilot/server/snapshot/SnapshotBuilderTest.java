@@ -106,6 +106,7 @@ class SnapshotBuilderTest {
         final List<String> cannons = new ArrayList<>();
         final List<String> fuel = new ArrayList<>();
         final List<String> radar = new ArrayList<>();
+        final List<String> wrecks = new ArrayList<>();
     }
 
     Decoded decode(int n) {
@@ -120,6 +121,7 @@ class SnapshotBuilderTest {
         Records.CannonState cs = new Records.CannonState();
         Records.FuelState fs = new Records.FuelState();
         Records.Radar rd = new Records.Radar();
+        Records.Wreckage wk = new Records.Wreckage();
         DebrisBurst db = new DebrisBurst();
         for (int p = 0; p < n; p++) {
             ByteBuffer buf = parts[p].duplicate();
@@ -162,6 +164,11 @@ class SnapshotBuilderTest {
                         case Section.RADAR -> {
                             rd.wrap(r, i);
                             d.radar.add(rd.cellX() + "," + rd.cellY() + ":" + rd.flags());
+                        }
+                        case Section.WRECKAGE -> {
+                            wk.wrap(r, i);
+                            d.wrecks.add(wk.x() + "," + wk.y() + " s" + wk.shape() + " z" + wk.size() + " r"
+                                + Math.round(wk.rotation() * Const.RES / (2 * Math.PI)));
                         }
                         default -> throw new AssertionError("unexpected section " + r.type());
                     }
@@ -228,6 +235,7 @@ class SnapshotBuilderTest {
                 () -> assertTrue(d.bursts.get(1).contains(" k" + Records.BurstKind.DEBRIS + " c" + Records.ObjColor.RED
                     + " age0 "), "the dying cannon burst of this tick follows with age 0"),
                 () -> assertEquals(List.of("0:" + Records.CannonState.FLAG_DEAD), d.cannons, "the dead cannon is flagged"),
+                () -> assertEquals(wrecks(), d.wrecks, "the dead cannon's wreckage: position, shape, size, rotation"),
                 () -> assertEquals(1, d.fuel.size(), "the fuel station in view is sent"),
                 () -> assertEquals(0.5, Float.parseFloat(d.fuel.get(0).substring(2)), 1.0 / 65535,
                     "fuel station level as a fraction of 500 (u16 precision)"),
@@ -548,6 +556,21 @@ class SnapshotBuilderTest {
                     "SELF (38 bytes) did not fit, but a later 3-byte record (cannon) still did"),
                 () -> assertEquals(Section.CANNON, small.get(SnapshotWriter.HEADER_SIZE), "the cannon section"));
         }
+    }
+
+    /** The live wreckage of {@link #w} as the WRECKAGE records should decode. */
+    List<String> wrecks() {
+        List<String> out = new ArrayList<>();
+        com.fulcrologic.jxpilot.server.world.Objects o = w.objects;
+        for (int k = 0; k < o.count(); k++) {
+            int h = o.active[k];
+            if (o.type[h] == Obj.WRECKAGE) {
+                out.add(o.cx[h] / 64f + "," + o.cy[h] / 64f + " s" + (o.info[h] & 0x7F) + " z" + o.size[h] + " r"
+                    + o.rotation[h]);
+            }
+        }
+        assertTrue(!out.isEmpty(), "the dying cannon made wreckage");
+        return out;
     }
 
     int shotAt(World wd, int owner, double x, double y) {

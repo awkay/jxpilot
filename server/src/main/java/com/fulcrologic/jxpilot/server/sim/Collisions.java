@@ -51,10 +51,13 @@ public final class Collisions {
 
     private final World w;
     private final Simulation sim;
+    /** C {@code wreckageCollisionMayKill}. */
+    private final boolean wreckageMayKill;
 
     public Collisions(World w, Simulation sim) {
         this.w = w;
         this.sim = sim;
+        this.wreckageMayKill = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.WRECKAGE_COLLISION_MAY_KILL);
     }
 
     /**
@@ -332,7 +335,7 @@ public final class Collisions {
             }
             // C computes hit = (SHIP_SZ + pl_radius >= range) || in_range_acd(..., range): the same test as above
             // (C passes range, not radius), so every object that gets here hits.
-            if (type == Obj.DEBRIS) {
+            if ((type & (Obj.DEBRIS | Obj.WRECKAGE)) != 0) {
                 debris(pl, h);
                 if ((pl.status & Obj.KILLED) != 0) {
                     return;
@@ -375,11 +378,13 @@ public final class Collisions {
     }
 
     /**
-     * C {@code Player_collides_with_debris}.
+     * C {@code Player_collides_with_debris}, for debris and wreckage.
      * <p>
      * BEHAVIOR: unless fully shielded the ship loses |(long)(2*mass*|v|)| fuel; at zero fuel it dies
      * ("succumbed to an explosion"): the owner (if another player) gets the kill and
      * Rate(owner, victim)*explosionKillScoreMult, else the victim loses Rate(0, score)*explosion*selfKill mults.
+     * BEHAVIOR: with wreckageCollisionMayKill, wreckage also kills a ship without shield and armor, and hits
+     * the armor of an unshielded ship that has armor (collision.c:1099-1102, 1133-1138).
      */
     void debris(Player pl, int h) {
         Objects o = w.objects;
@@ -389,7 +394,11 @@ public final class Collisions {
         if (!pl.fullyShielded()) {
             pl.addFuel(-cost);
         }
-        if (pl.fuel != 0) {
+        boolean deadlyWreck = o.type[h] == Obj.WRECKAGE && wreckageMayKill && (pl.used & Has.SHIELD) == 0;
+        if (pl.fuel != 0 && !(deadlyWreck && (pl.have & Has.ARMOR) == 0)) {
+            if (deadlyWreck) {
+                sim.ships.hitArmor(pl);
+            }
             return;
         }
         pl.status |= Obj.KILLED;

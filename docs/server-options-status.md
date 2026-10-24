@@ -181,7 +181,7 @@ follow C; the alias is the C command-line name.
 | `ballConnectorLength` |  | real | `120` | ANY+VIS | read by the robot AI only; the feature belongs to server-modes |
 | `connectorIsString` |  | bool | `no` | ANY+VIS | server-modes (balls/treasures) |
 | `treasureCollisionMayKill` | treasureUnshieldedCollisionKills | bool | `no` | ANY+VIS | read by the robot AI only; the feature belongs to server-modes |
-| `wreckageCollisionMayKill` | wreckageUnshieldedCollisionKills | bool | `no` | ANY+VIS | read by the robot AI only; the feature belongs to wreckage (see useWreckage) |
+| `wreckageCollisionMayKill` | wreckageUnshieldedCollisionKills | bool | `no` | ANY+VIS | implemented (server-batch2): wreckage kills unshielded ships without armor, or takes one armor (collision.c:1099-1138); robots avoid it |
 | `asteroidCollisionMayKill` | asteroidUnshieldedCollisionKills | bool | `yes` | ANY+VIS | read by the robot AI only; the feature belongs to server-modes |
 | `ignore20MaxFPS` |  | bool | `true` | CMD+DEF+VIS | not applicable: the native protocol has no client maxFPS request; snapshots run at the map's framesPerSecond |
 | `timing` | race | bool | `no` | ANY+VIS | implemented (MapLoader) |
@@ -347,7 +347,7 @@ follow C; the alias is the C command-line name.
 | `raceLaps` |  | int | `3` | ANY+VIS | server-modes (race) |
 | `lockOtherTeam` |  | bool | `true` | ANY+VIS | not implemented, no owner: player locks (event.c Player_lock_*, the LOCK keys) and viewing through a locked player are not ported yet; these options only change those |
 | `loseItemDestroys` |  | bool | `false` | ANY+VIS | server-items (items) |
-| `useWreckage` |  | bool | `true` | ANY+VIS | not implemented: wreckage objects (ship.c Make_wreckage, walls.c cannon death). C default is on. Raised with the lead |
+| `useWreckage` |  | bool | `true` | ANY+VIS | implemented (server-batch2): ship and cannon explosions leave wreckage (ship.c Make_wreckage), golden-traced against C |
 | `maxOffensiveItems` |  | int | `100` | ANY+VIS | read by the robot AI only; the feature belongs to server-items |
 | `maxDefensiveItems` |  | int | `100` | ANY+VIS | read by the robot AI only; the feature belongs to server-items |
 | `roundDelay` | roundDelaySeconds | int | `0` | ANY+VIS | implemented (Params) |
