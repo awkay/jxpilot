@@ -291,7 +291,7 @@ public final class ClientFrame {
         }
     }
 
-    /** Escape was pressed outside the talk line. */
+    /** A quit was asked for: keyQuit, Command-Q on macOS, or the QUIT button. */
     public boolean quitRequested() { return quit; }
 
     /** BEHAVIOR: true once per press of the scale-factor swap key. */

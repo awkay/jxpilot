@@ -58,7 +58,7 @@ class KeyConfigTest {
     @DisplayName("defaults")
     class Defaults {
         @Test
-        @DisplayName("C defaults plus the Mac/laptop supplement; Escape and Command unbound; turn speed 40")
+        @DisplayName("C defaults plus the Mac/laptop supplement; Escape swaps settings; Command unbound; turn speed 40")
         void defaults() {
             KeyConfig c = KeyConfig.defaults(null);
             assertAll(
@@ -71,7 +71,9 @@ class KeyConfigTest {
                 () -> assertEquals(ControlKey.LOCK_NEXT.mask(), game(c, GLFW_KEY_RIGHT), "Right locks next"),
                 () -> assertEquals(ControlKey.LOCK_PREV.mask(), game(c, GLFW_KEY_LEFT), "Left locks previous"),
                 () -> assertEquals(ControlKey.LOCK_CLOSE.mask(), game(c, GLFW_KEY_UP), "Up locks closest"),
-                () -> assertEquals(0L, game(c, GLFW_KEY_ESCAPE) | acts(c, GLFW_KEY_ESCAPE), "Escape is unbound (quits)"),
+                () -> assertEquals(ControlKey.SWAP_SETTINGS.mask(), game(c, GLFW_KEY_ESCAPE),
+                    "Escape is C's keySwapSettings"),
+                () -> assertEquals(0L, acts(c, GLFW_KEY_ESCAPE), "Escape has no client action"),
                 () -> assertEquals(0L, game(c, GLFW_KEY_LEFT_SUPER) | game(c, GLFW_KEY_RIGHT_SUPER)
                     | acts(c, GLFW_KEY_LEFT_SUPER) | acts(c, GLFW_KEY_RIGHT_SUPER), "Command is never bound"),
                 () -> assertTrue(KeyBindings.has(acts(c, GLFW_KEY_F1), ClientAction.HELP), "F1 is the key help"),
@@ -253,7 +255,6 @@ class KeyConfigTest {
                     "rc:2: unknown key function 'keyThurst'",
                     "rc:3: resource 'nickName' is not used by JXPilot (ignored)",
                     "rc:4: keyShield: Super_L (Command/Super) cannot be bound, skipped",
-                    "rc:5: keyFireShot: Escape always quits JXPilot, skipped",
                     "rc:7: power: not a number: 'lots'",
                     "rc:8: turnSpeed: 99 is outside 4-64, using 64",
                     "rc:9: altPower: 1 is outside 5-55, using 5",
@@ -264,7 +265,8 @@ class KeyConfigTest {
                 () -> assertEquals(0L, game(c, GLFW_KEY_RIGHT_SHIFT), "the line replaced Shift_R"),
                 () -> assertEquals(ControlKey.SHIELD.mask(), game(c, GLFW_KEY_SPACE), "space still shields"),
                 () -> assertEquals(ControlKey.FIRE_SHOT.mask(), game(c, GLFW_KEY_ENTER), "Return still fires"),
-                () -> assertEquals(0L, game(c, GLFW_KEY_ESCAPE), "Escape is not bound"),
+                () -> assertEquals(ControlKey.FIRE_SHOT.mask() | ControlKey.SWAP_SETTINGS.mask(),
+                    game(c, GLFW_KEY_ESCAPE), "Escape can be bound (it also keeps its default swap)"),
                 () -> assertEquals(ControlKey.FIRE_LASER.mask(), game(c, GLFW_KEY_SLASH), "slash fires the laser"),
                 () -> assertEquals(List.of(), c.bindings().keysyms(fn("keyCloak")), "keyCloak's only keysym was bad"),
                 () -> assertEquals(45.0, c.settings().power, "a bad number keeps the default"),

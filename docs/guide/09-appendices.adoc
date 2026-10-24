@@ -122,7 +122,8 @@ server; the JXPilot client can still join XPilot servers
 [cols="2,3,3",options="header"]
 |===
 |Area |XPilot |JXPilot
-|kbd:[Esc] |swaps engine settings |quits (bind `keySwapSettings` to swap settings)
+|Quitting |the QUIT button or closing the window; no quit key |the same, plus kbd:[Cmd+Q] on macOS and an
+optional `keyQuit` (unbound by default)
 |kbd:[F1] |talk macro 1 |key help; talk macros are not supported
 |Extra keys |- |kbd:[-] mutes sound, kbd:[Alt]/kbd:[Option] also connects, kbd:[0] also self-destructs
 |Turn speed default |35 |40

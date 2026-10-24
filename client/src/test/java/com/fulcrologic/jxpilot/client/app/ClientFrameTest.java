@@ -285,7 +285,7 @@ class ClientFrameTest {
         }
 
         @Test
-        @DisplayName("Escape requests quit; the swap key is reported once")
+        @DisplayName("Escape swaps settings (C), keyQuit requests quit; the swap key is reported once")
         void quitAndSwap() {
             ClientFrame cf = new ClientFrame(new AppFixture(true).game, conn, new InputState(KeyRouter.bindings("F12")),
                 new SceneData(), new RadarBlips(4));
@@ -298,14 +298,18 @@ class ClientFrameTest {
             boolean sound1 = cf.takeToggleSound();
             boolean sound2 = cf.takeToggleSound();
             cf.key(GLFW_KEY_ESCAPE, GLFW_PRESS, 0, T0);
+            boolean afterEscape = cf.quitRequested();
+            cf.input().bindings().bind(com.fulcrologic.jxpilot.client.game.input.ClientAction.QUIT, "F11");
+            cf.key(GLFW_KEY_F11, GLFW_PRESS, 0, T0);
             assertAll(
+                () -> assertFalse(afterEscape, "Escape does not quit"),
                 () -> assertFalse(before, "no quit at start"),
                 () -> assertTrue(swap1, "swap reported"),
                 () -> assertFalse(swap2, "only once"),
                 () -> assertFalse(noSound, "the swap key is no sound toggle"),
                 () -> assertTrue(sound1, "the sound key is reported"),
                 () -> assertFalse(sound2, "once"),
-                () -> assertTrue(cf.quitRequested(), "Escape: quit"));
+                () -> assertTrue(cf.quitRequested(), "keyQuit: quit"));
         }
 
         @Test
