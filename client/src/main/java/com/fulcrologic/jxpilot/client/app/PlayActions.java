@@ -177,11 +177,22 @@ public final class PlayActions implements TalkMacros.Context {
         return p.slotOf(p.selfId());
     }
 
-    /** BEHAVIOR: the locked player's slot (C {@code lock_id}), -1 without a lock. */
+    /**
+     * C talkmacros.c {@code #l}: the locked player, or the watched one while snooping.
+     * <p>
+     * BEHAVIOR: snooping (C {@code snooping = self && eyesId != self->id}): the own player is known and the
+     * connection's {@link GameConnection#eyesId} is another player: that player's slot (-1 when unknown). Otherwise
+     * the locked player's slot (C {@code lock_id}), -1 without a lock.
+     */
     @Override
     public int lockSlot() {
+        Players p = game.players();
+        int eyes = conn.eyesId();
+        if (p.selfId() != Protocol.NO_ID && eyes != Protocol.NO_ID && eyes != p.selfId()) {
+            return p.slotOf(eyes);
+        }
         int id = game.world().hasSelf() ? game.world().selfLockId() : Protocol.NO_ID;
-        return id == Protocol.NO_ID ? -1 : game.players().slotOf(id);
+        return id == Protocol.NO_ID ? -1 : p.slotOf(id);
     }
 
     @Override

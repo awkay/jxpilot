@@ -108,13 +108,11 @@ public final class XpConnection implements GameConnection {
     public static final int SHAPE_TRIES = 5;
     /** Verify, setup or start: silence this long fails the login (C Net_setup: 10 reads of 2 s). */
     public static final long TIMEOUT_NANOS = 20 * SECOND;
-    /** Playing: each this much silence says "No response from server" (C Input_loop's 10 s select). */
-    public static final long NO_RESPONSE_NANOS = 10 * SECOND;
     /**
-     * Playing: silence this long closes the connection. C never gives up; this is twice the C server's
-     * IDLE_TIMEOUT, so the server has dropped us by then.
+     * Playing: each this much silence says "No response from server" (C Input_loop's 10 s select). Silence never ends
+     * the connection while playing (C); the player quits.
      */
-    public static final long PLAY_TIMEOUT_NANOS = 60 * SECOND;
+    public static final long NO_RESPONSE_NANOS = 10 * SECOND;
     /** Datagrams handled per {@link #update} call at most. */
     public static final int MAX_RECEIVE_PER_UPDATE = 256;
     /** Bytes kept free in the send buffer for keyboard and talk. */
@@ -225,6 +223,10 @@ public final class XpConnection implements GameConnection {
 
     /** Own C player id, {@link Protocol#NO_ID} until the server announced it. */
     public int playerId() { return translator.selfId(); }
+
+    /** C {@code eyesId} of the newest frame ({@link XpTranslator#eyesId}). */
+    @Override
+    public int eyesId() { return translator.eyesId(); }
 
     /** The map built from the setup (null before). */
     public XpMap.Built map() { return built; }
@@ -350,7 +352,7 @@ public final class XpConnection implements GameConnection {
      * after {@link #MAX_TRIES}; queued, {@link #QUEUE_TIMEOUT_NANOS} without a contact reply closes (no cap
      * while replies come, as C); verifying to starting, {@link #TIMEOUT_NANOS} of silence closes.
      * BEHAVIOR: playing, each {@link #NO_RESPONSE_NANOS} of silence adds C's "No response from server" as a
-     * message; {@link #PLAY_TIMEOUT_NANOS} of silence closes.
+     * message; silence never closes the connection (C keeps waiting).
      * BEHAVIOR: a transport IOException (ICMP port unreachable, network down) counts in {@link #ioErrors()} and
      * is "nothing received" / "not sent" (C Sockbuf_read / Sockbuf_flush retry and carry on); it never escapes.
      */
@@ -426,9 +428,7 @@ public final class XpConnection implements GameConnection {
         }
         long silent = nowNanos - lastReceive;
         if (phase == Phase.PLAYING) {
-            if (silent >= PLAY_TIMEOUT_NANOS) {
-                fail("Connection to " + label + " lost (timeout)");
-            } else if (silent >= (noResponse + 1) * NO_RESPONSE_NANOS) {
+            if (silent >= (noResponse + 1) * NO_RESPONSE_NANOS) {
                 noResponse++;
                 translator.message(NO_RESPONSE);
             }

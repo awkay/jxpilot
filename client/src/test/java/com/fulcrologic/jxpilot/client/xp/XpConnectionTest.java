@@ -550,13 +550,20 @@ class XpConnectionTest {
         }
 
         @Test
-        void silenceTimesOut() {
+        void silenceWhilePlayingNeverCloses() {
             play();
             server.silentFrames = true;
-            idle(XpConnection.PLAY_TIMEOUT_NANOS + XpConnection.SECOND);
+            idle(10 * 60 * XpConnection.SECOND);
+            int notices = 0;
+            for (int k = 0; k < game.messages().gameCount(); k++) {
+                if (game.messages().game(k).text().toString().equals(XpConnection.NO_RESPONSE)) {
+                    notices++;
+                }
+            }
+            int n = notices;
             assertAll(
-                () -> assertEquals(ConnectionState.CLOSED, conn.state(), "closed"),
-                () -> assertEquals("Connection to 127.0.0.1:15345 lost (timeout)", conn.status().toString(), "reason"));
+                () -> assertEquals(ConnectionState.PLAYING, conn.state(), "still playing after 10 minutes (C waits)"),
+                () -> assertTrue(n >= 1, "the 'No response from server' notices keep coming"));
         }
 
         @Test
