@@ -184,4 +184,38 @@ class WormholesTest {
                 () -> assertFalse(Click.fromPixels(0f) != 0, "(clicks)"));
         }
     }
+
+    @Test
+    @DisplayName("C's break: a warp to a wormhole index that went away ends the whole player loop for the frame")
+    void warpBreak() {
+        Simulation s = sim("");
+        World w = s.world;
+        Player a = ready(s, "A", 0, 300, 300);
+        Player b = ready(s, "B", 0, 600, 300);
+        a.status |= Obj.WARPING;
+        a.wormHoleHit = 7;
+        b.vx = 5;
+        int bx = b.cx;
+        long[] in = new long[w.players.length];
+        s.tick(in);
+        int bxAfterBreak = b.cx;
+        boolean warpingCleared = (a.status & Obj.WARPING) == 0;
+        s.tick(in);
+        int bxNext = b.cx;
+        Simulation t = sim("");
+        Player c = ready(t, "C", 0, 300, 300);
+        Player d = ready(t, "D", 0, 600, 300);
+        c.status |= Obj.WARPING;
+        c.wormHoleHit = -3;
+        d.vx = 5;
+        int dx = d.cx;
+        boolean guard = t.ships.update(c);
+        t.tick(new long[t.world.players.length]);
+        assertAll(
+            () -> assertTrue(warpingCleared, "the warp ends"),
+            () -> assertEquals(bx, bxAfterBreak, "the ship after it is not updated (does not move) this frame"),
+            () -> assertTrue(bxNext > bx, "next frame it moves again"),
+            () -> assertFalse(guard, "an index below -1 (not reachable in C) just ends the warp"),
+            () -> assertTrue(d.cx > dx, "and the loop goes on"));
+    }
 }

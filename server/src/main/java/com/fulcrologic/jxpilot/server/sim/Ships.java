@@ -750,8 +750,11 @@ public final class Ships {
      * fuel exhaustion drops shields and thrust, thrust sets the acceleration and uses fuel, mass is updated,
      * a warping ship goes through its wormhole, gravity and acceleration change the velocity, the ship
      * moves and thrust/turn sparks are made.
+     * BEHAVIOR: returns true when C's {@code break} ends the whole player loop for this frame (a warp to a
+     * wormhole index past the current wormholes, update.c:1068-1074): the rest of this ship's update and the
+     * ships after it are skipped.
      */
-    public void update(Player pl) {
+    public boolean update(Player pl) {
         Params p = w.params;
         pl.power = clamp(pl.power, Const.MIN_PLAYER_POWER, Const.MAX_PLAYER_POWER);
         pl.turnSpeed = clamp(pl.turnSpeed, Const.MIN_PLAYER_TURNSPEED, Const.MAX_PLAYER_TURNSPEED);
@@ -765,7 +768,7 @@ public final class Ships {
             if ((pl.status & Obj.PLAYING) == 0) {
                 transportToHome(pl);
                 sim.mover.movePlayer(pl);
-                return;
+                return false;
             }
         }
         if (pl.count == 0) {
@@ -786,10 +789,10 @@ public final class Ships {
                     pl.scoreDirty = true;
                 }
             }
-            return;
+            return false;
         }
         if (w.roundDelay > 0) {
-            return;
+            return false;
         }
         if (pl.stunned > 0) {
             pl.stunned--;
@@ -818,8 +821,8 @@ public final class Ships {
         }
         thrustAcceleration(pl);
         setMass(pl);
-        if ((pl.status & Obj.WARPING) != 0) {
-            warp(pl);
+        if ((pl.status & Obj.WARPING) != 0 && warp(pl)) {
+            return true;
         }
         if ((pl.status & Obj.PAUSE) == 0) {
             if ((pl.status & Obj.GRAVITY) != 0) {
@@ -841,6 +844,7 @@ public final class Ships {
         }
         sim.locks.sensorRange(pl);
         pl.used &= pl.have;
+        return false;
     }
 
     /** C {@code LIMIT} of a float field against double bounds. */
@@ -1076,7 +1080,8 @@ public final class Ships {
     /**
      * Wormhole travel and hyperjumps (update.c:1041-1188).
      * <p>
-     * BEHAVIOR: a wormhole index past the current wormholes (a temporary one that went away) ends the warp.
+     * BEHAVIOR: a wormhole index past the current wormholes (a temporary one that went away) ends the warp
+     * and returns true: C's {@code break} there ends the whole player loop for the frame.
      * BEHAVIOR: through a wormhole: one still counting down sends to its last destination; otherwise 10% of the
      * time a random other wormhole that is neither IN nor temporary, else the non-IN, non-temporary wormhole
      * closest to the line of flight ahead (or a random non-IN one if none is ahead); the ship appears at its
@@ -1089,13 +1094,19 @@ public final class Ships {
      * BEHAVIOR: a hyperjump plays HYPERJUMP where the ship was and WORM_HOLE where it lands; a wormhole trip
      * plays WORM_HOLE before and after.
      */
-    void warp(Player pl) {
+    boolean warp(Player pl) {
         WormTable worms = w.worms;
         int hit = pl.wormHoleHit;
         int n = worms.count();
-        if (hit >= n || hit < -1) {
+        if (hit >= n) {
+            // a temporary wormhole that went away while the ship was warping: C clears WARPING and its
+            // break leaves the whole player loop (update.c:1068-1074)
             pl.status &= ~Obj.WARPING;
-            return;
+            return true;
+        }
+        if (hit < -1) {
+            pl.status &= ~Obj.WARPING;
+            return false;
         }
         int j;
         float wx;
@@ -1151,6 +1162,7 @@ public final class Ships {
         pl.status &= ~Obj.WARPING;
         pl.status |= Obj.WARPED;
         Sounds.play(w, pl.px, pl.py, SoundEvent.WORM_HOLE);
+        return false;
     }
 
     /**
