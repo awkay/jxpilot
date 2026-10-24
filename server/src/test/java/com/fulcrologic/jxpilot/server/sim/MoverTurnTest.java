@@ -34,7 +34,7 @@ import static com.fulcrologic.jxpilot.server.sim.MoverPlayerTest.killed;
 import static com.fulcrologic.jxpilot.server.sim.MoverPlayerTest.lastMessage;
 import static com.fulcrologic.jxpilot.server.sim.MoverPlayerTest.ship;
 import static com.fulcrologic.jxpilot.server.sim.MoverPlayerTest.sim;
-import static com.fulcrologic.jxpilot.server.sim.SegmentTest.BC;
+import static com.fulcrologic.jxpilot.common.sim.Click.BLOCK_CLICKS;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -49,6 +49,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * clockwise the nose (15,0) reaches x + 571 at dir 19 and x + 609 at dir 18, so dir 18 is blocked.
  */
 class MoverTurnTest {
+    static final int BC = BLOCK_CLICKS;
     static final String[] WALL = {"       ", "       ", " _   x ", "     x ", "       "};
     static final String[] CANNON = {"       ", "       ", " _     ", "     f ", "       "};
     static final String[] OPEN5 = {"     ", "     ", "     ", "     ", "_    "};

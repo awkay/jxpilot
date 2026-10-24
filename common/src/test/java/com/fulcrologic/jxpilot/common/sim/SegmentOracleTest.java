@@ -21,9 +21,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
  */
-package com.fulcrologic.jxpilot.server.sim;
+package com.fulcrologic.jxpilot.common.sim;
 
-import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -31,11 +30,11 @@ import org.junit.jupiter.api.Test;
 import java.util.SplittableRandom;
 
 import static com.fulcrologic.jxpilot.common.sim.MoveState.*;
-import static com.fulcrologic.jxpilot.server.sim.SegmentBlocksTest.at;
-import static com.fulcrologic.jxpilot.server.sim.SegmentBlocksTest.out;
-import static com.fulcrologic.jxpilot.server.sim.SegmentBlocksTest.row;
-import static com.fulcrologic.jxpilot.server.sim.SegmentBlocksTest.run;
-import static com.fulcrologic.jxpilot.server.sim.SegmentTest.BC;
+import static com.fulcrologic.jxpilot.common.sim.SegmentBlocksTest.at;
+import static com.fulcrologic.jxpilot.common.sim.SegmentBlocksTest.out;
+import static com.fulcrologic.jxpilot.common.sim.SegmentBlocksTest.row;
+import static com.fulcrologic.jxpilot.common.sim.SegmentBlocksTest.run;
+import static com.fulcrologic.jxpilot.common.sim.SegmentTest.BC;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
 /**
@@ -329,7 +328,7 @@ class SegmentOracleTest {
 
     /** Random interior points; todo stays inside the block; some cases biased to start near the hit line. */
     static void compare(char block, Oracle oracle, long seed) {
-        World w = row("  " + block + "  ");
+        KernelFx.TestWorld w = row("  " + block + "  ");
         SplittableRandom r = new SplittableRandom(seed);
         for (int i = 0; i < CASES; i++) {
             int ox = 1 + r.nextInt(BC - 1);
@@ -389,7 +388,7 @@ class SegmentOracleTest {
         @Test
         @DisplayName("points exactly on the ball's circle count as hits")
         void onCircle() {
-            World w = row("  *  ");
+            KernelFx.TestWorld w = row("  *  ");
             // (1792, 2016) is on the circle: 672^2 + 896^2 = 1120^2
             assertArrayEquals(crash(100, 100, CRASH_TREASURE), out(run(w, at(w, 1792, 2016, 100, 100))),
                 "starting on the circle crashes");

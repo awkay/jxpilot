@@ -251,14 +251,14 @@ public class ShipBody {
     }
 
     /** Bytes {@link #encode} writes. */
-    public static final int WIRE_SIZE = 41 + 44 + 70 + Item.COUNT;
+    public static final int WIRE_SIZE = 41 + 44 + 60 + Item.COUNT;
 
     /**
      * Write the prediction state at {@code off} (absolute puts: the buffer's position does not move), in the
      * buffer's byte order. Everything the kernel reads before it writes is here, bit for bit: floats as their
-     * IEEE bits, fuel as a double. Not on the wire: pixels and blocks (derived from the clicks), the previous
-     * position, the acceleration, the busy frame and the per-tank fuel, which the kernel only writes, and the
-     * hull. Item counts are bytes (C limits every item to at most 99); the heading is a byte (0..RES-1).
+     * IEEE bits, fuel as a double. Not on the wire: pixels and blocks (derived from the clicks), and what the kernel
+     * only writes or never reads: the previous position, the acceleration, the busy frame, the last wall touch,
+     * the per-tank fuel and the tank count and index; and the hull. Item counts are bytes (C limits every item to at most 99); the heading is a byte (0..RES-1).
      * <p>
      * BEHAVIOR: writes exactly {@link #WIRE_SIZE} bytes and returns that count.
      */
@@ -290,20 +290,17 @@ public class ShipBody {
         o += 44;
         b.putDouble(o, fuel);
         b.putDouble(o + 8, fuelMax);
-        b.put(o + 16, (byte) numTanks);
-        b.put(o + 17, (byte) currentTank);
-        b.putInt(o + 18, stunned);
-        b.putInt(o + 22, shots);
-        b.putInt(o + 26, shotMax);
-        b.putInt(o + 30, mods);
-        b.putLong(o + 34, shotTime);
-        b.put(o + 42, (byte) team);
-        b.putShort(o + 43, (short) wormHoleDest);
-        b.putLong(o + 45, lastWallTouch);
-        b.putLong(o + 53, prevKeys);
-        b.putLong(o + 61, lastReceivedKeys);
-        b.put(o + 69, (byte) (keysCleared ? 1 : 0));
-        o += 70;
+        b.putInt(o + 16, stunned);
+        b.putInt(o + 20, shots);
+        b.putInt(o + 24, shotMax);
+        b.putInt(o + 28, mods);
+        b.putLong(o + 32, shotTime);
+        b.put(o + 40, (byte) team);
+        b.putShort(o + 41, (short) wormHoleDest);
+        b.putLong(o + 43, prevKeys);
+        b.putLong(o + 51, lastReceivedKeys);
+        b.put(o + 59, (byte) (keysCleared ? 1 : 0));
+        o += 60;
         for (int i = 0; i < Item.COUNT; i++) {
             b.put(o + i, (byte) items[i]);
         }
@@ -345,20 +342,17 @@ public class ShipBody {
         o += 44;
         fuel = b.getDouble(o);
         fuelMax = b.getDouble(o + 8);
-        numTanks = b.get(o + 16) & 0xFF;
-        currentTank = b.get(o + 17) & 0xFF;
-        stunned = b.getInt(o + 18);
-        shots = b.getInt(o + 22);
-        shotMax = b.getInt(o + 26);
-        mods = b.getInt(o + 30);
-        shotTime = b.getLong(o + 34);
-        team = b.get(o + 42);
-        wormHoleDest = b.getShort(o + 43);
-        lastWallTouch = b.getLong(o + 45);
-        prevKeys = b.getLong(o + 53);
-        lastReceivedKeys = b.getLong(o + 61);
-        keysCleared = b.get(o + 69) != 0;
-        o += 70;
+        stunned = b.getInt(o + 16);
+        shots = b.getInt(o + 20);
+        shotMax = b.getInt(o + 24);
+        mods = b.getInt(o + 28);
+        shotTime = b.getLong(o + 32);
+        team = b.get(o + 40);
+        wormHoleDest = b.getShort(o + 41);
+        prevKeys = b.getLong(o + 43);
+        lastReceivedKeys = b.getLong(o + 51);
+        keysCleared = b.get(o + 59) != 0;
+        o += 60;
         for (int i = 0; i < Item.COUNT; i++) {
             items[i] = b.get(o + i) & 0xFF;
         }
@@ -381,9 +375,8 @@ public class ShipBody {
             || bits(power) != bits(o.power) || bits(powerS) != bits(o.powerS)
             || bits(turnSpeedS) != bits(o.turnSpeedS) || bits(turnResistanceS) != bits(o.turnResistanceS)
             || shieldTime != o.shieldTime || bits(fuel) != bits(o.fuel) || bits(fuelMax) != bits(o.fuelMax)
-            || numTanks != o.numTanks || currentTank != o.currentTank || stunned != o.stunned || shots != o.shots
-            || shotMax != o.shotMax || mods != o.mods || shotTime != o.shotTime || team != o.team
-            || wormHoleDest != o.wormHoleDest || lastWallTouch != o.lastWallTouch || prevKeys != o.prevKeys
+            || stunned != o.stunned || shots != o.shots || shotMax != o.shotMax || mods != o.mods
+            || shotTime != o.shotTime || team != o.team || wormHoleDest != o.wormHoleDest || prevKeys != o.prevKeys
             || lastReceivedKeys != o.lastReceivedKeys || keysCleared != o.keysCleared) {
             return false;
         }

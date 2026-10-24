@@ -33,7 +33,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static com.fulcrologic.jxpilot.server.sim.SegmentTest.BC;
+import static com.fulcrologic.jxpilot.common.sim.Click.BLOCK_CLICKS;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -43,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Worlds run at 60 fps unless stated (one tick is one C frame at any fps).
  */
 class MoverObjectTest {
+    static final int BC = BLOCK_CLICKS;
     static final String FPS60 = "framesPerSecond: 60";
     static final String E9 = "         ";
 

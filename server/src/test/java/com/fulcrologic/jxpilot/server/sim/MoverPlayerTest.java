@@ -42,7 +42,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static com.fulcrologic.jxpilot.common.sim.MoveState.*;
-import static com.fulcrologic.jxpilot.server.sim.SegmentTest.BC;
+import static com.fulcrologic.jxpilot.common.sim.Click.BLOCK_CLICKS;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -53,6 +53,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * (-9,-8) px = (960,0), (-576,512), (-576,-512) clicks from its centre.
  */
 class MoverPlayerTest {
+    static final int BC = BLOCK_CLICKS;
     static final String FPS60 = "framesPerSecond: 60";
 
     /** Walls at blocks (5,1)-(5,3): their left face is x = 175 px = 11200 clicks. Base at (1,2). */
