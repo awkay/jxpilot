@@ -225,7 +225,7 @@ final class Tuning {
      * the reloaders run, and the result is OK.
      */
     int tune(String name, String value) {
-        Opt o = Opt.find(name);
+        Opt o = find(name);
         if (o == null) {
             return NO_OPTION;
         }
@@ -235,12 +235,21 @@ final class Tuning {
         }
         String stored;
         switch (o.type()) {
-            case INT, SEC -> {
+            case INT -> {
                 long[] r = new long[1];
                 if (!CNum.strtol(value, r)) {
                     return INVALID;
                 }
                 stored = Integer.toString((int) r[0]);
+            }
+            case SEC -> {
+                long[] r = new long[1];
+                if (!CNum.strtol(value, r)) {
+                    return INVALID;
+                }
+                int fps = opts.framesPerSecond();
+                int frames = (int) r[0] * fps; // C: ival * FPS in int, wrapping
+                stored = Double.toString((frames + Math.copySign(0.5, frames)) / fps); // exactly frames frames
             }
             case BOOL -> {
                 if (on(value)) {
@@ -287,6 +296,21 @@ final class Tuning {
         return OK;
     }
 
+    /**
+     * C {@code Find_option_by_name}: an exact name, any case.
+     * <p>
+     * BEHAVIOR: a name containing whitespace is no option (C compares the whole string; {@link Opt#find} would
+     * drop the whitespace); otherwise {@link Opt#find}.
+     */
+    static Opt find(String name) {
+        for (int i = 0; i < name.length(); i++) {
+            if (Character.isWhitespace(name.charAt(i))) {
+                return null;
+            }
+        }
+        return Opt.find(name);
+    }
+
     /** C {@code ON}: BEHAVIOR: the value starts with "true", "on" or "yes", any case. */
     static boolean on(String v) {
         return startsIgnoreCase(v, "true") || startsIgnoreCase(v, "on") || startsIgnoreCase(v, "yes");
@@ -309,7 +333,9 @@ final class Tuning {
      * worldLives, wormTime, mineLife and missileLife below 0 become 0; cannonSmartness is limited to 0..3; the
      * item probabilities of {@code Set_misc_item_limits} to [0, 1], itemConcentratorRadius to [1, diagonal in
      * blocks] and asteroidMaxItems to at least 0; real names get C {@code Fix_real_name}, host names
-     * {@code Fix_host_name}; a robotTeam outside 0..9 becomes 0 (Robot_init's clamp; C's dummy tuner leaves it
+     * {@code Fix_host_name}; Move_init's limits on the wall bounce options (speeds 0..hypotenuse, angles 0..180,
+     * factors 0..1, fuel drain 0..1000) and Set_initial_resources' on the item options (each limit 0..its C
+     * maximum, each initial 0..its limit); a robotTeam outside 0..9 becomes 0 (Robot_init's clamp; C's dummy tuner leaves it
      * out of range and indexes past its team table).
      */
     void fixValues(Tuner t, Opt o) {
@@ -345,6 +371,25 @@ final class Tuning {
                 }
             }
             case CANNON_SMARTNESS -> writeBack(o, Math.clamp(opts.getInt(o), 0, 3));
+            case MOVE_INIT, CANNONS_USE_ITEMS -> {
+                double hyp = w.params.hypotenuse;
+                limit(Opt.MAX_OBJECT_WALL_BOUNCE_SPEED, 0, hyp);
+                limit(Opt.MAX_SHIELDED_WALL_BOUNCE_SPEED, 0, hyp);
+                limit(Opt.MAX_UNSHIELDED_WALL_BOUNCE_SPEED, 0, hyp);
+                limit(Opt.MAX_SHIELDED_PLAYER_WALL_BOUNCE_ANGLE, 0, 180);
+                limit(Opt.MAX_UNSHIELDED_PLAYER_WALL_BOUNCE_ANGLE, 0, 180);
+                limit(Opt.PLAYER_WALL_BOUNCE_BRAKE_FACTOR, 0, 1);
+                limit(Opt.OBJECT_WALL_BOUNCE_BRAKE_FACTOR, 0, 1);
+                limit(Opt.OBJECT_WALL_BOUNCE_LIFE_FACTOR, 0, 1);
+                limit(Opt.WALL_BOUNCE_FUEL_DRAIN_MULT, 0, 1000);
+            }
+            case INITIAL_RESOURCES -> {
+                for (Opt[] pair : ITEM_LIMITS) {
+                    int max = Math.clamp(opts.getInt(pair[1]), 0, ITEM_MAX[indexOf(pair)]);
+                    writeBack(pair[1], max);
+                    writeBack(pair[0], Math.clamp(opts.getInt(pair[0]), 0, max));
+                }
+            }
             case MISC_ITEM_LIMITS -> {
                 for (Opt p : new Opt[] {Opt.DROP_ITEM_ON_KILL_PROB, Opt.DETONATE_ITEM_ON_KILL_PROB,
                     Opt.MOVING_ITEM_PROB, Opt.RANDOM_ITEM_PROB, Opt.DESTROY_ITEM_IN_COLLISION_PROB,
@@ -373,6 +418,32 @@ final class Tuning {
                 writeBack(o, 0); // Robot_init's clamp (robot.c:601); C indexes World.teams out of range here
             }
         }
+    }
+
+    /** Set_initial_resources's pairs (initial, limit), fuel first (rules.c:215-245). */
+    static final Opt[][] ITEM_LIMITS = {
+        {Opt.INITIAL_FUEL, Opt.MAX_FUEL}, {Opt.INITIAL_TANKS, Opt.MAX_TANKS}, {Opt.INITIAL_EC_MS, Opt.MAX_EC_MS},
+        {Opt.INITIAL_ARMOR, Opt.MAX_ARMOR}, {Opt.INITIAL_MINES, Opt.MAX_MINES},
+        {Opt.INITIAL_MISSILES, Opt.MAX_MISSILES}, {Opt.INITIAL_CLOAKS, Opt.MAX_CLOAKS},
+        {Opt.INITIAL_SENSORS, Opt.MAX_SENSORS}, {Opt.INITIAL_WIDEANGLES, Opt.MAX_WIDEANGLES},
+        {Opt.INITIAL_REARSHOTS, Opt.MAX_REARSHOTS}, {Opt.INITIAL_AFTERBURNERS, Opt.MAX_AFTERBURNERS},
+        {Opt.INITIAL_TRANSPORTERS, Opt.MAX_TRANSPORTERS}, {Opt.INITIAL_MIRRORS, Opt.MAX_MIRRORS},
+        {Opt.INITIAL_DEFLECTORS, Opt.MAX_DEFLECTORS}, {Opt.INITIAL_HYPER_JUMPS, Opt.MAX_HYPER_JUMPS},
+        {Opt.INITIAL_PHASINGS, Opt.MAX_PHASINGS}, {Opt.INITIAL_LASERS, Opt.MAX_LASERS},
+        {Opt.INITIAL_EMERGENCY_THRUSTS, Opt.MAX_EMERGENCY_THRUSTS},
+        {Opt.INITIAL_TRACTOR_BEAMS, Opt.MAX_TRACTOR_BEAMS}, {Opt.INITIAL_AUTOPILOTS, Opt.MAX_AUTOPILOTS},
+        {Opt.INITIAL_EMERGENCY_SHIELDS, Opt.MAX_EMERGENCY_SHIELDS},
+    };
+    /** The C maxima of {@link #ITEM_LIMITS}: MAX_FUEL 10000, MAX_TANKS 8, MAX_AFTERBURNER 15, the rest 99. */
+    static final int[] ITEM_MAX = {10000, 8, 99, 99, 99, 99, 99, 99, 99, 99, 15, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99};
+
+    private static int indexOf(Opt[] pair) {
+        for (int i = 0; i < ITEM_LIMITS.length; i++) {
+            if (ITEM_LIMITS[i] == pair) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private void writeBack(Opt o, int v) {
@@ -550,6 +621,9 @@ final class Tuning {
                 for (int k = 0; k < w.numPlayers; k++) {
                     Player pl = w.playerAt(k);
                     if (p.playerShielding) {
+                        if (pl.tank) {
+                            continue; // tuner.c:103-115: not tanks
+                        }
                         if ((pl.used & Has.SHOT) == 0) {
                             pl.used |= Has.SHIELD;
                         }
@@ -612,6 +686,12 @@ final class Tuning {
                     } else {
                         worms.setCountdown(i, WORMCOUNT);
                     }
+                }
+            }
+            case ANNOUNCE_ALLIANCES -> {
+                for (int k = 0; k < w.numPlayers; k++) {
+                    Player pl = w.playerAt(k);
+                    w.events.add(com.fulcrologic.jxpilot.server.world.Events.ALLIANCE, pl.id, pl.alliance, 0, 0f);
                 }
             }
             case GAME_DURATION -> {
@@ -703,7 +783,7 @@ final class Tuning {
      * (int)(s * fps) divided by fps (int). (C's per-second case is unreachable: no option has that type.)
      */
     int get(String name, StringBuilder out) {
-        Opt o = Opt.find(name);
+        Opt o = find(name);
         if (o == null) {
             return NO_OPTION;
         }
@@ -713,7 +793,7 @@ final class Tuning {
         int fps = opts.framesPerSecond();
         switch (o.type()) {
             case INT -> out.append(opts.getInt(o));
-            case REAL -> out.append(CFormat.g((float) opts.getDouble(o)));
+            case REAL -> out.append(CFormat.g(o == Opt.GAME_DURATION ? w.gameDuration : (float) opts.getDouble(o)));
             case BOOL -> out.append(opts.getBool(o) ? "true" : "false");
             case STRING -> {
                 String v = opts.getString(o);

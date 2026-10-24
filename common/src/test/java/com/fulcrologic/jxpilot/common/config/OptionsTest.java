@@ -192,7 +192,16 @@ class OptionsTest {
                 () -> assertEquals(Long.MIN_VALUE, l(""), "empty fails"),
                 () -> assertEquals(Long.MIN_VALUE, l("-"), "a lone sign fails"),
                 () -> assertEquals(15, l("0x0F"), "a hex number may start with the digit 0"),
-                () -> assertEquals(Integer.MAX_VALUE * 4L, l("99999999999999999999"), "huge values clamp"),
+                () -> assertEquals(Long.MAX_VALUE, l("99999999999999999999"), "huge values saturate (glibc ERANGE)"),
+                () -> assertEquals(Long.MIN_VALUE + 1, l("-99999999999999999999") + 1, "huge negatives saturate"),
+                () -> assertEquals(Long.MIN_VALUE, l("-9223372036854775808"), "LONG_MIN itself is in range"),
+                () -> assertTrue(CNum.strtol("-99999999999999999999", new long[1]), "a saturated negative parses"),
+                () -> assertTrue(CNum.strtol("-9223372036854775808", new long[1]), "LONG_MIN parses"),
+                () -> assertEquals(Long.MAX_VALUE, l("9223372036854775807"), "LONG_MAX itself is in range"),
+                () -> assertEquals(Long.MAX_VALUE, l("9223372036854775808"), "LONG_MAX + 1 saturates"),
+                () -> assertEquals(Long.MAX_VALUE, l("0x8000000000000000"), "hex overflow saturates"),
+                () -> assertEquals(1215752191, (int) l("99999999999"), "an int cast wraps as C's long-to-int"),
+                () -> assertEquals(-1, (int) l("99999999999999999999"), "a saturated value casts to -1"),
                 () -> assertEquals(1, l("1١"), "non-ASCII digits stop parsing"));
         }
 
@@ -214,7 +223,20 @@ class OptionsTest {
                 () -> assertEquals(10.09, d("10.09"), EPS, "0 and 9 are mantissa digits"),
                 () -> assertEquals(1e10, d("1e10"), 1, "0 is an exponent digit"),
                 () -> assertEquals(1e9, d("1e9"), 1, "9 is an exponent digit"),
-                () -> assertTrue(Double.isNaN(d("")), "empty fails"));
+                () -> assertTrue(Double.isNaN(d("")), "empty fails"),
+                () -> assertEquals(16.0, d("0x10"), EPS, "hex float without exponent"),
+                () -> assertEquals(-16.0, d("-0X1p4"), EPS, "signed hex float with binary exponent"),
+                () -> assertEquals(0.5, d("0x.8"), EPS, "hex fraction without integer digits"),
+                () -> assertEquals(1.5, d("0x1.8P+0z"), EPS, "hex fraction, signed exponent, trailing junk"),
+                () -> assertEquals(0.25, d("0x1p-2"), EPS, "negative binary exponent"),
+                () -> assertEquals(255.0, d("0xfFp"), EPS, "an exponent without digits is ignored"),
+                () -> assertEquals(0.0, d("0x"), EPS, "a bare 0x parses the 0"),
+                () -> assertEquals(0.0, d("0x."), EPS, "0x. parses the 0"),
+                () -> assertEquals(0.0, d("0xg"), EPS, "0x without hex digits parses the 0"),
+                () -> assertTrue(Double.isNaN(d("inf")), "inf is refused"),
+                () -> assertTrue(Double.isNaN(d("nan")), "nan is refused"),
+                () -> assertTrue(Double.isNaN(d("1e999")), "an overflow to infinity is refused"),
+                () -> assertTrue(Double.isNaN(d("0x1p99999")), "a hex overflow to infinity is refused"));
         }
 
         @Test

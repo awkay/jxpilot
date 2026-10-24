@@ -101,8 +101,9 @@ class HostCommandsTest {
             HostFx.Wire d = new HostFx.Wire();
             h.initialState(dan, d.out);
             assertAll(
-                () -> assertEquals(List.of("ALLIANCE " + bob + " '+'", "ALLIANCE " + ann + " '+'"), only(a.take(), "ALLIANCE"),
-                    "Ann sees both as her allies"),
+                () -> assertEquals(List.of("ALLIANCE " + bob + " '+'", "ALLIANCE " + ann + " '+'", "ALLIANCE " + bob + " '+'",
+                        "ALLIANCE " + cid + " ' '"), only(a.take(), "ALLIANCE"),
+                    "Ann sees both as her allies; her own change resends every player's mark as she sees it"),
                 () -> assertEquals(List.of("ALLIANCE " + bob + " ' '", "ALLIANCE " + ann + " ' '"), only(c.take(), "ALLIANCE"),
                     "Cid sees no mark (alliances not announced)"),
                 () -> assertEquals(List.of("ALLIANCE " + ann + " ' '", "ALLIANCE " + bob + " ' '"), only(d.take(), "ALLIANCE"),

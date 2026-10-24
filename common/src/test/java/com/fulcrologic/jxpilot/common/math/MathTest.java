@@ -277,8 +277,16 @@ class MathTest {
                 () -> assertEquals(2, g[30][15 + 1], "beside the nose is outside"),
                 () -> assertEquals(-9, ShipShape.firstInsideOnAxis(g), "the first axis point not outside is x=-9"),
                 () -> assertEquals(ShipShape.NO_POINT, ShipShape.firstInsideOnAxis(empty), "an all-outside axis has none"),
-                () -> assertTrue(ShipShape.outside(g, 16, 0), "off-grid points are outside"),
-                () -> assertTrue(ShipShape.outside(g, 0, -16), "off-grid y is outside"),
+                () -> assertFalse(ShipShape.outside(g, 16, 0), "x = 16 is in C's never-marked column 31"),
+                () -> assertFalse(ShipShape.outside(g, 0, 16), "y = 16 is in C's never-marked row 31"),
+                () -> assertFalse(ShipShape.outside(g, 16, 16), "the corner (16, 16) is inside C's grid"),
+                () -> assertFalse(ShipShape.outside(g, 16, -15), "x = 16 with the lowest y"),
+                () -> assertFalse(ShipShape.outside(g, -15, 16), "y = 16 with the lowest x"),
+                () -> assertTrue(ShipShape.outside(g, 17, 0), "x above 16 is outside"),
+                () -> assertTrue(ShipShape.outside(g, 0, 17), "y above 16 is outside"),
+                () -> assertTrue(ShipShape.outside(g, -16, 0), "x below -15 is outside"),
+                () -> assertTrue(ShipShape.outside(g, 0, -16), "y below -15 is outside"),
+                () -> assertTrue(ShipShape.outside(g, 15, -15), "a flooded border point is outside"),
                 () -> assertFalse(ShipShape.outside(g, 0, 0), "inside points are not outside"));
         }
 
@@ -543,7 +551,9 @@ class MathTest {
                 () -> assertEquals(3, ShipShape.parse("(MG: 0,0()" + base).numPoints(),
                     "scanning resumes after the group's ')' even if the value ends with '('"),
                 () -> assertEquals(3, ShipShape.parse(base + "(1x: 0,0)").numPoints(), "a digit keyword adds no points"),
-                () -> assertNull(ShipShape.parse("(SH: 15,0 -9,8 -9,-8)(MG: 16,0)"), "a main gun off the grid is outside"),
+                () -> assertEquals(16, ShipShape.parse("(SH: 15,0 -9,8 -9,-8)(MG: 16,0)").mainGunX,
+                    "a main gun at x = 16 passes, as in C's never-marked grid column"),
+                () -> assertNull(ShipShape.parse("(SH: 15,0 -9,8 -9,-8)(MG: 17,0)"), "a main gun beyond 16 is outside"),
                 () -> assertEquals(3, ShipShape.parse(base + "(Zz: 0,0)").numPoints(), "an unknown upper-case keyword adds no points"),
                 () -> assertEquals(3, ShipShape.parse(base + "(zz: 0,0)").numPoints(), "an unknown lower-case keyword adds no points"),
                 () -> assertEquals(3, ShipShape.parse("(SH: 8,0 -15,15 -15,-15)").numPoints(), "x = 8 counts as a front point"));

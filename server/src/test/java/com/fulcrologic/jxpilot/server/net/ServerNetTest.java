@@ -465,12 +465,12 @@ class ServerNetTest {
             }
             assertAll(
                 () -> assertTrue(mine.get(0).accepted && mine.get(1).accepted, "two sessions from one IP are accepted"),
-                () -> assertEquals(Msg.Reject.REASON_FULL, mine.get(2).rejectReason, "the third from that IP is refused FULL"),
+                () -> assertEquals(Msg.Reject.REASON_LOCKED, mine.get(2).rejectReason, "the third from that IP is refused LOCKED (C E_GAME_LOCKED)"),
                 () -> assertEquals("too many players from your address", mine.get(2).rejectText, "saying why"),
                 () -> assertTrue(replace.accepted, "a reconnect of an existing session does not count itself"),
                 () -> assertTrue(other.accepted, "another IP is unaffected"),
                 () -> assertTrue(v6a.accepted && v6b.accepted, "two addresses of one IPv6 /64 are accepted"),
-                () -> assertEquals(Msg.Reject.REASON_FULL, v6c.rejectReason, "a third address in the same /64 is refused"),
+                () -> assertEquals(Msg.Reject.REASON_LOCKED, v6c.rejectReason, "a third address in the same /64 is refused (C E_GAME_LOCKED)"),
                 () -> assertTrue(v6other.accepted, "the neighbouring /64 is another source"),
                 () -> assertEquals(6, u.net.connections(), "maxPerIp 0 means unlimited"));
         }

@@ -80,7 +80,7 @@ public final class SimGameHost implements GameHost {
     private final Talk talk;
     /** server-commands: the talk commands (C command.c) and run-time option changes. */
     private final Tuning tuning;
-    private final Commands commands;
+    final Commands commands; // package-private for tests
     /** C {@code game_lock}: an operator's {@code /lock 1} refuses new players. */
     boolean gameLock;
     /** server-commands: the login queue (C contact.c), and C {@code main_loops} for its timing. */
@@ -467,7 +467,8 @@ public final class SimGameHost implements GameHost {
     /**
      * BEHAVIOR: READY spawns the reserved player on its login team ({@code Ships.spawn}, which sets the welcome
      * message and applies settings that came early); no base: kicked at the next tick ("no free base").
-     * BEHAVIOR: CHAT from a player in the game is a command when it starts with '/' (C {@code Receive_talk}:
+     * BEHAVIOR: CHAT is cut to MAX_CHARS - 1 = 79 characters (C's buffer); from a player in the game it is a command
+     * when it starts with '/' (C {@code Receive_talk}:
      * {@link Commands}, the line without the '/'), else goes through C {@code Handle_talk} ({@link Talk}).
      * BEHAVIOR: SETTINGS go to {@code Ships.applySettings} (kept for the spawn before it).
      * BEHAVIOR: DISPLAY, before or after READY, sets the player's view size, each axis limited to
@@ -492,6 +493,9 @@ public final class SimGameHost implements GameHost {
             case ReliableType.READY -> ready(p);
             case ReliableType.CHAT -> {
                 text.read(payload);
+                if (text.text.length() > Const.MAX_CHARS - 1) {
+                    text.text.setLength(Const.MAX_CHARS - 1); // C Receive_talk's char str[MAX_CHARS] (netserver.c:2780)
+                }
                 if (p.spawned) {
                     if (!text.text.isEmpty() && text.text.charAt(0) == '/') {
                         commands.handle(p, text.text.subSequence(1, text.text.length()));
@@ -1078,7 +1082,17 @@ public final class SimGameHost implements GameHost {
                 thrust.power = e.value[i];
                 thrust.send(out);
             }
-            case Events.ALLIANCE -> sendAlliance(viewerId, e.a[i], e.b[i], out);
+            case Events.ALLIANCE -> {
+                if (e.a[i] == viewerId) {
+                    // the viewer's own alliance changed: every '+' it sees may have changed (review M3)
+                    for (int k = 0; k < w.numPlayers; k++) {
+                        Player p = w.playerAt(k);
+                        sendAlliance(viewerId, p.id, p.alliance, out);
+                    }
+                } else {
+                    sendAlliance(viewerId, e.a[i], e.b[i], out);
+                }
+            }
             case Events.TIMING -> {
                 timing.id = e.a[i];
                 timing.check = e.b[i];

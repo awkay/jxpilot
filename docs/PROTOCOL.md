@@ -45,7 +45,8 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
    - A CONNECT whose header has the JX magic but another protocol version gets `REJECT` with reason
      VERSION (if it is at least as large as a bare 14-byte REJECT).
    - More than `maxClientsPerIP` sessions (default 4; an IPv4 address or an IPv6 /64 counts as one source;
-     0 = unlimited) get `REJECT` FULL.
+     0 = unlimited) get `REJECT` LOCKED with the text "too many players from your address" (C
+     `Check_max_clients_per_IP` answers E_GAME_LOCKED).
    - A CONNECT with a new nonce from an address that already has a session replaces it, but the old
      session is dropped only after the new join succeeded.
 2. Server answers ACCEPT with a random 16-bit session id. The session is **unverified** (anti-reflection:
@@ -134,7 +135,7 @@ Server → client:
 | 12 | SCORE_OBJECT | f32 score (points gained, negative when lost), u16 bx, u16 by (block where they were made), str8 label (C `Send_score_object`: a player name, "[Wall]", "[Shove]", "Cannon", "[Deadliest]"...). Sent only to the player whose score changed; drives the HUD score popups (the client's ScoreObjects stack) |
 | 13 | SEEK | u16 programmerId, u16 robotId, u16 soughtId — a player's ECM reprogrammed a robot to hunt someone (C `Send_seek`, item.c:1207), sent to everyone; the client logs "PROGRAMMER has programmed ROBOT to seek SOUGHT." (C `Handle_seek`) |
 | 20 | TIMING | race mode only (C `Send_timing`): u16 id, u8 check (the next checkpoint the player must pass, C `pl->check`), u16 round (laps started, 0 before the first checkpoint). Sent for every player in the initial state and whenever a player passes a checkpoint or race progress is reset. The last checkpoint passed is check - 1 (wrapping); the own player's check is the checkpoint the client highlights. Ids 20-26 are the game-mode block |
-| 31 | PLAYER_ALLIANCE | u16 id, u8 mark (Latin-1): the alliance mark of player id as this receiver sees it, C `Send_score`'s alliance character (netserver.c:1670-1678): ' ' not in an alliance, '+' in the receiver's own alliance (when `announceAlliances` is off; other alliances then show ' '), '0'-'9' the alliance number (when `announceAlliances` is on). Sent when a player's alliance changes (C resends the score then), and in the initial state for players in alliances (every player after a resync). The client shows it in the score list's team column outside team play and treats equal non-blank marks as friends (blue ship, friendly lock). Ids 32-33 are reserved for server-commands |
+| 31 | PLAYER_ALLIANCE | u16 id, u8 mark (Latin-1): the alliance mark of player id as this receiver sees it, C `Send_score`'s alliance character (netserver.c:1670-1678): ' ' not in an alliance, '+' in the receiver's own alliance (when `announceAlliances` is off; other alliances then show ' '), '0'-'9' the alliance number (when `announceAlliances` is on). Sent when a player's alliance changes (C resends the score then); when the receiver's own alliance changes it gets every player's mark again (its '+' marks may all have changed), and after an operator changes `announceAlliances` every player's mark goes to everyone. Also in the initial state for players in alliances (every player after a resync). The client shows it in the score list's team column outside team play and treats equal non-blank marks as friends (blue ship, friendly lock). Ids 32-33 are reserved for server-commands |
 
 Client → server:
 
