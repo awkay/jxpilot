@@ -176,7 +176,7 @@ public final class Ecm {
                 Player t = pl != null ? w.byId(pl.lockPlId) : null;
                 if (pl != null && (pl.lockTagged & Player.LOCK_PLAYER) != 0
                     && (pl.lockDistance <= pl.sensorRange || !w.items.limitedVisibility)
-                    && t != null && pl.canSee[t.slot]) {
+                    && t != null && pl.canSee[t.ind]) {
                     o.newInfo[h] = pl.lockPlId;
                 } else {
                     o.newInfo[h] = w.playerAt((int) (w.rfrac() * w.numPlayers)).id;
@@ -271,8 +271,9 @@ public final class Ecm {
                 Player t = w.byId(pl.lockPlId);
                 if ((pl.lockTagged & Player.LOCK_PLAYER) != 0
                     && (pl.lockDistance < pl.sensorRange || !w.items.limitedVisibility)
-                    && t != null && pl.canSee[t.slot] && pl.lockPlId != p.id && robotProgrammer != null) {
+                    && t != null && pl.canSee[t.ind] && pl.lockPlId != p.id && robotProgrammer != null) {
                     robotProgrammer.program(p, pl.lockPlId);
+                    w.events.add(com.fulcrologic.jxpilot.server.world.Events.SEEK, pl.id, p.id, pl.lockPlId, 0f);
                 }
             }
         }

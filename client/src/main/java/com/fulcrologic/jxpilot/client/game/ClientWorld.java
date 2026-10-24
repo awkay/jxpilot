@@ -186,6 +186,8 @@ public final class ClientWorld {
     private byte[] treasureFlags = new byte[0];
     private int[] baseOwner = new int[0];
     private final int[] selfItems = new int[Item.COUNT];
+    /** SELF_ITEMS loseItem (C {@code lose_item}, items-2). */
+    private int selfLoseItem;
 
     // radar (whole world, latest RADAR section)
     private final int radarCap;
@@ -342,6 +344,7 @@ public final class ClientWorld {
         Arrays.fill(treasureFlags, (byte) 0);
         Arrays.fill(baseOwner, Protocol.NO_ID);
         Arrays.fill(selfItems, 0);
+        selfLoseItem = 0;
         damaged = 0;
         roundDelay = 0;
         destruct = 0;
@@ -605,6 +608,7 @@ public final class ClientWorld {
                     for (int i = 0; i < Item.COUNT; i++) {
                         selfItems[i] = itemsRec.count(i);
                     }
+                    selfLoseItem = itemsRec.loseItem();
                 }
             }
             case Section.ITEM -> {
@@ -1333,6 +1337,9 @@ public final class ClientWorld {
 
     /** Count of a carried {@link Item} (by ordinal). */
     public int selfItem(int item) { return selfItems[item]; }
+
+    /** The {@link Item} (ordinal) KEY_LOSE_ITEM drops (C {@code lose_item}), from SELF_ITEMS; 0 before any. */
+    public int selfLoseItem() { return selfLoseItem; }
 
     public int shipCount() { return outShips; }
 

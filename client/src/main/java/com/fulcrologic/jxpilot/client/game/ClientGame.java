@@ -62,6 +62,9 @@ public final class ClientGame implements ConnectionListener {
     private final Msg.Timing timing = new Msg.Timing();
     private final Msg.GameEvent gameEvent = new Msg.GameEvent();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
+    // ---- server-items: SEEK (C Handle_seek)
+    private final Msg.Seek seek = new Msg.Seek();
+    private final StringBuilder seekText = new StringBuilder(3 * 32 + 32);
     private final Msg.PlayerAlliance alliance = new Msg.PlayerAlliance();
 
     private ConnectionState state = ConnectionState.IDLE;
@@ -138,6 +141,7 @@ public final class ClientGame implements ConnectionListener {
      * BEHAVIOR: PLAYER_JOIN/LEAVE/TEAM/THRUST/ALLIANCE and SCORE update {@link Players}; TEAM_SCORE the
      * scoreboard; MESSAGE the message log; BASE_OWNER the world; GAME_EVENT the event ring (sub-types in
      * {@code value} kept as sent). Unknown types are ignored.
+     * BEHAVIOR: SEEK adds C's "has programmed ... to seek ..." message ({@link #seek}).
      * BEHAVIOR: SCORE_OBJECT (C {@code Handle_score_object}; the server sends it only to the player whose
      * score changed) becomes a {@link ScoreObjects} entry with its points, label and block; an empty label
      * makes no HUD text. SCORE itself never makes one.
@@ -190,12 +194,35 @@ public final class ClientGame implements ConnectionListener {
                 gameEvent.read(p);
                 events.add(gameEvent);
             }
+            case ReliableType.SEEK -> {
+                seek.read(p);
+                seek(seek.programmerId, seek.robotId, seek.soughtId);
+            }
             case ReliableType.PLAYER_ALLIANCE -> {
                 alliance.read(p);
                 players.setAlliance(alliance.id, alliance.mark);
             }
             default -> { } // newer message types are ignored (PROTOCOL.md "Extending")
         }
+    }
+
+    /**
+     * C {@code Handle_seek} (client.c:1137): "PROGRAMMER has programmed ROBOT to seek SOUGHT." in the message
+     * log (as a game message, C {@code Add_message}).
+     * <p>
+     * BEHAVIOR: nothing when any of the three players is unknown (C logs "Bad player seek").
+     */
+    void seek(int programmerId, int robotId, int soughtId) {
+        int pr = players.slotOf(programmerId);
+        int ro = players.slotOf(robotId);
+        int so = players.slotOf(soughtId);
+        if (pr < 0 || ro < 0 || so < 0) {
+            return;
+        }
+        seekText.setLength(0);
+        seekText.append(players.name(pr)).append(" has programmed ").append(players.name(ro)).append(" to seek ")
+            .append(players.name(so)).append('.');
+        messages.add(Msg.Text.KIND_GAME, seekText);
     }
 
     @Override

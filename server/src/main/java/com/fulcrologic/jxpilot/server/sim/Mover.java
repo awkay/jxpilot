@@ -137,7 +137,7 @@ public final class Mover {
                 }
                 if (ms.bounce != NOT_A_BOUNCE && ms.bounce != BOUNCE_EDGE) {
                     if (type != Obj.BALL) {
-                        o.life[h] = (long) (o.life[h] * p.objectWallBounceLifeFactor);
+                        o.life[h] = (long) ((float) o.life[h] * p.objectWallBounceLifeFactor); // C walls.c:2000 float product
                     }
                     if (o.life[h] <= 0) {
                         break;

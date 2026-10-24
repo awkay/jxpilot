@@ -241,6 +241,30 @@ class ClientFrameTest {
                 () -> assertEquals(life0 - 7.0, life1, 1e-9, "0.5 s at 14 fps = 7 frames"),
                 () -> assertEquals(7.0, cf.hud().loops() + 0.0, "HUD loops advanced 7 frames"));
         }
+
+        @Test
+        @DisplayName("DISPLAY: the view's world size (size / zoom, rounded) is sent on the first step and only when it changes")
+        void display() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = frame(f);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            List<String> first = List.copyOf(conn.displays);
+            cf.step(T0 + 1000, 800, 600, 1, M, 256, 100);
+            List<String> same = List.copyOf(conn.displays);
+            cf.step(T0 + 2000, 900, 600, 1, M, 256, 100);
+            cf.step(T0 + 3000, 900, 650, 1, M, 256, 100);
+            cf.step(T0 + 4000, 901, 601, 2, M, 256, 100);
+            cf.step(T0 + 5000, 902, 602, 2, M, 256, 100);
+            cf.step(T0 + 6000, 800, 600, 0.8, M, 256, 100);
+            assertAll(
+                () -> assertEquals(List.of("800x600"), first, "the first step sends the view size"),
+                () -> assertEquals(List.of("800x600"), same, "an unchanged size is not sent again"),
+                () -> assertEquals(List.of("800x600", "900x600", "900x650", "451x301", "1000x750"), conn.displays,
+                    "a wider, then taller view; zoom 2 halves it (450.5 rounds to 451, and 902/2 = 451 is unchanged); "
+                        + "zoom 0.8 (scaleFactor 1.25) shows 1000x750"),
+                () -> assertEquals(List.of("update", "input", "flush"), conn.calls.subList(0, 3),
+                    "the step order is unchanged"));
+        }
     }
 
     @Nested
@@ -344,6 +368,46 @@ class ClientFrameTest {
                     | ControlKey.INCREASE_TURNSPEED.mask()), "the keys themselves are not sent (C)"),
                 () -> assertEquals(com.fulcrologic.jxpilot.client.game.hud.Hud.CONTROL_DELAY, cf.hud().controlCount(),
                     "the control meters show"));
+        }
+
+        @Test
+        @DisplayName("the file's modifier banks go to the connection once, at construction (C sends them at login)")
+        void modifierBanks() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = withRc(f, "modifierBank1: FN C\nmodifierBank4: X4 LS\n");
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            ClientFrame plain = frame(new AppFixture(true).players());
+            assertAll(
+                () -> assertEquals(List.of("FN C|||X4 LS", "|||"), conn.banks,
+                    "banks 1..4 from the file, then a default frame's four empty banks; a step sends none"));
+        }
+
+        @Test
+        @DisplayName("the lose-item keys outline the server's lose item on the HUD (C lose_item_active)")
+        void loseItemOutline() {
+            int[] counts = new int[com.fulcrologic.jxpilot.common.Item.COUNT];
+            int mine = com.fulcrologic.jxpilot.common.Item.MINE.ordinal();
+            counts[mine] = 3;
+            AppFixture f = new AppFixture(true).players().twice(x -> x.self(0, 100, 100, 0, 0xFFFF)
+                .loseItems(mine, counts));
+            ClientFrame cf = frame(f);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            boolean before = cf.extras().loseActive;
+            cf.key(GLFW_KEY_KP_0, GLFW_PRESS, 0, T0);
+            cf.step(T0 + 10_000_000L, 800, 600, 1, M, 256, 100);
+            boolean held = cf.extras().loseActive;
+            int item = cf.extras().loseItem;
+            cf.key(GLFW_KEY_KP_0, GLFW_RELEASE, 0, T0);
+            cf.step(T0 + 2_000_000_000L, 800, 600, 1, M, 256, 100);
+            boolean lastFade = cf.extras().loseActive;
+            cf.step(T0 + 2_010_000_000L, 800, 600, 1, M, 256, 100);
+            boolean after = cf.extras().loseActive;
+            assertAll(
+                () -> assertFalse(before, "no key yet: no outline"),
+                () -> assertTrue(held, "SELECT_ITEM held: outline"),
+                () -> assertEquals(mine, item, "on SELF_ITEMS' lose item"),
+                () -> assertTrue(lastFade, "released: the frame that uses up the fade still outlines (aged by dt)"),
+                () -> assertFalse(after, "then no outline"));
         }
 
         @Test

@@ -76,6 +76,23 @@ final class FakeConnection implements GameConnection {
         return settingsSent;
     }
 
+    /** Every setModifierBanks call, the four texts joined with '|' (not in {@link #calls}). */
+    final List<String> banks = new ArrayList<>();
+
+    @Override
+    public void setModifierBanks(String[] b) {
+        banks.add(String.join("|", b));
+    }
+
+    /** Every sendDisplay call as "width x height" (not in {@link #calls}, so the step order stays as it was). */
+    final List<String> displays = new ArrayList<>();
+
+    @Override
+    public boolean sendDisplay(int viewWidth, int viewHeight, long nowNanos) {
+        displays.add(viewWidth + "x" + viewHeight);
+        return true;
+    }
+
     @Override
     public void disconnect(long nowNanos) {
         log("disconnect");
