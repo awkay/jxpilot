@@ -245,6 +245,42 @@ class ReviewFixesTest {
         }
 
         @Test
+        @DisplayName("/get min/maxVisibilityDistance: the configured value until the first sensor range, then C's pixels")
+        void visibilityGet() {
+            TuningTest.Fx dflt = new TuningTest.Fx("");
+            String minBefore = dflt.get("minVisibilityDistance");
+            String maxBefore = dflt.get("maxVisibilityDistance");
+            dflt.s.ships.join("Ann", 0);
+            TuningTest.Fx blocks = new TuningTest.Fx("minVisibilityDistance: 10\nmaxVisibilityDistance: 40.5\n");
+            blocks.s.ships.join("Ann", 0);
+            TuningTest.Fx early = new TuningTest.Fx("");
+            early.t.tune("minVisibilityDistance", "12");
+            String earlyBefore = early.get("minVisibilityDistance");
+            Player e = early.s.ships.join("Ann", 0);
+            e.fuel = 0;
+            early.s.locks.sensorRange(e);
+            float earlyRange = e.sensorRange;
+            String earlyAfter = early.get("minVisibilityDistance");
+            early.t.tune("maxVisibilityDistance", "1e6");
+            early.t.tune("minVisibilityDistance", "5000");
+            early.s.locks.sensorRange(e);
+            // C player.c:230-237: float * int (BLOCK_SZ 35), or VISIBILITY_DISTANCE / World.hypotenuse; /get is "%g"
+            String hyp = CFormat.g((float) dflt.w.params.hypotenuse);
+            assertAll(
+                () -> assertEquals("0", minBefore, "no player yet: the configured 0"),
+                () -> assertEquals("0", maxBefore, "no player yet: the configured 0"),
+                () -> assertEquals("1000", dflt.get("minVisibilityDistance"), "0 became VISIBILITY_DISTANCE"),
+                () -> assertEquals(hyp, dflt.get("maxVisibilityDistance"), "0 became the world diagonal"),
+                () -> assertEquals("350", blocks.get("minVisibilityDistance"), "10 blocks * 35"),
+                () -> assertEquals("1417.5", blocks.get("maxVisibilityDistance"), "40.5 blocks * 35"),
+                () -> assertEquals("12", earlyBefore, "a /set before the first player is stored as given"),
+                () -> assertEquals("420", earlyAfter, "and then scaled as blocks, as C's init does"),
+                () -> assertEquals(420f, earlyRange, 1e-3, "the limit is 12 blocks"),
+                () -> assertEquals("5000", early.get("minVisibilityDistance"), "a later /set is stored as given"),
+                () -> assertEquals(5000f, e.sensorRange, 1e-3, "and used as pixels"));
+        }
+
+        @Test
         @DisplayName("min/maxVisibilityDistance become the sensor-range limits as given, in pixels (C tuner_dummy)")
         void visibility() {
             TuningTest.Fx f = new TuningTest.Fx("");

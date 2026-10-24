@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
+import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
@@ -47,14 +48,30 @@ public final class Locks {
     /** C {@code minVisibilityDistance}, {@code maxVisibilityDistance} and {@code EnergyRangeFactor}. */
     private double minVisibility;
     private double maxVisibility;
-    private final double energyRangeFactor;
+    private double energyRangeFactor;
+    /** C {@code Compute_sensor_range}'s {@code static int init}. */
+    private boolean init;
 
     public Locks(World w) {
         this.w = w;
-        double min = w.params.minVisibilityDistance;
-        double max = w.params.maxVisibilityDistance;
-        minVisibility = min <= 0.0 ? Const.VISIBILITY_DISTANCE : (float) (min * Const.BLOCK_SZ);
-        maxVisibility = max <= 0.0 ? w.params.hypotenuse : (float) (max * Const.BLOCK_SZ);
+    }
+
+    /**
+     * C {@code Compute_sensor_range}'s first-call block (player.c:230-248), run by the first sensor-range
+     * computation.
+     * <p>
+     * BEHAVIOR: the limits become pixels (VISIBILITY_DISTANCE and the world diagonal for 0, else blocks *
+     * BLOCK_SZ) and, as C writes them back into the option variables, {@code /get} shows those pixel values from
+     * now on; the energy factor makes the starting fuel and sensors reach exactly the minimum.
+     */
+    private void init() {
+        init = true;
+        double min = w.options.getDouble(Opt.MIN_VISIBILITY_DISTANCE);
+        double max = w.options.getDouble(Opt.MAX_VISIBILITY_DISTANCE);
+        minVisibility = min <= 0.0 ? (float) Const.VISIBILITY_DISTANCE : (float) ((float) min * Const.BLOCK_SZ);
+        maxVisibility = max <= 0.0 ? (float) w.params.hypotenuse : (float) ((float) max * Const.BLOCK_SZ);
+        w.options.replaceValue(Opt.MIN_VISIBILITY_DISTANCE, Float.toString((float) minVisibility));
+        w.options.replaceValue(Opt.MAX_VISIBILITY_DISTANCE, Float.toString((float) maxVisibility));
         int fuel0 = w.items.initial[Item.FUEL.ordinal()];
         if (fuel0 > 0.0) {
             float f = (float) (minVisibility / (fuel0 * (1.0 + (w.items.initial[Item.SENSOR.ordinal()] * 0.25))));
@@ -65,10 +82,11 @@ public final class Locks {
     }
 
     /**
-     * After /set minVisibilityDistance (C tuner_dummy): C's variable holds the new value as given, compared with
-     * ranges in pixels (only its start-up value is scaled by BLOCK_SZ); EnergyRangeFactor keeps its start-up value.
+     * After /set minVisibilityDistance (C tuner_dummy): C's variable holds the new value as given. Before the first
+     * sensor-range computation {@link #init} still scales it (blocks); after it, it is compared with ranges as
+     * pixels, and EnergyRangeFactor keeps its first value.
      * <p>
-     * BEHAVIOR: the minimum becomes {@code v} pixels, whatever its sign.
+     * BEHAVIOR: the minimum becomes {@code v} pixels, whatever its sign (until {@link #init} replaces it).
      */
     public void tuneMinVisibility(double v) {
         minVisibility = v;
@@ -77,7 +95,7 @@ public final class Locks {
     /**
      * After /set maxVisibilityDistance: as {@link #tuneMinVisibility}.
      * <p>
-     * BEHAVIOR: the maximum becomes {@code v} pixels, whatever its sign.
+     * BEHAVIOR: the maximum becomes {@code v} pixels, whatever its sign (until {@link #init} replaces it).
      */
     public void tuneMaxVisibility(double v) {
         maxVisibility = v;
@@ -91,6 +109,9 @@ public final class Locks {
      * reach exactly minVisibility.
      */
     public void sensorRange(Player pl) {
+        if (!init) {
+            init();
+        }
         float r = (float) (pl.fuel * energyRangeFactor);
         r = (float) (r * (1.0 + (pl.items[Item.SENSOR.ordinal()] * 0.25)));
         if (r < minVisibility) {

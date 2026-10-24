@@ -126,9 +126,11 @@ player-name commands; it keeps at most 15 characters of it and 63 of the host na
 |unbound
 |Bind the zoom swap to an X11 key name such as `z` or `F5` (XPilot's `keySwapScaleFactor`).
 
-|`--font FILE`, `--font-size PX`
-|bundled Fira Code, 13
-|Font for all text, and its size in logical pixels.
+|`--font FONT`, `--font-size PX`
+|XPilot's fonts per role
+|One font for all text instead of XPilot's per-role fonts (<<client-fonts>>): a TrueType file or a
+bundled name (`FiraCode`, `LiberationSans-Bold`, ...), optionally with `:SIZE`. `--font-size` alone
+selects bundled Fira Code at that size; without it the size is 13.
 
 |`--sound`, `--no-sound`
 |sound on
@@ -177,16 +179,31 @@ The client knows all of the XPilot client's resources: the key bindings and cont
 
 These take effect:
 
-* `name` and `team`;
+* `name`, `team`, `user` and `host`;
+* the fonts (<<client-fonts>>) and `scaleFactor`, `altScaleFactor`;
+* `toggleShield` and `autoShield`;
 * the HUD: `showHUD`, `verticalHUDLine`, `horizontalHUDLine`, `speedFactHUD`, `speedFactPTR`,
   `fuelMeter`, `fuelGauge`, `fuelNotify`, `fuelWarning`, `fuelCritical`, `turnSpeedMeter`, `powerMeter`;
 * items and mines: `showItems`, `showItemsTime`, `showMineName`;
 * messages and scores: `showMessages`, `maxMessages`, `charsPerSecond`, `maxLinesInHistory`,
   `showScoreDecimals`.
 
-The other resources are read and kept but change nothing yet, and the X11-only ones (`display`,
-`keyboard` and so on) never will. XPilot's settings panel, which changes these while you play, and its
-font resources are still being built.
+The CONFIG panel changes them while you play and saves them
+(<<03-playing.adoc#button-bar,The button bar, CONFIG and ABOUT>>). XPilot's look options, such as the
+packet meters, the clock, textures and colours, are read and kept but do not change the picture yet,
+and the X11-only ones (`display`, `keyboard` and so on) never will.
+
+[[client-fonts]]
+==== Fonts
+
+Like XPilot, the client uses a font per role: `gameFont` (the HUD and other text in the game view),
+`messageFont` (messages), `scoreListFont`, `buttonFont`, `textFont` (labels and the information
+windows), `talkFont` and `motdFont`. Their defaults are XPilot's X11 font names, drawn with the bundled
+Liberation fonts: each X11 font name is matched to the closest Liberation Serif, Sans or Mono face
+in its weight and slant. A font resource may be an
+X11 font name (its pixel size is used), a TrueType file, or a bundled name such as `LiberationSerif-Bold`
+or `FiraCode`, each optionally followed by `:SIZE`. A font that cannot be used falls back to the role's
+default with XPilot's "Couldn't find font" message. `--font` replaces them all with one font.
 
 [[viewer-flags]]
 == Viewer flags (`--view-map`)

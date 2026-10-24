@@ -160,8 +160,10 @@ class XpilotRcTest {
                 () -> assertTrue(ClientAction.TALK_CURSOR_UP.implemented(), "talk cursor"),
                 () -> assertTrue(ClientAction.SWAP_SCALEFACTOR.implemented(), "scale swap"),
                 () -> assertTrue(ClientAction.HELP.implemented(), "help"),
-                () -> assertFalse(ClientAction.ID_MODE.implemented(), "ID mode is not"),
-                () -> assertFalse(ClientAction.MSG_1.implemented(), "talk macros are not"));
+                () -> assertTrue(ClientAction.ID_MODE.implemented(), "ID mode"),
+                () -> assertTrue(ClientAction.MSG_1.implemented(), "talk macros"),
+                () -> assertTrue(ClientAction.POINTER_CONTROL.implemented(), "pointer control"),
+                () -> assertFalse(ClientAction.TOGGLE_RECORD.implemented(), "recording is not"));
         }
 
         @Test

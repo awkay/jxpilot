@@ -305,17 +305,23 @@ class XpConnectionTest {
         }
 
         @Test
-        void queueIsRepeatedAndTimesOut() {
+        void queueIsRepeatedAndWaitsWhileTheServerAcks() {
             server.queueSteps = Integer.MAX_VALUE;
+            server.queueAcks = true;
             start();
             idle(5 * XpConnection.SECOND);
             int requests = server.contactRequests.size();
-            idle(XpConnection.QUEUE_TIMEOUT_NANOS);
+            idle(200 * XpConnection.SECOND);
+            ConnectionState longQueued = conn.state();
+            server.queueAcks = false;
+            idle(XpConnection.QUEUE_TIMEOUT_NANOS + XpConnection.SECOND);
             assertAll(
                 () -> assertEquals(1, conn.queuePosition(), "queue position"),
                 () -> assertEquals(1 + 3, requests, "contact, queue, then a repeat every 2 s"),
-                () -> assertEquals(ConnectionState.CLOSED, conn.state(), "queue timeout"),
-                () -> assertEquals("Not admitted by 127.0.0.1:15345 (queued at 1)", conn.status().toString(), "reason"));
+                () -> assertEquals(ConnectionState.CONNECTING, longQueued, "no cap while the server acks (C)"),
+                () -> assertEquals(ConnectionState.CLOSED, conn.state(), "closed once the acks stop"),
+                () -> assertEquals("No answer from 127.0.0.1:15345 (queued at 1)", conn.status().toString(),
+                    "reason"));
         }
 
         @Test
@@ -601,13 +607,20 @@ class XpConnectionTest {
         }
 
         @Test
-        void silenceTimesOut() {
+        void silenceWhilePlayingNeverCloses() {
             play();
             server.silentFrames = true;
-            idle(XpConnection.TIMEOUT_NANOS + XpConnection.SECOND);
+            idle(10 * 60 * XpConnection.SECOND);
+            int notices = 0;
+            for (int k = 0; k < game.messages().gameCount(); k++) {
+                if (game.messages().game(k).text().toString().equals(XpConnection.NO_RESPONSE)) {
+                    notices++;
+                }
+            }
+            int n = notices;
             assertAll(
-                () -> assertEquals(ConnectionState.CLOSED, conn.state(), "closed"),
-                () -> assertEquals("Connection to 127.0.0.1:15345 lost (timeout)", conn.status().toString(), "reason"));
+                () -> assertEquals(ConnectionState.PLAYING, conn.state(), "still playing after 10 minutes (C waits)"),
+                () -> assertTrue(n >= 1, "the 'No response from server' notices keep coming"));
         }
 
         @Test

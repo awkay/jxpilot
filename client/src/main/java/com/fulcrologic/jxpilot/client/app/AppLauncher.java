@@ -118,9 +118,18 @@ public final class AppLauncher {
             ShipShapeResource::readLatin1, System.err);
         com.fulcrologic.jxpilot.client.xp.GameConnections.setUser(resource(keys, ClientOption.USER));
         com.fulcrologic.jxpilot.client.xp.GameConnections.setHost(resource(keys, ClientOption.HOST));
-        GameConnection conn = GameConnector.open(target, o.bind(), game, name(o, keys), team(o, keys), shape,
-            o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime(),
-            keys.options().integer(ClientOption.CLIENT_PORT_START), keys.options().integer(ClientOption.CLIENT_PORT_END));
+        GameConnection conn;
+        try {
+            conn = GameConnector.open(target, o.bind(), game, name(o, keys), team(o, keys), shape,
+                o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime(), GameConnector.environmentIdentity(
+                    keys.options().text(ClientOption.USER), keys.options().text(ClientOption.HOST),
+                    keys.options().text(ClientOption.DISPLAY)),
+                keys.options().integer(ClientOption.CLIENT_PORT_START), keys.options().integer(ClientOption.CLIENT_PORT_END));
+        } catch (IOException e) {
+            // C xpilot.c: an unknown host or a socket that cannot open is an error message and exit 1
+            System.err.println("Cannot connect to " + target + ": " + e.getMessage());
+            return 1;
+        }
         return new GameApp(o, game, conn, target.toString(), null, keys).saveTarget(rcFile(o,
             Path.of(System.getProperty("user.home", "."))), name(o, keys)).run();
     }

@@ -162,19 +162,53 @@ class AppPartsTest {
     @DisplayName("GameConnector")
     class Connector {
         @Test
-        @DisplayName("XPilot login: nick, team, shape, real name reduced to safe characters")
+        @DisplayName("XPilot login: nick, team, shape, audio; real name, host and display from the identity")
         void xpLogin() {
-            XpConnection.Login l = GameConnector.xpLogin("Ace", 4, "(SH: 1,0)", true, "t.käy x");
-            XpConnection.Login empty = GameConnector.xpLogin("Ace", 4, null, false, "ä");
+            XpIdentity id = new XpIdentity("tk", "box.example", ":1");
+            XpConnection.Login l = GameConnector.xpLogin("Ace", 4, "(SH: 1,0)", true, id);
+            XpConnection.Login empty = GameConnector.xpLogin("Ace", 4, null, false, id);
             assertAll(
                 () -> assertEquals("Ace", l.nick, "nick"),
                 () -> assertEquals(4, l.team, "team"),
                 () -> assertEquals("(SH: 1,0)", l.shape, "shape"),
-                () -> assertEquals("t.kyx", l.realName, "non-ASCII and space dropped"),
-                () -> assertEquals("jxpilot", empty.realName, "nothing left: jxpilot"),
+                () -> assertEquals("tk", l.realName, "real name"),
+                () -> assertEquals("box.example", l.host, "host"),
+                () -> assertEquals(":1", l.display, "display"),
                 () -> assertEquals("", empty.shape, "no shape is the empty shape (the default ship)"),
                 () -> assertTrue(l.audio, "asks for audio when sound is on"),
                 () -> assertFalse(empty.audio, "does not ask for audio when sound is off"));
+        }
+
+        @Test
+        @DisplayName("C identity: resource, else environment, else login / local host / :0.0; C's fixes")
+        void identity() {
+            java.util.Map<String, String> env = java.util.Map.of("XPILOTUSER", "envuser", "XPILOTHOST", "env.host",
+                "DISPLAY", ":7");
+            int[] asked = new int[1];
+            XpIdentity fromRes = XpIdentity.resolve("res", "res.host", ":2", env::get, "login", () -> {
+                asked[0]++;
+                return "local";
+            });
+            XpIdentity fromEnv = XpIdentity.resolve("", "", "", env::get, "login", () -> "local");
+            XpIdentity fallback = XpIdentity.resolve("", "", "", k -> null, "t.käy x", () -> "-bad");
+            assertAll(
+                () -> assertEquals(new XpIdentity("res", "res.host", ":2"), fromRes, "resources win"),
+                () -> assertEquals(0, asked[0], "the local host is not looked up then"),
+                () -> assertEquals(new XpIdentity("envuser", "env.host", ":7"), fromEnv, "then the environment"),
+                () -> assertEquals(new XpIdentity("t.kxxyxx", "xxx.xxx", ":0.0"), fallback,
+                    "then login (UTF-8 bytes and space made 'x'), the local host (fixed), C's :0.0"),
+                () -> assertEquals("X", XpIdentity.fixRealName(""), "empty real name: X"),
+                () -> assertEquals("abcdefghijklmno", XpIdentity.fixRealName("abcdefghijklmnopq"), "15 chars"),
+                () -> assertEquals("ax.b-c.dx", XpIdentity.fixHostName("a..b-c.d-"), "doubled or trailing . and -"),
+                () -> assertEquals("axb", XpIdentity.fixHostName("a_b"), "other characters"),
+                () -> assertEquals(63, XpIdentity.fixHostName("h".repeat(80)).length(), "63 chars"),
+                () -> assertEquals("xxx.xxx", XpIdentity.fixHostName(""), "empty host"),
+                () -> assertEquals("abx", XpIdentity.fixHostName("ab."), "a trailing dot"),
+                () -> assertEquals("ax-b", XpIdentity.fixHostName("a.-b"), "a dot before a dash"),
+                () -> assertEquals("AZaz09", XpIdentity.fixHostName("AZaz09"), "the letter and digit edges"),
+                () -> assertEquals("Axxxxxx", XpIdentity.fixHostName("A@[`{/:"), "their neighbours are not"),
+                () -> assertEquals("!~xx", XpIdentity.fixRealName("!~ \u007f"), "C isgraph: '!'..'~' only"),
+                () -> assertEquals("abcdefghijklmno", XpIdentity.fixRealName("abcdefghijklmno"), "exactly 15 kept"));
         }
 
         @Test

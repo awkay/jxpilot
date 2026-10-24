@@ -465,6 +465,35 @@ public final class Keys {
     }
 
     /** BEHAVIOR: true while hover-paused or on autopilot (the power and turn settings keys do nothing then). */
+    /**
+     * C {@code Receive_pointer_move} (netserver.c:3140): pointer control turned the ship by {@code movement} (the
+     * client's horizontal mouse movement in window pixels).
+     * <p>
+     * BEHAVIOR: ignored in HOVERPAUSE; an engaged autopilot is switched off first; the turn speed is
+     * {@code movement * turnSpeed / MAX_PLAYER_TURNSPEED}, its size limited to MIN..MAX_PLAYER_TURNSPEED with a
+     * turn resistance, else to 0..5 * RES; {@code turnVel -= direction * size}.
+     */
+    public void pointerMove(Player pl, int movement) {
+        if ((pl.status & Obj.HOVERPAUSE) != 0) {
+            return;
+        }
+        if ((pl.used & Has.AUTOPILOT) != 0) {
+            sim.devices.autopilot(pl, false);
+        }
+        float turnspeed = (float) (movement * pl.turnSpeed / Const.MAX_PLAYER_TURNSPEED);
+        float turndir = 1.0f;
+        if (turnspeed < 0) {
+            turndir = -1.0f;
+            turnspeed = -turnspeed;
+        }
+        if (pl.turnResistance != 0) {
+            turnspeed = (float) Math.max(Const.MIN_PLAYER_TURNSPEED, Math.min(Const.MAX_PLAYER_TURNSPEED, turnspeed));
+        } else {
+            turnspeed = Math.max(0, Math.min(5 * Const.RES, turnspeed));
+        }
+        pl.turnVel -= turndir * turnspeed;
+    }
+
     static boolean hoverOrAutopilot(Player pl) {
         return (pl.status & Obj.HOVERPAUSE) != 0 || (pl.used & Has.AUTOPILOT) != 0;
     }

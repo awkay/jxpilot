@@ -62,7 +62,16 @@ important keys:
 |===
 
 To quit, close the window, press kbd:[Cmd+Q] on macOS, or click QUIT in the button bar above the score
-list, as in XPilot. `keyQuit` (JXPilot only) binds a quit key; it is unbound by default.
+list (<<button-bar>>), as in XPilot. `keyQuit` (JXPilot only) binds a quit key; it is unbound by
+default.
+For kbd:[Esc] to quit, as in earlier JXPilot versions, put these two lines in `~/.xpilotrc`
+(<<key-bindings>>):
+
+[source,text]
+----
+xpilot.keySwapSettings:
+xpilot.keyQuit:          Escape
+----
 
 JXPilot's additions to XPilot's defaults: kbd:[Alt]/kbd:[Option] also connects to a ball, so a Mac
 laptop's single kbd:[Control] can stay refuel; kbd:[0] also self-destructs, since kbd:[End] needs kbd:[fn]
@@ -74,6 +83,27 @@ TIP: *Mac laptops and other compact keyboards* have no Page Up, Page Down, End o
 own. On a Mac laptop, kbd:[fn+↑] and kbd:[fn+↓] are Page Up and Page Down (lock on the previous / next
 player), and kbd:[fn+→] is End. The power and turn speed keys are on the keypad; the
 <<mac-laptop-keymap,Mac laptop keymap>> example moves them to function keys.
+
+[[button-bar]]
+=== The button bar, CONFIG and ABOUT
+
+Under the radar, as in XPilot, are three buttons. A button acts when you release the mouse button over
+it.
+
+QUIT:: Leave the game.
+ABOUT:: XPilot's information window, four pages: the bonus items (two pages, with their pictures),
+the game objective and about XPilot. NEXT, PREV and CLOSE page through it.
+MENU:: Hold the mouse button and release over an entry: KEYS shows the key help (as kbd:[F1]),
+CONFIG opens the settings panel, SCORE and PLAYER switch the score list between player names and real
+names, and MOTD shows the server's message of the day again.
+
+*CONFIG* covers the score list with XPilot's settings, in XPilot's order, a page at a time (NEXT, PREV,
+CLOSE). A Yes/No setting toggles when clicked; a number changes with its left and right arrows. Changes
+apply at once: the engine settings are sent to the server, and the HUD, message, item and zoom settings
+change what you see. The last entry, *Save Configuration*, writes the settings to `~/.xpilotrc` (or
+the `--keys` file) in XPilot's format: each saved setting's line is replaced where it is, your other
+lines stay, new settings go at the end, and the old file is kept with `.bak` added to its name. XPilot's own
+save keeps only the `xpilot.` lines of the old file.
 
 [[engine-settings]]
 === Engine settings

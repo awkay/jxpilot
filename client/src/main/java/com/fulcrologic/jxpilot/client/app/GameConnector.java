@@ -53,26 +53,53 @@ public final class GameConnector {
      */
     public static GameConnection open(ConnectTarget target, Endpoint bind, ConnectionListener listener, String name,
                                       int team, String shape, boolean audio, int seed) throws IOException {
-        return open(target, bind, listener, name, team, shape, audio, seed, 0, 0);
+        return open(target, bind, listener, name, team, shape, audio, seed, null, 0, 0);
     }
 
     /**
-     * {@link #open(ConnectTarget, Endpoint, ConnectionListener, String, int, String, boolean, int)} with C's
-     * {@code clientPortStart}/{@code clientPortEnd}: without {@code bind}, each socket takes the first free local
-     * UDP port of that range (C {@code CreateDgramSocket} over the range, for firewalls); a range starting at 0 means
-     * any port.
+     * As above with the XPilot login identity ({@link XpIdentity}); null resolves it from the environment only.
      */
     public static GameConnection open(ConnectTarget target, Endpoint bind, ConnectionListener listener, String name,
-                                      int team, String shape, boolean audio, int seed, int portStart, int portEnd)
+                                      int team, String shape, boolean audio, int seed, XpIdentity identity)
+        throws IOException {
+        return open(target, bind, listener, name, team, shape, audio, seed, identity, 0, 0);
+    }
+
+    /**
+     * As above with C's {@code clientPortStart}/{@code clientPortEnd}: without {@code bind}, each socket takes the
+     * first free local UDP port of that range (C {@code CreateDgramSocket} over the range, for firewalls); a range
+     * starting at 0 means any port.
+     */
+    public static GameConnection open(ConnectTarget target, Endpoint bind, ConnectionListener listener, String name,
+                                      int team, String shape, boolean audio, int seed, XpIdentity identity,
+                                      int portStart, int portEnd)
         throws IOException {
         Endpoint ep = target.endpoint();
         String label = ep.toString();
         if (target.protocol() == ConnectTarget.Protocol.XPILOT) {
+            XpIdentity id = identity != null ? identity : environmentIdentity("", "", "");
             return new XpConnection(port -> openUdp(new Endpoint(ep.host(), port), bind, portStart, portEnd), listener,
-                label, xpLogin(name, team, shape, audio, System.getProperty("user.name", "")));
+                label, xpLogin(name, team, shape, audio, id));
         }
         UdpTransport t = openUdp(ep, bind, portStart, portEnd);
-        return new NativeGameConnection(nativeConnection(t, label, listener, name, team, shape), t);
+        return new NativeGameConnection(identity != null
+            ? nativeConnection(t, label, listener, name, team, shape, identity)
+            : nativeConnection(t, label, listener, name, team, shape), t);
+    }
+
+    /** C's identity from the user/host/display resources, the environment, the login and the local host name. */
+    public static XpIdentity environmentIdentity(String user, String host, String display) {
+        return XpIdentity.resolve(user, host, display, System::getenv, System.getProperty("user.name", ""),
+            GameConnector::localHostName);
+    }
+
+    /** C {@code sock_get_local_hostname}: the local host's name, "localhost" when it cannot be found. */
+    static String localHostName() {
+        try {
+            return java.net.InetAddress.getLocalHost().getHostName(); // C gethostname(), not a reverse lookup
+        } catch (IOException | RuntimeException e) {
+            return "localhost";
+        }
     }
 
     /** A UDP socket to {@code to}: from {@code bind}, else from the first free port of the range, else any port. */
@@ -113,10 +140,10 @@ public final class GameConnector {
      * <p>
      * BEHAVIOR: nick, team and shape as given (null is ""; XpConnection converts it when sending); debris colours = the client's spark colours (temperature
      * levels, as the C client asks) and spark probability 1 (every particle every frame, so particles can be
-     * tracked across frames; the painter does C's sparkle); the real name is {@code userName} reduced to ASCII letters,
-     * digits, '-', '_' and '.' ("jxpilot" when nothing is left); audio (PKT_REQUEST_AUDIO) as given.
+     * tracked across frames; the painter does C's sparkle); real name, host and display from {@code id}; audio
+     * (PKT_REQUEST_AUDIO) as given.
      */
-    static XpConnection.Login xpLogin(String name, int team, String shape, boolean audio, String userName) {
+    static XpConnection.Login xpLogin(String name, int team, String shape, boolean audio, XpIdentity id) {
         XpConnection.Login login = new XpConnection.Login();
         login.audio = audio;
         login.nick = name;
@@ -124,14 +151,9 @@ public final class GameConnector {
         login.shape = shape == null ? "" : shape;
         login.debrisColors = PaintConfig.SPARK_COLORS.length;
         login.sparkProb = 1.0;
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < userName.length(); i++) {
-            char c = userName.charAt(i);
-            if (c < 128 && Character.isLetterOrDigit(c) || c == '-' || c == '_' || c == '.') {
-                sb.append(c);
-            }
-        }
-        login.realName = sb.isEmpty() ? "jxpilot" : sb.toString();
+        login.realName = id.realName();
+        login.host = id.host();
+        login.display = id.display();
         return login;
     }
 
@@ -140,6 +162,17 @@ public final class GameConnector {
      * {@code Send_shape} does: converted without limits ({@link ShipShape#convert}, so an empty or invalid
      * shape is the default ship) and written canonically ({@link ShipShape#toWireString}).
      */
+    static ClientConnection nativeConnection(Transport t, String label, ConnectionListener listener, String name,
+                                             int team, String shape, XpIdentity id) { // ... and id's real name and host
+        ClientConnection c = nativeConnection(t, label, listener, name, team, shape);
+        c.connect.realName.setLength(0);
+        c.connect.realName.append(id.realName());
+        c.connect.hostName.setLength(0);
+        c.connect.hostName.append(id.host());
+        return c;
+    }
+
+    /** As above with {@code GameConnections}' real name and host. */
     static ClientConnection nativeConnection(Transport t, String label, ConnectionListener listener, String name,
                                              int team, String shape) {
         ClientConnection c = new ClientConnection(t, listener, label, (int) System.nanoTime());

@@ -175,6 +175,57 @@ class XpTranslatorEdgeTest {
     }
 
     @Test
+    void asteroidBlipsKeepTheirSizeInPerSizeSections() {
+        // C Frame_radar: an asteroid is (size + 1) | 0x80
+        List<String> s = frame(c(1).self(1750, 1750).radar(35, 35, (3 + 1) | 0x80).radar(70, 70, 3)
+            .radar(105, 105, (1 + 1) | 0x80).radar(140, 140, (3 + 1) | 0x80).end(1));
+        List<String> radar = SnapDump.only(s, "RADAR");
+        assertAll(
+            () -> assertEquals(4, radar.size(), "four blips"),
+            () -> assertEquals("flags=0", radar.get(0).substring(radar.get(0).indexOf("flags=")), "the player first, variant 0"),
+            () -> assertEquals(List.of("flags=" + Records.Radar.FLAG_ASTEROID + " size=1",
+                    "flags=" + Records.Radar.FLAG_ASTEROID + " size=3", "flags=" + Records.Radar.FLAG_ASTEROID + " size=3"),
+                radar.subList(1, 4).stream().map(x -> x.substring(x.indexOf("flags="))).toList(),
+                "then one section per size, ascending"),
+            () -> assertEquals(0, XpTranslator.asteroidSize(0x80 | 0), "a size byte below 1 is size 0"));
+    }
+
+    @Test
+    void eyesFollowCsRules() {
+        // C Handle_start (self), Handle_eyes (PKT_EYES), Handle_ship (self visible, else the centre ship)
+        frame(c(1).self(1750, 1750).ship(1750, 1750, 3, 0).end(1));
+        int selfVisible = tr.eyesId();
+        frame(c(2).self(1750, 1750).ship(1000, 1000, 7, 0).ship(1750, 1750, 8, 0).end(2));
+        int centre = tr.eyesId();
+        frame(c(3).self(1750, 1750).eyes(9).end(3));
+        int packet = tr.eyesId();
+        frame(c(4).self(1750, 1750).eyes(9).ship(1750, 1750, 8, 0).end(4));
+        int centreOverPacket = tr.eyesId();
+        frame(c(5).self(1750, 1750).end(5));
+        int none = tr.eyesId();
+        assertAll(
+            () -> assertEquals(3, selfVisible, "the own ship in the frame: the own player"),
+            () -> assertEquals(8, centre, "else the ship at the view centre"),
+            () -> assertEquals(9, packet, "else PKT_EYES"),
+            () -> assertEquals(8, centreOverPacket, "the centre ship wins over PKT_EYES (Handle_ship comes later)"),
+            () -> assertEquals(3, none, "nothing said: the own player (Handle_start)"));
+    }
+
+    @Test
+    void aWatchedShipAtTheCentreGetsAPlayerBlip() {
+        // C Handle_ship: !selfVisible and a ship exactly at the SELF position (spectating): Handle_radar(.., 3)
+        List<String> watching = frame(c(1).self(1750, 1750).ship(1000, 1000, 7, 0).ship(1750, 1750, 8, 0).end(1));
+        List<String> offCentre = frame(c(2).self(1750, 1750).ship(1751, 1750, 8, 0).end(2));
+        List<String> selfToo = frame(c(3).self(1750, 1750).ship(1750, 1750, 8, 0).ship(1750, 1750, 3, 0).end(3));
+        assertAll(
+            () -> assertEquals(List.of("RADAR cell=128,128 flags=0"), SnapDump.only(watching, "RADAR"),
+                "the centre ship (8), not ship 7, as a plain player blip"),
+            () -> assertEquals(List.of(), SnapDump.only(offCentre, "RADAR"), "one pixel off: none"),
+            () -> assertEquals(List.of("RADAR cell=128,128 flags=" + Records.Radar.FLAG_SELF),
+                SnapDump.only(selfToo, "RADAR"), "the own ship in the frame wins"));
+    }
+
+    @Test
     void nonWrappingMapsKeepPositionsOutsideTheWorld() {
         XpMap.Built flat = XpMap.build(XpMapTest.setupFor(XpTranslatorTest.rows(), 0, 12, "Flat", true));
         tr.configure(flat, 0, XpProto.MY_VERSION);
@@ -190,57 +241,23 @@ class XpTranslatorEdgeTest {
     }
 
     @Test
-    void renamedPlayersLeaveWithTheNewName() {
-        tr.player(5, 0, ' ', "Longname", "");
-        tr.player(5, 0, ' ', "Bo", "");
-        rec.events.clear();
-        tr.leave(5);
-        assertEquals("message kind=4 from=65535 Bo left this world.", rec.events.get(0), "name replaced");
-    }
-
-    @Test
-    void scoreMycharUpdatesTheLeaveRule() {
-        XpTranslator t = new XpTranslator(rec);
-        t.configure(built, 0, XpProto.MY_VERSION);
-        t.player(5, 0, ' ', "Tank", "");
-        t.score(5, 0, 0, 'T');
-        rec.events.clear();
-        t.leave(5);
-        assertEquals(List.of("leave id=5"), rec.events, "a player that became a tank leaves silently");
-    }
-
-    @Test
-    void leavingKeepsTheOtherNames() {
+    void leavingSelfForgetsItAndOthersDoNot() {
         tr.player(1, 0, 'R', "Robby", "");
-        tr.player(2, 0, ' ', "Ann", "");
-        tr.leave(3);
         tr.leave(1);
-        rec.events.clear();
-        tr.player(7, 0, 'R', "Rex", "");
-        tr.war(7, 2);
-        tr.seek(2, 7, 2);
+        int afterOther = tr.selfId();
+        tr.leave(3);
         assertAll(
-            () -> assertEquals(List.of("join id=7 team=0 flags=1 name=Rex shape=",
-                "message kind=4 from=65535 Rex declares war on Ann.",
-                "message kind=4 from=65535 Ann has programmed Rex to seek Ann."), rec.events.subList(0, 3),
-                "names survive removals"),
+            () -> assertEquals(3, afterOther, "another player leaving keeps the self id"),
             () -> assertEquals(Protocol.NO_ID, tr.selfId(), "self left"));
     }
 
     @Test
-    void warAndSeekNeedEveryName() {
-        tr.player(1, 0, 'R', "Robby", "");
+    void warAndSeekAreDeliveredForAnyIds() {
         rec.events.clear();
         tr.war(3, 1);
-        tr.war(1, 3);
-        tr.war(3, 9);
-        tr.seek(3, 1, 3);
-        tr.seek(1, 3, 3);
-        tr.seek(3, 3, 9);
-        assertEquals(List.of("message kind=4 from=65535 Me declares war on Robby.",
-            "message kind=4 from=65535 Robby declares war on Me.",
-            "message kind=4 from=65535 Me has programmed Robby to seek Me.",
-            "message kind=4 from=65535 Robby has programmed Me to seek Me."), rec.events,
-            "slot 0 is a valid name; unknown ids stay silent");
+        tr.war(70000, -1);
+        tr.seek(3, 1, 9);
+        assertEquals(List.of("war robot=3 killer=1", "war robot=" + (70000 & 0xFFFF) + " killer=" + Protocol.NO_ID,
+            "seek programmer=3 robot=1 sought=9"), rec.events, "ClientGame checks the ids");
     }
 }

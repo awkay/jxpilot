@@ -84,10 +84,9 @@ public final class ClientFrame {
     private final WorldMapState mapState;
     /** The C client options (client-ui): pushed into the HUD, messages and talk line when they change. */
     private final LiveOptions liveOptions;
+    private final PlayActions play;
     /** The button bar, CONFIG panel and information window (client-ui). */
     private final ClientUi ui;
-    /** C {@code showRealName} (MENU / SCORE and PLAYER; keyIdMode toggles it too). */
-    private boolean showRealName;
     private String[] modifierBanks;
     /** The MOTD was asked for from the menu: show it when it arrives even without autoServerMotdPopup. */
     private boolean motdAsked;
@@ -148,6 +147,7 @@ public final class ClientFrame {
             + " closes" : ""), keys.helpLines());
         conn.sendSettings(settings.copyTo(settingsMsg), 0);
         conn.setModifierBanks(keys.modifierBanks());
+        this.play = new PlayActions(game, conn, keys.options(), System.out, System.err, System.nanoTime());
         this.modifierBanks = keys.modifierBanks();
     }
 
@@ -197,7 +197,8 @@ public final class ClientFrame {
         input.setPlaying(inPlay);
         connectionOptions(nowNanos);
         sendDisplayIfChanged(viewW, viewH, zoom, nowNanos);
-        conn.sendInput(input.takeKeys(), 0, nowNanos);
+        play.pointer().setWindow(viewW, viewH);
+        conn.sendInput(input.takeKeys(), play.takeAim(), nowNanos);
         conn.flush(nowNanos);
         if (w.hasSelf()) {
             centreX = w.selfX();
@@ -346,9 +347,49 @@ public final class ClientFrame {
      * SHOW_CONTROLS shows the power and turn speed meters; HELP closes an open MOTD panel, else toggles the key help;
      * TOGGLE_ITEMS toggles {@link HudExtras#showItems} (C {@code Key_press_show_items}); FUEL_NOTIFY shows the fuel
      * ({@link Hud#notifyFuel}); TOGGLE_MESSAGES toggles {@link Hud#showMessages} (C {@code Key_press_show_messages}).
+     * BEHAVIOR: the play events (ID mode, print, talk macros, pointer control) go to {@link PlayActions#handle};
+     * the talk line's state to {@link PlayActions#talk}.
      */
     public void key(int key, int action, int mods, long nowNanos) {
-        int ev = router.key(key, action, mods);
+        events(router.key(key, action, mods), nowNanos);
+    }
+
+    /**
+     * A GLFW mouse button under pointer control (C {@code pointerButton1..3}: left, middle, right).
+     * <p>
+     * BEHAVIOR: as a key bound to the button's functions ({@link PlayActions#button}); nothing without pointer
+     * control.
+     */
+    public void mouseButton(int glfwButton, int action, long nowNanos) {
+        if (action == org.lwjgl.glfw.GLFW.GLFW_PRESS || action == org.lwjgl.glfw.GLFW.GLFW_RELEASE) {
+            events(play.button(router, PlayActions.xButton(glfwButton),
+                action == org.lwjgl.glfw.GLFW.GLFW_PRESS), nowNanos);
+        }
+    }
+
+    /** BEHAVIOR: a wheel step is X button 4 (up) or 5 (down), pressed and released (C {@code pointerButton4/5}). */
+    public void scroll(double dy, long nowNanos) {
+        if (dy == 0) {
+            return;
+        }
+        int b = dy > 0 ? 4 : 5;
+        events(play.button(router, b, true), nowNanos);
+        events(play.button(router, b, false), nowNanos);
+    }
+
+    /** The pointer moved to (x, y) pixels of the game view ({@link com.fulcrologic.jxpilot.client.game.input.PointerControl#moved}). */
+    public void cursor(double x, double y) {
+        play.pointer().moved(x, y, talk.isOpen());
+    }
+
+    /** The window got focus back: a suspended pointer control resumes. */
+    public void focusGained() {
+        play.pointer().focusGained(talk.isOpen());
+    }
+
+    private void events(int ev, long nowNanos) {
+        play.handle(ev, router.takeMacros(), nowNanos);
+        play.talk(talk.isOpen());
         if ((ev & KeyRouter.SETTINGS) != 0) {
             conn.sendSettings(settings.copyTo(settingsMsg), nowNanos);
         }
@@ -396,17 +437,28 @@ public final class ClientFrame {
     /**
      * A GLFW mouse button event at window position (x, y) (logical pixels, origin top-left).
      * <p>
-     * BEHAVIOR: the C windows ({@link ClientUi#mouseButton}) get it first; returns whether they used it (an
-     * unused event belongs to the game view, e.g. pointer control).
+     * BEHAVIOR: under pointer control the button is a pointer button ({@link #mouseButton(int, int, long)}, C's
+     * grab); otherwise the C windows ({@link ClientUi#mouseButton}) get it; returns whether it was used.
      *
      * @param viewX where the game view starts (the panel's width plus the gap)
      */
     public boolean mouseButton(int button, int action, double x, double y, int viewX) {
+        if (play.pointer().grabbed()) {
+            mouseButton(button, action, System.nanoTime()); // C: the grabbed pointer belongs to the game view
+            return true;
+        }
         return ui.mouseButton(button, action, x, y, viewX);
     }
 
-    /** BEHAVIOR: pointer motion: the C windows first ({@link ClientUi#mouseMove}); returns whether they used it. */
+    /**
+     * BEHAVIOR: pointer motion: under pointer control it steers ({@link #cursor}, view coordinates); otherwise the
+     * C windows first ({@link ClientUi#mouseMove}); returns whether it was used.
+     */
     public boolean mouseMove(double x, double y, int viewX) {
+        if (play.pointer().grabbed()) {
+            cursor(x - viewX, y);
+            return true;
+        }
         return ui.mouseMove(x, y, viewX);
     }
 
@@ -534,7 +586,7 @@ public final class ClientFrame {
 
         @Override
         public void showRealName(boolean on) {
-            showRealName = on;
+            game.scoreboard().setIdMode(on);
         }
 
         @Override
@@ -567,10 +619,10 @@ public final class ClientFrame {
     public ClientUi ui() { return ui; }
 
     /** C {@code showRealName}: the score list shows NICK=USER@HOST (MENU / PLAYER) instead of nicks (MENU / SCORE). */
-    public boolean showRealName() { return showRealName; }
+    public boolean showRealName() { return game.scoreboard().idMode(); }
 
     /** BEHAVIOR: sets C {@code showRealName} (keyIdMode toggles it). */
-    public void setShowRealName(boolean on) { showRealName = on; }
+    public void setShowRealName(boolean on) { game.scoreboard().setIdMode(on); }
 
     /** The file "Save Configuration" writes, and the player name it saves. */
     public void setSaveTarget(java.nio.file.Path file, String playerName) {
@@ -583,10 +635,14 @@ public final class ClientFrame {
         router.character(codepoint);
     }
 
-    /** Window focus lost: game keys up. */
+    /** Window focus lost: game keys up, pointer control suspended. */
     public void focusLost() {
         router.focusLost();
+        play.pointer().focusLost();
     }
+
+    /** The play keys and pointer control. */
+    public PlayActions play() { return play; }
 
     /** BEHAVIOR: leave the server (DISCONNECT) unless the connection is already closed. */
     public void disconnect(long nowNanos) {

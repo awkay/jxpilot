@@ -124,7 +124,8 @@ final class SnapDump {
             }
             case Section.RADAR -> {
                 Records.Radar c = new Records.Radar().wrap(r, i);
-                yield "RADAR cell=" + c.cellX() + "," + c.cellY() + " flags=" + c.flags();
+                yield "RADAR cell=" + c.cellX() + "," + c.cellY() + " flags=" + c.flags()
+                    + (r.variant() != 0 ? " size=" + r.variant() : "");
             }
             case Section.SELF_ITEMS -> {
                 Records.SelfItems c = new Records.SelfItems().wrap(r, i);

@@ -63,7 +63,7 @@ class SnapshotModesTest {
 
     record Out(List<String> targets, List<String> treasures, List<String> timers, List<String> balls,
                List<String> connectors, List<String> asteroids, List<String> wrecks, List<String> radar,
-               List<Integer> shipFlags) {}
+               List<Integer> shipFlags, List<String> radarVariants) {}
 
     Out build(Simulation s, Player viewer, boolean radar) {
         World w = s.world;
@@ -72,7 +72,7 @@ class SnapshotModesTest {
         }
         int n = builders.computeIfAbsent(w, SnapshotBuilder::new).build(viewer, 1, w.events.burstSeq(), radar, parts);
         Out o = new Out(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(),
-            new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
+            new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
         SnapshotReader r = new SnapshotReader();
         r.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
         Records.TargetState tg = new Records.TargetState();
@@ -128,6 +128,7 @@ class SnapshotModesTest {
                         case Section.RADAR -> {
                             rd.wrap(r, i);
                             o.radar.add(String.valueOf(rd.flags()));
+                            o.radarVariants.add(rd.flags() + "/" + r.variant());
                         }
                         case Section.SHIP -> {
                             sh.wrap(r, i);
@@ -294,6 +295,26 @@ class SnapshotModesTest {
                 "options off: only the own ship"),
             () -> assertEquals(Protocol.NO_ID, 0xFFFF, "(NO_ID)"),
             () -> assertTrue(Obj.BALL > 0, "(ball)"));
+    }
+
+    @Test
+    @DisplayName("asteroid blips carry their size as the RADAR section variant (C size + 1 pixels), one section per size")
+    void asteroidRadarSizes() {
+        Simulation s = TestWorlds.sim("teamPlay: yes\ngravity: 0\ntreasuresOnRadar: yes\nasteroidsOnRadar: yes\n", ROWS);
+        Player v = TestWorlds.join(s, "V", 1);
+        v.sensorRange = 100_000;
+        s.asteroids.make(30 * 35, 3 * 35, 3, 0, 0f);
+        s.asteroids.make(32 * 35, 3 * 35, 1, 0, 0f);
+        s.asteroids.make(34 * 35, 3 * 35, 3, 0, 0f);
+        List<String> got = build(s, v, true).radarVariants();
+        String ball = Records.Radar.FLAG_BALL + "/0";
+        String ast = String.valueOf(Records.Radar.FLAG_ASTEROID);
+        assertAll(
+            () -> assertEquals(List.of(ast + "/1", ast + "/3", ast + "/3"),
+                got.stream().filter(x -> x.startsWith(ast + "/")).toList(), "sizes 1, 3, 3 grouped by size"),
+            () -> assertEquals(2, got.stream().filter(ball::equals).count(), "balls in variant 0"),
+            () -> assertTrue(got.stream().filter(x -> !x.startsWith(ast + "/")).allMatch(x -> x.endsWith("/0")),
+                "every other blip in variant 0"));
     }
 
     @Test

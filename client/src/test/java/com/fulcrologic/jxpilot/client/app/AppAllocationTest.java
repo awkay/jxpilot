@@ -113,6 +113,9 @@ class AppAllocationTest {
         return s;
     }
 
+    /** Most warm-up frames before measuring (the recorded server stream covers them). */
+    static final int WARM_MAX = 30_000;
+
     @Test
     void steadyStateFrameWithoutGlAllocatesZeroBytes() throws Exception {
         com.sun.management.ThreadMXBean mx = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
@@ -183,7 +186,7 @@ class AppAllocationTest {
                 return 0;
             }
         });
-        int frames = 26000;
+        int frames = WARM_MAX + 1500 + 4500; // the warm-up, the measured frames and slack: the ring must not run dry
         long genNow = now;
         long genTick = nextTick;
         for (int f = 0; f < frames; f++) {
@@ -198,6 +201,9 @@ class AppAllocationTest {
         }
         Ring ring = new Ring(packets, due);
         sw.target = ring;
+        // client-play: pointer control on (keyPointerControl), so pointer movement and buttons run every frame
+        cf.key(GLFW_KEY_KP_ENTER, GLFW_PRESS, 0, now);
+        cf.key(GLFW_KEY_KP_ENTER, GLFW_RELEASE, 0, now);
         long[] t = {now};
         Runnable frame = () -> {
             t[0] += frameNs;
@@ -210,21 +216,27 @@ class AppAllocationTest {
                 cf.key(GLFW_KEY_RIGHT_SHIFT, GLFW_RELEASE, 0, t[0]);
                 cf.key(GLFW_KEY_A, GLFW_RELEASE, 0, t[0]);
                 cf.key(GLFW_KEY_ENTER, GLFW_RELEASE, 0, t[0]);
+            } else if (f % 40 == 5) {
+                cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, t[0]);
+                cf.key(GLFW_KEY_U, GLFW_PRESS, 0, t[0]); // keyIdMode: the score list rebuilds
+            } else if (f % 40 == 25) {
+                cf.mouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, t[0]);
+                cf.key(GLFW_KEY_U, GLFW_RELEASE, 0, t[0]);
+                cf.scroll(-1, t[0]);
             }
+            cf.cursor(600 + (f % 9) * 7, 400 + (f % 5)); // pointer steering every frame
             ui(cf, f);
             cf.step(t[0], 1200, 800, 1, m, 256, 200);
             ring.frame++;
         };
-        // R7: warm up for 20000 frames
-        int warm = 0;
-        // The whole warm-up always runs: stopping as soon as the JIT settles left stream events (joins, leaves,
-        // first lock changes) unplayed, and their call sites then linked (allocating) inside the measured window.
-        while (warm < 20_000) {
-            for (int i = 0; i < 1000; i++) {
-                frame.run();
-            }
-            warm += 1000;
+        // R7: warm up until the JIT is done: no compilation (JFR jdk.Compilation) in 2 chunks of 1000 frames in a row
+        // (see JitQuiet: a late C2 request resolves its class's String constants on this thread)
+        int warm;
+        try (com.fulcrologic.jxpilot.client.JitQuiet jit = new com.fulcrologic.jxpilot.client.JitQuiet()) {
+            warm = jit.warm(frame, 1000, 4000, WARM_MAX, 2);
+            System.out.println("AppAllocationTest: warm-up " + warm + " frames, " + jit.compiles() + " compilations");
         }
+        int warmFrames = warm;
         long reliableBefore = game.reliableCount();
         long snapshotsBefore = conn.snapshotsReceived();
         // per frame (as XpNetAllocationTest): a bracket around the whole loop also catches the occasional
@@ -256,6 +268,7 @@ class AppAllocationTest {
             () -> assertTrue(game.world().particles().count() > 0, "particles alive"),
             () -> assertTrue(cf.radar().count() > 0, "radar blips"),
             () -> assertTrue(cf.extras().lock, "lock shown"),
+            () -> assertTrue(cf.play().pointer().on(), "pointer control was on while measured"),
             () -> assertTrue(cf.viewHud().textCount() > 3, "HUD built"),
             () -> assertTrue(cf.panelHud().textCount() >= 5, "score list built"),
             () -> assertTrue(lockSeen[0] && lockSeen[1], "R7: the lock target changed while measured"),
@@ -264,7 +277,7 @@ class AppAllocationTest {
             () -> assertTrue(uzi >= 0 && game.players().shape(uzi).numPoints() == 4,
                 "the rejoining robot has its custom shape"),
             () -> assertEquals(0, nz, "no frame allocates in steady state, joins, leaves and lock changes included"
-                + " (worst " + w + " bytes)"));
+                + " (worst " + w + " bytes, after " + warmFrames + " warm-up frames)"));
     }
 
     static byte[] copy(ByteBuffer b) {

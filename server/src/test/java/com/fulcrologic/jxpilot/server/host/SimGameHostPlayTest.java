@@ -361,6 +361,28 @@ class SimGameHostPlayTest {
         }
 
         @Test
+        @DisplayName("aimTurn is C's PKT_POINTER_MOVE: applied at once; 0 and unbound ids do nothing")
+        void pointerMove() {
+            Simulation s = sim("", THREE);
+            World w = s.world;
+            SimGameHost h = new SimGameHost(s);
+            int ann = enter(h, "Ann", 0);
+            Player p = w.byId(ann);
+            p.turnSpeed = 32;
+            p.turnResistance = 0.12f;
+            p.turnVel = 0;
+            h.input(ann, 1, 0, 20);
+            float moved = p.turnVel;
+            h.input(ann, 2, 0, 0);
+            float none = p.turnVel;
+            h.input(63, 3, 0, 20);
+            assertAll(
+                () -> assertEquals(-10f, moved, "20 px at turnSpeed 32 turns by 10 (Keys.pointerMove)"),
+                () -> assertEquals(moved, none, "0: no pointer move"),
+                () -> assertEquals(moved, p.turnVel, "an unbound id: nothing"));
+        }
+
+        @Test
         @DisplayName("a full queue keeps the oldest 15 and the newest mask")
         void overflow() {
             Simulation s = sim("", THREE);
