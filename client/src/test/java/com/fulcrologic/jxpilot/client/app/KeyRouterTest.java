@@ -100,6 +100,10 @@ class KeyRouterTest {
                 () -> assertEquals(KeyRouter.QUIT, press(GLFW_KEY_ESCAPE), "Escape: quit"),
                 () -> assertEquals(KeyRouter.SWAP_SCALE, press(GLFW_KEY_F12), "swap key: swap"),
                 () -> assertEquals(KeyRouter.TOGGLE_SOUND, press(GLFW_KEY_MINUS), "minus: sound toggle (ClientAction.TOGGLE_SOUND, a key C leaves unbound)"),
+                () -> assertEquals(KeyRouter.TOGGLE_ITEMS, press(GLFW_KEY_KP_8),
+                    "KP_8: toggle the owned items list (C keyToggleOwnedItems)"),
+                () -> assertEquals(KeyRouter.TOGGLE_MESSAGES, press(GLFW_KEY_KP_9),
+                    "KP_9: toggle the game messages (C keyToggleMessages)"),
                 () -> {
                     type("x");
                     assertFalse(talk.isOpen(), "characters do not open talk");
@@ -281,6 +285,27 @@ class KeyRouterTest {
                 () -> assertEquals(ControlKey.SWAP_SETTINGS.mask(), withSwap.input().keys() & ControlKey.SWAP_SETTINGS.mask(),
                     "and the swap key is sent"),
                 () -> assertEquals(KeyRouter.NONE, plain, "a plain game key is no event"));
+        }
+
+        @Test
+        @DisplayName("refuel/repair/tank keys show the fuel (C Key_press_fuel, Key_release); the keys are still sent")
+        void fuelNotify() {
+            int tankNext = press(GLFW_KEY_E);
+            int tankPrev = press(GLFW_KEY_W);
+            int refuel = press(GLFW_KEY_F);
+            long sent = input.keys();
+            int refuelUp = r.key(GLFW_KEY_F, GLFW_RELEASE, 0);
+            int tankUp = r.key(GLFW_KEY_E, GLFW_RELEASE, 0);
+            int plainUp = r.key(GLFW_KEY_A, GLFW_RELEASE, 0);
+            assertAll(
+                () -> assertEquals(KeyRouter.FUEL_NOTIFY, tankNext, "tank next press"),
+                () -> assertEquals(KeyRouter.FUEL_NOTIFY, tankPrev, "tank prev press"),
+                () -> assertEquals(KeyRouter.FUEL_NOTIFY, refuel, "refuel/repair press"),
+                () -> assertEquals(ControlKey.REFUEL.mask() | ControlKey.REPAIR.mask(),
+                    sent & (ControlKey.REFUEL.mask() | ControlKey.REPAIR.mask()), "refuel and repair are sent"),
+                () -> assertEquals(KeyRouter.FUEL_NOTIFY, refuelUp, "refuel/repair release"),
+                () -> assertEquals(KeyRouter.NONE, tankUp, "a tank key release is not"),
+                () -> assertEquals(KeyRouter.NONE, plainUp, "another release is not"));
         }
 
         @Test
