@@ -24,6 +24,7 @@ The client has three modes:
 java -jar jxpilot-client-VERSION.jar --connect HOST[:PORT] [GAME FLAGS]   # join a server
 java -jar jxpilot-client-VERSION.jar --local --map MAPFILE [GAME FLAGS]   # play on a server of your own
 java -jar jxpilot-client-VERSION.jar --view-map MAPFILE [VIEWER FLAGS]    # look at a map
+java -jar jxpilot-client-VERSION.jar --list-keys [--keys FILE]           # print the key bindings
 ----
 
 The application downloads take the same flags (`JXPilot.app/Contents/MacOS/JXPilot ...` on macOS);
@@ -105,6 +106,11 @@ personalities>>). The server uses it if it allows ship shapes.
 |`--volume N`
 |`100`
 |XPilot's `maxVolume`, 0 to 255: the loudest a sound plays. `0` is no sound; above 100 plays like 100.
+
+|`--keys FILE`
+|`~/.xpilotrc`
+|Key bindings and control settings in XPilot's resource format
+(<<03-playing.adoc#key-bindings,Changing the keys>>). Without the flag, `~/.xpilotrc` is read if it exists.
 
 |`--screenshot FILE.png`, `--frames N`
 |-, 300
