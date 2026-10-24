@@ -35,7 +35,8 @@ import java.util.Map;
 
 /**
  * Parsed C golden trace with the game-mode lines of xpilot-ref patch 0005 (XPMOBJ, XPPL2, XPTRS, XPTGT,
- * XPTEAM, and the random generator's XPMTP/XPMTN draw counts and XPMT state) next to the XPTRACE player lines of patch 0002, grouped by C frame ({@code frame_loops}).
+ * XPTEAM, XPMSG) next to the XPTRACE player lines of patch 0002, grouped by C frame ({@code frame_loops}), and
+ * the random draws and keyboard updates of patch 0006 ({@link #c}, as {@link CTraceItems} reads them).
  */
 final class ModeTrace {
     /** One XPMOBJ line: a ball, asteroid or wreckage after the frame. */
@@ -56,15 +57,12 @@ final class ModeTrace {
         final List<int[]> targets = new ArrayList<>();
         final List<String> teams = new ArrayList<>();
         final List<Double> teamScores = new ArrayList<>();
-        /** C's random draw count before (XPMTP) and after (XPMTN) the frame's update, -1 when not traced. */
-        long drawsBefore = -1;
         /** The XPTRACE ship's status bits. */
         int shipStatus;
         /** C's main loop of the XPTRACE line (the frame's update). */
         long shipLoop = -1;
         /** XPMSG lines as {@code [loop, text]}: game messages C sent during this frame. */
         final List<String[]> messages = new ArrayList<>();
-        long drawsAfter = -1;
 
         Frame(long frame) {
             this.frame = frame;
@@ -72,21 +70,26 @@ final class ModeTrace {
     }
 
     final List<Frame> frames = new ArrayList<>();
-    /** XPMT: C's random generator after frame {@link #mtFrame}: draws, left, next index, 625 state words. */
-    long mtFrame = -1;
-    long mtDraws;
-    int mtLeft;
-    int mtNext;
-    final int[] mtState = new int[625];
+    /** Patch 0006 lines by C frame: the frame's random draws (XPRAND) and keyboard updates (XPKEYS). */
+    final Map<Long, CTraceItems.CFrame> c = new LinkedHashMap<>();
 
     static ModeTrace load(String name) throws IOException {
         ModeTrace t = new ModeTrace();
         Map<Long, Frame> by = new LinkedHashMap<>();
+        String path;
+        try {
+            path = java.nio.file.Path.of(ModeTrace.class.getResource("/ctrace/" + name).toURI()).toString();
+        } catch (java.net.URISyntaxException e) {
+            throw new IOException(e);
+        }
+        for (CTraceItems.CFrame f : CTraceItems.load(path)) {
+            t.c.put(f.frame, f);
+        }
         try (InputStream in = ModeTrace.class.getResourceAsStream("/ctrace/" + name)) {
             BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.ISO_8859_1));
             for (String l = r.readLine(); l != null; l = r.readLine()) {
                 String[] c = l.trim().split("\\s+");
-                if (c.length < 3 || c[0].endsWith("_HDR")) {
+                if (c.length < 3 || !c[0].matches("XP(TRACE|MOBJ|PL2|TRS|TGT|TEAM|MSG)")) {
                     continue;
                 }
                 long frame = Long.parseLong(c[2]);
@@ -116,20 +119,9 @@ final class ModeTrace {
                         f.teams.add(c[3] + " " + c[4] + " " + c[5]);
                         f.teamScores.add(Double.parseDouble(c[6]));
                     }
-                    case "XPMTP" -> f.drawsBefore = Long.parseLong(c[3]);
                     case "XPMSG" -> {
                         String[] m = l.split(" ", 5);
                         f.messages.add(new String[] {m[1], m.length > 4 ? m[4] : ""});
-                    }
-                    case "XPMTN" -> f.drawsAfter = Long.parseLong(c[3]);
-                    case "XPMT" -> {
-                        t.mtFrame = frame;
-                        t.mtDraws = Long.parseLong(c[3]);
-                        t.mtLeft = Integer.parseInt(c[4]);
-                        t.mtNext = Integer.parseInt(c[5]);
-                        for (int i = 0; i < 625; i++) {
-                            t.mtState[i] = (int) Long.parseLong(c[6 + i]);
-                        }
                     }
                     default -> { }
                 }

@@ -262,15 +262,17 @@ public final class MapSymbols {
                 centredChar(b, text, 'F', cam.screenX(f.bx() * S + HALF, k), cam.screenY(f.by() * S + HALF, k), c);
             }
         }
-        if (!team) {
-            return;
-        }
         List<Base> bases = map.bases();
         for (int i = 0; i < bases.size(); i++) {
             Base base = bases.get(i);
-            if (base.team() >= 0 && visible(cam, base.bx(), base.by(), k)) {
-                baseDigit(b, text, cam, k, base, white);
+            CharSequence owner = st.baseOwnerName(i);
+            boolean digit = team && base.team() >= 0;
+            if ((digit || owner != null) && visible(cam, base.bx(), base.by(), k)) {
+                baseLabel(b, text, cam, k, base, digit, owner, white);
             }
+        }
+        if (!team) {
+            return;
         }
         List<Target> targets = map.targets();
         for (int i = 0; i < targets.size(); i++) {
@@ -433,13 +435,22 @@ public final class MapSymbols {
     }
 
     /**
-     * Base team digit placed beside the base opposite its line (C {@code Gui_paint_base} with no
-     * player name): below an up-facing base, above a down-facing one, right of a left-facing one and
-     * left of a right-facing one, {@link #BASE_TEXT_BORDER} logical pixels from the block.
+     * C {@code Gui_paint_base}'s label: the team digit (team play) and the owner's name, beside the base
+     * opposite its line, {@link #BASE_TEXT_BORDER} logical pixels from the block.
+     * <p>
+     * BEHAVIOR: text = digit, "digit " + name, or the name alone; below an up-facing base and above a
+     * down-facing one centred on the block (centred as digit width / 2 + (name width + 2) / 2, as C), right of
+     * a left-facing one, left of a right-facing one (ending at the border), at half an ascent below the
+     * block's middle.
      */
-    static void baseDigit(VertexBatch b, TextWriter text, Camera cam, int k, Base base, int c) {
+    static void baseLabel(VertexBatch b, TextWriter text, Camera cam, int k, Base base, boolean digit,
+                          CharSequence owner, int c) {
         char d = digit(base.team());
-        int w = (int) text.width(d);
+        int size = 0;
+        if (digit) {
+            size = owner != null ? (int) (text.width(d) + text.width(' ')) : (int) text.width(d);
+        }
+        int nameWidth = owner != null ? 2 + (int) text.width(owner) : 0;
         int ascent = (int) text.font().ascent();
         int descent = (int) text.font().descent();
         int x = base.bx() * S;
@@ -449,11 +460,11 @@ public final class MapSymbols {
         float sy;
         switch (base.dir()) {
             case Dir.UP -> {
-                sx = cam.screenX(x + HALF, k) - w / 2;
+                sx = cam.screenX(x + HALF, k) - size / 2 - nameWidth / 2;
                 sy = cam.screenY(y, k) - border - ascent;
             }
             case Dir.DOWN -> {
-                sx = cam.screenX(x + HALF, k) - w / 2;
+                sx = cam.screenX(x + HALF, k) - size / 2 - nameWidth / 2;
                 sy = cam.screenY(y + S, k) + border + descent;
             }
             case Dir.LEFT -> {
@@ -461,10 +472,16 @@ public final class MapSymbols {
                 sy = cam.screenY(y + HALF, k) - ascent / 2;
             }
             default -> {
-                sx = cam.screenX(x, k) - border - w;
+                sx = cam.screenX(x, k) - border - nameWidth - size;
                 sy = cam.screenY(y + HALF, k) - ascent / 2;
             }
         }
-        text.draw(b, d, sx, sy, c);
+        if (digit) {
+            text.draw(b, d, sx, sy, c);
+            sx += size;
+        }
+        if (owner != null) {
+            text.draw(b, owner, sx, sy, c);
+        }
     }
 }

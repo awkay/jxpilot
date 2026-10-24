@@ -465,12 +465,12 @@ class ServerNetTest {
             }
             assertAll(
                 () -> assertTrue(mine.get(0).accepted && mine.get(1).accepted, "two sessions from one IP are accepted"),
-                () -> assertEquals(Msg.Reject.REASON_FULL, mine.get(2).rejectReason, "the third from that IP is refused FULL"),
+                () -> assertEquals(Msg.Reject.REASON_LOCKED, mine.get(2).rejectReason, "the third from that IP is refused LOCKED (C E_GAME_LOCKED)"),
                 () -> assertEquals("too many players from your address", mine.get(2).rejectText, "saying why"),
                 () -> assertTrue(replace.accepted, "a reconnect of an existing session does not count itself"),
                 () -> assertTrue(other.accepted, "another IP is unaffected"),
                 () -> assertTrue(v6a.accepted && v6b.accepted, "two addresses of one IPv6 /64 are accepted"),
-                () -> assertEquals(Msg.Reject.REASON_FULL, v6c.rejectReason, "a third address in the same /64 is refused"),
+                () -> assertEquals(Msg.Reject.REASON_LOCKED, v6c.rejectReason, "a third address in the same /64 is refused (C E_GAME_LOCKED)"),
                 () -> assertTrue(v6other.accepted, "the neighbouring /64 is another source"),
                 () -> assertEquals(6, u.net.connections(), "maxPerIp 0 means unlimited"));
         }
@@ -523,7 +523,9 @@ class ServerNetTest {
         @Test
         @DisplayName("a peer is (channel, address); replies use the channel it arrived on")
         void pinned() {
-            Harness h = new Harness();
+            ServerNetConfig cfg = new ServerNetConfig();
+            cfg.maxPerIp = 0; // three peers from one address (default 2)
+            Harness h = new Harness(cfg, "mapName: test\n");
             TestClient on0 = new TestClient(1);
             TestClient on4 = new TestClient(2);
             TestClient on20 = new TestClient(3);
@@ -665,6 +667,7 @@ class ServerNetTest {
             cfg.connectCost = 1;
             cfg.sessionRatePerSecond = 10;
             cfg.sessionRateBurst = 20;
+            cfg.maxPerIp = 0; // many players behind one NAT
             Harness h = new Harness(cfg, "x: 1\n");
             List<TestClient> nat = new ArrayList<>();
             for (int i = 0; i < 4; i++) {

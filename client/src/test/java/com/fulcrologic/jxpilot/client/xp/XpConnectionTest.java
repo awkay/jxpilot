@@ -168,8 +168,8 @@ class XpConnectionTest {
             int display = server.loginPackets.indexOf("display 1024x1024 colors=0 spark=64");
             assertAll(
                 () -> assertEquals(List.of("modbank 0=FN C", "modbank 1=", "modbank 2=X4 LS", "modbank 3=" + "x".repeat(79)),
-                    server.loginPackets.subList(display + 1, display + 5),
-                    "banks 0..3 in order right after PKT_DISPLAY, a long text cut to MAX_CHARS - 1"),
+                    server.loginPackets.subList(display + 2, display + 6),
+                    "banks 0..3 in order after PKT_DISPLAY and the MOTD request, a long text cut to MAX_CHARS - 1"),
                 () -> assertEquals("FN C", login.modifierBanks[0], "remembered in the login for later joins"),
                 () -> assertEquals(List.of(), server.violations, "nothing the C server would reject"));
         }
@@ -218,9 +218,10 @@ class XpConnectionTest {
                 () -> assertTrue(server.contact.closed, "contact socket closed after the verify"),
                 () -> assertEquals(0x1234ABCD, conn.magic(), "connection magic"),
                 () -> assertEquals(List.of("shape", "play", "power34=11520", "power35=8960", "power36=8960",
-                    "power37=6400", "power38=30", "power39=30", "display 1024x1024 colors=0 spark=64", "modbank 0=",
-                    "modbank 1=", "modbank 2=", "modbank 3=", "audio 0", "fps 12"), server.loginPackets,
-                    "C Net_start bundle: values * 256, display, the 4 (empty) modifier banks, audio off, fps"),
+                    "power37=6400", "power38=30", "power39=30", "display 1024x1024 colors=0 spark=64", "motd 0 30720",
+                    "modbank 0=", "modbank 1=", "modbank 2=", "modbank 3=", "audio 0", "fps 12"), server.loginPackets,
+                    "C Net_start bundle: values * 256, display, the MOTD request (C Client_power), the 4 (empty)"
+                    + " modifier banks, audio off, fps"),
                 () -> assertEquals(1, server.plays, "one play request"),
                 () -> assertEquals(List.of(1), server.keyboardChanges, "keyboard announced once (Net_key_change)"),
                 () -> assertEquals(List.of(), server.violations, "nothing the C server would reject"),
@@ -238,7 +239,7 @@ class XpConnectionTest {
             run(5);
             assertAll(
                 () -> assertEquals("accepted 65535", rec.events.get(0), "session start"),
-                () -> assertEquals("welcome simHz=12 snapHz=12 fps=12 flags=" + Msg.Welcome.FLAG_EDGE_WRAP
+                () -> assertEquals("welcome simHz=12 snapHz=12 fps=12 flags=" + (Msg.Welcome.FLAG_EDGE_WRAP | Msg.Welcome.FLAG_RADAR_BLINKED)
                     + " server=127.0.0.1:15345", rec.events.get(1), "one tick per C frame"),
                 () -> assertEquals("config Fake Map 100x100", rec.events.get(2), "map"),
                 () -> assertEquals("accepted 3", rec.events.get(3), "self id when the server announces it"),
@@ -353,6 +354,9 @@ class XpConnectionTest {
                 () -> assertEquals(XpConnection.MAX_TRIES, server.plays, "play request resent every second"),
                 () -> assertEquals(XpConnection.SHAPE_TRIES,
                     server.loginPackets.stream().filter("shape"::equals).count(), "shape only in the first 5"),
+                () -> assertEquals(XpConnection.MAX_TRIES,
+                    server.loginPackets.stream().filter(x -> x.startsWith("motd")).count(),
+                    "the MOTD request is in every play request (C Client_power)"),
                 () -> assertEquals("Can't start play on 127.0.0.1:15345 after 10 attempts", conn.status().toString(),
                     "gave up"));
         }
@@ -443,15 +447,29 @@ class XpConnectionTest {
             st.power = 49.5f;
             boolean sent = conn.sendSettings(st, now);
             server.step();
-            List<String> later = server.loginPackets.subList(before, server.loginPackets.size());
+            List<String> later = List.copyOf(server.loginPackets.subList(before, server.loginPackets.size()));
+            boolean again = conn.sendSettings(st, now);
+            server.step();
+            int afterAgain = server.loginPackets.size();
             assertAll(
                 () -> assertFalse(early, "not sent before playing"),
                 () -> assertTrue(server.loginPackets.contains("power36=10240"), "the join carried turn speed 40 * 256"),
                 () -> assertTrue(sent, "sent while playing"),
-                () -> assertEquals(List.of("power34=12672", "power35=8960", "power36=10752", "power37=6400",
-                    "power38=30", "power39=30"), later, "all six settings at once (C Send_power ...)"),
+                () -> assertEquals(List.of("power34=12672", "power36=10752"), later,
+                    "only the changed values, one packet each (C: one Send_power / Send_turnspeed per key)"),
+                () -> assertFalse(again, "the same settings again send nothing"),
+                () -> assertEquals(before + 2, afterAgain, "no duplicate packets"),
                 () -> assertEquals(42f, login.settings.turnSpeed, "and remembered for the next join"),
                 () -> assertEquals(List.of(), server.violations, "nothing the C server would reject"));
+        }
+
+        @Test
+        @DisplayName("the play request asks for the whole MOTD (C Client_power: Startup_server_motd)")
+        void motdRequested() {
+            play();
+            assertEquals(List.of("motd 0 30720"),
+                server.loginPackets.stream().filter(x -> x.startsWith("motd")).toList(),
+                "one PKT_MOTD for the whole MOTD (offset 0, MAX_MOTD_SIZE)");
         }
 
         @Test

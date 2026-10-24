@@ -645,8 +645,27 @@ class MapSymbolsTest {
 
         float[] digit(Camera c, int dir) {
             VertexBatch b = Segs.batch();
-            MapSymbols.baseDigit(b, TEXT, c, 0, new Base(0, 1, 1, dir, 3, 3), WHITE);
+            MapSymbols.baseLabel(b, TEXT, c, 0, new Base(0, 1, 1, dir, 3, 3), true, null, WHITE);
             return new float[] {b.x(0), b.y(2)};
+        }
+
+        @Test
+        void ownerNamesFollowTheDigitOrStandAlone() {
+            WorldMap m = map(false, "...", "...", "...");
+            Camera c = cam(m, 52, 52, 104, 104);
+            VertexBatch both = Segs.batch();
+            MapSymbols.baseLabel(both, TEXT, c, 0, new Base(0, 1, 1, Dir.UP, 3, 3), true, "Ann", WHITE);
+            VertexBatch name = Segs.batch();
+            MapSymbols.baseLabel(name, TEXT, c, 0, new Base(0, 1, 1, Dir.UP, 3, 3), false, "Ann", WHITE);
+            VertexBatch right = Segs.batch();
+            MapSymbols.baseLabel(right, TEXT, c, 0, new Base(0, 1, 1, Dir.RIGHT, 3, 3), true, "Ann", WHITE);
+            int quad = both.vertexCount() / 6;
+            assertAll(
+                () -> assertEquals(4, quad, "digit and three letters"),
+                () -> assertEquals(35f, both.x(0), "digit: pen 52 - (7 + 7) / 2 - (21 + 2) / 2 = 34, glyph at + 1"),
+                () -> assertEquals(49f, both.x(6), "name after the digit and a space: pen 34 + 14"),
+                () -> assertEquals(42f, name.x(0), "no team: the name alone centred: pen 52 - 23 / 2 = 41"),
+                () -> assertEquals(-5f, right.x(0), "right-facing: pen 35 - 4 - 23 - 14 = -6, glyph + 1"));
         }
     }
 

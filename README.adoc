@@ -22,8 +22,8 @@ here instead.
 ====
 
 Status: work in progress, but playable: the Java server runs the XPilot game with robots, and the
-client plays on it or on original XPilot servers. Items work; balls, targets, races and asteroids (milestone M2)
-are being added. See `docs/SPEC.md` for the plan and milestones, and the user guide's
+client plays on it or on original XPilot servers. The server has the whole XPilot game: items, ball
+games, targets, races, asteroids, alliances and the `/` commands. See `docs/SPEC.md` for the plan and milestones, and the user guide's
 link:docs/guide/01-introduction.adoc#status[status table].
 
 == Documentation
@@ -42,7 +42,7 @@ link:docs/guide/02-quick-start.adoc[Quick start].
 [source,bash]
 ----
 java -jar jxpilot-client-VERSION.jar --local --map default    # a game against robots
-java -jar jxpilot-server-VERSION.jar --map default            # a server for others
+java -jar jxpilot-server-VERSION.jar --map default -noQuit    # a server for others
 java -jar jxpilot-client-VERSION.jar --connect HOST           # join it
 java -jar jxpilot-server-VERSION.jar --list-maps              # the maps built into the jars
 ----

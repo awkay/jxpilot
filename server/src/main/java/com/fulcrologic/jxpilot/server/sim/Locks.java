@@ -45,8 +45,8 @@ public final class Locks {
 
     private final World w;
     /** C {@code minVisibilityDistance}, {@code maxVisibilityDistance} and {@code EnergyRangeFactor}. */
-    private final double minVisibility;
-    private final double maxVisibility;
+    private double minVisibility;
+    private double maxVisibility;
     private final double energyRangeFactor;
 
     public Locks(World w) {
@@ -62,6 +62,25 @@ public final class Locks {
         } else {
             energyRangeFactor = (float) ENERGY_RANGE_FACTOR;
         }
+    }
+
+    /**
+     * After /set minVisibilityDistance (C tuner_dummy): C's variable holds the new value as given, compared with
+     * ranges in pixels (only its start-up value is scaled by BLOCK_SZ); EnergyRangeFactor keeps its start-up value.
+     * <p>
+     * BEHAVIOR: the minimum becomes {@code v} pixels, whatever its sign.
+     */
+    public void tuneMinVisibility(double v) {
+        minVisibility = v;
+    }
+
+    /**
+     * After /set maxVisibilityDistance: as {@link #tuneMinVisibility}.
+     * <p>
+     * BEHAVIOR: the maximum becomes {@code v} pixels, whatever its sign.
+     */
+    public void tuneMaxVisibility(double v) {
+        maxVisibility = v;
     }
 
     /**

@@ -145,21 +145,32 @@ public final class Msg {
         public static final int REASON_OTHER = 4;
         /** The game is locked by an operator ({@code /lock 1}, C {@code E_GAME_LOCKED}). */
         public static final int REASON_LOCKED = 5;
+        /**
+         * server-commands: the game is full and the player waits in the login queue (C ENTER_QUEUE reply) at
+         * {@link #position}; the client keeps sending CONNECT to keep its place and is accepted when admitted.
+         */
+        public static final int REASON_QUEUED = 6;
 
         public int nonce;
         public int reason;
         public final StringBuilder text = new StringBuilder(MSG_LEN);
+        /** Queue position (1 = next), after the text for {@link #REASON_QUEUED} only. */
+        public int position;
 
         public void write(ByteBuffer b) {
             b.putInt(nonce);
             b.put((byte) reason);
             Wire.putString8(b, text);
+            if (reason == REASON_QUEUED) {
+                b.putShort((short) position);
+            }
         }
 
         public void read(ByteBuffer b) {
             nonce = b.getInt();
             reason = b.get() & 0xFF;
             Wire.getString8(b, text);
+            position = reason == REASON_QUEUED && b.remaining() >= 2 ? b.getShort() & 0xFFFF : 0;
         }
     }
 
@@ -207,6 +218,12 @@ public final class Msg {
         public static final int FLAG_TEAM_PLAY = 1;
         public static final int FLAG_EDGE_WRAP = 2;
         public static final int FLAG_TIMING = 4;
+        /**
+         * The RADAR records are already blinked by the server (the C server omits blips in their dark phase):
+         * the client must not blink them again. Set by the XPilot-protocol client for itself; the JXPilot
+         * server leaves it clear.
+         */
+        public static final int FLAG_RADAR_BLINKED = 8;
 
         public int playerId;
         public int team = Protocol.NO_TEAM;
@@ -257,6 +274,50 @@ public final class Msg {
     }
 
     /** {@link ReliableType#DATA_CHUNK}: {@code u32 offset} then raw bytes to the end of the message. */
+    /**
+     * The message of the day, in pieces: {@code u32 offset, u32 total size, bytes} (Latin-1 text, C's MOTD file,
+     * at most {@link #MAX_SIZE} bytes in all).
+     */
+    public static final class Motd {
+        /** C {@code MAX_MOTD_SIZE}. */
+        public static final int MAX_SIZE = 30 * 1024;
+
+        private Motd() {}
+
+        /**
+         * Queue the whole text as MOTD messages, each as large as a reliable slot allows.
+         * <p>
+         * BEHAVIOR: nothing for an empty text; texts over {@link #MAX_SIZE} are cut to it.
+         */
+        public static void sendAll(ReliableChannel ch, byte[] text) {
+            int total = Math.min(text.length, MAX_SIZE);
+            int off = 0;
+            while (off < total) {
+                ByteBuffer b = ch.begin(ReliableType.MOTD);
+                int len = Math.min(total - off, b.remaining() - 8);
+                b.putInt(off).putInt(total).put(text, off, len);
+                ch.end();
+                off += len;
+            }
+        }
+
+        /**
+         * Copy a received piece into {@code dest} (at least {@link #MAX_SIZE} bytes).
+         * <p>
+         * BEHAVIOR: returns the total size, or -1 for a piece that does not fit (then nothing is copied).
+         */
+        public static int read(ByteBuffer b, byte[] dest) {
+            int off = b.getInt();
+            int total = b.getInt();
+            int len = b.remaining();
+            if (off < 0 || total < 0 || total > dest.length || len > total - off || off > total) {
+                return -1;
+            }
+            b.get(dest, off, len);
+            return total;
+        }
+    }
+
     public static final class DataChunk {
         private DataChunk() {}
 

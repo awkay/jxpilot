@@ -44,17 +44,17 @@ class ServerNetCommandsTest {
         o.force(Opt.DENY_HOSTS, "10.0.0.0/8, 192.168.1.1");
         o.force(Opt.MAX_CLIENTS_PER_IP, "7");
         h.host.sessions.optionChanged(Opt.SHOT_SPEED, o);
-        int before = h.cfg.denyHosts.length;
+        int before = h.cfg.denyHosts.size();
         int perIpBefore = h.cfg.maxPerIp;
         h.host.sessions.optionChanged(Opt.DENY_HOSTS, o);
         int perIpAfterDeny = h.cfg.maxPerIp;
         h.host.sessions.optionChanged(Opt.MAX_CLIENTS_PER_IP, o);
         assertAll(
             () -> assertEquals(0, before, "another option changes nothing here"),
-            () -> assertEquals(4, perIpBefore, "the default limit"),
-            () -> assertEquals(2, h.cfg.denyHosts.length, "two networks denied"),
-            () -> assertTrue(DenyList.denied(h.cfg.denyHosts, Harness.addr("10.1.2.3", 9)), "10/8 is denied"),
-            () -> assertEquals(4, perIpAfterDeny, "denyHosts does not touch the limit"),
+            () -> assertEquals(2, perIpBefore, "the default limit (C's 2)"),
+            () -> assertEquals(2, h.cfg.denyHosts.size(), "two networks denied"),
+            () -> assertTrue(h.cfg.denyHosts.denied(Harness.addr("10.1.2.3", 9)), "10/8 is denied"),
+            () -> assertEquals(2, perIpAfterDeny, "denyHosts does not touch the limit"),
             () -> assertEquals(7, h.cfg.maxPerIp, "the new limit"));
     }
 
@@ -62,5 +62,28 @@ class ServerNetCommandsTest {
     @DisplayName("a REJECT for a locked game says \"game locked\" (C E_GAME_LOCKED)")
     void lockedText() {
         assertEquals("game locked", ServerNet.rejectText(Msg.Reject.REASON_LOCKED), "the text");
+    }
+
+    @Test
+    @DisplayName("a queued join (C ENTER_QUEUE reply) answers REJECT QUEUED with the position; the host sees the source")
+    void queued() {
+        Harness h = new Harness();
+        h.host.joinAnswer = -Msg.Reject.REASON_QUEUED;
+        h.host.queuePos = 3;
+        TestClient c = new TestClient(1);
+        java.net.InetSocketAddress a = Harness.addr("10.0.0.5", 4000);
+        h.in(0, a, c.connect("Cid", 255, "(SH: a shape long enough for the full text)"));
+        h.deliver(c, a);
+        long first = h.host.lastSource;
+        TestClient again = new TestClient(1);
+        h.in(0, Harness.addr("10.0.0.5", 4001), again.connect("Cid", 255, ""));
+        h.deliver(again, Harness.addr("10.0.0.5", 4001));
+        assertAll(
+            () -> assertEquals(Msg.Reject.REASON_QUEUED, c.rejectReason, "QUEUED"),
+            () -> assertEquals(3, c.rejectPosition, "the position"),
+            () -> assertEquals("queued at position 3", c.rejectText, "C's words"),
+            () -> assertEquals(0, h.net.connections(), "no session while queued"),
+            () -> assertEquals(first, h.host.lastSource, "the same address is the same source"),
+            () -> assertEquals("queued", ServerNet.rejectText(Msg.Reject.REASON_QUEUED), "the reason's text"));
     }
 }

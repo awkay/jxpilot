@@ -46,6 +46,11 @@ public interface MapState {
     /** Index of the next race checkpoint (drawn filled). */
     int nextCheckpoint();
 
+    /** F12: the name of the player who owns base {@code i} (C Base_info_by_pos), or null when nobody does. */
+    default CharSequence baseOwnerName(int i) {
+        return null;
+    }
+
     /**
      * Frame counter ({@code loops} in C) driving wormhole and concentrator animation: the server's frame
      * number, advancing once per server tick at the map's {@code framesPerSecond} (one tick = one C frame,

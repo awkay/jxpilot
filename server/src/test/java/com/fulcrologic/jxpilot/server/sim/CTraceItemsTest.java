@@ -23,366 +23,223 @@
  */
 package com.fulcrologic.jxpilot.server.sim;
 
-import com.fulcrologic.jxpilot.common.Item;
-import com.fulcrologic.jxpilot.common.net.ControlKey;
-import com.fulcrologic.jxpilot.server.sim.CTraceItems.CEcm;
-import com.fulcrologic.jxpilot.server.sim.CTraceItems.CFrame;
-import com.fulcrologic.jxpilot.server.sim.CTraceItems.CObj;
-import com.fulcrologic.jxpilot.server.sim.CTraceItems.CPulse;
-import com.fulcrologic.jxpilot.server.world.Ecms;
-import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.Obj;
-import com.fulcrologic.jxpilot.server.world.Objects;
-import com.fulcrologic.jxpilot.server.world.Pulses;
-import com.fulcrologic.jxpilot.server.world.Player;
-import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Golden traces of item weapons and devices on the original C server (tools/xpilot-ref patch 0003, see
- * {@code src/test/resources/ctrace/items/README.txt}), replayed in the Java simulation and compared frame by frame
- * with no tolerance: the ship's physics and fuel, its items, abilities and tanks, and the weapon objects it made.
+ * Golden traces of item weapons and devices on the original C server (tools/xpilot-ref patches 0004 and 0006, see
+ * {@code src/test/resources/ctrace/items/README.txt}), replayed in the Java simulation by {@link CReplay} and compared
+ * frame by frame with no tolerance: every player's physics, status, items, abilities, tanks and lock, every object C
+ * traced (missiles, mines, items, shots, cannon shots, balls, wreckage), laser pulses, ECMs, busy cannons, and the
+ * explosion debris (burst counts, lives, speeds, and the particles themselves around each explosion).
  * <p>
- * Replay rules (as {@link CTraceTest}): the keys of frame f come from C's own trace of frame f (thrust bit, turn
- * sign, SHIELD/LASER/cloak/phasing/emergency use bits, new objects for fire and mine keys, item counts for lost
- * items, the current tank). Values C draws at random (object lives, item pack sizes and drop offsets) are copied
- * from C into the Java object when it is made; everything after that must agree exactly.
+ * Replay rules: the Java world is set up as the C server was (lib/defaults, the map, the trace's command line), the
+ * players join in the tick C added them and hold the keys C received (XPKEYS), and every random draw is C's own
+ * (XPRAND, matched by call site in {@link CDraws}); Java's own debris expansion (a deliberate deviation) is replaced
+ * by C's particles when they are made. Nothing else is copied from C.
  */
-@DisplayName("C golden traces of items (default.xp)")
+@DisplayName("C golden traces of items")
 class CTraceItemsTest {
-    /** Objects compared: missiles, mines, items, the player's own shots (C balls and cannon fire are not ours). */
-    static boolean ours(CObj c) {
-        return (c.type() & (Obj.SMART_SHOT | Obj.HEAT_SHOT | Obj.TORPEDO | Obj.MINE)) != 0
-            || (c.type() == Obj.SHOT && c.id() == 1);
+    /** The command line every default.xp recording shares (README.txt). */
+    static final String[] DEFAULT = {"gravity", "-0.14", "sparksWallBounce", "no"};
+    /** The command line every items-arena.xp recording shares. */
+    static final String[] ARENA = {"gravity", "0", "initialLasers", "3", "initialECMs", "1", "initialMissiles", "4",
+        "itemConcentratorProb", "1", "itemConcentratorRadius", "1", "movingItemProb", "0"};
+
+    static String[] opts(String[] base, String... more) {
+        String[] o = Arrays.copyOf(base, base.length + more.length);
+        System.arraycopy(more, 0, o, base.length, more.length);
+        return o;
     }
 
-    static boolean oursJava(Objects o, int h) {
-        return (o.type[h] & (Obj.SMART_SHOT | Obj.HEAT_SHOT | Obj.TORPEDO | Obj.MINE)) != 0
-            || (o.type[h] == Obj.SHOT && o.owner[h] != Obj.NO_ID);
+    static CReplay.Result replay(String trace, String... more) throws IOException {
+        return CReplay.run(trace, "default.xp", Long.MAX_VALUE, opts(DEFAULT, more));
     }
 
-    /** The state compared of one object (life only when C's life is deterministic). */
-    static String key(int type, int cx, int cy, int px, int py, float vx, float vy, float ax, float ay, float mass,
-                      int status, long info, long count, int dir) {
-        return type + " c" + cx + "," + cy + " p" + px + "," + py + " v" + vx + "," + vy + " a" + ax + "," + ay
-            + " m" + mass + " s" + Integer.toHexString(status) + " i" + info + " n" + count + " d" + dir;
+    static CReplay.Result arena(String trace, String... more) throws IOException {
+        return CReplay.run(trace, "items-arena.xp", Long.MAX_VALUE, opts(ARENA, more));
     }
 
-    static String key(CObj c) {
-        return key(c.type(), c.cx(), c.cy(), c.prevX(), c.prevY(), c.vx(), c.vy(), c.ax(), c.ay(), c.mass(),
-            c.status() & 0xFFFFFF, c.info(), c.count(), c.dir());
-    }
-
-    static String key(Objects o, int h) {
-        return key(o.type[h], o.cx[h], o.cy[h], o.prevX[h], o.prevY[h], o.vx[h], o.vy[h], o.accX[h], o.accY[h],
-            o.mass[h], o.status[h] & 0xFFFFFF, o.info[h], o.counter[h], o.missileDir[h]);
-    }
-
+    /** The item columns of a C item line, as {@link CReplay} prints them. */
     static String items(int[] it, int used, int have, long fuel, long max, int tanks, int cur) {
-        return java.util.Arrays.toString(it) + " used " + Integer.toHexString(used) + " have " + Integer.toHexString(have)
+        return Arrays.toString(it) + " used " + Integer.toHexString(used) + " have " + Integer.toHexString(have)
             + " fuel " + fuel + "/" + max + " tanks " + tanks + " cur " + cur;
     }
 
-    /** Result of a replay: frames compared, mismatching frames, objects compared. */
-    record Result(int frames, List<String> mismatches, int objects) {}
-
-    static Result replay(String trace, String... opts) throws IOException {
-        return replay(trace, Long.MAX_VALUE, opts);
-    }
-
-    /** Replay the trace's frames up to and including C frame {@code last}. */
-    static Result replay(String trace, long last, String... opts) throws IOException {
-        List<CFrame> c = CTraceItems.load(trace);
-        c.removeIf(f -> f.frame > last);
-        Simulation s = CTraceItems.world(opts);
-        World w = s.world;
-        Player p = CTraceItems.join(s, c.get(0));
-        long[] in = new long[w.players.length];
-        List<String> bad = new ArrayList<>();
-        int objects = 0;
-        CFrame prev = null;
-        int lostItem = -1;
-        int lostPack = 0;
-        for (CFrame f : c) {
-            long keys = f.ship.thrusting() ? ControlKey.THRUST.mask() : 0;
-            keys |= f.ship.turnAcc() > 0 ? ControlKey.TURN_LEFT.mask()
-                : (f.ship.turnAcc() < 0 ? ControlKey.TURN_RIGHT.mask() : 0);
-            int used = f.items.used();
-            int pused = prev == null ? used : prev.items.used();
-            if ((used & Has.SHIELD) != 0) {
-                keys |= ControlKey.SHIELD.mask();
-            }
-            if ((used & Has.LASER) != 0) {
-                keys |= ControlKey.FIRE_LASER.mask();
-            }
-            if (((used ^ pused) & Has.CLOAKING_DEVICE) != 0) {
-                keys |= ControlKey.CLOAK.mask();
-            }
-            if ((used & ~pused & Has.PHASING_DEVICE) != 0) {
-                keys |= ControlKey.PHASING.mask();
-            }
-            if ((used & ~pused & Has.EMERGENCY_THRUST) != 0) {
-                keys |= ControlKey.EMERGENCY_THRUST.mask();
-            }
-            if (prev != null && f.items.current() != prev.items.current()) {
-                keys |= f.items.current() == (prev.items.current() + 1) % (f.items.numTanks() + 1)
-                    ? ControlKey.TANK_NEXT.mask() : ControlKey.TANK_PREV.mask();
-            }
-            if (f.ecms.size() > (prev == null ? 0 : prev.ecms.size())) {
-                keys |= ControlKey.ECM.mask();
-            }
-            int newTorps = 0;
-            for (CObj o : f.objs) {
-                if (o.type() == Obj.TORPEDO && o.info() == 0) {
-                    keys |= ControlKey.FIRE_TORPEDO.mask();
-                }
-                if (o.type() == Obj.HEAT_SHOT && prev != null && countType(prev, Obj.HEAT_SHOT) < countType(f, Obj.HEAT_SHOT)) {
-                    keys |= ControlKey.FIRE_HEAT.mask();
-                }
-            }
-            if (prev != null && countType(f, Obj.MINE) > countType(prev, Obj.MINE)) {
-                CObj m = newest(f, prev, Obj.MINE);
-                keys |= (m.status() & Obj.GRAVITY) != 0 ? ControlKey.DETACH_MINE.mask() : ControlKey.DROP_MINE.mask();
-            }
-            if ((used & Has.SHOT) != 0) {
-                keys |= ControlKey.FIRE_SHOT.mask();
-            }
-            if (prev != null) {
-                for (int i = 0; i < Item.COUNT; i++) {
-                    if (i != Item.MINE.ordinal() && i != Item.MISSILE.ordinal() && i != Item.TANK.ordinal()
-                        && i != Item.FUEL.ordinal()) {
-                        continue;
-                    }
-                    if (f.items.items()[i] < prev.items.items()[i] && (keys & (ControlKey.DROP_MINE.mask()
-                        | ControlKey.DETACH_MINE.mask() | ControlKey.FIRE_TORPEDO.mask()
-                        | ControlKey.FIRE_HEAT.mask())) == 0 && i != Item.TANK.ordinal()) {
-                        p.loseItem = i;
-                        keys |= ControlKey.LOSE_ITEM.mask();
-                        // C drew the pack size at random (item.c:198): use the amount C lost
-                        lostPack = prev.items.items()[i] - f.items.items()[i];
-                        lostItem = i;
-                    }
-                }
-            }
-            in[p.slot] = keys;
-            int before = w.objects.count();
-            int min = 0;
-            int max = 0;
-            if (lostItem >= 0) {
-                min = w.items.minPerPack[lostItem];
-                max = w.items.maxPerPack[lostItem];
-                w.items.minPerPack[lostItem] = lostPack;
-                w.items.maxPerPack[lostItem] = lostPack;
-            }
-            s.tick(in);
-            if (lostItem >= 0) {
-                w.items.minPerPack[lostItem] = min;
-                w.items.maxPerPack[lostItem] = max;
-                lostItem = -1;
-            }
-            objects += syncNew(w, f, before);
-            CTraceTest.Frame j = CTraceTest.Frame.of(f.ship.frame(), p);
-            List<String> d = new ArrayList<>();
-            if (!j.equals(f.ship)) {
-                d.add("ship\n    C    " + f.ship + "\n    Java " + j);
-            }
-            String ci = items(f.items.items(), f.items.used(), f.items.have(), f.items.fuel(), f.items.fuelMax(),
-                f.items.numTanks(), f.items.current());
-            String ji = items(p.items, p.used, p.have, (long) p.fuel, (long) p.fuelMax, p.numTanks, p.currentTank);
-            if (!ci.equals(ji)) {
-                d.add("items\n    C    " + ci + "\n    Java " + ji);
-            }
-            List<String> co = new ArrayList<>();
-            for (CObj o : f.objs) {
-                if (ours(o)) {
-                    co.add(key(o));
-                }
-            }
-            List<String> jo = new ArrayList<>();
-            Objects o = w.objects;
-            for (int k = 0; k < o.count(); k++) {
-                int h = o.active[k];
-                if (oursJava(o, h) && o.life[h] > 0) {
-                    jo.add(key(o, h));
-                }
-            }
-            co.sort(null);
-            jo.sort(null);
-            if (!co.equals(jo)) {
-                d.add("objects\n    C    " + co + "\n    Java " + jo);
-            }
-            List<String> cp = new ArrayList<>();
-            for (CPulse q : f.pulses) {
-                cp.add(q.x() + "," + q.y() + " d" + q.dir() + " l" + q.len() + " t" + q.life() + " r" + q.refl());
-            }
-            List<String> jp = new ArrayList<>();
-            Pulses ps = w.pulses;
-            for (int k = 0; k < ps.count(); k++) {
-                jp.add(ps.x[k] + "," + ps.y[k] + " d" + ps.dir[k] + " l" + ps.len[k] + " t" + ps.life[k] + " r"
-                    + ps.refl[k]);
-            }
-            cp.sort(null);
-            jp.sort(null);
-            if (!cp.equals(jp)) {
-                d.add("pulses\n    C    " + cp + "\n    Java " + jp);
-            }
-            List<String> ce = new ArrayList<>();
-            for (CEcm q : f.ecms) {
-                ce.add(q.x() + "," + q.y() + " s" + q.size());
-            }
-            List<String> je = new ArrayList<>();
-            Ecms es = w.ecms;
-            for (int k = 0; k < es.count(); k++) {
-                je.add(es.x[k] + "," + es.y[k] + " s" + es.size[k]);
-            }
-            ce.sort(null);
-            je.sort(null);
-            if (!ce.equals(je)) {
-                d.add("ecms\n    C    " + ce + "\n    Java " + je);
-            }
-            if (!d.isEmpty()) {
-                bad.add("frame " + f.frame + ": " + String.join("\n  ", d));
-            }
-            prev = f;
-        }
-        return new Result(c.size(), bad, objects);
-    }
-
-    static int countType(CFrame f, int type) {
-        int n = 0;
-        for (CObj o : f.objs) {
-            if (o.type() == type) {
-                n++;
-            }
-        }
-        return n;
-    }
-
-    /** The object of the type in {@code f} that is at no position an object of that type had in {@code prev}. */
-    static CObj newest(CFrame f, CFrame prev, int type) {
-        CObj best = null;
-        for (CObj o : f.objs) {
-            boolean old = false;
-            for (CObj q : prev.objs) {
-                old |= q.type() == type && q.cx() == o.cx() && q.cy() == o.cy();
-            }
-            if (o.type() == type && !old) {
-                best = o;
-            }
-        }
-        return best;
-    }
-
-    /**
-     * Copy what C drew at random into the objects Java made this tick: the life (and fuse life offset) of each new
-     * object from the C object of the same type at the same click position.
-     */
-    static int syncNew(World w, CFrame f, int before) {
-        Objects o = w.objects;
-        int n = 0;
-        for (int k = before; k < o.count(); k++) {
-            int h = o.active[k];
-            for (CObj c : f.objs) {
-                if (c.type() == o.type[h] && c.cx() == o.cx[h] && c.cy() == o.cy[h]) {
-                    double fuse = o.life[h] - o.fuseLife[h];
-                    o.life[h] = c.life();
-                    o.fuseLife[h] = c.life() - fuse;
-                    n++;
-                    break;
-                }
-            }
-        }
-        return n;
-    }
-
-    static void check(Result r, int frames) {
+    /** Frames compared and no difference, plus the trace-specific coverage claims. */
+    @SafeVarargs
+    static void check(CReplay.Result r, int frames, Function<CReplay.Result, String>... claims) {
+        List<String> bad = r.mismatches().stream().limit(3).toList();
         assertAll(
-            () -> assertEquals(frames, r.frames(), "C frames compared"),
-            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
+            () -> assertEquals(frames, r.frames(), "C frames compared (" + r.summary() + ")"),
+            () -> assertEquals(List.of(), bad, "no frame differs from C (" + r.mismatches().size() + " do)"),
+            () -> {
+                for (Function<CReplay.Result, String> c : claims) {
+                    String failed = c.apply(r);
+                    assertTrue(failed == null, failed);
+                }
+            });
+    }
+
+    /** A coverage claim: {@code what} holds, else the message says what the trace failed to exercise. */
+    static Function<CReplay.Result, String> has(String what, java.util.function.Predicate<CReplay.Result> p) {
+        return r -> p.test(r) ? null : "the trace exercises " + what + " (" + r.summary() + ")";
     }
 
     @Test
-    @DisplayName("torpedoes at rest and while thrusting: ship, items and torpedoes bit-identical")
+    @DisplayName("torpedoes at rest and while thrusting")
     void torpedo() throws IOException {
-        Result r = replay("torpedo.txt", "initialMissiles", "4");
-        check(r, 85);
-        assertTrue(r.objects() >= 2, "both torpedoes were made");
+        check(replay("torpedo.txt", "initialMissiles", "4"), 84,
+            has("torpedo flight", r -> r.of(Obj.TORPEDO) > 20));
     }
 
     @Test
-    @DisplayName("heat-seeker locking on its own thrusting ship")
+    @DisplayName("heat-seeker locking on its own thrusting ship (cannons live)")
     void heatSeeker() throws IOException {
-        // C frame 36: a (random, silenced in Java) cannon shot hits the ship; the missile flies from frame 24
-        check(replay("heat-seeker.txt", 35, "initialMissiles", "4"), 35);
+        check(replay("heat-seeker.txt", "initialMissiles", "4"), 79,
+            has("heat-seeker flight", r -> r.of(Obj.HEAT_SHOT) > 15));
+    }
+
+    @Test
+    @DisplayName("heat-seeker's whole flight: close and mid range errors while the ship thrusts, growing error while it coasts")
+    void heatSeekerFull() throws IOException {
+        check(replay("heat-seeker-full.txt", "initialMissiles", "4"), 105,
+            has("a long heat-seeker flight", r -> r.of(Obj.HEAT_SHOT) > 60));
+    }
+
+    @Test
+    @DisplayName("an unlocked heat-seeker finds its ship when it starts thrusting at mid range (the search's error)")
+    void heatSeekerSearch() throws IOException {
+        check(replay("heat-search.txt", "initialMissiles", "4"), 88,
+            has("a heat-seeker flight", r -> r.of(Obj.HEAT_SHOT) > 40));
+    }
+
+    @Test
+    @DisplayName("a smart missile locked on a second player, steering around walls")
+    void smartMissile() throws IOException {
+        check(replay("smart.txt", "initialMissiles", "4"), 140,
+            has("smart missile flight", r -> r.of(Obj.SMART_SHOT) > 50));
     }
 
     @Test
     @DisplayName("a dropped and a thrown mine")
     void mines() throws IOException {
-        check(replay("mines.txt", "initialMines", "4", "mineFuseTime", "0"), 78);
+        check(replay("mines.txt", "initialMines", "4", "mineFuseTime", "0"), 78,
+            has("mines", r -> r.of(Obj.MINE) > 50));
+    }
+
+    @Test
+    @DisplayName("a fused mine: owner immunity runs out under its own ship, the explosion's debris")
+    void mineFuse() throws IOException {
+        check(replay("mine-fuse.txt", "initialMines", "2", "mineFuseTime", "1"), 74,
+            has("the fused mine", r -> r.of(Obj.MINE) > 10),
+            has("the mine explosion's particles", r -> r.particles() > 100 && r.particleFrames() > 0));
     }
 
     @Test
     @DisplayName("laser pulses cut short by a wall")
     void laser() throws IOException {
-        check(replay("laser.txt", "initialLasers", "2"), 66);
+        check(replay("laser.txt", "initialLasers", "2"), 69, has("pulses", r -> r.pulses() > 10));
+    }
+
+    @Test
+    @DisplayName("laser hits on an armoured second player (ED_LASER_HIT), ECM on it, energy packs picked up")
+    void laserHit() throws IOException {
+        check(arena("arena-laser.txt", "itemMineProb", "0.01", "itemEnergyPackProb", "0.01", "maxItemDensity", "0.02",
+            "initialArmors", "1"), 100,
+            has("pulses", r -> r.pulses() > 10), has("an ECM", r -> r.ecms() > 0),
+            has("items at the concentrator", r -> r.of(Obj.ITEM) > 100));
+    }
+
+    @Test
+    @DisplayName("a killed player's picked-up mines are thrown (dropItemOnKillProb 1)")
+    void throwItems() throws IOException {
+        check(arena("arena-throw.txt", "itemMineProb", "9.4e-5", "maxItemDensity", "0.1",
+            "dropItemOnKillProb", "1", "detonateItemOnKillProb", "0"), 100,
+            has("the wreckage of the killed player", r -> r.of(Obj.WRECKAGE) > 0));
+    }
+
+    @Test
+    @DisplayName("a killed player's picked-up mines detonate (detonateItemOnKillProb 1)")
+    void detonateItems() throws IOException {
+        check(arena("arena-detonate.txt", "itemMineProb", "0.01", "maxItemDensity", "0.05", "dropItemOnKillProb", "0",
+            "detonateItemOnKillProb", "1"), 121,
+            has("detonated mines", r -> r.of(Obj.MINE) > 0),
+            has("their explosions' particles", r -> r.particles() > 300));
+    }
+
+    @Test
+    @DisplayName("an ECM makes a ship let go of the treasure ball it tows (C Fire_general_ecm, item.c:1167-1179)")
+    void ecmBallDetach() throws IOException {
+        check(CReplay.run("ball-ecm.txt", "ball-ecm.xp", Long.MAX_VALUE, "sparksWallBounce", "no", "initialECMs", "8"),
+            110, has("the towed ball", r -> r.of(Obj.BALL) > 100), has("ECMs", r -> r.ecms() > 20));
     }
 
     @Test
     @DisplayName("wideangle volleys (rear shots into the ceiling)")
     void wideangle() throws IOException {
-        check(replay("wideangle-rearshot.txt", "initialWideangles", "2", "initialRearshots", "3"), 60);
+        check(replay("wideangle-rearshot.txt", "initialWideangles", "2", "initialRearshots", "3"), 58,
+            has("shots", r -> r.of(Obj.SHOT) > 100));
     }
 
     @Test
     @DisplayName("rear shots into open space")
     void rearshot() throws IOException {
-        check(replay("rearshot.txt", "initialRearshots", "3"), 69);
+        check(replay("rearshot.txt", "initialRearshots", "3"), 68, has("shots", r -> r.of(Obj.SHOT) > 100));
     }
 
     @Test
     @DisplayName("afterburners")
     void afterburner() throws IOException {
-        check(replay("afterburner.txt", "initialAfterburners", "5"), 62);
+        check(replay("afterburner.txt", "initialAfterburners", "5"), 61);
     }
 
     @Test
     @DisplayName("emergency thrust")
     void emergencyThrust() throws IOException {
-        check(replay("emergency-thrust.txt", "initialEmergencyThrusts", "1"), 66);
+        check(replay("emergency-thrust.txt", "initialEmergencyThrusts", "1"), 63);
     }
 
     @Test
     @DisplayName("cloak, uncloak, phasing")
     void cloakPhasing() throws IOException {
-        check(replay("cloak-phasing.txt", "initialCloaks", "1", "initialPhasings", "1"), 108);
+        check(replay("cloak-phasing.txt", "initialCloaks", "1", "initialPhasings", "1"), 107);
     }
 
     @Test
-    @DisplayName("ECM blast")
+    @DisplayName("ECM blast next to a cannon: the cannon is damaged")
     void ecm() throws IOException {
-        check(replay("ecm.txt", "initialECMs", "2"), 53);
+        check(replay("ecm.txt", "initialECMs", "2"), 53, has("an ECM", r -> r.ecms() > 0),
+            has("a damaged cannon", r -> r.cannonFrames() > 20));
     }
 
     @Test
-    @DisplayName("lost mine and missile packs")
+    @DisplayName("lost mine and missile packs (drop offsets, speeds and lives from C's draws)")
     void loseItem() throws IOException {
-        // C frame 65: a (random, silenced in Java) cannon shot hits the ship after the last pack is lost
-        check(replay("lose-item.txt", 64, "initialMines", "3", "initialMissiles", "2"), 64);
+        check(replay("lose-item.txt", "initialMines", "3", "initialMissiles", "2"), 84,
+            has("dropped item packs", r -> r.of(Obj.ITEM) > 60));
+    }
+
+    @Test
+    @DisplayName("mine packs lost while moving right, then left (both drop offset and speed branches)")
+    void loseItemRight() throws IOException {
+        check(replay("lose-item-right.txt", "initialMines", "3", "initialMissiles", "2"), 80,
+            has("dropped item packs", r -> r.of(Obj.ITEM) > 40));
     }
 
     @Test
     @DisplayName("extra tanks: switching and fuel flow")
     void tanks() throws IOException {
-        check(replay("tanks.txt", "initialTanks", "2"), 74);
+        check(replay("tanks.txt", "initialTanks", "2"), 73);
     }
 }

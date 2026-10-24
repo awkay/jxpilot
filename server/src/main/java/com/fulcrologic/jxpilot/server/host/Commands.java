@@ -41,8 +41,7 @@ import com.fulcrologic.jxpilot.server.world.World;
  * everyone (C {@code Set_message}). Operator status ({@link Player#isOperator}) comes from {@code /password},
  * checked against the {@code password} option (command line, defaults file or {@code passwordFileName}).
  * <p>
- * JXPilot has no login queue (a full game refuses a newcomer), so {@code /queue} always finds it empty and
- * {@code /advance} never finds the player. Commands run between ticks and may allocate.
+ * Commands run between ticks and may allocate.
  */
 final class Commands {
     static final int SUCCESS = 0;
@@ -81,6 +80,11 @@ final class Commands {
         new Command("team", "t", "/team <team number> swaps you to given team.", false),
         new Command("version", "v", "Print server version.", false),
     };
+
+    /** JXPilot brute-force guard of {@code /password}: wrong tries before a cooldown, its first and longest length. */
+    static final int PASSWORD_TRIES = 3;
+    static final int PASSWORD_LOCK_SECONDS = 10;
+    static final int PASSWORD_LOCK_MAX_SECONDS = 300;
 
     static final String ALLY_USAGE = "Usage: /ally {invite|cancel|refuse|accept|leave|list} [<player name>]";
     private static final String[] ALLY_CMDS = {"invite", "cancel", "refuse", "accept", "leave", "list"};
@@ -135,7 +139,12 @@ final class Commands {
             }
         }
         if (c == null) {
-            tell(pl, "Unknown command '" + name + "'.  [*Server reply*]");
+            msg.setLength(0);
+            msg.append("Unknown command '").append(name).append("'.  [*Server reply*]");
+            if (msg.length() > Const.MSG_LEN - 1) {
+                msg.setLength(Const.MSG_LEN - 1);
+            }
+            tell(pl, msg);
             return;
         }
         msg.setLength(0);
@@ -189,10 +198,10 @@ final class Commands {
     // ================================================================ commands
 
     /**
-     * C {@code Cmd_advance} with C {@code Queue_advance_player} over JXPilot's (always empty) queue.
+     * C {@code Cmd_advance} with C {@code Queue_advance_player} ({@link LoginQueue#advance}).
      * <p>
      * BEHAVIOR: not an operator: NOT_OPERATOR; no name: NO_NAME; a name of 16 characters or more: "Name too
-     * long." (ERROR); otherwise "Player \"NAME\" not in queue." (SUCCESS).
+     * long." (ERROR); otherwise the queue's answer (SUCCESS).
      */
     int advance(String arg, boolean oper) {
         if (!oper) {
@@ -201,17 +210,12 @@ final class Commands {
         if (arg.isEmpty()) {
             return NO_NAME;
         }
-        if (arg.length() >= Const.MAX_NAME_LEN) {
-            msg.append("Name too long.");
-            return ERROR;
-        }
-        msg.append("Player \"").append(arg).append("\" not in queue.");
-        return SUCCESS;
+        return host.loginQueue.advance(arg, msg) ? SUCCESS : ERROR;
     }
 
-    /** C {@code Cmd_queue} with {@code Queue_show_list}: BEHAVIOR: "The queue is empty." (SUCCESS). */
+    /** C {@code Cmd_queue} with {@code Queue_show_list} ({@link LoginQueue#showList}): BEHAVIOR: always SUCCESS. */
     int queue() {
-        msg.append("The queue is empty.");
+        host.loginQueue.showList(msg);
         return SUCCESS;
     }
 
@@ -252,8 +256,16 @@ final class Commands {
      * BEHAVIOR: without a password option, or with an argument other than the password (exact): "Wrong.", and an
      * operator loses the status ("Wrong.  You lost operator status."). The password: operator status, "You got
      * operator status.". Always SUCCESS.
+     * BEHAVIOR (JXPilot, not C): every third wrong try starts a cooldown of 10 seconds, doubling each time up to 5
+     * minutes; during it every try answers "Too many wrong passwords.  Try again in N seconds." without being
+     * checked. The password resets the count and the length.
      */
     int password(String arg, Player pl) {
+        if (w.frames < pl.passwordLockedUntil) {
+            long secs = (pl.passwordLockedUntil - w.frames + w.params.fps - 1) / w.params.fps;
+            msg.append("Too many wrong passwords.  Try again in ").append(secs).append(" seconds.");
+            return SUCCESS;
+        }
         String password = w.options.getString(Opt.PASSWORD);
         if (password == null || !arg.equals(password)) {
             msg.append("Wrong.");
@@ -261,7 +273,15 @@ final class Commands {
                 pl.isOperator = false;
                 msg.append("  You lost operator status.");
             }
+            if (++pl.passwordFails >= PASSWORD_TRIES) {
+                pl.passwordFails = 0;
+                pl.passwordLockFrames = pl.passwordLockFrames == 0 ? PASSWORD_LOCK_SECONDS * w.params.fps
+                    : Math.min(2 * pl.passwordLockFrames, PASSWORD_LOCK_MAX_SECONDS * w.params.fps);
+                pl.passwordLockedUntil = w.frames + pl.passwordLockFrames;
+            }
         } else {
+            pl.passwordFails = 0;
+            pl.passwordLockFrames = 0;
             pl.isOperator = true;
             msg.append("You got operator status.");
         }
@@ -535,8 +555,9 @@ final class Commands {
      * player's score is taken from the old team and given to the new one (C's order, so the score the new team
      * gets is the old team's new share); with limitedLives, when an opponent is in the game (not paused) the
      * swapper waits for the next round ('W', no lives, GAME_OVER, no self-destruct, count -1); a new home base of
-     * the team is picked (the ship keeps flying); PLAYER_TEAM, SCORE and BASE_OWNER tell everyone (C
-     * {@code Send_info_about_player}).
+     * the team is picked and announced (C {@code Pick_startpos}), with its tail: a ship not playing waits 3*FPS, a
+     * paused or game-over one goes home (a flying ship keeps flying); then PLAYER_TEAM, SCORE and BASE_OWNER tell
+     * everyone (C {@code Send_info_about_player}).
      */
     void swapTeam(Player pl, int team) {
         var p = w.params;
@@ -569,6 +590,8 @@ final class Commands {
             }
         }
         sim.ships.pickStartPos(pl);
+        w.events.add(Events.BASE_OWNER, pl.homeBase, pl.id, 0, 0f);
+        sim.ships.startPosPicked(pl);
         w.events.add(Events.TEAM, pl.id, pl.team, 0, 0f);
         pl.scoreDirty = true;
         w.events.add(Events.BASE_OWNER, pl.homeBase, pl.id, 0, 0f);

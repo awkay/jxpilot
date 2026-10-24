@@ -24,12 +24,10 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
-import com.fulcrologic.jxpilot.common.math.CRandom;
 import com.fulcrologic.jxpilot.common.config.ConfigParser;
 import com.fulcrologic.jxpilot.common.config.OptionOrigin;
 import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.map.Base;
-import com.fulcrologic.jxpilot.common.net.ControlKey;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
@@ -58,7 +56,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("C golden traces (game modes)")
 class ModeTraceTest {
     /** The C server's random seed in every recording (trace.sh --seed 42). */
-    static final int SEED = 42;
     static final int FRAMES_TREASURE_CASH = 95;
 
     /** Simulation over a map file from the test resources. */
@@ -121,7 +118,7 @@ class ModeTraceTest {
 
     /**
      * Replay a trace with one human ship: start on the base C used, C client settings (power 45, turnspeed 35,
-     * turnresistance 30/256), per-frame keys from C's state.
+     * turnresistance 30/256), the keys C's client sent (XPKEYS) and C's random draws (XPRAND, {@link CDraws}).
      */
     static Result replay(Simulation s, ModeTrace t) {
         return replayUntil(s, t, Long.MAX_VALUE);
@@ -130,8 +127,14 @@ class ModeTraceTest {
     /** {@link #replay} up to and including C frame {@code last} (debugging). */
     static Result replayUntil(Simulation s, ModeTrace t, long last) {
         World w = s.world;
+        // every random draw is C's own, matched by call site (patch 0006 XPRAND, CDraws); the draws C made before
+        // the first traced frame (the login's Pick_startpos among them) belong to it
+        CDraws draws = new CDraws();
+        w.replay = draws;
+        ModeTrace.Frame f0 = t.frames.get(0);
+        draws.begin(f0.frame, t.c.containsKey(f0.frame) ? t.c.get(f0.frame).draws : List.of());
         Player p = s.ships.join("Refpilot", 0);
-        CTraceTest.Frame first = t.frames.get(0).ship;
+        CTraceTest.Frame first = f0.ship;
         int bx = (first.cx() >> 6) / 35;
         int by = (first.cy() >> 6) / 35;
         for (Base b : w.map.bases()) {
@@ -141,66 +144,36 @@ class ModeTraceTest {
         }
         s.ships.goHome(p);
         s.ships.applySettings(p, 45f, 35f, 30 / 256f, 35f, 25f, 30 / 256f);
+        int cid = f0.players.get(0).id();
         long[] in = new long[w.players.length];
         List<String> bad = new ArrayList<>();
-        boolean wasConnected = false;
-        boolean wasDestructing = false;
-        // a trace with C's draw counts replays C's random stream: seeded like the C server (XPILOT_SEED 42),
-        // brought to C's count before every frame (the C frame code draws too), its draws checked after
-        CRandom mt = t.frames.get(0).drawsBefore >= 0 ? new CRandom(SEED) : null;
-        w.rng.useC(mt);
+        long keys = 0;
         for (ModeTrace.Frame f : t.frames) {
             if (f.frame > last) {
                 break;
             }
-            if (mt != null) {
-                if (mt.draws() > f.drawsBefore && bad.size() < 6) {
-                    bad.add("frame " + f.frame + ": Java drew " + (mt.draws() - f.drawsBefore) + " more than C before it");
-                }
-                w.rng.skip((int) Math.max(0, f.drawsBefore - mt.draws()));
+            CTraceItems.CFrame cf = t.c.get(f.frame);
+            if (f != f0) {
+                draws.begin(f.frame, cf != null ? cf.draws : List.of());
+            }
+            // the keys C's client held down (XPKEYS), until its next keyboard update; a key pressed and released
+            // within one tick (a tap) is held for that tick, as C handled both updates
+            in[p.slot] = keys;
+            if (cf != null && cf.keys.containsKey(cid)) {
+                keys = cf.keys.get(cid);
+                in[p.slot] = cf.keysAny.get(cid);
             }
             CTraceTest.Frame c = f.ship;
-            long keys = c.thrusting() ? ControlKey.THRUST.mask() : 0;
-            keys |= c.turnAcc() > 0 ? ControlKey.TURN_LEFT.mask() : (c.turnAcc() < 0 ? ControlKey.TURN_RIGHT.mask() : 0);
             ModeTrace.Pl2 pl2 = f.players.get(0);
-            if ((pl2.used() & Has.CONNECTOR) != 0) {
-                keys |= ControlKey.CONNECTOR.mask();
-            }
-            if ((pl2.used() & Has.SHOT) != 0) {
-                keys |= ControlKey.FIRE_SHOT.mask();
-            }
-            if ((pl2.used() & Has.SHIELD) != 0) {
-                // C's client keeps the shield up and lowers it to fire (autoShield)
-                keys |= ControlKey.SHIELD.mask();
-            }
-            boolean connected = false;
-            boolean recreated = false;
-            for (ModeTrace.Obj o : f.objs) {
-                connected |= o.type() == Obj.BALL && o.id() == p.id;
-                // a ball C deleted and remade in its treasure starts its life count again
-                recreated |= o.type() == Obj.BALL && o.life() == Long.MAX_VALUE;
-            }
-            if (wasConnected && !connected && !recreated && (pl2.used() & Has.CONNECTOR) == 0) {
-                // the ball came loose this frame and lives on, and the connector went off with it: C's player
-                // pressed DROP_BALL ('d', Detach_ball(ind, -1)); a snapped connector stays on
-                keys |= ControlKey.DROP_BALL.mask();
-            }
-            wasConnected = connected;
-            boolean destructing = (f.shipStatus & Obj.SELF_DESTRUCT) != 0;
-            if (destructing && !wasDestructing) {
-                // C's player toggled self-destruct this frame (End)
-                keys |= ControlKey.SELF_DESTRUCT.mask();
-            }
-            wasDestructing = destructing;
-            in[p.slot] = keys;
             long msgFrom = w.events.seq();
+            int problems = draws.problems.size();
             s.tick(in);
+            draws.end();
             if (bad.size() >= 6) {
                 continue;
             }
-            if (mt != null && mt.draws() != f.drawsAfter) {
-                bad.add("frame " + f.frame + " random draws in the frame: C " + (f.drawsAfter - f.drawsBefore)
-                    + ", Java " + (mt.draws() - f.drawsBefore));
+            for (int i = problems; i < draws.problems.size(); i++) {
+                bad.add("draws: " + draws.problems.get(i));
             }
             CTraceTest.Frame j = CTraceTest.Frame.of(c.frame(), p);
             if (!j.equals(c)) {
@@ -298,9 +271,9 @@ class ModeTraceTest {
         Result r = replay(s, t);
         ModeTrace.Pl2 last = t.frames.get(t.frames.size() - 1).players.get(0);
         assertAll(
-            () -> assertEquals(211, r.frames(), "211 C frames are compared"),
+            () -> assertEquals(210, r.frames(), "210 C frames are compared"),
             () -> assertEquals(2, last.round(), "(C completed lap 1)"),
-            () -> assertEquals(171, last.bestLap(), "(in 171 frames)"),
+            () -> assertEquals(157, last.bestLap(), "(in 157 frames)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }
 
@@ -339,7 +312,7 @@ class ModeTraceTest {
         Simulation s = resourceMap("target-shoot.xp", 1);
         Result r = replay(s, t);
         assertAll(
-            () -> assertEquals(171, r.frames(), "171 C frames are compared"),
+            () -> assertEquals(172, r.frames(), "172 C frames are compared"),
             () -> assertTrue(t.frames.stream().anyMatch(f -> f.targets.get(0)[2] > 0), "(C destroyed it)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }
@@ -367,29 +340,9 @@ class ModeTraceTest {
         Result r = replay(s, t);
         boolean reset = t.frames.stream().anyMatch(f -> f.frame > 200 && f.players.get(0).round() == 0);
         assertAll(
-            () -> assertEquals(405, r.frames(), "405 C frames are compared"),
+            () -> assertEquals(404, r.frames(), "404 C frames are compared"),
             () -> assertTrue(reset, "(C finished the race and reset it)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
-    }
-
-    @Test
-    @DisplayName("CRandom is C's generator: seeded with 42, it reaches the state the C server dumped")
-    void cRandomMatchesTheDump() throws Exception {
-        ModeTrace t = ModeTrace.load("asteroid-box.txt");
-        CRandom ours = new CRandom(SEED);
-        for (long i = 0; i < t.mtDraws; i++) {
-            ours.next();
-        }
-        CRandom dumped = new CRandom(0);
-        dumped.load(t.mtLeft, t.mtNext, t.mtState, t.mtDraws);
-        boolean same = true;
-        for (int i = 0; i < 2000; i++) {
-            same &= ours.next() == dumped.next();
-        }
-        boolean all = same;
-        assertAll(
-            () -> assertTrue(t.mtFrame > 0, "(the trace has the dump)"),
-            () -> assertTrue(all, "the next 2000 values (over a reload) agree"));
     }
 
     @Test
@@ -399,7 +352,7 @@ class ModeTraceTest {
         Simulation s = resourceMap("ball-tow.xp", 1);
         Result r = replay(s, t);
         assertAll(
-            () -> assertEquals(107, r.frames(), "107 C frames are compared"),
+            () -> assertEquals(108, r.frames(), "108 C frames are compared"),
             () -> assertTrue(t.frames.get(t.frames.size() - 1).objs.get(0).id() == -1, "(the ball was dropped)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }
@@ -428,7 +381,7 @@ class ModeTraceTest {
         boolean died = t.frames.stream().anyMatch(f -> f.messages.stream()
             .anyMatch(m -> m[1].equals("Refpilot smashed against a treasure.")));
         assertAll(
-            () -> assertEquals(268, r.frames(), "268 C frames are compared"),
+            () -> assertEquals(269, r.frames(), "269 C frames are compared"),
             () -> assertTrue(scoreRises(t) >= 4, "(the ship broke asteroids: " + scoreRises(t) + ")"),
             () -> assertTrue(died, "(and died)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
@@ -476,7 +429,7 @@ class ModeTraceTest {
         }
         long n = landings;
         assertAll(
-            () -> assertEquals(109, r.frames(), "109 C frames are compared"),
+            () -> assertEquals(110, r.frames(), "110 C frames are compared"),
             () -> assertTrue(n >= 1, "(the loose ball landed in its treasure: " + n + ")"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }
@@ -499,7 +452,7 @@ class ModeTraceTest {
         }
         long n = snaps;
         assertAll(
-            () -> assertEquals(120, r.frames(), "120 C frames are compared"),
+            () -> assertEquals(119, r.frames(), "119 C frames are compared"),
             () -> assertEquals(3, n, "(the connector snapped 3 times with the connector key held)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }

@@ -188,6 +188,7 @@ public final class Simulation {
         }
         lasers.collide();
         asteroids.collide();
+        robots.afterCollisions();
         killPlayers();
         expireObjects();
         if (w.gameDuration >= 0 || w.params.maxRoundTime > 0) {

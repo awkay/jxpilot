@@ -77,6 +77,11 @@ public final class ReliableType {
      */
     public static final int TIMING = 20;
     /**
+     * {@link Msg.Motd}: a piece of the server's message of the day (C motdFileName). Sent once after the initial
+     * state when the server has one; older clients skip it.
+     */
+    public static final int MOTD = 28;
+    /**
      * server-commands block 31-33: {@link Msg.PlayerAlliance}: a player's alliance mark as the receiver sees
      * it (C {@code Send_score}'s alliance character).
      */

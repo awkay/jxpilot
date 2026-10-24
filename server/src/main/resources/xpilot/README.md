@@ -15,3 +15,7 @@ angles of 180.
 
 The file must stay byte-for-byte identical to the original. To change settings, copy it, edit the
 copy, and start the server with `--defaults <your copy>`.
+
+`server-help.txt` holds the help text of every server option, extracted unchanged (line breaks included)
+from the option table in XPilot 4.5.5's `src/server/cmdline.c`, same license and authors. `-help` prints
+it as the C server does.

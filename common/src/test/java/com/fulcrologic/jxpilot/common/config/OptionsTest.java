@@ -124,7 +124,7 @@ class OptionsTest {
                 () -> assertEquals(800.0, o.getDouble(Opt.IP_PACKET_BURST), EPS, "ipPacketBurst defaults to 800"),
                 () -> assertEquals(400.0, o.getDouble(Opt.SESSION_PACKET_RATE), EPS, "sessionPacketRate defaults to 400/s"),
                 () -> assertEquals(800.0, o.getDouble(Opt.SESSION_PACKET_BURST), EPS, "sessionPacketBurst defaults to 800"),
-                () -> assertEquals(4, o.getInt(Opt.MAX_CLIENTS_PER_IP), "maxClientsPerIP defaults to 4 in JXPilot"),
+                () -> assertEquals(2, o.getInt(Opt.MAX_CLIENTS_PER_IP), "maxClientsPerIP defaults to 2, as C (cmdline.c:1122)"),
                 () -> assertEquals(List.of(false, false, false, false, false, false, false), fromMap,
                     "none of them can be set from a map"),
                 () -> assertEquals(3, cli.getInt(Opt.SNAPSHOT_DIVISOR), "--snapshotDivisor"),
@@ -192,7 +192,16 @@ class OptionsTest {
                 () -> assertEquals(Long.MIN_VALUE, l(""), "empty fails"),
                 () -> assertEquals(Long.MIN_VALUE, l("-"), "a lone sign fails"),
                 () -> assertEquals(15, l("0x0F"), "a hex number may start with the digit 0"),
-                () -> assertEquals(Integer.MAX_VALUE * 4L, l("99999999999999999999"), "huge values clamp"),
+                () -> assertEquals(Long.MAX_VALUE, l("99999999999999999999"), "huge values saturate (glibc ERANGE)"),
+                () -> assertEquals(Long.MIN_VALUE + 1, l("-99999999999999999999") + 1, "huge negatives saturate"),
+                () -> assertEquals(Long.MIN_VALUE, l("-9223372036854775808"), "LONG_MIN itself is in range"),
+                () -> assertTrue(CNum.strtol("-99999999999999999999", new long[1]), "a saturated negative parses"),
+                () -> assertTrue(CNum.strtol("-9223372036854775808", new long[1]), "LONG_MIN parses"),
+                () -> assertEquals(Long.MAX_VALUE, l("9223372036854775807"), "LONG_MAX itself is in range"),
+                () -> assertEquals(Long.MAX_VALUE, l("9223372036854775808"), "LONG_MAX + 1 saturates"),
+                () -> assertEquals(Long.MAX_VALUE, l("0x8000000000000000"), "hex overflow saturates"),
+                () -> assertEquals(1215752191, (int) l("99999999999"), "an int cast wraps as C's long-to-int"),
+                () -> assertEquals(-1, (int) l("99999999999999999999"), "a saturated value casts to -1"),
                 () -> assertEquals(1, l("1١"), "non-ASCII digits stop parsing"));
         }
 
@@ -214,7 +223,20 @@ class OptionsTest {
                 () -> assertEquals(10.09, d("10.09"), EPS, "0 and 9 are mantissa digits"),
                 () -> assertEquals(1e10, d("1e10"), 1, "0 is an exponent digit"),
                 () -> assertEquals(1e9, d("1e9"), 1, "9 is an exponent digit"),
-                () -> assertTrue(Double.isNaN(d("")), "empty fails"));
+                () -> assertTrue(Double.isNaN(d("")), "empty fails"),
+                () -> assertEquals(16.0, d("0x10"), EPS, "hex float without exponent"),
+                () -> assertEquals(-16.0, d("-0X1p4"), EPS, "signed hex float with binary exponent"),
+                () -> assertEquals(0.5, d("0x.8"), EPS, "hex fraction without integer digits"),
+                () -> assertEquals(1.5, d("0x1.8P+0z"), EPS, "hex fraction, signed exponent, trailing junk"),
+                () -> assertEquals(0.25, d("0x1p-2"), EPS, "negative binary exponent"),
+                () -> assertEquals(255.0, d("0xfFp"), EPS, "an exponent without digits is ignored"),
+                () -> assertEquals(0.0, d("0x"), EPS, "a bare 0x parses the 0"),
+                () -> assertEquals(0.0, d("0x."), EPS, "0x. parses the 0"),
+                () -> assertEquals(0.0, d("0xg"), EPS, "0x without hex digits parses the 0"),
+                () -> assertTrue(Double.isNaN(d("inf")), "inf is refused"),
+                () -> assertTrue(Double.isNaN(d("nan")), "nan is refused"),
+                () -> assertTrue(Double.isNaN(d("1e999")), "an overflow to infinity is refused"),
+                () -> assertTrue(Double.isNaN(d("0x1p99999")), "a hex overflow to infinity is refused"));
         }
 
         @Test
@@ -499,6 +521,43 @@ class OptionsTest {
     @DisplayName("toConfigText")
     class ConfigText {
         @Test
+        @DisplayName("unknown names (macros, settings this server ignores) are shipped only when the map set them")
+        void unknownOrigins() {
+            Options o = parse("mapWidth: 1\nmapHeight: 1\nfromMap: m\nmapData: \\multiline: EOF\nx\nEOF\n");
+            o.setValue("fromDefaults", "d", false, OptionOrigin.DEFAULTS);
+            o.setValue("fromCommand", "c", false, OptionOrigin.COMMAND);
+            o.setValue("fromPassword", "p", false, OptionOrigin.PASSWORD);
+            ConfigParser.parse("define: Macro \\multiline: End\ngravity: 1\nEnd\n", "defaults", OptionOrigin.DEFAULTS, o);
+            String text = o.toConfigText();
+            assertAll(
+                () -> assertTrue(text.contains("fromMap: m\n"), "the map's own unknown name"),
+                () -> assertFalse(text.contains("fromDefaults"), "not the defaults file's"),
+                () -> assertFalse(text.contains("fromCommand"), "not the command line's"),
+                () -> assertFalse(text.contains("fromPassword"), "not the password file's"),
+                () -> assertFalse(text.contains("Macro"), "not the defaults file's macros (lib/defaults' SoftWalls...)"));
+        }
+
+        @Test
+        @DisplayName("nothing from the password file reaches clients: not the password, not a mistyped name, in either order")
+        void passwordFileNeverShipped() {
+            String pwd = "password: secret\npasswd: hunter2\n";
+            Options before = new Options();
+            ConfigParser.parse(pwd, "password", OptionOrigin.PASSWORD, before);
+            ConfigParser.parse("mapWidth: 1\nmapHeight: 1\npasswd: frommap\n", "map", OptionOrigin.MAP, before);
+            Options after = new Options();
+            ConfigParser.parse("mapWidth: 1\nmapHeight: 1\npasswd: frommap\n", "map", OptionOrigin.MAP, after);
+            ConfigParser.parse(pwd, "password", OptionOrigin.PASSWORD, after);
+            String a = before.toConfigText();
+            String b = after.toConfigText();
+            assertAll(
+                () -> assertFalse(a.contains("hunter2") || b.contains("hunter2"), "the mistyped line's value"),
+                () -> assertFalse(a.contains("secret") || b.contains("secret"), "the password"),
+                () -> assertFalse(b.contains("passwd"), "a map name the password file took over is not shipped"),
+                () -> assertFalse(a.contains("passwd"), "read first, the password file's value keeps its origin: the"
+                    + " map cannot change it (C option.c: PASSWORD beats MAP)"));
+        }
+
+        @Test
         @DisplayName("round trips through the parser exactly")
         void roundTrip() {
             Options o = parse("mapWidth: 3\nmapHeight: 2\nmapName: Test Map\nteamPlay: yes\ngravity: -0.3\n"
@@ -515,7 +574,7 @@ class OptionsTest {
                 {"crValue", "a\r\r\nb"},
                 {"plainValue", "\tleading tab"}};
             for (String[] v : values) {
-                o.setValue(v[0], v[1], true, OptionOrigin.COMMAND);
+                o.setValue(v[0], v[1], true, OptionOrigin.MAP);
             }
             String text = o.toConfigText();
             Options r = parse(text);

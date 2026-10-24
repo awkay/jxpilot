@@ -78,9 +78,9 @@ public final class Debris implements DebrisBurst.Sink {
      * BEHAVIOR: when {@code burstKind >= 0} the quantized burst is recorded as an event for clients.
      * BEHAVIOR: OBJ_SHOT fragments are cluster shots: without shotsGravity they lose GRAVITY, and with
      * shotHitFuelDrainUsesKineticEnergy their mass is mass/(speed/shotSpeed)^2.
-     * BEHAVIOR: replaying a C server's random stream (tests, {@code Rng.useC}) the particles are C's own: the
-     * origin is not rounded, no burst is recorded and each particle draws its direction, offset, speed and
-     * life from that stream ({@link #cParticles}).
+     * BEHAVIOR: replaying a C server's random draws (tests, {@code World.replay}) the burst is still recorded but
+     * the particles are C's own: at the unrounded origin, each drawing its direction, offset, speed and life from
+     * C's draws ({@link #cParticles}).
      *
      * @param color     {@code Records.ObjColor} of the particles
      * @param burstKind {@code Records.BurstKind}, or -1 for particles clients do not draw as a burst
@@ -101,17 +101,15 @@ public final class Debris implements DebrisBurst.Sink {
         if (fx < 0 || fx >= w.pixelWidth || fy < 0 || fy >= w.pixelHeight) {
             return 0;
         }
-        boolean c = w.rng.c() != null;
-        if (!c) {
-            fx = ThrustSparks.wirePos(fx);
-            fy = ThrustSparks.wirePos(fy);
-            if (w.wrap) {
-                fx = (float) w.wrapXPixel(fx);
-                fy = (float) w.wrapYPixel(fy);
-            }
-            if (fx >= w.pixelWidth || fy >= w.pixelHeight) {
-                return 0;
-            }
+        boolean c = w.replay != null;
+        float bx = ThrustSparks.wirePos(fx);
+        float by = ThrustSparks.wirePos(fy);
+        if (w.wrap) {
+            bx = (float) w.wrapXPixel(bx);
+            by = (float) w.wrapYPixel(by);
+        }
+        if (!c && (bx >= w.pixelWidth || by >= w.pixelHeight)) {
+            return 0;
         }
         if (maxLife < minLife) {
             maxLife = minLife;
@@ -148,13 +146,9 @@ public final class Debris implements DebrisBurst.Sink {
             return 0;
         }
         boolean kinetic = type == Obj.SHOT && p.shotHitFuelDrainUsesKineticEnergy;
-        if (c) {
-            return cParticles(fx, fy, vx, vy, owner, team, type, mass, status, color, radius, num, minDir, maxDir,
-                minSp, maxSp, minLife, maxLife, kinetic);
-        }
         DebrisBurst d = burstKind >= 0 ? w.events.addBurst(burstKind, color, owner, w.tick) : scratch;
-        d.x = fx;
-        d.y = fy;
+        d.x = bx;
+        d.y = by;
         d.vx = vx;
         d.vy = vy;
         d.seed = w.rng.nextInt();
@@ -167,6 +161,11 @@ public final class Debris implements DebrisBurst.Sink {
         d.maxLife = maxLife;
         d.hypotenuse = (float) p.hypotenuse;
         Records.Burst.quantize(d);
+        if (c) {
+            // the burst is still recorded for clients; the particles are C's
+            return cParticles(fx, fy, vx, vy, owner, team, type, mass, status, color, radius, num, minDir, maxDir,
+                minSp, maxSp, minLife, maxLife, kinetic);
+        }
         return expand(d, owner, team, type, mass, status, color, radius, kinetic);
     }
 
@@ -325,7 +324,7 @@ public final class Debris implements DebrisBurst.Sink {
      */
     public void thrust(Player pl) {
         Sounds.play(w, pl.px, pl.py, SoundEvent.THRUST);
-        if (w.rng.c() != null) {
+        if (w.replay != null) {
             cThrust(pl);
             return;
         }
@@ -364,7 +363,7 @@ public final class Debris implements DebrisBurst.Sink {
      * to 0 (a negative one never does: C's signed shift), then {@link #make} with C's red and blue sparks.
      */
     void cThrust(Player pl) {
-        int thisRand = ((cKeepRand >>= 2) != 0 ? cKeepRand : (cKeepRand = w.rng.nextInt())) & 0x03;
+        int thisRand = ((cKeepRand >>= 2) != 0 ? cKeepRand : (cKeepRand = w.randomMT())) & 0x03;
         int tot = (int) ((pl.power * 0.15) + thisRand + 1);
         int ab = pl.afterburners();
         int alt = ab != 0 ? (((tot - 1) * ab) >> 4) + 1 : 0;

@@ -38,9 +38,11 @@ use `command grep -a ...` or `rg -a`. Key files:
 - **Snapshots:** the server snapshots every tick by default (divisor 1). Radar is sent every 3rd
   snapshot unless configured otherwise.
 - **Client rendering:** the client renders at vsync and interpolates between the two most recent
-  snapshots, rendering about one snapshot interval behind. The own ship is interpolated at the render
-  tick like every other ship (no extrapolation). Hiding input latency with client-side prediction is
-  planned: see `docs/latency-fixes.md`.
+  snapshots, rendering about one snapshot interval behind. The own ship (and the camera) is not
+  interpolated: it is predicted from the newest SELF to the estimated server tick with its velocity and
+  an acceleration estimate, and a new SELF's prediction error is blended out over a few render frames
+  (60 ms time constant; snap on death and teleport). Input prediction with server reconciliation (the
+  rest of `docs/latency-fixes.md`) is future work.
 - **Client input:** sent immediately on any key change, otherwise at about the tick rate. The server
   applies input at the next frame, as C does.
 - **Goal:** with the same map, options and inputs, the Java server matches the C server frame for

@@ -75,33 +75,43 @@ source.
 |Defaults file |`LIBDIR/defaults`; a missing file is skipped |XPilot's `lib/defaults` is in the jar;
 `--defaults FILE` replaces it, `--defaults none` skips it, and a named file that cannot be read is an
 error
-|Last player leaves |the server exits, unless started with `-noQuit` |the server keeps running (matching
-XPilot is being worked on)
-|Operator commands, password file |available |not yet
 |Player names |must start with a capital letter (the XPilot client capitalizes) |any non-empty name;
 names already in use are refused, ignoring case
 |Real names and host names |shown in the player list and join messages |not known; join messages show
 the player name only
-|Changing team or ship shape while playing |possible |not yet
-|Rounds |also end races and treasure games |race and treasure rounds come with those features (M2);
-team rounds end by lives or `maxRoundTime`
 |Keys |every key press in a client packet counts |the server sees your keys once per frame; a key
 pressed and released within one frame (1/14 s) is lost
 |Random events |XPilot's random number generator |another generator: random details (sparks, explosions, robot
 choices) differ, nothing else
-|Gravity of a `gravityPoint` on a non-square wrapping map; objects exactly half a world apart |XPilot bugs
-|fixed
-|Hyperjump with `wormTime` |leaves a pair of temporary wormholes |no temporary wormholes; the jump is
-the same
-|Mines, missiles and nukes on the radar |blink |always shown
-|An ECM reprogramming a robot |all players are told |the robot goes to war without a message
-|Modifier banks |the XPilot client loads them from its resources when you join |start empty; store
-them in the game with the reprogram key (<<03-playing.adoc#modifiers,Weapon modifiers>>)
-|Selecting an item to drop |the server marks the selected item on the HUD |not shown; the HUD shows the
-item counts
-|`denyHosts` |IPv4; `:` also separates entries |IPv4 and IPv6, so `:` does not separate entries
+|Exhaust sparks |drawn from the server's random numbers |every client computes the server's sparks
+from the frame and the ship, so they are not sent; their push on other ships matches XPilot on
+average, not frame for frame
+|Gravity of a `gravityPoint` on a non-square wrapping map; objects exactly half a world apart; connecting
+to a ball that was just destroyed; a vanishing temporary wormhole cutting short every ship's warp |XPilot
+bugs |fixed
+|Temporary (hyperjump) wormholes |unlimited |at most 64 at a time
+|`--map NAME` |a file in the current directory, then in the map directory (`MAPDIR`) |the 19 standard
+maps are built into the jars and a plain name means one of them first; a file of the same name in the
+current directory needs a path (`./default.xp`)
+|`gameDuration` |the server log says "Server will stop in N minutes." |no log line; the HUD shows the
+time left and, after the game, the shutdown countdown
+|`denyHosts` |only takes effect after an operator changes it during the game (an XPilot bug); IPv4; `:`
+also separates entries |applies from the start; IPv4 and IPv6, so `:` does not separate entries
 |`serverHost` |the address the contact socket binds |the bind selector when `--bind` is not given
 |`logRobots` |on standard output, with a time stamp |on the server log, without a time stamp
+|Login queue |the client asks to join the queue and the server confirms its position every few
+seconds |the client keeps asking every second and is told its position; the queue rules are XPilot's
+|Ship shape |sent when you join |the same; a shape change during the game is ignored
+|`/set` |connected clients see only what the server sends |the same: they keep the configuration they
+got when they joined
+|Wrong operator passwords |unlimited tries |after 3 wrong tries a wait of 10 seconds, doubling up to 5
+minutes
+|Option numbers |`inf` and `nan` are accepted |refused (the default at start-up, "invalid value" for
+`/set`)
+|Changing options over the network |an admin tool can list and change options through the contact port
+|not available; operators use `/get` and `/set` in the game
+|Password file |`LIBDIR/password` unless named otherwise; a missing file is skipped |read only when
+`passwordFileName` names it; a named file that cannot be read is an error
 |Network |XPilot's protocol, one port per player, meta server |JXPilot's protocol on one UDP port; no meta
 server; the JXPilot client can still join XPilot servers
 |===
@@ -118,8 +128,8 @@ server; the JXPilot client can still join XPilot servers
 |Turn speed default |35 |40
 |Engine sound |a short sound every frame |a loop while you thrust
 |ID mode, message and item toggles, pointer control, recording |available |not supported
-|Showing frames |each frame as it arrives |smooth motion at your screen's refresh rate, about 90 ms behind
-the latest frame
+|Showing frames |each frame as it arrives |smooth motion at your screen's refresh rate: other ships about
+90 ms behind the latest frame, your own ship predicted forward from it
 |===
 
 [appendix]
@@ -177,8 +187,8 @@ firewalls on both sides; the server answers only from the address you contacted
 (<<04-running-a-server.adoc#multi-homed,Replies from the right address>>).
 
 |Client: the game feels sluggish, your ship reacts late
-|Your keys take a round trip to the server plus about 135 ms. Play on a server closer to you, or host it
-half way between the players (<<04-running-a-server.adoc#hosting,Hosting for friends far away>>).
+|Your keys take a round trip to the server, plus the wait for its next frame (up to 1/14 s). Play on a
+server closer to you, or host it half way between the players (<<04-running-a-server.adoc#hosting,Hosting for friends far away>>).
 
 |Client: `jxpilot keys: ...` lines at startup
 |Your `~/.xpilotrc` (or `--keys` file) has a line JXPilot cannot use, or a key bound to more than one
@@ -199,8 +209,8 @@ the system's sound output, or use `--no-sound` to skip the attempt.
 
 Can I play JXPilot now?::
 Yes: against robots with `--local`, on a JXPilot server with `--connect`, or on an original XPilot
-server with `--connect xp://...`. Balls, targets, races and asteroids are not on the JXPilot server yet
-(<<01-introduction.adoc#status,Status>>).
+server with `--connect xp://...`. The JXPilot server has the whole XPilot game; see
+<<01-introduction.adoc#status,Status>> for what is still missing.
 
 Can I join an original XPilot server, or use the original XPilot client with a JXPilot server?::
 The JXPilot client joins original XPilot 4.5.5 servers with `xp://`

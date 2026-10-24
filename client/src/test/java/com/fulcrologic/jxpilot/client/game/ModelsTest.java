@@ -132,12 +132,83 @@ class ModelsTest {
             assertAll(
                 () -> assertEquals(0.0, before, "0 before any sample"),
                 () -> assertEquals(660.0, first, 1e-9, "600 at 1 s, 60 ticks per second later"),
-                () -> assertEquals(540.3, offset, 1e-9, "a sample 3 ticks ahead moves the smoothed offset by 10% (0.3)"),
+                () -> assertEquals(600.3, offset, 1e-9,
+                    "a sample 3 ticks ahead moves the smoothed offset (from the first sample's time) by 10% (0.3)"),
                 () -> assertEquals(660.0, same, 1e-9, "no local time elapsed: the shown estimate has not moved yet"),
                 () -> assertEquals(665.15, fiveTicks, 1e-6, "5 ticks later (nanosecond rounding): slewed by 5 * 3% = 0.15"),
                 () -> assertEquals(720.3, later, 1e-9, "1 s later: the whole 0.3 is in"),
                 () -> assertEquals(5000.0, c.serverTick(3_000_000_000L), 1e-9, "a sample 30+ ticks away resyncs at once"),
                 () -> assertTrue(c.synced(), "synced"));
+        }
+
+        /** Feed a server running at {@code speed} x nominal (14 Hz) for {@code secs}; returns the worst error after 6 s. */
+        double drift(double speed, double secs, java.util.SplittableRandom rnd, TickClock c) {
+            c.reset(14);
+            double worst = 0;
+            int tick = 0;
+            for (double t = 0; t < secs; t += 1 / (14 * speed)) {
+                long now = Math.round((t + rnd.nextDouble(-0.008, 0.008)) * 1e9);
+                c.sample(tick, now);
+                for (int k = 0; k < 4; k++) {
+                    double rt = t + k * 0.25 / (14 * speed);
+                    double est = c.serverTick(Math.round(rt * 1e9));
+                    double truth = rt * 14 * speed;
+                    if (t > 6) {
+                        worst = Math.max(worst, Math.abs(est - truth));
+                    }
+                }
+                tick++;
+            }
+            return worst;
+        }
+
+        @Test
+        @DisplayName("F7/R4: servers at 0.95x and 1.10x the nominal rate are followed (rate estimated, error < 0.3 tick)")
+        void rate() {
+            TickClock slow = new TickClock();
+            TickClock fast = new TickClock();
+            double eSlow = drift(0.95, 20, new java.util.SplittableRandom(1), slow);
+            double eFast = drift(1.10, 20, new java.util.SplittableRandom(2), fast);
+            TickClock nominal = new TickClock();
+            double eNom = drift(1.0, 20, new java.util.SplittableRandom(3), nominal);
+            assertAll(
+                () -> assertEquals(0.95, slow.rate(), 0.01, "slow server rate estimated"),
+                () -> assertEquals(1.10, fast.rate(), 0.01, "fast server rate estimated"),
+                () -> assertEquals(1.0, nominal.rate(), 0.01, "nominal rate"),
+                () -> assertTrue(eSlow < 0.3, "slow: the estimate stays within 0.3 tick (" + eSlow + ")"),
+                () -> assertTrue(eFast < 0.3, "fast: within 0.3 tick (" + eFast + ")"),
+                () -> assertTrue(eNom < 0.3, "nominal: within 0.3 tick (" + eNom + ")"));
+        }
+
+        @Test
+        @DisplayName("the rate waits for enough samples over a second, is clamped, and resets; a far shown offset snaps")
+        void rateRulesAndSnap() {
+            TickClock c = new TickClock();
+            c.reset(10);
+            for (int i = 0; i < TickClock.RATE_MIN_SAMPLES - 1; i++) {
+                c.sample((int) Math.round(i * 1.4), i * 100_000_000L);
+            }
+            double early = c.rate();
+            for (int i = TickClock.RATE_MIN_SAMPLES - 1; i < 40; i++) {
+                c.sample((int) Math.round(i * 1.4), i * 100_000_000L);
+            }
+            double clamped = c.rate();
+            c.reset(10);
+            double afterReset = c.rate();
+            TickClock d = new TickClock();
+            d.reset(10);
+            d.sample(100, 0);
+            d.serverTick(0);
+            for (int i = 1; i <= 8; i++) {
+                d.sample(100 + i * 10 + 4, i * 1_000_000_000L);
+            }
+            double snapped = d.serverTick(8_000_000_000L);
+            assertAll(
+                () -> assertEquals(1.0, early, "15 samples: no estimate yet"),
+                () -> assertEquals(TickClock.RATE_LIMIT, clamped, 1e-9, "a server 1.4x as fast is clamped to 1.25"),
+                () -> assertEquals(1.0, afterReset, "reset forgets the rate"),
+                () -> assertEquals(d.offset() + d.rate() * 80, snapped, 1e-6,
+                    "the smoothed offset moved more than 0.5 tick from the shown one: snapped, not slewed"));
         }
 
         @Test
@@ -169,26 +240,6 @@ class ModelsTest {
     @Nested
     @DisplayName("Players")
     class PlayersTest {
-        @Test
-        @DisplayName("TIMING: only a change of checkpoint or lap is taken, with the frame it happened (C Handle_timing)")
-        void timing() {
-            Players p = new Players();
-            p.join(join(1, 0, 0, "Ann", ""));
-            int s = p.slotOf(1);
-            int v0 = p.version();
-            p.setTiming(1, 2, 1, 40);
-            int v1 = p.version();
-            p.setTiming(1, 2, 1, 90);
-            int v2 = p.version();
-            p.setTiming(9, 1, 1, 1);
-            assertAll(
-                () -> assertEquals(1 * Players.MAX_CHECKS + 2, p.timing(s), "progress = round * MAX_CHECKS + check"),
-                () -> assertEquals(40, p.timingLoops(s), "the frame of the change; a repeat does not move it"),
-                () -> assertTrue(v1 != v0, "a change bumps the version"),
-                () -> assertEquals(v1, v2, "a repeat does not"),
-                () -> assertEquals(v1, p.version(), "unknown ids are ignored"));
-        }
-
         @Test
         @DisplayName("joins, rejoins, leaves and updates by wire id")
         void lifecycle() {
@@ -395,45 +446,49 @@ class ModelsTest {
         }
 
         @Test
-        @DisplayName("timing: race order (progress, then who got there first; P/T/W last) and C's lap.check column")
-        void raceOrder() {
+        @DisplayName("F4 timing mode: race order (progress, then who got there first; P/T/W last), race column")
+        void race() {
             Players p = new Players();
             p.join(join(1, 0, 0, "Ann", ""));
-            p.join(join(2, 0, 0, "Bob", ""));
-            p.join(join(3, 0, Msg.PlayerJoin.FLAG_ROBOT, "Cy", ""));
+            p.join(join(2, 0, Msg.PlayerJoin.FLAG_ROBOT, "Bob", ""));
+            p.join(join(3, 0, 0, "Cy", ""));
             p.join(join(4, 0, 0, "Dee", ""));
             p.join(join(5, 0, 0, "Eve", ""));
+            p.setScore(1, 50, -1, 0);
             p.setScore(4, 0, -1, Msg.Score.STATUS_PAUSED);
-            p.setTiming(1, 1, 1, 10);
-            p.setTiming(2, 2, 1, 50);
-            p.setTiming(3, 1, 1, 8);
-            p.setTiming(4, 5, 3, 1);
+            p.setTiming(1, 3, 1, 100);
+            p.setTiming(2, 2, 2, 120);
+            p.setTiming(3, 2, 2, 110);
+            p.setTiming(4, 5, 9, 90);
+            p.setTiming(5, 0, 120, 95);
+            p.setTiming(99, 1, 1, 1);
+            int v = p.version();
+            p.setTiming(1, 3, 1, 200);
             Scoreboard sb = new Scoreboard();
             sb.configure(false, true, false, 0);
             sb.update(p);
             assertAll(
-                () -> assertEquals(List.of("  1.c     0  Bob", "R 1.b     0  Cy", "  1.b     0  Ann", "    b     0  Eve",
-                    "P   b     0  Dee"), labels(sb),
-                    "Bob is furthest; Cy reached 1.b before Ann; Eve has no progress; paused Dee last. C's static "
-                        + "raceStr keeps the 'b' of the last lap.check for rows without one"),
-                () -> assertEquals(0, sb.bestRow(), "the leader is best"),
-                () -> assertEquals(" AL   SCORE   NAME", sb.heading().toString(), "C overwrites its LAP heading"));
+                () -> assertEquals(List.of("  120     0  Eve", "  2.c     0  Cy", "R 2.c     0  Bob",
+                    "  1.d    50  Ann", "P         0  Dee"), labels(sb),
+                    "most progress first; equal progress: earlier tick first; paused last with a blank race column"),
+                () -> assertEquals(v, p.version(), "unchanged progress changes nothing (no new tick)"),
+                () -> assertEquals(100, p.timingTick(p.slotOf(1)), "the first tick it got there is kept"),
+                () -> assertEquals(1 * 26 + 3, p.timing(p.slotOf(1)), "timing = round * 26 + check"),
+                () -> assertEquals(0, sb.bestRow(), "the leader is best"));
         }
 
         @Test
-        @DisplayName("timing: laps above 99 print as %3d, two-digit laps leave '.x' behind in the static buffer")
-        void raceColumnWidths() {
+        @DisplayName("free for all: the team column shows the alliance char (C teamStr = other->alliance)")
+        void allianceColumn() {
             Players p = new Players();
             p.join(join(1, 0, 0, "Ann", ""));
-            p.join(join(2, 0, 0, "Bob", ""));
-            p.join(join(3, 0, 0, "Cy", ""));
-            p.setTiming(1, 0, 120, 1);
-            p.setTiming(2, 0, 12, 1);
+            p.setScore(1, 30, -1, 0);
+            p.setAlliance(1, 'a');
+            p.setAlliance(2, 'b');
             Scoreboard sb = new Scoreboard();
-            sb.configure(false, true, false, 0);
+            sb.configure(false, false, false, 1);
             sb.update(p);
-            assertEquals(List.of("  120     0  Ann", "  12.a     0  Bob", "    .a     0  Cy"), labels(sb),
-                "Ann lap 120, Bob 12.a (four characters), Cy none: blanks over '12' leave '.a'");
+            assertEquals("  a   30.0  Ann", labels(sb).get(0), "alliance in the team column");
         }
 
         @Test

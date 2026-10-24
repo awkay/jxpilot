@@ -144,4 +144,32 @@ class InputEdgeTest {
             () -> assertEquals(afterDelete, up2, "up again skips the empty slots back to it"),
             () -> assertEquals("b", two.text().toString(), "down from the older line reaches the newest"));
     }
+
+    @Test
+    @DisplayName("F14: a key pressed and released between two sends is sent once, then released")
+    void taps() {
+        InputState in = new InputState(KeyBindings.defaults());
+        long start = in.takeKeys();
+        in.press(GLFW_KEY_RIGHT_SHIFT);
+        in.release(GLFW_KEY_RIGHT_SHIFT);
+        long tap = in.takeKeys();
+        long next = in.takeKeys();
+        in.press(GLFW_KEY_ENTER);
+        in.release(GLFW_KEY_ENTER);
+        long fire = in.takeKeys();
+        long afterFire = in.takeKeys();
+        in.press(GLFW_KEY_A);
+        long held = in.takeKeys();
+        in.release(GLFW_KEY_A);
+        long releasedAfterSend = in.takeKeys();
+        assertAll(
+            () -> assertEquals(ControlKey.SHIELD.mask(), start, "nothing pressed: the shield (C Key_init)"),
+            () -> assertEquals(ControlKey.THRUST.mask() | ControlKey.SHIELD.mask(), tap, "the tapped thrust is sent"),
+            () -> assertEquals(ControlKey.SHIELD.mask(), next, "and released in the next send"),
+            () -> assertEquals(ControlKey.FIRE_SHOT.mask(), fire, "a tapped shot goes out with the shield down"),
+            () -> assertEquals(ControlKey.SHIELD.mask(), afterFire, "then the shield is back"),
+            () -> assertEquals(ControlKey.TURN_LEFT.mask() | ControlKey.SHIELD.mask(), held, "a held key is sent"),
+            () -> assertEquals(ControlKey.SHIELD.mask(), releasedAfterSend,
+                "released after it was sent: not a tap, gone at once"));
+    }
 }

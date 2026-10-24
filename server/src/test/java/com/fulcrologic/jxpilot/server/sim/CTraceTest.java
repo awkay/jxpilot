@@ -96,6 +96,15 @@ class CTraceTest {
     record Result(int frames, List<String> mismatches) {}
 
     static Result replay(String trace, boolean sparksBounce) throws IOException {
+        return replay(trace, sparksBounce, 0);
+    }
+
+    /**
+     * BEHAVIOR: frames up to {@code syncUntil} are not compared; after each of them the ship is set to C's
+     * state (position, velocity, heading, turn state, fuel, mass), so events Java does not replay (a C cannon
+     * shot) are carried over.
+     */
+    static Result replay(String trace, boolean sparksBounce, long syncUntil) throws IOException {
         List<Frame> c = load(trace);
         Simulation s = TestWorlds.shipped("default.xp", 1);
         World w = s.world;
@@ -121,12 +130,25 @@ class CTraceTest {
             keys |= f.turnAcc() > 0 ? ControlKey.TURN_LEFT.mask() : (f.turnAcc() < 0 ? ControlKey.TURN_RIGHT.mask() : 0);
             in[p.slot] = keys;
             s.tick(in);
+            if (f.frame() <= syncUntil) {
+                p.setClicks(f.cx(), f.cy());
+                p.vx = f.vx();
+                p.vy = f.vy();
+                p.velocity = (float) Math.hypot(f.vx(), f.vy());
+                p.dir = f.dir();
+                p.floatDir = f.floatDir();
+                p.turnVel = f.turnVel();
+                p.oldTurnVel = f.turnVel();
+                p.fuel = f.fuel();
+                p.mass = f.mass();
+                continue;
+            }
             Frame j = Frame.of(f.frame(), p);
             if (!j.equals(f)) {
                 bad.add("frame " + f.frame() + "\n  C    " + f + "\n  Java " + j);
             }
         }
-        return new Result(c.size(), bad);
+        return new Result((int) c.stream().filter(f -> f.frame() > syncUntil).count(), bad);
     }
 
     @Test
@@ -159,6 +181,30 @@ class CTraceTest {
             () -> assertEquals(139, r.frames(), "139 C frames are compared"),
             () -> assertTrue(c.stream().anyMatch(f -> f.vy() > 10) && c.stream().anyMatch(f -> f.vy() < -25),
                 "(the trace bounces off a wall at speed)"),
+            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
+    }
+
+    @Test
+    @DisplayName("thrust held against the ceiling (sliding along it), then an impact: bit-identical")
+    void wallThrust() throws IOException {
+        Result r = replay("wall-thrust.txt", false);
+        List<Frame> c = load("wall-thrust.txt");
+        assertAll(
+            () -> assertEquals(111, r.frames(), "111 C frames are compared"),
+            () -> assertTrue(c.stream().filter(f -> f.thrusting() && f.cy() >> 6 == 1458).count() > 30,
+                "(the trace thrusts for more than 30 frames at the ceiling)"),
+            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
+    }
+
+    @Test
+    @DisplayName("thrust into a 45-degree slope at 16 px/frame and the bounce: bit-identical after C's cannon hit")
+    void slopeImpact() throws IOException {
+        Result r = replay("slope-impact.txt", false, 26);
+        List<Frame> c = load("slope-impact.txt");
+        assertAll(
+            () -> assertEquals(63, r.frames(), "frames 27-89 are compared"),
+            () -> assertTrue(c.stream().anyMatch(f -> f.frame() > 26 && f.vx() > 16)
+                && c.stream().anyMatch(f -> f.frame() > 26 && f.vy() < -9.9), "(the trace bounces off the slope)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }
 }

@@ -544,6 +544,9 @@ public final class Ships {
         pl.alliance = Player.ALLIANCE_NOT_SET; // server-commands: C Init_player (player.c:527-529, 554)
         pl.invite = Obj.NO_ID;
         pl.isOperator = false;
+        pl.passwordFails = 0;
+        pl.passwordLockedUntil = 0;
+        pl.passwordLockFrames = 0;
         setMass(pl);
     }
 
@@ -639,6 +642,21 @@ public final class Ships {
             }
         }
         return false;
+    }
+
+    /**
+     * server-commands: the tail of C {@code Pick_startpos} for a player already in the game (player.c:131-145),
+     * after its new home base was announced.
+     * <p>
+     * BEHAVIOR: a ship not playing waits RECOVERY_DELAY (3*FPS) frames; a paused or game-over one goes home;
+     * otherwise nothing.
+     */
+    public void startPosPicked(Player pl) {
+        if ((pl.status & Obj.PLAYING) == 0) {
+            pl.count = 3 * w.params.fps;
+        } else if ((pl.status & (Obj.PAUSE | Obj.GAME_OVER)) != 0) {
+            goHome(pl);
+        }
     }
 
     private boolean isFree(int base, Player pl) {

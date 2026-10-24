@@ -282,26 +282,46 @@ class XpReliableDecoderTest {
         }
 
         @Test
-        @DisplayName("PKT_TIMING (%c%hd%hu) becomes TIMING with check = t % MAX_CHECKS, round = t / MAX_CHECKS (C Receive_timing)")
-        void timing() {
-            List<Integer> res = decode(new CPackets().timing(5, 3, 2).timing(7, 25, 120));
+        void ignoredPacketsAreConsumedAndCounted() {
+            List<Integer> res = decode(new CPackets().timing(5, 3, 2).string(1, 2, 3).motd(0, "abc".getBytes(), 3));
             assertAll(
-                () -> assertEquals(List.of(5, 5), res, "sizes"),
-                () -> assertEquals(List.of("timing id=5 check=3 round=2", "timing id=7 check=25 round=120"), rec.events,
-                    "decoded"),
-                () -> assertEquals(0, dec.ignored(), "not ignored any more"));
+                () -> assertEquals(List.of(5, 6, 14), res, "sizes"),
+                () -> assertEquals(1, dec.ignored(), "PKT_STRING ignored"),
+                () -> assertEquals(List.of("timing id=5 check=3 round=2", "motd 0/3 abc"), rec.events,
+                    "PKT_TIMING becomes TIMING (round * 26 + check unpacked, C Receive_timing); a whole MOTD a MOTD"));
             prefixesIncomplete(new CPackets().timing(1, 2, 3));
+            prefixesIncomplete(new CPackets().string(1, 2, 3));
+            prefixesIncomplete(new CPackets().motd(0, "ab".getBytes(), 2));
         }
 
         @Test
-        void ignoredPacketsAreConsumedAndCounted() {
-            List<Integer> res = decode(new CPackets().string(1, 2, 3).motd(0, "abc".getBytes(), 3));
+        @DisplayName("MOTD chunks are collected in order and delivered once complete, as MOTD pieces of at most a"
+            + " reliable payload")
+        void motd() {
+            String body = "Welcome!\n  rules: be nice  \n" + "x".repeat(3000) + "\n";
+            byte[] text = body.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
+            byte[] a = java.util.Arrays.copyOfRange(text, 0, 20);
+            byte[] b = java.util.Arrays.copyOfRange(text, 20, text.length);
+            decode(new CPackets().motd(0, a, text.length));
+            int afterFirst = rec.events.size();
+            decode(new CPackets().motd(5, b, text.length));
+            int afterStray = rec.events.size();
+            decode(new CPackets().motd(20, b, text.length));
+            List<String> pieces = List.copyOf(rec.events);
+            decode(new CPackets().motd(0, a, text.length));
+            com.fulcrologic.jxpilot.client.game.ClientGame g = new com.fulcrologic.jxpilot.client.game.ClientGame();
+            XpTranslator t = new XpTranslator(g);
+            t.motd(body);
+            String shown = g.takeMotd();
+            int total = text.length;
             assertAll(
-                () -> assertEquals(List.of(6, 14), res, "sizes"),
-                () -> assertEquals(2, dec.ignored(), "two ignored"),
-                () -> assertEquals(List.of(), rec.events, "nothing for the model"));
-            prefixesIncomplete(new CPackets().string(1, 2, 3));
-            prefixesIncomplete(new CPackets().motd(0, "ab".getBytes(), 2));
+                () -> assertEquals(0, afterFirst, "nothing until the MOTD is complete"),
+                () -> assertEquals(0, afterStray, "a chunk at another offset is skipped"),
+                () -> assertEquals(2, pieces.size(), "two pieces for " + total + " bytes"),
+                () -> assertTrue(pieces.get(0).startsWith("motd 0/" + total + " Welcome!"), "the first piece"),
+                () -> assertTrue(pieces.get(1).startsWith("motd 2040/" + total + " "), "the second at its offset"),
+                () -> assertEquals(pieces, rec.events, "delivered once: a repeated MOTD adds nothing"),
+                () -> assertEquals(body, shown, "ClientGame assembles the same text as the JXPilot server's MOTD"));
         }
 
         @Test

@@ -162,6 +162,7 @@ class ConnectionSelectionTest {
             }
             st.turnSpeed = 42;
             boolean settingsLater = n.sendSettings(st, now);
+            boolean duplicate = n.sendSettings(st, now);
             boolean displayLater = n.sendDisplay(1000, 800, now);
             boolean empty = n.sendChat("", now);
             boolean sent = n.sendChat("hello", now);
@@ -173,6 +174,7 @@ class ConnectionSelectionTest {
                 () -> assertFalse(beforeStart, "no chat before a session"),
                 () -> assertFalse(settingsEarly, "settings are not sent before a session"),
                 () -> assertTrue(settingsLater, "but at once while playing"),
+                () -> assertFalse(duplicate, "the same settings again: no second SETTINGS"),
                 () -> assertEquals(java.util.List.of("45.0/40.0", "45.0/42.0"), server.settings,
                     "the join carried the early settings (before READY), then the change"),
                 () -> assertFalse(displayEarly, "the view size is not sent before a session"),

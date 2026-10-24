@@ -145,6 +145,9 @@ public final class ClientGame implements ConnectionListener {
      * BEHAVIOR: SCORE_OBJECT (C {@code Handle_score_object}; the server sends it only to the player whose
      * score changed) becomes a {@link ScoreObjects} entry with its points, label and block; an empty label
      * makes no HUD text. SCORE itself never makes one.
+     * BEHAVIOR: a SPAWN GAME_EVENT of the own player marks the own ship as teleported (R15).
+     * BEHAVIOR: TIMING (C {@code Handle_timing}) sets the player's race check/round, stamped with the newest
+     * tick (C {@code timing_loops}) when they change.
      */
     @Override
     public void onReliable(int type, ByteBuffer p) {
@@ -174,6 +177,10 @@ public final class ClientGame implements ConnectionListener {
                 scoreObject.read(p);
                 scoreObjects.add(scoreObject.score, scoreObject.text, true, scoreObject.bx, scoreObject.by);
             }
+            case ReliableType.TIMING -> {
+                timing.read(p);
+                players.setTiming(timing.id, timing.check, timing.round, world.newestTick());
+            }
             case ReliableType.TEAM_SCORE -> {
                 teamScore.read(p);
                 scoreboard.setTeamScore(teamScore.team, teamScore.score);
@@ -186,14 +193,14 @@ public final class ClientGame implements ConnectionListener {
                 baseOwner.read(p);
                 world.setBaseOwner(baseOwner.baseIndex, baseOwner.playerId);
             }
-            case ReliableType.TIMING -> {
-                timing.read(p);
-                players.setTiming(timing.id, timing.check, timing.round, world.newestTick());
-            }
             case ReliableType.GAME_EVENT -> {
                 gameEvent.read(p);
                 events.add(gameEvent);
+                if (gameEvent.kind == Msg.GameEvent.SPAWN && gameEvent.a == players.selfId()) {
+                    world.markSelfTeleport(world.newestTick()); // R15: the next SELF is a new place
+                }
             }
+            case ReliableType.MOTD -> motdPiece(p);
             case ReliableType.SEEK -> {
                 seek.read(p);
                 seek(seek.programmerId, seek.robotId, seek.soughtId);
@@ -292,7 +299,41 @@ public final class ClientGame implements ConnectionListener {
 
     public boolean teamPlay() { return (welcomeFlags & Msg.Welcome.FLAG_TEAM_PLAY) != 0; }
 
+    /** F11: the server already blinks radar blips (the C server): the client does not blink them again. */
+    public boolean radarBlinked() { return (welcomeFlags & Msg.Welcome.FLAG_RADAR_BLINKED) != 0; }
+
     public CharBuf serverName() { return serverName; }
+
+    // ---- the server's message of the day (C motd), assembled from MOTD pieces
+    private final byte[] motd = new byte[Msg.Motd.MAX_SIZE];
+    private int motdGot;
+    private boolean motdReady;
+
+    private void motdPiece(ByteBuffer p) {
+        int len = p.remaining() - 8;
+        int total = Msg.Motd.read(p, motd);
+        if (total < 0) {
+            return;
+        }
+        motdGot += len;
+        if (motdGot >= total) {
+            motdReady = true;
+            motdGot = total;
+        }
+    }
+
+    /**
+     * The server's MOTD once all of it has arrived, then null again (C pops its MOTD viewer up once).
+     * <p>
+     * BEHAVIOR: null until every MOTD piece is in; then the Latin-1 text once.
+     */
+    public String takeMotd() {
+        if (!motdReady) {
+            return null;
+        }
+        motdReady = false;
+        return new String(motd, 0, motdGot, java.nio.charset.StandardCharsets.ISO_8859_1);
+    }
 
     public int playerId() { return playerId; }
 

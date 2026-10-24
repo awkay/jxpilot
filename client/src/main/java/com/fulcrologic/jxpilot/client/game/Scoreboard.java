@@ -34,12 +34,10 @@ package com.fulcrologic.jxpilot.client.game;
  * after one empty line, ordered by team score, ties broken by lives (more first with limited lives,
  * fewer otherwise).
  * <p>
- * In timing mode the rows follow the race instead (C): further progress ({@code round * MAX_CHECKS + check})
- * first, on equal progress the one who got there first; paused, tank and waiting players ('P', 'T', 'W')
- * go last in their order, and the first row is the best. The race column shows {@code lap.checkpoint}
- * ({@code "%d.%c"}, laps above 99 as {@code "%3d"}) for playing ships that started racing; C writes it into
- * one static buffer, so a row without progress shows the characters a longer earlier row left behind
- * ({@link #appendRace}). C's "LAP" heading is overwritten before it is drawn, so the heading has none.
+ * Timing (race) mode (F4): C sorts by race progress instead (round * MAX_CHECKS + check, more first; equal
+ * progress by who got there first; paused, tank and waiting players last in join order), marks the first row
+ * best and fills the race column ("%d.%c" round and check letter, "%3d" above 99 rounds). Progress comes
+ * from TIMING messages (C PKT_TIMING).
  */
 public final class Scoreboard {
     /** C {@code MAX_TEAMS}. */
@@ -66,8 +64,6 @@ public final class Scoreboard {
     private int builtVersion = -1;
     private int teamVersion;
     private int builtTeamVersion = -1;
-    /** C {@code Paint_score_entry}'s static {@code raceStr[8]}: kept between rows and frames. */
-    private final char[] raceStr = {0, 0, ' ', 0, 0, 0, 0, 0};
 
     public Scoreboard() {
         for (int i = 0; i < labels.length; i++) {
@@ -143,10 +139,8 @@ public final class Scoreboard {
                 best = s;
             }
             int j = timing ? raceSlot(p, s, i) : 0;
-            if (!timing) {
-                while (j < i && p.score(order[j]) >= sc) {
-                    j++;
-                }
+            while (!timing && j < i && p.score(order[j]) >= sc) {
+                j++;
             }
             System.arraycopy(order, j, order, j + 1, i - j);
             order[j] = s;
@@ -177,32 +171,27 @@ public final class Scoreboard {
         }
     }
 
-    /** C {@code strchr("PTW", mychar)}: players sorted last in a race. */
-    private static boolean outOfRace(char c) {
-        return c == 'P' || c == 'T' || c == 'W';
-    }
-
-    /**
-     * C {@code Client_score_table}'s race insertion point for the {@code i}-th player {@code s}: last when it is
-     * out of the race, else before the first row that is behind it, out of the race, or level with it but got
-     * there later.
-     */
+    /** C {@code Client_score_table} in timing mode: where player {@code s} goes among the first i. */
     private int raceSlot(Players p, int s, int i) {
-        if (outOfRace(p.statusChar(s))) {
+        if (last(p.statusChar(s))) {
             return i;
         }
         int t = p.timing(s);
-        int j;
-        for (j = 0; j < i; j++) {
+        int j = 0;
+        for (; j < i; j++) {
             int o = order[j];
-            if (p.timing(o) < t || outOfRace(p.statusChar(o))) {
+            if (p.timing(o) < t || last(p.statusChar(o))) {
                 break;
             }
-            if (p.timing(o) == t && p.timingLoops(o) > p.timingLoops(s)) {
+            if (p.timing(o) == t && p.timingTick(o) - p.timingTick(s) > 0) {
                 break;
             }
         }
         return j;
+    }
+
+    private static boolean last(char c) {
+        return c == 'P' || c == 'T' || c == 'W';
     }
 
     private void accumulateTeam(Players p, int s, int life) {
@@ -270,10 +259,14 @@ public final class Scoreboard {
     }
 
     /**
-     * C label {@code "%c %s%s%s%s  %s"}: status char, race column (3 blanks in timing mode), team
-     * column (digit and blank in team play, else the alliance blank), score, lives (limited lives only),
-     * name.
+     * C label {@code "%c %s%s%s%s  %s"}: status char, race column (timing mode), team column (digit and
+     * blank in team play, else the alliance char, ' ' for none), score, lives (limited lives only), name.
      */
+    void format(CharBuf b, char statusChar, int team, char alliance, float score, int lives, CharSequence name) {
+        format(b, statusChar, team, alliance, score, lives, name, 0, 0);
+    }
+
+    /** As above with race progress for the race column ({@link #appendRace}). */
     void format(CharBuf b, char statusChar, int team, char alliance, float score, int lives, CharSequence name,
                 int round, int check) {
         b.clear();
@@ -289,51 +282,24 @@ public final class Scoreboard {
     }
 
     /**
-     * The race column (C {@code raceStr}, timing mode only): the static buffer gets two blanks, then for a
-     * playing ship (' ' or 'R') with progress {@code "%3d"} of the lap above 99, else {@code "%d.%c"} of lap
-     * and checkpoint letter; it is printed up to its first NUL, leftovers of earlier rows included.
+     * C {@code Paint_score_entry}'s race column (timing mode only).
+     * <p>
+     * BEHAVIOR: for an active player (' ' or 'R') with round + check above 0: "%3d" rounds above 99, else
+     * round, '.', check as a letter ('a' + check); otherwise three blanks.
      */
     private void appendRace(CharBuf b, char statusChar, int round, int check) {
         if (!timing) {
             return;
         }
-        char[] r = raceStr;
-        r[0] = ' ';
-        r[1] = ' ';
         if ((statusChar == ' ' || statusChar == 'R') && round + check > 0) {
-            int n;
             if (round > 99) {
-                n = putInt(r, 0, round, 3);
+                b.appendInt(round, 3, ' ');
             } else {
-                n = putInt(r, 0, round, 1);
-                r[n++] = '.';
-                r[n++] = (char) (check + 'a');
+                b.appendInt(round).append('.').append((char) ('a' + check));
             }
-            r[n] = 0;
+            return;
         }
-        for (int i = 0; i < r.length && r[i] != 0; i++) {
-            b.append(r[i]);
-        }
-    }
-
-    /** {@code sprintf("%*d")} into {@code r} at {@code at}, right-aligned in {@code width}; returns the end. */
-    private static int putInt(char[] r, int at, int v, int width) {
-        int digits = 1;
-        for (int x = v / 10; x != 0; x /= 10) {
-            digits++;
-        }
-        int pad = Math.max(0, width - digits);
-        for (int i = 0; i < pad; i++) {
-            r[at++] = ' ';
-        }
-        for (int i = digits - 1; i >= 0; i--) {
-            int x = v;
-            for (int k = 0; k < i; k++) {
-                x /= 10;
-            }
-            r[at++] = (char) ('0' + x % 10);
-        }
-        return at;
+        b.append("   ");
     }
 
     private void appendScoreAndLife(CharBuf b, float score, int lives) {

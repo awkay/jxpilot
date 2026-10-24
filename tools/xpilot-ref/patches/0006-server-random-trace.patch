@@ -1,0 +1,222 @@
+xpilot-ref patch 0006: optional random number, debris and cannon trace.
+
+This patch modifies XPilot 4.5.5 (GPL-2.0-or-later, Copyright (C) 1991-2010
+by Bjoern Stabell, Ken Ronny Schouten, Bert Gijsbers, Dick Balaska et al.).
+It is a derivative work distributed under the same license.
+
+Why: so that a reimplementation can replay a C game with the C server's own
+random numbers and compare the results exactly (item packs and drops, missile
+aim errors, explosion debris counts, cannons...).  Applies on top of 0005.
+Every rfrac() and randomMT() call in src/server goes through a wrapper in
+server.c (macros at the end of src/server/proto.h; the two declarations in
+src/common/commonproto.h are parenthesized so the macros cannot touch them),
+Make_debris (play.c) learns its call site, and Receive_keyboard_frame
+(netserver.c) reports each keyboard update.  Inert unless the environment variable
+XPILOT_TRACE_RAND is set; then it prints to stderr:
+  XPRAND func file:line f|i value      every draw, in order; value is the
+                                       32-bit randomMT() number, an rfrac()
+                                       (f) is value / 2^32
+  XPDEBRIS frame func file:line x y vx vy id team type mass status color
+           radius min_debris max_debris min_dir max_dir min_speed max_speed
+           min_life max_life           every Make_debris call (its caller,
+                                       its arguments, floats as %a)
+  XPDEB loop frame index type id cx cy vx vy mass life status
+                                       after each Update_objects(), every
+                                       spark or debris object but the
+                                       exhaust (explosion debris and
+                                       wall-bounce sparks)
+  XPCANNON loop frame index dead_time damaged tractor_count used
+           emergency_shield_left phasing_left
+                                       after each Update_objects(), every
+                                       cannon that is not idle
+  XPKEYS frame id k1,k2,...|-          every keyboard update a player's
+                                       client sends (netserver.c), with the
+                                       keys_t numbers it holds down
+Game logic and the random sequence are unchanged.
+
+--- a/src/common/commonproto.h	2026-10-24 00:40:11
++++ b/src/common/commonproto.h	2026-10-24 00:40:12
+@@ -33,10 +33,10 @@
+ /* randommt.c */
+ extern void seedMT(unsigned int seed);
+ extern unsigned int reloadMT(void);
+-extern unsigned int randomMT(void);
++extern unsigned int (randomMT)(void);
+ 
+ /* math.c */
+-extern double rfrac(void);
++extern double (rfrac)(void);
+ extern int mod(int x, int y);
+ extern void Make_table(void);
+ 
+--- a/src/server/netserver.c	2026-10-24 00:40:11
++++ b/src/server/netserver.c	2026-10-24 00:40:12
+@@ -2208,6 +2208,17 @@
+ 	pl = Players[GetInd[connp->id]];
+ 	memcpy(pl->last_keyv, connp->r.ptr, size);
+ 	connp->r.ptr += size;
++	if (xpref_trace_rand()) {
++	    /* xpilot-ref patch 0006: the keys this update holds down */
++	    int k, n = 0;
++	    fprintf(stderr, "XPKEYS %ld %d", frame_loops, (int)pl->id);
++	    for (k = 0; k < NUM_KEYS; k++) {
++		if (BITV_ISSET(pl->last_keyv, k)) {
++		    fprintf(stderr, "%c%d", n++ ? ',' : ' ', k);
++		}
++	    }
++	    fputs(n ? "\n" : " -\n", stderr);
++	}
+ 	Handle_keyboard(GetInd[connp->id]);
+     }
+     if (connp->num_keyboard_updates++ && (connp->state & CONN_PLAYING)) {
+--- a/src/server/play.c	2026-10-24 00:40:11
++++ b/src/server/play.c	2026-10-24 00:40:12
+@@ -142,6 +142,7 @@
+  */
+ 
+ /* Create debris particles */
++#undef Make_debris
+ void Make_debris(
+     /* pos.x, pos.y   */ DFLOAT  x,          DFLOAT y,
+     /* vel.x, vel.y   */ DFLOAT  velx,       DFLOAT vely,
+@@ -162,6 +163,19 @@
+     int			i, num_debris, life;
+     modifiers		mods;
+ 
++    if (xpref_trace_rand()) {
++	/* xpilot-ref patch 0006: the call and its caller, floats exact */
++	fprintf(stderr, "XPDEBRIS %ld %s %s:%d %a %a %a %a %d %d %d %a %ld"
++		" %d %d %d %d %d %d %a %a %d %d\n",
++		frame_loops, xpref_debris_func, xpref_debris_file,
++		xpref_debris_line, (double)x, (double)y, (double)velx,
++		(double)vely, id, (int)team, type, (double)mass, status,
++		color, radius, min_debris, max_debris, min_dir, max_dir,
++		(double)min_speed, (double)max_speed, min_life, max_life);
++	xpref_debris_func = "?";
++	xpref_debris_file = "?";
++	xpref_debris_line = 0;
++    }
+     if (BIT(World.rules->mode, WRAP_PLAY)) {
+ 	if (x < 0) x += World.width;
+ 	else if (x >= World.width) x -= World.width;
+--- a/src/server/proto.h	2026-10-24 00:40:11
++++ b/src/server/proto.h	2026-10-24 00:40:12
+@@ -407,4 +407,23 @@
+  */
+ char *showtime(void);
+ 
++/*
++ * xpref_rfrac(), xpref_randomMT(), the Make_debris call-site record
++ * (xpilot-ref patch 0006, not part of upstream XPilot 4.5.5): every server
++ * call of rfrac() and randomMT() goes through server.c, which prints the
++ * value and its call site when XPILOT_TRACE_RAND is set; Make_debris
++ * learns its caller.  The values and their order are unchanged.
++ */
++extern double xpref_rfrac(const char *func, const char *file, int line);
++extern unsigned int xpref_randomMT(const char *func, const char *file,
++				   int line);
++extern const char *xpref_debris_func, *xpref_debris_file;
++extern int xpref_debris_line;
++extern int xpref_trace_rand(void);
++#define rfrac() xpref_rfrac(__FUNCTION__, __FILE__, __LINE__)
++#define randomMT() xpref_randomMT(__FUNCTION__, __FILE__, __LINE__)
++#define Make_debris (xpref_debris_func = __FUNCTION__, \
++		     xpref_debris_file = __FILE__, \
++		     xpref_debris_line = __LINE__), Make_debris
++
+ #endif
+--- a/src/server/server.c	2026-10-24 00:40:12
++++ b/src/server/server.c	2026-10-24 00:40:22
+@@ -293,6 +293,84 @@
+ }
+ 
+ /*
++ * xpilot-ref random number and cannon trace (patch 0006, not part of
++ * upstream XPilot 4.5.5).  Inert unless XPILOT_TRACE_RAND is set; then every
++ * server rfrac()/randomMT() call prints "XPRAND func file:line f|i value"
++ * (value = the 32 bit randomMT() number; rfrac() is value / 2^32), every
++ * Make_debris() call prints "XPDEBRIS ..." (play.c), and after each
++ * Update_objects() every spark and debris object but the exhaust (explosion
++ * debris and wall-bounce sparks; exhaust sparks are owner-immune) prints
++ * "XPDEB loop frame index type id cx cy vx vy mass life status" and every
++ * cannon whose state is not idle prints "XPCANNON loop frame index
++ * dead_time damaged tractor_count used emergency_shield_left
++ * phasing_left".  The random sequence is unchanged.
++ */
++const char *xpref_debris_func = "?", *xpref_debris_file = "?";
++int xpref_debris_line = 0;
++
++int xpref_trace_rand(void)
++{
++    static int init = 0, on = 0;
++    if (!init) {
++	init = 1;
++	on = (getenv("XPILOT_TRACE_RAND") != NULL);
++    }
++    return on;
++}
++
++unsigned int xpref_randomMT(const char *func, const char *file, int line)
++{
++    unsigned int v = (randomMT)();
++    if (xpref_trace_rand()) {
++	fprintf(stderr, "XPRAND %s %s:%d i %u\n", func, file, line, v);
++    }
++    return v;
++}
++
++double xpref_rfrac(const char *func, const char *file, int line)
++{
++    /* exactly common/math.c rfrac() */
++    unsigned int v = (randomMT)();
++    if (xpref_trace_rand()) {
++	fprintf(stderr, "XPRAND %s %s:%d f %u\n", func, file, line, v);
++    }
++    return (double) v * 0.00000000023283064365386962890625;
++}
++
++static void Trace_cannons(void)
++{
++    int i;
++
++    if (!xpref_trace_rand()) {
++	return;
++    }
++    for (i = 0; i < NumObjs; i++) {
++	object *obj = Obj[i];
++	if (!BIT(obj->type, OBJ_SPARK|OBJ_DEBRIS)
++	    || (BIT(obj->status, OWNERIMMUNE)
++		&& !BIT(obj->status, FROMBOUNCE))) {
++	    continue;
++	}
++	fprintf(stderr, "XPDEB %ld %ld %d %d %d %d %d %a %a %a %ld %#lx\n",
++		main_loops, frame_loops, i, obj->type, (int)obj->id,
++		obj->pos.cx, obj->pos.cy, (double)obj->vel.x,
++		(double)obj->vel.y, (double)obj->mass, (long)obj->life,
++		(unsigned long)obj->status);
++    }
++    for (i = 0; i < World.NumCannons; i++) {
++	cannon_t *c = World.cannon + i;
++	if (c->dead_time || c->damaged || c->tractor_count || c->used
++	    || c->emergency_shield_left || c->phasing_left) {
++	    fprintf(stderr, "XPCANNON %ld %ld %d %d %d %d %#lx %d %d\n",
++		    main_loops, frame_loops, i, c->dead_time, c->damaged,
++		    c->tractor_count, (unsigned long)c->used,
++		    c->emergency_shield_left, c->phasing_left);
++	}
++    }
++    fflush(stderr);
++}
++
++/*
+  * xpilot-ref object trace hook (not part of upstream XPilot 4.5.5).
+  * When the environment variable XPILOT_TRACE_OBJS is set, print after each
+  * Update_objects() call one "XPOBJ" line for every object in Obj[] except
+@@ -584,6 +662,7 @@
+ 	Trace_wreckage();
+ 	Trace_objects();
+ 	Trace_modes();
++	Trace_cannons();
+ 
+ 	if ((main_loops % UPDATES_PR_FRAME) == 0) {
+ 	    Frame_update();

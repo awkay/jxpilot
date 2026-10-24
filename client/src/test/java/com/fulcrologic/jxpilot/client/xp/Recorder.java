@@ -89,11 +89,6 @@ final class Recorder implements ConnectionListener, XpReliableDecoder.Control {
                 s.read(p);
                 yield "score id=" + s.id + " score=" + s.score + " lives=" + s.lives + " status=" + s.status;
             }
-            case ReliableType.TIMING -> {
-                Msg.Timing t = new Msg.Timing();
-                t.read(p);
-                yield "timing id=" + t.id + " check=" + t.check + " round=" + t.round;
-            }
             case ReliableType.PLAYER_ALLIANCE -> {
                 Msg.PlayerAlliance a = new Msg.PlayerAlliance();
                 a.read(p);
@@ -108,6 +103,18 @@ final class Recorder implements ConnectionListener, XpReliableDecoder.Control {
                 Msg.Text t = new Msg.Text();
                 t.read(p);
                 yield "message kind=" + t.kind + " from=" + t.from + " " + t.text;
+            }
+            case ReliableType.MOTD -> {
+                int off = p.getInt();
+                int total = p.getInt();
+                byte[] t = new byte[p.remaining()];
+                p.get(t);
+                yield "motd " + off + "/" + total + " " + new String(t, java.nio.charset.StandardCharsets.ISO_8859_1);
+            }
+            case ReliableType.TIMING -> {
+                Msg.Timing t = new Msg.Timing();
+                t.read(p);
+                yield "timing id=" + t.id + " check=" + t.check + " round=" + t.round;
             }
             case ReliableType.SCORE_OBJECT -> {
                 Msg.ScoreObject o = new Msg.ScoreObject();

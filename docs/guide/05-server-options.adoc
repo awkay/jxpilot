@@ -24,8 +24,8 @@ description starts with what the JXPilot server does with it:
 |===
 |Status |Meaning
 |*Implemented* |The server uses the option as XPilot does.
-|*In progress (M2)* |The option belongs to a feature being built: balls and treasures, targets,
-races or asteroids. It takes effect when the feature arrives.
+|*In progress (M2)* |The option belongs to a feature being built. It takes effect when the feature
+arrives.
 |*Not yet* |Not implemented, and not part of current work; the reason is given.
 |*Not supported* |Deliberately left out; the reason is given.
 |*No effect* |XPilot 4.5.5 itself never uses it.

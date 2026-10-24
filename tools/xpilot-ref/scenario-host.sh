@@ -16,6 +16,8 @@ ROBOTS=""
 ALL_PLAYERS=0
 OBJS=0
 MODES=0
+RAND=0
+NAME2=""
 MAP_FILE=""
 NAME=refpilot
 KEYS=""
@@ -35,6 +37,8 @@ while [ $# -gt 0 ]; do
         --all-players) ALL_PLAYERS=1; shift;;
         --objs) OBJS=1; shift;;
         --modes) MODES=1; shift;;
+        --rand) RAND=1; shift;;
+        --name2) NAME2="$2"; shift 2;;
         --map-file) MAP_FILE="$2"; shift 2;;
         --name) NAME="$2"; shift 2;;
         --keys) KEYS="$2"; shift 2;;
@@ -56,11 +60,13 @@ xpref_require_image
 
 args=(--name "$NAME" --after "$AFTER" --robots "$ROBOTS" --out /out ${PASS[@]+"${PASS[@]}"})
 [ -n "$KEYS" ] && args+=(--keys "$KEYS")
+[ -n "$NAME2" ] && args+=(--name2 "$NAME2")
 [ "$MODE" = frames ] && args+=(--frames "$FRAMES" --interval "$INTERVAL")
 if [ "$MODE" = trace ]; then
     args+=(--trace)
     [ "$OBJS" = 1 ] && args+=(--trace-objs)
     [ "$MODES" = 1 ] && args+=(--trace-modes)
+    [ "$RAND" = 1 ] && args+=(--trace-rand)
     if [ "$ALL_PLAYERS" = 0 ]; then
         # The server capitalises the first letter of the nick.
         cap="$(printf '%s' "${NAME:0:1}" | tr '[:lower:]' '[:upper:]')${NAME:1}"
@@ -71,7 +77,7 @@ fi
 # Budget: startup + wait + keys + captures, generously rounded up.
 key_sleep=$(printf '%s\n' $KEYS | awk -F: '$1=="sleep"{s+=$2} END{print s+0}')
 budget=$(awk -v a="$AFTER" -v k="$key_sleep" -v f="$FRAMES" -v i="$INTERVAL" -v m="$MODE" \
-    'BEGIN{t=a+k+20; if (m=="frames") t+=f*(i+1); printf "%d", t+0.999}')
+    -v two="${NAME2:+1}" 'BEGIN{t=a+k+20; if (m=="frames") t+=f*(i+1); if (two) t+=15; printf "%d", t+0.999}')
 
 tmp="$(xpref_tmpdir)"
 if [ -n "$MAP_FILE" ]; then

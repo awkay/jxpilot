@@ -1,5 +1,5 @@
 xpilot-ref patch 0005: optional per-tick trace of balls, asteroids, wreckage,
-race progress, treasures and targets, and of the random generator.
+race progress, treasures, targets and game messages.
 
 This patch modifies XPilot 4.5.5 (GPL-2.0-or-later, Copyright (C) 1991-2010
 by Bjoern Stabell, Ken Ronny Schouten, Bert Gijsbers, Dick Balaska et al.).
@@ -7,61 +7,20 @@ It is a derivative work distributed under the same license.
 
 Why: to compare the reimplementation's game modes (ball connector physics,
 asteroid motion and placement, race timing and respawn, treasure and target
-state) numerically against the original server, replaying its random stream.
+state, scores and messages) numerically against the original server.
 Applies on top of patches 0002, 0003 and 0004.  Adds Trace_modes() to
-src/server/server.c, called right after Trace_objects(), a randomMT() call
-counter with a state dump to src/common/randommt.c, and a game message trace
-(XPMSG) to Set_message()/Set_player_message() in src/server/frame.c.  It is inert unless
-the environment variable XPILOT_TRACE_MODES is set (the counter only counts).
-Game logic is unchanged.
+src/server/server.c, called right after Trace_objects(), and a game message
+trace (XPMSG) to Set_message()/Set_player_message() in src/server/frame.c.
+It is inert unless the environment variable XPILOT_TRACE_MODES is set.  The
+random draws come from patch 0006 (XPILOT_TRACE_RAND).  Game logic is
+unchanged.
 
---- a/src/common/randommt.c
-+++ b/src/common/randommt.c
-@@ -159,10 +159,36 @@
+--- a/src/server/frame.c	2026-10-24 01:37:46
++++ b/src/server/frame.c	2026-10-24 01:37:46
+@@ -1359,6 +1359,30 @@
+     Frame_radar_buffer_free();
  }
  
- 
-+#include <stdio.h>
-+
-+/*
-+ * xpilot-ref trace hooks (not part of upstream XPilot 4.5.5): a count of
-+ * randomMT() calls and a dump of the generator state, so a reimplementation
-+ * can replay this server's random stream.  Game logic is unchanged.
-+ */
-+static unsigned long	trace_mt_draws;
-+
-+unsigned long Trace_MT_draws(void)
-+{
-+    return trace_mt_draws;
-+}
-+
-+void Trace_MT_dump(FILE *fp)
-+{
-+    int i;
-+
-+    fprintf(fp, " %lu %d %d", trace_mt_draws, left,
-+	    next != NULL ? (int)(next - state) : 0);
-+    for (i = 0; i <= N; i++) {
-+	fprintf(fp, " %u", (unsigned) state[i]);
-+    }
-+}
-+
- unsigned int randomMT(void)
- {
-     uint32 y;
- 
-+    trace_mt_draws++;
-     if (--left < 0)
- 	return (reloadMT());
- 
---- a/src/server/frame.c
-+++ b/src/server/frame.c
-@@ -1357,6 +1357,30 @@
-     oldTimeLeft = newTimeLeft;
- 
-     Frame_radar_buffer_free();
-+}
-+
 +/*
 + * xpilot-ref message trace (not part of upstream XPilot 4.5.5): with
 + * XPILOT_TRACE_MODES set, every game message as "XPMSG loop frame to text"
@@ -84,9 +43,11 @@ Game logic is unchanged.
 +	    fprintf(stderr, "XPMSG %ld %ld %d %s\n", main_loops, frame_loops, to, text);
 +	}
 +    }
- }
- 
++}
++
  void Set_message(const char *message)
+ {
+     player		*pl;
 @@ -1376,6 +1400,7 @@
      } else {
  	msg = message;
@@ -103,16 +64,12 @@ Game logic is unchanged.
      if (pl->conn != NOT_CONNECTED) {
  	Send_message(pl->conn, msg);
      }
---- a/src/server/server.c
-+++ b/src/server/server.c
-@@ -462,7 +462,119 @@
- 		(long)obj->life, (double)obj->mass,
- 		(int)wr->size, (int)wr->info, (int)wr->rotation,
- 		(double)wr->turnspeed, (int)obj->id);
-+    }
-+    fflush(stderr);
-+}
-+
+--- a/src/server/server.c	2026-10-24 01:37:46
++++ b/src/server/server.c	2026-10-24 01:38:05
+@@ -466,6 +466,84 @@
+     fflush(stderr);
+ }
+ 
 +/*
 + * xpilot-ref game-mode trace hook (not part of upstream XPilot 4.5.5).
 + * When XPILOT_TRACE_MODES is set, print after each Update_objects():
@@ -124,39 +81,13 @@ Game logic is unchanged.
 + *   XPTRS  loop frame index have destroyed   (every treasure)
 + *   XPTGT  loop frame index damage dead_time (every target)
 + *   XPTEAM loop frame team left destroyed score (teams with treasures)
-+ *   XPMTN  loop frame draws (randomMT() calls so far)
-+ *   XPMT   loop frame draws left next state[0..624] (once, the first frame
-+ *          with a player: the random generator's state)
 + * Has no effect unless XPILOT_TRACE_MODES is set.
 + */
-+extern unsigned long Trace_MT_draws(void);
-+extern void Trace_MT_dump(FILE *fp);
-+
-+/*
-+ * Before Update_objects(): XPMTP loop frame draws, the random generator's
-+ * draw count at the start of the frame (the frame code in between draws
-+ * from it too).  Has no effect unless XPILOT_TRACE_MODES is set.
-+ */
-+static void Trace_modes_pre(void)
-+{
-+    static int		init = 0;
-+    static int		on = 0;
-+
-+    if (!init) {
-+	init = 1;
-+	on = (getenv("XPILOT_TRACE_MODES") != NULL);
-+    }
-+    if (on) {
-+	fprintf(stderr, "XPMTP %ld %ld %lu\n", main_loops, frame_loops,
-+		Trace_MT_draws());
-+    }
-+}
 +
 +static void Trace_modes(void)
 +{
 +    static int		init = 0;
 +    static int		on = 0;
-+    static int		mt_dumped = 0;
 +    int			i;
 +
 +    if (!init) {
@@ -165,14 +96,6 @@ Game logic is unchanged.
 +    }
 +    if (!on) {
 +	return;
-+    }
-+    fprintf(stderr, "XPMTN %ld %ld %lu\n", main_loops, frame_loops,
-+	    Trace_MT_draws());
-+    if (!mt_dumped && NumPlayers > 0) {
-+	mt_dumped = 1;
-+	fprintf(stderr, "XPMT %ld %ld", main_loops, frame_loops);
-+	Trace_MT_dump(stderr);
-+	fputc('\n', stderr);
 +    }
 +    for (i = 0; i < NumObjs; i++) {
 +	object *obj = Obj[i];
@@ -203,7 +126,7 @@ Game logic is unchanged.
 +		(void *)pl->ball, pl->check, pl->round, pl->time,
 +		pl->best_lap, pl->last_lap, pl->last_lap_time,
 +		pl->mychar > ' ' ? pl->mychar : '_', (double)pl->score);
-     }
++    }
 +    for (i = 0; i < World.NumTreasures; i++) {
 +	fprintf(stderr, "XPTRS %ld %ld %d %d %d\n", main_loops, frame_loops,
 +		i, (int)World.treasures[i].have,
@@ -222,15 +145,13 @@ Game logic is unchanged.
 +		World.teams[i].TreasuresDestroyed,
 +		(double)World.teams[i].score);
 +    }
-     fflush(stderr);
- }
- 
-@@ -502,10 +614,12 @@
- 	    }
- 	}
- 
-+	Trace_modes_pre();
- 	Update_objects();
++    fflush(stderr);
++}
++
+ void Main_loop(void)
+ {
+     main_loops++;
+@@ -506,6 +584,7 @@
  	Trace_players();
  	Trace_wreckage();
  	Trace_objects();

@@ -107,7 +107,8 @@ class XpTranslatorEdgeTest {
                 "damaged, round delay and time left of this frame"),
             () -> assertEquals(List.of("TIMERS damaged=0 roundDelay=0 timeLeft=-1"), SnapDump.only(without, "TIMERS"),
                 "nothing reported: 0, 0 (no round delay) and -1"),
-            () -> assertEquals(List.of(), SnapDump.only(noSelf, "TIMERS"), "only with PKT_SELF"));
+            () -> assertEquals(List.of("TIMERS damaged=4 roundDelay=0 timeLeft=-1"), SnapDump.only(noSelf, "TIMERS"),
+                "also without PKT_SELF (C sends an ECM-damaged player only PKT_DAMAGED)"));
     }
 
     @Test

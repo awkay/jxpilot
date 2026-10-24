@@ -121,13 +121,35 @@ public final class ShipShape {
         return ptX.length;
     }
 
+    /** Shapes kept by {@link #parseOrDefault} (R10: a player join parses no shape it has seen). */
+    static final int CACHE_SIZE = 64;
+    private static final java.util.Map<String, ShipShape> CACHE = new java.util.LinkedHashMap<>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(java.util.Map.Entry<String, ShipShape> eldest) {
+            return size() > CACHE_SIZE;
+        }
+    };
+
     /**
      * Parse with the C limits, returning the default ship if the string is empty or invalid
      * (C {@code Parse_shape_str}: what the server uses for players and robots).
+     * <p>
+     * BEHAVIOR: results are cached by string (the {@link #CACHE_SIZE} most recently used; shapes are
+     * immutable), so the same shape string returns the same instance without parsing again; thread safe.
      */
     public static ShipShape parseOrDefault(String s) {
+        synchronized (CACHE) {
+            ShipShape cached = CACHE.get(s);
+            if (cached != null) {
+                return cached;
+            }
+        }
         ShipShape sh = parse(s);
-        return sh == null ? DEFAULT : sh;
+        ShipShape result = sh == null ? DEFAULT : sh;
+        synchronized (CACHE) {
+            CACHE.put(s, result);
+        }
+        return result;
     }
 
     /**
@@ -709,12 +731,14 @@ public final class ShipShape {
         for (int done = 0; done < todo; done++) {
             int x = qx[done];
             int y = qy[done];
-            int[][] nb = {{x + 1, y}, {x - 1, y}, {x, y + 1}, {x, y - 1}};
-            for (int[] c : nb) {
-                if (c[0] >= -15 && c[0] <= 15 && c[1] >= -15 && c[1] <= 15 && g[c[0] + 15][c[1] + 15] == 0) {
-                    g[c[0] + 15][c[1] + 15] = 2;
-                    qx[todo] = c[0];
-                    qy[todo++] = c[1];
+            // the four neighbours without a per-cell array (R10: this loop allocated ~100 KB per shape)
+            for (int k = 0; k < 4; k++) {
+                int cx = x + (k == 0 ? 1 : k == 1 ? -1 : 0);
+                int cy = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                if (cx >= -15 && cx <= 15 && cy >= -15 && cy <= 15 && g[cx + 15][cy + 15] == 0) {
+                    g[cx + 15][cy + 15] = 2;
+                    qx[todo] = cx;
+                    qy[todo++] = cy;
                 }
             }
         }
@@ -736,12 +760,15 @@ public final class ShipShape {
     }
 
     /**
-     * BEHAVIOR: true if (x,y) is off the grid or marked outside the hull.
+     * BEHAVIOR: true if (x,y) is marked outside the hull.
+     * BEHAVIOR: a coordinate of exactly 16 (the other within [-15, 16]) is inside: C's grid is
+     * {@code pt[32][32]} indexed +15 and never marks row or column 31 (shipshape.c:176).
+     * BEHAVIOR: any coordinate below -15 or above 16 is outside (C reads outside its grid there: undefined).
      */
     static boolean outside(byte[][] g, int x, int y) {
-        if (x < -15 || x > 15 || y < -15 || y > 15) {
+        if (x < -15 || x > 16 || y < -15 || y > 16) {
             return true;
         }
-        return g[x + 15][y + 15] == 2;
+        return x <= 15 && y <= 15 && g[x + 15][y + 15] == 2;
     }
 }

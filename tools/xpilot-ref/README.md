@@ -38,6 +38,9 @@ untested.
 | `patches/0003-server-wreckage-trace.patch` | Opt-in wreckage trace (`XPILOT_TRACE_WRECK`). Inert unless set. |
 | `patches/0004-server-object-trace.patch` | Opt-in object, laser pulse, ECM and player item trace. Inert unless `XPILOT_TRACE_OBJS` is set. |
 | `patches/0005-server-mode-trace.patch` | Opt-in trace of balls, asteroids, wreckage, race progress, treasures and targets. Inert unless `XPILOT_TRACE_MODES` is set. |
+| `patches/0006-server-random-trace.patch` | Opt-in trace of every server random draw, `Make_debris` call, explosion particle, keyboard update and busy cannon (for exact replays). Inert unless `XPILOT_TRACE_RAND` is set. |
+| `compact-rand.sh` | Shrinks a `--rand` trace for committing (drops the frame code's and the thrust exhaust's draws, merges draw runs, keeps explosion particles only around explosions, optionally ends it at a frame). |
+| `patches/0007-server-robot-trace.patch` | Opt-in default-robot decision trace (`XPILOT_TRACE_ROBOT`): mode, long-term mode, war lock, whether the play returned through the evade check. Inert unless set. |
 | `build.sh` | Builds image `xpilot-ref:4.5.5`. |
 | `server.sh` | Runs a headless server and prints its log. |
 | `screenshot.sh` | Runs server and client on Xvfb and saves one PNG. |
@@ -143,8 +146,8 @@ relies on patch 0002.
 
 ```sh
 trace.sh --map NAME --out FILE.txt [--after S] [--keys "ACTIONS"] [--robots N]
-         [--all-players] [--objs] [--modes] [--map-file F] [--seed N] [--png FILE.png]
-         [--server-opt OPT]...
+         [--all-players] [--objs] [--modes] [--rand] [--name2 NAME] [--map-file F]
+         [--seed N] [--png FILE.png] [--server-opt OPT]... [--client-opt OPT]...
 
 tools/xpilot-ref/trace.sh --map default --seed 42 --after 1 \
     --keys "down:Shift_L sleep:1 up:Shift_L sleep:1" --out /tmp/thrust-trace.txt
@@ -207,14 +210,11 @@ XPMSG  loop frame to text    (every game message, Set_message/Set_player_message
 XPTRS  loop frame index have destroyed
 XPTGT  loop frame index damage dead_time
 XPTEAM loop frame team treasures_left treasures_destroyed score
-XPMTP  loop frame draws      (randomMT() calls so far, before Update_objects)
-XPMTN  loop frame draws      (the same after it)
-XPMT   loop frame draws left next state[0..624]   (once, the first frame with a player)
 ```
 
-The XPMT* lines let a reimplementation replay the server's random stream: XPilot's generator seeded like
-the server (`--seed`), brought to the XPMTP count before each frame (the frame code between updates draws
-too), must have made exactly the XPMTN count after it.
+With `--rand` (patch 0006) the trace also carries every random draw and keyboard update, so the game-mode
+traces replay with C's own draws and keys (`compact-rand.sh`, with `KEEP_THRUST=1` to keep the thrust
+exhaust's draws).
 
 for every ball, asteroid and wreckage object (balls: `owner treasure length`; asteroids and wreckage:
 `size rotation turnspeed info`), every player, treasure, target and team with treasures. `ptr` is the C
@@ -226,6 +226,33 @@ those options in such a map. Example (the ball connector trace of `ModeTraceTest
 XPREF_IMAGE=xpilot-ref:server-modes tools/xpilot-ref/trace.sh \
     --map-file server/src/test/resources/ctrace/ball-tow.xp --seed 42 --after 1 --modes \
     --keys "down:Control_L down:Shift_L sleep:0.6 up:Shift_L sleep:3 up:Control_L sleep:0.5" --out /tmp/ball.txt
+```
+
+`--rand` sets `XPILOT_TRACE_RAND` and needs patch 0006 (every image built
+from this directory has it). The server then also prints every `rfrac()` and
+`randomMT()` draw with its C function and `file:line` (`XPRAND`), every
+`Make_debris` call with its caller and arguments (`XPDEBRIS`), every
+keyboard update a client sends (`XPKEYS`), the explosion debris and
+wall-bounce sparks (`XPDEB`, every spark and debris object but the
+exhaust) and every cannon
+that is not idle (`XPCANNON`). With these a reimplementation can replay the
+C game with C's own random numbers and keys and compare it exactly
+(`CTraceItemsTest`; the line formats are in
+`server/src/test/resources/ctrace/items/README.txt`). Such a trace is large:
+`compact-rand.sh RAW [LAST]` shrinks it for committing.
+
+`--name2 NAME` starts a second client once the first is in play (so the
+first player gets id 1); the key action `focus:2` sends the following keys
+to the second client's window, `focus:1` back to the first. Use
+`--all-players` to trace both.
+
+```sh
+XPREF_IMAGE=xpilot-ref:items3-traces tools/xpilot-ref/trace.sh --objs --rand --map default --seed 2 \
+    --after 1 --server-opt -initialMissiles --server-opt 4 \
+    --client-opt -autoShield --client-opt no --all-players --name2 target \
+    --keys "down:space sleep:0.15 up:space sleep:0.3 down:Up sleep:0.15 up:Up sleep:0.3 down:backslash sleep:0.15 up:backslash sleep:6" \
+    --out /tmp/smart.raw
+tools/xpilot-ref/compact-rand.sh /tmp/smart.raw 140 > /tmp/smart.txt
 ```
 
 You can also run the server in raw mode with only robots and trace them:
@@ -303,11 +330,10 @@ GPL-2.0-or-later, and why.
    `server/src/test/resources/ctrace/wreckage-default.txt`:
 
    ```sh
-   CDPATH= XPREF_IMAGE=xpilot-ref:4.5.5-sb2 tools/xpilot-ref/build.sh   # or rebuild the default tag
-   docker run --rm --network none -e XPILOT_TRACE_WRECK=1 -e XPILOT_SEED=1 xpilot-ref:4.5.5-sb2 \
+   docker run --rm --network none -e XPILOT_TRACE=1 -e XPILOT_TRACE_WRECK=1 -e XPILOT_SEED=1 xpilot-ref:4.5.5 \
        timeout -s INT -k 5 180 xpilots -map default -robots 4 -minRobots 4 -noQuit +reportToMetaServer \
        -rawMode 2> wreck.trace
-   grep -E '^XPW(MAKE|RAND|RECK) ' wreck.trace > wreckage-default.txt
+   # keep the XPW* lines and the XPTRACE lines of frames with wreckage (and the frame before)
    ```
 
    Images built before this patch lack it; rebuild with `build.sh`.
@@ -317,10 +343,40 @@ GPL-2.0-or-later, and why.
    filters the XPITEMS lines like the XPTRACE lines.
 5. `0005-server-mode-trace.patch`, in `src/server/server.c` only, on top of
    0004: adds `Trace_modes()`, called right after `Trace_objects()`, which prints the
-   XPMOBJ/XPPL2/XPTRS/XPTGT/XPTEAM/XPMTN/XPMT lines when `XPILOT_TRACE_MODES` is set
-   (`trace.sh --modes`), `Trace_modes_pre()` (XPMTP) before `Update_objects()`, and in
-   `src/common/randommt.c` a `randomMT()` call counter with a state dump. Inert otherwise (the
-   counter only counts), and in `src/server/frame.c` the XPMSG game message trace.
+   XPMOBJ/XPPL2/XPTRS/XPTGT/XPTEAM lines when `XPILOT_TRACE_MODES` is set
+   (`trace.sh --modes`), and in `src/server/frame.c` the XPMSG game message trace. Inert
+   otherwise.
+6. `0006-server-random-trace.patch`, on top of 0005, in
+   `src/common/commonproto.h`, `src/server/proto.h`, `server.c`, `play.c`
+   and `netserver.c`: macros at the end of `proto.h` send every server
+   `rfrac()`/`randomMT()` call through wrappers in `server.c` that print the
+   value and call site (the two declarations in `commonproto.h` are
+   parenthesized so the macros cannot touch them), `Make_debris` learns and
+   prints its caller, `Receive_keyboard_frame` prints each keyboard update,
+   and `Trace_cannons()` (after `Trace_modes()`) prints explosion debris,
+   wall-bounce sparks and busy cannons. Everything is inert unless `XPILOT_TRACE_RAND` is set;
+   the random sequence and the game are unchanged.
+7. `0007-server-robot-trace.patch`, on top of 0006, in `src/server/robotdef.c` only: the default
+   robot's `play` hook becomes `Robot_default_play_trace()`, which calls
+   `Robot_default_play()` and then, when `XPILOT_TRACE_ROBOT` is set, prints one
+   line per robot per play:
+
+   ```
+   XPROBOT loop frame id mode longterm lock evaded turnacc power thrusting x y name
+   ```
+
+   `mode` is `robot_mode` (RM_* bits: 4 idle, 8/16 evade left/right, 32 climb,
+   64 harvest, 128 attack, 256 take-off, 512 cannon kill, 1024 refuel, 2048
+   navigate), `longterm` is `longterm_mode`, `lock` is `robot_lock` (bit 0 = war),
+   and `evaded` is 1 when the play returned through `Check_robot_evade()`. It draws
+   no random numbers, so the XPTRACE lines are unchanged. Used for the stuck-robot
+   comparison in `server/src/test/resources/robots/README.md`:
+
+   ```sh
+   docker run --rm --network none -e XPILOT_TRACE=1 -e XPILOT_TRACE_ROBOT=1 -e XPILOT_SEED=2 \
+       xpilot-ref:4.5.5 timeout -s INT -k 5 600 xpilots -map default -robots 4 -minRobots 4 \
+       -noQuit +reportToMetaServer -rawMode -defaults /usr/local/lib/xpilot/defaults 2> c4s2.trace
+   ```
 
 ## Known quirks
 
@@ -360,6 +416,20 @@ GPL-2.0-or-later, and why.
 - **xdotool and focus.** Without a window manager, `xdotool --sync` waits
   about 18 seconds for events that never come. The harness uses plain
   `windowfocus` followed by a 0.1 second sleep.
+- **Key autorepeat.** Xvfb runs with `-ardelay 60000 -arinterval 60000`:
+  X autorepeat would turn a held key into a stream of press/release
+  events, and the server would get extra keyboard updates. Keep at least
+  0.1 s between releasing one key and pressing another (`up:a sleep:0.1
+  down:b`): the client sends one keyboard update per X event, and two in one
+  server tick cannot be replayed (a Java tick takes one key state).
+- **Shields.** The client holds the shield key from the start
+  (`Key_init`), and with its default `autoShield` it raises the shield again
+  after firing. For an unshielded ship use `--client-opt -autoShield
+  --client-opt no` and tap `space` once.
+- **Exhaust sparks.** JXPilot draws a ship's exhaust from a (tick, id) seed
+  that clients share, so a golden replay cannot give it C's sparks; keep
+  other ships out of a thrusting ship's exhaust (debris, wall-bounce sparks
+  and flak fragments are replayed exactly).
 - **Floating point.** This is an arm64 build, and `DFLOAT` is `float` in
   4.5.5. Low-order float digits could differ from an x86 build.
 - **Untagged images.** A rebuild leaves the previous `xpilot-ref:4.5.5`

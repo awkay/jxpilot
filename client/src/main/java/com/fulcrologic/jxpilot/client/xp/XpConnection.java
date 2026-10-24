@@ -65,6 +65,9 @@ public final class XpConnection implements GameConnection {
         Transport open(int port) throws IOException;
     }
 
+    /** The control settings the server was last sent (PKT_PLAY or a settings change). */
+    private final Msg.Settings sent = new Msg.Settings();
+
     /** Login and play settings. */
     public static final class Login {
         /** Nick (first letter is capitalised, at most 15 chars, as the C server does). */
@@ -437,8 +440,9 @@ public final class XpConnection implements GameConnection {
     /**
      * C {@code Send_power} ... {@code Send_turnresistance_s}.
      * <p>
-     * BEHAVIOR: the settings become the login's (sent with the next PKT_PLAY); while PLAYING the six
-     * PKT_POWER/TURNSPEED/TURNRESISTANCE (+ _S) packets (value * 256) go out at once (true).
+     * BEHAVIOR: the settings become the login's (sent with the next PKT_PLAY); while PLAYING only the values
+     * that differ from what the server was last sent go out at once, one packet each (value * 256): a power or
+     * turn-speed key sends exactly the one packet C's key handler sends; true iff something was sent.
      */
     @Override
     public boolean sendSettings(Msg.Settings settings, long nowNanos) {
@@ -447,10 +451,28 @@ public final class XpConnection implements GameConnection {
         if (phase != Phase.PLAYING) {
             return false;
         }
+        Msg.Settings st = login.settings;
         ensureRoom(6 * 3);
-        writeSettings(login.settings);
-        flushPending();
-        return true;
+        int n = 0;
+        n += changed(XpProto.PKT_POWER, st.power, sent.power);
+        n += changed(XpProto.PKT_POWER_S, st.altPower, sent.altPower);
+        n += changed(XpProto.PKT_TURNSPEED, st.turnSpeed, sent.turnSpeed);
+        n += changed(XpProto.PKT_TURNSPEED_S, st.altTurnSpeed, sent.altTurnSpeed);
+        n += changed(XpProto.PKT_TURNRESISTANCE, st.turnResistance, sent.turnResistance);
+        n += changed(XpProto.PKT_TURNRESISTANCE_S, st.altTurnResistance, sent.altTurnResistance);
+        NativeGameConnection.copy(st, sent);
+        if (n > 0) {
+            flushPending();
+        }
+        return n > 0;
+    }
+
+    private int changed(int type, float now, float before) {
+        if ((int) (now * 256.0) == (int) (before * 256.0)) {
+            return 0;
+        }
+        power(type, now);
+        return 1;
     }
 
     /** BEHAVIOR: the banks become the login's, sent with every play request (C sends them only at login). */
@@ -466,6 +488,7 @@ public final class XpConnection implements GameConnection {
         power(XpProto.PKT_TURNSPEED_S, st.altTurnSpeed);
         power(XpProto.PKT_TURNRESISTANCE, st.turnResistance);
         power(XpProto.PKT_TURNRESISTANCE_S, st.altTurnResistance);
+        NativeGameConnection.copy(st, sent);
     }
 
     /**
@@ -627,6 +650,11 @@ public final class XpConnection implements GameConnection {
         XpWriter.s16(tx, clampView(login.viewHeight));
         XpWriter.u8(tx, login.debrisColors);
         XpWriter.u8(tx, (int) Math.round(Math.max(0, Math.min(1, login.sparkProb)) * XpProto.MAX_SPARK_RAND));
+        // C Client_power: Startup_server_motd (autoServerMotdPopup), in every play request: a C server still
+        // draining the setup discards the whole first bundle ("Discarding packet 57"), only a retry gets through
+        XpWriter.u8(tx, XpProto.PKT_MOTD);
+        XpWriter.s32(tx, 0);
+        XpWriter.s32(tx, XpProto.MAX_MOTD_SIZE);
         for (int i = 0; i < login.modifierBanks.length; i++) {
             XpWriter.u8(tx, XpProto.PKT_MODIFIERBANK);
             XpWriter.u8(tx, i);
@@ -796,7 +824,8 @@ public final class XpConnection implements GameConnection {
         welcome.gameFps = welcome.simHz;
         welcome.flags = ((setup.mode & XpProto.MODE_TEAM_PLAY) != 0 ? Msg.Welcome.FLAG_TEAM_PLAY : 0)
             | ((setup.mode & XpProto.MODE_WRAP_PLAY) != 0 ? Msg.Welcome.FLAG_EDGE_WRAP : 0)
-            | ((setup.mode & XpProto.MODE_TIMING) != 0 ? Msg.Welcome.FLAG_TIMING : 0);
+            | ((setup.mode & XpProto.MODE_TIMING) != 0 ? Msg.Welcome.FLAG_TIMING : 0)
+            | Msg.Welcome.FLAG_RADAR_BLINKED;
         welcome.serverName.setLength(0);
         welcome.serverName.append(label);
         listener.onWelcome(welcome);
