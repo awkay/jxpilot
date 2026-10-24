@@ -398,21 +398,21 @@ class DefaultRobotPlayTest {
             W t = new W("");
             Player g = RobotFixture.human(t.s, "G", 900, 700);
             t.r.choosePlayerLock(t.p, t.d, t.h, 700);
-            int first = t.d.lockPlId;
+            int first = t.p.lockPlId;
             t.r.choosePlayerLock(t.p, t.d, g, 351);
-            int notNear = t.d.lockPlId;
+            int notNear = t.p.lockPlId;
             t.r.choosePlayerLock(t.p, t.d, g, 349);
-            int near = t.d.lockPlId;
-            t.d.lockDistance = 100;
+            int near = t.p.lockPlId;
+            t.p.lockDistance = 100;
             t.h.score = 5;
             t.r.choosePlayerLock(t.p, t.d, t.h, 900);
             assertAll(
                 () -> assertEquals(t.h.id, first, "free: lock"),
-                () -> assertEquals(DefaultRobot.LOCK_PLAYER, t.d.lockTagged, "LOCK_PLAYER"),
+                () -> assertEquals(DefaultRobot.LOCK_PLAYER, t.p.lockTagged, "LOCK_PLAYER"),
                 () -> assertEquals(t.h.id, notNear, "351 is not under half of 700"),
                 () -> assertEquals(g.id, near, "349 is"),
-                () -> assertEquals(t.h.id, t.d.lockPlId, "a higher score takes the lock"),
-                () -> assertEquals(900, t.d.lockDistance, "lock distance = enemy distance"),
+                () -> assertEquals(t.h.id, t.p.lockPlId, "a higher score takes the lock"),
+                () -> assertEquals(900, t.p.lockDistance, "lock distance = enemy distance"),
                 () -> assertTrue(t.it.calls.contains("sensorRange"), "sensor range recomputed"));
         }
 
@@ -421,53 +421,53 @@ class DefaultRobotPlayTest {
         void lockBall() {
             W t = new W("teamPlay: yes\nreserveRobotTeam: no\n");
             Player g = RobotFixture.human(t.s, "G", 900, 700);
-            t.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            t.d.lockPlId = t.h.id;
-            t.d.lockDistance = 100;
+            t.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            t.p.lockPlId = t.h.id;
+            t.p.lockDistance = 100;
             g.have |= Has.BALL;
             t.r.choosePlayerLock(t.p, t.d, g, 199);
-            assertEquals(g.id, t.d.lockPlId, "ball carrier");
+            assertEquals(g.id, t.p.lockPlId, "ball carrier");
         }
 
         @Test
         @DisplayName("releasePlayerLock: dropped when the target dies, hides, a war target plays, or fuel is low")
         void release() {
             W t = new W("");
-            t.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            t.d.lockPlId = t.h.id;
-            t.d.lockDistance = 50;
+            t.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            t.p.lockPlId = t.h.id;
+            t.p.lockDistance = 50;
             t.r.releasePlayerLock(t.p, t.d);
-            boolean kept = t.d.lockTagged == DefaultRobot.LOCK_PLAYER;
+            boolean kept = t.p.lockTagged == DefaultRobot.LOCK_PLAYER;
             t.p.fuel = t.d.fuelL3;
             t.r.releasePlayerLock(t.p, t.d);
             assertAll(
                 () -> assertTrue(kept, "a visible playing target with fuel: kept"),
-                () -> assertEquals(0, t.d.lockTagged, "fuel at level 3: dropped"),
-                () -> assertEquals(1, t.d.lockPlId, "C sets pl_id 1"),
-                () -> assertEquals(0.0, t.d.lockDistance, "distance 0"));
+                () -> assertEquals(0, t.p.lockTagged, "fuel at level 3: dropped"),
+                () -> assertEquals(1, t.p.lockPlId, "C sets pl_id 1"),
+                () -> assertEquals(0.0, t.p.lockDistance, "distance 0"));
             W u = new W("");
             Player g = RobotFixture.human(u.s, "G", 900, 700);
-            u.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            u.d.lockPlId = u.h.id;
+            u.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            u.p.lockPlId = u.h.id;
             DefaultRobot.setWar(u.d, g.id);
             u.r.releasePlayerLock(u.p, u.d);
-            int war = u.d.lockTagged;
-            u.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            u.d.lockPlId = u.h.id;
+            int war = u.p.lockTagged;
+            u.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            u.p.lockPlId = u.h.id;
             g.status &= ~Obj.PLAYING;
             u.r.releasePlayerLock(u.p, u.d);
-            int warDead = u.d.lockTagged;
+            int warDead = u.p.lockTagged;
             u.h.status &= ~Obj.PLAYING;
             u.r.releasePlayerLock(u.p, u.d);
-            int dead = u.d.lockTagged;
-            u.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            u.d.lockPlId = 77;
+            int dead = u.p.lockTagged;
+            u.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            u.p.lockPlId = 77;
             u.r.releasePlayerLock(u.p, u.d);
             assertAll(
                 () -> assertEquals(0, war, "at war with another playing ship"),
                 () -> assertEquals(DefaultRobot.LOCK_PLAYER, warDead, "the war target is dead: kept"),
                 () -> assertEquals(0, dead, "the locked ship died"),
-                () -> assertEquals(0, u.d.lockTagged, "the locked ship left"));
+                () -> assertEquals(0, u.p.lockTagged, "the locked ship left"));
         }
 
         @Test
@@ -481,16 +481,16 @@ class DefaultRobotPlayTest {
             Player p = RobotFixture.robot(race, "R", 100, 100);
             Player h = RobotFixture.human(race, "H", 200, 100);
             RobotData d = race.robots.data(p);
-            d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            d.lockPlId = h.id;
+            p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            p.lockPlId = h.id;
             race.robots.robot().releasePlayerLock(p, d);
             W t = new W("teamPlay: yes\nreserveRobotTeam: no\n");
-            t.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            t.d.lockPlId = t.h.id;
+            t.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            t.p.lockPlId = t.h.id;
             t.r.releasePlayerLock(t.p, t.d);
             assertAll(
-                () -> assertEquals(0, d.lockTagged, "race: dropped"),
-                () -> assertEquals(0, t.d.lockTagged, "same team (team 0 for both): dropped"));
+                () -> assertEquals(0, p.lockTagged, "race: dropped"),
+                () -> assertEquals(0, t.p.lockTagged, "same team (team 0 for both): dropped"));
         }
     }
 
@@ -620,13 +620,17 @@ class DefaultRobotPlayTest {
         }
 
         @Test
-        @DisplayName("the default gate hides unimplemented abilities")
+        @DisplayName("the real item gate lets a robot with a cloak and fuel above level 2 cloak; without one it does not")
         void defaultGate() {
             Simulation s = RobotFixture.sim("", RobotFixture.open(40, 40, "___"));
             Player p = RobotFixture.robot(s, "R", 700, 700);
+            s.robots.robot().play(p, s.robots.data(p));
+            int without = p.used & Has.CLOAKING_DEVICE;
             p.have |= Has.CLOAKING_DEVICE;
             s.robots.robot().play(p, s.robots.data(p));
-            assertEquals(0, p.used & Has.CLOAKING_DEVICE, "no cloaking in S1");
+            assertAll(
+                () -> assertEquals(0, without, "no cloaking device: not cloaked"),
+                () -> assertEquals(Has.CLOAKING_DEVICE, p.used & Has.CLOAKING_DEVICE, "with one: cloaked"));
         }
 
         @Test
@@ -702,8 +706,8 @@ class DefaultRobotPlayTest {
             t.d.robotCount = 31;
             t.r.play(t.p, t.d);
             assertAll(
-                () -> assertEquals(t.h.id, t.d.lockPlId, "locked on H (count 30 after the decrement)"),
-                () -> assertEquals(DefaultRobot.LOCK_PLAYER, t.d.lockTagged & DefaultRobot.LOCK_PLAYER, "LOCK_PLAYER"),
+                () -> assertEquals(t.h.id, t.p.lockPlId, "locked on H (count 30 after the decrement)"),
+                () -> assertEquals(DefaultRobot.LOCK_PLAYER, t.p.lockTagged & DefaultRobot.LOCK_PLAYER, "LOCK_PLAYER"),
                 () -> assertEquals(DefaultRobot.RM_ATTACK, t.d.robotMode, "attacking"),
                 () -> assertEquals(1, t.p.shots, "and firing (even count, clear path)"));
         }
@@ -716,7 +720,7 @@ class DefaultRobotPlayTest {
             t.d.robotCount = 113;
             t.r.play(t.p, t.d);
             assertAll(
-                () -> assertEquals(0, t.d.lockTagged, "112 % 3 != 0: no enemy picked"),
+                () -> assertEquals(0, t.p.lockTagged, "112 % 3 != 0: no enemy picked"),
                 () -> assertEquals(DefaultRobot.RM_ROBOT_IDLE, t.d.robotMode, "112 % 64 >= 32: idle"));
         }
 

@@ -180,6 +180,10 @@ final class RobotFixture {
 
     /** An item gate with settable counts and abilities that records every action. */
     static final class SpyItems extends RobotItems {
+        SpyItems() {
+            super(null);
+        }
+
         final Map<Item, Integer> counts = new EnumMap<>(Item.class);
         final List<String> calls = new ArrayList<>();
         int haveMask = ~0;

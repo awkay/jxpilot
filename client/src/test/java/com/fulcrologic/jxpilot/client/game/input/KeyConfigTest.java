@@ -118,15 +118,16 @@ class KeyConfigTest {
                 () -> assertEquals(ControlKey.PAUSE.mask(), game(c, GLFW_KEY_9), "9 pauses"),
                 () -> assertEquals(ControlKey.LOSE_ITEM.mask(), game(c, GLFW_KEY_Y), "y loses the item"),
                 () -> assertEquals(ControlKey.LOSE_ITEM.mask(), game(c, GLFW_KEY_KP_DECIMAL), "KP_Delete is keypad ."),
-                () -> assertEquals(ControlKey.SELECT_ITEM.mask() | ControlKey.REPROGRAM.mask(),
-                    game(c, GLFW_KEY_GRAVE_ACCENT), "grave selects the item (and reprograms, C's quoteleft)"),
+                () -> assertEquals(ControlKey.SELECT_ITEM.mask(), game(c, GLFW_KEY_GRAVE_ACCENT),
+                    "grave only selects the item (reprogram moved off C's quoteleft)"),
+                () -> assertEquals(ControlKey.REPROGRAM.mask(), game(c, GLFW_KEY_F8), "F8 reprograms"),
+                () -> assertFalse(KeyBindings.has(acts(c, GLFW_KEY_F8), ClientAction.MSG_8), "F8 is no longer talk macro 8"),
                 () -> assertEquals(ControlKey.DETONATE_MINES.mask(), game(c, GLFW_KEY_U), "u detonates mines"),
-                () -> assertTrue(KeyBindings.has(acts(c, GLFW_KEY_U), ClientAction.ID_MODE), "u is still ID mode"),
+                () -> assertFalse(KeyBindings.has(acts(c, GLFW_KEY_U), ClientAction.ID_MODE), "ID mode is unbound"),
                 () -> assertEquals(0L, game(c, GLFW_KEY_EQUAL), "= no longer detonates"),
                 () -> assertEquals(ControlKey.FIRE_LASER.mask(), game(c, GLFW_KEY_SLASH), "slash fires the laser"),
                 () -> assertTrue(KeyBindings.has(acts(c, GLFW_KEY_F2), ClientAction.MSG_2), "F2 keeps its macro"),
-                () -> assertEquals(List.of("grave/quoteleft: keyReprogram keySelectItem", "u: keyDetonateMines keyIdMode"),
-                    c.conflicts(), "the two keys it binds twice are reported"),
+                () -> assertEquals(List.of(), c.conflicts(), "no key is bound twice"),
                 () -> assertEquals(40.0, c.settings().turnSpeed, "settings keep the defaults"));
         }
     }
@@ -178,6 +179,31 @@ class KeyConfigTest {
                 () -> assertEquals(10.0, s.altTurnSpeed, "altTurnSpeed with XPilot*"),
                 () -> assertEquals(0.5, s.altTurnResistance, "altTurnResistance with *"),
                 () -> assertEquals(List.of(), c.problems(), "no problems"));
+        }
+
+        @Test
+        @DisplayName("maxVolume (C default.c): an integer 0-255, clamped and reported outside, ignored when not a number")
+        void maxVolume() {
+            KeyConfig set = KeyConfig.load("xpilot.maxVolume: 40\n", "rc", null);
+            KeyConfig edge = KeyConfig.load("maxvolume: 255\n", "rc", null);
+            KeyConfig high = KeyConfig.load("maxVolume: 300\n", "rc", null);
+            KeyConfig low = KeyConfig.load("maxVolume: -3\n", "rc", null);
+            KeyConfig bad = KeyConfig.load("maxVolume: 40%\n", "rc", null);
+            KeyConfig zero = KeyConfig.load("maxVolume: 0\n", "rc", null);
+            assertAll(
+                () -> assertEquals(40, set.maxVolume(), "the value, with the xpilot. prefix"),
+                () -> assertEquals(List.of(), set.problems(), "no problems"),
+                () -> assertEquals(255, edge.maxVolume(), "255 is allowed (any case)"),
+                () -> assertEquals(List.of(), edge.problems(), "without a problem"),
+                () -> assertEquals(0, zero.maxVolume(), "0 is allowed (no sound)"),
+                () -> assertEquals(255, high.maxVolume(), "too high is clamped"),
+                () -> assertEquals(List.of("rc:1: maxVolume: 300 is outside 0-255, using 255"), high.problems(), "and reported"),
+                () -> assertEquals(0, low.maxVolume(), "negative is clamped to 0"),
+                () -> assertEquals(List.of("rc:1: maxVolume: -3 is outside 0-255, using 0"), low.problems(), "and reported"),
+                () -> assertEquals(-1, bad.maxVolume(), "not an integer: not set"),
+                () -> assertEquals(List.of("rc:1: maxVolume: not an integer: '40%'"), bad.problems(), "and reported"),
+                () -> assertEquals(-1, KeyConfig.load("power: 50\n", "rc", null).maxVolume(), "a file without it: not set"),
+                () -> assertEquals(-1, KeyConfig.defaults(null).maxVolume(), "the defaults: not set"));
         }
     }
 

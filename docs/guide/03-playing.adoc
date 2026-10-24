@@ -31,7 +31,9 @@ shield key, it works as hold-to-shield.
 [[controls]]
 == Controls
 
-JXPilot uses XPilot's default keys (from the C client's `default.c`). The most important ones:
+JXPilot uses XPilot's default keys (from the C client's `default.c`), with a few additions. Press
+kbd:[F1] in the game for a list of every key; the message `F1: keys` reminds you when you join. The most
+important keys:
 
 [cols="2,3",options="header"]
 |===
@@ -41,6 +43,7 @@ JXPilot uses XPilot's default keys (from the C client's `default.c`). The most i
 |kbd:[Enter] |Fire
 |kbd:[Space] |Shield
 |kbd:[F] or kbd:[Ctrl] |Refuel (at a fuel station); kbd:[F] also repairs (at a target)
+|kbd:[Ctrl] or kbd:[Alt]/kbd:[Option] |Connect to a ball
 |kbd:[Tab] |Drop a mine
 |kbd:[ \ ] |Fire a smart missile
 |kbd:[;] |Fire a heat seeker
@@ -49,36 +52,49 @@ JXPilot uses XPilot's default keys (from the C client's `default.c`). The most i
 |kbd:[Page Down] / kbd:[Page Up] / kbd:[Up] |Lock on the next / previous / closest player
 |kbd:[H] or kbd:[Home] |Change home base (and toggle the autopilot, kbd:[H])
 |kbd:[Pause] |Pause, only on your home base (<<pausing>>)
-|kbd:[End] |Self-destruct after a 150-frame countdown; press again to cancel
-|kbd:[M] |Talk (type a message, kbd:[Enter] sends it; <<talking>>)
-|kbd:[Esc] |Quit the game (in XPilot it swaps engine settings; <<engine-settings>>)
-|Keypad kbd:[*] / kbd:[/] |More / less engine power
+|kbd:[End] or kbd:[0] |Self-destruct after a 150-frame countdown; press again to cancel
+|Keypad kbd:[*] / kbd:[/] |More / less engine power (<<engine-settings>>)
 |Keypad kbd:[+] / kbd:[-] |Faster / slower turning
+|kbd:[M] |Talk (type a message, kbd:[Enter] sends it; <<talking>>)
+|kbd:[F1] |Show or hide the key help
+|kbd:[-] |Sound off and on (<<sound>>)
+|kbd:[Esc] |Quit the game (in XPilot it swaps engine settings)
 |===
+
+JXPilot's additions to XPilot's defaults: kbd:[Alt]/kbd:[Option] also connects to a ball, so a Mac
+laptop's single kbd:[Control] can stay refuel; kbd:[0] also self-destructs, since kbd:[End] needs kbd:[fn]
+on a Mac laptop; kbd:[F1] shows the key help (XPilot uses it for talk macro 1); kbd:[-] mutes; and
+kbd:[Esc] always quits. All of this can be changed (<<key-bindings>>).
 
 [[laptop-keys]]
 TIP: *Mac laptops and other compact keyboards* have no Page Up, Page Down, End or keypad keys of their
 own. On a Mac laptop, kbd:[fn+↑] and kbd:[fn+↓] are Page Up and Page Down (lock on the previous / next
-player), and kbd:[fn+→] is End (self-destruct). The single kbd:[Control] key works as the left Control
-key: refuel, and the ball connector.
+player), and kbd:[fn+→] is End. The power and turn speed keys are on the keypad; the
+<<mac-laptop-keymap,Mac laptop keymap>> example moves them to function keys.
 
 [[engine-settings]]
 === Engine settings
 
 Your ship's engine power, turn speed and turn resistance are settings you choose. JXPilot starts you
-with the XPilot client's defaults: power 45, turn speed 35 and turn resistance 0.12, and the
-alternative settings power 35, turn speed 25, turn resistance 0.12. The keypad keys above change the
-current settings. XPilot swaps to the alternative settings with kbd:[Esc]; in JXPilot kbd:[Esc] quits,
-so the swap has no key until key bindings can be changed.
+with power 45, turn speed 40 and turn resistance 0.12 (XPilot's client defaults, except turn speed,
+which is 35 in XPilot), and the alternative settings power 35, turn speed 25, turn resistance 0.12.
+
+The power and turn speed keys (keypad kbd:[*] kbd:[/] kbd:[+] kbd:[-]) change your settings in the client,
+by 10% and 5% per press, and send them to the server, as the XPilot client does. While you change them,
+power and turn speed meters show below the fuel gauge (top right) for 100 frames. XPilot swaps to the
+alternative settings with kbd:[Esc]; in JXPilot kbd:[Esc] quits, so bind `keySwapSettings` to another key
+if you want the swap. The six settings can be set in your keys file (<<key-bindings>>).
 
 [[all-keys]]
-=== All game keys
+=== All keys
 
-Every key the client sends to the server, with its XPilot key id and default keys. The names in
-monospace are X11 key names, as XPilot's `default.c` and `.xpilotrc` files use them. Several functions
-share a key, and some have more than one key, exactly as in XPilot.
+Every key function, under its XPilot resource name (the name to use in a keys file), with JXPilot's
+default keys. The names in monospace are X11 key names, as XPilot's `.xpilotrc` files use them. Several
+functions share a key, and some have more than one key, exactly as in XPilot. Where JXPilot's default
+differs from XPilot's, the table says so.
 
-This table is generated from the code (`ControlKey`), so it is always current.
+This table is generated from the code, so it is always current. `--list-keys` prints the same list for
+your own keys file (<<key-bindings>>).
 
 ifdef::env-github[]
 On GitHub, see link:generated/keys.adoc[generated/keys.adoc] for the table.
@@ -86,7 +102,60 @@ endif::[]
 
 include::generated/keys.adoc[]
 
-The table lists XPilot's defaults. In JXPilot kbd:[Esc] quits, so "Swap settings" has no key.
+XPilot's talk macros (`keySendMsg1` to `keySendMsg20`), ID mode, the message and item toggles, pointer
+control, recording and printing messages are not in JXPilot.
+
+[[key-bindings]]
+=== Changing the keys: `~/.xpilotrc`
+
+JXPilot reads key bindings and control settings from `~/.xpilotrc`, in the resource format of the
+XPilot client, so an existing XPilot file works. `--keys FILE` reads another file instead.
+
+[source,text]
+----
+! Comments start with '!'.
+xpilot.keyFireShot:       Return KP_Enter    ! the function's keys, separated by spaces
+xpilot.keyPointerControl:                    ! an empty value unbinds (frees KP_Enter)
+xpilot.keySwapSettings:   Insert             ! give the swap-settings function a key
+xpilot.turnSpeed:         35                 ! XPilot's turn speed
+----
+
+The rules:
+
+* One `resource: value` per line. The `xpilot.` prefix is optional (`xpilot*`, `XPilot.` and `*` work
+  too); resources of other programs are ignored. A line ending in `\` continues on the next line.
+* Each key function the file names *replaces* that function's default keys; functions the file does not
+  name keep their defaults. An empty value unbinds the function.
+* The resource names are those of the table above. Key names are X11 keysyms: letters, digits,
+  `Return`, `space`, `Shift_L`, `Control_R`, `Alt_L`, `KP_Add`, `F5`, `bracketleft` and so on.
+* The six control settings are `power` (5 to 55), `turnSpeed` (4 to 64), `turnResistance` (0 to 1),
+  `altPower`, `altTurnSpeed` and `altTurnResistance`. Values outside the range are clamped.
+* `maxVolume` (0 to 255) sets the sound volume (<<sound>>). XPilot's other sound resources, `sounds`
+  and `audioServer`, are not used: the sounds are built in.
+* kbd:[Esc] always quits and cannot be bound; the Command (Super) keys are never bound.
+* Every problem (an unknown function or key name, a bad number, a key bound to more than one function)
+  is printed when the client starts, as `jxpilot keys: FILE:LINE: ...`, and the rest of the file still
+  applies.
+
+`java -jar jxpilot-client-VERSION.jar --list-keys` (with `--keys FILE` if you use one) prints the
+effective bindings, the control settings and any problems, and exits.
+
+[[mac-laptop-keymap]]
+==== Example: a Mac laptop keymap
+
+This file (`docs/examples/xpilotrc.mac-laptop` in the source) moves the keypad and other hard-to-reach
+functions to keys a Mac laptop has, and frees kbd:[F9] to kbd:[F12] from the talk macros. Copy it to
+`~/.xpilotrc` and adjust to taste.
+
+ifdef::env-github[]
+See link:../examples/xpilotrc.mac-laptop[docs/examples/xpilotrc.mac-laptop].
+endif::[]
+ifndef::env-github[]
+[source,text]
+----
+include::../examples/xpilotrc.mac-laptop[]
+----
+endif::[]
 
 [[client-keys]]
 === Client keys
@@ -96,16 +165,14 @@ These keys act in the client and are never sent to the server.
 [cols="2,3",options="header"]
 |===
 |Key |Function
+|kbd:[F1] |Show or hide the key help
 |kbd:[M] |Open the talk line
+|kbd:[-] |Sound off and on (<<sound>>)
 |kbd:[Esc] |Quit (or, in the talk line, cancel the message)
-|kbd:[0] |Sound off and on (<<sound>>). This default may change.
-|Any key you choose with `--swap-scale-key` |Swap between the normal and the alternative zoom
+|`keySwapScaleFactor`, or `--swap-scale-key KEY` |Swap between the normal and the alternative zoom
 (`--scale-factor`, `--alt-scale-factor`; <<07-client-reference.adoc#game-flags,Game flags>>). Unbound by
 default, as in XPilot.
 |===
-
-XPilot's talk macros (kbd:[F1] to kbd:[F12]), ID mode, message toggles and pointer control are not in
-JXPilot. Changing key bindings is planned.
 
 [[talking]]
 === Talking
@@ -123,6 +190,9 @@ server works the same way):
 |`hello all` |Everyone. Lines show as `hello all [YourName]`.
 |`2: regroup at base` |Everyone on team 2 (and you).
 |`ace: nice shot` |The player whose name is `ace`, or starts with `ace` if only one does (and you).
+|`god: the map is broken` |The server operator, through the server's admin message file (on a JXPilot
+server, only if the operator set one up; <<04-running-a-server.adoc#admin-messages,Messages to the
+operator>>). Nobody else sees it.
 |`see you :-)` |Everyone: a colon followed by a smiley character, or at the end of the line, is not
 an address.
 |===
@@ -152,16 +222,22 @@ swap-scale-factor key
 
 The client plays sound effects, on by default. Which sounds play, and when, is decided as in XPilot:
 the server sends XPilot's sound events (shots, explosions, hits, pickups, wormholes, wins and so on),
-already made quieter with distance, and the client plays a clip for each. This works the same on a
-JXPilot server and on an original XPilot server.
+already made quieter with distance, and the client plays a clip for each. You also hear the start sound
+when you join, as in XPilot.
+
+On an original XPilot server you usually hear nothing: sound is compiled out of the standard XPilot
+server builds, so most XPilot servers send no sound events. The client asks for sounds once, when it
+joins (unless sound is off then); muting later does not change that request.
 
 [cols="2,4",options="header"]
 |===
 |Control |Effect
-|`--no-sound` (or `--sound`) |Turn sound off (on) for this run. XPilot's `sound` resource.
-|`--volume N` |XPilot's `maxVolume`: the loudest a sound may play, 0 to 255 (default 100). `0` means no
-sound; values above 100 play like 100.
-|kbd:[0] |Mute and unmute while playing; the message log shows `Sound off.` / `Sound on.`
+|`--no-sound` (or `--sound`) |Turn sound off (on) for this run. JXPilot only: whether an XPilot
+client has sound is decided when it is built.
+|`--volume N` |XPilot's `maxVolume`: the loudest a sound may play, 0 to 255. `0` means no sound; values
+above 100 play like 100. Without the flag, `maxVolume` from your keys file (`xpilot.maxVolume: 60` in
+`~/.xpilotrc` or the `--keys` file) applies, else 100.
+|kbd:[-] |Mute and unmute while playing (`keyToggleSound`); the message log shows `Sound off.` / `Sound on.`
 |===
 
 Details:
@@ -201,6 +277,8 @@ lost them, with a label such as the victim's name, `[Wall]`, `[Shove]` or `[Dead
 Shots:: Shots that cannot hurt you (your team mates' shots when team immunity is on, shots of a
 paused player, your own shots with `selfImmunity`) are drawn in a different colour.
 Talk line (middle):: Opens with kbd:[M] for typing a chat message.
+Key help:: kbd:[F1] shows every key binding over the game, and hides it again.
+Meters (top right):: The fuel gauge, and the power and turn speed meters while you change them.
 
 [[scoring]]
 == Scoring
@@ -265,18 +343,15 @@ milestone M2. On race maps the game currently runs without rounds.
 All multipliers are in <<05-server-options.adoc#opts-scoring,Scoring options>>.
 
 [[items]]
-== Items
+== Items and weapons
 
-NOTE: Items are server rules. When the JXPilot client plays on an original C XPilot server, every
-item works: the C server handles pickup and use, and the client draws the items and sends their keys.
-The JXPilot (Java) server does not have items yet; they are being added (milestone M2). The "Works on" column
-shows both.
+Items work on the JXPilot server and on original XPilot servers alike; the rules are XPilot's.
 
 Items float around the map (more around item concentrators, the `%` map symbol); fly over one to pick
 it up. On the map an item is a blue triangle with the item's symbol inside it, as in the "In play"
-column; the HUD shows the symbols of the items you carry. These are XPilot's 21 items. The pictures
-are drawn from the same bitmaps the client uses (ported from the XPilot client), and the descriptions
-are the XPilot client's own.
+column; the HUD shows the symbols of the items you carry, with their counts. These are XPilot's 21
+items. The pictures are drawn from the same bitmaps the client uses (ported from the XPilot client),
+and the descriptions are the XPilot client's own.
 
 ifdef::env-github[]
 On GitHub, see link:generated/items.adoc[generated/items.adoc] for the table with the pictures.
@@ -285,4 +360,119 @@ endif::[]
 include::generated/items.adoc[]
 
 How often each item appears, how many you start with and how many you may carry are server options
-(<<05-server-options.adoc#opts-items,Items and fuel>>).
+(<<05-server-options.adoc#opts-items,Items and fuel>>). The keys below are JXPilot's defaults
+(<<all-keys,All keys>>); the descriptions follow the XPilot manual.
+
+[[dropping-items]]
+=== Dropping items
+
+kbd:[Keypad 0] (or keypad kbd:[Insert]) selects, press by press, which item to drop; keypad
+kbd:[Delete] (or keypad kbd:[.]) drops it. Depending on the server (`loseItemDestroys`) the item is
+destroyed or falls back into the map. Tanks cannot be dropped this way; they are detached
+(<<tanks>>). When you are killed you may drop some of your items (`dropItemOnKillProb`).
+
+[[weapons]]
+=== Weapons
+
+Shots:: kbd:[Enter] fires your cannon. *Wide-angle shot* items add two extra front cannons, *rear
+shot* items an extra rear cannon.
+Missiles:: A *rocket pack* can be fired three ways. kbd:[ \ ] fires a *smart missile*, which homes on
+the player you have locked on (it needs a lock). kbd:[;] fires a *heat seeker*: faster, it homes on
+engine heat, and ECM cannot confuse it; a detached tank fools it. kbd:[ ' ] fires a *torpedo*, very fast
+and without guidance, straight ahead.
+Mines:: kbd:[Tab] drops a stationary *mine*, kbd:[ \] ] throws a moving one (a bomb). Mines explode when
+an enemy comes close; they spare you and your team. Your own and your team's mines look hollow, others
+filled; an ECM can reprogram a mine, so a hollow mine is not always safe. kbd:[=] detonates the
+closest mine you dropped.
+Laser:: kbd:[/] fires a short-range laser beam in the direction you point: instant and deadly, but
+expensive in fuel. More laser items give more range and a faster repeat. Enemy ECMs can destroy your
+lasers.
+Nuclear and cluster weapons:: If the server allows them (`allowNukes`, `allowClusters`; the bundled
+`lib/defaults` turns both off), kbd:[N] makes your next missiles or mines nuclear: `N` takes eight
+missiles or four mines for one weapon, `FN` (press again) uses your whole stock. kbd:[C] makes them
+cluster weapons, which burst into a shower of deadly shots instead of debris: careful, the shots can
+kill you too.
+
+[[modifiers]]
+=== Weapon modifiers
+
+When the server allows modifiers (`allowModifiers`, on in `lib/defaults`), these keys change how your
+missiles, mines and lasers behave. The current modifiers show at the bottom left of the HUD.
+
+[cols="1,1,5",options="header"]
+|===
+|Key |HUD |Effect
+|kbd:[N] |`N`, `FN` |Nuclear: limited, then full (needs `allowNukes`)
+|kbd:[C] |`C` |Cluster (needs `allowClusters`)
+|kbd:[I] |`I` |Implosion: explosions pull instead of push
+|kbd:[V] |`V1`-`V3` |Slower explosion fragments (for nuclear and cluster weapons)
+|kbd:[X] |`X2`-`X4` |Fire that many miniature missiles or mines at once, sharing the damage and cost
+|kbd:[Z] |`Z1`-`Z3` |Narrower spread of miniature weapons and of wide-angle and rear shots
+|kbd:[B] |`B1`-`B3` |Weaker tractor beams; missiles with stronger engines but smaller warheads
+|kbd:[L] |`LS`, `LB` |Laser that stuns or blinds instead of killing (needs `allowLaserModifiers`)
+|kbd:[K] | |Clear all modifiers
+|kbd:[1]-kbd:[4] | |Load modifier bank 1 to 4
+|===
+
+To store your current modifiers in a bank, press the backtick key `+`+` (`keyReprogram`) and then the bank's key
+kbd:[1]-kbd:[4]. In JXPilot the banks start empty; the XPilot client loads them from its
+`modifierBank` resources.
+
+[[locks]]
+=== Locking on
+
+Smart missiles, tractor beams and the ECM's missile retargeting need a lock on a player. The locked
+player is drawn filled, and the HUD shows their name, distance and direction
+(<<gallery.adoc#on-screen-hud,The HUD>>).
+
+[cols="2,4",options="header"]
+|===
+|Key |Locks on
+|kbd:[Page Down] (or kbd:[→]) |the next player
+|kbd:[Page Up] (or kbd:[←]) |the previous player
+|kbd:[↑] (or kbd:[Select]) |the closest player, if within range
+|kbd:[↓] |the next closest player
+|kbd:[5]-kbd:[8] |the player stored in lock bank 1 to 4 (store one with the backtick key `+`+`, then the bank key)
+|===
+
+With `lockOtherTeam` off, you can only lock on your own team. With `allowViewing`, a paused or
+waiting player sees the game through the locked player's eyes.
+
+[[tanks]]
+=== Tanks
+
+Each *tank* item adds a fuel tank: more fuel capacity and quicker refuelling, but more weight.
+kbd:[E] and kbd:[W] choose the active tank (the one fuel is used from); kbd:[R] detaches the active
+tank (or the last extra tank). A detached tank looks like your ship, carries your name, thrusts away and
+draws heat seekers after it.
+
+[[devices]]
+=== Devices
+
+[cols="2,1,5",options="header"]
+|===
+|Item |Key |Use
+|Cloaking device |kbd:[Delete] or kbd:[Backspace] |Toggle invisibility, on screen and on radar. It
+costs fuel; your exhaust stays visible, and getting hit, bouncing into a player or passing a wormhole
+shows you for a while.
+|Sensor |- |See cloaked players; more sensors see them better.
+|Afterburner |- |A stronger and more fuel-efficient engine.
+|Emergency thrust |kbd:[J] |Toggle a burst of full-power thrust; the time is used only while you
+thrust, and the rest is kept for later.
+|Autopilot |kbd:[H] |Toggle hovering: the ship brakes to a stop and holds still (unless gravity is too
+strong). Useful next to a fuel station.
+|Emergency shield |kbd:[G] |Toggle extra shield power: while your shield is up, nothing costs you fuel
+and walls cannot kill you. The time is used only while the shield is up.
+|Deflector |kbd:[O] |Toggle a field that pushes hostile objects away from your ship.
+|Phasing device |kbd:[P] |Fly through anything, walls included, for a short time.
+|Hyperjump |kbd:[Q] |Teleport to a random place on the map.
+|Transporter |kbd:[T] |Steal an item or fuel from the closest player within range.
+|Tractor beam |kbd:[,] (pull), kbd:[.] (push) |Pull the locked player towards you, or push them away
+(pressor beam). The force is mutual: a lighter ship moves more.
+|ECM |kbd:[[] |An electronic pulse: nearby smart missiles get confused and then go after the player you
+had locked; nearby mines explode, go blind for a while, or (the closest) are reprogrammed to spare you;
+nearby ships' sensors freeze, cloaked ships show, and their lasers may be destroyed.
+|Mirror |- |Reflects laser beams.
+|Armor |- |Absorbs a hit when your shield is down.
+|===
+

@@ -24,6 +24,7 @@ The client has three modes:
 java -jar jxpilot-client-VERSION.jar --connect HOST[:PORT] [GAME FLAGS]   # join a server
 java -jar jxpilot-client-VERSION.jar --local --map MAP [GAME FLAGS]       # play on a server of your own
 java -jar jxpilot-client-VERSION.jar --view-map MAP [VIEWER FLAGS]        # look at a map
+java -jar jxpilot-client-VERSION.jar --list-keys [--keys FILE]            # print the key bindings
 java -jar jxpilot-client-VERSION.jar --list-maps                          # print the built-in maps
 ----
 
@@ -120,11 +121,16 @@ personalities>>). The server uses it if it allows ship shapes.
 
 |`--sound`, `--no-sound`
 |sound on
-|Play sound effects or not (XPilot's `sound` resource; <<03-playing.adoc#sound,Sound>>).
+|Play sound effects or not (JXPilot only; <<03-playing.adoc#sound,Sound>>).
 
 |`--volume N`
-|`100`
+|`maxVolume` from the keys file, else `100`
 |XPilot's `maxVolume`, 0 to 255: the loudest a sound plays. `0` is no sound; above 100 plays like 100.
+
+|`--keys FILE`
+|`~/.xpilotrc`
+|Key bindings and control settings in XPilot's resource format
+(<<03-playing.adoc#key-bindings,Changing the keys>>). Without the flag, `~/.xpilotrc` is read if it exists.
 
 |`--screenshot FILE.png`, `--frames N`
 |-, 300
@@ -297,7 +303,7 @@ on existing XPilot servers:
 
 [source,shell]
 ----
-java -jar jxpilot-client-VERSION.jar --connect xp://HOST            # or: --connect HOST --protocol xpilot
+java -jar jxpilot-client-VERSION.jar --connect xp://HOST                  # or: --connect HOST --protocol xpilot
 java -jar jxpilot-client-VERSION.jar --connect xp://HOST:15345 --name Ace --team 2
 ----
 

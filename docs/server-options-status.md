@@ -69,7 +69,7 @@ follow C; the alias is the C command-line name.
 | `gravity` |  | real | `-0.14` | ANY+VIS | implemented (MapLoader) |
 | `shipMass` |  | real | `20.0` | ANY+VIS | implemented (Params) |
 | `ballMass` |  | real | `50.0` | ANY+VIS | server-modes (balls/treasures) |
-| `minItemMass` |  | real | `1.0` | ANY+VIS | read (Params); the feature belongs to server-items |
+| `minItemMass` |  | real | `1.0` | ANY+VIS | implemented (server-items) |
 | `shotMass` |  | real | `0.1` | ANY+VIS | implemented (Params) |
 | `shotSpeed` |  | real | `21.0` | ANY+VIS | implemented (Params) |
 | `shotLife` |  | int | `60` | ANY+VIS | implemented (Params) |
@@ -88,11 +88,13 @@ follow C; the alias is the C command-line name.
 | `reserveRobotTeam` |  | bool | `true` | ANY+VIS | implemented (Params) |
 | `robotRealName` |  | string | `robot` | ANY+VIS | used in the logRobots line only (no real names on the wire) |
 | `robotHostName` |  | string | `xpilot.org` | ANY+VIS | unsupported: the native protocol carries no real or host names (C shows them in the player list); robotRealName is only used in the logRobots line |
-| `tankRealName` |  | string | `tank` | ANY+VIS | server-items (fuel tanks detached as pseudo-players); the real/host name part is unsupported like robotRealName/robotHostName |
-| `tankHostName` |  | string | `tanks.org` | ANY+VIS | server-items (fuel tanks detached as pseudo-players); the real/host name part is unsupported like robotRealName/robotHostName |
-| `tankScoreDecrement` | tankDecrement | int | `500` | ANY+VIS | server-items (fuel tanks detached as pseudo-players); the real/host name part is unsupported like robotRealName/robotHostName |
+| `tankRealName` |  | string | `tank` | ANY+VIS | implemented (server-items): tanks are pseudo-players named "NAME's tank"; the real/host name part is unsupported like robotRealName/robotHostName |
+| `tankHostName` |  | string | `tanks.org` | ANY+VIS | implemented (server-items): tanks are pseudo-players named "NAME's tank"; the real/host name part is unsupported like robotRealName/robotHostName |
+| `tankScoreDecrement` | tankDecrement | int | `500` | ANY+VIS | implemented (server-items) |
 | `turnThrust` | turnFuel | bool | `false` | ANY+VIS | implemented (Params) |
 | `selfImmunity` |  | bool | `false` | ANY+VIS | implemented (Params) |
+| `defaultShipShape` |  | string | `(NM:Default)...` | ANY+VIS | not implemented: a player or robot without a valid shape gets the built-in standard ship, which is also this option's default |
+| `tankShipShape` |  | string | `(NM:fueltank)...` | ANY+VIS | server-items (fuel tanks detached as pseudo-players) |
 | `maxPlayerShots` | shots | int | `256` | ANY+VIS | implemented (Params) |
 | `shotsGravity` |  | bool | `true` | ANY+VIS | implemented (Params) |
 | `idleRun` | rawMode | bool | `false` | CMD+DEF+VIS | implemented (rawMode) |
@@ -123,14 +125,14 @@ follow C; the alias is the C command-line name.
 | `ballsWallBounce` |  | bool | `yes` | ANY+VIS | read (Params); the feature belongs to server-modes (balls) |
 | `ballCollisions` |  | bool | `no` | ANY+VIS | server-modes (balls/treasures) |
 | `ballSparkCollisions` |  | bool | `yes` | ANY+VIS | server-modes (balls/treasures) |
-| `minesWallBounce` |  | bool | `no` | ANY+VIS | read (Params); the feature belongs to server-items |
-| `itemsWallBounce` |  | bool | `yes` | ANY+VIS | read (Params); the feature belongs to server-items |
-| `missilesWallBounce` |  | bool | `no` | ANY+VIS | read (Params); the feature belongs to server-items |
+| `minesWallBounce` |  | bool | `no` | ANY+VIS | implemented (server-items) |
+| `itemsWallBounce` |  | bool | `yes` | ANY+VIS | implemented (server-items) |
+| `missilesWallBounce` |  | bool | `no` | ANY+VIS | implemented (server-items) |
 | `sparksWallBounce` |  | bool | `no` | ANY+VIS | implemented (Params) |
 | `debrisWallBounce` |  | bool | `no` | ANY+VIS | implemented (Params) |
 | `asteroidsWallBounce` |  | bool | `yes` | ANY+VIS | read (Params); the feature belongs to server-modes (asteroids) |
-| `cloakedExhaust` |  | bool | `yes` | ANY+VIS | read (Params); the feature belongs to server-items |
-| `cloakedShield` |  | bool | `yes` | ANY+VIS | read by the robot AI only; the feature belongs to server-items |
+| `cloakedExhaust` |  | bool | `yes` | ANY+VIS | implemented (server-items) |
+| `cloakedShield` |  | bool | `yes` | ANY+VIS | implemented (server-items) |
 | `maxObjectWallBounceSpeed` | maxObjectBounceSpeed | real | `40` | ANY+VIS | implemented (Params) |
 | `maxShieldedWallBounceSpeed` | maxShieldedBounceSpeed | real | `50` | ANY+VIS | implemented (Params) |
 | `maxUnshieldedWallBounceSpeed` | maxUnshieldedBounceSpeed | real | `20` | ANY+VIS | implemented (Params) |
@@ -140,14 +142,14 @@ follow C; the alias is the C command-line name.
 | `objectWallBounceBrakeFactor` | objectWallBrake | real | `0.95` | ANY+VIS | implemented (Params) |
 | `objectWallBounceLifeFactor` |  | real | `0.80` | ANY+VIS | implemented (Params) |
 | `wallBounceFuelDrainMult` | wallBounceDrain | real | `1.0` | ANY+VIS | implemented (Params) |
-| `wallBounceDestroyItemProb` |  | real | `0.0` | ANY+VIS | server-items (items) |
+| `wallBounceDestroyItemProb` |  | real | `0.0` | ANY+VIS | implemented (server-items) |
 | `reportToMetaServer` | reportMeta | bool | `yes` | CMD+DEF+VIS | unsupported: no meta server speaks the JXPilot protocol |
 | `searchDomainForXPilot` |  | bool | `no` | CMD+DEF+VIS | unsupported: no meta server speaks the JXPilot protocol |
 | `denyHosts` |  | string | `` | CMD+DEF+VIS | implemented (server-batch2): CONNECTs from those addresses/networks are ignored (contact.c) |
 | `maxClientsPerIP` | maxPerIP | int | `4` | CMD+DEF+VIS | implemented (ServerNetConfig) |
-| `limitedVisibility` |  | bool | `no` | ANY+VIS | read by the robot AI only; the feature belongs to server-items (sensors/visibility) |
-| `minVisibilityDistance` | minVisibility | real | `0.0` | ANY+VIS | read (Params); the feature belongs to server-items |
-| `maxVisibilityDistance` | maxVisibility | real | `0.0` | ANY+VIS | read (Params); the feature belongs to server-items |
+| `limitedVisibility` |  | bool | `no` | ANY+VIS | implemented (server-items) |
+| `minVisibilityDistance` | minVisibility | real | `0.0` | ANY+VIS | implemented (server-items) |
+| `maxVisibilityDistance` | maxVisibility | real | `0.0` | ANY+VIS | implemented (server-items) |
 | `limitedLives` |  | bool | `no` | ANY+VIS | implemented (Params) |
 | `worldLives` | lives | int | `0` | ANY+VIS | implemented (Params) |
 | `reset` |  | bool | `yes` | ANY+VIS | implemented (Params) |
@@ -158,16 +160,16 @@ follow C; the alias is the C command-line name.
 | `teamFuel` |  | bool | `no` | ANY+VIS | implemented (Params) |
 | `teamCannons` |  | bool | `no` | ANY+VIS | implemented (Params, MapLoader) |
 | `cannonSmartness` |  | int | `1` | ANY+VIS | implemented (Params) |
-| `cannonsUseItems` | cannonsPickupItems | bool | `no` | ANY+VIS | read (Params); the feature belongs to server-items |
-| `cannonsDefend` |  | bool | `yes` | ANY+VIS | server-items (weapons) |
+| `cannonsUseItems` | cannonsPickupItems | bool | `no` | ANY+VIS | implemented (server-items) |
+| `cannonsDefend` |  | bool | `yes` | ANY+VIS | implemented (server-items) |
 | `cannonFlak` | cannonAAA | bool | `yes` | ANY+VIS | implemented (Params) |
 | `cannonDeadTime` |  | sec | `72` | ANY+VIS | implemented (Params) |
 | `keepShots` |  | bool | `no` | ANY+VIS | implemented (Params) |
 | `teamAssign` |  | bool | `yes` | ANY+VIS | implemented (Params) |
 | `teamImmunity` |  | bool | `yes` | ANY+VIS | implemented (Params) |
 | `teamShareScore` |  | bool | `no` | ANY+VIS | implemented (Params) |
-| `ecmsReprogramMines` |  | bool | `yes` | ANY+VIS | server-items (weapons) |
-| `ecmsReprogramRobots` |  | bool | `yes` | ANY+VIS | server-items (weapons) |
+| `ecmsReprogramMines` |  | bool | `yes` | ANY+VIS | implemented (server-items) |
+| `ecmsReprogramRobots` |  | bool | `yes` | ANY+VIS | implemented (server-items) |
 | `targetKillTeam` |  | bool | `no` | ANY+VIS | implemented (Params) |
 | `targetTeamCollision` | targetCollision | bool | `yes` | ANY+VIS | implemented (Params) |
 | `targetSync` |  | bool | `no` | ANY+VIS | implemented (Params) |
@@ -190,6 +192,7 @@ follow C; the alias is the C command-line name.
 | `edgeWrap` |  | bool | `no` | ANY+VIS | implemented (MapLoader) |
 | `edgeBounce` |  | bool | `yes` | ANY+VIS | implemented (Params) |
 | `extraBorder` |  | bool | `no` | ANY+VIS | implemented (MapLoader) |
+| `gravityPoint` |  | position | `0,0` | ANY+VIS | implemented (MapLoader) |
 | `gravityAngle` |  | real | `90` | ANY+VIS | implemented (MapLoader) |
 | `gravityPointSource` |  | bool | `false` | ANY+VIS | implemented (MapLoader) |
 | `gravityClockwise` |  | bool | `false` | ANY+VIS | implemented (MapLoader) |
@@ -206,49 +209,49 @@ follow C; the alias is the C command-line name.
 | `adminMessageFileName` | adminMessage | string | `(none)` | CMD+DEF | implemented (server-batch2): "god:" chat appended to the file (no default file: C uses LIBDIR/log) |
 | `adminMessageFileSizeLimit` | adminMessageLimit | int | `20202` | CMD+DEF | implemented (server-batch2) |
 | `framesPerSecond` | FPS | int | `14` | ANY+VIS | implemented (one tick per C frame) |
-| `allowSmartMissiles` | allowSmarts | bool | `True` | ANY+VIS | read by the robot AI only; the feature belongs to server-items |
-| `allowHeatSeekers` | allowHeats | bool | `True` | ANY+VIS | server-items (weapons) |
-| `allowTorpedoes` | allowTorps | bool | `True` | ANY+VIS | server-items (weapons) |
-| `allowNukes` | nukes | bool | `False` | ANY+VIS | read by the robot AI only; the feature belongs to server-items |
-| `allowClusters` | clusters | bool | `False` | ANY+VIS | read by the robot AI only; the feature belongs to server-items |
-| `allowModifiers` | modifiers | bool | `False` | ANY+VIS | read by the robot AI only; the feature belongs to server-items |
-| `allowLaserModifiers` | lasermodifiers | bool | `False` | ANY+VIS | read by the robot AI only; the feature belongs to server-items |
+| `allowSmartMissiles` | allowSmarts | bool | `True` | ANY+VIS | implemented (server-items) |
+| `allowHeatSeekers` | allowHeats | bool | `True` | ANY+VIS | implemented (server-items) |
+| `allowTorpedoes` | allowTorps | bool | `True` | ANY+VIS | implemented (server-items) |
+| `allowNukes` | nukes | bool | `False` | ANY+VIS | implemented (server-items) |
+| `allowClusters` | clusters | bool | `False` | ANY+VIS | implemented (server-items) |
+| `allowModifiers` | modifiers | bool | `False` | ANY+VIS | implemented (server-items) |
+| `allowLaserModifiers` | lasermodifiers | bool | `False` | ANY+VIS | implemented (server-items) |
 | `allowShipShapes` | ShipShapes | bool | `True` | ANY+VIS | implemented (RobotManager) |
 | `playersOnRadar` | playersRadar | bool | `True` | ANY+VIS | implemented (server-batch2): off hides other teams from the radar (frame.c:1152-1170) |
-| `missilesOnRadar` | missilesRadar | bool | `True` | ANY+VIS | server-items (weapons) |
-| `minesOnRadar` | minesRadar | bool | `False` | ANY+VIS | server-items (weapons) |
-| `nukesOnRadar` | nukesRadar | bool | `True` | ANY+VIS | server-items (weapons) |
+| `missilesOnRadar` | missilesRadar | bool | `True` | ANY+VIS | implemented (server-items) |
+| `minesOnRadar` | minesRadar | bool | `False` | ANY+VIS | implemented (server-items) |
+| `nukesOnRadar` | nukesRadar | bool | `True` | ANY+VIS | implemented (server-items) |
 | `treasuresOnRadar` | treasuresRadar | bool | `False` | ANY+VIS | server-modes (balls/treasures) |
 | `asteroidsOnRadar` | asteroidsRadar | bool | `False` | ANY+VIS | server-modes (asteroids) |
-| `distinguishMissiles` |  | bool | `True` | ANY+VIS | server-items (weapons) |
-| `maxMissilesPerPack` |  | int | `4` | ANY+VIS | server-items (weapons) |
-| `maxMinesPerPack` |  | int | `2` | ANY+VIS | server-items (weapons) |
-| `identifyMines` |  | bool | `True` | ANY+VIS | server-items (weapons) |
-| `shieldedItemPickup` | shieldItem | bool | `False` | ANY+VIS | server-items (items) |
-| `shieldedMining` | shieldMine | bool | `False` | ANY+VIS | server-items (weapons) |
-| `laserIsStunGun` | stunGun | bool | `False` | ANY+VIS | server-items (weapons) |
-| `nukeMinSmarts` |  | int | `7` | ANY+VIS | read by the robot AI only; the feature belongs to server-items |
-| `nukeMinMines` |  | int | `4` | ANY+VIS | read by the robot AI only; the feature belongs to server-items |
+| `distinguishMissiles` |  | bool | `True` | ANY+VIS | implemented (server-items) |
+| `maxMissilesPerPack` |  | int | `4` | ANY+VIS | implemented (server-items) |
+| `maxMinesPerPack` |  | int | `2` | ANY+VIS | implemented (server-items) |
+| `identifyMines` |  | bool | `True` | ANY+VIS | implemented (server-items) |
+| `shieldedItemPickup` | shieldItem | bool | `False` | ANY+VIS | implemented (server-items) |
+| `shieldedMining` | shieldMine | bool | `False` | ANY+VIS | implemented (server-items) |
+| `laserIsStunGun` | stunGun | bool | `False` | ANY+VIS | implemented (server-items) |
+| `nukeMinSmarts` |  | int | `7` | ANY+VIS | implemented (server-items) |
+| `nukeMinMines` |  | int | `4` | ANY+VIS | implemented (server-items) |
 | `nukeClusterDamage` |  | real | `1.0` | ANY+VIS | accepted, no effect: C 4.5.5 declares it but never reads it |
-| `mineFuseTime` |  | sec | `0.0` | ANY+VIS | server-items (weapons) |
-| `mineLife` |  | int | `0` | ANY+VIS | server-items (weapons) |
-| `minMineSpeed` |  | real | `0` | ANY+VIS | server-items (weapons) |
-| `missileLife` |  | int | `0` | ANY+VIS | server-items (weapons) |
-| `baseMineRange` |  | int | `0` | ANY+VIS | server-items (weapons) |
-| `mineShotDetonateDistance` |  | int | `0` | ANY+VIS | server-items (weapons) |
+| `mineFuseTime` |  | sec | `0.0` | ANY+VIS | implemented (server-items) |
+| `mineLife` |  | int | `0` | ANY+VIS | implemented (server-items) |
+| `minMineSpeed` |  | real | `0` | ANY+VIS | implemented (server-items) |
+| `missileLife` |  | int | `0` | ANY+VIS | implemented (server-items) |
+| `baseMineRange` |  | int | `0` | ANY+VIS | implemented (server-items) |
+| `mineShotDetonateDistance` |  | int | `0` | ANY+VIS | implemented (server-items) |
 | `shotKillScoreMult` |  | real | `1.0` | ANY+VIS | implemented (Params) |
-| `torpedoKillScoreMult` |  | real | `1.0` | ANY+VIS | server-items (weapons) |
-| `smartKillScoreMult` |  | real | `1.0` | ANY+VIS | server-items (weapons) |
-| `heatKillScoreMult` |  | real | `1.0` | ANY+VIS | server-items (weapons) |
+| `torpedoKillScoreMult` |  | real | `1.0` | ANY+VIS | implemented (server-items) |
+| `smartKillScoreMult` |  | real | `1.0` | ANY+VIS | implemented (server-items) |
+| `heatKillScoreMult` |  | real | `1.0` | ANY+VIS | implemented (server-items) |
 | `clusterKillScoreMult` |  | real | `1.0` | ANY+VIS | implemented (Params) |
-| `laserKillScoreMult` |  | real | `1.0` | ANY+VIS | server-items (weapons) |
-| `tankKillScoreMult` |  | real | `0.44` | ANY+VIS | read (Params); the feature belongs to server-items |
+| `laserKillScoreMult` |  | real | `1.0` | ANY+VIS | implemented (server-items) |
+| `tankKillScoreMult` |  | real | `0.44` | ANY+VIS | implemented (server-items) |
 | `runoverKillScoreMult` |  | real | `0.33` | ANY+VIS | implemented (Params) |
 | `ballKillScoreMult` |  | real | `1.0` | ANY+VIS | server-modes (balls/treasures) |
 | `explosionKillScoreMult` |  | real | `0.33` | ANY+VIS | implemented (Params) |
 | `shoveKillScoreMult` |  | real | `0.5` | ANY+VIS | implemented (Params) |
 | `crashScoreMult` |  | real | `0.33` | ANY+VIS | implemented (Params) |
-| `mineScoreMult` |  | real | `0.17` | ANY+VIS | server-items (weapons) |
+| `mineScoreMult` |  | real | `0.17` | ANY+VIS | implemented (server-items) |
 | `selfKillScoreMult` |  | real | `0.5` | ANY+VIS | implemented (Params) |
 | `selfDestructScoreMult` |  | real | `0` | ANY+VIS | implemented (Params) |
 | `unownedKillScoreMult` |  | real | `0.5` | ANY+VIS | implemented (Params) |
@@ -256,100 +259,100 @@ follow C; the alias is the C command-line name.
 | `cannonPoints` |  | real | `1.0` | ANY+VIS | implemented (Params) |
 | `asteroidMaxScore` |  | real | `100.0` | ANY+VIS | server-modes (asteroids) |
 | `cannonMaxScore` |  | real | `100.0` | ANY+VIS | implemented (Params) |
-| `movingItemProb` |  | real | `0.2` | ANY+VIS | server-items (items) |
-| `randomItemProb` |  | real | `0.0` | ANY+VIS | server-items (items) |
-| `dropItemOnKillProb` |  | real | `0.5` | ANY+VIS | server-items (items) |
-| `detonateItemOnKillProb` |  | real | `0.5` | ANY+VIS | server-items (items) |
-| `destroyItemInCollisionProb` |  | real | `0.0` | ANY+VIS | server-items (items) |
+| `movingItemProb` |  | real | `0.2` | ANY+VIS | implemented (server-items) |
+| `randomItemProb` |  | real | `0.0` | ANY+VIS | implemented (server-items) |
+| `dropItemOnKillProb` |  | real | `0.5` | ANY+VIS | implemented (server-items) |
+| `detonateItemOnKillProb` |  | real | `0.5` | ANY+VIS | implemented (server-items) |
+| `destroyItemInCollisionProb` |  | real | `0.0` | ANY+VIS | implemented (server-items) |
 | `asteroidItemProb` |  | real | `0.0` | ANY+VIS | server-modes (asteroids) |
 | `asteroidMaxItems` |  | int | `0` | ANY+VIS | server-modes (asteroids) |
-| `itemProbMult` | itemProbFact | real | `1.0` | ANY+VIS | server-items (items) |
-| `cannonItemProbMult` |  | real | `1.0` | ANY+VIS | server-items (items) |
-| `maxItemDensity` |  | real | `0.00012` | ANY+VIS | server-items (items) |
+| `itemProbMult` | itemProbFact | real | `1.0` | ANY+VIS | implemented (server-items) |
+| `cannonItemProbMult` |  | real | `1.0` | ANY+VIS | implemented (server-items) |
+| `maxItemDensity` |  | real | `0.00012` | ANY+VIS | implemented (server-items) |
 | `asteroidProb` |  | real | `5e-7` | ANY+VIS | server-modes (asteroids) |
 | `maxAsteroidDensity` |  | real | `0` | ANY+VIS | server-modes (asteroids) |
-| `itemConcentratorRadius` | itemConcentratorRange | int | `10` | ANY+VIS | server-items (items) |
-| `itemConcentratorProb` |  | real | `1.0` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
+| `itemConcentratorRadius` | itemConcentratorRange | int | `10` | ANY+VIS | implemented (server-items) |
+| `itemConcentratorProb` |  | real | `1.0` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
 | `asteroidConcentratorRadius` | asteroidConcentratorRange | int | `10` | ANY+VIS | server-modes (asteroids) |
 | `asteroidConcentratorProb` |  | real | `1.0` | ANY+VIS | server-modes (asteroids) |
-| `rogueHeatProb` |  | real | `1.0` | ANY+VIS | server-items (weapons) |
-| `rogueMineProb` |  | real | `1.0` | ANY+VIS | server-items (weapons) |
-| `itemEnergyPackProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemTankProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemECMProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemArmorProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemMineProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemMissileProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemCloakProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemSensorProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemWideangleProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemRearshotProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemAfterburnerProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemTransporterProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemMirrorProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemDeflectorProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemHyperJumpProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemPhasingProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemLaserProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemEmergencyThrustProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemTractorBeamProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemAutopilotProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
-| `itemEmergencyShieldProb` |  | real | `1e-9` | ANY+VIS | server-items (item probabilities; lib/defaults sets most of them) |
+| `rogueHeatProb` |  | real | `1.0` | ANY+VIS | implemented (server-items) |
+| `rogueMineProb` |  | real | `1.0` | ANY+VIS | implemented (server-items) |
+| `itemEnergyPackProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemTankProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemECMProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemArmorProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemMineProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemMissileProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemCloakProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemSensorProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemWideangleProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemRearshotProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemAfterburnerProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemTransporterProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemMirrorProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemDeflectorProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemHyperJumpProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemPhasingProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemLaserProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemEmergencyThrustProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemTractorBeamProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemAutopilotProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
+| `itemEmergencyShieldProb` |  | real | `1e-9` | ANY+VIS | implemented (server-items): random item spawn and cannon item probabilities (C Set_world_items) |
 | `initialFuel` |  | int | `1000` | ANY+VIS | implemented (Params) |
-| `initialTanks` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialECMs` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialArmor` | initialArmors | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialMines` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialMissiles` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialCloaks` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialSensors` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialWideangles` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialRearshots` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialAfterburners` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialTransporters` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialMirrors` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialDeflectors` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialHyperJumps` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialPhasings` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialLasers` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialEmergencyThrusts` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialTractorBeams` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialAutopilots` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `initialEmergencyShields` |  | int | `0` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
+| `initialTanks` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialECMs` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialArmor` | initialArmors | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialMines` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialMissiles` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialCloaks` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialSensors` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialWideangles` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialRearshots` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialAfterburners` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialTransporters` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialMirrors` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialDeflectors` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialHyperJumps` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialPhasings` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialLasers` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialEmergencyThrusts` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialTractorBeams` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialAutopilots` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `initialEmergencyShields` |  | int | `0` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
 | `maxFuel` |  | int | `10000` | ANY+VIS | implemented (Params) |
-| `maxTanks` |  | int | `8` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxECMs` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxMines` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxMissiles` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxCloaks` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxSensors` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxWideangles` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxRearshots` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxAfterburners` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxTransporters` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxArmor` | maxArmors | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxMirrors` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxDeflectors` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxPhasings` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxHyperJumps` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxEmergencyThrusts` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxLasers` |  | int | `5` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxTractorBeams` |  | int | `4` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxAutopilots` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `maxEmergencyShields` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
+| `maxTanks` |  | int | `8` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxECMs` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxMines` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxMissiles` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxCloaks` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxSensors` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxWideangles` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxRearshots` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxAfterburners` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxTransporters` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxArmor` | maxArmors | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxMirrors` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxDeflectors` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxPhasings` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxHyperJumps` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxEmergencyThrusts` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxLasers` |  | int | `5` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxTractorBeams` |  | int | `4` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxAutopilots` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
+| `maxEmergencyShields` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
 | `gameDuration` | time | real | `0.0` | ANY+VIS | implemented (Params) |
-| `allowViewing` |  | bool | `false` | ANY+VIS | not implemented, no owner: player locks (event.c Player_lock_*, the LOCK keys) and viewing through a locked player are not ported yet; these options only change those |
+| `allowViewing` |  | bool | `false` | ANY+VIS | implemented (server-items): a paused player with a lock sees through any locked player (Locks.viewOf); the lower snapshot rate for paused players is not ported |
 | `friction` |  | real | `0.0` | ANY+VIS | implemented (Params) |
 | `blockFriction` |  | real | `0.0` | ANY+VIS | implemented (Params) |
 | `blockFrictionVisible` |  | bool | `true` | ANY+VIS | implemented (server-batch2): friction is sent as filled decor, or blank when off |
 | `coriolis` |  | int | `0` | ANY+VIS | implemented (Params) |
 | `checkpointRadius` |  | real | `6.0` | ANY+VIS | server-modes (race) |
 | `raceLaps` |  | int | `3` | ANY+VIS | server-modes (race) |
-| `lockOtherTeam` |  | bool | `true` | ANY+VIS | not implemented, no owner: player locks (event.c Player_lock_*, the LOCK keys) and viewing through a locked player are not ported yet; these options only change those |
-| `loseItemDestroys` |  | bool | `false` | ANY+VIS | server-items (items) |
+| `lockOtherTeam` |  | bool | `true` | ANY+VIS | implemented (server-items): Locks.lockAllowed (C Player_lock_allowed) |
+| `loseItemDestroys` |  | bool | `false` | ANY+VIS | implemented (server-items) |
 | `useWreckage` |  | bool | `true` | ANY+VIS | implemented (server-batch2): ship and cannon explosions leave wreckage (ship.c Make_wreckage), golden-traced against C |
-| `maxOffensiveItems` |  | int | `100` | ANY+VIS | read by the robot AI only; the feature belongs to server-items |
-| `maxDefensiveItems` |  | int | `100` | ANY+VIS | read by the robot AI only; the feature belongs to server-items |
+| `maxOffensiveItems` |  | int | `100` | ANY+VIS | implemented (server-items) |
+| `maxDefensiveItems` |  | int | `100` | ANY+VIS | implemented (server-items) |
 | `roundDelay` | roundDelaySeconds | int | `0` | ANY+VIS | implemented (Params) |
 | `maxRoundTime` |  | int | `0` | ANY+VIS | implemented (Params) |
 | `roundsToPlay` |  | int | `0` | ANY+VIS | implemented (Params) |

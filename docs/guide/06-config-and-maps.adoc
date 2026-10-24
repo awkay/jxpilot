@@ -101,16 +101,20 @@ expand: lowgrav
 [[precedence]]
 == Precedence: which value wins
 
-An option can be set on the command line, in the map file, in the server config file, or not at all
-(the built-in default). From strongest to weakest:
+An option can be set on the command line, in the map file, in the server config file, in the defaults
+file (XPilot's `lib/defaults`, <<04-running-a-server.adoc#defaults-file,The defaults file>>), or not at
+all (the built-in default). The server reads them in XPilot's order: command line, defaults file, config
+file, map. From strongest to weakest:
 
 [cols="1,2,5",options="header"]
 |===
 |Rank |Source |Rule
 |1 |Command line |Always wins. Nothing else can change a command-line value.
-|2 |Map file |Beats the config file and the defaults, unless the config-file value has `\override:`.
-|3 |Config file |Beats the defaults. With `\override:`, also beats the map.
-|4 |Built-in default |Used when nothing else sets the option
+|2 |Map file |Beats the config file and the defaults file, unless their value has `\override:`.
+|3 |Config file |Beats the defaults file (it is read later, as the same kind of source). With
+`\override:`, also beats the map.
+|4 |Defaults file |Beats the built-in default. With `\override:`, also beats the map.
+|5 |Built-in default |Used when nothing else sets the option
 (<<05-server-options.adoc#server-options,defaults>>).
 |===
 

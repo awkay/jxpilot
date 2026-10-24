@@ -13,7 +13,7 @@ endif::[]
 
 The JXPilot server runs the game: the simulation ported from the XPilot server, robots, and the
 network layer that JXPilot clients connect to. It is headless and runs on any system with Java 25.
-Items, balls, targets and races are not on it yet (<<01-introduction.adoc#status,Status>>).
+Balls, targets, races and asteroids are not on it yet (<<01-introduction.adoc#status,Status>>).
 
 [[server-cli]]
 == Command line
@@ -21,8 +21,9 @@ Items, balls, targets and races are not on it yet (<<01-introduction.adoc#status
 [source,shell]
 ----
 java [JVM options] -jar jxpilot-server-VERSION.jar [--map MAP] [--port N] [--bind SELECTOR ...] [--bindWait]
-     [-OPTION VALUE ...] [CONFIGFILE]
+     [--defaults FILE|none] [-OPTION VALUE ...] [CONFIGFILE]
 java -jar jxpilot-server-VERSION.jar --list-maps
+java -jar jxpilot-server-VERSION.jar -help | -version | -dump | -dumpMan | -dumpWindows | -dumpFlags
 ----
 
 `--map MAP`:: The map to serve (here or as `mapFileName` in the config file): the name of a map built
@@ -34,6 +35,9 @@ server plays the built-in `default`, as the C server plays its `default.xp`. See
 `--bind tailscale0 --bind loopback` is the same as `--bind tailscale0,loopback`. See <<binding>>.
 `--bindWait`:: Start even if a `--bind` selector matches no address yet, and bind it when it appears
 (for example when a VPN comes up after the server). See <<bind-wait>>.
+`--defaults FILE|none`:: The defaults file read before the config file and the map: XPilot's
+`lib/defaults` unless you name another file, or none at all (<<defaults-file>>). Option
+`defaultsFileName`.
 `-OPTION VALUE`:: Any server option, by its name or short name, for example `-gravity -0.3`,
 `--maxClientsPerIP 8` or `-FPS 20`. All options are listed in
 <<05-server-options.adoc#server-options,Server configuration reference>>.
@@ -54,12 +58,29 @@ taken as the config file name, which fails to load (the server prints `jxpilot s
 * Text and list values containing spaces need shell quoting: `-mapName "My map"`.
 * A value that does not parse (for example `-port abc`) is reported as an "option warning" at startup
   and the option keeps its default.
-* `-help`, `-version` and `-dump` are in XPilot's option table, but the server does not act on them yet.
+
+[[info-requests]]
+=== Information requests
+
+These print something and exit, as the XPilot server does (one or two dashes):
+
+[cols="2,4",options="header"]
+|===
+|Flag |Prints
+|`-help`, `-h` |Every option with its short name, value type, help text and where it may be set.
+|`-version`, `-v` |`JXPilot server VERSION (a port of XPilot 4.5.5)`.
+|`-dump` |Every option with its built-in default, in config-file format: a starting point for a
+config file.
+|`-dumpMan`, `-dumpWindows` |The same as `-dump` (XPilot's own formats for these are not reproduced).
+|`-dumpFlags` |Every option's allowed sources and visibility.
+|===
 
 [[exit-status]]
 === Exit status and stopping
 
-The server runs until it is stopped with kbd:[Ctrl+C] or `SIGTERM`. It then tells connected players
+The server runs until it is stopped with kbd:[Ctrl+C] or `SIGTERM`, also when every player has left.
+(XPilot's server exits when the last human leaves, unless started with `-noQuit`; matching that is
+being worked on.) It then tells connected players
 it is going away, closes its sockets and exits; as for any Java program, the exit status is then 130
 (after kbd:[Ctrl+C]) or 143 (after `SIGTERM`). It exits with status 1 for bad arguments, a missing or
 unreadable map, or a bind failure (with the reason and a usage line on standard error), and with
@@ -126,11 +147,12 @@ The same option can come from several places. From strongest to weakest:
 
 . the command line;
 . the map file;
-. the config file;
+. your config file;
+. the defaults file, XPilot's `lib/defaults` (<<defaults-file>>);
 . the built-in default.
 
-An `\override:` value in the config file beats the map (`gravity: \override: 0`). Details:
-<<06-config-and-maps.adoc#precedence,Precedence>>.
+An `\override:` value in the config file or the defaults file beats the map
+(`gravity: \override: 0`). Details: <<06-config-and-maps.adoc#precedence,Precedence>>.
 
 [[binding]]
 == Network binding
@@ -280,7 +302,11 @@ and for packets outside a session.
 |`sessionPacketBurst` |800 |Burst size, in packets, for `sessionPacketRate`.
 |`snapshotDivisor` |1 |Send a snapshot every N simulation frames (1 = every frame).
 |`radarDivisor` |3 |Include the radar in every Nth snapshot.
-|`bind` |`all` |See <<binding>>.
+|`denyHosts` |none |Addresses whose connection attempts are ignored, separated by commas, semicolons or
+spaces: an IP address, `address/prefix` (`203.0.113.0/24`, `2001:db8::/32`) or, as in XPilot,
+`address/dotted.mask` (`203.0.113.0/255.255.255.0`). Host names are not resolved.
+|`bind` |`all` |See <<binding>>. Without `--bind`, XPilot's `serverHost` (a host name or address) is
+used as the bind selector.
 |`bindWait` |false |See <<bind-wait>>.
 |===
 
@@ -347,6 +373,44 @@ For operators this means: a client behind a firewall that blocks the replies can
 burst of unanswered connection attempts in a log is harmless. CONNECTs also count against
 `ipPacketRate`.
 
+[[defaults-file]]
+== The defaults file: XPilot's `lib/defaults`
+
+The XPilot server reads a defaults file, `lib/defaults`, at every start, and so does the JXPilot server:
+the jar carries XPilot 4.5.5's file, unmodified. Like XPilot, the server reads its sources in this
+order: the command line, the defaults file, your config file, then the map. The precedence rules above
+then decide: the command line beats everything, the map beats the defaults file, and a defaults or
+config value written with `\override:` beats the map.
+
+What `lib/defaults` changes, compared with the built-in defaults of the option reference:
+
+* `gravity -0.25` (built in: -0.14) and `framesPerSecond 14`;
+* `allowNukes` and `allowClusters` off, `allowModifiers` on;
+* item appearance: `maxItemDensity`, `movingItemProb 0.3` and the individual `item...Prob` values;
+* through `expand: SoftWalls`, wall bounce speeds and angles of 180 (`maxShieldedWallBounceSpeed`,
+  `maxUnshieldedWallBounceSpeed`, `maxShieldedPlayerWallBounceAngle`,
+  `maxUnshieldedPlayerWallBounceAngle`): softer walls.
+
+A map that sets any of these keeps its own value; `default.xp`, for instance, keeps its own bounce
+speeds and its 12 frames per second. The option reference shows the `lib/defaults` values next to the
+built-in ones.
+
+`lib/defaults` also defines three groups of settings you can switch on with `-expand NAME` (or
+`expand: NAME` in your config file):
+
+[cols="2,5",options="header"]
+|===
+|Group |Settings
+|`PrivateSettings` |`idleRun` off, `noQuit` off, no meta server, `contactPort 15000`, `serverHost localhost`
+|`PublicSettings` |`idleRun` on, `noQuit` on, `reportToMetaServer` on
+|`BounceAll` |Everything bounces off walls (shots, balls, mines, items, sparks, debris, asteroids, players),
+with softer bounce limits, and `edgeBounce` on
+|===
+
+`--defaults FILE` reads your own file instead (start from a copy of XPilot's: it is in the source as
+`server/src/main/resources/xpilot/defaults`), and `--defaults none` reads none, so the built-in defaults
+apply. A file you name that cannot be read stops the server with an error.
+
 [[config-files]]
 == Configuration files
 
@@ -371,8 +435,17 @@ maxClientsPerIP: 8
 gravity:         \override: -0.2           # beats the map's own gravity
 ----
 
-XPilot's file options (`defaults`, `passwordFileName`, `motd`, `scoretable`, `adminMessage`) are
-accepted, but the server does not read those files yet. Use the positional config file instead.
+Of XPilot's other file options, `defaults` (`--defaults`) and `adminMessage`
+(<<admin-messages>>) are used; `passwordFileName`, `motd` and `scoretable` are accepted but not read.
+
+[[admin-messages]]
+=== Messages to the operator: `god:`
+
+A player who types a chat line starting with `god:` writes to the operator rather than to the other
+players. As in XPilot, the line is appended to the file named by `adminMessageFileName` (short
+`adminMessage`), with the date, time and player name, if that file already exists and is writable, and
+only while the file stays below `adminMessageFileSizeLimit` bytes (default 20202). Without the option
+the line is dropped.
 
 [[robots]]
 == Robots
@@ -399,7 +472,13 @@ are in the game and a base is free. `0` turns robots off.
 |`restrictRobots` |true |Robots only join `robotTeam`.
 |`reserveRobotTeam` |true |Humans may not join the robot team.
 |`robotFile` |XPilot's robots |A file of robot personalities (below). Command line or config file.
+|`logRobots` |true |Log each robot that joins: `NAME (PLAYERS, robot) starts at startpos BASE.`
 |===
+
+With limited lives, a robot that loses its last life leaves the game and is replaced by a new one
+(outside race and team play, or when its score is too low), instead of waiting out the round. Robots
+react to how they were killed as in XPilot: killed by a weapon or a shove, a robot declares war on its
+killer; when two ships destroy each other in a collision, robots at war with the other stop that war.
 
 The full list, with every robot option, is in <<05-server-options.adoc#opts-robots,Robots>>.
 

@@ -12,4 +12,5 @@ Texts copied from https://github.com/LWJGL/lwjgl3/tree/3.3.6 unless noted.
                                                                modules/lwjgl/openal/openal_soft_license.txt
                        The natives are built from https://github.com/kcat/openal-soft at commit
                        90191edd20bb877c5cbddfdac7ec0fe49ad93727 (the .git files in the natives jars);
-                       that source is the corresponding source of the bundled libopenal.
+                       that source is the corresponding source of the bundled libopenal. Every JXPilot
+                       release attaches it as openal-soft-source-<commit>.tar.gz (NOTICE.txt).

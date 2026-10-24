@@ -180,10 +180,15 @@ The workflow:
 . runs the full build with tests, the license-header check and the generated-docs check, and builds
   the two jars (`mvn -Prelease verify`), then smoke-tests the server jar;
 . zips the maps and builds this guide;
+. checks that the OpenAL Soft natives in the client jar were built from the commit `NOTICE.txt` names,
+  and attaches that commit's source as `openal-soft-source-COMMIT.tar.gz` (the LGPL requires it; after an
+  LWJGL upgrade, update the commit in `release.yml`, `NOTICE.txt` and `META-INF/licenses/lwjgl/README.txt`
+  together);
 . builds a client application with its own Java runtime on macOS (arm64, x64), Linux (x64, arm64) and
   Windows (x64) with `jpackage`;
 . writes `SHA256SUMS.txt` and publishes a GitHub Release with all files and release notes
-  (`.github/release-notes.md` plus GitHub's generated change list). A tag with a suffix, such as
+  (`.github/release-notes/vVERSION.md` if it exists, then `.github/release-notes.md`, then GitHub's
+  generated change list; write the per-version section before tagging). A tag with a suffix, such as
   `v0.3.0-rc1`, makes a pre-release.
 
 The jars and the maps are enough for a release: if an application image fails on one platform, the

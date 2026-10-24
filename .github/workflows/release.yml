@@ -109,6 +109,30 @@ jobs:
           zip -qr "out/jxpilot-maps-$VERSION.zip" "$staging"
           ls -l out
 
+      # LGPL: the client jar bundles OpenAL Soft (LWJGL's lwjgl-openal natives). Every release carries its
+      # corresponding source: the OpenAL Soft tree at the commit the natives were built from. The check fails
+      # the release when the natives' .git stamps (or NOTICE.txt) name another commit, e.g. after an LWJGL
+      # upgrade: then update OPENAL_SOFT_COMMIT, NOTICE.txt and META-INF/licenses/lwjgl/README.txt together.
+      - name: Attach the OpenAL Soft source (LGPL)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          OPENAL_SOFT_COMMIT: 90191edd20bb877c5cbddfdac7ec0fe49ad93727
+        run: |
+          jar="out/jxpilot-client-$VERSION.jar"
+          stamps=$(unzip -Z1 "$jar" | grep -E '^META-INF/.+/org/lwjgl/openal/[^/]+\.git$' || true)
+          [ -n "$stamps" ] || { echo "no OpenAL Soft .git stamps in $jar"; exit 1; }
+          for s in $stamps; do
+            got=$(unzip -p "$jar" "$s" | tr -d '[:space:]')
+            [ "$got" = "$OPENAL_SOFT_COMMIT" ] || { echo "$s: built from $got, expected $OPENAL_SOFT_COMMIT"; exit 1; }
+          done
+          echo "OpenAL Soft natives ($(echo "$stamps" | wc -l) stamps) are from $OPENAL_SOFT_COMMIT"
+          grep -q "$OPENAL_SOFT_COMMIT" dist/src/main/resources/META-INF/NOTICE.txt \
+            || { echo "NOTICE.txt does not name $OPENAL_SOFT_COMMIT"; exit 1; }
+          src="out/openal-soft-source-$OPENAL_SOFT_COMMIT.tar.gz"
+          curl -fsSL --retry 3 -o "$src" "https://github.com/kcat/openal-soft/archive/$OPENAL_SOFT_COMMIT.tar.gz"
+          tar -tzf "$src" | grep -q "^openal-soft-$OPENAL_SOFT_COMMIT/COPYING$"
+          ls -l "$src"
+
       - name: Install Asciidoctor
         run: sudo gem install --no-document asciidoctor -v "$ASCIIDOCTOR_VERSION"
 
@@ -234,7 +258,12 @@ jobs:
         env:
           IMAGES_RESULT: ${{ needs.app-image.result }}
         run: |
-          sed "s/@VERSION@/$VERSION/g" .github/release-notes.md > notes.md
+          # A per-version section (.github/release-notes/vVERSION.md), if there is one, goes first.
+          : > notes.md
+          if [ -f ".github/release-notes/v$VERSION.md" ]; then
+            cat ".github/release-notes/v$VERSION.md" >> notes.md
+          fi
+          sed "s/@VERSION@/$VERSION/g" .github/release-notes.md >> notes.md
           if [ "$IMAGES_RESULT" != success ]; then
             printf '\n> Note: some platform app images failed to build for this release; the jars work everywhere.\n' >> notes.md
           fi
