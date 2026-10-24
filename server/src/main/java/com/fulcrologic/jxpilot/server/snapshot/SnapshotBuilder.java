@@ -86,6 +86,8 @@ public final class SnapshotBuilder {
     /** {@link World#frames} when {@link #hash} was last rebuilt (-1: never). */
     private long hashFrames = -1;
     private final int[] shotList;
+    /** C {@code wormholeVisible}: temporary wormholes are sent. */
+    private final boolean wormholeVisible;
     private final int[] shotVariant;
     private double viewHalfX = DEFAULT_VIEW_HALF;
     private double viewHalfY = DEFAULT_VIEW_HALF;
@@ -119,6 +121,7 @@ public final class SnapshotBuilder {
         this.w = w;
         wr.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
         shotList = new int[w.objects.capacity];
+        wormholeVisible = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.WORMHOLE_VISIBLE);
         shotVariant = new int[w.objects.capacity];
         wrecks = new int[w.objects.capacity];
         visStamp = new int[w.objects.capacity];
@@ -629,23 +632,34 @@ public final class SnapshotBuilder {
         }
     }
 
-    /** BEHAVIOR: every temporary wormhole (few, map-like): its block and type (Wormhole.Type ordinal). */
+    /**
+     * C {@code Frame_map} wormholes (frame.c:611-636): with wormholeVisible, the temporary IN ends in view
+     * (the OUT ends are never sent), as their block and type (Wormhole.Type ordinal).
+     */
     private void writeTempWormholes() {
+        if (!wormholeVisible) {
+            return;
+        }
         com.fulcrologic.jxpilot.server.world.WormTable worms = w.worms;
         for (int i = worms.mapCount; i < worms.count(); i++) {
+            int type = worms.type(i);
+            if (type == com.fulcrologic.jxpilot.server.world.WormTable.OUT
+                || !visible((worms.bx(i) + 0.5) * Const.BLOCK_SZ, (worms.by(i) + 0.5) * Const.BLOCK_SZ, 0)) {
+                continue;
+            }
             if (!need(Section.TEMP_WORMHOLE, 0)) {
                 return;
             }
-            Records.TempWormhole.put(wr, worms.bx(i), worms.by(i), worms.type(i));
+            Records.TempWormhole.put(wr, worms.bx(i), worms.by(i), type);
         }
     }
 
     /**
      * Balls, connectors and asteroids in view (C {@code Frame_shots}, {@code Frame_ships}).
      * <p>
-     * BEHAVIOR: a ball: its handle, team (its treasure's), and the ship it is connected to (or NO_ID); a ship
-     * reaching for a ball (C {@code pl->ball}) shows a connector from the ball to the ship; asteroids with size
-     * and rotation.
+     * BEHAVIOR: a ball: its handle, team (its treasure's), and the ship it is connected to (or NO_ID); a playing
+     * ship (not paused, not game over) reaching for a ball (C {@code pl->ball}) shows a connector from the ball
+     * to the ship when both are in view; asteroids with size and rotation.
      */
     private void writeModeObjects() {
         Objects o = w.objects;
@@ -674,17 +688,19 @@ public final class SnapshotBuilder {
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
             int h = pl.ball;
-            if (h < 0 || !o.isLive(h) || o.type[h] != Obj.BALL || (pl.status & (Obj.PLAYING | Obj.PAUSE)) == 0) {
+            // C Frame_ships (frame.c:1009-1024, 1078-1085): playing ships in view, not paused, not game over
+            if (h < 0 || !o.isLive(h) || o.type[h] != Obj.BALL || (pl.status & Obj.PLAYING) == 0
+                || (pl.status & (Obj.PAUSE | Obj.GAME_OVER)) != 0) {
                 continue;
             }
             double bx = o.cx[h] / (double) Click.CLICK;
             double by = o.cy[h] / (double) Click.CLICK;
-            if (!visible(bx, by, 0) || !wr.inView(pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK)
-                || !need(Section.CONNECTOR, 0)) {
+            double sx = pl.cx / (double) Click.CLICK;
+            double sy = pl.cy / (double) Click.CLICK;
+            if (!visible(bx, by, 0) || !visible(sx, sy, 0) || !need(Section.CONNECTOR, 0)) {
                 continue;
             }
-            Records.Connector.put(wr, bx, by, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK,
-                Records.Connector.KIND_BALL);
+            Records.Connector.put(wr, bx, by, sx, sy, Records.Connector.KIND_BALL);
         }
     }
 

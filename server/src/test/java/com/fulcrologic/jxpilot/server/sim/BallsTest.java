@@ -126,6 +126,7 @@ class BallsTest {
             World w = s.world;
             Objects o = w.objects;
             int h = ballOf(w, 2);
+            o.life[h] = Balls.BALL_LIFE - 5;
             Player p = ship(s, "P", 1, o.px[h] - 100, o.py[h]);
             p.used |= Has.CONNECTOR;
             s.balls.connect(p);
@@ -921,8 +922,10 @@ class BallsTest {
             p.ball = 0;
             p.wormHoleHit = 0;
             p.status |= Obj.WARPING;
+            long joined = o.cellSeq[b];
             s.ships.warp(p);
             assertAll(
+                () -> assertTrue(o.cellSeq[b] > joined, "the ball joins its new cell (Cell_add_object)"),
                 () -> assertEquals(16.5 * 35, p.px, 1, "the ship came out of the other wormhole"),
                 () -> assertEquals(p.px + 40, o.px[b], 1, "the ball keeps its offset"),
                 () -> assertEquals(o.px[b], o.prevX[b], "and its previous position is reset"),

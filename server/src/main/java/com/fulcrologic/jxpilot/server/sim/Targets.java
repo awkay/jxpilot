@@ -106,14 +106,12 @@ public final class Targets {
             if (m.targetDamage[i] >= ModeState.TARGET_DAMAGE) {
                 m.targetDamage[i] = ModeState.TARGET_DAMAGE;
             }
-            m.targetLastChange[i] = w.frames;
         }
     }
 
     private void revive(int i) {
         Target t = w.map.targets().get(i);
         w.map.setBlock(t.bx(), t.by(), BlockType.TARGET);
-        w.modes.targetLastChange[i] = w.frames;
     }
 
     /**
@@ -144,12 +142,14 @@ public final class Targets {
     }
 
     /**
-     * Target repair in the C player loop (update.c, one fuel tank).
+     * Target repair in the C player loop (update.c:995-1028).
      * <p>
      * BEHAVIOR: repair stops when more than 90 px from the target, it is at full strength, dead, or the ship
      * phases.
-     * BEHAVIOR: otherwise, while the ship has more than REFUEL_RATE fuel, the target gains
-     * TARGET_FUEL_REPAIR_PER_FRAME (capped at full) for REFUEL_RATE fuel; with too little fuel repair stops.
+     * BEHAVIOR: otherwise each of the ship's tanks in turn (num_tanks + 1 steps from the current one, which is
+     * restored afterwards): a tank holding more than REFUEL_RATE gives REFUEL_RATE and the target gains
+     * TARGET_FUEL_REPAIR_PER_FRAME (capped at full, which ends the round); a tank with less turns repair off
+     * (later tanks still give).
      */
     public void repair(Player pl) {
         if ((pl.used & Has.REPAIR) == 0) {
@@ -167,16 +167,27 @@ public final class Targets {
             pl.used &= ~Has.REPAIR;
             return;
         }
-        if (pl.fuel > Ships.REFUEL_RATE) {
-            m.targetDamage[i] += fuelRepairPerFrame;
-            m.targetLastChange[i] = w.frames;
-            pl.addFuel(-Ships.REFUEL_RATE);
-            if (m.targetDamage[i] > ModeState.TARGET_DAMAGE) {
-                m.targetDamage[i] = ModeState.TARGET_DAMAGE;
+        // C goes round all num_tanks + 1 tanks from the current one (update.c:1006-1027)
+        int n = pl.numTanks;
+        int ct = pl.currentTank;
+        do {
+            if (pl.tankFuel[pl.currentTank] > Ships.REFUEL_RATE) {
+                m.targetDamage[i] += fuelRepairPerFrame;
+                pl.addFuel(-Ships.REFUEL_RATE);
+                if (m.targetDamage[i] > ModeState.TARGET_DAMAGE) {
+                    m.targetDamage[i] = ModeState.TARGET_DAMAGE;
+                    break;
+                }
+            } else {
+                pl.used &= ~Has.REPAIR;
             }
-        } else {
-            pl.used &= ~Has.REPAIR;
-        }
+            if (pl.currentTank == pl.numTanks) {
+                pl.currentTank = 0;
+            } else {
+                pl.currentTank += 1;
+            }
+        } while (n-- != 0);
+        pl.currentTank = ct;
     }
 
     // ================================================================ hits
@@ -294,7 +305,6 @@ public final class Targets {
             }
             default -> { }
         }
-        m.targetLastChange[target] = w.frames;
         if (m.targetDamage[target] > 0) {
             return;
         }

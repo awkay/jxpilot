@@ -89,6 +89,8 @@ public final class SimGameHost implements GameHost {
     private int lastQueuePosition;
     /** C {@code RawMode} (idleRun; an operator may change it). */
     private boolean rawMode;
+    /** The server log (C {@code xpprintf}), or null. */
+    public java.util.function.Consumer<CharSequence> log;
     /** C motdFileName. */
     private final MotdFile motd;
     /** Viewers whose MOTD goes out with their next event drain (after the initial state). */
@@ -677,7 +679,7 @@ public final class SimGameHost implements GameHost {
      * BEHAVIOR: a connected human the sim removed during the tick (maxPauseTime) is kicked.
      * BEHAVIOR: first the shutdown countdown after a gameDuration game over (C Main_loop): once it ran out
      * nothing else happens and {@link #shutdownDue} is true. The first running tick with a human starts the
-     * gameDuration clock.
+     * gameDuration clock and logs "DD Mon HH:MM:SS Server will stop in N minutes." (C server.c:265).
      */
     @Override
     public void tick(int tick) {
@@ -701,10 +703,29 @@ public final class SimGameHost implements GameHost {
             return;
         }
         applyQueuedInput();
-        sim.rounds.startGameDuration(humans > 0);
+        if (sim.rounds.startGameDuration(humans > 0) && log != null) {
+            // C server.c:265, once per game
+            log.accept(AdminLog.showtime(java.time.ZonedDateTime.now()) + " Server will stop in "
+                + formatG(w.gameDuration) + " minutes.");
+        }
         long from = w.events.seq();
         sim.tick(tick, keysBySlot);
         kickRemoved(from);
+    }
+
+    /**
+     * C {@code printf("%g")} of a positive number: 6 significant digits without trailing zeros, in exponent
+     * form ({@code 1.5e+07}) when the exponent is below -4 or at least 6.
+     */
+    static String formatG(double v) {
+        java.math.BigDecimal d = new java.math.BigDecimal(v).round(new java.math.MathContext(6));
+        int exp = d.precision() - d.scale() - 1;
+        if (exp < -4 || exp >= 6) {
+            String m = d.movePointLeft(exp).stripTrailingZeros().toPlainString();
+            return m + "e" + (exp < 0 ? "-" : "+") + (Math.abs(exp) < 10 ? "0" : "") + Math.abs(exp);
+        }
+        String s = d.stripTrailingZeros().toPlainString();
+        return s;
     }
 
     /** BEHAVIOR: true once the shutdown countdown after a gameDuration game over has run out (C End_game). */

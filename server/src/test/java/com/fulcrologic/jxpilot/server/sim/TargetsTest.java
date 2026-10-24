@@ -191,6 +191,7 @@ class TargetsTest {
             p.used &= ~Has.PHASING_DEVICE;
             p.used |= Has.REPAIR;
             p.fuel = 5 * 256;
+            p.tankFuel[0] = p.fuel; // the main tank holds it all (no extra tanks)
             s.targets.repair(p);
             states[4] = p.used & Has.REPAIR;
             assertAll(

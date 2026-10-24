@@ -72,6 +72,8 @@ public final class SimGameHostFactory implements GameHostFactory {
         if (robotFile != null && !robotFile.isEmpty()) {
             sim.robots.setRoster(RobotRoster.load(Path.of(robotFile)));
         }
-        return new SimGameHost(sim);
+        SimGameHost host = new SimGameHost(sim);
+        host.log = log;
+        return host;
     }
 }

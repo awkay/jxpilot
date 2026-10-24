@@ -452,11 +452,14 @@ final class CReplay {
     }
 
     /**
-     * Give the particles Java made for each burst of this tick C's own particles (play.c:204-240 with C's draws):
-     * position, velocity, mass and life. Java expands bursts from its own seed by design (clients replay them); in
-     * a golden replay they must be C's, or C's debris would push ships differently. Java's particles of a burst
-     * are the new objects of its type and owner at its origin, in allocation order (the last one may have been
-     * moved into the slot of the object whose death made the burst, as C moves it too).
+     * Put the particles Java made for each burst of this tick in C's object slots. Replaying, Java already makes
+     * C's own particles (Debris.cParticles with C's draws); but a trace compacted without the thrust exhaust's
+     * particle draws (compact-rand.sh) gives Java's exhaust other lives, its sparks die at other times and the pool
+     * order (C's Obj[] swaps) drifts from C's, which changes the order in which particles later hit a ship. The
+     * particles' C states (play.c:204-240 from the trace's draws) are given to Java's particles in C's slot order;
+     * with the exhaust's draws in the trace this changes nothing. Java's particles of a burst are the new objects
+     * of its type and owner at its origin, in allocation order (the last one may have been moved into the slot
+     * of the object whose death made the burst, as C moves it too).
      *
      * @return problems found (Java particles not found, C draws missing)
      */
@@ -473,23 +476,18 @@ final class CReplay {
             int owner;
             int ocx;
             int ocy;
+            // replaying, Java makes C's own particles at C's origin (Debris.cParticles)
+            ocx = com.fulcrologic.jxpilot.server.world.Click.fromPixels(c.x());
+            ocy = com.fulcrologic.jxpilot.server.world.Click.fromPixels(c.y());
             if (c.flak()) {
-                // flak fragments are shots, not a recorded burst: Java made them at the wire-rounded origin too
+                // flak fragments are shots, not a recorded burst
                 owner = c.q().id();
-                ocx = com.fulcrologic.jxpilot.server.world.Click.fromPixels(
-                    com.fulcrologic.jxpilot.common.math.ThrustSparks.wirePos(c.x()));
-                ocy = com.fulcrologic.jxpilot.server.world.Click.fromPixels(
-                    com.fulcrologic.jxpilot.common.math.ThrustSparks.wirePos(c.y()));
             } else {
                 if (seq >= e.burstSeq()) {
                     bad.add("particles: no Java burst for " + c.key());
                     break;
                 }
-                int ei = Events.burstIndex(seq++);
-                DebrisBurst jb = e.burst[ei];
-                owner = e.burstOwner[ei];
-                ocx = com.fulcrologic.jxpilot.server.world.Click.fromPixels(jb.x);
-                ocy = com.fulcrologic.jxpilot.server.world.Click.fromPixels(jb.y);
+                owner = e.burstOwner[Events.burstIndex(seq++)];
             }
             List<Integer> idx = new ArrayList<>();
             for (int k = 0; k < o.count(); k++) {

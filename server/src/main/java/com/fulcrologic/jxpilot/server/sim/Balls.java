@@ -379,9 +379,10 @@ public final class Balls implements Segment.TreasureHook, Ecm.BallDetacher {
         return false;
     }
 
-    /** C's "skip" test of Punish_team and Object_hits_target: tanks (none here), counted-out pause, waiting 0. */
+    /** C's "skip" test of Punish_team and Object_hits_target: tanks, counted-out pause, waiting with no score. */
     static boolean ignored(Player p) {
-        return ((p.status & Obj.PAUSE) != 0 && p.count <= 0)
+        return p.tank
+            || ((p.status & Obj.PAUSE) != 0 && p.count <= 0)
             || ((p.status & Obj.GAME_OVER) != 0 && p.mychar == 'W' && p.score == 0);
     }
 

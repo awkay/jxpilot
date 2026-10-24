@@ -1,0 +1,32 @@
+# JXPilot golden-trace map (GPL-2.0-or-later, see LICENSE): an asteroid
+# concentrator above the only base, so asteroids appear near an idle ship.
+mapName: asteroid-ram
+mapAuthor: JXPilot
+mapWidth: 16
+mapHeight: 14
+edgeWrap: no
+maxAsteroidDensity: 0.05
+asteroidProb: 0.001
+asteroidConcentratorProb: 1.0
+asteroidConcentratorRadius: 1
+# the C server also reads lib/defaults: pin what it sets there
+gravity: -0.25
+maxItemDensity: 0
+movingItemProb: 0
+framesPerSecond: 14
+mapData: \multiline: EndOfMapdata
+xxxxxxxxxxxxxxxx
+x              x
+x              x
+x              x
+x       &      x
+x              x
+x              x
+x              x
+x              x
+x              x
+x              x
+x              x
+x   *   _      x
+xxxxxxxxxxxxxxxx
+EndOfMapdata
