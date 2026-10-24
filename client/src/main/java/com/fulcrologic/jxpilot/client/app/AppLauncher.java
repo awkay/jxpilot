@@ -115,7 +115,9 @@ public final class AppLauncher {
         GameConnection conn;
         try {
             conn = GameConnector.open(target, o.bind(), game, name(o, keys), team(o, keys), shape,
-                o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime());
+                o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime(), GameConnector.environmentIdentity(
+                    keys.options().text(ClientOption.USER), keys.options().text(ClientOption.HOST),
+                    keys.options().text(ClientOption.DISPLAY)));
         } catch (IOException e) {
             // C xpilot.c: an unknown host or a socket that cannot open is an error message and exit 1
             System.err.println("Cannot connect to " + target + ": " + e.getMessage());

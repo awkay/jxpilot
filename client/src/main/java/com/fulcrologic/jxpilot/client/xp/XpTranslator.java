@@ -572,8 +572,14 @@ public final class XpTranslator {
      * with size 1..2, 4..7) are flagged ASTEROID. The own ship is added with FLAG_SELF when visible,
      * as the C client does in {@code Handle_ship}.
      */
+    /**
+     * BEHAVIOR: the server's blips; the own ship as the SELF blip when it is in the frame; otherwise (C
+     * {@code Handle_ship}, {@code !selfVisible}) the first ship exactly at the view centre, the one being watched,
+     * as a plain player blip (C size 3).
+     */
     private void writeRadar(XpFrame f, int selfShip) {
-        if (f.radar == 0 && selfShip < 0 || !w.beginSection(Section.RADAR)) {
+        int eyesShip = selfShip < 0 && f.hasSelf ? centreShip(f) : -1;
+        if (f.radar == 0 && selfShip < 0 && eyesShip < 0 || !w.beginSection(Section.RADAR)) {
             return;
         }
         for (int k = 0; k < f.radar; k++) {
@@ -581,8 +587,20 @@ public final class XpTranslator {
         }
         if (selfShip >= 0) {
             Records.Radar.put(w, wrapX(f.shipX[selfShip]), wrapY(f.shipY[selfShip]), Records.Radar.FLAG_SELF);
+        } else if (eyesShip >= 0) {
+            Records.Radar.put(w, wrapX(f.shipX[eyesShip]), wrapY(f.shipY[eyesShip]), radarFlags(3));
         }
         w.endSection();
+    }
+
+    /** BEHAVIOR: the first ship at exactly the SELF position (C {@code x == pos.x && y == pos.y}), -1 when none. */
+    static int centreShip(XpFrame f) {
+        for (int i = 0; i < f.ships; i++) {
+            if (f.shipX[i] == f.selfX && f.shipY[i] == f.selfY) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     static int radarFlags(int size) {

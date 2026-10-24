@@ -175,6 +175,20 @@ class XpTranslatorEdgeTest {
     }
 
     @Test
+    void aWatchedShipAtTheCentreGetsAPlayerBlip() {
+        // C Handle_ship: !selfVisible and a ship exactly at the SELF position (spectating): Handle_radar(.., 3)
+        List<String> watching = frame(c(1).self(1750, 1750).ship(1000, 1000, 7, 0).ship(1750, 1750, 8, 0).end(1));
+        List<String> offCentre = frame(c(2).self(1750, 1750).ship(1751, 1750, 8, 0).end(2));
+        List<String> selfToo = frame(c(3).self(1750, 1750).ship(1750, 1750, 8, 0).ship(1750, 1750, 3, 0).end(3));
+        assertAll(
+            () -> assertEquals(List.of("RADAR cell=128,128 flags=0"), SnapDump.only(watching, "RADAR"),
+                "the centre ship (8), not ship 7, as a plain player blip"),
+            () -> assertEquals(List.of(), SnapDump.only(offCentre, "RADAR"), "one pixel off: none"),
+            () -> assertEquals(List.of("RADAR cell=128,128 flags=" + Records.Radar.FLAG_SELF),
+                SnapDump.only(selfToo, "RADAR"), "the own ship in the frame wins"));
+    }
+
+    @Test
     void nonWrappingMapsKeepPositionsOutsideTheWorld() {
         XpMap.Built flat = XpMap.build(XpMapTest.setupFor(XpTranslatorTest.rows(), 0, 12, "Flat", true));
         tr.configure(flat, 0, XpProto.MY_VERSION);
