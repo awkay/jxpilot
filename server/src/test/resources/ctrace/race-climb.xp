@@ -1,0 +1,47 @@
+# JXPilot golden-trace map (GPL-2.0-or-later, see LICENSE): a vertical race
+# track, base at the bottom, checkpoint A just above it and B high up.
+mapName: race-climb
+mapAuthor: JXPilot
+mapWidth: 8
+mapHeight: 30
+edgeWrap: no
+timing: yes
+raceLaps: 3
+checkpointRadius: 3
+# the C server also reads lib/defaults: pin what it sets there
+gravity: -0.25
+maxItemDensity: 0
+movingItemProb: 0
+framesPerSecond: 14
+mapData: \multiline: EndOfMapdata
+xxxxxxxx
+x      x
+x      x
+x      x
+x      x
+x      x
+x      x
+x      x
+x      x
+x  B   x
+x      x
+x      x
+x      x
+x      x
+x      x
+x      x
+x      x
+x      x
+x      x
+x      x
+x      x
+x      x
+x      x
+x      x
+x      x
+x      x
+x  A   x
+x      x
+x  _   x
+xxxxxxxx
+EndOfMapdata

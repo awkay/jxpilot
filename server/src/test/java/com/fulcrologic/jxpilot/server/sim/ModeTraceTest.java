@@ -186,4 +186,18 @@ class ModeTraceTest {
             () -> assertTrue(t.frames.stream().anyMatch(f -> f.objs.get(0).id() == 1), "(the ball gets connected)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }
+
+    @Test
+    @DisplayName("race: pass A at the start, climb through B, fall back through A completing lap 1: bit-identical")
+    void raceClimb() throws Exception {
+        ModeTrace t = ModeTrace.load("race-climb.txt");
+        Simulation s = resourceMap("race-climb.xp", 1);
+        Result r = replay(s, t);
+        ModeTrace.Pl2 last = t.frames.get(t.frames.size() - 1).players.get(0);
+        assertAll(
+            () -> assertEquals(213, r.frames(), "213 C frames are compared"),
+            () -> assertEquals(2, last.round(), "(C completed lap 1)"),
+            () -> assertEquals(171, last.bestLap(), "(in 171 frames)"),
+            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
+    }
 }
