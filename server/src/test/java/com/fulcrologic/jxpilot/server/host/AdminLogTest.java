@@ -76,14 +76,14 @@ class AdminLogTest {
     void limits() throws IOException {
         Path f = Files.writeString(dir.resolve("log"), "x".repeat(100));
         assertAll(
-            () -> assertFalse(log(null, 20202).log("A", "hi"), "no file name"),
-            () -> assertFalse(log(dir.resolve("missing"), 20202).log("A", "hi"), "the file must already exist"),
-            () -> assertFalse(log(dir, 20202).log("A", "hi"), "a directory is no log file"),
-            () -> assertFalse(log(f, 0).log("A", "hi"), "limit 0"),
-            () -> assertFalse(log(f, 180).log("A", "hi"), "size + 80 = 180 is not below 180"),
-            () -> assertFalse(log(f, 183).log("A", "abc"), "room 3 does not exceed the length 3"),
+            () -> assertFalse(log(null, 20202).log("A", "god:hi", 4), "no file name"),
+            () -> assertFalse(log(dir.resolve("missing"), 20202).log("A", "god:hi", 4), "the file must already exist"),
+            () -> assertFalse(log(dir, 20202).log("A", "god:hi", 4), "a directory is no log file"),
+            () -> assertFalse(log(f, 0).log("A", "god:hi", 4), "limit 0"),
+            () -> assertFalse(log(f, 180).log("A", "god:hi", 4), "size + 80 = 180 is not below 180"),
+            () -> assertFalse(log(f, 183).log("A", "god:abc", 4), "room 3 does not exceed the length 3"),
             () -> assertEquals(100, Files.size(f), "untouched"),
-            () -> assertTrue(log(f, 184).log("A", "abc"), "room 4 > 3: written"));
+            () -> assertTrue(log(f, 184).log("A", "god:abc", 4), "room 4 > 3: written"));
     }
 
     @Test

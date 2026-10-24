@@ -71,7 +71,9 @@ public final class RobotManager {
     int numRobots;
 
     /** Server log for C's {@code logRobots} lines (robot.c:835-837); null logs nothing. */
-    public java.util.function.Consumer<String> log;
+    public java.util.function.Consumer<CharSequence> log;
+    /** The log line, reused (robots join during play: no allocation here). */
+    private final StringBuilder logLine = new StringBuilder(80);
     final boolean logRobots;
     final String robotRealName;
 
@@ -561,7 +563,10 @@ public final class RobotManager {
         numRobots++;
         talk.says(RobotTalk.ENTER, pl.name, null);
         if (logRobots && log != null) {
-            log.accept(pl.name + " (" + w.numPlayers + ", " + robotRealName + ") starts at startpos " + pl.homeBase + ".");
+            logLine.setLength(0);
+            logLine.append(pl.name).append(" (").append(w.numPlayers).append(", ").append(robotRealName)
+                .append(") starts at startpos ").append(pl.homeBase).append('.');
+            log.accept(logLine);
         }
         sim.rounds.robotEntered();
         w.events.add(Events.THRUST, pl.id, pl.afterburners(), 0, (float) pl.power);

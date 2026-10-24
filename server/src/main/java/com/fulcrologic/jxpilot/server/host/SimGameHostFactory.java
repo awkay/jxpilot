@@ -41,7 +41,7 @@ import java.util.function.IntSupplier;
  */
 public final class SimGameHostFactory implements GameHostFactory {
     private final IntSupplier seeds;
-    private final java.util.function.Consumer<String> log;
+    private final java.util.function.Consumer<CharSequence> log;
 
     /** World RNG seeds from the clock (every game differs); robot log lines go to stderr like the server log. */
     public SimGameHostFactory() {
@@ -54,7 +54,7 @@ public final class SimGameHostFactory implements GameHostFactory {
     }
 
     /** @param log server log for the logRobots lines */
-    public SimGameHostFactory(IntSupplier seeds, java.util.function.Consumer<String> log) {
+    public SimGameHostFactory(IntSupplier seeds, java.util.function.Consumer<CharSequence> log) {
         this.seeds = seeds;
         this.log = log;
     }

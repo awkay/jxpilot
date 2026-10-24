@@ -48,7 +48,7 @@ class RobotLogTest {
     void logs() {
         Simulation s = RobotFixture.sim("robotRealName: droid\n", RobotFixture.open(20, 20, "___"));
         List<String> log = new ArrayList<>();
-        s.robots.log = log::add;
+        s.robots.log = l -> log.add(l.toString());
         TestWorlds.join(s, "H", 0);
         Player r = s.robots.create();
         assertEquals(List.of(r.name + " (2, droid) starts at startpos " + r.homeBase + "."), log, "one line");
@@ -62,7 +62,7 @@ class RobotLogTest {
             com.fulcrologic.jxpilot.common.config.OptionOrigin.COMMAND, o);
         Simulation s = new Simulation(new com.fulcrologic.jxpilot.server.world.World(o, 1));
         List<String> log = new ArrayList<>();
-        s.robots.log = log::add;
+        s.robots.log = l -> log.add(l.toString());
         s.robots.create();
         Simulation quiet = RobotFixture.sim("", RobotFixture.open(20, 20, "___"));
         quiet.robots.create();
@@ -76,7 +76,7 @@ class RobotLogTest {
     void factory() {
         Options o = TestWorlds.options("", RobotFixture.open(20, 20, "___"));
         List<String> log = new ArrayList<>();
-        java.util.function.Consumer<String> sink = log::add;
+        java.util.function.Consumer<CharSequence> sink = l -> log.add(l.toString());
         SimGameHost host = (SimGameHost) new SimGameHostFactory(() -> 1, sink).create(o, WorldMap.fromOptions(o));
         assertSame(sink, host.simulation().robots.log, "wired");
     }

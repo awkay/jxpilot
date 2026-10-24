@@ -86,10 +86,9 @@ final class Talk {
     }
 
     private void god(Player from, CharSequence line, int colon) {
-        CharSequence text = line.subSequence(colon + 1, line.length());
-        if (admin.log(from.name, text)) {
-            w.events.playerMessage(Msg.Text.KIND_PRIVATE, from.id, from.id).append(text).append(" [")
-                .append(from.name).append("]:[GOD]");
+        if (admin.log(from.name, line, colon + 1)) {
+            w.events.playerMessage(Msg.Text.KIND_PRIVATE, from.id, from.id).append(line, colon + 1, line.length())
+                .append(" [").append(from.name).append("]:[GOD]");
         } else {
             w.events.playerMessage(Msg.Text.KIND_SERVER, Obj.NO_ID, from.id)
                 .append(" < GOD doesn't seem to be listening>");
