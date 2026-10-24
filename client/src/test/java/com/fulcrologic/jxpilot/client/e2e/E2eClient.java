@@ -86,9 +86,17 @@ final class E2eClient implements ConnectionListener, AutoCloseable {
     }
 
     E2eClient(String host, int port, String name, int seed) throws IOException {
+        this(host, port, name, Protocol.NO_TEAM, null, seed);
+    }
+
+    /** A client asking for {@code team} with ship {@code shape} (null: the default ship). */
+    E2eClient(String host, int port, String name, int team, String shape, int seed) throws IOException {
         this.name = name;
-        this.conn = GameConnections.open(new ConnectTarget(ConnectTarget.Protocol.JXPILOT,
-            new com.fulcrologic.jxpilot.client.net.Endpoint(host, port)), this, name, Protocol.NO_TEAM, null, seed);
+        this.conn = shape == null && team == Protocol.NO_TEAM
+            ? GameConnections.open(new ConnectTarget(ConnectTarget.Protocol.JXPILOT,
+                new com.fulcrologic.jxpilot.client.net.Endpoint(host, port)), this, name, team, null, seed)
+            : com.fulcrologic.jxpilot.client.app.GameConnector.open(new ConnectTarget(ConnectTarget.Protocol.JXPILOT,
+                new com.fulcrologic.jxpilot.client.net.Endpoint(host, port)), null, this, name, team, shape, false, seed);
     }
 
     void start(long now) {

@@ -26,6 +26,7 @@ package com.fulcrologic.jxpilot.client.xp;
 import com.fulcrologic.jxpilot.client.net.ConnectionListener;
 import com.fulcrologic.jxpilot.client.net.ConnectionState;
 import com.fulcrologic.jxpilot.client.net.Transport;
+import com.fulcrologic.jxpilot.common.math.ShipShape;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.net.Protocol;
 
@@ -73,7 +74,7 @@ public final class XpConnection implements GameConnection {
         public String display = ":0";
         /** Team 0..9 or {@link Protocol#NO_TEAM}. */
         public int team = Protocol.NO_TEAM;
-        /** Ship shape string, empty for the default ship. */
+        /** The shipShape resource, empty for the default ship; converted when sent (C Send_shape). */
         public String shape = "";
         public final Msg.Settings settings = new Msg.Settings();
         /** View size requested with PKT_DISPLAY (C limits it to 384..1024). */
@@ -610,12 +611,13 @@ public final class XpConnection implements GameConnection {
         tries++;
         lastSend = now;
         if (tries <= SHAPE_TRIES) {
+            // C Send_shape: Convert_shape_str (no limits; empty or invalid is the default ship), then
+            // Convert_ship_2_string's buf, and its ext for servers newer than 3.2.
+            ShipShape.WireParts w = ShipShape.convert(login.shape).toWireParts();
             XpWriter.u8(tx, XpProto.PKT_SHAPE);
-            String s = login.shape;
-            int cut = Math.min(s.length(), XpProto.MSG_LEN - 1);
-            XpWriter.string(tx, s.substring(0, cut), XpProto.MSG_LEN);
+            XpWriter.string(tx, w.buf(), XpProto.MSG_LEN);
             if (version > 0x3200) {
-                XpWriter.string(tx, s.substring(cut), XpProto.MSG_LEN);
+                XpWriter.string(tx, w.ext(), XpProto.MSG_LEN);
             }
         }
         XpWriter.u8(tx, XpProto.PKT_PLAY);

@@ -29,7 +29,7 @@ import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 
 /**
- * Score rules, a port of {@code src/server/score.c} (alliances are not supported). Changed players and
+ * Score rules, a port of {@code src/server/score.c}. Changed players and
  * teams are marked dirty; {@link Simulation} emits SCORE/TEAM_SCORE events once per tick for them. Every
  * player score change also emits a SCORE_OBJECT event for that player's HUD (C {@code Send_score_object}).
  */
@@ -67,7 +67,9 @@ public final class Scoring {
      * C {@code SCORE(ind, points, x, y, msg)}.
      * <p>
      * BEHAVIOR: in team play the team score changes and the player's own score changes only without
-     * teamShareScore; otherwise the player's score changes. The player is marked dirty.
+     * teamShareScore; otherwise, for a player in an alliance with teamShareScore, the points are shared
+     * among the alliance's members (C {@code Alliance_score}), else the player's score changes. The player
+     * is marked dirty.
      * BEHAVIOR: a human player gets a SCORE_OBJECT event (a = id, b = block x, c = block y, value = points,
      * text = the label).
      */
@@ -77,6 +79,8 @@ public final class Scoring {
                 pl.score += points;
             }
             teamScore(pl.team, points);
+        } else if (pl.alliance != Player.ALLIANCE_NOT_SET && w.params.teamShareScore) {
+            allianceScore(pl.alliance, points); // server-commands: score.c:58-59
         } else {
             pl.score += points;
         }
@@ -110,24 +114,37 @@ public final class Scoring {
     }
 
     /**
-     * C {@code Players[winner]->alliance != ALLIANCE_NOT_SET && == Players[loser]->alliance} (score.c:131).
+     * server-commands: C {@code Alliance_score}.
      * <p>
-     * BEHAVIOR: false: alliances are not ported yet (server-commands adds them; replace this body then).
+     * BEHAVIOR: every member of alliance {@code id} gets points / (number of members) and is marked dirty.
      */
-    boolean sameAlliance(Player winner, Player loser) {
-        return false;
+    void allianceScore(int id, double points) {
+        int members = 0;
+        for (int k = 0; k < w.numPlayers; k++) {
+            if (w.playerAt(k).alliance == id) {
+                members++;
+            }
+        }
+        double share = points / members;
+        for (int k = 0; k < w.numPlayers; k++) {
+            Player p = w.playerAt(k);
+            if (p.alliance == id) {
+                p.score += share;
+                p.scoreDirty = true;
+            }
+        }
     }
 
     /**
      * C {@code Score_players}.
      * <p>
-     * BEHAVIOR: team mates, alliance members ({@link #sameAlliance}) and a player who kills its own tank get both
-     * scores made non-positive (score.c:128-140: no profit from killing your own side), then each gets their
-     * score via {@link #score} at the loser's block position with their own label.
+     * BEHAVIOR: team mates, allies and a player who kills its own tank get both scores made non-positive
+     * (score.c:128-140: no profit from killing your own side), then each gets their score via {@link #score} at the
+     * loser's block position with their own label.
      */
     public void scorePlayers(Player winner, double winnerScore, CharSequence winnerMsg, Player loser,
                              double loserScore, CharSequence loserMsg) {
-        if (w.sameTeam(winner, loser) || sameAlliance(winner, loser)
+        if (w.sameTeam(winner, loser) || w.allied(winner, loser)
             || (loser.tank && loser.lockPlId == winner.id)) {
             if (winnerScore > 0) {
                 winnerScore = -winnerScore;

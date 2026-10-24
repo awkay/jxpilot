@@ -167,17 +167,17 @@ class MessagesTest {
             Msg.Shape s2 = new Msg.Shape();
             s2.read(b);
             Msg.Connect c = new Msg.Connect();
-            c.shape.append("z".repeat(500));
+            c.shape.append("z".repeat(600));
             ByteBuffer cb = ByteBuffer.allocate(1000);
             c.write(cb);
             cb.flip();
             Msg.Connect c2 = new Msg.Connect();
             c2.read(cb);
             assertAll(
-                () -> assertEquals(Msg.MAX_SHAPE_LEN, j2.shape.length(), "player join shape is capped at 256"),
+                () -> assertEquals(Msg.MAX_SHAPE_LEN, j2.shape.length(), "player join shape is capped at MAX_SHAPE_LEN"),
                 () -> assertEquals("n", j2.name.toString(), "the name survives"),
-                () -> assertEquals(Msg.MAX_SHAPE_LEN, s2.shape.length(), "shape message is capped at 256"),
-                () -> assertEquals(Msg.MAX_SHAPE_LEN, c2.shape.length(), "connect shape is capped at 256"));
+                () -> assertEquals(Msg.MAX_SHAPE_LEN, s2.shape.length(), "shape message is capped at MAX_SHAPE_LEN"),
+                () -> assertEquals(Msg.MAX_SHAPE_LEN, c2.shape.length(), "connect shape is capped at MAX_SHAPE_LEN"));
         }
 
         @Test

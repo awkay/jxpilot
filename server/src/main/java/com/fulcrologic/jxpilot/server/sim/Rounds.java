@@ -684,7 +684,7 @@ public final class Rounds {
      * BEHAVIOR: with roundDelay the next round waits roundDelay seconds ("Delaying N seconds until start of
      * next round."), else the round timer restarts; every score is resent.
      */
-    void resetAllPlayers() {
+    public void resetAllPlayers() {
         Params p = w.params;
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);

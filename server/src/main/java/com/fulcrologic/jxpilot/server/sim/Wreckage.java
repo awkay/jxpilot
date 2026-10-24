@@ -45,14 +45,19 @@ import java.util.function.DoubleSupplier;
  */
 public final class Wreckage {
     private final World w;
-    private final boolean useWreckage;
+    private boolean useWreckage;
     /** C {@code rfrac()}: the world RNG; the golden test replays C's draws through it. */
     DoubleSupplier rfrac;
 
     public Wreckage(World w) {
         this.w = w;
-        this.useWreckage = w.options.getBool(Opt.USE_WRECKAGE);
+        reloadOptions();
         this.rfrac = w::rfrac;
+    }
+
+    /** server-commands: (re)read the options this class keeps (at construction, and after {@code /set}). */
+    public void reloadOptions() {
+        this.useWreckage = w.options.getBool(Opt.USE_WRECKAGE);
     }
 
     /**

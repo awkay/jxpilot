@@ -7,7 +7,9 @@ Our own UDP protocol (no XPilot client compatibility). All code lives in
 - Max datagram payload: **1200 bytes** (`Protocol.MAX_PACKET`). Default port 15345.
 - Strings: `u8` or `u16` length + Latin-1 bytes; chars > 255 become `?`. Writers truncate to the
   length field and to the space left in the buffer, so a long string never throws. Ship shapes are
-  capped at 256 chars on decode (`Msg.MAX_SHAPE_LEN`, C `MSG_LEN`).
+  capped at 512 chars on decode (`Msg.MAX_SHAPE_LEN`, C `2*MSG_LEN`, the size of C's shape buffers), so
+  a canonical shape (`ShipShape.toWireString()`, C `Convert_ship_2_string` buf + ext, each under 256)
+  always fits.
 - `NO_ID = 0xFFFF`, `NO_TEAM = 0xFF`.
 
 ## Datagram header (8 bytes, every packet) — `PacketHeader`
@@ -27,9 +29,9 @@ reliable traffic for free. An idle side sends `ACK` (header only) when `Reliable
 
 | id | name | dir | body |
 |---|---|---|---|
-| 1 | CONNECT | C→S | `Msg.Connect`: u32 nonce, u8 team (0-9 or 255), str8 name, str16 shape. Resent every 250 ms until answered. |
+| 1 | CONNECT | C→S | `Msg.Connect`: u32 nonce, u8 team (0-9 or 255), str8 name, str16 shape. Resent every 250 ms until answered. The shape is the ship the player wears for the whole session (C takes PKT_SHAPE only at login); the JXPilot client sends it in C's canonical form (`ShipShape.toWireString`, C `Convert_ship_2_string`). The server applies C's shape limits (`Parse_shape_str`); an empty or invalid shape gives the built-in ship, and without `allowShipShapes` everyone wears `defaultShipShape`. |
 | 2 | ACCEPT | S→C | `Msg.Accept`: u32 nonce, u16 playerId. Header session = new random session id. Re-sent for duplicate CONNECTs and on a backoff schedule until the session is verified (below). |
-| 3 | REJECT | S→C | `Msg.Reject`: u32 nonce, u8 reason, str8 text. Header session 0. Never larger than the CONNECT it answers (the text is cut to fit). Reasons: 1 FULL (no slot after kicking a robot, else paused players; or the requested team is full), 2 VERSION, 3 BAD_NAME (empty, or already in use: compared without case after trailing blanks are cut and the name is clamped to 16 Latin-1 chars), 4 OTHER (team play with `teamAssign: no` and no valid team requested, or no team can be picked; C contact.c `Check_queue`). |
+| 3 | REJECT | S→C | `Msg.Reject`: u32 nonce, u8 reason, str8 text. Header session 0. Never larger than the CONNECT it answers (the text is cut to fit). Reasons: 1 FULL (no slot after kicking a robot, else paused players; or the requested team is full), 2 VERSION, 3 BAD_NAME (empty, or already in use: compared without case after trailing blanks are cut and the name is clamped to 16 Latin-1 chars), 4 OTHER (team play with `teamAssign: no` and no valid team requested, or no team can be picked; C contact.c `Check_queue`), 5 LOCKED ("game locked": an operator locked the game with `/lock 1`, C `E_GAME_LOCKED`; checked first). |
 | 4 | RELIABLE | both | reliable channel body (below). |
 | 5 | INPUT | C→S | input with redundancy (below). |
 | 6 | SNAPSHOT | S→C | world snapshot (below). |
@@ -120,7 +122,7 @@ Server → client:
 |---|---|---|
 | 1 | WELCOME | u16 playerId, u8 team, u8 simHz, u8 snapshotHz, u8 flags (1 teamPlay, 2 edgeWrap, 4 timing), f32 gameFps, u32 configLength, u32 configCompressedLength, u32 configCrc32, str8 serverName. *(Server S1 fix round: the server simulates at the map's framesPerSecond, so simHz = gameFps; one tick is one C frame.)* |
 | 2 | DATA_CHUNK | u32 offset, raw bytes (≤ 1024) to the end of the message |
-| 3 | PLAYER_JOIN | u16 id, u8 team, u8 flags (1 robot, 2 tank, 4 self, 8 paused), f32 power, u8 afterburners, str8 name, str16 shape (empty = default). A detached fuel tank is a pseudo player with flag 2, the name "NAME's tank" and the `tankShipShape` (with `allowShipShapes`); it owns no base |
+| 3 | PLAYER_JOIN | u16 id, u8 team, u8 flags (1 robot, 2 tank, 4 self, 8 paused), f32 power, u8 afterburners, str8 name, str16 shape (C's canonical form, `Convert_ship_2_string`; empty = the built-in default ship). A detached fuel tank is a pseudo player with flag 2, the name "NAME's tank" and the `tankShipShape` (with `allowShipShapes`, else `defaultShipShape`); it owns no base |
 | 4 | PLAYER_LEAVE | u16 id |
 | 5 | PLAYER_TEAM | u16 id, u8 team |
 | 6 | SCORE | u16 id, f32 score, i16 lives (-1 = unlimited), u8 status (1 dead, 2 paused, 4 waiting, 8 out of lives). Only updates the score table: the client's HUD score popups come from SCORE_OBJECT (12), never from SCORE changes |
@@ -132,18 +134,18 @@ Server → client:
 | 12 | SCORE_OBJECT | f32 score (points gained, negative when lost), u16 bx, u16 by (block where they were made), str8 label (C `Send_score_object`: a player name, "[Wall]", "[Shove]", "Cannon", "[Deadliest]"...). Sent only to the player whose score changed; drives the HUD score popups (the client's ScoreObjects stack) |
 | 13 | SEEK | u16 programmerId, u16 robotId, u16 soughtId — a player's ECM reprogrammed a robot to hunt someone (C `Send_seek`, item.c:1207), sent to everyone; the client logs "PROGRAMMER has programmed ROBOT to seek SOUGHT." (C `Handle_seek`) |
 | 20 | TIMING | race mode only (C `Send_timing`): u16 id, u8 check (the next checkpoint the player must pass, C `pl->check`), u16 round (laps started, 0 before the first checkpoint). Sent for every player in the initial state and whenever a player passes a checkpoint or race progress is reset. The last checkpoint passed is check - 1 (wrapping); the own player's check is the checkpoint the client highlights. Ids 20-26 are the game-mode block |
+| 31 | PLAYER_ALLIANCE | u16 id, u8 mark (Latin-1): the alliance mark of player id as this receiver sees it, C `Send_score`'s alliance character (netserver.c:1670-1678): ' ' not in an alliance, '+' in the receiver's own alliance (when `announceAlliances` is off; other alliances then show ' '), '0'-'9' the alliance number (when `announceAlliances` is on). Sent when a player's alliance changes (C resends the score then), and in the initial state for players in alliances (every player after a resync). The client shows it in the score list's team column outside team play and treats equal non-blank marks as friends (blue ship, friendly lock). Ids 32-33 are reserved for server-commands |
 
 Client → server:
 
 | id | name | body |
 |---|---|---|
 | 64 | READY | empty |
-| 65 | CHAT | same as MESSAGE (kind/from ignored); XPilot "name:"/"team:" prefixes in the text |
+| 65 | CHAT | same as MESSAGE (kind/from ignored); XPilot "name:"/"team:" prefixes in the text. A line starting with '/' is a talk command (C `Receive_talk`/`Handle_player_command`: /advance /ally /get /help /kick /lock /password /pause /queue /reset /set /team /version); replies come back as MESSAGE kind server ending in " [*Server reply*]" |
 | 66 | SETTINGS | f32 power, turnSpeed, turnResistance, altPower, altTurnSpeed, altTurnResistance, u8 flags (1 autoShield). The client sends it before READY on every join (C sends the settings with PKT_PLAY) and again whenever a power or turn-speed key changes them (C Send_power ...); those keys themselves are never sent |
-| 67 | CHANGE_TEAM | u8 team |
-| 68 | SHAPE | str16 shape |
+| 67 | CHANGE_TEAM | u8 team. Handled exactly as the talk command "/team N" (C has no team-change packet; the C client changes teams with that command) |
+| 68 | SHAPE | str16 shape. Ignored: the shape comes with CONNECT (C accepts PKT_SHAPE only before the player is in the game) |
 | 15 | DISPLAY | u16 viewWidth, u16 viewHeight: the world area the client shows, in world pixels (C PKT_DISPLAY's `view_width`/`view_height`: window size times scaleFactor). Sent before READY on every join and again whenever it changes (resize, scale swap). The server limits each axis to 384..1024 (C `Receive_display`, MIN/MAX_VIEW_SIZE) and uses it for the HUD lock's in-view test and for culling the receiver's snapshots; until it arrives the view is 768 x 768 (DEF_VIEW_SIZE) |
-
 | 14 | MODIFIER_BANK | u8 bank (0..3), str8 text: one of the client's weapon modifier banks as C text (the `modifierBank1..4` resources, e.g. `FN C V2 X4 LS`; C PKT_MODIFIERBANK). The client sends all four before READY on every join (C sends them once at login, after PKT_DISPLAY). The server parses the text as C `Receive_modifier_bank` into the player's bank, before READY (kept for the spawn) or in play: nothing without allowModifiers; `N` nuclear and `FN` full nuclear need allowNukes, `C` cluster allowClusters, `LS`/`LB` stun/blind laser allowLaserModifiers (the char after `L` is always consumed); `I` implosion, `V#` velocity 0..3, `X#` mini 2..4 (stored 1..3), `Z#` spread 0..3, `B#` power 0..3 (a number out of range is the minimum); other chars are skipped, case is ignored, the text ends at a NUL. A bank above 3 is ignored; a text of 80 chars or more (C MAX_CHARS string overflow) is dropped |
 
 DISPLAY and MODIFIER_BANK are client → server messages although their ids are below 64 (13 is SEEK).

@@ -48,6 +48,24 @@ and its 12 fps.
 - Tests that build a `World` straight from `Options` don't get lib/defaults. To match the real server,
   call `DefaultsFile.applyBundled(options)` before parsing the map.
 
+## Changing options while the server runs (`/set`, `/get`)
+
+An operator (`/password`) changes options with `/set OPTION VALUE`; anyone reads them with `/get OPTION`
+(server-commands, C parser.c `Tune_option`/`Get_option_value`). Which options can change, and what happens
+when they do, follows C's option table: the 37 `tuner_none` options (map size and data, `teamPlay`,
+`limitedLives`, `timing`, `edgeWrap`, `framesPerSecond`, file names, ports...) and the JXPilot network options
+are refused ("This option cannot be changed at runtime."); every other option takes its new value at once, and
+C's tuner runs (for example `maxRobots` kicks surplus robots, `gravity` recomputes the gravity field,
+`allowShields` raises or drops everyone's shields, `worldLives` with limited lives restarts the round, wall
+bounce options rebuild the crash masks).
+
+For implementers: keep option values in `Params`, `ItemParams` or `ModeParams` (a new `*Params` class must be added to
+`Tuning.tune` the same way). `/set` updates the fields its change alters (a `from` before and after, compared
+field by field). A value copied into a
+class of its own is not updated unless that class re-reads it in a `reloadOptions()` that the tuning calls
+(as `RobotManager`, `DefaultRobot`, `Collisions`, `Wreckage`, `SnapshotBuilder` and `SimGameHost` do).
+Connected clients keep the configuration they got when they joined (see DEVIATIONS-server.md).
+
 ## Information requests
 
 `-help`/`-h`, `-version`/`-v`, `-dump`, `-dumpMan`, `-dumpWindows` and `-dumpFlags` (one or two dashes)
@@ -93,8 +111,8 @@ follow C; the alias is the C command-line name.
 | `tankScoreDecrement` | tankDecrement | int | `500` | ANY+VIS | implemented (server-items) |
 | `turnThrust` | turnFuel | bool | `false` | ANY+VIS | implemented (Params) |
 | `selfImmunity` |  | bool | `false` | ANY+VIS | implemented (Params) |
-| `defaultShipShape` |  | string | `(NM:Default)...` | ANY+VIS | not implemented: a player or robot without a valid shape gets the built-in standard ship, which is also this option's default |
-| `tankShipShape` |  | string | `(NM:fueltank)...` | ANY+VIS | server-items (fuel tanks detached as pseudo-players) |
+| `defaultShipShape` |  | string | `(NM:Default)...` | ANY+VIS | implemented (server-commands): without allowShipShapes every player and robot wears it (C Init_player); an invalid one gives the built-in ship |
+| `tankShipShape` |  | string | `(NM:fueltank)...` | ANY+VIS | implemented: detached fuel tanks wear it (`Ships.tankShipShape`, C ship.c:416-418: this shape with allowShipShapes, else defaultShipShape) |
 | `maxPlayerShots` | shots | int | `256` | ANY+VIS | implemented (Params) |
 | `shotsGravity` |  | bool | `true` | ANY+VIS | implemented (Params) |
 | `idleRun` | rawMode | bool | `false` | CMD+DEF+VIS | implemented (rawMode) |
@@ -154,8 +172,8 @@ follow C; the alias is the C command-line name.
 | `worldLives` | lives | int | `0` | ANY+VIS | implemented (Params) |
 | `reset` |  | bool | `yes` | ANY+VIS | implemented (Params) |
 | `resetOnHuman` | humanReset | int | `0` | ANY+VIS | implemented (Params) |
-| `allowAlliances` | alliances | bool | `yes` | ANY+VIS | not implemented, no owner: alliances (alliance.c, the /ally commands and client support) are not in any M2 agent's list |
-| `announceAlliances` |  | bool | `no` | ANY+VIS | not implemented, no owner: alliances (alliance.c, the /ally commands and client support) are not in any M2 agent's list |
+| `allowAlliances` | alliances | bool | `yes` | ANY+VIS | implemented (server-commands): /ally, alliance immunity, scores, radar and robots; never in team play; a run-time change follows C's tuner (takes effect at the next rules update) |
+| `announceAlliances` |  | bool | `no` | ANY+VIS | implemented (server-commands): alliance changes go to everyone and the score list shows alliance numbers (PLAYER_ALLIANCE) |
 | `teamPlay` | teams | bool | `no` | ANY+VIS | implemented (MapLoader) |
 | `teamFuel` |  | bool | `no` | ANY+VIS | implemented (Params) |
 | `teamCannons` |  | bool | `no` | ANY+VIS | implemented (Params, MapLoader) |
@@ -203,7 +221,7 @@ follow C; the alias is the C command-line name.
 | `asteroidConcentratorVisible` |  | bool | `true` | ANY+VIS | implemented (server-batch2) for the client map |
 | `wormTime` |  | sec | `0` | ANY+VIS | implemented (Params) |
 | `defaultsFileName` | defaults | string | `(none)` | CMD | implemented (server-batch2): --defaults FILE|none; default is the bundled lib/defaults |
-| `passwordFileName` |  | string | `(none)` | CMD+DEF | unsupported: no operator commands yet (C command.c) |
+| `passwordFileName` |  | string | `(none)` | CMD+DEF | implemented (server-commands): read after the defaults and config files, origin PASSWORD (only `password` is taken); none is read without the option; a named file that cannot be read is an error |
 | `motdFileName` | motd | string | `(none)` | CMD+DEF | not implemented: the native protocol has no MOTD request; needs a protocol and client change |
 | `scoreTableFileName` | scoretable | string | `(none)` | CMD+DEF | accepted, no effect: C 4.5.5 declares it but never reads it |
 | `adminMessageFileName` | adminMessage | string | `(none)` | CMD+DEF | implemented (server-batch2): "god:" chat appended to the file (no default file: C uses LIBDIR/log) |
@@ -216,7 +234,7 @@ follow C; the alias is the C command-line name.
 | `allowClusters` | clusters | bool | `False` | ANY+VIS | implemented (server-items) |
 | `allowModifiers` | modifiers | bool | `False` | ANY+VIS | implemented (server-items) |
 | `allowLaserModifiers` | lasermodifiers | bool | `False` | ANY+VIS | implemented (server-items) |
-| `allowShipShapes` | ShipShapes | bool | `True` | ANY+VIS | implemented (RobotManager) |
+| `allowShipShapes` | ShipShapes | bool | `True` | ANY+VIS | implemented (RobotManager; server-commands: players' CONNECT shapes, broadcast in PLAYER_JOIN; tanks) |
 | `playersOnRadar` | playersRadar | bool | `True` | ANY+VIS | implemented (server-batch2): off hides other teams from the radar (frame.c:1152-1170) |
 | `missilesOnRadar` | missilesRadar | bool | `True` | ANY+VIS | implemented (server-items) |
 | `minesOnRadar` | minesRadar | bool | `False` | ANY+VIS | implemented (server-items) |
@@ -359,7 +377,7 @@ follow C; the alias is the C command-line name.
 | `maxVisibleObject` | maxVisibleObjects | int | `1000` | ANY+VIS | not implemented: the snapshot byte budget (nearest first) limits objects instead |
 | `pLockServer` |  | bool | `false` | CMD+DEF+VIS | not applicable: JVM server (no mlock, no signal timer) |
 | `timerResolution` |  | int | `0` | CMD+DEF+VIS | not applicable: JVM server (no mlock, no signal timer) |
-| `password` |  | string | `(none)` | CMD+DEF+PWD | unsupported: no operator commands yet (C command.c) |
+| `password` |  | string | `(none)` | CMD+DEF+PWD | implemented (server-commands): `/password` gives operator status; never sent to clients; `/get password` is refused; `/set password` changes it quietly |
 | `clientPortStart` |  | int | `0` | CMD+DEF+VIS | not applicable: one UDP socket per bound address serves every client |
 | `clientPortEnd` |  | int | `0` | CMD+DEF+VIS | not applicable: one UDP socket per bound address serves every client |
 | `maxPauseTime` |  | sec | `3600` | ANY+VIS | implemented (Params) |
