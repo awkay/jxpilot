@@ -1,0 +1,27 @@
+# JXPilot golden-trace test map (not an XPilot original map).
+# Copyright (C) 2026 Tony Kay and the JXPilot contributors. GPL-2.0-or-later.
+# ball-tow.xp with a second base 6 blocks right of the first: a ship that
+# tows the treasure ball and a second ship whose ECM can make it let go.
+mapName: ball-ecm
+mapAuthor: JXPilot contributors
+mapWidth: 14
+mapHeight: 10
+teamPlay: no
+edgeWrap: no
+# the C server also reads lib/defaults: pin what it sets there
+gravity: -0.25
+maxItemDensity: 0
+movingItemProb: 0
+framesPerSecond: 14
+mapData: \multiline: EndOfMapdata
+xxxxxxxxxxxxxx
+x            x
+x            x
+x            x
+x            x
+x            x
+x            x
+x            x
+x  *  _     _x
+xxxxxxxxxxxxxx
+EndOfMapdata
