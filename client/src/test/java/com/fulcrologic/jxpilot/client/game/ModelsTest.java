@@ -396,6 +396,31 @@ class ModelsTest {
         }
 
         @Test
+        @DisplayName("a robot's war target follows its name as \" (NAME)\" (C paint.c:553); a gone target shows nothing")
+        void warTarget() {
+            Players p = new Players();
+            p.join(join(1, 0, 0, "Ann", ""));
+            p.join(join(3, 0, Msg.PlayerJoin.FLAG_ROBOT, "Cy", ""));
+            p.join(join(4, 0, Msg.PlayerJoin.FLAG_ROBOT, "Dee", ""));
+            p.setScore(1, 30, -1, 0);
+            p.setScore(3, 20, -1, 0);
+            p.setScore(4, 10, -1, 0);
+            p.setWar(3, 1);
+            p.setWar(4, 77);
+            p.setWar(99, 1);
+            Scoreboard sb = new Scoreboard();
+            sb.configure(false, false, false, 1);
+            sb.update(p);
+            List<String> withWar = labels(sb);
+            p.setWar(3, com.fulcrologic.jxpilot.common.net.Protocol.NO_ID);
+            sb.update(p);
+            assertAll(
+                () -> assertEquals(List.of("      30.0  Ann", "R     20.0  Cy (Ann)", "R     10.0  Dee"), withWar,
+                    "Cy is at war with Ann; Dee's target is no player"),
+                () -> assertEquals("R     20.0  Cy", sb.label(1).toString(), "a war that ended (version bumped: re-laid out)"));
+        }
+
+        @Test
         @DisplayName("team play with limited lives: team rows after a blank line, ties by lives")
         void teams() {
             Players p = new Players();

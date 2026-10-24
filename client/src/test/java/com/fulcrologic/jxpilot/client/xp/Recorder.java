@@ -126,6 +126,16 @@ final class Recorder implements ConnectionListener, XpReliableDecoder.Control {
                 b.read(p);
                 yield "base index=" + b.baseIndex + " player=" + b.playerId;
             }
+            case ReliableType.WAR -> {
+                Msg.War w = new Msg.War();
+                w.read(p);
+                yield "war robot=" + w.robotId + " killer=" + w.killerId;
+            }
+            case ReliableType.SEEK -> {
+                Msg.Seek k = new Msg.Seek();
+                k.read(p);
+                yield "seek programmer=" + k.programmerId + " robot=" + k.robotId + " sought=" + k.soughtId;
+            }
             default -> "reliable " + type;
         };
     }

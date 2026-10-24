@@ -43,7 +43,7 @@ public final class Scoreboard {
     /** C {@code MAX_TEAMS}. */
     public static final int MAX_TEAMS = 10;
     /** Label capacity (C {@code MSG_LEN}). */
-    public static final int LABEL_LEN = 80;
+    public static final int LABEL_LEN = 128;
 
     private final CharBuf heading = new CharBuf(LABEL_LEN);
     private final CharBuf[] labels = new CharBuf[Players.CAPACITY + MAX_TEAMS];
@@ -164,10 +164,23 @@ public final class Scoreboard {
             rowDim[rows] = c == 'D' || c == 'P' || c == 'W';
             format(labels[rows], c, teamPlay ? p.team(s) : -1, p.alliance(s), p.score(s), p.lives(s), p.name(s),
                 p.round(s), p.check(s));
+            appendWar(labels[rows], p, s);
             rows++;
         }
         if (teamPlay && !timing) {
             teamRows(n);
+        }
+    }
+
+    /**
+     * C {@code Paint_score_entry}: a robot's war or seek target, " (NAME)" after its name.
+     * <p>
+     * BEHAVIOR: appended iff the player's war id is a player in the table.
+     */
+    static void appendWar(CharBuf b, Players p, int slot) {
+        int w = p.slotOf(p.warId(slot));
+        if (w >= 0) {
+            b.append(" (").append(p.name(w)).append(')');
         }
     }
 

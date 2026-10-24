@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.client.xp;
 
 import com.fulcrologic.jxpilot.common.net.Msg;
+import com.fulcrologic.jxpilot.common.net.Protocol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -201,29 +202,14 @@ class XpReliableDecoderTest {
         }
 
         @Test
-        void warAndSeekMessages() {
-            decode(new CPackets().player(1, 0, 'R', "Robby", "r", "h", "", "").player(2, 0, ' ', "Ann", "r", "h", "", "")
-                .player(3, 0, ' ', "Bob", "r", "h", "", ""));
+        void warAndSeekBecomeWarAndSeekRecords() {
             rec.events.clear();
-            decode(new CPackets().war(1, 2).war(1, -1).war(9, 2).war(1, 9).seek(3, 1, 2).seek(9, 1, 2).seek(3, 9, 2)
-                .seek(3, 1, 9));
-            assertEquals(List.of("message kind=4 from=65535 Robby declares war on Ann.",
-                "message kind=4 from=65535 Bob has programmed Robby to seek Ann."), rec.events,
-                "C texts; unknown ids and killer -1 say nothing");
+            decode(new CPackets().war(1, 2).war(1, -1).seek(3, 1, 2));
+            assertEquals(List.of("war robot=1 killer=2", "war robot=1 killer=" + Protocol.NO_ID,
+                "seek programmer=3 robot=1 sought=2"), rec.events,
+                "ids as received; C's killer -1 (war over) is NO_ID; ClientGame makes the texts");
             prefixesIncomplete(new CPackets().war(1, 2));
             prefixesIncomplete(new CPackets().seek(1, 2, 3));
-        }
-
-        @Test
-        void manyPlayersOverflowTheNameTableQuietly() {
-            CPackets p = new CPackets();
-            for (int i = 0; i <= XpTranslator.NAME_CAP; i++) {
-                p.player(i, 0, ' ', "P" + i, "r", "h", "", "");
-            }
-            decode(p);
-            rec.events.clear();
-            decode(new CPackets().leave(XpTranslator.NAME_CAP));
-            assertEquals(List.of("leave id=" + XpTranslator.NAME_CAP), rec.events, "untracked player: leave only");
         }
     }
 

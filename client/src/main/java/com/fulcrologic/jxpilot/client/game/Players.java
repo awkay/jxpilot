@@ -59,6 +59,8 @@ public final class Players {
     private final int[] check = new int[CAPACITY];
     private final int[] round = new int[CAPACITY];
     private final int[] timingTick = new int[CAPACITY];
+    /** C {@code other->war_id}: the robot's war or seek target, {@link Protocol#NO_ID} for none. */
+    private final int[] warId = new int[CAPACITY];
     private final int[] order = new int[CAPACITY];
     private int count;
     private int selfId = Protocol.NO_ID;
@@ -162,7 +164,7 @@ public final class Players {
      * BEHAVIOR: the engine offset comes from the shape read without limits as C client.c Handle_player's
      * {@code Convert_shape_str} (default ship when empty or invalid);
      * score, lives and status reset (0, -1 unlimited, 0), race progress too (C {@code other->timing = 0});
-     * the alliance mark is blank.
+     * the alliance mark is blank; no war target (C {@code war_id = -1}).
      */
     public int join(Msg.PlayerJoin j) {
         int s = slotOf(j.id);
@@ -194,6 +196,7 @@ public final class Players {
         check[s] = 0;
         round[s] = 0;
         timingTick[s] = 0;
+        warId[s] = Protocol.NO_ID;
         if ((j.flags & Msg.PlayerJoin.FLAG_SELF) != 0) {
             selfId = j.id;
         }
@@ -210,8 +213,18 @@ public final class Players {
         return -1;
     }
 
-    /** BEHAVIOR: removes the player, keeping the join order of the rest; unknown ids are ignored. */
+    /**
+     * BEHAVIOR: removes the player, keeping the join order of the rest; unknown ids are ignored.
+     * BEHAVIOR: every war on the leaving id ends (C Handle_leave clears {@code war_id}), even for an id not in
+     * the table.
+     */
     public void leave(int id) {
+        for (int i = 0; i < count; i++) {
+            if (warId[order[i]] == id) {
+                warId[order[i]] = Protocol.NO_ID;
+                version++;
+            }
+        }
         int s = slotOf(id);
         if (s < 0) {
             return;
@@ -227,6 +240,23 @@ public final class Players {
         count = k;
         version++;
     }
+
+    /**
+     * C {@code Handle_war} / {@code Handle_seek}: robot {@code id}'s target becomes {@code target}
+     * ({@link Protocol#NO_ID}: none).
+     * <p>
+     * BEHAVIOR: a known id only; unknown ids are ignored.
+     */
+    public void setWar(int id, int target) {
+        int s = slotOf(id);
+        if (s >= 0) {
+            warId[s] = target;
+            version++;
+        }
+    }
+
+    /** The robot's war target id, {@link Protocol#NO_ID} for none. */
+    public int warId(int slot) { return warId[slot]; }
 
     /** BEHAVIOR: PLAYER_TEAM for a known id; unknown ids are ignored. */
     public void setTeam(int id, int t) {

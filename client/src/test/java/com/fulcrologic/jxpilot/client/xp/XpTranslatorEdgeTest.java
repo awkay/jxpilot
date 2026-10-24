@@ -190,60 +190,23 @@ class XpTranslatorEdgeTest {
     }
 
     @Test
-    void renamedPlayersLeaveWithTheNewName() {
-        tr.player(5, 0, ' ', "Longname", "");
-        tr.player(5, 0, ' ', "Bo", "");
-        tr.leave(5);
-        tr.player(6, 0, ' ', "Cy", "");
-        rec.events.clear();
-        tr.seek(6, 6, 6);
-        assertEquals("message kind=4 from=65535 Cy has programmed Cy to seek Cy.", rec.events.get(0),
-            "the left player's slot holds the next player");
-    }
-
-    @Test
-    void scoreMycharUpdatesTheLeaveRule() {
-        XpTranslator t = new XpTranslator(rec);
-        t.configure(built, 0, XpProto.MY_VERSION);
-        t.player(5, 0, ' ', "Tank", "");
-        t.score(5, 0, 0, 'T');
-        rec.events.clear();
-        t.leave(5);
-        assertEquals(List.of("leave id=5"), rec.events, "a player that became a tank leaves silently");
-    }
-
-    @Test
-    void leavingKeepsTheOtherNames() {
+    void leavingSelfForgetsItAndOthersDoNot() {
         tr.player(1, 0, 'R', "Robby", "");
-        tr.player(2, 0, ' ', "Ann", "");
-        tr.leave(3);
         tr.leave(1);
-        rec.events.clear();
-        tr.player(7, 0, 'R', "Rex", "");
-        tr.war(7, 2);
-        tr.seek(2, 7, 2);
+        int afterOther = tr.selfId();
+        tr.leave(3);
         assertAll(
-            () -> assertEquals(List.of("join id=7 team=0 flags=1 name=Rex shape=",
-                "message kind=4 from=65535 Rex declares war on Ann.",
-                "message kind=4 from=65535 Ann has programmed Rex to seek Ann."), rec.events.subList(0, 3),
-                "names survive removals"),
+            () -> assertEquals(3, afterOther, "another player leaving keeps the self id"),
             () -> assertEquals(Protocol.NO_ID, tr.selfId(), "self left"));
     }
 
     @Test
-    void warAndSeekNeedEveryName() {
-        tr.player(1, 0, 'R', "Robby", "");
+    void warAndSeekAreDeliveredForAnyIds() {
         rec.events.clear();
         tr.war(3, 1);
-        tr.war(1, 3);
-        tr.war(3, 9);
-        tr.seek(3, 1, 3);
-        tr.seek(1, 3, 3);
-        tr.seek(3, 3, 9);
-        assertEquals(List.of("message kind=4 from=65535 Me declares war on Robby.",
-            "message kind=4 from=65535 Robby declares war on Me.",
-            "message kind=4 from=65535 Me has programmed Robby to seek Me.",
-            "message kind=4 from=65535 Robby has programmed Me to seek Me."), rec.events,
-            "slot 0 is a valid name; unknown ids stay silent");
+        tr.war(70000, -1);
+        tr.seek(3, 1, 9);
+        assertEquals(List.of("war robot=3 killer=1", "war robot=" + (70000 & 0xFFFF) + " killer=" + Protocol.NO_ID,
+            "seek programmer=3 robot=1 sought=9"), rec.events, "ClientGame checks the ids");
     }
 }

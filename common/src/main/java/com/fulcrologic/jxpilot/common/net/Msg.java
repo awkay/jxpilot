@@ -840,6 +840,29 @@ public final class Msg {
         }
     }
 
+    /**
+     * {@link ReliableType#WAR}: u16 robotId, u16 killerId (C {@code "%c%hd%hd"}); {@link Protocol#NO_ID} as the
+     * killer ends the war (C sends -1).
+     */
+    public static final class War implements Payload {
+        public int robotId;
+        public int killerId;
+
+        public void write(ByteBuffer b) {
+            b.putShort((short) robotId);
+            b.putShort((short) killerId);
+        }
+
+        public void read(ByteBuffer b) {
+            robotId = b.getShort() & 0xFFFF;
+            killerId = b.getShort() & 0xFFFF;
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.WAR);
+        }
+    }
+
     /** {@link ReliableType#CHANGE_TEAM}. */
     public static final class ChangeTeam implements Payload {
         public int team;

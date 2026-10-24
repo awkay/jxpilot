@@ -51,8 +51,6 @@ import java.nio.ByteBuffer;
 public final class XpTranslator {
     /** Snapshot body capacity: far above the worst case of a 4 KB C datagram (27 B per particle). */
     public static final int SNAPSHOT_CAPACITY = 1 << 18;
-    /** Players remembered for C's client-side leave/war/seek messages. */
-    public static final int NAME_CAP = 256;
     /** A ship moving farther than this between frames gets no derived velocity (respawn, wrap jump). */
     public static final int TELEPORT_PX = 10 * XpProto.BLOCK_SZ;
 
@@ -76,6 +74,8 @@ public final class XpTranslator {
     private final Msg.Text text = new Msg.Text();
     private final Msg.BaseOwner baseOwner = new Msg.BaseOwner();
     private final Msg.Timing timing = new Msg.Timing();
+    private final Msg.War warMsg = new Msg.War();
+    private final Msg.Seek seekMsg = new Msg.Seek();
 
     // configuration
     private XpMap.Built map;
@@ -86,11 +86,6 @@ public final class XpTranslator {
     private int version = XpProto.MY_VERSION;
     private int[] cBaseOwner = new int[0];
 
-    // players (for C's client-generated messages)
-    private final int[] nameId = new int[NAME_CAP];
-    private final StringBuilder[] names = new StringBuilder[NAME_CAP];
-    private final char[] nameChar = new char[NAME_CAP];
-    private int nameCount;
     private int selfId = Protocol.NO_ID;
     private boolean expectSelf;
 
@@ -114,9 +109,6 @@ public final class XpTranslator {
 
     public XpTranslator(ConnectionListener listener) {
         this.listener = listener;
-        for (int i = 0; i < NAME_CAP; i++) {
-            names[i] = new StringBuilder(XpProto.MAX_CHARS);
-        }
         // final sizes up front, so messages never grow them while playing
         text.text.ensureCapacity(2 * XpProto.MSG_LEN);
         join.name.ensureCapacity(XpProto.MAX_CHARS);
@@ -139,7 +131,6 @@ public final class XpTranslator {
         version = protocolVersion;
         cBaseOwner = new int[built.baseIndex().length];
         java.util.Arrays.fill(cBaseOwner, Protocol.NO_ID);
-        nameCount = 0;
         selfId = Protocol.NO_ID;
         expectSelf = false;
         prevCount = 0;
@@ -781,15 +772,6 @@ public final class XpTranslator {
         listener.onReliable(type, pay);
     }
 
-    private int nameSlot(int id) {
-        for (int i = 0; i < nameCount; i++) {
-            if (nameId[i] == id) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
     /**
      * C {@code Handle_player}: a player joined (or its data changed).
      * <p>
@@ -803,16 +785,6 @@ public final class XpTranslator {
             expectSelf = false;
             selfId = id;
             listener.onAccepted(id);
-        }
-        int s = nameSlot(id);
-        if (s < 0 && nameCount < NAME_CAP) {
-            s = nameCount++;
-            nameId[s] = id;
-        }
-        if (s >= 0) {
-            names[s].setLength(0);
-            names[s].append(name);
-            nameChar[s] = (char) mychar;
         }
         join.id = id & 0xFFFF;
         join.team = team & 0xFF;
@@ -851,10 +823,6 @@ public final class XpTranslator {
             case 'D' -> Msg.Score.STATUS_OUT_OF_LIVES;
             default -> 0;
         };
-        int s = nameSlot(id);
-        if (s >= 0) {
-            nameChar[s] = (char) mychar;
-        }
         deliver(score, ReliableType.SCORE);
     }
 
@@ -931,28 +899,12 @@ public final class XpTranslator {
         deliver(text, ReliableType.MESSAGE);
     }
 
-    private StringBuilder clientMessage() {
-        text.kind = Msg.Text.KIND_GAME;
-        text.from = Protocol.NO_ID;
-        text.text.setLength(0);
-        return text.text;
-    }
-
     /**
      * C {@code Handle_leave}.
      * <p>
-     * BEHAVIOR: PLAYER_LEAVE (ClientGame adds C's "NAME left this world."); the name table forgets the id.
+     * BEHAVIOR: PLAYER_LEAVE (ClientGame adds C's "NAME left this world."); leaving self forgets the self id.
      */
     public void leave(int id) {
-        int s = nameSlot(id);
-        if (s >= 0) {
-            nameCount--;
-            nameId[s] = nameId[nameCount];
-            StringBuilder t = names[s];
-            names[s] = names[nameCount];
-            names[nameCount] = t;
-            nameChar[s] = nameChar[nameCount];
-        }
         if (id == selfId) {
             selfId = Protocol.NO_ID;
         }
@@ -960,28 +912,25 @@ public final class XpTranslator {
         deliver(leave, ReliableType.PLAYER_LEAVE);
     }
 
-    /** C {@code Handle_war}: BEHAVIOR: "ROBOT declares war on KILLER." when both are known and killer != -1. */
+    /**
+     * C {@code Handle_war}: BEHAVIOR: WAR with the robot and the killer (C's -1, "no more war", as
+     * {@link Protocol#NO_ID}); ClientGame keeps the target and says "ROBOT declares war on KILLER.".
+     */
     public void war(int robotId, int killerId) {
-        int r = nameSlot(robotId);
-        int k = nameSlot(killerId);
-        if (r < 0 || killerId == -1 || k < 0) {
-            return;
-        }
-        clientMessage().append(names[r]).append(" declares war on ").append(names[k]).append('.');
-        deliver(text, ReliableType.MESSAGE);
+        warMsg.robotId = robotId & 0xFFFF;
+        warMsg.killerId = killerId == -1 ? Protocol.NO_ID : killerId & 0xFFFF;
+        deliver(warMsg, ReliableType.WAR);
     }
 
-    /** C {@code Handle_seek}: BEHAVIOR: "P has programmed R to seek S." when all three are known. */
+    /**
+     * C {@code Handle_seek}: BEHAVIOR: SEEK with the three ids; ClientGame keeps the target and says
+     * "P has programmed R to seek S.".
+     */
     public void seek(int programmerId, int robotId, int soughtId) {
-        int p = nameSlot(programmerId);
-        int r = nameSlot(robotId);
-        int s = nameSlot(soughtId);
-        if (p < 0 || r < 0 || s < 0) {
-            return;
-        }
-        clientMessage().append(names[p]).append(" has programmed ").append(names[r]).append(" to seek ")
-            .append(names[s]).append('.');
-        deliver(text, ReliableType.MESSAGE);
+        seekMsg.programmerId = programmerId & 0xFFFF;
+        seekMsg.robotId = robotId & 0xFFFF;
+        seekMsg.soughtId = soughtId & 0xFFFF;
+        deliver(seekMsg, ReliableType.SEEK);
     }
 
     /**
