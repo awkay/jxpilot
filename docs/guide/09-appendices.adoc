@@ -35,8 +35,9 @@ https://github.com/awkay/jxpilot.
 [cols="2,3,2",options="header"]
 |===
 |Component |Where |License
-|XPilot 4.5.5 maps |`maps/*.xp`, the maps zip, the application downloads |GPL v2 or later; authors in
-<<06-config-and-maps.adoc#shipped-maps,Shipped maps>>
+|XPilot 4.5.5 maps |Server and client jars (`xpilot/maps/`, with `xpilot/maps/README.md` on their origin),
+`maps/*.xp`, the maps zip |GPL v2 or later (part of the XPilot distribution; `META-INF/LICENSE` in the
+jars); authors in <<06-config-and-maps.adoc#shipped-maps,Shipped maps>>
 |Fira Code font |Client jar (`fonts/`) |SIL Open Font License 1.1 (`fonts/FiraCode-LICENSE.txt`)
 |Sound effects: Juhani Junkala, "The Essential Retro Video Game Sound Effects Collection [512
 sounds]" (21 clips), and Kenney, "Sci-Fi Sounds" `thrusterFire_004` (the engine loop) |Client jar

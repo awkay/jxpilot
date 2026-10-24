@@ -139,7 +139,7 @@ The map viewer (`--view-map`, available now) has its own keys:
 |Key |Function
 |Arrow keys |Pan the camera
 |kbd:[=] or keypad kbd:[+], kbd:[-] or keypad kbd:[-], mouse wheel |Zoom in / out
-|kbd:[Tab] |Next map in the same directory
+|kbd:[Tab] |Next map: the next built-in map, or for a map file the next one in its directory
 |kbd:[F] |Filled or outlined walls
 |kbd:[R] |Show or hide the radar
 |kbd:[S] |Swap between the current zoom and the alternative zoom (`--alt-scale-factor`), as XPilot's

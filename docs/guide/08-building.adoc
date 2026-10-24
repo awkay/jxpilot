@@ -30,13 +30,14 @@ plan, architecture, performance rules and milestones), `docs/PROTOCOL.md` (the w
 git clone https://github.com/awkay/jxpilot.git
 cd jxpilot
 mvn install                                     # build and test every module
-mvn -pl client exec:exec                        # map viewer on maps/default.xp
-mvn -pl client exec:exec -Dclient.args="--view-map ../maps/planetx.xp --demo"
+mvn -pl client exec:exec                        # map viewer on the built-in default map
+mvn -pl client exec:exec -Dclient.args="--view-map planetx --demo"
 mvn -Prelease verify                            # also build the release jars (below)
 ----
 
 The `exec:exec` run adds the right Java options for your system, including `-XstartOnFirstThread` on
-macOS. It runs in the `client/` directory, so relative map paths in `client.args` start with `../maps/`.
+macOS. It runs in the `client/` directory, so a relative path to a map file in `client.args` starts
+from there (`../maps/planetx.xp`); built-in map names need no path.
 
 [[modules]]
 === Modules
@@ -51,7 +52,9 @@ the network protocol codecs.
 servers, the embedded server for `--local`. `client/scripts/run-client.sh` runs it from a build.
 |`dist/` |Release packaging: the client jar launcher, the release jars (`-Prelease`), and the generator
 of this guide's reference tables.
-|`maps/` |The original XPilot maps, unmodified. Never change these files.
+|`maps/` |The original XPilot maps, unmodified. Never change these files. The common module's build
+copies them into the jars as `xpilot/maps/` (listed by `common/src/main/resources/xpilot/maps/index.txt`,
+which a test keeps in step with `maps/`).
 |`docs/` |Design documents; `docs/guide/` is this guide.
 |`tools/xpilot-ref/` |A Docker harness that runs the original C XPilot 4.5.5 server and client
 headlessly, for screenshots and physics traces to compare against.

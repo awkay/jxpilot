@@ -35,16 +35,21 @@ every release and published at https://awkay.github.io/jxpilot/.
 
 == Downloads
 
-Runnable jars (Java 25), the maps, and client applications with a bundled Java runtime for macOS,
+Runnable jars (Java 25) and client applications with a bundled Java runtime for macOS,
 Linux and Windows are on the https://github.com/awkay/jxpilot/releases[Releases page]. See the guide's
 link:docs/guide/02-quick-start.adoc[Quick start].
 
 [source,bash]
 ----
-java -jar jxpilot-client-VERSION.jar --local --map maps/default.xp    # a game against robots
-java -jar jxpilot-server-VERSION.jar --map maps/default.xp            # a server for others
-java -jar jxpilot-client-VERSION.jar --connect HOST                   # join it
+java -jar jxpilot-client-VERSION.jar --local --map default    # a game against robots
+java -jar jxpilot-server-VERSION.jar --map default            # a server for others
+java -jar jxpilot-client-VERSION.jar --connect HOST           # join it
+java -jar jxpilot-server-VERSION.jar --list-maps              # the maps built into the jars
 ----
+
+The 19 original maps are inside both jars: `--map NAME` picks one by name (`tourmination`, or
+`tourmination.xp`; case does not matter). A value with a path in it (`./mymap.xp`, `maps/mymap.xp`) is
+a map file.
 
 == Building and running
 
@@ -53,8 +58,8 @@ Requires JDK 25 and Maven.
 [source,bash]
 ----
 mvn install                                   # build + test all modules
-mvn -pl client exec:exec                      # map viewer (default.xp)
-mvn -pl client exec:exec -Dclient.args="--local --map ../maps/planetx.xp"
+mvn -pl client exec:exec                      # map viewer (the bundled default)
+mvn -pl client exec:exec -Dclient.args="--local --map planetx"
 mvn -Prelease verify                          # also build the release jars into dist/target/release/
 ----
 
@@ -80,7 +85,7 @@ are XPilot's defaults; kbd:[Esc] quits. See `docs/XPILOT-PROTOCOL.md` for what t
 * `server/`: game simulation and server
 * `client/`: LWJGL renderer, HUD, input, networking
 * `dist/`: release packaging (client launcher, runnable jars) and the guide's generated tables
-* `maps/`: original XPilot maps, unmodified (see `maps/README.md`)
+* `maps/`: original XPilot maps, unmodified (see `maps/README.md`); the build bundles them into the jars
 * `docs/`: spec, protocol, testing standard; `docs/guide/` is the user guide
 
 == License
@@ -100,7 +105,8 @@ changes.
 [cols="2,3,3",options="header"]
 |===
 |Component |Where |License
-|XPilot 4.5.5 maps |`maps/*.xp` |GPL v2 or later (part of the XPilot distribution); see `maps/README.md`
+|XPilot 4.5.5 maps |`maps/*.xp`; inside the server and client jars as `xpilot/maps/` |GPL v2 or later (part of the
+XPilot distribution); see `maps/README.md` (also in the jars)
 |XPilot 4.5.5 server defaults file (`lib/defaults`) |`server/src/main/resources/xpilot/defaults`; inside the
 server and client jars |GPL v2 or later (part of the XPilot distribution); see `server/src/main/resources/xpilot/README.md`
 |Fira Code font |`client/src/main/resources/fonts/` |SIL Open Font License 1.1 (`FiraCode-LICENSE.txt`)

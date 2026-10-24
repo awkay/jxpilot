@@ -76,7 +76,8 @@ jobs:
           -DnewVersion="$VERSION" -DprocessAllModules=true -DgenerateBackupPoms=false
 
       # validate: license-header check; test: every module's tests, including the check that
-      # docs/guide/generated/ matches the code; package (-Prelease): the two runnable jars.
+      # docs/guide/generated/ matches the code; package (-Prelease): the two runnable jars;
+      # integration-test: ReleaseJarTest runs those jars from a directory without maps/.
       - name: Build, test and package the jars
         run: mvn -B -ntp -Prelease verify
 
@@ -84,12 +85,15 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          # Starts, binds loopback and serves the map; stopped after a few seconds.
-          timeout 8s java -jar "dist/target/release/jxpilot-server-$VERSION.jar" \
-            --map maps/default.xp --port 15345 --bind loopback > server.log 2>&1 || true
-          cat server.log
-          grep -q '^listening on ' server.log
-          grep -q '^serving map ' server.log
+          # From a directory that holds only the jar: starts, binds loopback and serves the bundled
+          # map 'default'; stopped after a few seconds.
+          smoke=$(mktemp -d)
+          cp "dist/target/release/jxpilot-server-$VERSION.jar" "$smoke/"
+          (cd "$smoke" && test ! -e maps && timeout 8s java -jar "jxpilot-server-$VERSION.jar" \
+            --map default --port 15345 --bind loopback > server.log 2>&1) || true
+          cat "$smoke/server.log"
+          grep -q '^listening on ' "$smoke/server.log"
+          grep -q "^serving map 'The Newbie Globe' " "$smoke/server.log"
 
       - name: Assemble release files
         env:
@@ -97,6 +101,7 @@ jobs:
         run: |
           mkdir -p out
           cp "dist/target/release/jxpilot-client-$VERSION.jar" "dist/target/release/jxpilot-server-$VERSION.jar" out/
+          # The maps are built into both jars; the zip is a convenience for editing them.
           staging="jxpilot-maps-$VERSION"
           mkdir -p "$staging"
           cp -R maps "$staging/maps"
@@ -152,27 +157,23 @@ jobs:
           name: release-files
           path: files
 
-      # jpackage bundles a trimmed Java runtime with the client jar and the maps. The app's main
-      # class is ClientMain itself: the launcher's relaunch is not needed because the JVM options
-      # below already carry -XstartOnFirstThread on macOS. With no arguments the app starts a game on an
-      # embedded server with robots on the bundled default map ($APPDIR is expanded by the jpackage launcher).
+      # jpackage bundles a trimmed Java runtime with the client jar, which has the maps built in. The
+      # app's main class is ClientMain itself: the launcher's relaunch is not needed because the JVM
+      # options below already carry -XstartOnFirstThread on macOS. With no arguments the app starts a
+      # game on an embedded server with robots on the bundled map 'default'.
       - name: Build the app image
         run: |
           mkdir -p input
           cp "files/jxpilot-client-$VERSION.jar" input/jxpilot-client.jar
-          unzip -q "files/jxpilot-maps-$VERSION.zip"
-          cp -R "jxpilot-maps-$VERSION/maps" input/maps
           modules=$(jdeps --multi-release "$JAVA_VERSION" --print-module-deps --ignore-missing-deps input/jxpilot-client.jar)
           echo "Runtime modules: $modules"
-          # shellcheck disable=SC2016 # $APPDIR is expanded by the jpackage launcher, not the shell
-          default_map='$APPDIR/maps/default.xp'
           args=(--type app-image --name JXPilot --dest image --input input
                 --main-jar jxpilot-client.jar --main-class com.fulcrologic.jxpilot.client.ClientMain
                 --add-modules "$modules"
                 --java-options -XX:+UseZGC
                 --java-options --enable-native-access=ALL-UNNAMED
                 --java-options --sun-misc-unsafe-memory-access=allow
-                --arguments --local --arguments --map --arguments "$default_map"
+                --arguments --local --arguments --map --arguments default
                 --vendor "JXPilot contributors" --copyright "GPL-2.0-or-later; see LICENSE")
           case "$RUNNER_OS" in
             macOS)
@@ -186,7 +187,7 @@ jobs:
               [ -n "$APP_VERSION" ] && args+=(--app-version "$APP_VERSION") ;;
           esac
           jpackage "${args[@]}"
-          cp "jxpilot-maps-$VERSION/LICENSE" image/
+          unzip -p input/jxpilot-client.jar META-INF/LICENSE > image/LICENSE
 
       - name: Archive the app image
         run: |

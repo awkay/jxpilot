@@ -33,7 +33,8 @@ release number, for example `0.2.0`.
 |Yes
 
 |`jxpilot-maps-VERSION.zip`
-|The 19 original XPilot maps and the license. You need these for both the client and the server.
+|The 19 original XPilot maps and the license, for editing or for other XPilot programs. You don't need
+it to play: the jars and applications have the maps built in.
 |-
 
 |`JXPilot-VERSION-macos-arm64.zip`, `-macos-x64.zip`, `-linux-x64.tar.gz`, `-linux-arm64.tar.gz`,
@@ -68,21 +69,22 @@ The jars need a Java 25 (or newer) runtime. The application downloads (`JXPilot-
 [[run-client]]
 == Playing right away: a game against robots
 
-Unzip `jxpilot-maps-VERSION.zip`, then from the directory that contains it run:
-
 [source,shell]
 ----
-java -jar jxpilot-client-VERSION.jar --local --map jxpilot-maps-VERSION/maps/default.xp
+java -jar jxpilot-client-VERSION.jar --local --map default
 ----
 
 `--local` starts a JXPilot server inside the client, reachable only from your own computer, and joins
-it. Robots join too (four by default), so you have someone to fight. Any other map works the same way.
+it. Robots join too (four by default), so you have someone to fight. `default` is one of the 19 maps
+built into the jar; `--list-maps` lists them all, and any of them works the same way
+(`--map tourmination`). To play a map file of your own, give a path: `--map ./mymap.xp`
+(<<07-client-reference.adoc#client-map-names,Map names>>).
 Your player name is your login name; choose another with `--name`. The keys are XPilot's: kbd:[A] and
 kbd:[S] turn, kbd:[Shift] thrusts, kbd:[Enter] fires, kbd:[Space] is the shield, kbd:[M] opens the talk
 line and kbd:[Esc] quits (<<03-playing.adoc#controls,Controls>>).
 
 To look at a map without playing, use the map viewer:
-`java -jar jxpilot-client-VERSION.jar --view-map jxpilot-maps-VERSION/maps/default.xp` (add `--demo` to
+`java -jar jxpilot-client-VERSION.jar --view-map default` (add `--demo` to
 see ships, shots and the HUD in action; <<07-client-reference.adoc#viewer-flags,Viewer flags>>).
 
 [[platform-notes]]
@@ -102,8 +104,8 @@ The client needs a graphics driver with OpenGL 3.3 and an X11 or Wayland desktop
 `java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -jar jxpilot-client-VERSION.jar ...`.
 
 Windows::
-Run the same command in PowerShell or Command Prompt, using `\` in paths if you prefer:
-`java -jar jxpilot-client-VERSION.jar --view-map jxpilot-maps-VERSION\maps\default.xp`.
+Run the same command in PowerShell or Command Prompt. In a path to a map file of your own, `\` works
+as well as `/`: `java -jar jxpilot-client-VERSION.jar --view-map .\mymap.xp`.
 
 NOTE: The client has been tested most on macOS (Apple Silicon). The Windows and Linux files are built
 by the same release process, with less testing so far. Please report problems.
@@ -112,8 +114,8 @@ by the same release process, with less testing so far. Please report problems.
 == Running the application downloads (no Java needed)
 
 The `JXPilot-VERSION-PLATFORM` archives contain the client with a trimmed Java runtime and the maps.
-Started without arguments, the application starts a game against robots on the bundled `default.xp`
-(as `--local --map default.xp`); started from a terminal it takes the same flags as the jar.
+Started without arguments, the application starts a game against robots on the bundled `default` map
+(as `--local --map default`); started from a terminal it takes the same flags as the jar.
 
 [cols="1,3,4",options="header"]
 |===
@@ -121,20 +123,19 @@ Started without arguments, the application starts a game against robots on the b
 
 |macOS
 |Unzip, then double-click `JXPilot.app` (first see <<gatekeeper>>).
-|`JXPilot.app/Contents/MacOS/JXPilot --view-map /path/to/map.xp --demo`
+|`JXPilot.app/Contents/MacOS/JXPilot --view-map planetx --demo`
 
 |Linux
 |`tar xzf JXPilot-VERSION-linux-x64.tar.gz`, then run `JXPilot-VERSION-linux-x64/JXPilot/bin/JXPilot`.
-|`.../JXPilot/bin/JXPilot --view-map /path/to/map.xp`
+|`.../JXPilot/bin/JXPilot --local --map /path/to/my.xp`
 
 |Windows
 |Unzip, then double-click `JXPilot\JXPilot.exe`. A console window opens next to the game window and
 shows its messages.
-|`JXPilot\JXPilot.exe --view-map C:\path\to\map.xp`
+|`JXPilot\JXPilot.exe --view-map C:\path\to\my.xp`
 |===
 
-The bundled maps are inside the application: `JXPilot.app/Contents/app/maps` on macOS and
-`JXPilot/lib/app/maps` on Linux and `JXPilot\app\maps` on Windows.
+The maps are inside the client jar in the application, so they are found by name as with the jar.
 
 [[gatekeeper]]
 === macOS: "JXPilot is damaged and can't be opened"
@@ -157,7 +158,7 @@ and checked against `SHA256SUMS.txt`. The jars are not affected: they run in the
 
 [source,shell]
 ----
-java -jar jxpilot-server-VERSION.jar --map jxpilot-maps-VERSION/maps/default.xp
+java -jar jxpilot-server-VERSION.jar --map default
 ----
 
 The server prints the addresses it listens on and runs until you press kbd:[Ctrl+C]. For example, with
