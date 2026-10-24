@@ -269,6 +269,26 @@ class MessagesTest {
     @DisplayName("Msg codecs")
     class Codecs {
         @Test
+        @DisplayName("TIMING round trips id (u16), check (u8) and round (u16) in 5 bytes")
+        void timing() {
+            ByteBuffer b = buf();
+            Msg.Timing t = new Msg.Timing();
+            t.id = 40000;
+            t.check = 25;
+            t.round = 65535;
+            t.write(b);
+            int len = b.position();
+            b.flip();
+            Msg.Timing t2 = new Msg.Timing();
+            t2.read(b);
+            assertAll(
+                () -> assertEquals(5, len, "5 bytes"),
+                () -> assertEquals(40000, t2.id, "id"),
+                () -> assertEquals(25, t2.check, "check"),
+                () -> assertEquals(65535, t2.round, "round"));
+        }
+
+        @Test
         @DisplayName("control messages round trip")
         void control() {
             ByteBuffer b = buf();
@@ -587,30 +607,6 @@ class MessagesTest {
                 () -> assertEquals(300, o2.bx, "carries block x"),
                 () -> assertEquals(65535, o2.by, "carries block y as u16"),
                 () -> assertEquals("[Wall]", o2.text.toString(), "carries the label"));
-        }
-
-        @Test
-        @DisplayName("TIMING carries the player id, next checkpoint and rounds")
-        void timing() {
-            ReliableChannel tx = new ReliableChannel();
-            Msg.Timing t = new Msg.Timing();
-            t.id = 65534;
-            t.check = 25;
-            t.round = 60000;
-            t.send(tx);
-            ByteBuffer p = buf();
-            tx.write(p, 0);
-            p.flip();
-            Capture cap = new Capture();
-            new ReliableChannel().read(p, cap);
-            Msg.Timing t2 = new Msg.Timing();
-            t2.read(cap.payloads.get(0));
-            assertAll(
-                () -> assertEquals(List.of(ReliableType.TIMING), cap.types, "sent as TIMING (13)"),
-                () -> assertEquals(13, ReliableType.TIMING, "type id 13"),
-                () -> assertEquals(65534, t2.id, "id as u16"),
-                () -> assertEquals(25, t2.check, "check"),
-                () -> assertEquals(60000, t2.round, "round as u16"));
         }
 
         @Test

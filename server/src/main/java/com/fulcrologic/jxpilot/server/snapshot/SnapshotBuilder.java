@@ -34,6 +34,7 @@ import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
 import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.server.world.ModeState;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
@@ -45,8 +46,10 @@ import java.nio.ByteBuffer;
  * Fills SNAPSHOT bodies for one viewer from the {@link World} with common's {@link SnapshotWriter}.
  * Allocation free; one instance per server thread.
  * <p>
- * Sections in order: SELF, SOUND (the viewer's queued sounds; the caller clears the queue once sent), SHIP (other ships in view), CANNON, FUEL, RADAR (whole world, when requested),
- * BURST (bursts made since the viewer's cursor, in view), WRECKAGE (in view) and last SHOT, which fills the remaining room
+ * Sections in order: SELF, SOUND (the viewer's queued sounds; the caller clears the queue once sent), SHIP (other ships in view), CANNON, FUEL,
+ * TARGET, TREASURE, TEMP_WORMHOLE, RADAR (when requested), the item sections ({@link ItemSections}: TIMERS, SELF_ITEMS, ITEM, MINE,
+ * MISSILE, LASER, ECM, beams, TRANSPORTER), BURST (bursts made since the viewer's cursor, in view), WRECKAGE (in
+ * view), the game-mode objects (BALL, ASTEROID, ball CONNECTOR) and last SHOT, which fills the remaining room
  * nearest first ({@link ShotHash}, grouped by kind/colour relative to the viewer). Objects farther than the
  * view half-size from the viewer (or not encodable, {@link SnapshotWriter#inView}) are culled. When a
  * datagram fills up, the snapshot continues in the next buffer as a new self-contained part (same tick,
@@ -69,8 +72,6 @@ public final class SnapshotBuilder {
     /** Wreckage handles of this round ({@link #beginRound}), {@code wrecks[0..wreckCount)}. */
     private final int[] wrecks;
     private int wreckCount;
-    /** C {@code playersOnRadar}: other teams' ships appear on the radar (frame.c:1152-1170). */
-    private final boolean playersOnRadar;
     private final SnapshotWriter wr = new SnapshotWriter();
     private final ShotHash hash;
     /** {@link World#frames} when {@link #hash} was last rebuilt (-1: never). */
@@ -95,16 +96,23 @@ public final class SnapshotBuilder {
     private int lastInputSeq;
     private double cx;
     private double cy;
+    /** The item sections (server-items). */
+    private final ItemSections itemSections;
 
     public SnapshotBuilder(World w) {
         this.w = w;
-        this.playersOnRadar = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.PLAYERS_ON_RADAR);
         wr.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
         shotList = new int[w.objects.capacity];
         shotVariant = new int[w.objects.capacity];
         wrecks = new int[w.objects.capacity];
         hash = new ShotHash(w);
+        itemSections = new ItemSections(w, this);
         initRecordClasses();
+    }
+
+    /** The section writer (for {@link ItemSections}). */
+    SnapshotWriter writer() {
+        return wr;
     }
 
     /**
@@ -179,11 +187,17 @@ public final class SnapshotBuilder {
         writeRefuel();
         writeCannons();
         writeFuel();
+        writeTargets();
+        writeTreasures();
+        writeTempWormholes();
         if (radar) {
             writeRadar(viewer);
+            writeModeRadar(viewer);
         }
+        itemSections.write(viewer);
         writeBursts(burstFrom);
         writeWreckage();
+        writeModeObjects();
         writeShots(viewer);
         closeSection();
         int count = part + 1;
@@ -216,7 +230,7 @@ public final class SnapshotBuilder {
      * BEHAVIOR: returns false when the record fits in none of the buffers: only that record is dropped;
      * records of the same or a larger size are skipped from then on, smaller ones are still tried.
      */
-    private boolean need(int type, int variant) {
+    boolean need(int type, int variant) {
         if (curType == type && curVariant == variant && wr.hasRoom()) {
             return true;
         }
@@ -241,7 +255,7 @@ public final class SnapshotBuilder {
         return true;
     }
 
-    private boolean visible(double x, double y, double margin) {
+    boolean visible(double x, double y, double margin) {
         double dx = w.wrapDx(x - cx);
         double dy = w.wrapDy(y - cy);
         return Math.abs(dx) <= viewHalfX + margin && Math.abs(dy) <= viewHalfY + margin && wr.inView(x, y);
@@ -268,6 +282,30 @@ public final class SnapshotBuilder {
         if ((pl.used & Has.REFUEL) != 0) {
             f |= Records.ShipFlags.REFUELING;
         }
+        if ((pl.used & Has.REPAIR) != 0) {
+            f |= Records.ShipFlags.REPAIRING;
+        }
+        if ((pl.have & Has.BALL) != 0) {
+            f |= Records.ShipFlags.HAS_BALL;
+        }
+        if ((pl.used & Has.CLOAKING_DEVICE) != 0) {
+            f |= Records.ShipFlags.CLOAKED;
+        }
+        if ((pl.used & Has.PHASING_DEVICE) != 0) {
+            f |= Records.ShipFlags.PHASING;
+        }
+        if ((pl.used & Has.EMERGENCY_SHIELD) != 0) {
+            f |= Records.ShipFlags.EMERGENCY_SHIELD;
+        }
+        if ((pl.used & Has.DEFLECTOR) != 0) {
+            f |= Records.ShipFlags.DEFLECTOR;
+        }
+        if ((pl.used & Has.AUTOPILOT) != 0 || (pl.status & Obj.HOVERPAUSE) != 0) {
+            f |= Records.ShipFlags.AUTOPILOT;
+        }
+        if ((pl.used & Has.EMERGENCY_THRUST) != 0) {
+            f |= Records.ShipFlags.EMERGENCY_THRUST;
+        }
         if (pl == viewer || w.sameTeam(pl, viewer)) {
             f |= Records.ShipFlags.FRIENDLY;
         }
@@ -282,10 +320,14 @@ public final class SnapshotBuilder {
         if (!need(Section.SELF, 0)) {
             return;
         }
-        Records.Self.put(wr, v.id, shipFlags(v, v), (float) cx, (float) cy, (float) v.vx, (float) v.vy,
-            (float) heading(v), (float) (v.fuel / 256), (float) (v.fuelMax / 256), Protocol.NO_ID, 0, 0,
+        int flags = (shipFlags(v, v) & ~Records.ShipFlags.AUTOPILOT)
+            | (itemSections.autopilotLight(v) ? Records.ShipFlags.AUTOPILOT : 0);
+        Records.Self.put(wr, v.id, flags, (float) cx, (float) cy, (float) v.vx, (float) v.vy,
+            (float) heading(v), (float) (v.fuel / 256), (float) (v.fuelMax / 256),
+            (v.lockTagged & Player.LOCK_PLAYER) != 0 && (v.used & Has.COMPASS) != 0 ? v.lockPlId : Protocol.NO_ID,
+            v.numTanks, v.currentTank,
             (v.status & Obj.PLAYING) == 0 && v.count > 0 ? v.count : 0, v.power, v.turnSpeed, v.turnResistance,
-            0, 0, 0, 0);
+            itemSections.lockDist(v), itemSections.lockDir(v), v.check, ItemSections.selfMods(v.mods));
     }
 
     private void writeSounds(Player v) {
@@ -310,6 +352,9 @@ public final class SnapshotBuilder {
             if (pl == v || !shown(pl)) {
                 continue;
             }
+            if ((pl.status & Obj.PAUSE) == 0 && !itemSections.shipShown(pl, v)) {
+                continue;
+            }
             double x = pl.cx / (double) Click.CLICK;
             double y = pl.cy / (double) Click.CLICK;
             if (!visible(x, y, 0) || !need(Section.SHIP, 0)) {
@@ -320,14 +365,17 @@ public final class SnapshotBuilder {
     }
 
     /**
-     * BEHAVIOR: the SHOT section variant of a shot relative to the viewer: kind, colour, and
+     * BEHAVIOR: the SHOT section variant of a shot relative to the viewer: kind (NUCLEAR for any shot with
+     * nuclear modifiers, C frame.c:830, the client blinks it), colour, and
      * {@code FLAG_HARMLESS} when C frame.c would draw it as harmless to the viewer (team immune owner, paused
      * owner, an unowned shot of the viewer's team in team play, or the viewer's own shot with selfImmunity).
      */
     int shotVariant(int h, Player v) {
         Objects o = w.objects;
         int kind;
-        if (o.type[h] == Obj.CANNON_SHOT) {
+        if (com.fulcrologic.jxpilot.server.world.Mods.isNuclear(o.mods[h])) {
+            kind = Records.ShotKind.NUCLEAR;
+        } else if (o.type[h] == Obj.CANNON_SHOT) {
             kind = Records.ShotKind.CANNON_SHOT;
         } else if ((o.mods[h] & Obj.MOD_CLUSTER) != 0) {
             kind = Records.ShotKind.CLUSTER;
@@ -498,10 +546,129 @@ public final class SnapshotBuilder {
         }
     }
 
+    // ================================================================ game modes (server-modes)
+
+    /** BEHAVIOR: targets in view: index, DEAD while dead, and the strength left (C {@code Send_target}). */
+    private void writeTargets() {
+        java.util.List<com.fulcrologic.jxpilot.common.map.Target> targets = w.map.targets();
+        ModeState m = w.modes;
+        for (int i = 0; i < targets.size(); i++) {
+            com.fulcrologic.jxpilot.common.map.Target t = targets.get(i);
+            if (!visible(t.x(), t.y(), 0) || !need(Section.TARGET, 0)) {
+                continue;
+            }
+            boolean dead = w.targetDeadTime[i] > 0;
+            Records.TargetState.put(wr, i, dead ? Records.TargetState.FLAG_DEAD : 0,
+                (double) m.targetDamage[i] / ModeState.TARGET_DAMAGE);
+        }
+    }
+
+    /** BEHAVIOR: treasures in view: index and HAS_BALL while their ball rests in them. */
+    private void writeTreasures() {
+        java.util.List<com.fulcrologic.jxpilot.common.map.Treasure> ts = w.map.treasures();
+        for (int i = 0; i < ts.size(); i++) {
+            com.fulcrologic.jxpilot.common.map.Treasure t = ts.get(i);
+            if (!visible(t.x(), t.y(), 0) || !need(Section.TREASURE, 0)) {
+                continue;
+            }
+            Records.TreasureState.put(wr, i, w.modes.treasureHave[i] ? Records.TreasureState.FLAG_HAS_BALL : 0);
+        }
+    }
+
+    /** BEHAVIOR: every temporary wormhole (few, map-like): its block and type (Wormhole.Type ordinal). */
+    private void writeTempWormholes() {
+        com.fulcrologic.jxpilot.server.world.WormTable worms = w.worms;
+        for (int i = worms.mapCount; i < worms.count(); i++) {
+            if (!need(Section.TEMP_WORMHOLE, 0)) {
+                return;
+            }
+            Records.TempWormhole.put(wr, worms.bx(i), worms.by(i), worms.type(i));
+        }
+    }
+
+    /**
+     * Balls, connectors and asteroids in view (C {@code Frame_shots}, {@code Frame_ships}).
+     * <p>
+     * BEHAVIOR: a ball: its handle, team (its treasure's), and the ship it is connected to (or NO_ID); a ship
+     * reaching for a ball (C {@code pl->ball}) shows a connector from the ball to the ship; asteroids with size
+     * and rotation.
+     */
+    private void writeModeObjects() {
+        Objects o = w.objects;
+        ModeState m = w.modes;
+        for (int k = 0; k < o.count(); k++) {
+            int h = o.active[k];
+            int type = o.type[h];
+            if ((type & (Obj.BALL | Obj.ASTEROID)) == 0 || o.life[h] <= 0) {
+                continue;
+            }
+            double x = o.cx[h] / (double) Click.CLICK;
+            double y = o.cy[h] / (double) Click.CLICK;
+            if (!visible(x, y, 0)) {
+                continue;
+            }
+            if (type == Obj.BALL) {
+                if (need(Section.BALL, 0)) {
+                    int team = m.treasureTeam[m.ballTreasure[h]];
+                    Records.Ball.put(wr, h, x, y, team < 0 ? Protocol.NO_TEAM : team,
+                        o.owner[h] == Obj.NO_ID ? Protocol.NO_ID : o.owner[h]);
+                }
+            } else if (need(Section.ASTEROID, 0)) {
+                Records.Asteroid.put(wr, x, y, o.size[h], o.rotation[h] * (2 * Math.PI / Const.RES));
+            }
+        }
+        for (int k = 0; k < w.numPlayers; k++) {
+            Player pl = w.playerAt(k);
+            int h = pl.ball;
+            if (h < 0 || !o.isLive(h) || o.type[h] != Obj.BALL || (pl.status & (Obj.PLAYING | Obj.PAUSE)) == 0) {
+                continue;
+            }
+            double bx = o.cx[h] / (double) Click.CLICK;
+            double by = o.cy[h] / (double) Click.CLICK;
+            if (!visible(bx, by, 0) || !wr.inView(pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK)
+                || !need(Section.CONNECTOR, 0)) {
+                continue;
+            }
+            Records.Connector.put(wr, bx, by, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK,
+                Records.Connector.KIND_BALL);
+        }
+    }
+
+    /**
+     * BEHAVIOR: radar blips for balls (with treasuresOnRadar, FLAG_BALL) and asteroids (with asteroidsOnRadar,
+     * FLAG_ASTEROID) within the viewer's sensor range (C Frame_radar).
+     */
+    private void writeModeRadar(Player v) {
+        boolean balls = w.modeParams.treasuresOnRadar;
+        boolean asteroids = w.modeParams.asteroidsOnRadar;
+        if (!balls && !asteroids) {
+            return;
+        }
+        Objects o = w.objects;
+        for (int k = 0; k < o.count(); k++) {
+            int h = o.active[k];
+            int flag;
+            if (balls && o.type[h] == Obj.BALL) {
+                flag = Records.Radar.FLAG_BALL;
+            } else if (asteroids && o.type[h] == Obj.ASTEROID) {
+                flag = Records.Radar.FLAG_ASTEROID;
+            } else {
+                continue;
+            }
+            if (w.wrapLength(v.px - o.px[h], v.py - o.py[h]) > v.sensorRange) {
+                continue;
+            }
+            if (!need(Section.RADAR, 0)) {
+                return;
+            }
+            Records.Radar.put(wr, o.px[h], o.py[h], flag);
+        }
+    }
+
     private void writeRadar(Player v) {
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
-            if (!pl.isAlive() || (!playersOnRadar && pl != v && !w.sameTeam(pl, v)) || !need(Section.RADAR, 0)) {
+            if (!pl.isAlive() || !itemSections.onRadar(pl, v) || !need(Section.RADAR, 0)) {
                 continue;
             }
             int flags = 0;
@@ -513,5 +680,6 @@ public final class SnapshotBuilder {
             }
             Records.Radar.put(wr, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK, flags);
         }
+        itemSections.writeRadarObjects(v);
     }
 }

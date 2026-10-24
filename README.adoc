@@ -22,7 +22,7 @@ here instead.
 ====
 
 Status: work in progress, but playable: the Java server runs the XPilot game with robots, and the
-client plays on it or on original XPilot servers. Items, balls, targets and races (milestone M2)
+client plays on it or on original XPilot servers. Items work; balls, targets, races and asteroids (milestone M2)
 are being added. See `docs/SPEC.md` for the plan and milestones, and the user guide's
 link:docs/guide/01-introduction.adoc#status[status table].
 
@@ -105,10 +105,10 @@ changes.
 server and client jars |GPL v2 or later (part of the XPilot distribution); see `server/src/main/resources/xpilot/README.md`
 |Fira Code font |`client/src/main/resources/fonts/` |SIL Open Font License 1.1 (`FiraCode-LICENSE.txt`)
 |Sound effects: Juhani Junkala, "The Essential Retro Video Game Sound Effects Collection [512 sounds]"
-(opengameart.org) |`client/src/main/resources/sounds/` (21 clips) |CC0 1.0 (`LICENSE-sounds.txt`: source,
+(opengameart.org) |`client/src/main/resources/sounds/` (21 clips) |CC0 1.0 (`CC0-1.0.txt`; `LICENSE-sounds.txt`: source,
 sha256, per-clip origin and modifications)
 |Sound effect: Kenney, "Sci-Fi Sounds" `thrusterFire_004` (kenney.nl), cut into a loop
-|`client/src/main/resources/sounds/thrust_loop.wav` |CC0 1.0 (`LICENSE-sounds.txt`)
+|`client/src/main/resources/sounds/thrust_loop.wav` |CC0 1.0 (`CC0-1.0.txt`, `LICENSE-sounds.txt`)
 |LWJGL 3 and its natives (GLFW, stb, OpenAL Soft, libffi, liburing; Khronos headers) |Maven dependency;
 bundled only in the release client jar (texts in `dist/src/main/resources/META-INF/licenses/lwjgl/`) |BSD
 3-Clause; zlib, MIT or public domain, GNU LGPL 2 or later, MIT, MIT, Khronos (MIT-style)

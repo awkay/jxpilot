@@ -57,6 +57,11 @@ public final class Mover {
     private final float[] rx = new float[ShipShape.MAX_SHIP_PTS];
     private final float[] ry = new float[ShipShape.MAX_SHIP_PTS];
 
+    /** Install the ball reactions to treasures (balls exist once the simulation is built). */
+    void setTreasureHook(Segment.TreasureHook hook) {
+        seg.treasureHook = hook;
+    }
+
     public Mover(World w, Simulation sim) {
         this.w = w;
         this.sim = sim;
@@ -114,8 +119,9 @@ public final class Mover {
         ms.targetCrashes = (p.objTargetMask & type) != 0;
         ms.treasureCrashes = (p.objTreasureMask & type) != 0;
         ms.wormholeWarps = true;
-        ms.phased = false;
+        ms.phased = type == Obj.BALL && sim.balls.phased(h);
         ms.team = o.team[h];
+        ms.targetTeam = type == Obj.BALL ? ballTeam(h) : o.team[h];
         ms.status = o.status[h];
         ms.type = type;
         ms.start(o.cx[h], o.cy[h], o.vx[h], o.vy[h], tx, ty, o.missileDir[h]);
@@ -130,7 +136,9 @@ public final class Mover {
                     break;
                 }
                 if (ms.bounce != NOT_A_BOUNCE && ms.bounce != BOUNCE_EDGE) {
-                    o.life[h] = (long) (o.life[h] * p.objectWallBounceLifeFactor);
+                    if (type != Obj.BALL) {
+                        o.life[h] = (long) (o.life[h] * p.objectWallBounceLifeFactor);
+                    }
                     if (o.life[h] <= 0) {
                         break;
                     }
@@ -184,6 +192,13 @@ public final class Mover {
         if (posUpdate) {
             o.remember(h);
         }
+    }
+
+    /** A ball's team for its target test: its owner's team, else TEAM_NOT_SET (walls.c Move_segment). */
+    private int ballTeam(int h) {
+        int owner = w.modes.ballOwner[h];
+        Player pl = owner == Obj.NO_ID ? null : w.byId(owner);
+        return pl != null ? pl.team : Const.TEAM_NOT_SET;
     }
 
     // ================================================================ players
@@ -269,6 +284,7 @@ public final class Mover {
         mi.wormholeWarps = true;
         mi.phased = (pl.used & Has.PHASING_DEVICE) != 0;
         mi.team = pl.team;
+        mi.targetTeam = pl.team;
         mi.status = pl.status;
         mi.type = Obj.PLAYER;
         for (int i = 0; i < n; i++) {
@@ -497,6 +513,7 @@ public final class Mover {
         cost = (cost * (Const.RES / 2 + absDelta)) / Const.RES;
         if (!pl.fullyShielded()) {
             pl.addFuel(-((cost << 8) * p.wallBounceFuelDrainMult));
+            sim.items.damage(pl, w.items.wallBounceDestroyItemProb);
         }
         if (pl.fuel == 0 && p.wallBounceFuelDrainMult != 0) {
             m.crash = m.target >= 0 ? CRASH_TARGET : CRASH_WALL_NO_FUEL;
@@ -505,6 +522,9 @@ public final class Mover {
         if (cost != 0) {
             sim.debris.wallSparks(pl, wallDir, (int) (cost * p.wallBounceExplosionMult));
             Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_BOUNCED);
+            if (m.target >= 0) {
+                sim.targets.playerHits(m.target, pl, (long) ((cost << 8) * (p.wallBounceFuelDrainMult / 4.0)));
+            }
         }
         return false;
     }
@@ -567,6 +587,7 @@ public final class Mover {
         mi.wormholeWarps = false;
         mi.phased = (pl.used & Has.PHASING_DEVICE) != 0;
         mi.team = pl.team;
+        mi.targetTeam = pl.team;
         mi.status = pl.status;
         mi.type = Obj.PLAYER;
         for (int i = 1; i < n; i++) {

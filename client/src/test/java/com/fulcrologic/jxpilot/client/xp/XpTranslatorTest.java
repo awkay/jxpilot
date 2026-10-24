@@ -525,5 +525,30 @@ class XpTranslatorTest {
                     "robot interpolated between frames: " + cw.shipX(0)),
                 () -> assertTrue(cw.pointCount() >= 1, "debris tracked as point particles"));
         }
+
+        @Test
+        @DisplayName("a paused C player gets every 4th frame: the client measures 4 frames between sounds' arrivals")
+        void pausedListenerArrivalInterval() {
+            ClientGame game = new ClientGame();
+            XpTranslator t = new XpTranslator(game);
+            com.fulcrologic.jxpilot.common.net.Msg.Welcome w = new com.fulcrologic.jxpilot.common.net.Msg.Welcome();
+            w.simHz = 12;
+            w.snapshotHz = 12;
+            w.gameFps = 12;
+            game.onConfig(w, built.options(), built.map());
+            t.configure(built, XpProto.MODE_WRAP_PLAY, XpProto.MY_VERSION);
+            XpFrameDecoder d = new XpFrameDecoder(new XpKeyboard());
+            for (int loops = 4; loops <= 24; loops += 4) {
+                byte[] a = c(loops).audio(23, 80).end(loops).bytes();
+                XpReader r = new XpReader().wrap(ByteBuffer.wrap(a), 0, a.length);
+                while (r.has(1)) {
+                    d.decode(r, f);
+                }
+                t.frame(f, loops * 1_000_000_000L / 12);
+            }
+            assertAll(
+                () -> assertEquals(4 / 12.0, game.world().arrivalIntervalSeconds(), 1e-12, "4 frames at 12 fps"),
+                () -> assertEquals(6, game.world().sounds().total(), "each frame's thrust sound arrived"));
+        }
     }
 }

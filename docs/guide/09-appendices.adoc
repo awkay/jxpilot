@@ -43,13 +43,14 @@ https://github.com/awkay/jxpilot.
 |Sound effects: Juhani Junkala, "The Essential Retro Video Game Sound Effects Collection [512
 sounds]" (21 clips), and Kenney, "Sci-Fi Sounds" `thrusterFire_004` (the engine loop) |Client jar
 (`sounds/`) |CC0 1.0 (public domain). Sources, checksums, the clip each came from and how it was
-processed: `sounds/LICENSE-sounds.txt` in the client jar.
+processed: `sounds/LICENSE-sounds.txt` in the client jar, with the CC0 text in `sounds/CC0-1.0.txt`.
 |LWJGL 3 |Client jar |BSD 3-Clause
 |GLFW, stb, libffi, liburing (in LWJGL's native libraries); Khronos OpenGL headers |Client jar |zlib;
 MIT or public domain; MIT; MIT; Khronos (MIT-style). Texts in `META-INF/licenses/lwjgl/` in the client jar.
 |OpenAL Soft (in LWJGL's OpenAL native libraries) |Client jar |GNU LGPL 2.0 or later
-(`META-INF/licenses/lwjgl/openal_soft_license.txt`). Source: https://github.com/kcat/openal-soft at
-commit `90191edd20bb877c5cbddfdac7ec0fe49ad93727`.
+(`META-INF/licenses/lwjgl/openal_soft_license.txt`). Its source, https://github.com/kcat/openal-soft at
+commit `90191edd20bb877c5cbddfdac7ec0fe49ad93727`, is attached to every release as
+`openal-soft-source-COMMIT.tar.gz`; `META-INF/NOTICE.txt` in the client jar has the details.
 |Java runtime (OpenJDK, Eclipse Temurin build) |Application downloads only (`runtime/`) |GPL v2 with
 the Classpath Exception; texts in the runtime's `legal/` directory
 |JUnit 5, PIT |Build and tests only, not distributed |EPL 2.0 / Apache 2.0
@@ -89,6 +90,14 @@ pressed and released within one frame (1/14 s) is lost
 choices) differ, nothing else
 |Gravity of a `gravityPoint` on a non-square wrapping map; objects exactly half a world apart |XPilot bugs
 |fixed
+|Hyperjump with `wormTime` |leaves a pair of temporary wormholes |no temporary wormholes; the jump is
+the same
+|Mines, missiles and nukes on the radar |blink |always shown
+|An ECM reprogramming a robot |all players are told |the robot goes to war without a message
+|Modifier banks |the XPilot client loads them from its resources when you join |start empty; store
+them in the game with the reprogram key (<<03-playing.adoc#modifiers,Weapon modifiers>>)
+|Selecting an item to drop |the server marks the selected item on the HUD |not shown; the HUD shows the
+item counts
 |`denyHosts` |IPv4; `:` also separates entries |IPv4 and IPv6, so `:` does not separate entries
 |`serverHost` |the address the contact socket binds |the bind selector when `--bind` is not given
 |`logRobots` |on standard output, with a time stamp |on the server log, without a time stamp
@@ -189,7 +198,7 @@ the system's sound output, or use `--no-sound` to skip the attempt.
 
 Can I play JXPilot now?::
 Yes: against robots with `--local`, on a JXPilot server with `--connect`, or on an original XPilot
-server with `--connect xp://...`. Items, balls, targets and races are not on the JXPilot server yet
+server with `--connect xp://...`. Balls, targets, races and asteroids are not on the JXPilot server yet
 (<<01-introduction.adoc#status,Status>>).
 
 Can I join an original XPilot server, or use the original XPilot client with a JXPilot server?::

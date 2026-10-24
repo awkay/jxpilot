@@ -37,7 +37,7 @@ package com.fulcrologic.jxpilot.client.game;
  * Timing (race) mode (F4): C sorts by race progress instead (round * MAX_CHECKS + check, more first; equal
  * progress by who got there first; paused, tank and waiting players last in join order), marks the first row
  * best and fills the race column ("%d.%c" round and check letter, "%3d" above 99 rounds). Progress comes
- * from TIMING messages (C PKT_TIMING; the JXPilot server has no race mode yet).
+ * from TIMING messages (C PKT_TIMING).
  */
 public final class Scoreboard {
     /** C {@code MAX_TEAMS}. */

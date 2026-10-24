@@ -65,14 +65,25 @@ public final class Obj {
     public static final int RECREATE = 1 << 17;
     public static final int FROMBOUNCE = 1 << 18;
     public static final int OWNERIMMUNE = 1 << 19;
+    /** Player is storing a modifier or lock bank (KEY_REPROGRAM held). */
+    public static final int REPROGRAM = 1 << 20;
+    public static final int NOEXPLOSION = 1 << 21;
     public static final int COLLISIONSHOVE = 1 << 22;
+    /** Reached the race finish this frame. */
+    public static final int FINISH = 1 << 23;
+    /** Finished the race and scored (server-modes). */
+    public static final int RACE_OVER = 1 << 24;
+    /** An item that shows up to clients as a random item type. */
+    public static final int RANDOM_ITEM = 1 << 25;
 
     /** C {@code KILL_BITS} (rules.c): cleared on death. */
     public static final int KILL_BITS = THRUSTING | PLAYING | KILLED | SELF_DESTRUCT | WARPING | WARPED;
 
-    // ---- modifiers (only the warhead bits are used in M1)
+    // ---- modifiers: C's {@code modifiers} bit fields packed in an int, see {@link Mods}
     /** {@code mods.warhead & CLUSTER}. */
     public static final int MOD_CLUSTER = 1;
+    /** {@code mods.warhead & IMPLOSION}. */
+    public static final int MOD_IMPLOSION = 1 << 1;
 
     /** "No player" owner id (C {@code NO_ID}). */
     public static final int NO_ID = -1;

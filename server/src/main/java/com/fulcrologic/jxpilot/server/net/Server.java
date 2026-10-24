@@ -194,8 +194,13 @@ public final class Server implements AutoCloseable {
                 }
                 transport.poll(sched.nanosUntilNext(s.clock.getAsLong()));
                 int n = sched.due(s.clock.getAsLong());
-                for (int i = 0; i < n; i++) {
+                for (int i = 0; i < n && running; i++) {
                     net.tick(s.clock.getAsLong());
+                    if (net.shutdownDue()) {
+                        // C End_game: the loop stops and every peer gets DISCONNECT (shutdown)
+                        s.log.log("game over: shutting down");
+                        running = false;
+                    }
                 }
             }
         } catch (Throwable e) {

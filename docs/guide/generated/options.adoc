@@ -3,7 +3,7 @@
 // by dist/src/test/java/com/fulcrologic/jxpilot/dist/docs/GuideTables.java. Do not edit:
 // run `make -C docs/guide generate` instead. The build fails when this file is stale.
 
-The server knows *301* options: 126 implemented, 155 in progress, 7 not yet, 6 not supported, 2 no effect, 5 not applicable. In these groups:
+The server knows *301* options: 282 implemented, 1 in progress, 5 not yet, 6 not supported, 2 no effect, 5 not applicable. In these groups:
 
 * <<opts-files,Command line and server files>> (11)
 * <<opts-network,Server and network>> (23)
@@ -303,14 +303,14 @@ Race mode (checkpoints), ball races, rounds and time limits.
 |boolean
 |`+false+`
 |command line, map, config file
-|*In progress (M2).* Is timing done for balls (on) or players (off)? Only used if timing is on.
+|*Implemented.* Is timing done for balls (on) or players (off)? Only used if timing is on.
 
 |[[opt-ballraceConnected]]`+ballraceConnected+`
 |
 |boolean
 |`+false+`
 |command line, map, config file
-|*In progress (M2).* Should a player be connected to a ball to pass a checkpoint? Only used if timing and ballrace are both on.
+|*Implemented.* Should a player be connected to a ball to pass a checkpoint? Only used if timing and ballrace are both on.
 
 |[[opt-gameDuration]]`+gameDuration+`
 |`+time+`
@@ -324,14 +324,14 @@ Race mode (checkpoints), ball races, rounds and time limits.
 |real
 |`+6.0+`
 |command line, map, config file
-|*In progress (M2).* How close you have to be to a checkpoint to register - in blocks.
+|*Implemented.* How close you have to be to a checkpoint to register - in blocks.
 
 |[[opt-raceLaps]]`+raceLaps+`
 |
 |integer
 |`+3+`
 |command line, map, config file
-|*In progress (M2).* How many laps a race is run over.
+|*Implemented.* How many laps a race is run over.
 
 |[[opt-roundDelay]]`+roundDelay+`
 |`+roundDelaySeconds+`
@@ -377,35 +377,35 @@ What the radar shows.
 |boolean
 |`+True+`
 |command line, map, config file
-|*In progress (M2).* Are missiles visible on the radar.
+|*Implemented.* Are missiles visible on the radar.
 
 |[[opt-minesOnRadar]]`+minesOnRadar+`
 |`+minesRadar+`
 |boolean
 |`+False+`
 |command line, map, config file
-|*In progress (M2).* Are mines visible on the radar.
+|*Implemented.* Are mines visible on the radar.
 
 |[[opt-nukesOnRadar]]`+nukesOnRadar+`
 |`+nukesRadar+`
 |boolean
 |`+True+`
 |command line, map, config file
-|*In progress (M2).* Are nukes visible or highlighted on the radar.
+|*Implemented.* Are nukes visible or highlighted on the radar.
 
 |[[opt-treasuresOnRadar]]`+treasuresOnRadar+`
 |`+treasuresRadar+`
 |boolean
 |`+False+`
 |command line, map, config file
-|*In progress (M2).* Are treasure balls visible or highlighted on the radar.
+|*Implemented.* Are treasure balls visible or highlighted on the radar.
 
 |[[opt-asteroidsOnRadar]]`+asteroidsOnRadar+`
 |`+asteroidsRadar+`
 |boolean
 |`+False+`
 |command line, map, config file
-|*In progress (M2).* Are asteroids visible on the radar.
+|*Implemented.* Are asteroids visible on the radar.
 
 |===
 
@@ -430,21 +430,21 @@ Points for kills, deaths and destroying things.
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* Multiplication factor to scale score for torpedo kills.
+|*Implemented.* Multiplication factor to scale score for torpedo kills.
 
 |[[opt-smartKillScoreMult]]`+smartKillScoreMult+`
 |
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* Multiplication factor to scale score for smart missile kills.
+|*Implemented.* Multiplication factor to scale score for smart missile kills.
 
 |[[opt-heatKillScoreMult]]`+heatKillScoreMult+`
 |
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* Multiplication factor to scale score for heatseeker kills.
+|*Implemented.* Multiplication factor to scale score for heatseeker kills.
 
 |[[opt-clusterKillScoreMult]]`+clusterKillScoreMult+`
 |
@@ -458,14 +458,14 @@ Points for kills, deaths and destroying things.
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* Multiplication factor to scale score for laser kills.
+|*Implemented.* Multiplication factor to scale score for laser kills.
 
 |[[opt-tankKillScoreMult]]`+tankKillScoreMult+`
 |
 |real
 |`+0.44+`
 |command line, map, config file
-|*In progress (M2).* Multiplication factor to scale score for tank kills.
+|*Implemented.* Multiplication factor to scale score for tank kills.
 
 |[[opt-runoverKillScoreMult]]`+runoverKillScoreMult+`
 |
@@ -479,7 +479,7 @@ Points for kills, deaths and destroying things.
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* Multiplication factor to scale score for ball kills.
+|*Implemented.* Multiplication factor to scale score for ball kills.
 
 |[[opt-explosionKillScoreMult]]`+explosionKillScoreMult+`
 |
@@ -507,7 +507,7 @@ Points for kills, deaths and destroying things.
 |real
 |`+0.17+`
 |command line, map, config file
-|*In progress (M2).* Multiplication factor to scale score for mine hits.
+|*Implemented.* Multiplication factor to scale score for mine hits.
 
 |[[opt-selfKillScoreMult]]`+selfKillScoreMult+`
 |
@@ -535,7 +535,7 @@ Points for kills, deaths and destroying things.
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* Points awarded for breaking an asteroid.
+|*Implemented.* Points awarded for breaking an asteroid.
 
 |[[opt-cannonPoints]]`+cannonPoints+`
 |
@@ -549,7 +549,7 @@ Points for kills, deaths and destroying things.
 |real
 |`+100.0+`
 |command line, map, config file
-|*In progress (M2).* Maximum score to receive points for breaking an asteroid.
+|*Implemented.* Maximum score to receive points for breaking an asteroid.
 
 |[[opt-cannonMaxScore]]`+cannonMaxScore+`
 |
@@ -574,7 +574,7 @@ Item appearance probabilities, starting amounts and carrying limits.
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Do items bounce off walls?
+|*Implemented.* Do items bounce off walls?
 
 |[[opt-itemConcentratorVisible]]`+itemConcentratorVisible+`
 |
@@ -588,7 +588,7 @@ Item appearance probabilities, starting amounts and carrying limits.
 |boolean
 |`+False+`
 |command line, map, config file
-|*In progress (M2).* Can items be picked up while shields are up?
+|*Implemented.* Can items be picked up while shields are up?
 
 |[[opt-movingItemProb]]`+movingItemProb+`
 |
@@ -596,63 +596,63 @@ Item appearance probabilities, starting amounts and carrying limits.
 |`+0.2+` +
 lib/defaults: `+0.3+`
 |command line, map, config file
-|*In progress (M2).* Probability for an item to appear as moving.
+|*Implemented.* Probability for an item to appear as moving.
 
 |[[opt-randomItemProb]]`+randomItemProb+`
 |
 |real
 |`+0.0+`
 |command line, map, config file
-|*In progress (M2).* Probability for an item to appear random. Random items change their appearance every frame, so players cannot tell what item they have until they get it.
+|*Implemented.* Probability for an item to appear random. Random items change their appearance every frame, so players cannot tell what item they have until they get it.
 
 |[[opt-dropItemOnKillProb]]`+dropItemOnKillProb+`
 |
 |real
 |`+0.5+`
 |command line, map, config file
-|*In progress (M2).* Probability for dropping an item (each item) when you are killed.
+|*Implemented.* Probability for dropping an item (each item) when you are killed.
 
 |[[opt-detonateItemOnKillProb]]`+detonateItemOnKillProb+`
 |
 |real
 |`+0.5+`
 |command line, map, config file
-|*In progress (M2).* Probability for undropped items to detonate when you are killed.
+|*Implemented.* Probability for undropped items to detonate when you are killed.
 
 |[[opt-destroyItemInCollisionProb]]`+destroyItemInCollisionProb+`
 |
 |real
 |`+0.0+`
 |command line, map, config file
-|*In progress (M2).* Probability for items (some items) to be destroyed in a collision.
+|*Implemented.* Probability for items (some items) to be destroyed in a collision.
 
 |[[opt-asteroidItemProb]]`+asteroidItemProb+`
 |
 |real
 |`+0.0+`
 |command line, map, config file
-|*In progress (M2).* Probability for an asteroid to release items when it breaks.
+|*Implemented.* Probability for an asteroid to release items when it breaks.
 
 |[[opt-asteroidMaxItems]]`+asteroidMaxItems+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* The maximum number of items a broken asteroid can release.
+|*Implemented.* The maximum number of items a broken asteroid can release.
 
 |[[opt-itemProbMult]]`+itemProbMult+`
 |`+itemProbFact+`
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* Item Probability Multiplication Factor scales all item probabilities.
+|*Implemented.* Item Probability Multiplication Factor scales all item probabilities.
 
 |[[opt-cannonItemProbMult]]`+cannonItemProbMult+`
 |
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* Average number of items a cannon gets per minute.
+|*Implemented.* Average number of items a cannon gets per minute.
 
 |[[opt-maxItemDensity]]`+maxItemDensity+`
 |
@@ -660,21 +660,21 @@ lib/defaults: `+0.3+`
 |`+0.00012+` +
 lib/defaults: `+3.46021e-04+`
 |command line, map, config file
-|*In progress (M2).* Maximum density [0.0-1.0] for items (max items per block).
+|*Implemented.* Maximum density [0.0-1.0] for items (max items per block).
 
 |[[opt-itemConcentratorRadius]]`+itemConcentratorRadius+`
 |`+itemConcentratorRange+`
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* The maximum distance from an item concentator for items to appear in. Sensible values are in the range 1 to 20. If no item concentators are defined in a map then items can popup anywhere. If any are any then items popup in the vicinity of an item concentrator with probability itemConcentratorProb and anywhere the remainder of the time. An item concentrator is drawn on screen as three rotating triangles. The map symbol is the percentage symbol '%'.
+|*Implemented.* The maximum distance from an item concentator for items to appear in. Sensible values are in the range 1 to 20. If no item concentators are defined in a map then items can popup anywhere. If any are any then items popup in the vicinity of an item concentrator with probability itemConcentratorProb and anywhere the remainder of the time. An item concentrator is drawn on screen as three rotating triangles. The map symbol is the percentage symbol '%'.
 
 |[[opt-itemConcentratorProb]]`+itemConcentratorProb+`
 |
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* The probability, if any item concentrators are present, that they will be used. This proportion of items will be placed near item concentrators, within itemConcentratorRadius.
+|*Implemented.* The probability, if any item concentrators are present, that they will be used. This proportion of items will be placed near item concentrators, within itemConcentratorRadius.
 
 |[[opt-itemEnergyPackProb]]`+itemEnergyPackProb+`
 |
@@ -682,7 +682,7 @@ lib/defaults: `+3.46021e-04+`
 |`+1e-9+` +
 lib/defaults: `+4.01323e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for an energy pack to appear.
+|*Implemented.* Probability for an energy pack to appear.
 
 |[[opt-itemTankProb]]`+itemTankProb+`
 |
@@ -690,7 +690,7 @@ lib/defaults: `+4.01323e-09+`
 |`+1e-9+` +
 lib/defaults: `+2.40292e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for an extra tank to appear.
+|*Implemented.* Probability for an extra tank to appear.
 
 |[[opt-itemECMProb]]`+itemECMProb+`
 |
@@ -698,14 +698,14 @@ lib/defaults: `+2.40292e-09+`
 |`+1e-9+` +
 lib/defaults: `+1.92426e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for an ECM item to appear.
+|*Implemented.* Probability for an ECM item to appear.
 
 |[[opt-itemArmorProb]]`+itemArmorProb+`
 |
 |real
 |`+1e-9+`
 |command line, map, config file
-|*In progress (M2).* Probability for an armor item to appear.
+|*Implemented.* Probability for an armor item to appear.
 
 |[[opt-itemMineProb]]`+itemMineProb+`
 |
@@ -713,7 +713,7 @@ lib/defaults: `+1.92426e-09+`
 |`+1e-9+` +
 lib/defaults: `+6.40779e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for a mine item to appear.
+|*Implemented.* Probability for a mine item to appear.
 
 |[[opt-itemMissileProb]]`+itemMissileProb+`
 |
@@ -721,7 +721,7 @@ lib/defaults: `+6.40779e-09+`
 |`+1e-9+` +
 lib/defaults: `+1.92426e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for a missile item to appear.
+|*Implemented.* Probability for a missile item to appear.
 
 |[[opt-itemCloakProb]]`+itemCloakProb+`
 |
@@ -729,7 +729,7 @@ lib/defaults: `+1.92426e-09+`
 |`+1e-9+` +
 lib/defaults: `+1.60596e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for a cloak item to appear.
+|*Implemented.* Probability for a cloak item to appear.
 
 |[[opt-itemSensorProb]]`+itemSensorProb+`
 |
@@ -737,7 +737,7 @@ lib/defaults: `+1.60596e-09+`
 |`+1e-9+` +
 lib/defaults: `+1.60596e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for a sensor item to appear.
+|*Implemented.* Probability for a sensor item to appear.
 
 |[[opt-itemWideangleProb]]`+itemWideangleProb+`
 |
@@ -745,7 +745,7 @@ lib/defaults: `+1.60596e-09+`
 |`+1e-9+` +
 lib/defaults: `+2.70371e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for a wideangle item to appear.
+|*Implemented.* Probability for a wideangle item to appear.
 
 |[[opt-itemRearshotProb]]`+itemRearshotProb+`
 |
@@ -753,7 +753,7 @@ lib/defaults: `+2.70371e-09+`
 |`+1e-9+` +
 lib/defaults: `+2.94386e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for a rearshot item to appear.
+|*Implemented.* Probability for a rearshot item to appear.
 
 |[[opt-itemAfterburnerProb]]`+itemAfterburnerProb+`
 |
@@ -761,7 +761,7 @@ lib/defaults: `+2.94386e-09+`
 |`+1e-9+` +
 lib/defaults: `+2.74620e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for an afterburner item to appear.
+|*Implemented.* Probability for an afterburner item to appear.
 
 |[[opt-itemTransporterProb]]`+itemTransporterProb+`
 |
@@ -769,35 +769,35 @@ lib/defaults: `+2.74620e-09+`
 |`+1e-9+` +
 lib/defaults: `+1.60596e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for a transporter item to appear.
+|*Implemented.* Probability for a transporter item to appear.
 
 |[[opt-itemMirrorProb]]`+itemMirrorProb+`
 |
 |real
 |`+1e-9+`
 |command line, map, config file
-|*In progress (M2).* Probability for a mirror item to appear.
+|*Implemented.* Probability for a mirror item to appear.
 
 |[[opt-itemDeflectorProb]]`+itemDeflectorProb+`
 |
 |real
 |`+1e-9+`
 |command line, map, config file
-|*In progress (M2).* Probability for a deflector item to appear.
+|*Implemented.* Probability for a deflector item to appear.
 
 |[[opt-itemHyperJumpProb]]`+itemHyperJumpProb+`
 |
 |real
 |`+1e-9+`
 |command line, map, config file
-|*In progress (M2).* Probability for a hyperjump item to appear.
+|*Implemented.* Probability for a hyperjump item to appear.
 
 |[[opt-itemPhasingProb]]`+itemPhasingProb+`
 |
 |real
 |`+1e-9+`
 |command line, map, config file
-|*In progress (M2).* Probability for a phasing item to appear.
+|*Implemented.* Probability for a phasing item to appear.
 
 |[[opt-itemLaserProb]]`+itemLaserProb+`
 |
@@ -805,7 +805,7 @@ lib/defaults: `+1.60596e-09+`
 |`+1e-9+` +
 lib/defaults: `+1.60596e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for a Laser item to appear.
+|*Implemented.* Probability for a Laser item to appear.
 
 |[[opt-itemEmergencyThrustProb]]`+itemEmergencyThrustProb+`
 |
@@ -813,7 +813,7 @@ lib/defaults: `+1.60596e-09+`
 |`+1e-9+` +
 lib/defaults: `+1.60596e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for an Emergency Thrust item to appear.
+|*Implemented.* Probability for an Emergency Thrust item to appear.
 
 |[[opt-itemTractorBeamProb]]`+itemTractorBeamProb+`
 |
@@ -821,7 +821,7 @@ lib/defaults: `+1.60596e-09+`
 |`+1e-9+` +
 lib/defaults: `+2.74620e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for a Tractor Beam item to appear.
+|*Implemented.* Probability for a Tractor Beam item to appear.
 
 |[[opt-itemAutopilotProb]]`+itemAutopilotProb+`
 |
@@ -829,7 +829,7 @@ lib/defaults: `+2.74620e-09+`
 |`+1e-9+` +
 lib/defaults: `+1.60596e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for an Autopilot item to appear.
+|*Implemented.* Probability for an Autopilot item to appear.
 
 |[[opt-itemEmergencyShieldProb]]`+itemEmergencyShieldProb+`
 |
@@ -837,7 +837,7 @@ lib/defaults: `+1.60596e-09+`
 |`+1e-9+` +
 lib/defaults: `+1.60596e-09+`
 |command line, map, config file
-|*In progress (M2).* Probability for an Emergency Shield item to appear.
+|*Implemented.* Probability for an Emergency Shield item to appear.
 
 |[[opt-initialFuel]]`+initialFuel+`
 |
@@ -851,140 +851,140 @@ lib/defaults: `+1.60596e-09+`
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many tanks players start with.
+|*Implemented.* How many tanks players start with.
 
 |[[opt-initialECMs]]`+initialECMs+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many ECMs players start with.
+|*Implemented.* How many ECMs players start with.
 
 |[[opt-initialArmor]]`+initialArmor+`
 |`+initialArmors+`
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How much armor players start with.
+|*Implemented.* How much armor players start with.
 
 |[[opt-initialMines]]`+initialMines+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many mines players start with.
+|*Implemented.* How many mines players start with.
 
 |[[opt-initialMissiles]]`+initialMissiles+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many missiles players start with.
+|*Implemented.* How many missiles players start with.
 
 |[[opt-initialCloaks]]`+initialCloaks+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many cloaks players start with.
+|*Implemented.* How many cloaks players start with.
 
 |[[opt-initialSensors]]`+initialSensors+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many sensors players start with.
+|*Implemented.* How many sensors players start with.
 
 |[[opt-initialWideangles]]`+initialWideangles+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many wideangles players start with.
+|*Implemented.* How many wideangles players start with.
 
 |[[opt-initialRearshots]]`+initialRearshots+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many rearshots players start with.
+|*Implemented.* How many rearshots players start with.
 
 |[[opt-initialAfterburners]]`+initialAfterburners+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many afterburners players start with.
+|*Implemented.* How many afterburners players start with.
 
 |[[opt-initialTransporters]]`+initialTransporters+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many transporters players start with.
+|*Implemented.* How many transporters players start with.
 
 |[[opt-initialMirrors]]`+initialMirrors+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many mirrors players start with.
+|*Implemented.* How many mirrors players start with.
 
 |[[opt-initialDeflectors]]`+initialDeflectors+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many deflectors players start with.
+|*Implemented.* How many deflectors players start with.
 
 |[[opt-initialHyperJumps]]`+initialHyperJumps+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many hyperjumps players start with.
+|*Implemented.* How many hyperjumps players start with.
 
 |[[opt-initialPhasings]]`+initialPhasings+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many phasing devices players start with.
+|*Implemented.* How many phasing devices players start with.
 
 |[[opt-initialLasers]]`+initialLasers+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many lasers players start with.
+|*Implemented.* How many lasers players start with.
 
 |[[opt-initialEmergencyThrusts]]`+initialEmergencyThrusts+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many emergency thrusts players start with.
+|*Implemented.* How many emergency thrusts players start with.
 
 |[[opt-initialTractorBeams]]`+initialTractorBeams+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many tractor/pressor beams players start with.
+|*Implemented.* How many tractor/pressor beams players start with.
 
 |[[opt-initialAutopilots]]`+initialAutopilots+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many autopilots players start with.
+|*Implemented.* How many autopilots players start with.
 
 |[[opt-initialEmergencyShields]]`+initialEmergencyShields+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How many emergency shields players start with.
+|*Implemented.* How many emergency shields players start with.
 
 |[[opt-maxFuel]]`+maxFuel+`
 |
@@ -998,161 +998,161 @@ lib/defaults: `+1.60596e-09+`
 |integer
 |`+8+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of tanks per player.
+|*Implemented.* Upper limit on the number of tanks per player.
 
 |[[opt-maxECMs]]`+maxECMs+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of ECMs per player.
+|*Implemented.* Upper limit on the number of ECMs per player.
 
 |[[opt-maxMines]]`+maxMines+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of mines per player.
+|*Implemented.* Upper limit on the number of mines per player.
 
 |[[opt-maxMissiles]]`+maxMissiles+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of missiles per player.
+|*Implemented.* Upper limit on the number of missiles per player.
 
 |[[opt-maxCloaks]]`+maxCloaks+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of cloaks per player.
+|*Implemented.* Upper limit on the number of cloaks per player.
 
 |[[opt-maxSensors]]`+maxSensors+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of sensors per player.
+|*Implemented.* Upper limit on the number of sensors per player.
 
 |[[opt-maxWideangles]]`+maxWideangles+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of wides per player.
+|*Implemented.* Upper limit on the number of wides per player.
 
 |[[opt-maxRearshots]]`+maxRearshots+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of rearshots per player.
+|*Implemented.* Upper limit on the number of rearshots per player.
 
 |[[opt-maxAfterburners]]`+maxAfterburners+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of afterburners per player.
+|*Implemented.* Upper limit on the number of afterburners per player.
 
 |[[opt-maxTransporters]]`+maxTransporters+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of transporters per player.
+|*Implemented.* Upper limit on the number of transporters per player.
 
 |[[opt-maxArmor]]`+maxArmor+`
 |`+maxArmors+`
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the amount of armor per player.
+|*Implemented.* Upper limit on the amount of armor per player.
 
 |[[opt-maxMirrors]]`+maxMirrors+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of mirrors per player.
+|*Implemented.* Upper limit on the number of mirrors per player.
 
 |[[opt-maxDeflectors]]`+maxDeflectors+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of deflectors per player.
+|*Implemented.* Upper limit on the number of deflectors per player.
 
 |[[opt-maxPhasings]]`+maxPhasings+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of phasing devices per players.
+|*Implemented.* Upper limit on the number of phasing devices per players.
 
 |[[opt-maxHyperJumps]]`+maxHyperJumps+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of hyperjumps per player.
+|*Implemented.* Upper limit on the number of hyperjumps per player.
 
 |[[opt-maxEmergencyThrusts]]`+maxEmergencyThrusts+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of emergency thrusts per player.
+|*Implemented.* Upper limit on the number of emergency thrusts per player.
 
 |[[opt-maxLasers]]`+maxLasers+`
 |
 |integer
 |`+5+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of lasers per player.
+|*Implemented.* Upper limit on the number of lasers per player.
 
 |[[opt-maxTractorBeams]]`+maxTractorBeams+`
 |
 |integer
 |`+4+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of tractorbeams per player.
+|*Implemented.* Upper limit on the number of tractorbeams per player.
 
 |[[opt-maxAutopilots]]`+maxAutopilots+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of autopilots per player.
+|*Implemented.* Upper limit on the number of autopilots per player.
 
 |[[opt-maxEmergencyShields]]`+maxEmergencyShields+`
 |
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* Upper limit on the number of emergency shields per player.
+|*Implemented.* Upper limit on the number of emergency shields per player.
 
 |[[opt-loseItemDestroys]]`+loseItemDestroys+`
 |
 |boolean
 |`+false+`
 |command line, map, config file
-|*In progress (M2).* Destroy item that player drops. Otherwise drop it.
+|*Implemented.* Destroy item that player drops. Otherwise drop it.
 
 |[[opt-maxOffensiveItems]]`+maxOffensiveItems+`
 |
 |integer
 |`+100+`
 |command line, map, config file
-|*In progress (M2).* How many offensive items a player can carry.
+|*Implemented.* How many offensive items a player can carry.
 
 |[[opt-maxDefensiveItems]]`+maxDefensiveItems+`
 |
 |integer
 |`+100+`
 |command line, map, config file
-|*In progress (M2).* How many defensive items a player can carry.
+|*Implemented.* How many defensive items a player can carry.
 
 |===
 
@@ -1191,21 +1191,21 @@ What happens when ships and objects hit walls, the world edge or each other.
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Do balls bounce off walls?
+|*Implemented.* Do balls bounce off walls?
 
 |[[opt-minesWallBounce]]`+minesWallBounce+`
 |
 |boolean
 |`+no+`
 |command line, map, config file
-|*In progress (M2).* Do mines bounce off walls?
+|*Implemented.* Do mines bounce off walls?
 
 |[[opt-missilesWallBounce]]`+missilesWallBounce+`
 |
 |boolean
 |`+no+`
 |command line, map, config file
-|*In progress (M2).* Do missiles bounce off walls?
+|*Implemented.* Do missiles bounce off walls?
 
 |[[opt-sparksWallBounce]]`+sparksWallBounce+`
 |
@@ -1226,7 +1226,7 @@ What happens when ships and objects hit walls, the world edge or each other.
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Do asteroids bounce off walls?
+|*Implemented.* Do asteroids bounce off walls?
 
 |[[opt-maxObjectWallBounceSpeed]]`+maxObjectWallBounceSpeed+`
 |`+maxObjectBounceSpeed+`
@@ -1300,7 +1300,7 @@ lib/defaults: `+180+`
 |real
 |`+0.0+`
 |command line, map, config file
-|*In progress (M2).* The probability for each item a player owns to get destroyed when the player bounces against a wall.
+|*Implemented.* The probability for each item a player owns to get destroyed when the player bounces against a wall.
 
 |[[opt-edgeBounce]]`+edgeBounce+`
 |
@@ -1428,14 +1428,14 @@ lib/defaults: `+-0.25+`
 |real
 |`+50.0+`
 |command line, map, config file
-|*In progress (M2).* Mass of balls.
+|*Implemented.* Mass of balls.
 
 |[[opt-minItemMass]]`+minItemMass+`
 |
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* The minimum mass per item when carried by a ship.
+|*Implemented.* The minimum mass per item when carried by a ship.
 
 |[[opt-shotMass]]`+shotMass+`
 |
@@ -1611,14 +1611,14 @@ Map cannons.
 |boolean
 |`+no+`
 |command line, map, config file
-|*In progress (M2).* Do cannons use items?
+|*Implemented.* Do cannons use items?
 
 |[[opt-cannonsDefend]]`+cannonsDefend+`
 |
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Do cannons actively use defensive items like emergency shields and phasing devices? This only works if cannons are actually allowed to use items.
+|*Implemented.* Do cannons actively use defensive items like emergency shields and phasing devices? This only works if cannons are actually allowed to use items.
 
 |[[opt-cannonFlak]]`+cannonFlak+`
 |`+cannonAAA+`
@@ -1741,21 +1741,21 @@ Computer-controlled players and detached fuel tanks.
 |text
 |`+tank+`
 |command line, map, config file
-|*In progress (M2).* What is the tanks' apparent real name?
+|*Implemented.* What is the tanks' apparent real name?
 
 |[[opt-tankHostName]]`+tankHostName+`
 |
 |text
 |`+tanks.org+`
 |command line, map, config file
-|*In progress (M2).* What is the tanks' apparent host name?
+|*Implemented.* What is the tanks' apparent host name?
 
 |[[opt-tankScoreDecrement]]`+tankScoreDecrement+`
 |`+tankDecrement+`
 |integer
 |`+500+`
 |command line, map, config file
-|*In progress (M2).* How much lower is the tank's score than the player's?
+|*Implemented.* How much lower is the tank's score than the player's?
 
 |[[opt-logRobots]]`+logRobots+`
 |
@@ -1780,14 +1780,14 @@ Capture-the-ball play, ball connectors and destroyable targets.
 |boolean
 |`+no+`
 |command line, map, config file
-|*In progress (M2).* Can balls collide with other objects?
+|*Implemented.* Can balls collide with other objects?
 
 |[[opt-ballSparkCollisions]]`+ballSparkCollisions+`
 |
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Can balls be blown around by exhaust? (Needs ballCollisions too)
+|*Implemented.* Can balls be blown around by exhaust? (Needs ballCollisions too)
 
 |[[opt-targetKillTeam]]`+targetKillTeam+`
 |
@@ -1822,63 +1822,63 @@ Capture-the-ball play, ball connectors and destroyable targets.
 |boolean
 |`+no+`
 |command line, map, config file
-|*In progress (M2).* Do team members die when their treasure is destroyed?
+|*Implemented.* Do team members die when their treasure is destroyed?
 
 |[[opt-captureTheFlag]]`+captureTheFlag+`
 |`+ctf+`
 |boolean
 |`+no+`
 |command line, map, config file
-|*In progress (M2).* Does a team's treasure have to be safe before enemy balls can be cashed?
+|*Implemented.* Does a team's treasure have to be safe before enemy balls can be cashed?
 
 |[[opt-treasureCollisionDestroys]]`+treasureCollisionDestroys+`
 |`+treasureCollisionDestroy+`
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Are balls destroyed when a player touches it?
+|*Implemented.* Are balls destroyed when a player touches it?
 
 |[[opt-ballConnectorSpringConstant]]`+ballConnectorSpringConstant+`
 |
 |real
 |`+1500.0+`
 |command line, map, config file
-|*In progress (M2).* What is the spring constant for connectors?
+|*Implemented.* What is the spring constant for connectors?
 
 |[[opt-ballConnectorDamping]]`+ballConnectorDamping+`
 |
 |real
 |`+2.0+`
 |command line, map, config file
-|*In progress (M2).* What is the damping force on connectors?
+|*Implemented.* What is the damping force on connectors?
 
 |[[opt-maxBallConnectorRatio]]`+maxBallConnectorRatio+`
 |
 |real
 |`+0.30+`
 |command line, map, config file
-|*In progress (M2).* How much longer or shorter can a connecter get before it breaks?
+|*Implemented.* How much longer or shorter can a connecter get before it breaks?
 
 |[[opt-ballConnectorLength]]`+ballConnectorLength+`
 |
 |real
 |`+120+`
 |command line, map, config file
-|*In progress (M2).* How long is a normal connector string?
+|*Implemented.* How long is a normal connector string?
 
 |[[opt-connectorIsString]]`+connectorIsString+`
 |
 |boolean
 |`+no+`
 |command line, map, config file
-|*In progress (M2).* Is the ball connector made of string?
+|*Implemented.* Is the ball connector made of string?
 
 |[[opt-treasureCollisionMayKill]]`+treasureCollisionMayKill+`
 |`+treasureUnshieldedCollisionKills+`
 |boolean
 |`+no+`
 |command line, map, config file
-|*In progress (M2).* Does a ball kill a player when the player touches it unshielded?
+|*Implemented.* Does a ball kill a player when the player touches it unshielded?
 
 |===
 
@@ -1945,35 +1945,35 @@ Bullets, missiles, mines, nukes, lasers and ECMs.
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Is it possible to reprogram mines with ECMs?
+|*Implemented.* Is it possible to reprogram mines with ECMs?
 
 |[[opt-ecmsReprogramRobots]]`+ecmsReprogramRobots+`
 |
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Are robots reprogrammed by ECMs instead of blinded?
+|*Implemented.* Are robots reprogrammed by ECMs instead of blinded?
 
 |[[opt-allowSmartMissiles]]`+allowSmartMissiles+`
 |`+allowSmarts+`
 |boolean
 |`+True+`
 |command line, map, config file
-|*In progress (M2).* Should smart missiles be allowed?
+|*Implemented.* Should smart missiles be allowed?
 
 |[[opt-allowHeatSeekers]]`+allowHeatSeekers+`
 |`+allowHeats+`
 |boolean
 |`+True+`
 |command line, map, config file
-|*In progress (M2).* Should heatseekers be allowed?
+|*Implemented.* Should heatseekers be allowed?
 
 |[[opt-allowTorpedoes]]`+allowTorpedoes+`
 |`+allowTorps+`
 |boolean
 |`+True+`
 |command line, map, config file
-|*In progress (M2).* Should torpedoes be allowed?
+|*Implemented.* Should torpedoes be allowed?
 
 |[[opt-allowNukes]]`+allowNukes+`
 |`+nukes+`
@@ -1981,7 +1981,7 @@ Bullets, missiles, mines, nukes, lasers and ECMs.
 |`+False+` +
 lib/defaults: `+no+`
 |command line, map, config file
-|*In progress (M2).* Should nuclear weapons be allowed?
+|*Implemented.* Should nuclear weapons be allowed?
 
 |[[opt-allowClusters]]`+allowClusters+`
 |`+clusters+`
@@ -1989,7 +1989,7 @@ lib/defaults: `+no+`
 |`+False+` +
 lib/defaults: `+no+`
 |command line, map, config file
-|*In progress (M2).* Should cluster weapons be allowed?
+|*Implemented.* Should cluster weapons be allowed?
 
 |[[opt-allowModifiers]]`+allowModifiers+`
 |`+modifiers+`
@@ -1997,70 +1997,70 @@ lib/defaults: `+no+`
 |`+False+` +
 lib/defaults: `+yes+`
 |command line, map, config file
-|*In progress (M2).* Should the weapon modifiers be allowed?
+|*Implemented.* Should the weapon modifiers be allowed?
 
 |[[opt-allowLaserModifiers]]`+allowLaserModifiers+`
 |`+lasermodifiers+`
 |boolean
 |`+False+`
 |command line, map, config file
-|*In progress (M2).* Can lasers be modified to be a different weapon?
+|*Implemented.* Can lasers be modified to be a different weapon?
 
 |[[opt-distinguishMissiles]]`+distinguishMissiles+`
 |
 |boolean
 |`+True+`
 |command line, map, config file
-|*In progress (M2).* Are different types of missiles distinguished (by length).
+|*Implemented.* Are different types of missiles distinguished (by length).
 
 |[[opt-maxMissilesPerPack]]`+maxMissilesPerPack+`
 |
 |integer
 |`+4+`
 |command line, map, config file
-|*In progress (M2).* The number of missiles gotten by picking up one missile item.
+|*Implemented.* The number of missiles gotten by picking up one missile item.
 
 |[[opt-maxMinesPerPack]]`+maxMinesPerPack+`
 |
 |integer
 |`+2+`
 |command line, map, config file
-|*In progress (M2).* The number of mines gotten by picking up one mine item.
+|*Implemented.* The number of mines gotten by picking up one mine item.
 
 |[[opt-identifyMines]]`+identifyMines+`
 |
 |boolean
 |`+True+`
 |command line, map, config file
-|*In progress (M2).* Are mine owner's names displayed.
+|*Implemented.* Are mine owner's names displayed.
 
 |[[opt-shieldedMining]]`+shieldedMining+`
 |`+shieldMine+`
 |boolean
 |`+False+`
 |command line, map, config file
-|*In progress (M2).* Can mines be thrown and placed while shields are up?
+|*Implemented.* Can mines be thrown and placed while shields are up?
 
 |[[opt-laserIsStunGun]]`+laserIsStunGun+`
 |`+stunGun+`
 |boolean
 |`+False+`
 |command line, map, config file
-|*In progress (M2).* Is the laser weapon a stun gun weapon?
+|*Implemented.* Is the laser weapon a stun gun weapon?
 
 |[[opt-nukeMinSmarts]]`+nukeMinSmarts+`
 |
 |integer
 |`+7+`
 |command line, map, config file
-|*In progress (M2).* The minimum number of missiles needed to fire one nuclear missile.
+|*Implemented.* The minimum number of missiles needed to fire one nuclear missile.
 
 |[[opt-nukeMinMines]]`+nukeMinMines+`
 |
 |integer
 |`+4+`
 |command line, map, config file
-|*In progress (M2).* The minimum number of mines needed to make a nuclear mine.
+|*Implemented.* The minimum number of mines needed to make a nuclear mine.
 
 |[[opt-nukeClusterDamage]]`+nukeClusterDamage+`
 |
@@ -2074,56 +2074,56 @@ lib/defaults: `+yes+`
 |seconds
 |`+0.0+`
 |command line, map, config file
-|*In progress (M2).* Number of seconds after which owned mines become deadly, zero means never.
+|*Implemented.* Number of seconds after which owned mines become deadly, zero means never.
 
 |[[opt-mineLife]]`+mineLife+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* Life of mines in ticks, zero means use default.
+|*Implemented.* Life of mines in ticks, zero means use default.
 
 |[[opt-minMineSpeed]]`+minMineSpeed+`
 |
 |real
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* Minimum speed of mines.
+|*Implemented.* Minimum speed of mines.
 
 |[[opt-missileLife]]`+missileLife+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* Life of missiles in ticks, zero means use default.
+|*Implemented.* Life of missiles in ticks, zero means use default.
 
 |[[opt-baseMineRange]]`+baseMineRange+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* Range within which mines/bombs are not allowed.
+|*Implemented.* Range within which mines/bombs are not allowed.
 
 |[[opt-mineShotDetonateDistance]]`+mineShotDetonateDistance+`
 |
 |integer
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* How close must a shot be to detonate a mine? Set this to 0 to turn it off.
+|*Implemented.* How close must a shot be to detonate a mine? Set this to 0 to turn it off.
 
 |[[opt-rogueHeatProb]]`+rogueHeatProb+`
 |
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* Probability that unclaimed missile packs will go rogue.
+|*Implemented.* Probability that unclaimed missile packs will go rogue.
 
 |[[opt-rogueMineProb]]`+rogueMineProb+`
 |
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* Probability that unclaimed mine items will activate.
+|*Implemented.* Probability that unclaimed mine items will activate.
 
 |===
 
@@ -2183,35 +2183,35 @@ Ship shapes, shields, lives, visibility and other per-player rules.
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Do engines of cloaked ships generate exhaust?
+|*Implemented.* Do engines of cloaked ships generate exhaust?
 
 |[[opt-cloakedShield]]`+cloakedShield+`
 |
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Can players use shields when cloaked?
+|*Implemented.* Can players use shields when cloaked?
 
 |[[opt-limitedVisibility]]`+limitedVisibility+`
 |
 |boolean
 |`+no+`
 |command line, map, config file
-|*In progress (M2).* Should the players have a limited visibility?
+|*Implemented.* Should the players have a limited visibility?
 
 |[[opt-minVisibilityDistance]]`+minVisibilityDistance+`
 |`+minVisibility+`
 |real
 |`+0.0+`
 |command line, map, config file
-|*In progress (M2).* Minimum block distance for limited visibility, 0 for default.
+|*Implemented.* Minimum block distance for limited visibility, 0 for default.
 
 |[[opt-maxVisibilityDistance]]`+maxVisibilityDistance+`
 |`+maxVisibility+`
 |real
 |`+0.0+`
 |command line, map, config file
-|*In progress (M2).* Maximum block distance for limited visibility, 0 for default.
+|*Implemented.* Maximum block distance for limited visibility, 0 for default.
 
 |[[opt-limitedLives]]`+limitedLives+`
 |
@@ -2260,14 +2260,14 @@ Ship shapes, shields, lives, visibility and other per-player rules.
 |boolean
 |`+false+`
 |command line, map, config file
-|*Not yet:* player locks (event.c Player_lock_*, the LOCK keys) and viewing through a locked player are not ported yet; these options only change those. Are players allowed to watch any other player while paused, waiting or dead?
+|*Implemented.* Are players allowed to watch any other player while paused, waiting or dead?
 
 |[[opt-lockOtherTeam]]`+lockOtherTeam+`
 |
 |boolean
 |`+true+`
 |command line, map, config file
-|*Not yet:* player locks (event.c Player_lock_*, the LOCK keys) and viewing through a locked player are not ported yet; these options only change those. Can you lock on players from other teams when you're dead.
+|*Implemented.* Can you lock on players from other teams when you're dead.
 
 |[[opt-useWreckage]]`+useWreckage+`
 |
@@ -2299,35 +2299,35 @@ Asteroid appearance and behaviour.
 |boolean
 |`+yes+`
 |command line, map, config file
-|*In progress (M2).* Can ships be destroyed when hit by an asteroid?
+|*Implemented.* Can ships be destroyed when hit by an asteroid?
 
 |[[opt-asteroidProb]]`+asteroidProb+`
 |
 |real
 |`+5e-7+`
 |command line, map, config file
-|*In progress (M2).* Probability for an asteroid to appear.
+|*Implemented.* Probability for an asteroid to appear.
 
 |[[opt-maxAsteroidDensity]]`+maxAsteroidDensity+`
 |
 |real
 |`+0+`
 |command line, map, config file
-|*In progress (M2).* Maximum density [0.0-1.0] for asteroids (max asteroids per block.
+|*Implemented.* Maximum density [0.0-1.0] for asteroids (max asteroids per block.
 
 |[[opt-asteroidConcentratorRadius]]`+asteroidConcentratorRadius+`
 |`+asteroidConcentratorRange+`
 |integer
 |`+10+`
 |command line, map, config file
-|*In progress (M2).* The maximum distance from an asteroid concentrator for asteroids to appear in. Sensible values are in the range 1 to 20. If no asteroid concentrators are defined in a map then asteroids can popup anywhere. If any are then asteroids popup in the vicinity of an asteroid concentrator with probability asteroidConcentratorProb and anywhere the remainder of the time. An asteroid concentrator is drawn on the screen as three rotating squares. The map symbol is the ampersand '&'.
+|*Implemented.* The maximum distance from an asteroid concentrator for asteroids to appear in. Sensible values are in the range 1 to 20. If no asteroid concentrators are defined in a map then asteroids can popup anywhere. If any are then asteroids popup in the vicinity of an asteroid concentrator with probability asteroidConcentratorProb and anywhere the remainder of the time. An asteroid concentrator is drawn on the screen as three rotating squares. The map symbol is the ampersand '&'.
 
 |[[opt-asteroidConcentratorProb]]`+asteroidConcentratorProb+`
 |
 |real
 |`+1.0+`
 |command line, map, config file
-|*In progress (M2).* The probability, if any asteroid concentrators are present, that they will be used. This proportion of asteroids will be placed near asteroid concentrators, within asteroidConcentratorRadius.
+|*Implemented.* The probability, if any asteroid concentrators are present, that they will be used. This proportion of asteroids will be placed near asteroid concentrators, within asteroidConcentratorRadius.
 
 |===
 

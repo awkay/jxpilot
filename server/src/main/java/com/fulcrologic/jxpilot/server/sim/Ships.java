@@ -27,6 +27,7 @@ import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.Base;
+import com.fulcrologic.jxpilot.common.map.Checkpoint;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.FuelStation;
 import com.fulcrologic.jxpilot.common.map.Wormhole;
@@ -39,6 +40,7 @@ import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
+import com.fulcrologic.jxpilot.server.world.WormTable;
 
 /**
  * Ship rules: the per-player part of C {@code Update_objects} ({@code src/server/update.c}), and from
@@ -188,10 +190,9 @@ public final class Ships {
             if (enterListener != null) {
                 enterListener.entered(pl);
             }
-            // C Handle_login: sound_play_all(START_SOUND) before the newcomer's PKT_REQUEST_AUDIO sets its
-            // WANT_AUDIO, so everyone but the newcomer hears it
+            // C Handle_login: sound_play_all(START_SOUND); the newcomer's PKT_REQUEST_AUDIO, in the same datagram,
+            // then plays START to it too (sound_player_onoff), so everyone hears it
             Sounds.playAll(w, SoundEvent.START);
-            pl.audio.clear();
             sim.rounds.playerEntered(pl);
         }
         return true;
@@ -228,13 +229,17 @@ public final class Ships {
      * Remove a player (C {@code Delete_player}).
      * <p>
      * BEHAVIOR: a reserved player that never spawned just frees its slot (no events).
+     * BEHAVIOR: a ball connected to the player is deleted at once (it explodes and returns to its treasure);
+     * balls the player owned lose their owner.
      * BEHAVIOR: the player's debris and sparks lose their owner and keep flying; its other objects lose their
      * owner and, without keepShots, die (life 0) and cannon shots lose their mass so they do not explode;
      * without keepShots EVERY cannon shot in the world dies the same way (a C quirk, kept).
      * BEHAVIOR: team membership drops; with teamShareScore the leaver's score is taken back from the team
      * (C TEAM_SCORE(team, -score)) and the rest is shared among the remaining members.
-     * BEHAVIOR: shove records naming the player are cleared; the home base is released
-     * (BASE_OWNER(base, NO_ID)) and LEAVE is emitted.
+     * BEHAVIOR: shove records, locks and lock banks naming the player are cleared (locks with their tractor
+     * beam); the home base is released (BASE_OWNER(base, NO_ID)) and LEAVE is emitted; its laser pulses go.
+     * BEHAVIOR: tanks are not team members and own no base; the tanks a player released leave with it (with
+     * keepShots they stay, ownerless).
      */
     public void leave(Player pl) {
         if (!pl.inUse) {
@@ -250,6 +255,14 @@ public final class Ships {
         for (int k = o.count() - 1; k >= 0; k--) {
             int h = o.active[k];
             int type = o.type[h];
+            if (type == Obj.BALL) {
+                if (o.owner[h] == id) {
+                    sim.shots.delete(h);
+                } else if (w.modes.ballOwner[h] == id) {
+                    w.modes.ballOwner[h] = Obj.NO_ID;
+                }
+                continue;
+            }
             if (o.owner[h] == id) {
                 if ((type & (Obj.DEBRIS | Obj.SPARK)) == 0 && !keep) {
                     o.life[h] = 0;
@@ -258,14 +271,29 @@ public final class Ships {
                     }
                 }
                 o.owner[h] = Obj.NO_ID;
+                if ((type & Obj.MINE) != 0) {
+                    o.mineOwner[h] = Obj.NO_ID;
+                }
+            } else if ((type & Obj.MINE) != 0) {
+                if (o.mineOwner[h] == id) {
+                    o.mineOwner[h] = Obj.NO_ID;
+                    if (!keep) {
+                        o.life[h] = 0;
+                        o.mass[h] = 0;
+                    }
+                }
             } else if (type == Obj.CANNON_SHOT && !keep) {
                 o.life[h] = 0;
                 o.mass[h] = 0;
             }
         }
+        if (pl.numPulses != 0) {
+            sim.lasers.removeOwnedBy(pl);
+        }
         int team = pl.team;
+        boolean tank = pl.tank;
         w.removePlayer(pl);
-        if (team != Const.TEAM_NOT_SET) {
+        if (team != Const.TEAM_NOT_SET && !tank) {
             w.teamMembers[team]--;
             if (w.params.teamShareScore) {
                 sim.scoring.teamScore(team, -pl.score);
@@ -278,11 +306,31 @@ public final class Ships {
                     other.shovePusher[i] = Obj.NO_ID;
                 }
             }
+            if ((other.lockTagged & (Player.LOCK_PLAYER | Player.LOCK_VISIBLE)) != 0
+                && (other.lockPlId == id || w.numPlayers <= 1)) {
+                other.lockTagged &= ~(Player.LOCK_PLAYER | Player.LOCK_VISIBLE);
+                other.used &= ~Has.TRACTOR_BEAM;
+            }
+            for (int i = 0; i < Player.BANKS; i++) {
+                if (other.lockBank[i] == id) {
+                    other.lockBank[i] = -1;
+                }
+            }
         }
-        if (pl.homeBase >= 0) {
+        if (pl.homeBase >= 0 && !tank) {
             w.events.add(Events.BASE_OWNER, pl.homeBase, Obj.NO_ID, 0, 0f);
         }
         w.events.add(Events.LEAVE, id, 0, 0, 0f);
+        for (int k = w.numPlayers - 1; k >= 0; k--) {
+            Player t = w.playerAt(k);
+            if (t.tank && t.lockPlId == id) {
+                if (keep) {
+                    t.lockPlId = Obj.NO_ID;
+                } else {
+                    leave(t);
+                }
+            }
+        }
     }
 
     /**
@@ -465,7 +513,37 @@ public final class Ships {
         pl.keysCleared = false;
         pl.frameLastBusy = w.frames;
         pl.scoreDirty = false;
+        initItemState(pl);
         setMass(pl);
+    }
+
+    /** The item parts of C {@code Init_player} (server-items): locks, modifiers, banks, timers, sensors. */
+    void initItemState(Player pl) {
+        pl.tank = false;
+        pl.lockTagged = 0;
+        pl.lockPlId = 0;
+        pl.lockDistance = 0;
+        pl.mods = 0;
+        for (int i = 0; i < Player.BANKS; i++) {
+            pl.modBank[i] = 0;
+            pl.lockBank[i] = -1;
+        }
+        pl.missileRack = 0;
+        pl.forceVisible = 0;
+        pl.updateVisibility = false;
+        pl.numPulses = 0;
+        pl.ecmCount = 0;
+        pl.emergencyThrustLeft = pl.emergencyThrustMax = 0;
+        pl.emergencyShieldLeft = pl.emergencyShieldMax = 0;
+        pl.phasingLeft = pl.phasingMax = 0;
+        pl.loseItem = 0;
+        pl.loseItemState = 0;
+        pl.tractorIsPressor = false;
+        for (int i = 0; i < w.players.length; i++) {
+            pl.canSee[i] = true;
+            w.players[i].canSee[pl.slot] = true;
+        }
+        sim.locks.sensorRange(pl);
     }
 
     /**
@@ -490,14 +568,10 @@ public final class Ships {
     }
 
     /**
-     * C {@code Player_init_fuel} with a single tank: max = TANK_CAP(0), fuel = min(fuel, max), no extra tanks
-     * (item count 0; initialTanks is not supported), empty mass = shipMass.
+     * C {@code Player_init_fuel} ({@link Tanks#initFuel}): the main tank first, then initialTanks extra tanks.
      */
     void initFuel(Player pl, double fuel) {
-        pl.fuelMax = MAX_PLAYER_FUEL;
-        pl.fuel = Math.min(fuel, pl.fuelMax);
-        pl.emptyMass = w.params.shipMass;
-        pl.items[Item.TANK.ordinal()] = 0;
+        sim.tanks.initFuel(pl, fuel);
     }
 
     /**
@@ -548,6 +622,9 @@ public final class Ships {
     /**
      * C {@code Go_home}: put the ship on its base, at rest, facing the base direction.
      * <p>
+     * BEHAVIOR: in race mode after the first checkpoint (not GAME_OVER) the ship appears at the centre of the
+     * last checkpoint passed instead, with a random velocity of at most +-0.05 per axis and the heading it
+     * passed that checkpoint with, +-RES/16 at random.
      * BEHAVIOR: clears velocity, acceleration, turning and the key state: keys still held are ignored until the
      * client's key state changes (C clears {@code last_keyv}/{@code prev_keyv}).
      * BEHAVIOR: C {@code Player_used_kill}: USED_KILL abilities off, and without default shields HAS_SHIELD is
@@ -556,12 +633,26 @@ public final class Ships {
      * follows its JOIN).
      */
     public void goHome(Player pl) {
-        Base b = w.map.bases().get(pl.homeBase);
-        pl.dir = b.dir();
-        pl.floatDir = b.dir();
-        pl.initPixels((b.bx() + 0.5) * Const.BLOCK_SZ, (b.by() + 0.5) * Const.BLOCK_SZ);
-        pl.vx = pl.vy = 0;
-        pl.velocity = 0;
+        int check = sim.race.respawnCheck(pl, true);
+        if (check >= 0) {
+            Checkpoint c = w.map.checkpoints().get(check);
+            float vx = (float) ((w.rfrac() - 0.5) * 0.1);
+            float vy = (float) ((w.rfrac() - 0.5) * 0.1);
+            int dir = (pl.lastCheckDir + (int) ((w.rfrac() - 0.5) * (Const.RES / 8))) & (Const.RES - 1);
+            pl.dir = dir;
+            pl.floatDir = dir;
+            pl.initPixels((c.bx() + 0.5) * Const.BLOCK_SZ + vx, (c.by() + 0.5) * Const.BLOCK_SZ + vy);
+            pl.vx = vx;
+            pl.vy = vy;
+            pl.velocity = (float) StrictMath.hypot(vx, vy);
+        } else {
+            Base b = w.map.bases().get(pl.homeBase);
+            pl.dir = b.dir();
+            pl.floatDir = b.dir();
+            pl.initPixels((b.bx() + 0.5) * Const.BLOCK_SZ, (b.by() + 0.5) * Const.BLOCK_SZ);
+            pl.vx = pl.vy = 0;
+            pl.velocity = 0;
+        }
         pl.accX = pl.accY = 0;
         pl.turnAcc = pl.turnVel = 0;
         pl.prevKeys = 0;
@@ -576,8 +667,12 @@ public final class Ships {
                 pl.shieldTime = 2 * w.params.fps;
                 pl.have |= Has.SHIELD;
             }
+            if ((pl.have & Has.DEFLECTOR) != 0) {
+                sim.devices.deflector(pl, true);
+            }
         }
         pl.status &= ~Obj.THRUSTING;
+        sim.locks.resetVisibility(pl);
         if (pl.spawned) {
             w.events.add(Events.GAME_EVENT, Msg.GameEvent.SPAWN, pl.id, pl.homeBase, 0f);
         }
@@ -586,19 +681,25 @@ public final class Ships {
     /**
      * C {@code Pause_player}.
      * <p>
-     * BEHAVIOR: on (when not paused): count = 10*FPS, SELF_DESTRUCT and PLAYING off, PAUSE on, mychar 'P'.
+     * BEHAVIOR: on (when not paused): count = 10*FPS, SELF_DESTRUCT and PLAYING off, PAUSE on, mychar 'P'; a
+     * ship with a ball drops it.
      * BEHAVIOR: off (when paused and the count has run out): PAUSE off; with limitedLives, if a non-team player
      * has lost a life it is too late: life 0, 'W', GAME_OVER; otherwise ' ', Go_home, PLAYING, and full lives
-     * with limitedLives. Otherwise nothing happens.
+     * with limitedLives; in race mode the race progress starts over (after Go_home, as C). Otherwise nothing
+     * happens.
      */
     public void pause(Player pl, boolean on) {
         Params p = w.params;
         if (on && (pl.status & Obj.PAUSE) == 0) {
             pl.count = 10 * p.fps;
+            pl.updateVisibility = true;
             pl.status &= ~(Obj.SELF_DESTRUCT | Obj.PLAYING);
             pl.status |= Obj.PAUSE;
             pl.mychar = 'P';
             pl.scoreDirty = true;
+            if ((pl.have & Has.BALL) != 0) {
+                sim.balls.detach(pl, -1);
+            }
         } else if (!on && (pl.status & Obj.PAUSE) != 0 && pl.count <= 0) {
             pl.status &= ~Obj.PAUSE;
             pl.scoreDirty = true;
@@ -623,6 +724,11 @@ public final class Ships {
                 if (p.limitedLives) {
                     pl.life = p.worldLives;
                 }
+            }
+            if (w.modeParams.timing) {
+                int count = pl.count;
+                sim.race.resetPlayer(pl);
+                pl.count = count;
             }
         }
     }
@@ -691,13 +797,18 @@ public final class Ships {
             pl.status &= ~Obj.THRUSTING;
         }
         updateShieldTime(pl);
+        sim.devices.timers(pl);
+        sim.devices.use(pl);
         long tf = turn(pl, p);
         sim.mover.turnPlayer(pl);
 
         if ((pl.used & Has.SHIELD) != 0) {
             pl.addFuel(ED_SHIELD);
         }
+        sim.devices.drain(pl);
+        sim.locks.updateVisibility(pl);
         refuel(pl);
+        sim.targets.repair(pl);
         if (pl.fuel <= 0) {
             pl.used &= ~(Has.SHIELD | Has.CLOAKING_DEVICE | Has.DEFLECTOR);
             pl.status &= ~Obj.THRUSTING;
@@ -728,6 +839,7 @@ public final class Ships {
                 sim.debris.turnThrust(pl, (int) (5 + (tf >> 2)));
             }
         }
+        sim.locks.sensorRange(pl);
         pl.used &= pl.have;
     }
 
@@ -796,8 +908,8 @@ public final class Ships {
      * <p>
      * BEHAVIOR: stops when more than 90 px from the station, full, the station is gone, phased, or (team play
      * with teamFuel) the station belongs to another team.
-     * BEHAVIOR: otherwise moves REFUEL_RATE from the station; a station with less gives the rest and
-     * refuelling stops.
+     * BEHAVIOR: otherwise moves REFUEL_RATE from the station into each tank in turn (numTanks + 1 times per
+     * frame); a station with less gives the rest and refuelling stops. The current tank is kept.
      */
     void refuel(Player pl) {
         if ((pl.used & Has.REFUEL) == 0) {
@@ -813,14 +925,25 @@ public final class Ships {
             pl.used &= ~Has.REFUEL;
             return;
         }
-        if (w.fuelLevel[pl.fs] > REFUEL_RATE) {
-            w.fuelLevel[pl.fs] -= REFUEL_RATE;
-            pl.addFuel(REFUEL_RATE);
-        } else {
-            pl.addFuel(w.fuelLevel[pl.fs]);
-            w.fuelLevel[pl.fs] = 0;
-            pl.used &= ~Has.REFUEL;
-        }
+        int i = pl.numTanks;
+        int ct = pl.currentTank;
+        do {
+            if (w.fuelLevel[pl.fs] > REFUEL_RATE) {
+                w.fuelLevel[pl.fs] -= REFUEL_RATE;
+                pl.addFuel(REFUEL_RATE);
+            } else {
+                pl.addFuel(w.fuelLevel[pl.fs]);
+                w.fuelLevel[pl.fs] = 0;
+                pl.used &= ~Has.REFUEL;
+                break;
+            }
+            if (pl.currentTank == pl.numTanks) {
+                pl.currentTank = 0;
+            } else {
+                pl.currentTank += 1;
+            }
+        } while (i-- != 0);
+        pl.currentTank = ct;
     }
 
     /**
@@ -905,13 +1028,23 @@ public final class Ships {
      * C {@code Transport_to_home}: velocity that carries a dead ship to its base in RECOVERY_DELAY frames,
      * accelerating for the first half and braking for the second (C floats).
      * <p>
+     * BEHAVIOR: in race mode after the first checkpoint the destination is the last checkpoint passed.
      * BEHAVIOR: with t = count + 0.5 and T = 3*FPS: m = 2/t while 2t &lt;= T, else t' = T - t and
      * m = 4t'/(T^2 - 2t'^2); velocity = wrapped distance to the base centre * m.
      */
     void transportToHome(Player pl) {
-        Base b = w.map.bases().get(pl.homeBase);
-        float bx = (float) ((b.bx() + 0.5) * Const.BLOCK_SZ);
-        float by = (float) ((b.by() + 0.5) * Const.BLOCK_SZ);
+        int check = sim.race.respawnCheck(pl, false);
+        float bx;
+        float by;
+        if (check >= 0) {
+            Checkpoint c = w.map.checkpoints().get(check);
+            bx = (float) ((c.bx() + 0.5) * Const.BLOCK_SZ);
+            by = (float) ((c.by() + 0.5) * Const.BLOCK_SZ);
+        } else {
+            Base b = w.map.bases().get(pl.homeBase);
+            bx = (float) ((b.bx() + 0.5) * Const.BLOCK_SZ);
+            by = (float) ((b.by() + 0.5) * Const.BLOCK_SZ);
+        }
         float dx = (float) w.wrapDx(bx - pl.px);
         float dy = (float) w.wrapDy(by - pl.py);
         int bigT = 3 * w.params.fps;
@@ -936,60 +1069,128 @@ public final class Ships {
         }
         pl.status |= Obj.KILLED;
         w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" has committed suicide.");
+        sim.items.throwItems(pl);
         kill(pl);
     }
 
     /**
-     * Wormhole travel (update.c:1041-1188, hyperjump excluded).
+     * Wormhole travel and hyperjumps (update.c:1041-1188).
      * <p>
-     * BEHAVIOR: a wormhole still counting down sends to its last destination; otherwise 10% of the time a
-     * random non-IN other wormhole, else the non-IN wormhole closest to the line of flight ahead (or a random
-     * one if none is ahead).
-     * BEHAVIOR: the ship appears at the destination's centre, the source remembers the destination for
-     * wormTime frames (WORMCOUNT without wormTime), and the ship is WARPED (not WARPING).
+     * BEHAVIOR: a wormhole index past the current wormholes (a temporary one that went away) ends the warp.
+     * BEHAVIOR: through a wormhole: one still counting down sends to its last destination; otherwise 10% of the
+     * time a random other wormhole that is neither IN nor temporary, else the non-IN, non-temporary wormhole
+     * closest to the line of flight ahead (or a random non-IN one if none is ahead); the ship appears at its
+     * centre, and the source remembers the destination for wormTime frames (WORMCOUNT without wormTime)
+     * unless the destination is temporary.
+     * BEHAVIOR: a hyperjump (wormHoleHit -1): up to 20 random positions are tried for a space-like block (else
+     * the ship stays); with wormTime, between two plain SPACE blocks, a temporary IN/OUT wormhole pair is made.
+     * BEHAVIOR: towed balls come along ({@link #warpBalls}); the ship is WARPED (not WARPING).
+     * BEHAVIOR: the ship is seen by everyone for 15 more frames (forceVisible).
+     * BEHAVIOR: a hyperjump plays HYPERJUMP where the ship was and WORM_HOLE where it lands; a wormhole trip
+     * plays WORM_HOLE before and after.
      */
     void warp(Player pl) {
+        WormTable worms = w.worms;
         int hit = pl.wormHoleHit;
-        int n = w.map.wormholes().size();
-        if (hit < 0 || hit >= n) {
+        int n = worms.count();
+        if (hit >= n || hit < -1) {
             pl.status &= ~Obj.WARPING;
             return;
         }
         int j;
-        if (w.wormCountdown[hit] > 0) {
-            j = w.wormLastDest[hit];
-        } else if (w.rfrac() < 0.10f) {
-            do {
-                j = (int) (w.rfrac() * n);
-            } while (w.map.wormholes().get(j).type() == Wormhole.Type.IN || hit == j);
+        float wx;
+        float wy;
+        if (hit != -1) {
+            if (worms.countdown(hit) > 0) {
+                j = worms.lastDest(hit);
+            } else if (w.rfrac() < 0.10f) {
+                do {
+                    j = (int) (w.rfrac() * n);
+                } while (worms.type(j) == WormTable.IN || hit == j || worms.temporary(j));
+            } else {
+                j = nearestAhead(pl, hit, n);
+            }
+            Sounds.play(w, pl.px, pl.py, SoundEvent.WORM_HOLE);
+            wx = (float) ((worms.bx(j) + 0.5) * Const.BLOCK_SZ);
+            wy = (float) ((worms.by(j) + 0.5) * Const.BLOCK_SZ);
         } else {
-            j = nearestAhead(pl, hit, n);
+            int counter;
+            wx = 0;
+            wy = 0;
+            for (counter = 20; counter > 0; counter--) {
+                wx = (int) (w.rfrac() * w.pixelWidth);
+                wy = (int) (w.rfrac() * w.pixelHeight);
+                if ((BlockType.bit(w.map.block((int) (wx / Const.BLOCK_SZ), (int) (wy / Const.BLOCK_SZ)))
+                    & Asteroids.SPACE_BLOCKS) != 0) {
+                    break;
+                }
+            }
+            if (counter == 0) {
+                wx = pl.px;
+                wy = pl.py;
+            }
+            int toBx = (int) (wx / Const.BLOCK_SZ);
+            int toBy = (int) (wy / Const.BLOCK_SZ);
+            if (counter != 0 && w.params.wormTime != 0 && w.map.block(pl.bx, pl.by) == BlockType.SPACE
+                && w.map.block(toBx, toBy) == BlockType.SPACE) {
+                worms.addTemp(pl.bx, pl.by, toBx, toBy);
+            }
+            j = -2;
+            Sounds.play(w, pl.px, pl.py, SoundEvent.HYPERJUMP);
         }
-        Sounds.play(w, pl.px, pl.py, SoundEvent.WORM_HOLE);
-        Wormhole dest = w.map.wormholes().get(j);
+        warpBalls(pl, wx, wy);
         pl.wormHoleDest = j;
-        pl.initPixels((dest.bx() + 0.5) * Const.BLOCK_SZ, (dest.by() + 0.5) * Const.BLOCK_SZ);
-        if (j != hit) {
-            w.wormLastDest[hit] = j;
-            w.wormCountdown[hit] = w.params.wormTime != 0 ? w.params.wormTime : WORMCOUNT;
+        pl.initPixels(wx, wy);
+        pl.forceVisible += 15;
+        if (j != hit && hit != -1) {
+            worms.setLastDest(hit, j);
+            if (!worms.temporary(j)) {
+                worms.setCountdown(hit, w.params.wormTime != 0 ? w.params.wormTime : WORMCOUNT);
+            }
         }
         pl.status &= ~Obj.WARPING;
         pl.status |= Obj.WARPED;
         Sounds.play(w, pl.px, pl.py, SoundEvent.WORM_HOLE);
     }
 
+    /**
+     * The ball part of a warp (update.c:1149-1178): the ship stops reaching for a ball, and every ball connected
+     * to it moves along by the same offset (wrapped); a ball that would leave the world dies.
+     */
+    void warpBalls(Player pl, float wx, float wy) {
+        if ((pl.used & Has.CONNECTOR) != 0) {
+            pl.ball = -1;
+        }
+        if ((pl.have & Has.BALL) == 0) {
+            return;
+        }
+        Objects o = w.objects;
+        for (int k = 0; k < o.count(); k++) {
+            int h = o.active[k];
+            if ((o.type[h] & Obj.BALL) == 0 || o.owner[h] != pl.id) {
+                continue;
+            }
+            float bx = (float) w.wrapXPixel(o.px[h] + (wx - pl.px));
+            float by = (float) w.wrapYPixel(o.py[h] + (wy - pl.py));
+            if (bx < 0 || bx >= w.pixelWidth || by < 0 || by >= w.pixelHeight) {
+                o.life[h] = 0;
+            } else {
+                o.initPixels(h, bx, by);
+            }
+        }
+    }
+
     /** The RANDOM_REAR_WORM choice of update.c:1065-1110 (note: C wraps the y offset with WRAP_DX). */
     private int nearestAhead(Player pl, int hit, int n) {
-        Wormhole from = w.map.wormholes().get(hit);
+        WormTable worms = w.worms;
         int nearestFront = -1;
         int proxFront = 10000000;
         for (int j = 0; j < n; j++) {
-            Wormhole h = w.map.wormholes().get(j);
-            if (j == hit || h.type() == Wormhole.Type.IN) {
+            if (j == hit || worms.type(j) == WormTable.IN || worms.temporary(j)) {
                 continue;
             }
-            int wx = (int) w.wrapDx((h.bx() - from.bx()) * Const.BLOCK_SZ);
-            int wy = (int) w.wrapDx((h.by() - from.by()) * Const.BLOCK_SZ);
+            int wx = (int) w.wrapDx((worms.bx(j) - worms.bx(hit)) * Const.BLOCK_SZ);
+            int wy = (int) w.wrapDx((worms.by(j) - worms.by(hit)) * Const.BLOCK_SZ);
             int proximity = Math.abs((int) (pl.vy * wx + pl.vx * wy));
             if (!(pl.vx * wx + pl.vy * wy < 0) && proximity < proxFront) {
                 nearestFront = j;
@@ -1002,7 +1203,7 @@ public final class Ships {
         int j;
         do {
             j = (int) (w.rfrac() * n);
-        } while (w.map.wormholes().get(j).type() == Wormhole.Type.IN || j == hit);
+        } while (worms.type(j) == WormTable.IN || j == hit);
         return j;
     }
 
@@ -1021,6 +1222,7 @@ public final class Ships {
     /**
      * C {@code Player_death_reset}.
      * <p>
+     * BEHAVIOR: every ball is dropped and the connector is off ({@link Balls#detach}).
      * BEHAVIOR: velocity and acceleration zeroed, mass reset, KILL_BITS cleared (so not PLAYING), items reset,
      * respawn count = max(3*FPS, count).
      * BEHAVIOR: fuel = max((long)(fuel*0.9), initialFuel*256 + (int)(rfrac*(1+that)*0.2)), capped at the tank.
@@ -1028,9 +1230,20 @@ public final class Ships {
      * (GAME_OVER, mychar 'D'), without limited lives life counts up (C). A robot losing its last life may
      * leave the game instead ({@code RobotManager.leaveOutOfLives}); then nothing else is reset.
      * BEHAVIOR: abilities reset to DEF_HAVE / DEF_USED minus USED_KILL.
+     * BEHAVIOR: a tank is deleted instead ({@link #leave}); an autopilot (or hover pause) is switched off first;
+     * the item timers, ECM count, forced visibility and lock distance are reset.
      */
     public void deathReset(Player pl) {
         Params p = w.params;
+        if (pl.tank) {
+            leave(pl);
+            return;
+        }
+        sim.balls.detach(pl, -1);
+        if ((pl.used & Has.AUTOPILOT) != 0 || (pl.status & Obj.HOVERPAUSE) != 0) {
+            pl.status &= ~Obj.HOVERPAUSE;
+            sim.devices.autopilot(pl, false);
+        }
         pl.vx = pl.vy = 0;
         pl.accX = pl.accY = 0;
         pl.emptyMass = pl.mass = p.shipMass;
@@ -1040,10 +1253,16 @@ public final class Ships {
                 pl.items[i] = p.initialItems[i];
             }
         }
+        pl.forceVisible = 0;
         pl.shotMax = p.maxPlayerShots;
         pl.count = Math.max(3 * p.fps, pl.count);
+        pl.ecmCount = 0;
+        pl.emergencyThrustLeft = pl.emergencyThrustMax = 0;
+        pl.emergencyShieldLeft = pl.emergencyShieldMax = 0;
+        pl.phasingLeft = pl.phasingMax = 0;
         pl.damaged = 0;
         pl.stunned = 0;
+        pl.lockDistance = 0;
         double fuel = (long) (pl.fuel * 0.90);
         double minFuel = p.initialFuel * 256;
         minFuel += (int) (w.rfrac() * (1 + minFuel) * 0.2f);
@@ -1059,6 +1278,7 @@ public final class Ships {
                     pl.life = 0;
                     pl.status |= Obj.GAME_OVER;
                     pl.mychar = 'D';
+                    sim.locks.lockClosest(pl, false);
                 }
             } else {
                 pl.life++;
@@ -1073,8 +1293,13 @@ public final class Ships {
 
     /** C {@code Record_shove}: remember who pushed this ship and when (ring of MAX_SHOVES). */
     public void recordShove(Player pl, Player pusher) {
+        recordShove(pl, pusher, w.frames);
+    }
+
+    /** C {@code Record_shove} with an explicit time (ECM blinding and blinding lasers count until it). */
+    public void recordShove(Player pl, Player pusher, long time) {
         pl.shovePusher[pl.shoveNext] = pusher.id;
-        pl.shoveTime[pl.shoveNext] = w.frames;
+        pl.shoveTime[pl.shoveNext] = time;
         if (++pl.shoveNext == Player.MAX_SHOVES) {
             pl.shoveNext = 0;
         }

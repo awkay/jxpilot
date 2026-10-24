@@ -67,6 +67,50 @@ class SoundQueueTest {
     }
 
     @Nested
+    @DisplayName("ClientWorld arrival interval (for the thrust loop's hold)")
+    class Arrival {
+        @Test
+        @DisplayName("WELCOME's interval until steps are seen, then the larger of it and the smallest recent step")
+        void divisor3() {
+            WorldFixture fx = new WorldFixture(false);
+            fx.welcome.snapshotHz = 20; // simHz 60: snapshotDivisor 3
+            fx.world.configure(fx.map, fx.options, fx.welcome);
+            double before = fx.world.arrivalIntervalSeconds();
+            fx.begin(100).ingest(T0);
+            fx.begin(103).ingest(T0);
+            double every3 = fx.world.arrivalIntervalSeconds();
+            fx.begin(112).ingest(T0);
+            double afterLoss = fx.world.arrivalIntervalSeconds();
+            fx.begin(113).ingest(T0);
+            double oneStep = fx.world.arrivalIntervalSeconds();
+            fx.world.reset();
+            assertAll(
+                () -> assertEquals(3 / 60.0, before, 1e-12, "no snapshots yet: WELCOME's 3 ticks at 60 Hz"),
+                () -> assertEquals(3 / 60.0, every3, 1e-12, "steps of 3 ticks: 3/60 s"),
+                () -> assertEquals(3 / 60.0, afterLoss, 1e-12, "a lost snapshot (a step of 9) does not stretch it"),
+                () -> assertEquals(3 / 60.0, oneStep, 1e-12, "never below WELCOME's interval"),
+                () -> assertEquals(3 / 60.0, fx.world.arrivalIntervalSeconds(), 1e-12, "a reset forgets the steps"));
+        }
+
+        @Test
+        @DisplayName("a C server's reduced rate for a paused player (every 4th frame) is measured; playing again resets it")
+        void pausedRate() {
+            WorldFixture fx = new WorldFixture(false);
+            fx.welcome.simHz = 12;
+            fx.welcome.snapshotHz = 12;
+            fx.world.configure(fx.map, fx.options, fx.welcome);
+            for (int t = 4; t <= 40; t += 4) {
+                fx.begin(t).ingest(T0);
+            }
+            double paused = fx.world.arrivalIntervalSeconds();
+            fx.begin(41).ingest(T0);
+            assertAll(
+                () -> assertEquals(4 / 12.0, paused, 1e-12, "every 4th frame at 12 fps: 1/3 s"),
+                () -> assertEquals(1 / 12.0, fx.world.arrivalIntervalSeconds(), 1e-12, "one frame step: back to 1/12 s"));
+        }
+    }
+
+    @Nested
     @DisplayName("ClientWorld SOUND ingest")
     class Ingest {
         @Test

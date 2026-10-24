@@ -69,6 +69,37 @@ class ClientGameTest {
     }
 
     @Test
+    @DisplayName("TIMING sets a known player's race progress (check, round); unknown ids and new joins start at 0")
+    void timing() {
+        ClientGame g = configured();
+        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(9, 1, "Robby")));
+        Msg.Timing t = new Msg.Timing();
+        t.id = 9;
+        t.check = 2;
+        t.round = 3;
+        g.onReliable(ReliableType.TIMING, payload(t));
+        int s = g.players().slotOf(9);
+        int check = g.players().check(s);
+        int round = g.players().round(s);
+        t.id = 44;
+        g.onReliable(ReliableType.TIMING, payload(t));
+        g.onReliable(ReliableType.PLAYER_LEAVE, payload(leaveOf(9)));
+        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(9, 1, "Robby")));
+        int s2 = g.players().slotOf(9);
+        assertAll(
+            () -> assertEquals(2, check, "check"),
+            () -> assertEquals(3, round, "round"),
+            () -> assertEquals(-1, g.players().slotOf(44), "an unknown id is ignored"),
+            () -> assertEquals(0, g.players().check(s2) + g.players().round(s2), "a new join starts at 0"));
+    }
+
+    static Msg.PlayerLeave leaveOf(int id) {
+        Msg.PlayerLeave l = new Msg.PlayerLeave();
+        l.id = id;
+        return l;
+    }
+
+    @Test
     @DisplayName("reliable events apply in arrival order: an event for an unknown player is a no-op")
     void ordering() {
         ClientGame g = configured();
@@ -177,25 +208,6 @@ class ClientGameTest {
         assertAll(
             () -> assertFalse(other, "another player's spawn: nothing"),
             () -> assertTrue(g.world().selfTeleportPending(), "own spawn: the next SELF snaps"));
-    }
-
-    @Test
-    @DisplayName("F4: TIMING sets the player's race progress; unknown players are ignored")
-    void timing() {
-        ClientGame g = configured();
-        g.onReliable(ReliableType.PLAYER_JOIN, payload(join(7, 0, "me")));
-        Msg.Timing t = new Msg.Timing();
-        t.id = 7;
-        t.check = 4;
-        t.round = 2;
-        g.onReliable(ReliableType.TIMING, payload(t));
-        t.id = 99;
-        g.onReliable(ReliableType.TIMING, payload(t));
-        int s = g.players().slotOf(7);
-        assertAll(
-            () -> assertEquals(4, g.players().check(s), "check"),
-            () -> assertEquals(2, g.players().round(s), "round"),
-            () -> assertEquals(-1, g.players().slotOf(99), "an unknown id is not created"));
     }
 
     @Test

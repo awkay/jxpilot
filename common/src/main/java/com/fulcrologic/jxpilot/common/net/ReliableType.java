@@ -55,8 +55,11 @@ public final class ReliableType {
     public static final int PLAYER_THRUST = 11;
     /** {@link Msg.ScoreObject}: a score popup for the receiver's HUD (C score objects). */
     public static final int SCORE_OBJECT = 12;
-    /** {@link Msg.Timing}: a player's race progress (C PKT_TIMING). The JXPilot server has no race yet. */
-    public static final int TIMING = 13;
+    /**
+     * {@link Msg.Timing}: race progress of a player (C {@code Send_timing}). Game-mode messages use ids 20-26
+     * (server-modes block).
+     */
+    public static final int TIMING = 20;
 
     // ---- client -> server
     /** Empty body: client has the config/map and is ready to play. */

@@ -164,6 +164,11 @@ public final class ClientWorld {
     // until configure: one sim tick per C frame at the default framesPerSecond, snapshot divisor 1
     private float frameFraction = 1f;
     private double snapshotInterval = Protocol.DEFAULT_SNAPSHOT_DIVISOR;
+    /** Tick steps between the last {@value #STEP_WINDOW} new newest ticks (see {@link #arrivalIntervalSeconds}). */
+    static final int STEP_WINDOW = 8;
+    private final int[] tickSteps = new int[STEP_WINDOW];
+    private int stepCount;
+    private int stepNext;
     private double delayTicks = Protocol.DEFAULT_SNAPSHOT_DIVISOR + JITTER_MARGIN_SECONDS * ClientGame.DEFAULT_FPS;
     private double maxExtrapolateTicks = 2.0 * Protocol.DEFAULT_SNAPSHOT_DIVISOR;
     private int defaultEngineX = ShipShape.defaultShip().engineX;
@@ -368,6 +373,8 @@ public final class ClientWorld {
         shutdownCount = -1;
         haveTimeLeft = false;
         clock.reset(clock.simHz());
+        stepCount = 0;
+        stepNext = 0;
         outShips = 0;
         outShots = 0;
         outPoints = 0;
@@ -449,6 +456,11 @@ public final class ClientWorld {
             f = oldestOrFree();
             f.begin(tick, nowNanos, haveNewest ? Math.max(newestTick + 1, tick - MAX_SPARK_TICKS + 1)
                 : tick - snapshotIntervalInt() + 1);
+            if (haveNewest) {
+                tickSteps[stepNext] = tick - newestTick;
+                stepNext = (stepNext + 1) % STEP_WINDOW;
+                stepCount = Math.min(stepCount + 1, STEP_WINDOW);
+            }
             newestTick = tick;
             haveNewest = true;
             samplePending = true;
@@ -1352,6 +1364,23 @@ public final class ClientWorld {
     public float frameFraction() { return frameFraction; }
 
     public double snapshotIntervalTicks() { return snapshotInterval; }
+
+    /**
+     * Seconds between snapshots as they really arrive, for sounds that the server repeats every frame (thrust).
+     * <p>
+     * BEHAVIOR: the larger of the WELCOME snapshot interval and the smallest tick step between the last
+     * {@value #STEP_WINDOW} new newest ticks (a C server sends paused players every 4th frame and players out of
+     * the game every 2nd, frame.c), divided by simHz; the smallest step ignores single lost snapshots. Without
+     * steps yet (and after a reset), the WELCOME interval.
+     */
+    public double arrivalIntervalSeconds() {
+        int min = Integer.MAX_VALUE;
+        for (int i = 0; i < stepCount; i++) {
+            min = Math.min(min, tickSteps[i]);
+        }
+        double ticks = stepCount == 0 ? snapshotInterval : Math.max(snapshotInterval, min);
+        return ticks / clock.simHz();
+    }
 
     public double interpolationDelayTicks() { return delayTicks; }
 

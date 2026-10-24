@@ -32,16 +32,19 @@ import com.fulcrologic.jxpilot.common.SoundEvent;
  * volume by distance (C {@code sound_play_sensors}); like C the client only caps it at {@code maxVolume}.
  * <p>
  * Voices are fixed: each loop clip owns one voice, the rest play one-shots. A loop event (thrust, which C
- * sends every frame while thrusting) starts its loop or keeps it going for {@link #LOOP_HOLD_FRAMES} game
- * frames; {@link #update} stops it when no new event came. A one-shot takes a free voice, else the quietest
+ * sends every frame while thrusting) starts its loop or keeps it going for the hold time ({@link #setHold}:
+ * 2.5 game frames, or 1.5 snapshot intervals when snapshots come less often); {@link #update} stops it when no
+ * new event came. A one-shot takes a free voice, else the quietest
  * (then oldest) one-shot voice. Two events of the same clip in the same frame share one voice at the louder
  * gain. Pure logic over the device; allocation free per event and per frame.
  */
 public final class SoundPlayer {
     /** Default voices: OpenAL Soft offers far more, 16 is plenty for XPilot's event rate. */
     public static final int VOICES = 16;
-    /** A loop keeps playing this many game frames after its last event (C sends one per frame). */
+    /** A loop keeps playing this many game frames after its last event (C sends one per frame)... */
     public static final double LOOP_HOLD_FRAMES = 2.5;
+    /** ...or this many intervals between snapshots, when those arrive less often (snapshotDivisor, a paused C player). */
+    public static final double LOOP_HOLD_ARRIVALS = 1.5;
     /** C's default {@code maxVolume} resource. */
     public static final int DEFAULT_MAX_VOLUME = 100;
     /** Largest {@code maxVolume} C's configure menu accepts. */
@@ -112,12 +115,14 @@ public final class SoundPlayer {
     public int maxVolume() { return maxVolume; }
 
     /**
-     * BEHAVIOR: the loop hold time is {@link #LOOP_HOLD_FRAMES} frames of {@code fps}; a non-positive fps
-     * keeps the previous value.
+     * Set the loop hold time from the game's frame rate and the interval at which snapshots really arrive.
+     * <p>
+     * BEHAVIOR: hold = max({@link #LOOP_HOLD_FRAMES} frames of {@code fps}, {@link #LOOP_HOLD_ARRIVALS} x
+     * {@code arrivalSeconds}); a non-positive fps keeps the previous value.
      */
-    public void setFrameRate(double fps) {
+    public void setHold(double fps, double arrivalSeconds) {
         if (fps > 0) {
-            holdNanos = (long) (LOOP_HOLD_FRAMES * 1e9 / fps);
+            holdNanos = (long) (Math.max(LOOP_HOLD_FRAMES / fps, LOOP_HOLD_ARRIVALS * arrivalSeconds) * 1e9);
         }
     }
 
@@ -219,12 +224,12 @@ public final class SoundPlayer {
     }
 
     /**
-     * The client's per-frame step: {@link #setFrameRate}(fps), {@link #drain}(q), {@link #update}.
+     * The client's per-frame step: {@link #setHold}(fps, arrivalSeconds), {@link #drain}(q), {@link #update}.
      * <p>
-     * BEHAVIOR: plays what arrived, then stops loops whose hold time at {@code fps} has passed.
+     * BEHAVIOR: plays what arrived, then stops loops whose hold time has passed.
      */
-    public void frame(SoundQueue q, double fps, long nowNanos) {
-        setFrameRate(fps);
+    public void frame(SoundQueue q, double fps, double arrivalSeconds, long nowNanos) {
+        setHold(fps, arrivalSeconds);
         drain(q, nowNanos);
         update(nowNanos);
     }

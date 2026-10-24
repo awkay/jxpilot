@@ -59,9 +59,9 @@ public final class ClientGame implements ConnectionListener {
     private final Msg.TeamScore teamScore = new Msg.TeamScore();
     private final Msg.Text text = new Msg.Text();
     private final Msg.BaseOwner baseOwner = new Msg.BaseOwner();
+    private final Msg.Timing timing = new Msg.Timing();
     private final Msg.GameEvent gameEvent = new Msg.GameEvent();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
-    private final Msg.Timing timing = new Msg.Timing();
 
     private ConnectionState state = ConnectionState.IDLE;
     private WorldMap map;
