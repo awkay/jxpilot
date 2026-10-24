@@ -84,7 +84,7 @@ public final class GameConnector {
     /** C {@code sock_get_local_hostname}: the local host's name, "localhost" when it cannot be found. */
     static String localHostName() {
         try {
-            return java.net.InetAddress.getLocalHost().getCanonicalHostName();
+            return java.net.InetAddress.getLocalHost().getHostName(); // C gethostname(), not a reverse lookup
         } catch (IOException | RuntimeException e) {
             return "localhost";
         }
