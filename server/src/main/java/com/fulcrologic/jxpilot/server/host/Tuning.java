@@ -29,6 +29,7 @@ import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.server.world.ItemParams;
 import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -262,12 +263,14 @@ final class Tuning {
             }
         }
         Params before = Params.from(opts, w.map);
+        ItemParams beforeItems = ItemParams.from(opts, w.width, w.height, w.params.fps);
         opts.force(o, stored);
         fixValues(t, o);
         int cannonMask = w.params.objCannonMask;
         int targetMask = w.params.objTargetMask;
         int treasureMask = w.params.objTreasureMask;
         copyChanges(before, Params.from(opts, w.map), w.params);
+        copyChanges(beforeItems, ItemParams.from(opts, w.width, w.height, w.params.fps), w.items);
         w.params.objCannonMask = cannonMask;
         w.params.objTargetMask = targetMask;
         w.params.objTreasureMask = treasureMask;
@@ -441,6 +444,14 @@ final class Tuning {
                     for (int i = 0; i < ai.length; i++) {
                         if (ai[i] != bi[i]) {
                             li[i] = ai[i];
+                        }
+                    }
+                } else if (a instanceof float[] af) {
+                    float[] bf = (float[]) b;
+                    float[] lf = (float[]) f.get(live);
+                    for (int i = 0; i < af.length; i++) {
+                        if (Float.compare(af[i], bf[i]) != 0) {
+                            lf[i] = af[i];
                         }
                     }
                 } else if (a instanceof double[] ad) {

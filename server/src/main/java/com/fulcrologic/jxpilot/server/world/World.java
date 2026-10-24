@@ -40,6 +40,8 @@ import java.util.Arrays;
 public final class World {
     /** C {@code NUM_IDS}: wire ids are 1..MAX_IDS-1 (0 is never used, as C {@code peek_ID}). */
     public static final int MAX_IDS = 256;
+    /** C {@code MAX_PSEUDO_PLAYERS}: extra player slots for detached tanks. */
+    public static final int MAX_PSEUDO_PLAYERS = 16;
 
     public final Options options;
     public final WorldMap map;
@@ -60,6 +62,8 @@ public final class World {
     public final byte[] wallDist;
 
     public final Player[] players;
+    /** Player slots for humans and robots: one per base (the rest are for detached tanks). */
+    public final int baseSlots;
     /** Slots of players in the game, in join order (C {@code Players[0..NumPlayers)}). */
     public final int[] order;
     public int numPlayers;
@@ -69,6 +73,18 @@ public final class World {
     public final Objects objects;
     public final Grid grid;
     public final Events events = new Events();
+
+    // ---- items (server-items)
+    /** Item, weapon and device options and the per-item table (C {@code World.items[]}). */
+    public final ItemParams items;
+    /** C {@code World.items[i].num}: floating items of each kind. */
+    public final int[] itemCount = new int[com.fulcrologic.jxpilot.common.Item.COUNT];
+    /** Laser pulses in flight. */
+    public final Pulses pulses = new Pulses();
+    /** ECM blasts and transporter beams. */
+    public final Ecms ecms = new Ecms();
+    /** Item and device state of the cannons. */
+    public final CannonItems cannonItems;
 
     // ---- dynamic map state
     /** Frames a cannon stays dead; 0 = alive. */
@@ -120,17 +136,24 @@ public final class World {
         this.wrap = map.edgeWrap();
         this.rng = new Rng(seed);
         this.wallDist = WallDist.compute(map);
-        int cap = Math.max(1, Math.min(MAX_IDS - 1, map.bases().size()));
+        baseSlots = Math.max(1, Math.min(MAX_IDS - 1, map.bases().size()));
+        int cap = Math.min(MAX_IDS - 1, baseSlots + MAX_PSEUDO_PLAYERS);
         players = new Player[cap];
         for (int i = 0; i < cap; i++) {
             players[i] = new Player(i);
+            players[i].initVisibility(cap);
         }
         order = new int[cap];
         Arrays.fill(slotOfId, -1);
         objects = new Objects(params.maxObjects);
         grid = new Grid(width, height, wrap, params.maxObjects);
+        items = ItemParams.from(options, width, height, params.fps);
 
         cannonDeadTime = new int[map.cannons().size()];
+        cannonItems = new CannonItems(map.cannons().size());
+        for (int c = 0; c < map.cannons().size(); c++) {
+            cannonItems.init(c, items, rng, params.cannonsUseItems);
+        }
         fuelLevel = new double[map.fuels().size()];
         Arrays.fill(fuelLevel, Const.START_STATION_FUEL * 256);
         targetDeadTime = new int[map.targets().size()];
@@ -192,10 +215,49 @@ public final class World {
     /**
      * Reserve a free slot and id (C {@code peek_ID}); the player is not in the game until {@link #enter}.
      * <p>
-     * BEHAVIOR: returns null when every slot (one per base) is taken, reserved ones included.
+     * BEHAVIOR: returns null when every slot (one per base) is taken, reserved ones included (tanks do not
+     * count).
      * BEHAVIOR: the id is the lowest unused id &gt;= 1.
      */
     public Player addPlayer() {
+        return hasFreeSlot() ? takeSlot() : null;
+    }
+
+    /** BEHAVIOR: true while fewer humans and robots (reserved ones included) than bases hold a slot. */
+    public boolean hasFreeSlot() {
+        int used = 0;
+        for (Player p : players) {
+            if (p.inUse && !p.tank) {
+                used++;
+            }
+        }
+        return used < baseSlots;
+    }
+
+    /**
+     * Reserve a slot and id for a detached tank (C {@code Tank_handle_detach}).
+     * <p>
+     * BEHAVIOR: returns null when MAX_PSEUDO_PLAYERS tanks exist or no slot or id is free; the player is marked
+     * as a tank.
+     */
+    public Player addTank() {
+        int tanks = 0;
+        for (Player p : players) {
+            if (p.inUse && p.tank) {
+                tanks++;
+            }
+        }
+        if (tanks >= MAX_PSEUDO_PLAYERS) {
+            return null;
+        }
+        Player p = takeSlot();
+        if (p != null) {
+            p.tank = true;
+        }
+        return p;
+    }
+
+    private Player takeSlot() {
         for (Player p : players) {
             if (!p.inUse) {
                 int id = 1;
@@ -249,6 +311,7 @@ public final class World {
         slotOfId[p.id] = -1;
         p.inUse = false;
         p.spawned = false;
+        p.tank = false;
     }
 
     /** Wall distance (half blocks) at an in-range block. */

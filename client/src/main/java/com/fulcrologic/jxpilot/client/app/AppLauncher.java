@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.client.app;
 
 import com.fulcrologic.jxpilot.client.game.ClientGame;
 import com.fulcrologic.jxpilot.client.game.input.KeyConfig;
+import com.fulcrologic.jxpilot.client.sound.SoundPlayer;
 import com.fulcrologic.jxpilot.client.gl.MapViewerApp;
 import com.fulcrologic.jxpilot.client.net.Endpoint;
 import com.fulcrologic.jxpilot.client.xp.ConnectTarget;
@@ -95,9 +96,22 @@ public final class AppLauncher {
         String shape = ShipShapeResource.resolve(o.shape(), o.shipShapeFile(), keys.shipShape(), keys.shipShapeFile(),
             ShipShapeResource::readLatin1, System.err);
         GameConnection conn = GameConnector.open(target, o.bind(), game, o.name(), o.team(), shape,
-            o.sound() && o.maxVolume() > 0, (int) System.nanoTime());
+            o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime());
         new GameApp(o, game, conn, target.toString(), null, keys).run();
         return 0;
+    }
+
+    /**
+     * C {@code maxVolume} for a launch.
+     * <p>
+     * BEHAVIOR: {@code --volume} when given; else the key file's maxVolume (C {@code ~/.xpilotrc}) when it sets
+     * one; else {@value SoundPlayer#DEFAULT_MAX_VOLUME}. A null key config counts as a file without it.
+     */
+    public static int maxVolume(AppOptions o, KeyConfig keys) {
+        if (o.maxVolume() != AppOptions.VOLUME_UNSET) {
+            return o.maxVolume();
+        }
+        return keys != null && keys.maxVolume() >= 0 ? keys.maxVolume() : SoundPlayer.DEFAULT_MAX_VOLUME;
     }
 
     /**

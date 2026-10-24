@@ -52,8 +52,9 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  *   --font FILE, --font-size PX text font (default: bundled, 13)
  *   --screenshot FILE.png      save a PNG after --frames N frames (default 300) and exit
  *   --no-vsync                 render as fast as possible
- *   --sound, --no-sound        play sound effects (default on; C resource sound)
- *   --volume N                 C maxVolume: the loudest a sound plays, 0..255 percent (default 100; 0 = no sound)
+ *   --sound, --no-sound        play sound effects (default on; JXPilot only: C chose this when it was built)
+ *   --volume N                 C maxVolume: the loudest a sound plays, 0..255 percent (0 = no sound); default:
+ *                              the key file's maxVolume, else 100
  *   --keys FILE                key bindings and control settings in ~/.xpilotrc format (default: ~/.xpilotrc)
  *   --list-keys                print the effective key bindings and exit
  * </pre>
@@ -68,7 +69,7 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  * @param swapScaleKey X11 keysym bound to the scale-factor swap, or null
  * @param fontFile   TrueType file, or null for the bundled font
  * @param sound      play sound effects
- * @param maxVolume  C {@code maxVolume}, 0..{@value SoundPlayer#MAX_MAX_VOLUME}
+ * @param maxVolume  {@code --volume} (C {@code maxVolume}), 0..{@value SoundPlayer#MAX_MAX_VOLUME}, or {@link #VOLUME_UNSET}
  * @param keysFile   key file given with {@code --keys}, or null for {@code ~/.xpilotrc}
  * @param shipShapeFile shape file given with {@code --shipShapeFile}, or null when not given
  */
@@ -95,6 +96,8 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
     public static final int MAX_NAME = Players.MAX_NAME;
     /** Default frames before a screenshot (5 s at 60 Hz: enough to connect and receive the map). */
     public static final int DEFAULT_FRAMES = 300;
+    /** {@link #maxVolume()} when {@code --volume} was not given (the key file or C's 100 decide). */
+    public static final int VOLUME_UNSET = -1;
     /** Default font size in logical pixels. */
     public static final double DEFAULT_FONT_SIZE = 13;
 
@@ -125,7 +128,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
      * BEHAVIOR: {@code --keys FILE} names the key file; {@code --list-keys} selects {@link Mode#LIST_KEYS}
      * (keeping {@code --keys} and {@code --swap-scale-key}, ignoring the launch mode).
      * BEHAVIOR: sound is on unless {@code --no-sound} (the last of --sound/--no-sound wins); {@code --volume}
-     * is an integer 0..{@value SoundPlayer#MAX_MAX_VOLUME} (default {@value SoundPlayer#DEFAULT_MAX_VOLUME}).
+     * is an integer 0..{@value SoundPlayer#MAX_MAX_VOLUME}, {@link #VOLUME_UNSET} when not given.
      * BEHAVIOR: unknown options and missing values throw IllegalArgumentException naming the option.
      */
     public static AppOptions parse(String[] args, String userName) {
@@ -133,12 +136,12 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
             if (a.equals("--view-map")) {
                 return new AppOptions(Mode.VIEW_MAP, LaunchOptions.parse(args), null, null, null, Protocol.NO_TEAM,
                     "", null, null, DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true,
-                    SoundPlayer.DEFAULT_MAX_VOLUME, null, null);
+                    VOLUME_UNSET, null, null);
             }
         }
         if (args.length == 0) {
             return new AppOptions(Mode.HELP, null, null, null, null, Protocol.NO_TEAM, "", null, null,
-                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, SoundPlayer.DEFAULT_MAX_VOLUME,
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, VOLUME_UNSET,
                 null, null);
         }
         String connect = null;
@@ -161,7 +164,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         String font = null;
         double fontSize = DEFAULT_FONT_SIZE;
         boolean sound = true;
-        int maxVolume = SoundPlayer.DEFAULT_MAX_VOLUME;
+        int maxVolume = VOLUME_UNSET;
         String keys = null;
         boolean listKeys = false;
         for (int i = 0; i < args.length; i++) {

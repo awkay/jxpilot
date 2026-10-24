@@ -170,7 +170,6 @@ public final class SimGameHost implements GameHost {
 
     /** After an operator changed {@code o} at run time: what this host and the network layer keep is re-read. */
     private void optionChanged(Opt o) {
-        builder.reloadOptions();
         rawMode = w.options.getBool(Opt.IDLE_RUN);
         sessions.optionChanged(o, w.options);
     }
@@ -296,12 +295,7 @@ public final class SimGameHost implements GameHost {
     }
 
     private boolean hasFreeSlot() {
-        for (Player p : w.players) {
-            if (!p.inUse) {
-                return true;
-            }
-        }
-        return false;
+        return w.hasFreeSlot();
     }
 
     /** BEHAVIOR: the name as {@code Ships.reserve} stores it: trailing blanks stripped, 16 chars, Latin-1. */
@@ -579,7 +573,7 @@ public final class SimGameHost implements GameHost {
     private int humans() {
         int n = 0;
         for (int k = 0; k < w.numPlayers; k++) {
-            if (!w.playerAt(k).robot) {
+            if (!w.playerAt(k).robot && !w.playerAt(k).tank) {
                 n++;
             }
         }
@@ -664,6 +658,8 @@ public final class SimGameHost implements GameHost {
      * sections.
      * BEHAVIOR: part 0 sends the viewer's queued sounds and empties its queue (C {@code sound_play_queued}), so
      * each sound goes out in one snapshot.
+     * BEHAVIOR: a viewer out of the game (or paused, see {@code Locks.viewOf}) gets the snapshot, sounds included,
+     * of the player it has locked on (C frame.c:1314-1336).
      */
     @Override
     public boolean fillSnapshot(int viewerId, int part, boolean radar, SnapshotWriter out) {
@@ -676,9 +672,10 @@ public final class SimGameHost implements GameHost {
                 b.clear();
                 b.position(PacketHeader.SIZE);
             }
-            scratchParts = builder.build(p, 0, burstCursor[viewerId], radar, scratch);
+            Player view = sim.locks.viewOf(p);
+            scratchParts = builder.build(view, 0, burstCursor[viewerId], radar, scratch);
             burstCursor[viewerId] = w.events.burstSeq();
-            p.audio.clear();
+            view.audio.clear();
         }
         if (part >= scratchParts) {
             return false;
@@ -715,7 +712,7 @@ public final class SimGameHost implements GameHost {
         for (int k = 0; k < w.numPlayers; k++) {
             Player p = w.playerAt(k);
             sendJoin(viewerId, p, out);
-            if (p.homeBase >= 0) {
+            if (p.homeBase >= 0 && !p.tank) {
                 baseOwner.baseIndex = p.homeBase;
                 baseOwner.playerId = p.id;
                 baseOwner.send(out);
@@ -744,7 +741,8 @@ public final class SimGameHost implements GameHost {
         join.id = p.id;
         join.team = wireTeam(p.team);
         join.flags = (p.robot ? Msg.PlayerJoin.FLAG_ROBOT : 0) | (p.id == viewerId ? Msg.PlayerJoin.FLAG_SELF : 0)
-            | ((p.status & Obj.PAUSE) != 0 ? Msg.PlayerJoin.FLAG_PAUSED : 0);
+            | ((p.status & Obj.PAUSE) != 0 ? Msg.PlayerJoin.FLAG_PAUSED : 0)
+            | (p.tank ? Msg.PlayerJoin.FLAG_TANK : 0);
         join.power = p.power;
         join.afterburners = p.afterburners();
         join.name.setLength(0);

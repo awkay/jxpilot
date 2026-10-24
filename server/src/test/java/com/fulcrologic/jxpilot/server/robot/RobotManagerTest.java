@@ -432,8 +432,8 @@ class RobotManagerTest {
             Player b = s.robots.create();
             RobotData bd = s.robots.data(b);
             DefaultRobot.setWar(bd, a.id);
-            bd.lockTagged = DefaultRobot.LOCK_PLAYER;
-            bd.lockPlId = a.id;
+            b.lockTagged = DefaultRobot.LOCK_PLAYER;
+            b.lockPlId = a.id;
             b.used |= Has.TRACTOR_BEAM;
             int aid = a.id;
             a.score = -1;
@@ -448,7 +448,7 @@ class RobotManagerTest {
                     RobotFixture.messages(s.world, from), "kicked"),
                 () -> assertEquals(List.of(aid + ":0:0"), RobotFixture.events(s.world, Events.LEAVE, from), "LEAVE"),
                 () -> assertEquals(Obj.NO_ID, DefaultRobot.warOnPlayer(bd), "wars on it end"),
-                () -> assertEquals(0, bd.lockTagged, "locks on it end"),
+                () -> assertEquals(0, b.lockTagged, "locks on it end"),
                 () -> assertEquals(0, b.used & Has.TRACTOR_BEAM, "with the tractor beam"));
         }
 
@@ -644,7 +644,7 @@ class RobotManagerTest {
         }
 
         @Test
-        @DisplayName("locks are refreshed to the wrapped distance; THRUST is sent when a robot's power changes")
+        @DisplayName("locks are refreshed to the wrapped distance (after the moves); THRUST is sent when a robot's power changes")
         void locksAndPower() {
             Simulation s = sim("maxRobots: 1\n", "___");
             Player r = s.robots.create();
@@ -652,13 +652,14 @@ class RobotManagerTest {
             RobotFixture.place(r, 100, 100);
             RobotFixture.place(h, 400, 500);
             RobotData d = s.robots.data(r);
-            d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            d.lockPlId = h.id;
+            r.lockTagged = DefaultRobot.LOCK_PLAYER;
+            r.lockPlId = h.id;
             r.power = 30;
             long from = s.world.events.seq();
             s.robots.update();
+            s.devices.afterMove();
             assertAll(
-                () -> assertTrue(d.lockDistance == 500.0 || d.lockTagged == 0, "distance 500 (unless dropped while playing)"),
+                () -> assertTrue(r.lockDistance == 500.0 || r.lockTagged == 0, "distance 500 (unless dropped while playing)"),
                 () -> assertFalse(RobotFixture.events(s.world, Events.THRUST, from).isEmpty(), "power changed: THRUST"));
         }
 
@@ -756,7 +757,7 @@ class RobotManagerTest {
             s.robots.setRoster(r);
             Player p = s.robots.create();
             DefaultRobot before = s.robots.robot();
-            s.robots.setItems(new RobotItems());
+            s.robots.setItems(new RobotItems(s));
             assertAll(
                 () -> assertEquals("Solo", p.name.toString(), "from the new roster"),
                 () -> assertNotSame(before, s.robots.robot(), "a new robot type instance with the gate"));

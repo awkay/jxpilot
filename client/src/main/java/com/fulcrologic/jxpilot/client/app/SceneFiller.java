@@ -103,8 +103,8 @@ public final class SceneFiller {
             }
         }
         for (int i = 0; i < w.shotCount(); i++) {
-            int c = w.shotColor(i);
             boolean harmless = w.shotHarmless(i);
+            int c = nuclearBlink(w.shotKind(i), w.shotColor(i), harmless, w.renderTick());
             out.addShot(w.shotX(i), w.shotY(i), shotColor(c, harmless), teamShot(c, harmless));
         }
         objects(out, w);
@@ -303,6 +303,20 @@ public final class SceneFiller {
             case Records.ObjColor.BLUE -> Palette.BLUE;
             default -> Palette.WHITE;
         };
+    }
+
+    /**
+     * C frame.c:830: a dangerous nuclear shot is sent as a RED teamshot when {@code frame_loops & 2}; on the native
+     * path the server marks it {@link Records.ShotKind#NUCLEAR} and the client blinks it from the server tick.
+     * <p>
+     * BEHAVIOR: RED for a NUCLEAR shot that is not harmless at ticks with bit 1 set (2, 3, 6, 7, ...), else the
+     * shot's own colour.
+     */
+    static int nuclearBlink(int kind, int objColor, boolean harmless, double tick) {
+        if (kind == Records.ShotKind.NUCLEAR && !harmless && (((long) Math.floor(tick)) & 2) != 0) {
+            return Records.ObjColor.RED;
+        }
+        return objColor;
     }
 
     /**

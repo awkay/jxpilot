@@ -77,14 +77,14 @@ public final class Alliances {
     /**
      * C {@code Invite_player}: {@code pl} invites {@code ally}.
      * <p>
-     * BEHAVIOR: nothing (false) when inviting oneself, an ally, or the player already invited.
+     * BEHAVIOR: nothing (false) when inviting oneself, a tank, an ally, or the player already invited.
      * BEHAVIOR: when {@code ally} has invited {@code pl}, {@code pl} accepts instead (true).
      * BEHAVIOR: otherwise an earlier invitation of {@code pl} is cancelled, the new one recorded, and a robot
      * decides at once ({@code RobotManager.invite}, C {@code Robot_invite}) while a human gets
      * " < NAME seeks an alliance with you >" (true).
      */
     public boolean invite(Player pl, Player ally) {
-        if (pl == ally || w.allied(pl, ally) || pl.invite == ally.id) {
+        if (pl == ally || ally.tank || w.allied(pl, ally) || pl.invite == ally.id) {
             return false;
         }
         if (ally.invite == pl.id) {
@@ -97,7 +97,7 @@ public final class Alliances {
         pl.invite = ally.id;
         if (ally.robot) {
             sim.robots.invite(ally, pl);
-        } else {
+        } else if (human(ally)) {
             tell(ally).append(" < ").append(pl.name).append(" seeks an alliance with you >");
         }
         return true;
@@ -116,7 +116,7 @@ public final class Alliances {
         }
         Player ally = w.byId(pl.invite);
         pl.invite = Obj.NO_ID;
-        if (ally != null && ally.spawned && !ally.robot) {
+        if (ally != null && ally.spawned && human(ally)) {
             tell(ally).append(" < ").append(pl.name).append(" has cancelled the invitation for an alliance >");
         }
         return true;
@@ -133,7 +133,7 @@ public final class Alliances {
             return false;
         }
         ally.invite = Obj.NO_ID;
-        if (!ally.robot) {
+        if (human(ally)) {
             tell(ally).append(" < ").append(pl.name).append(" has declined your invitation for an alliance >");
         }
         return true;
@@ -155,7 +155,7 @@ public final class Alliances {
                 j++;
             }
         }
-        if (!pl.robot) {
+        if (human(pl)) {
             StringBuilder sb = tell(pl);
             if (j == 0) {
                 sb.append(" < You were not invited for any alliance >");
@@ -209,7 +209,7 @@ public final class Alliances {
                 j++;
             }
         }
-        if (!pl.robot) {
+        if (human(pl)) {
             StringBuilder sb = tell(pl);
             if (j == 0) {
                 sb.append(" < You were not invited for any alliance >");
@@ -284,17 +284,22 @@ public final class Alliances {
     /**
      * C {@code Player_join_alliance}: {@code pl} joins the alliance of {@code ally}.
      * <p>
-     * BEHAVIOR: announced first (so the joiner does not get two messages): with announceAlliances everyone gets
+     * BEHAVIOR: a tank joins silently; otherwise announced first (so the joiner does not get two messages): with
+     * announceAlliances everyone gets
      * " < NAME has joined alliance N >"; else the human members get " < NAME has joined your alliance >" and a
      * human joiner " < You have joined ALLY's alliance >". Then {@code pl} is added.
      */
     public void join(Player pl, Player ally) {
         int id = ally.alliance;
+        if (pl.tank) {
+            add(id, pl);
+            return;
+        }
         if (announce()) {
             all().append(" < ").append(pl.name).append(" has joined alliance ").append(id).append(" >");
         } else {
             tellAlliance(id, msg().append(" < ").append(pl.name).append(" has joined your alliance >"));
-            if (!pl.robot) {
+            if (human(pl)) {
                 tell(pl).append(" < You have joined ").append(ally.name).append("'s alliance >");
             }
         }
@@ -333,11 +338,13 @@ public final class Alliances {
             return false;
         }
         remove(id, pl);
-        if (announce()) {
+        if (pl.tank) {
+            // a tank leaves silently (C !IS_TANK_IND)
+        } else if (announce()) {
             all().append(" < ").append(pl.name).append(" has left alliance ").append(id).append(" >");
         } else {
             tellAlliance(id, msg().append(" < ").append(pl.name).append(" has left your alliance >"));
-            if (!pl.robot) {
+            if (human(pl)) {
                 tell(pl).append(" < You have left the alliance >");
             }
         }
@@ -371,7 +378,7 @@ public final class Alliances {
             Player o = w.playerAt(k);
             if (o.alliance == id) {
                 remove(id, o);
-                if (!announce() && !o.robot) {
+                if (!announce() && human(o)) {
                     tell(o).append(" < Your alliance has been dissolved >");
                 }
             }
@@ -412,7 +419,7 @@ public final class Alliances {
      * <p>
      * BEHAVIOR: outside an alliance: " < You are not a member of any alliance >".
      * BEHAVIOR: otherwise " < Alliance N:" (announceAlliances) or " < Your alliance: ", then the human members, then
-     * the robots, each followed by ", "; whenever the line is longer than 80 characters before a name, it is sent
+     * the robots (tanks are not listed), each followed by ", "; whenever the line is longer than 80 characters before a name, it is sent
      * with ">" appended and continues as " <            "; the last ", " is cut and " >" ends the last line.
      */
     public void list(Player pl) {
@@ -429,7 +436,7 @@ public final class Alliances {
         for (int pass = 0; pass < 2; pass++) {
             for (int k = 0; k < w.numPlayers; k++) {
                 Player o = w.playerAt(k);
-                if (o.alliance == pl.alliance && o.robot == (pass == 1)) {
+                if (o.alliance == pl.alliance && (pass == 0 ? human(o) : o.robot)) {
                     if (msg.length() > 80) {
                         msg.append('>');
                         tell(pl).append(msg);
@@ -458,6 +465,11 @@ public final class Alliances {
 
     // ================================================================ helpers
 
+    /** C {@code IS_HUMAN_PTR}: neither a robot nor a tank. */
+    private static boolean human(Player p) {
+        return !p.robot && !p.tank;
+    }
+
     private void changed(Player pl) {
         w.events.add(Events.ALLIANCE, pl.id, pl.alliance, 0, 0f);
     }
@@ -476,7 +488,7 @@ public final class Alliances {
     private void tellAlliance(int id, CharSequence text) {
         for (int k = 0; k < w.numPlayers; k++) {
             Player o = w.playerAt(k);
-            if (!o.robot && o.alliance == id) {
+            if (human(o) && o.alliance == id) {
                 tell(o).append(text);
             }
         }

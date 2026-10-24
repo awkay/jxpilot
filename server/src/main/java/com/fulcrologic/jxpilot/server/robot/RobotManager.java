@@ -94,7 +94,7 @@ public final class RobotManager {
         }
         this.talk = new RobotTalk(w);
         this.roster = RobotRoster.defaults();
-        this.items = new RobotItems();
+        this.items = new RobotItems(sim);
         this.robot = new DefaultRobot(w, sim, items);
         allowShipShapes = w.options.getBool(Opt.ALLOW_SHIP_SHAPES);
         reloadOptions();
@@ -139,7 +139,7 @@ public final class RobotManager {
         return roster;
     }
 
-    /** Use another item gate (M2 items, or a test spy). */
+    /** Use another item gate (a test spy). */
     public void setItems(RobotItems it) {
         items = it;
         robot = new DefaultRobot(w, sim, it);
@@ -171,7 +171,8 @@ public final class RobotManager {
      * an id and an unused robot, and (team play with restrictRobots) the robot team has room, a robot joins
      * every ROBOT_CREATE_DELAY = 2*FPS frames; otherwise the delay restarts and the lowest scoring robot leaves
      * when there are more players than bases or than maxRobots (with more than minRobots robots).
-     * BEHAVIOR: with robots: the visibility distances are updated, lock distances refreshed, and every robot
+     * BEHAVIOR: detached tanks (pseudo players) do not count as playing ships.
+     * BEHAVIOR: with robots: the visibility distances are updated and every robot
      * either checks whether it leaves (dead robots only on their respawn frame) or plays.
      */
     public void update() {
@@ -182,7 +183,7 @@ public final class RobotManager {
         handleEvents();
         Params p = w.params;
         int numAny = w.numPlayers;
-        int numPlaying = numAny;
+        int numPlaying = numAny - tanks();
         int numBases = w.map.bases().size();
         if ((numPlaying < p.maxRobots || numRobots < p.minRobots)
             && numPlaying < numBases
@@ -204,7 +205,6 @@ public final class RobotManager {
         }
         if (numRobots > 0) {
             robot.roundTick(numRobots);
-            refreshLocks();
             robot.refreshCells();
             for (int k = 0; k < w.numPlayers; k++) {
                 Player pl = w.playerAt(k);
@@ -234,18 +234,15 @@ public final class RobotManager {
         return w.teamMembers[t] >= w.map.teamBaseCount(t);
     }
 
-    /** C updates {@code lock.distance} for every locked player each frame (update.c). */
-    private void refreshLocks() {
+    /** C {@code NumPseudoPlayers}: detached tanks in the game. */
+    private int tanks() {
+        int n = 0;
         for (int k = 0; k < w.numPlayers; k++) {
-            Player pl = w.playerAt(k);
-            RobotData d = data[pl.slot];
-            if (pl.robot && (d.lockTagged & DefaultRobot.LOCK_PLAYER) != 0) {
-                Player t = w.byId(d.lockPlId);
-                if (t != null) {
-                    d.lockDistance = w.wrapLength(pl.px - t.px, pl.py - t.py);
-                }
+            if (w.playerAt(k).tank) {
+                n++;
             }
         }
+        return n;
     }
 
     /**
@@ -369,20 +366,13 @@ public final class RobotManager {
     /**
      * C {@code Delete_player}'s robot bookkeeping for a departed id.
      * <p>
-     * BEHAVIOR: robots at war with it stop; robot locks on it (or every lock when at most one player is left)
-     * are dropped together with their tractor beam.
+     * BEHAVIOR: robots at war with it stop (locks on it were already dropped by {@code Ships.leave}).
      */
     void playerLeft(int id) {
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
             if (!pl.robot) {
                 continue;
-            }
-            RobotData d = data[pl.slot];
-            if ((d.lockTagged & (DefaultRobot.LOCK_PLAYER | DefaultRobot.LOCK_VISIBLE)) != 0
-                && (d.lockPlId == id || w.numPlayers <= 1)) {
-                d.lockTagged &= ~(DefaultRobot.LOCK_PLAYER | DefaultRobot.LOCK_VISIBLE);
-                pl.used &= ~Has.TRACTOR_BEAM;
             }
             resetWarIfOn(pl, id);
         }
@@ -432,7 +422,7 @@ public final class RobotManager {
         if (pl.alliance != Player.ALLIANCE_NOT_SET) {
             for (int k = 0; k < w.numPlayers; k++) {
                 Player o = w.playerAt(k);
-                if (!o.robot && w.allied(pl, o)) {
+                if (!o.robot && !o.tank && w.allied(pl, o)) {
                     a.refuse(pl, inviter);
                     return;
                 }

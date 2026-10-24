@@ -536,5 +536,63 @@ class AlliancesTest {
             f.s.robots.war(bot, human);
             assertEquals(Obj.NO_ID, f.s.robots.warOnPlayer(bot), "no war on an ally");
         }
+
+        @Test
+        @DisplayName("locks skip allies (Player_lock_closest), see them (lock visible, cloaking); ECM spares them")
+        void locksEcmVisibility() {
+            Fx f = new Fx("");
+            Player ann = f.join("Ann");
+            Player bob = f.join("Bob");
+            Player cid = f.join("Cid");
+            ann.initPixels(100, 100);
+            bob.initPixels(130, 100);
+            cid.initPixels(300, 100);
+            f.ally(ann, bob);
+            boolean locked = f.s.locks.lockClosest(ann, false);
+            int target = ann.lockPlId;
+            java.util.Arrays.fill(ann.canSee, false);
+            boolean seesAlly = f.s.locks.sees(ann, bob);
+            boolean seesStranger = f.s.locks.sees(ann, cid);
+            bob.damaged = 0;
+            cid.initPixels(140, 100);
+            cid.damaged = 0;
+            f.s.ecm.fireGeneral(ann, ann.team, 100, 100);
+            assertAll(
+                () -> assertTrue(locked, "a lock was taken"),
+                () -> assertEquals(cid.id, target, "on the stranger, though the ally is closer"),
+                () -> assertTrue(seesAlly, "an ally is always seen (frame.c:412, 1030)"),
+                () -> assertFalse(seesStranger, "a stranger only when visible"),
+                () -> assertEquals(0, bob.damaged, "ECM spares the ally (item.c:1133)"),
+                () -> assertTrue(cid.damaged > 0, "not the stranger"));
+        }
+
+        @Test
+        @DisplayName("a detached tank joins its owner's alliance silently, cannot be invited, and is not listed")
+        void tanks() {
+            Fx f = new Fx("initialTanks: 2\n");
+            Player ann = f.join("Ann");
+            Player bob = f.join("Bob");
+            f.ally(ann, bob);
+            long m0 = f.mark();
+            f.s.tanks.detach(ann);
+            Player tank = null;
+            for (int k = 0; k < f.w.numPlayers; k++) {
+                if (f.w.playerAt(k).tank) {
+                    tank = f.w.playerAt(k);
+                }
+            }
+            final Player t = tank;
+            List<String> joined = since(f.w, m0);
+            boolean invited = f.a.invite(bob, t);
+            long m1 = f.mark();
+            f.a.list(ann);
+            List<String> listed = since(f.w, m1);
+            assertAll(
+                () -> assertEquals(ann.alliance, t.alliance, "in Ann's alliance"),
+                () -> assertEquals(List.of("ALLIANCE " + t.id + " 0"), joined, "no join message"),
+                () -> assertEquals(3, f.a.memberCount(0), "a member"),
+                () -> assertFalse(invited, "tanks cannot be invited"),
+                () -> assertEquals(List.of("TO " + ann.id + ": < Your alliance: Ann, Bob >"), listed, "not listed"));
+        }
     }
 }

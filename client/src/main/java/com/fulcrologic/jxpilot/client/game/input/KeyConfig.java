@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.client.game.input;
 
+import com.fulcrologic.jxpilot.client.sound.SoundPlayer;
 import com.fulcrologic.jxpilot.common.Const;
 
 import java.util.ArrayList;
@@ -53,6 +54,8 @@ public final class KeyConfig {
 
     private final KeyBindings bindings;
     private final ControlSettings settings = new ControlSettings();
+    /** C {@code maxVolume} from the file, -1 when the file does not set it. */
+    private int maxVolume = -1;
     private final List<String> problems = new ArrayList<>();
     private final String source;
     private String shipShape;
@@ -85,6 +88,8 @@ public final class KeyConfig {
      * is clamped and reported.
      * BEHAVIOR: shipShape and shipShapeFile are kept as given ({@link #shipShape()}, {@link #shipShapeFile()};
      * the last entry wins).
+     * BEHAVIOR: maxVolume (C default.c) sets {@link #maxVolume()}: an integer, clamped to C's 0-255 and
+     * reported when outside; a value that is not an integer is reported and ignored.
      * BEHAVIOR: an unknown {@code key...} resource is reported; other resources are reported as ignored.
      * BEHAVIOR: binding Escape is reported (it always quits); parse problems of the file are reported.
      *
@@ -156,6 +161,10 @@ public final class KeyConfig {
 
     private boolean setting(String src, XpilotRc.Entry e) {
         String n = e.name().toLowerCase(Locale.ROOT);
+        if (n.equals("maxvolume")) {
+            volume(src, e);
+            return true;
+        }
         double lo;
         double hi;
         switch (n) {
@@ -199,6 +208,22 @@ public final class KeyConfig {
         return true;
     }
 
+    private void volume(String src, XpilotRc.Entry e) {
+        int v;
+        try {
+            v = Integer.parseInt(e.value().trim());
+        } catch (NumberFormatException ex) {
+            problem(src, e.line(), e.name() + ": not an integer: '" + e.value() + "'");
+            return;
+        }
+        if (v < 0 || v > SoundPlayer.MAX_MAX_VOLUME) {
+            int c = Math.max(0, Math.min(SoundPlayer.MAX_MAX_VOLUME, v));
+            problem(src, e.line(), e.name() + ": " + v + " is outside 0-" + SoundPlayer.MAX_MAX_VOLUME + ", using " + c);
+            v = c;
+        }
+        maxVolume = v;
+    }
+
     private static String fmt(double v) {
         return v == Math.rint(v) ? Long.toString((long) v) : Double.toString(v);
     }
@@ -217,6 +242,9 @@ public final class KeyConfig {
     public KeyBindings bindings() { return bindings; }
 
     public ControlSettings settings() { return settings; }
+
+    /** The file's C {@code maxVolume} (0..255), or -1 when it does not set one. */
+    public int maxVolume() { return maxVolume; }
 
     /** Every problem found, in file order ({@code source:line: message}). */
     public List<String> problems() { return List.copyOf(problems); }

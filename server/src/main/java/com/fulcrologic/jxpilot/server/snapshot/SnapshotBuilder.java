@@ -69,8 +69,6 @@ public final class SnapshotBuilder {
     /** Wreckage handles of this round ({@link #beginRound}), {@code wrecks[0..wreckCount)}. */
     private final int[] wrecks;
     private int wreckCount;
-    /** C {@code playersOnRadar}: other teams' ships appear on the radar (frame.c:1152-1170). */
-    private boolean playersOnRadar;
     private final SnapshotWriter wr = new SnapshotWriter();
     private final ShotHash hash;
     /** {@link World#frames} when {@link #hash} was last rebuilt (-1: never). */
@@ -95,21 +93,23 @@ public final class SnapshotBuilder {
     private int lastInputSeq;
     private double cx;
     private double cy;
+    /** The item sections (server-items). */
+    private final ItemSections itemSections;
 
     public SnapshotBuilder(World w) {
         this.w = w;
-        reloadOptions();
         wr.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
         shotList = new int[w.objects.capacity];
         shotVariant = new int[w.objects.capacity];
         wrecks = new int[w.objects.capacity];
         hash = new ShotHash(w);
+        itemSections = new ItemSections(w, this);
         initRecordClasses();
     }
 
-    /** server-commands: (re)read the options this class keeps (at construction, and after {@code /set}). */
-    public void reloadOptions() {
-        this.playersOnRadar = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.PLAYERS_ON_RADAR);
+    /** The section writer (for {@link ItemSections}). */
+    SnapshotWriter writer() {
+        return wr;
     }
 
     /**
@@ -187,6 +187,7 @@ public final class SnapshotBuilder {
         if (radar) {
             writeRadar(viewer);
         }
+        itemSections.write(viewer);
         writeBursts(burstFrom);
         writeWreckage();
         writeShots(viewer);
@@ -221,7 +222,7 @@ public final class SnapshotBuilder {
      * BEHAVIOR: returns false when the record fits in none of the buffers: only that record is dropped;
      * records of the same or a larger size are skipped from then on, smaller ones are still tried.
      */
-    private boolean need(int type, int variant) {
+    boolean need(int type, int variant) {
         if (curType == type && curVariant == variant && wr.hasRoom()) {
             return true;
         }
@@ -246,7 +247,7 @@ public final class SnapshotBuilder {
         return true;
     }
 
-    private boolean visible(double x, double y, double margin) {
+    boolean visible(double x, double y, double margin) {
         double dx = w.wrapDx(x - cx);
         double dy = w.wrapDy(y - cy);
         return Math.abs(dx) <= viewHalfX + margin && Math.abs(dy) <= viewHalfY + margin && wr.inView(x, y);
@@ -273,6 +274,24 @@ public final class SnapshotBuilder {
         if ((pl.used & Has.REFUEL) != 0) {
             f |= Records.ShipFlags.REFUELING;
         }
+        if ((pl.used & Has.CLOAKING_DEVICE) != 0) {
+            f |= Records.ShipFlags.CLOAKED;
+        }
+        if ((pl.used & Has.PHASING_DEVICE) != 0) {
+            f |= Records.ShipFlags.PHASING;
+        }
+        if ((pl.used & Has.EMERGENCY_SHIELD) != 0) {
+            f |= Records.ShipFlags.EMERGENCY_SHIELD;
+        }
+        if ((pl.used & Has.DEFLECTOR) != 0) {
+            f |= Records.ShipFlags.DEFLECTOR;
+        }
+        if ((pl.used & Has.AUTOPILOT) != 0 || (pl.status & Obj.HOVERPAUSE) != 0) {
+            f |= Records.ShipFlags.AUTOPILOT;
+        }
+        if ((pl.used & Has.EMERGENCY_THRUST) != 0) {
+            f |= Records.ShipFlags.EMERGENCY_THRUST;
+        }
         if (pl == viewer || w.sameTeam(pl, viewer)) {
             f |= Records.ShipFlags.FRIENDLY;
         }
@@ -287,10 +306,14 @@ public final class SnapshotBuilder {
         if (!need(Section.SELF, 0)) {
             return;
         }
-        Records.Self.put(wr, v.id, shipFlags(v, v), (float) cx, (float) cy, (float) v.vx, (float) v.vy,
-            (float) heading(v), (float) (v.fuel / 256), (float) (v.fuelMax / 256), Protocol.NO_ID, 0, 0,
+        int flags = (shipFlags(v, v) & ~Records.ShipFlags.AUTOPILOT)
+            | (itemSections.autopilotLight(v) ? Records.ShipFlags.AUTOPILOT : 0);
+        Records.Self.put(wr, v.id, flags, (float) cx, (float) cy, (float) v.vx, (float) v.vy,
+            (float) heading(v), (float) (v.fuel / 256), (float) (v.fuelMax / 256),
+            (v.lockTagged & Player.LOCK_PLAYER) != 0 && (v.used & Has.COMPASS) != 0 ? v.lockPlId : Protocol.NO_ID,
+            v.numTanks, v.currentTank,
             (v.status & Obj.PLAYING) == 0 && v.count > 0 ? v.count : 0, v.power, v.turnSpeed, v.turnResistance,
-            0, 0, 0, 0);
+            itemSections.lockDist(v), itemSections.lockDir(v), 0, ItemSections.selfMods(v.mods));
     }
 
     private void writeSounds(Player v) {
@@ -315,6 +338,9 @@ public final class SnapshotBuilder {
             if (pl == v || !shown(pl)) {
                 continue;
             }
+            if ((pl.status & Obj.PAUSE) == 0 && !itemSections.shipShown(pl, v)) {
+                continue;
+            }
             double x = pl.cx / (double) Click.CLICK;
             double y = pl.cy / (double) Click.CLICK;
             if (!visible(x, y, 0) || !need(Section.SHIP, 0)) {
@@ -325,14 +351,17 @@ public final class SnapshotBuilder {
     }
 
     /**
-     * BEHAVIOR: the SHOT section variant of a shot relative to the viewer: kind, colour, and
+     * BEHAVIOR: the SHOT section variant of a shot relative to the viewer: kind (NUCLEAR for any shot with
+     * nuclear modifiers, C frame.c:830, the client blinks it), colour, and
      * {@code FLAG_HARMLESS} when C frame.c would draw it as harmless to the viewer (team immune owner, paused
      * owner, an unowned shot of the viewer's team in team play, or the viewer's own shot with selfImmunity).
      */
     int shotVariant(int h, Player v) {
         Objects o = w.objects;
         int kind;
-        if (o.type[h] == Obj.CANNON_SHOT) {
+        if (com.fulcrologic.jxpilot.server.world.Mods.isNuclear(o.mods[h])) {
+            kind = Records.ShotKind.NUCLEAR;
+        } else if (o.type[h] == Obj.CANNON_SHOT) {
             kind = Records.ShotKind.CANNON_SHOT;
         } else if ((o.mods[h] & Obj.MOD_CLUSTER) != 0) {
             kind = Records.ShotKind.CLUSTER;
@@ -506,18 +535,18 @@ public final class SnapshotBuilder {
     private void writeRadar(Player v) {
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
-            if (!pl.isAlive() || (!playersOnRadar && pl != v && !w.sameTeam(pl, v) && !w.allied(v, pl))
-                || !need(Section.RADAR, 0)) {
+            if (!pl.isAlive() || !itemSections.onRadar(pl, v) || !need(Section.RADAR, 0)) {
                 continue;
             }
             int flags = 0;
             if (pl == v) {
                 flags |= Records.Radar.FLAG_SELF;
             }
-            if (pl != v && (w.sameTeam(pl, v) || w.allied(v, pl))) { // allies: frame.c:1168, 1187
+            if (pl != v && (w.sameTeam(pl, v) || w.allied(v, pl) || (pl.tank && pl.lockPlId == v.id))) { // frame.c:1187
                 flags |= Records.Radar.FLAG_FRIENDLY;
             }
             Records.Radar.put(wr, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK, flags);
         }
+        itemSections.writeRadarObjects(v);
     }
 }

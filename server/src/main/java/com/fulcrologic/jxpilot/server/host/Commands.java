@@ -308,7 +308,7 @@ final class Commands {
      * C {@code Cmd_kick}.
      * <p>
      * BEHAVIOR: operators only (NOT_OPERATOR); no name: NO_NAME; the player (by {@link #playerByName}) leaves the
-     * game (a robot is deleted, a human's connection dropped with "kicked out"), then everyone gets "OPER kicked
+     * game (a robot or tank is deleted, a human's connection dropped with "kicked out"), then everyone gets "OPER kicked
      * NAME out! [*Server notice*]" (SUCCESS); no match: "Name does not match any player.", several: "Name
      * matches several players." (ERROR).
      */
@@ -326,8 +326,10 @@ final class Commands {
         String notice = pl.name + " kicked " + p.name + " out! [*Server notice*]";
         if (host.connected(p)) {
             host.kickByCommand(p, pl);
-        } else {
+        } else if (p.robot) {
             sim.robots.remove(p);
+        } else {
+            sim.ships.leave(p); // a tank (C Delete_player)
         }
         all().append(notice);
         return SUCCESS;

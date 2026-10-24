@@ -63,7 +63,10 @@ public final class Cannons {
      * One tick for every cannon.
      * <p>
      * BEHAVIOR: a dead cannon counts down and comes back (its block becomes CANNON again) at zero.
-     * BEHAVIOR: a live cannon looks for a target with probability 1/16 and fires if it finds one.
+     * BEHAVIOR: a live cannon may defend itself ({@link CannonWeapons#defend}); one that is not
+     * emergency-shielded, phased, damaged or holding a tractor beam looks for a target with probability 1/16 and
+     * fires if it finds one (the rfrac() is drawn only then, update.c:632), otherwise it may pick up an item; its
+     * damage and device timers then run ({@link CannonWeapons#tick}).
      */
     public void update() {
         for (int i = 0; i < w.cannonDeadTime.length; i++) {
@@ -74,24 +77,40 @@ public final class Cannons {
                 }
                 continue;
             }
-            if (w.rfrac() * 16 < 1) {
+            sim.cannonWeapons.defend(i);
+            if (sim.cannonWeapons.mayFire(i) && w.rfrac() * 16 < 1) {
                 checkFire(i);
+            } else {
+                sim.cannonWeapons.pickItem(i);
+            }
+            sim.cannonWeapons.tick(i);
+        }
+    }
+
+    /** C {@code Cannon_check_fire}: pick a weapon ({@link CannonWeapons#selectWeapon}), aim and, with a target, fire. */
+    void checkFire(int i) {
+        int weapon = sim.cannonWeapons.selectWeapon(i);
+        if (aim(i, weapon)) {
+            if (weapon == CannonWeapons.CW_SHOT && w.cannonItems.item(i, com.fulcrologic.jxpilot.common.Item.WIDEANGLE) == 0
+                && w.cannonItems.item(i, com.fulcrologic.jxpilot.common.Item.REARSHOT) == 0) {
+                fire(i, aimDir);
+            } else {
+                sim.cannonWeapons.fire(i, weapon, w.playerAt(target), aimDir);
             }
         }
     }
 
-    /** C {@code Cannon_check_fire}: aim and, with a target, fire. */
-    void checkFire(int i) {
-        if (aim(i)) {
-            fire(i, aimDir);
-        }
+    /** {@link #aim(int, int)} for plain shots. */
+    boolean aim(int i) {
+        return aim(i, CannonWeapons.CW_SHOT);
     }
 
     /**
-     * C {@code Cannon_aim} for CW_SHOT.
+     * C {@code Cannon_aim} for a weapon ({@link CannonWeapons#aimRange}: its speed and range).
      * <p>
-     * BEHAVIOR: candidates are playing ships within the visual range (500 px) that are not on the cannon's team
-     * (team play); smartness 3 ignores phased ships.
+     * BEHAVIOR: candidates are playing ships within the visual range (500 px plus 2 blocks per sensor) that are not
+     * on the cannon's team (team play) and not hidden by their cloak ({@link CannonWeapons#hidden}); smartness 3
+     * ignores phased ships.
      * BEHAVIOR: smartness 0 fires straight ahead at anyone seen; 1 fires ahead with random spread +-RES/6 at
      * anyone within range (32 * shotSpeed); 2 aims at the closest, limited to the cannon's sector, +-3 noise;
      * 3 leads the target (flight time = tdist / speed in whole frames, C integer division) and fires only
@@ -99,14 +118,15 @@ public final class Cannons {
      * BEHAVIOR: returns false (no target) when nobody qualifies.
      */
     @SuppressWarnings("checkstyle:CyclomaticComplexity")
-    boolean aim(int i) {
+    boolean aim(int i, int weapon) {
         Cannon c = w.map.cannons().get(i);
         int smart = w.params.cannonSmartness;
-        int speed = (int) w.params.shotSpeed;
-        int range = CANNON_SHOT_LIFE_MAX * speed;
+        sim.cannonWeapons.aimRange(i, weapon);
+        int speed = sim.cannonWeapons.aimSpeed;
+        int range = sim.cannonWeapons.aimRange;
         int cpx = (int) c.x();
         int cpy = (int) c.y();
-        int visualRange = (int) CANNON_DISTANCE;
+        int visualRange = sim.cannonWeapons.visualRange(i);
         boolean found = false;
         boolean ready = false;
         int closest = range;
@@ -128,6 +148,7 @@ public final class Cannons {
             }
             if ((pl.status & (Obj.PLAYING | Obj.GAME_OVER | Obj.PAUSE | Obj.KILLED)) != Obj.PLAYING
                 || (w.params.teamPlay && pl.team == c.team())
+                || sim.cannonWeapons.hidden(i, pl)
                 || (smart > 2 && (pl.used & Has.PHASING_DEVICE) != 0)) {
                 continue;
             }

@@ -1,8 +1,10 @@
 # Shared helpers for the xpilot-ref host scripts.  Sourced, not executed.
 
-XPREF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+XPREF_DIR="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 XPILOT_SRC="${XPILOT_SRC:-/Users/tonykay/Downloads/xpilot-4.5.5}"
 XPREF_IMAGE="${XPREF_IMAGE:-xpilot-ref:4.5.5}"
+# Container name prefix (lets parallel users keep their own namespace).
+XPREF_CNAME_PREFIX="${XPREF_CNAME_PREFIX:-xpilot-ref}"
 
 if [ -z "${DOCKER:-}" ]; then
     if command -v docker > /dev/null 2>&1; then
@@ -24,9 +26,9 @@ xpref_require_image() {
         || die "image $XPREF_IMAGE not found; run $XPREF_DIR/build.sh first"
 }
 
-# Unique container name, always with the xpilot-ref prefix.
+# Unique container name, always with the $XPREF_CNAME_PREFIX prefix.
 xpref_container_name() {
-    echo "xpilot-ref-$1-$$-$RANDOM"
+    echo "$XPREF_CNAME_PREFIX-$1-$$-$RANDOM"
 }
 
 # xpref_run_deadline SECONDS CONTAINER_NAME docker-run-args...
@@ -39,8 +41,8 @@ xpref_run_deadline() {
     local secs="$1" cname="$2"
     shift 2
     case "$cname" in
-        xpilot-ref-*) ;;
-        *) die "refusing to run container without xpilot-ref prefix: $cname";;
+        "$XPREF_CNAME_PREFIX"-?*) ;;
+        *) die "refusing to run container without $XPREF_CNAME_PREFIX prefix: $cname";;
     esac
     "$DOCKER" run --rm --name "$cname" "$@" &
     local pid=$! waited=0

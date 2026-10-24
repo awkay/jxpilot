@@ -34,8 +34,8 @@
 # process_sounds.py does the thrust-loop cut/crossfade and the level normalization.
 set -eu
 
-here=$(cd "$(dirname "$0")" && pwd)
-root=$(cd "$here/../.." && pwd)
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+root=$(CDPATH= cd -- "$here/../.." && pwd)
 out=${1:-$root/client/src/main/resources/sounds}
 work=${WORK:-$(mktemp -d)}
 
