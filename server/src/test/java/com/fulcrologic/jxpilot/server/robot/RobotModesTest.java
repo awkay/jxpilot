@@ -78,24 +78,24 @@ class RobotModesTest {
         Player behind = RobotFixture.human(s, "H", 900, 350);
         Player other = RobotFixture.human(s, "O", 1000, 350);
         RobotData d = s.robots.data(p);
-        d.lockTagged = DefaultRobot.LOCK_PLAYER;
-        d.lockPlId = other.id;
-        d.lockDistance = 1000;
+        p.lockTagged = DefaultRobot.LOCK_PLAYER;
+        p.lockPlId = other.id;
+        p.lockDistance = 1000;
         p.check = 1;
         p.round = 1;
         behind.check = 0;
         behind.round = 1;
         r.choosePlayerLock(p, d, behind, 300);
-        int kept = d.lockPlId;
+        int kept = p.lockPlId;
         behind.check = 1;
         r.choosePlayerLock(p, d, behind, 300);
         assertAll(
             () -> assertEquals(other.id, kept, "a ship behind in checkpoints is not taken"),
-            () -> assertEquals(behind.id, d.lockPlId, "level with the robot: locked"));
+            () -> assertEquals(behind.id, p.lockPlId, "level with the robot: locked"));
     }
 
     @Test
-    @DisplayName("the world-backed gate reads balls, treasures, targets and asteroid sizes and drops balls")
+    @DisplayName("the gate reads balls, treasures, targets and asteroid sizes and drops balls")
     void gate() {
         String[] rows = RobotFixture.open(20, 10, "11");
         char[] r = rows[9 - 2].toCharArray();
@@ -104,8 +104,7 @@ class RobotModesTest {
         rows[9 - 2] = new String(r);
         Simulation s = RobotFixture.sim("teamPlay: yes\n", rows);
         World w = s.world;
-        RobotItems it = new RobotItems(w);
-        it.setSimulation(s);
+        RobotItems it = new RobotItems(s);
         Player p = RobotFixture.human(s, "H", 300, 200);
         int ball = 0;
         w.objects.owner[ball] = p.id;
@@ -119,7 +118,6 @@ class RobotModesTest {
         int towed = it.towedBall(p);
         int have = it.have(p);
         it.detachBall(p);
-        RobotItems none = new RobotItems();
         assertAll(
             () -> assertEquals(1234.0, it.targetDamage(0), "target damage"),
             () -> assertTrue(treasure, "the treasure has its ball"),
@@ -127,13 +125,6 @@ class RobotModesTest {
             () -> assertEquals(p.id, it.ballOwner(ball), "ball owner"),
             () -> assertEquals(3, it.asteroidSize(ast), "asteroid size"),
             () -> assertEquals(Obj.NO_ID, w.objects.owner[ball], "detachBall drops the ball"),
-            () -> assertEquals(Has.BALL, have & Has.BALL, "HAS_BALL is read through the gate"),
-            () -> assertTrue((RobotItems.IMPLEMENTED_ABILITIES & Has.BALL) != 0, "HAS_BALL is an implemented ability"),
-            () -> assertFalse(none.treasureHasBall(0), "without a world: no ball at home"),
-            () -> assertEquals(-1, none.towedBall(p), "without a world: none towed"),
-            () -> assertEquals(-1, none.ballOwner(ball), "without a world: no owner"),
-            () -> assertEquals(1, none.asteroidSize(ast), "without a world: size 1"),
-            () -> assertEquals(DefaultRobot.TARGET_DAMAGE, none.targetDamage(0), "without a world: full"));
-        none.detachBall(p);
+            () -> assertEquals(Has.BALL, have & Has.BALL, "HAS_BALL is read through the gate"));
     }
 }

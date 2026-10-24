@@ -116,19 +116,20 @@ class AsteroidsExactTest {
     @Test
     @DisplayName("broken: dust is mass * DUST_FACT, half as wreckage and half as debris; items roll 1..max")
     void dust() {
-        Simulation s = sim("asteroidMaxItems: 5\nasteroidItemProb: 0.5\n");
+        Simulation s = sim("asteroidMaxItems: 5\nasteroidItemProb: 0.5\nmaxItemDensity: 1\nitemMineProb: 1\n");
         World w = s.world;
         int h = s.asteroids.make(500, 500, 2, 0, 0f);
         float mass3 = (float) (w.objects.mass[h] * Asteroids.DUST_FACT);
         w.rng.seed(4);
         int[] drops = new int[1];
-        s.asteroids.itemDrop = (px, py, vx, vy) -> drops[0]++;
         s.asteroids.broken(h);
         float wreck = 0;
         for (int k = 0; k < w.objects.count(); k++) {
             int q = w.objects.active[k];
             if (w.objects.type[q] == Obj.WRECKAGE) {
                 wreck += w.objects.mass[q];
+            } else if (w.objects.type[q] == Obj.ITEM) {
+                drops[0]++;
             }
         }
         float total = wreck;

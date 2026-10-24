@@ -20,10 +20,8 @@ are deliberate.
 | Rounds: `gameDuration` | the server log says "Server will stop in N minutes." when the first human enters; each frame sends the seconds left only when they change (else the round time), and `End_game` kicks every player with "shutting down: ..." | the same wall-clock timer, game over and 30 * FPS shutdown (`Rounds`, `SimGameHost`, `Server`); no log line; TIMERS carries the seconds left in every snapshot while the timer runs, and the shutdown ends every connection with DISCONNECT (shutdown) | The native protocol sends HUD timers as state, not as one-off packets. |
 | Ball life | `LONG_MAX`, counted down every frame; "loose for N frames" is `LONG_MAX - life` | 2^52 (exact in a double), the same countdown and message | `Objects.life` is a double. |
 | Connector reach (`pl->ball`) | a plain pointer: after the ball is deleted the slot may hold another object, and C can then "connect" to it | the handle is checked to still be a live ball | C undefined behaviour. |
-| Radar balls and asteroids | only within the viewer's `sensor_range` | the whole world | Sensor range is not ported (items). |
 | Temporary wormholes | unlimited (`realloc`); `remove_temp_wormhole` leaves the moved wormhole's `itemID` stale | at most 64 at a time; the moved wormhole's object index is updated | Fixed pool; C bug. |
 | Warp of a removed temporary wormhole | `break` leaves the whole player loop for this frame | only this ship's warp ends | C bug. |
-| Asteroid item drops | `Choose_random_item` + `Make_item` | an `Asteroids.ItemDrop` hook, called once per item after C's rolls; nothing drops until the item code installs it | Items are ported separately. |
 | Race respawn and asteroid placement | `rfrac()` draws (Mersenne Twister) | the world RNG (xorshift) | As "Random numbers" above. |
 | `Give_best_player_bonus` with nobody eligible | reads an unset array entry | announces nothing | C undefined behaviour. |
 | Login messages (`Handle_login`) | "Welcome to ...", "X (realname) has entered ..." | the network layer (`SimGameHost`) sets them in C's place (before the round-delay message), without the real name: "X has entered ..." / "X (team N) has entered ..." | Our CONNECT carries no real name. |
@@ -40,3 +38,17 @@ are deliberate.
 | `denyHosts` separators | splits the list on `,;: \t\n`; IPv4 only | splits on commas, semicolons and whitespace; IPv4 and IPv6, `addr/prefix` or `addr/dotted.mask` | ':' is part of IPv6 addresses. |
 | `serverHost` | the contact socket binds to that host; it is also reported to the meta server | used as the bind selector when `--bind` is not given | No meta server. |
 | `logRobots` line | `"DD Mon HH:MM:SS NAME (n, realname) starts at startpos B."` on stdout | the same text without the time stamp, on the server log (stderr) | Matches the rest of our server log. |
+| Robot war on shoves (walls.c `Player_crash`) | `Robot_war` with a random pusher (`rfrac() * num_pushers`) | war on the last pusher, the killer of the KILL event the shove produces (no extra `rfrac()` draw) | The robot manager reacts to sim events; only the RNG sequence differs. |
+| Missile start outside the world (`Fire_general_shot`, no edgeWrap) | the allocated object is left with stale position and velocity | the object is freed | C bug: a ghost missile; only near the edge of non-wrapping maps. |
+| Random parts of the frame code (`Frame_shots`: random items, confused mines' friendliness) | world `rfrac()` per client per frame | a snapshot-local RNG seeded from the tick and viewer | Snapshots must not change the simulation's random sequence. |
+| Radar blinking of mines, missiles and nukes (`Frame_radar`) | shown or hidden by frame number | always shown | Our radar goes out every few snapshots, so frame-number blinking would alias. |
+| HUD lock visibility (`Frame_status` sets LOCK_VISIBLE) | per connected client when its frame is built, with the client's view size | for every human at the end of the sim tick, with a 1024x768 view for the `inview` test | Keeps the simulation independent of snapshot timing; only matters with playersOnRadar off. |
+| Hyperjump with wormTime | makes a pair of temporary wormholes (`add_temp_wormholes`) | no temporary wormholes; the jump itself is C's | Not ported yet. |
+| Visibility of a new player | stale `canSee` entries of the slot until the next visibility update | everyone sees and is seen at join until the first update | Avoids an invisible first frame. |
+| ECM reprogramming a robot | `Send_seek` tells every client | the robot goes to war; no message | Our protocol has no seek message. |
+| Snapshot rate of paused / game-over players (frame.c:1275-1294) | without allowViewing, paused players get every 4th frame and game-over players every 2nd | every snapshot | A bandwidth saving only; our snapshot rate is set by the network layer. |
+| Modifier banks | the C client sends its configured banks at login (PKT_MODIFIERBANK) | banks start empty; REPROGRAM + LOAD_MODIFIERS fills them in game | Our protocol has no bank message. |
+| Lose-item selection HUD (`Send_loseitem`) | sent while selecting | not sent | Our protocol; the client shows the item counts. |
+| Deflector object lookup | C's cells are kept current by every move | the spatial grid is rebuilt for each deflector (and cannon danger) query | Same objects in the same order. |
+| Lasers hitting asteroids, ECM detaching balls | in the laser and ECM code | hooks only (`Ecm.ballDetacher`); asteroids are not simulated by this code | Balls and asteroids belong to their own ports. |
+| Rare item code paths | allocate nothing | the first run of some rare message branches resolves C string literals once (a few bytes) | JVM string constant resolution; `ShotNames.warm()` pre-resolves the kill messages. |

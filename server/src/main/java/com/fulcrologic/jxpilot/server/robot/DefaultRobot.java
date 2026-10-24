@@ -36,6 +36,7 @@ import com.fulcrologic.jxpilot.common.math.XMath;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.world.Grid;
 import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.server.world.Mods;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
@@ -562,12 +563,13 @@ public final class DefaultRobot {
     // ================================================================ modifiers
 
     /**
-     * C {@code Robot_check_new_modifiers}: drop modifiers the rules forbid, then make them the player's.
+     * C {@code Robot_check_new_modifiers}: drop modifiers the rules forbid, then make them the player's
+     * ({@link Player#mods}).
      * <p>
      * BEHAVIOR: no nukes clears nuclear; no clusters clears CLUSTER; no modifiers clears velocity, mini,
      * spread, power and IMPLOSION; no laser modifiers clears laser.
      */
-    void setModifiers(RobotData d, int nuclear, int warhead, int velocity, int mini, int spread, int power,
+    void setModifiers(Player pl, int nuclear, int warhead, int velocity, int mini, int spread, int power,
                       int laser) {
         if (!allowNukes) {
             nuclear = 0;
@@ -585,18 +587,17 @@ public final class DefaultRobot {
         if (!allowLaserModifiers) {
             laser = 0;
         }
-        d.modNuclear = nuclear;
-        d.modWarhead = warhead;
-        d.modVelocity = velocity;
-        d.modMini = mini;
-        d.modSpread = spread;
-        d.modPower = power;
-        d.modLaser = laser;
+        int m = Mods.withNuclear(0, nuclear);
+        m = Mods.withWarhead(m, warhead);
+        m = Mods.withVelocity(m, velocity);
+        m = Mods.withMini(m, mini);
+        m = Mods.withSpread(m, spread);
+        m = Mods.withPower(m, power);
+        pl.mods = Mods.withLaser(m, laser);
     }
 
     /**
-     * C {@code Choose_weapon_modifier}. (The modifiers are kept in {@link RobotData}: the S1 sim ignores them for
-     * normal shots, as C does, and has no other weapons.)
+     * C {@code Choose_weapon_modifier}: the robot's modifiers ({@link Player#mods}) for its next weapon.
      * <p>
      * BEHAVIOR: tractor beam: no modifiers. Laser: every 4th count a random laser setting. Shots: every 4th
      * count a random spread. Other types return without changing the modifiers.
@@ -618,19 +619,19 @@ public final class DefaultRobot {
         int min;
         int count = d.robotCount;
         if (weaponType == Has.TRACTOR_BEAM) {
-            setModifiers(d, 0, 0, 0, 0, 0, 0, 0);
+            setModifiers(pl, 0, 0, 0, 0, 0, 0, 0);
             return;
         } else if (weaponType == Has.LASER) {
             if ((count % 4) == 0) {
                 laser = (int) (w.rfrac() * (MODS_LASER_MAX + 1));
             }
-            setModifiers(d, 0, 0, 0, 0, 0, 0, laser);
+            setModifiers(pl, 0, 0, 0, 0, 0, 0, laser);
             return;
         } else if (weaponType == Obj.SHOT) {
             if ((count % 4) == 0) {
                 spread = (int) (w.rfrac() * (MODS_SPREAD_MAX + 1));
             }
-            setModifiers(d, 0, 0, 0, 0, spread, 0, 0);
+            setModifiers(pl, 0, 0, 0, 0, spread, 0, 0);
             return;
         } else if (weaponType == Obj.MINE) {
             stock = items.count(pl, Item.MINE);
@@ -666,7 +667,7 @@ public final class DefaultRobot {
             mini = (int) (w.rfrac() * (MODS_MINI_MAX + 1));
             spread = (int) (w.rfrac() * (MODS_SPREAD_MAX + 1));
         }
-        setModifiers(d, nuclear, warhead, velocity, mini, spread, power, laser);
+        setModifiers(pl, nuclear, warhead, velocity, mini, spread, power, laser);
     }
 
     // ================================================================ Check_robot_target
@@ -842,7 +843,7 @@ public final class DefaultRobot {
                 case 3 -> type = Obj.HEAT_SHOT;
                 default -> type = Obj.TORPEDO;
             }
-            Player locked = w.byId(d.lockPlId);
+            Player locked = w.byId(pl.lockPlId);
             if (locked != null && detectHunt(pl, locked) && !items.canSee(pl, locked)) {
                 type = Obj.HEAT_SHOT;
             }
@@ -888,8 +889,8 @@ public final class DefaultRobot {
         Player war = w.byId(d.robotLockId);
         if ((d.robotLock & LOCK_PLAYER) != 0 && war != null && playing(war)) {
             ship = war;
-        } else if ((d.lockTagged & LOCK_PLAYER) != 0) {
-            ship = w.byId(d.lockPlId);
+        } else if ((pl.lockTagged & LOCK_PLAYER) != 0) {
+            ship = w.byId(pl.lockPlId);
         }
         if (ship == null || !playing(ship)) {
             return;
@@ -922,10 +923,10 @@ public final class DefaultRobot {
      */
     void tractorBeam(Player pl, RobotData d) {
         pl.used &= ~Has.TRACTOR_BEAM;
-        d.tractorIsPressor = false;
-        Player ship = w.byId(d.lockPlId);
-        if ((d.lockTagged & LOCK_PLAYER) != 0 && ship != null && pl.fuel > d.fuelL3
-            && d.lockDistance < 200 + items.count(pl, Item.TRACTOR_BEAM) * 50) {
+        pl.tractorIsPressor = false;
+        Player ship = w.byId(pl.lockPlId);
+        if ((pl.lockTagged & LOCK_PLAYER) != 0 && ship != null && pl.fuel > d.fuelL3
+            && pl.lockDistance < 200 + items.count(pl, Item.TRACTOR_BEAM) * 50) {
             double xvd = ship.vx - pl.vx;
             double yvd = ship.vy - pl.vy;
             double vel = Math.hypot(xvd, yvd);
@@ -933,15 +934,15 @@ public final class DefaultRobot {
             dir = Trig.mod((int) dir);
             boolean away = dir >= RES / 4 && dir <= 3 * RES / 4;
             if (pl.velocity <= d.normalSpeed) {
-                if (d.lockDistance < (SHIP_SZ * 4) || (!away && vel > d.attackSpeed)) {
+                if (pl.lockDistance < (SHIP_SZ * 4) || (!away && vel > d.attackSpeed)) {
                     pl.used |= Has.TRACTOR_BEAM;
-                    d.tractorIsPressor = true;
+                    pl.tractorIsPressor = true;
                 } else if (away && vel < d.maxSpeed && vel > d.normalSpeed) {
                     pl.used |= Has.TRACTOR_BEAM;
                 }
             }
             if ((pl.used & Has.TRACTOR_BEAM) != 0) {
-                d.lockTagged |= LOCK_VISIBLE;
+                pl.lockTagged |= LOCK_VISIBLE;
             }
         }
     }
@@ -1721,7 +1722,7 @@ public final class DefaultRobot {
         if (enemyI != null) {
             choosePlayerLock(pl, d, enemyI, enemyDist);
         }
-        if ((d.lockTagged & LOCK_PLAYER) != 0) {
+        if ((pl.lockTagged & LOCK_PLAYER) != 0) {
             releasePlayerLock(pl, d);
         }
         if (checkEvade(pl, d, mineI, shipI)) {
@@ -1758,10 +1759,10 @@ public final class DefaultRobot {
                 }
             }
         }
-        if ((d.lockTagged & LOCK_PLAYER) != 0) {
-            Player ship = w.byId(d.lockPlId);
+        if ((pl.lockTagged & LOCK_PLAYER) != 0) {
+            Player ship = w.byId(pl.lockPlId);
             if (ship != null && detectHunt(pl, ship)) {
-                int shootTime = (int) (d.lockDistance / (p.shotSpeed + 1));
+                int shootTime = (int) (pl.lockDistance / (p.shotSpeed + 1));
                 int dx = (int) (long) (ship.px + ship.vx * shootTime);
                 int dy = (int) (long) (ship.py + ship.vy * shootTime);
                 dx -= (int) (long) (pl.vx * shootTime);
@@ -1861,6 +1862,17 @@ public final class DefaultRobot {
     }
 
     /**
+     * Initialize this class's enum switch table now (javac's synthetic SwitchMap class), so the first item switch
+     * a robot runs in a tick does not allocate.
+     */
+    public static int warmSwitches() {
+        return switch (Item.FUEL) {
+            case FUEL -> 0;
+            default -> 1;
+        };
+    }
+
+    /**
      * The player lock choice of {@code Robot_default_play}.
      * <p>
      * BEHAVIOR: lock on the chosen enemy if not locked, if it is less than half the lock distance away (and in
@@ -1868,15 +1880,15 @@ public final class DefaultRobot {
      * or if it has a higher score than the locked player.
      */
     void choosePlayerLock(Player pl, RobotData d, Player ship, double enemyDist) {
-        Player locked = w.byId(d.lockPlId);
-        if ((d.lockTagged & LOCK_PLAYER) == 0
-            || (enemyDist < d.lockDistance / 2
+        Player locked = w.byId(pl.lockPlId);
+        if ((pl.lockTagged & LOCK_PLAYER) == 0
+            || (enemyDist < pl.lockDistance / 2
                 && (!w.modeParams.timing || (ship.check >= pl.check && ship.round >= pl.round)))
-            || (enemyDist < d.lockDistance * 2 && w.params.teamPlay && (ship.have & Has.BALL) != 0)
+            || (enemyDist < pl.lockDistance * 2 && w.params.teamPlay && (ship.have & Has.BALL) != 0)
             || (locked != null && ship.score > locked.score)) {
-            d.lockPlId = ship.id;
-            d.lockTagged |= LOCK_PLAYER;
-            d.lockDistance = enemyDist;
+            pl.lockPlId = ship.id;
+            pl.lockTagged |= LOCK_PLAYER;
+            pl.lockDistance = (float) enemyDist;
             items.sensorRange(pl);
         }
     }
@@ -1889,7 +1901,7 @@ public final class DefaultRobot {
      * (not race mode), in race mode the ship is not ahead (C's always-true heading test), or it is a team mate.
      */
     void releasePlayerLock(Player pl, RobotData d) {
-        Player ship = w.byId(d.lockPlId);
+        Player ship = w.byId(pl.lockPlId);
         boolean drop;
         if (ship == null) {
             drop = true;
@@ -1897,16 +1909,16 @@ public final class DefaultRobot {
             int deltaDir = Trig.mod(pl.dir - wrapFindDir(ship.px - pl.px, ship.py - pl.py));
             Player war = w.byId(d.robotLockId);
             drop = !playing(ship)
-                || ((d.robotLock & LOCK_PLAYER) != 0 && d.robotLockId != d.lockPlId && war != null && playing(war))
+                || ((d.robotLock & LOCK_PLAYER) != 0 && d.robotLockId != pl.lockPlId && war != null && playing(war))
                 || !detectHunt(pl, ship)
                 || (pl.fuel <= d.fuelL3 && !w.map.timing())
                 || (w.map.timing() && (deltaDir < 3 * RES / 4 || deltaDir > RES / 4))
                 || w.teamImmune(pl.id, ship.id);
         }
         if (drop) {
-            d.lockTagged &= ~LOCK_PLAYER;
-            d.lockPlId = 1;
-            d.lockDistance = 0;
+            pl.lockTagged &= ~LOCK_PLAYER;
+            pl.lockPlId = 1;
+            pl.lockDistance = 0;
         }
     }
 

@@ -124,6 +124,11 @@ public final class Records {
         /** Cluster / nuke fragments that are dangerous. */
         public static final int CLUSTER = 2;
         public static final int PULSE = 3;
+        /**
+         * A dangerous shot with nuclear modifiers (nuclear cluster fragments): C frame.c:830 draws it RED as a
+         * teamshot every other two frames ({@code frame_loops & 2}), else like any shot. The client blinks it.
+         */
+        public static final int NUCLEAR = 4;
 
         /**
          * Variant bit: the shot cannot hurt the receiver (C frame.c draws it in the friendly colour):

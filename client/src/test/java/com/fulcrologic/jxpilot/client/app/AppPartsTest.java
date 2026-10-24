@@ -270,6 +270,24 @@ class AppPartsTest {
         }
 
         @Test
+        @DisplayName("maxVolume: --volume wins, else the key file's maxVolume (~/.xpilotrc), else C's 100")
+        void maxVolume() {
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig rc =
+                com.fulcrologic.jxpilot.client.game.input.KeyConfig.load("maxVolume: 30\n", "rc", null);
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig none =
+                com.fulcrologic.jxpilot.client.game.input.KeyConfig.load("power: 50\n", "rc", null);
+            AppOptions given = AppOptions.parse(new String[] {"--connect", "h", "--volume", "70"}, "u");
+            AppOptions zero = AppOptions.parse(new String[] {"--connect", "h", "--volume", "0"}, "u");
+            AppOptions absent = AppOptions.parse(new String[] {"--connect", "h"}, "u");
+            assertAll(
+                () -> assertEquals(70, AppLauncher.maxVolume(given, rc), "--volume over the file"),
+                () -> assertEquals(0, AppLauncher.maxVolume(zero, rc), "--volume 0 over the file"),
+                () -> assertEquals(30, AppLauncher.maxVolume(absent, rc), "the file without --volume"),
+                () -> assertEquals(100, AppLauncher.maxVolume(absent, none), "neither: 100"),
+                () -> assertEquals(100, AppLauncher.maxVolume(absent, null), "no key config: 100"));
+        }
+
+        @Test
         @DisplayName("launcher: --list-keys prints the table and exits 0; an unreadable --keys file exits 2")
         void listKeys(@org.junit.jupiter.api.io.TempDir Path home) throws Exception {
             java.io.PrintStream saved = System.out;

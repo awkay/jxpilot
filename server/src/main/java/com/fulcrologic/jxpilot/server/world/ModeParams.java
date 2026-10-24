@@ -75,9 +75,6 @@ public final class ModeParams {
     public int asteroidChance;
     /** C {@code World.asteroids.max}: maximum asteroid count in size-1 units. */
     public int asteroidMax;
-    public boolean useWreckage;
-    public boolean wreckageCollisionMayKill;
-    public float randomItemProb;
 
     /** Resolve from the options and the map. */
     public static ModeParams from(Options o, WorldMap map, int fps) {
@@ -113,9 +110,6 @@ public final class ModeParams {
         m.maxAsteroidDensity = f(o, Opt.MAX_ASTEROID_DENSITY);
         m.asteroidConcentratorRadius = o.getInt(Opt.ASTEROID_CONCENTRATOR_RADIUS);
         m.asteroidConcentratorProb = f(o, Opt.ASTEROID_CONCENTRATOR_PROB);
-        m.useWreckage = o.getBool(Opt.USE_WRECKAGE);
-        m.wreckageCollisionMayKill = o.getBool(Opt.WRECKAGE_COLLISION_MAY_KILL);
-        m.randomItemProb = f(o, Opt.RANDOM_ITEM_PROB);
         m.tuneAsteroids(map.width(), map.height(), fps);
         return m;
     }

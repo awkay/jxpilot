@@ -159,6 +159,76 @@ public final class Player {
     /** Score, lives or status changed this tick (a SCORE event is emitted at the end of the tick). */
     public boolean scoreDirty;
 
+    // ================================================================ items (server-items, C player fields)
+    /** C {@code MAX_TANKS}. */
+    public static final int MAX_TANKS = 8;
+    /** C {@code LOCKBANK_MAX} and {@code NUM_MODBANKS}. */
+    public static final int BANKS = 4;
+    /** C {@code LOCK_PLAYER}. */
+    public static final int LOCK_PLAYER = 1;
+    /** C {@code LOCK_VISIBLE}: the lock was shown on the HUD this frame. */
+    public static final int LOCK_VISIBLE = 2;
+
+    /** C {@code fuel.tank[]}: main tank (0) and extra tanks (fixed point); {@link #fuel} is their sum. */
+    public final double[] tankFuel = new double[1 + MAX_TANKS];
+    /** C {@code fuel.num_tanks}. */
+    public int numTanks;
+    /** C {@code fuel.current}: the tank fuel is added to and taken from. */
+    public int currentTank;
+    /** A detached fuel tank (C {@code OBJ_EXT_TANK}); its owner is {@link #lockPlId}, as in C. */
+    public boolean tank;
+
+    /** C {@code lock.tagged}: {@link #LOCK_PLAYER}, {@link #LOCK_VISIBLE}. */
+    public int lockTagged;
+    /** C {@code lock.pl_id}. */
+    public int lockPlId;
+    /** C {@code lock.distance} (a float). */
+    public float lockDistance;
+    /** C {@code lockbank}: stored lock ids, -1 (C NOT_CONNECTED) when empty. */
+    public final int[] lockBank = new int[BANKS];
+
+    /** C {@code mods} ({@link Mods}). */
+    public int mods;
+    /** C {@code modbank}. */
+    public final int[] modBank = new int[BANKS];
+
+    /** C {@code sensor_range}. */
+    public float sensorRange;
+    /** C {@code visibility[j].canSee}, indexed by the other player's {@link #slot}. */
+    public boolean[] canSee = new boolean[0];
+    /** C {@code visibility[j].lastChange}, indexed by slot. */
+    public long[] visLastChange = new long[0];
+    /** C {@code forceVisible}: frames this ship stays visible to everyone. */
+    public int forceVisible;
+    /** C {@code updateVisibility}. */
+    public boolean updateVisibility;
+
+    /** C {@code num_pulses}: own laser pulses in flight. */
+    public int numPulses;
+    /** C {@code ecmcount}: own ECM blasts still expanding. */
+    public int ecmCount;
+    /** C {@code missile_rack}: next missile rack to fire from. */
+    public int missileRack;
+
+    public int emergencyThrustLeft;
+    public int emergencyThrustMax;
+    public int emergencyShieldLeft;
+    public int emergencyShieldMax;
+    public int phasingLeft;
+    public int phasingMax;
+
+    /** C {@code lose_item}: the item KEY_LOSE_ITEM drops. */
+    public int loseItem;
+    /** C {@code lose_item_state} (2 key down, 1 key up, negative: shown for a few more frames). */
+    public int loseItemState;
+
+    /** C autopilot saves of power, turnspeed and turnresistance. */
+    public float autoPowerS;
+    public float autoTurnSpeedS;
+    public float autoTurnResistanceS;
+    /** C {@code tractor_is_pressor}. */
+    public boolean tractorIsPressor;
+
     public Player(int slot) {
         this.slot = slot;
     }
@@ -208,9 +278,27 @@ public final class Player {
         return (used & Has.EMERGENCY_THRUST) != 0 ? 15 : items[Item.AFTERBURNER.ordinal()];
     }
 
-    /** C {@code Add_fuel} on the single tank: the sum is clamped to {@code [0, fuelMax]}. */
+    /**
+     * C {@code Add_fuel}: the change is clamped so the sum stays in {@code [0, fuelMax]}, then added to the sum
+     * and to the current tank.
+     * <p>
+     * BEHAVIOR: the change is first truncated toward zero, as C converts the argument to its {@code long} parameter.
+     */
     public void addFuel(double f) {
-        double v = fuel + f;
-        fuel = v > fuelMax ? fuelMax : (v < 0 ? 0 : v);
+        f = (long) f;
+        if (fuel + f > fuelMax) {
+            f = fuelMax - fuel;
+        } else if (fuel + f < 0) {
+            f = -fuel;
+        }
+        fuel += f;
+        tankFuel[currentTank] += f;
+    }
+
+    /** Size the per-player visibility tables for {@code players} slots (called once by {@link World}). */
+    public void initVisibility(int players) {
+        canSee = new boolean[players];
+        java.util.Arrays.fill(canSee, true);
+        visLastChange = new long[players];
     }
 }

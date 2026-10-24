@@ -295,6 +295,21 @@ class SceneFillerTest {
         }
 
         @Test
+        @DisplayName("nuclearBlink: a harmful NUCLEAR shot is RED at ticks with bit 1 set (C frame.c:830)")
+        void nuclearBlink() {
+            int n = Records.ShotKind.NUCLEAR;
+            int e = Records.ObjColor.ENEMY;
+            assertAll(
+                () -> assertEquals(e, SceneFiller.nuclearBlink(n, e, false, 1.9), "tick 1: own colour"),
+                () -> assertEquals(Records.ObjColor.RED, SceneFiller.nuclearBlink(n, e, false, 2.0), "tick 2: red"),
+                () -> assertEquals(Records.ObjColor.RED, SceneFiller.nuclearBlink(n, e, false, 3.7), "tick 3: red"),
+                () -> assertEquals(e, SceneFiller.nuclearBlink(n, e, false, 4.0), "tick 4: own colour"),
+                () -> assertEquals(e, SceneFiller.nuclearBlink(n, e, true, 2.0), "a harmless one never blinks"),
+                () -> assertEquals(e, SceneFiller.nuclearBlink(Records.ShotKind.CLUSTER, e, false, 2.0),
+                    "a plain cluster fragment never blinks"));
+        }
+
+        @Test
         @DisplayName("particleColor: whole frames of life left, blue-owned for afterburner sparks")
         void particleColor() {
             assertAll(

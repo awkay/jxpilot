@@ -30,6 +30,7 @@ import com.fulcrologic.jxpilot.common.map.Cannon;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.server.world.Events;
+import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -60,9 +61,10 @@ public final class Crashes {
      * <p>
      * BEHAVIOR: wormhole crashes (and NOT_A_CRASH, C's default case) do nothing; every other crash ends the
      * object's life.
-     * BEHAVIOR: hitting a cannon destroys it ({@link #cannonDies}).
      * BEHAVIOR: a ball's treasure crash was already handled while moving ({@link Balls#atTreasure}); a target
      * crash damages the target ({@link Targets#objectHits}).
+     * BEHAVIOR: an item hitting a cannon is added to its stock; anything else destroys an unshielded cannon
+     * ({@link #cannonDies}), or uses up one of its armors.
      */
     public void objectCrashed(int h, MoveState ms) {
         if (ms.crash == CRASH_WORMHOLE || ms.crash == NOT_A_CRASH) {
@@ -76,7 +78,15 @@ public final class Crashes {
             sim.targets.objectHits(ms.target, h);
         }
         if (ms.crash == CRASH_CANNON) {
-            cannonDies(ms.cannon, w.objects.owner[h]);
+            if (w.objects.type[h] == Obj.ITEM) {
+                sim.cannonWeapons.addItem(ms.cannon, w.objects.info[h], w.objects.counter[h]);
+            } else if ((w.cannonItems.used[ms.cannon] & Has.EMERGENCY_SHIELD) == 0) {
+                if (w.cannonItems.item(ms.cannon, com.fulcrologic.jxpilot.common.Item.ARMOR) > 0) {
+                    w.cannonItems.add(ms.cannon, com.fulcrologic.jxpilot.common.Item.ARMOR, -1);
+                } else {
+                    cannonDies(ms.cannon, w.objects.owner[h]);
+                }
+            }
         }
     }
 
@@ -120,7 +130,9 @@ public final class Crashes {
                 if (!shielded) {
                     Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_CANNON);
                 }
-                cannonDies(ms.cannon, shielded ? pl.id : Obj.NO_ID);
+                if ((w.cannonItems.used[ms.cannon] & Has.EMERGENCY_SHIELD) == 0) {
+                    cannonDies(ms.cannon, shielded ? pl.id : Obj.NO_ID);
+                }
                 if (shielded) {
                     return;
                 }
@@ -260,6 +272,8 @@ public final class Crashes {
         Cannon c = w.map.cannons().get(index);
         w.cannonDeadTime[index] = w.params.cannonDeadTime;
         w.map.setBlock(c.bx(), c.by(), BlockType.SPACE);
+        sim.cannonWeapons.throwItems(index);
+        sim.cannonWeapons.init(index);
         int x = (int) c.x();
         int y = (int) c.y();
         Sounds.play(w, x, y, SoundEvent.CANNON_EXPLOSION);

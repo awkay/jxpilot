@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.server;
 
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 import com.fulcrologic.jxpilot.common.math.Rng;
+import com.fulcrologic.jxpilot.common.net.ControlKey;
 import com.fulcrologic.jxpilot.common.net.Protocol;
 import com.fulcrologic.jxpilot.server.sim.RandomPilot;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
@@ -308,6 +309,97 @@ class AllocationTest {
             () -> assertEquals(16, robotsPeak, "16 robots were playing (a leaver is replaced after 2*FPS frames)"),
             () -> assertTrue(eventsAfter > eventsBefore + 100, "the robots were busy (" + (eventsAfter - eventsBefore)
                 + " events)"));
+    }
+
+    /** Item keys the item-world humans press at random (THRUST and turns too, so they move about). */
+    private static final ControlKey[] ITEM_KEYS = {
+        ControlKey.THRUST, ControlKey.TURN_LEFT, ControlKey.FIRE_SHOT, ControlKey.FIRE_MISSILE,
+        ControlKey.FIRE_TORPEDO, ControlKey.FIRE_HEAT, ControlKey.DROP_MINE, ControlKey.DETACH_MINE,
+        ControlKey.DETONATE_MINES, ControlKey.FIRE_LASER, ControlKey.ECM, ControlKey.CLOAK, ControlKey.TANK_DETACH,
+        ControlKey.TANK_NEXT, ControlKey.LOSE_ITEM, ControlKey.SELECT_ITEM, ControlKey.EMERGENCY_SHIELD,
+        ControlKey.EMERGENCY_THRUST, ControlKey.PHASING, ControlKey.HYPERJUMP, ControlKey.DEFLECTOR,
+        ControlKey.TRANSPORTER, ControlKey.TRACTOR_BEAM, ControlKey.PRESSOR_BEAM, ControlKey.TOGGLE_AUTOPILOT,
+        ControlKey.TOGGLE_NUCLEAR, ControlKey.TOGGLE_CLUSTER, ControlKey.TOGGLE_MINI, ControlKey.TOGGLE_LASER,
+        ControlKey.LOCK_CLOSE, ControlKey.LOCK_NEXT, ControlKey.REPROGRAM, ControlKey.SHIELD
+    };
+
+    @Test
+    @DisplayName("an item world (robots and humans using every item, spawns, tanks, snapshots) allocates zero bytes")
+    void itemTickIsAllocationFree() {
+        StringBuilder cfg = new StringBuilder("gravity: -0.14\nmaxRobots: 8\nminRobots: 8\nrobotLeaveLife: 0\n"
+            + "itemProbMult: 8\nallowNukes: yes\nallowClusters: yes\nallowModifiers: yes\n"
+            + "allowLaserModifiers: yes\nnukeMinSmarts: 2\nnukeMinMines: 2\nlimitedLives: no\n");
+        for (String item : new String[] {"Tanks", "ECMs", "Armor", "Mines", "Missiles", "Cloaks", "Sensors",
+            "Wideangles", "Rearshots", "Afterburners", "Transporters", "Mirrors", "Deflectors", "HyperJumps",
+            "Phasings", "Lasers", "EmergencyThrusts", "TractorBeams", "Autopilots", "EmergencyShields"}) {
+            cfg.append("initial").append(item).append(": 2\n");
+        }
+        Simulation s = new Simulation(new World(TestWorlds.options(cfg.toString(), Arena.rows()), 7));
+        World w = s.world;
+        s.robots.setEnabled(true);
+        for (int h = 0; h < 4; h++) {
+            s.ships.join("human" + h, 0);
+        }
+        SnapshotBuilder sb = new SnapshotBuilder(w);
+        ByteBuffer[] parts = new ByteBuffer[4];
+        for (int i = 0; i < parts.length; i++) {
+            parts[i] = ByteBuffer.allocateDirect(Protocol.MAX_PACKET);
+        }
+        long[] in = new long[w.players.length];
+        Rng keys = new Rng(11);
+        int[] seen = new int[6];
+        long allocated = 0;
+        for (int i = 0; i < 24000; i++) {
+            boolean measured = i >= 20000;
+            long a = MX.getCurrentThreadAllocatedBytes();
+            for (int k = 0; k < w.numPlayers; k++) {
+                Player pl = w.playerAt(k);
+                if (!pl.robot && !pl.tank && (i & 3) == 0) {
+                    long m = 0;
+                    int bits = keys.nextInt();
+                    for (int b = 0; b < 3; b++) {
+                        m |= ITEM_KEYS[((bits >>> (b * 8)) & 0xff) % ITEM_KEYS.length].mask();
+                    }
+                    in[pl.slot] = m;
+                }
+            }
+            s.tick(in);
+            for (int k = 0; k < w.numPlayers; k++) {
+                for (ByteBuffer b : parts) {
+                    b.clear();
+                }
+                Player pl = w.playerAt(k);
+                sb.build(pl, w.tick, 0, (w.tick % 3) == 0, parts);
+            }
+            if (measured) {
+                allocated += MX.getCurrentThreadAllocatedBytes() - a;
+                count(w, seen);
+            }
+        }
+        long bytes = allocated;
+        assertAll(
+            () -> assertEquals(0, bytes, "4000 measured item-world ticks allocate no bytes"),
+            () -> assertTrue(seen[0] > 0, "missiles flew (" + seen[0] + " missile-ticks)"),
+            () -> assertTrue(seen[1] > 0, "mines lay (" + seen[1] + ")"),
+            () -> assertTrue(seen[2] > 0, "items floated (" + seen[2] + ")"),
+            () -> assertTrue(seen[3] > 0, "laser pulses flew (" + seen[3] + ")"),
+            () -> assertTrue(seen[4] > 0, "ECMs went off (" + seen[4] + ")"),
+            () -> assertTrue(seen[5] > 0, "detached tanks played (" + seen[5] + ")"));
+    }
+
+    private static void count(World w, int[] seen) {
+        Objects o = w.objects;
+        for (int k = 0; k < o.count(); k++) {
+            int t = o.type[o.active[k]];
+            seen[0] += (t & (Obj.SMART_SHOT | Obj.HEAT_SHOT | Obj.TORPEDO)) != 0 ? 1 : 0;
+            seen[1] += t == Obj.MINE ? 1 : 0;
+            seen[2] += t == Obj.ITEM ? 1 : 0;
+        }
+        seen[3] += w.pulses.count();
+        seen[4] += w.ecms.count();
+        for (int k = 0; k < w.numPlayers; k++) {
+            seen[5] += w.playerAt(k).tank ? 1 : 0;
+        }
     }
 
     private static int joins(Simulation s) {

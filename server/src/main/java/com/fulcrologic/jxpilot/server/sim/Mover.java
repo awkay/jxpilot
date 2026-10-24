@@ -513,6 +513,7 @@ public final class Mover {
         cost = (cost * (Const.RES / 2 + absDelta)) / Const.RES;
         if (!pl.fullyShielded()) {
             pl.addFuel(-((cost << 8) * p.wallBounceFuelDrainMult));
+            sim.items.damage(pl, w.items.wallBounceDestroyItemProb);
         }
         if (pl.fuel == 0 && p.wallBounceFuelDrainMult != 0) {
             m.crash = m.target >= 0 ? CRASH_TARGET : CRASH_WALL_NO_FUEL;

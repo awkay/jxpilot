@@ -240,29 +240,44 @@ class AsteroidsTest {
         }
 
         @Test
-        @DisplayName("size 1: only wreckage and debris; item drops with asteroidMaxItems and asteroidItemProb")
+        @DisplayName("size 1: only wreckage and debris; asteroidMaxItems and asteroidItemProb drop real items there")
         void dust() {
-            Simulation s = sim("asteroidMaxItems: 3\nasteroidItemProb: 1\n");
+            String items = "asteroidMaxItems: 3\nmaxItemDensity: 1\nitemMineProb: 1\n";
+            Simulation s = sim(items + "asteroidItemProb: 1\n");
             World w = s.world;
-            List<String> drops = new ArrayList<>();
-            s.asteroids.itemDrop = (px, py, vx, vy) -> drops.add(px + "," + py);
             int h = s.asteroids.make(500, 500, 1, 0, 0f);
             s.asteroids.broken(h);
-            Simulation noItems = sim("asteroidMaxItems: 3\nasteroidItemProb: 0\n");
-            List<String> none = new ArrayList<>();
-            noItems.asteroids.itemDrop = (px, py, vx, vy) -> none.add("x");
+            List<Integer> drops = itemsOf(w);
+            Simulation noItems = sim(items + "asteroidItemProb: 0\n");
             int h2 = noItems.asteroids.make(500, 500, 1, 0, 0f);
             noItems.asteroids.broken(h2);
-            Simulation noHook = sim("asteroidMaxItems: 3\nasteroidItemProb: 1\n");
-            int h3 = noHook.asteroids.make(500, 500, 1, 0, 0f);
-            noHook.asteroids.broken(h3);
+            Simulation noKinds = sim("asteroidMaxItems: 3\nasteroidItemProb: 1\n");
+            java.util.Arrays.fill(noKinds.world.items.prob, 0f); // lib/defaults gives every kind a tiny chance
+            int h3 = noKinds.asteroids.make(500, 500, 1, 0, 0f);
+            noKinds.asteroids.broken(h3);
+            Objects o = w.objects;
+            int first = drops.isEmpty() ? -1 : drops.get(0);
             assertAll(
                 () -> assertEquals(0, w.modes.asteroidCount, "no children"),
                 () -> assertEquals(0, w.modes.asteroidNum, "count back to 0"),
-                () -> assertTrue(drops.size() >= 1 && drops.size() <= 3, "1..3 items dropped"),
-                () -> assertEquals("500,500", drops.get(0), "at the asteroid"),
-                () -> assertEquals(List.of(), none, "probability 0: none"),
-                () -> assertEquals(0, noHook.world.modes.asteroidCount, "no item code: nothing happens"));
+                () -> assertTrue(drops.size() >= 1 && drops.size() <= 3, "1..3 items dropped (" + drops.size() + ")"),
+                () -> assertEquals(500, o.px[first], "at the asteroid (x)"),
+                () -> assertEquals(500, o.py[first], "at the asteroid (y)"),
+                () -> assertEquals(com.fulcrologic.jxpilot.common.Item.MINE.ordinal(), o.info[first], "a kind by probability"),
+                () -> assertTrue((o.status[first] & Obj.GRAVITY) != 0, "moving with gravity"),
+                () -> assertEquals(List.of(), itemsOf(noItems.world), "probability 0: none"),
+                () -> assertEquals(List.of(), itemsOf(noKinds.world), "no item kind has a probability: none"));
+        }
+
+        List<Integer> itemsOf(World w) {
+            List<Integer> l = new ArrayList<>();
+            for (int k = 0; k < w.objects.count(); k++) {
+                int q = w.objects.active[k];
+                if (w.objects.type[q] == Obj.ITEM) {
+                    l.add(q);
+                }
+            }
+            return l;
         }
 
         @Test

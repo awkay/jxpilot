@@ -29,6 +29,7 @@ import com.fulcrologic.jxpilot.common.math.XMath;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.server.world.Mods;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
@@ -49,6 +50,8 @@ public final class Collisions {
     static final long ED_PL_CRASH = (long) (-100.0 * 256);
     /** C {@code ED_SHOT_HIT}. */
     static final double ED_SHOT_HIT = -25.0 * 256;
+    /** C {@code ED_SMART_SHOT_HIT}. */
+    static final double ED_SMART_SHOT_HIT = -120.0 * 256;
 
     private final World w;
     private final Simulation sim;
@@ -176,7 +179,6 @@ public final class Collisions {
             }
             if (pl.px < 0 || pl.py < 0 || pl.px >= w.pixelWidth || pl.py >= w.pixelHeight) {
                 pl.status |= Obj.KILLED;
-                Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_WALL);
                 w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" left the known universe.");
                 w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, pl.id, Obj.NO_ID, Msg.GameEvent.CRASH_UNIVERSE);
                 sim.scoring.score(pl, -Scoring.rate(Scoring.WALL_SCORE, pl.score), pl.bx, pl.by, pl.name);
@@ -213,10 +215,14 @@ public final class Collisions {
         if (p.bounceWithPlayer) {
             if (!pl.fullyShielded()) {
                 pl.addFuel(ED_PL_CRASH);
+                sim.items.damage(pl, w.items.destroyItemInCollisionProb);
             }
             if (!o.fullyShielded()) {
                 o.addFuel(ED_PL_CRASH);
+                sim.items.damage(o, w.items.destroyItemInCollisionProb);
             }
+            pl.forceVisible = 20;
+            o.forceVisible = 20;
             repel(pl, o, 2 * Const.SHIP_SZ);
         }
         if (!p.crashWithPlayer) {
@@ -239,10 +245,16 @@ public final class Collisions {
         if (oDead && plDead) {
             w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" and ").append(o.name)
                 .append(" crashed.");
-            double sc = Scoring.rate(o.score, pl.score) * p.crashScoreMult;
-            double sc2 = Scoring.rate(pl.score, o.score) * p.crashScoreMult;
             w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, pl.id, o.id, Msg.GameEvent.CRASH_SHIPS);
-            sim.scoring.scorePlayers(pl, -sc, o.name, o, -sc2, pl.name);
+            if (!pl.tank && !o.tank) {
+                double sc = Scoring.rate(o.score, pl.score) * p.crashScoreMult;
+                double sc2 = Scoring.rate(pl.score, o.score) * p.crashScoreMult;
+                sim.scoring.scorePlayers(pl, -sc, o.name, o, -sc2, pl.name);
+            } else if (pl.tank) {
+                tankCrash(pl, o, p);
+            } else {
+                tankCrash(o, pl, p);
+            }
         } else if (oDead) {
             ranOver(pl, o, p);
         } else if (plDead) {
@@ -250,14 +262,44 @@ public final class Collisions {
         }
     }
 
+    /**
+     * Both ships died and {@code tank} is a tank: its owner scores tankKillScoreMult from the other. As C, when both
+     * are tanks the first one's owner scores (collision.c:378; C's "don't bother scoring two tanks" comment is not
+     * what its code does).
+     */
+    private void tankCrash(Player tank, Player other, Params p) {
+        Player owner = w.byId(tank.lockPlId);
+        if (owner == null) {
+            return;
+        }
+        double sc = Scoring.rate(owner.score, other.score) * p.tankKillScoreMult;
+        sim.scoring.scorePlayers(owner, sc, other.name, other, -sc, tank.name);
+    }
+
+    /**
+     * C's "ran over" branches of PlayerCollision.
+     * <p>
+     * BEHAVIOR: the winner gets the kill; a tank's score goes to its owner (unless the owner is the victim) with
+     * tankKillScoreMult, a ship's with runoverKillScoreMult.
+     */
     private void ranOver(Player winner, Player victim, Params p) {
         w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(winner.name).append(" ran over ")
             .append(victim.name).append('.');
         Sounds.play(w, victim.px, victim.py, SoundEvent.PLAYER_RAN_OVER_PLAYER);
         winner.kills++;
-        double sc = Scoring.rate(winner.score, victim.score) * p.runoverKillScoreMult;
+        Player scorer = winner;
+        double sc;
+        if (winner.tank) {
+            Player owner = w.byId(winner.lockPlId);
+            if (owner != null && owner != victim) {
+                scorer = owner;
+            }
+            sc = Scoring.rate(scorer.score, victim.score) * p.tankKillScoreMult;
+        } else {
+            sc = Scoring.rate(winner.score, victim.score) * p.runoverKillScoreMult;
+        }
         w.events.kill(winner.id, victim.id, 0f, Events.KILL_RUNOVER);
-        sim.scoring.scorePlayers(winner, sc, victim.name, victim, -sc, winner.name);
+        sim.scoring.scorePlayers(scorer, sc, victim.name, victim, -sc, winner.name);
     }
 
     /**
@@ -295,6 +337,10 @@ public final class Collisions {
      * BEHAVIOR: an object hits when its path comes within SHIP_SZ + pl_range of the ship's path.
      * BEHAVIOR: immune: own owner-immune sparks, own objects with selfImmunity, team-immune owners, paused
      * owners, unowned objects of the own team with teamImmunity, own shots before their fuse.
+     * BEHAVIOR: a shielded ship (without shieldedItemPickup) only bumps items, which start to fall; own shots and
+     * missiles before their fuse and confused mines pass; balls and asteroids are left to their own code.
+     * BEHAVIOR: an item is picked up ({@link Items#pickup}; one that is not stays and the ship moves on); a mine
+     * hit is announced and scored ({@link Mines#playerHit}) before it explodes.
      * BEHAVIOR: a hit ends the object; debris drains fuel (and may kill), killing shots damage or kill, and
      * the momentum is shared (inelastic, {@link #deltaMv}).
      */
@@ -325,6 +371,8 @@ public final class Collisions {
                     } else if (p.selfImmunity) {
                         continue;
                     }
+                } else if (p.selfImmunity && pl.tank && pl.lockPlId == owner) {
+                    continue;
                 } else if (w.teamImmune(owner, pl.id)) {
                     continue;
                 } else {
@@ -336,7 +384,22 @@ public final class Collisions {
             } else if (p.teamPlay && p.teamImmunity && o.team[h] == pl.team && type != Obj.BALL) {
                 continue;
             }
-            if ((type & (Obj.SHOT | Obj.CANNON_SHOT)) != 0 && pl.id == owner && o.life[h] > o.fuseLife[h]) {
+            if (type == Obj.ITEM) {
+                if ((pl.used & Has.SHIELD) != 0 && !w.items.shieldedItemPickup) {
+                    o.status[h] |= Obj.GRAVITY;
+                    deltaMv(pl, h);
+                    continue;
+                }
+            } else if ((type & (Obj.HEAT_SHOT | Obj.SMART_SHOT | Obj.TORPEDO | Obj.SHOT | Obj.CANNON_SHOT)) != 0) {
+                if (pl.id == owner && o.life[h] > o.fuseLife[h]) {
+                    continue;
+                }
+            } else if ((type & Obj.MINE) != 0) {
+                if ((o.status[h] & Obj.CONFUSED) != 0) {
+                    continue;
+                }
+            } else if ((type & (Obj.BALL | Obj.ASTEROID)) != 0) {
+                // balls and asteroids collide with ships in their owners' code
                 continue;
             } else if (type == Obj.BALL && sim.balls.phased(h)) {
                 continue;
@@ -358,7 +421,14 @@ public final class Collisions {
             }
             // C computes hit = (SHIP_SZ + pl_radius >= range) || in_range_acd(..., range): the same test as above
             // (C passes range, not radius), so every object that gets here hits.
-            if ((type & (Obj.DEBRIS | Obj.WRECKAGE)) != 0) {
+            if (type == Obj.ITEM) {
+                sim.items.pickup(pl, h);
+                if (o.life[h] != 0) {
+                    continue;
+                }
+            } else if (type == Obj.MINE) {
+                sim.mines.playerHit(pl, h);
+            } else if ((type & (Obj.DEBRIS | Obj.WRECKAGE)) != 0) {
                 debris(pl, h);
                 if ((pl.status & Obj.KILLED) != 0) {
                     return;
@@ -454,29 +524,54 @@ public final class Collisions {
     /**
      * C {@code Player_collides_with_killing_shot} for shots and cannon shots.
      * <p>
-     * BEHAVIOR: with shields up (or armor) the shot only drains fuel (unless fully shielded):
-     * 25*256 * (relative speed^2 * |mass|) / (shotSpeed^2 * shotMass) with shotHitFuelDrainUsesKineticEnergy,
-     * else 25*256; shields drop at zero fuel; armor is used when unshielded.
+     * BEHAVIOR: with shields up (or armor, or for a nuclear torpedo 3 times in 4) the hit only drains fuel
+     * (unless fully shielded): a missile "X ate a smart missile from Y." costs 120*256 / ((mini+1)*(power+1)) and
+     * makes the ship visible for 2 frames; a shot costs 25*256 * SHOT_MULT * (relative speed^2 * |mass|) /
+     * (shotSpeed^2 * shotMass) with shotHitFuelDrainUsesKineticEnergy (else 25*256 * SHOT_MULT) and SHOT_MULT
+     * frames of visibility; shields drop at zero fuel; armor is used when unshielded.
      * BEHAVIOR: otherwise the ship dies: cannon fire costs Rate(CANNON_SCORE, score)/4 * mult (and gives it to
      * the cannon's team in team play), unowned shots Rate(0)*unownedKillScoreMult, own shots
      * Rate(0)*selfKillScoreMult, another player's shot Rate(killer, victim) to the killer (a kill).
-     * The factor is shotKillScoreMult (clusterKillScoreMult for cluster fragments).
+     * The factor is shotKillScoreMult (clusterKillScoreMult for cluster fragments, torpedo/smart/heat
+     * KillScoreMult for missiles); the description is C's Describe_shot.
      */
     void killingShot(Player pl, int h) {
         Objects o = w.objects;
         Params p = w.params;
         int type = o.type[h];
-        if ((pl.used & Has.SHIELD) != 0 || (pl.have & Has.ARMOR) != 0) {
-            if (type == Obj.SHOT || type == Obj.CANNON_SHOT) {
-                Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_EAT_SHOT);
+        boolean missile = (type & (Obj.TORPEDO | Obj.HEAT_SHOT | Obj.SMART_SHOT)) != 0;
+        if ((pl.used & Has.SHIELD) != 0 || (pl.have & Has.ARMOR) != 0
+            || (type == Obj.TORPEDO && Mods.isNuclear(o.mods[h]) && (int) (w.rfrac() >= 0.25f ? 1 : 0) != 0)) {
+            switch (type) {
+                case Obj.TORPEDO -> Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_EAT_TORPEDO_SHOT);
+                case Obj.HEAT_SHOT -> Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_EAT_HEAT_SHOT);
+                case Obj.SMART_SHOT -> Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_EAT_SMART_SHOT);
+                default -> { }
             }
-            if (!pl.fullyShielded()) {
-                float drainFactor = 1.0f;
-                if (p.shotHitFuelDrainUsesKineticEnergy) {
-                    float rel = (float) StrictMath.hypot(pl.vx - o.vx[h], pl.vy - o.vy[h]);
-                    drainFactor = (rel * rel * Math.abs(o.mass[h])) / (p.shotSpeed * p.shotSpeed * p.shotMass);
+            if (missile) {
+                Player killer = o.owner[h] != Obj.NO_ID ? w.byId(o.owner[h]) : null;
+                StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" ate ");
+                ShotNames.append(msg, type, o.status[h], o.mods[h], true);
+                if (killer != null) {
+                    msg.append(" from ").append(killer.name);
                 }
-                pl.addFuel((long) (ED_SHOT_HIT * drainFactor * 1.0f));
+                msg.append('.');
+                long drain = (long) (ED_SMART_SHOT_HIT / ((Mods.mini(o.mods[h]) + 1) * (Mods.power(o.mods[h]) + 1)));
+                if (!pl.fullyShielded()) {
+                    pl.addFuel(drain);
+                }
+                pl.forceVisible += 2;
+            } else if (type == Obj.SHOT || type == Obj.CANNON_SHOT) {
+                Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_EAT_SHOT);
+                if (!pl.fullyShielded()) {
+                    float drainFactor = 1.0f;
+                    if (p.shotHitFuelDrainUsesKineticEnergy) {
+                        float rel = (float) StrictMath.hypot(pl.vx - o.vx[h], pl.vy - o.vy[h]);
+                        drainFactor = (rel * rel * Math.abs(o.mass[h])) / (p.shotSpeed * p.shotSpeed * p.shotMass);
+                    }
+                    pl.addFuel((long) (ED_SHOT_HIT * drainFactor * shotMult(h)));
+                }
+                pl.forceVisible = (int) (pl.forceVisible + shotMult(h));
             }
             if (pl.fuel <= 0) {
                 pl.used &= ~Has.SHIELD;
@@ -484,6 +579,9 @@ public final class Collisions {
             if ((pl.used & Has.SHIELD) == 0 && (pl.have & Has.ARMOR) != 0) {
                 sim.ships.hitArmor(pl);
             }
+            return;
+        }
+        if (!missile && type != Obj.SHOT && type != Obj.CANNON_SHOT) {
             return;
         }
         Player killer = null;
@@ -495,11 +593,13 @@ public final class Collisions {
             msg.append(" was hit by cannonfire.");
             sc = Scoring.rate(Scoring.CANNON_SCORE, pl.score) / 4;
         } else if (o.owner[h] == Obj.NO_ID || w.byId(o.owner[h]) == null) {
-            msg.append(" was killed by ").append(describe(type, o.mods[h])).append('.');
+            msg.append(" was killed by ");
+            ShotNames.append(msg, type, o.status[h], o.mods[h], true).append('.');
             sc = Scoring.rate(0, pl.score) * p.unownedKillScoreMult;
         } else {
             killer = w.byId(o.owner[h]);
-            msg.append(" was killed by ").append(describe(type, o.mods[h])).append(" from ").append(killer.name)
+            msg.append(" was killed by ");
+            ShotNames.append(msg, type, o.status[h], o.mods[h], true).append(" from ").append(killer.name)
                 .append('.');
             if (killer == pl) {
                 Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_SHOT_THEMSELF);
@@ -510,7 +610,15 @@ public final class Collisions {
                 sc = Scoring.rate(killer.score, pl.score);
             }
         }
-        sc *= (type == Obj.SHOT && (o.mods[h] & Obj.MOD_CLUSTER) != 0) ? p.clusterKillScoreMult : p.shotKillScoreMult;
+        double factor;
+        switch (type) {
+            case Obj.SHOT -> factor = Mods.isCluster(o.mods[h]) ? p.clusterKillScoreMult : p.shotKillScoreMult;
+            case Obj.TORPEDO -> factor = w.items.torpedoKillScoreMult;
+            case Obj.SMART_SHOT -> factor = w.items.smartKillScoreMult;
+            case Obj.HEAT_SHOT -> factor = w.items.heatKillScoreMult;
+            default -> factor = p.shotKillScoreMult;
+        }
+        sc *= factor;
         w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, killer != null ? killer.id : Obj.NO_ID, pl.id, 0f);
         if (fromCannon) {
             sim.scoring.score(pl, -sc, pl.bx, pl.by, "Cannon");
@@ -523,6 +631,12 @@ public final class Collisions {
             sim.scoring.scorePlayers(killer, sc, pl.name, pl, -sc, killer.name);
         }
         pl.status |= Obj.KILLED;
+    }
+
+    /** C {@code SHOT_MULT}: nukeClusterDamage for nuclear cluster fragments, else 1. */
+    float shotMult(int h) {
+        int m = w.objects.mods[h];
+        return Mods.isNuclear(m) && Mods.isCluster(m) ? w.items.nukeClusterDamage : 1.0f;
     }
 
     /**

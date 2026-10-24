@@ -130,6 +130,8 @@ The rules:
   `Return`, `space`, `Shift_L`, `Control_R`, `Alt_L`, `KP_Add`, `F5`, `bracketleft` and so on.
 * The six control settings are `power` (5 to 55), `turnSpeed` (4 to 64), `turnResistance` (0 to 1),
   `altPower`, `altTurnSpeed` and `altTurnResistance`. Values outside the range are clamped.
+* `maxVolume` (0 to 255) sets the sound volume (<<sound>>). XPilot's other sound resources, `sounds`
+  and `audioServer`, are not used: the sounds are built in.
 * kbd:[Esc] always quits and cannot be bound; the Command (Super) keys are never bound.
 * Every problem (an unknown function or key name, a bad number, a key bound to more than one function)
   is printed when the client starts, as `jxpilot keys: FILE:LINE: ...`, and the rest of the file still
@@ -220,15 +222,21 @@ swap-scale-factor key
 
 The client plays sound effects, on by default. Which sounds play, and when, is decided as in XPilot:
 the server sends XPilot's sound events (shots, explosions, hits, pickups, wormholes, wins and so on),
-already made quieter with distance, and the client plays a clip for each. This works the same on a
-JXPilot server and on an original XPilot server.
+already made quieter with distance, and the client plays a clip for each. You also hear the start sound
+when you join, as in XPilot.
+
+On an original XPilot server you usually hear nothing: sound is compiled out of the standard XPilot
+server builds, so most XPilot servers send no sound events. The client asks for sounds once, when it
+joins (unless sound is off then); muting later does not change that request.
 
 [cols="2,4",options="header"]
 |===
 |Control |Effect
-|`--no-sound` (or `--sound`) |Turn sound off (on) for this run. XPilot's `sound` resource.
-|`--volume N` |XPilot's `maxVolume`: the loudest a sound may play, 0 to 255 (default 100). `0` means no
-sound; values above 100 play like 100.
+|`--no-sound` (or `--sound`) |Turn sound off (on) for this run. JXPilot only: whether an XPilot
+client has sound is decided when it is built.
+|`--volume N` |XPilot's `maxVolume`: the loudest a sound may play, 0 to 255. `0` means no sound; values
+above 100 play like 100. Without the flag, `maxVolume` from your keys file (`xpilot.maxVolume: 60` in
+`~/.xpilotrc` or the `--keys` file) applies, else 100.
 |kbd:[-] |Mute and unmute while playing (`keyToggleSound`); the message log shows `Sound off.` / `Sound on.`
 |===
 

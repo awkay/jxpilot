@@ -50,7 +50,7 @@ import com.fulcrologic.jxpilot.server.world.World;
  * and reports {@code LONG_MAX - life} as the frames it was loose; a double cannot count down from LONG_MAX, so
  * {@link #BALL_LIFE} (2^52, exact) stands in for it.
  */
-public final class Balls implements Segment.TreasureHook {
+public final class Balls implements Segment.TreasureHook, Ecm.BallDetacher {
     /** Stand-in for C's {@code LONG_MAX} ball life (exactly representable, so it counts down frame by frame). */
     public static final double BALL_LIFE = 0x1p52;
     /** C {@code BALL_RADIUS}. */
@@ -202,6 +202,27 @@ public final class Balls implements Segment.TreasureHook {
                 pl.have &= ~Has.BALL;
             } else {
                 Sounds.play(w, pl.px, pl.py, SoundEvent.DROP_BALL);
+            }
+        }
+    }
+
+    /**
+     * The ball part of an ECM blast (item.c:1168-1181) on ship {@code p} at {@code range} (1 at the centre).
+     * <p>
+     * BEHAVIOR: every ball whose C owner (the last ship it was connected to) is {@code p}, connected or not,
+     * draws once and detaches from {@code p} ({@link #detach}) when (int)(rfrac()*100) &lt; (int)(20*range)+5.
+     */
+    @Override
+    public void ecmDetach(Player p, float range) {
+        Objects o = w.objects;
+        ModeState m = w.modes;
+        for (int k = 0; k < o.count(); k++) {
+            int h = o.active[k];
+            if ((o.type[h] & Obj.BALL) == 0 || m.ballOwner[h] != p.id) {
+                continue;
+            }
+            if ((int) (w.rfrac() * 100.0f) < ((int) (20 * range) + 5)) {
+                detach(p, h);
             }
         }
     }

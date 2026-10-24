@@ -127,7 +127,7 @@ public final class Rounds {
         int winner = -1;
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
-            if ((pl.status & Obj.PAUSE) != 0) {
+            if ((pl.status & Obj.PAUSE) != 0 || pl.tank) {
                 continue;
             }
             if ((pl.status & Obj.GAME_OVER) == 0) {
@@ -162,7 +162,7 @@ public final class Rounds {
         int winning = -1;
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
-            if ((pl.status & Obj.PAUSE) != 0 || pl.team < 0 || pl.team >= Const.MAX_TEAMS) {
+            if ((pl.status & Obj.PAUSE) != 0 || pl.tank || pl.team < 0 || pl.team >= Const.MAX_TEAMS) {
                 continue;
             }
             if ((pl.status & Obj.GAME_OVER) != 0) {
@@ -229,7 +229,7 @@ public final class Rounds {
             }
             for (int k = 0; k < w.numPlayers; k++) {
                 Player pl = w.playerAt(k);
-                if ((pl.status & Obj.PAUSE) == 0 && pl.team >= 0 && pl.team < Const.MAX_TEAMS) {
+                if ((pl.status & Obj.PAUSE) == 0 && !pl.tank && pl.team >= 0 && pl.team < Const.MAX_TEAMS) {
                     teamScoreSum[pl.team] += pl.score;
                 }
             }
@@ -329,7 +329,7 @@ public final class Rounds {
         bestRatio = -1.0;
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
-            if ((pl.status & Obj.PAUSE) != 0 && pl.count <= 0) {
+            if (pl.tank || ((pl.status & Obj.PAUSE) != 0 && pl.count <= 0)) {
                 continue;
             }
             averageScore += pl.score;
@@ -469,7 +469,7 @@ public final class Rounds {
                 if (pl.team != winningTeam) {
                     continue;
                 }
-                if (((pl.status & Obj.PAUSE) != 0 && pl.count <= 0)
+                if (pl.tank || ((pl.status & Obj.PAUSE) != 0 && pl.count <= 0)
                     || ((pl.status & Obj.GAME_OVER) != 0 && pl.mychar == 'W' && pl.score == 0)) {
                     continue;
                 }
@@ -646,7 +646,7 @@ public final class Rounds {
                 } else {
                     sim.ships.kill(pl);
                     if (!pl.inUse) {
-                        k--; // a robot out of lives was deleted (player.c:690-694)
+                        k--; // a tank or a robot out of lives was deleted (player.c:690-694)
                         continue;
                     }
                 }
@@ -661,6 +661,9 @@ public final class Rounds {
                 pl.life = p.worldLives;
             }
             sim.race.resetPlayer(pl);
+            if (pl.tank) {
+                pl.mychar = 'T';
+            }
             pl.scoreDirty = true;
         }
         if (p.teamPlay) {

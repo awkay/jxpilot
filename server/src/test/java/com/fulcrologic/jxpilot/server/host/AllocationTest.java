@@ -59,7 +59,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AllocationTest {
     private static final com.sun.management.ThreadMXBean MX =
         (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
-    static final int WARMUP = 9_000;
+    // long enough for the C2 compiles of the once-per-tick item methods (a compile request shows up as a few
+    // hundred thread-allocated bytes on the measured thread)
+    static final int WARMUP = 20_000;
     static final int MEASURED = 5_000;
 
     /** What the client side of the reliable channel saw. */
@@ -193,6 +195,10 @@ class AllocationTest {
     void hostHotPath() throws IOException {
         Loop loop = new Loop();
         for (int i = 0; i < WARMUP; i++) {
+            loop.step(false);
+        }
+        // robots leave and are replaced ~28 ticks later; do not start measuring inside such a gap
+        for (int i = 0; i < 200 && loop.host.simulation().robots.numRobots() < 8; i++) {
             loop.step(false);
         }
         int robots = loop.host.simulation().robots.numRobots();

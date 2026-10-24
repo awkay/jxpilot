@@ -42,6 +42,18 @@ public final class ShipGeom {
     public final float[] engineY = new float[Const.RES];
     public final float[] gunX = new float[Const.RES];
     public final float[] gunY = new float[Const.RES];
+    /** {@code lGunX[g][dir]}: left gun g rotated (C {@code l_gun}); likewise right, left rear, right rear guns. */
+    public final float[][] lGunX;
+    public final float[][] lGunY;
+    public final float[][] rGunX;
+    public final float[][] rGunY;
+    public final float[][] lrGunX;
+    public final float[][] lrGunY;
+    public final float[][] rrGunX;
+    public final float[][] rrGunY;
+    /** Missile racks rotated (C {@code m_rack}); at least one (at the main gun when the shape has none). */
+    public final float[][] rackX;
+    public final float[][] rackY;
 
     public ShipGeom(ShipShape shape) {
         this.shape = shape;
@@ -53,6 +65,33 @@ public final class ShipGeom {
         }
         rotate(shape.engineX, shape.engineY, engineX, engineY);
         rotate(shape.mainGunX, shape.mainGunY, gunX, gunY);
+        lGunX = new float[shape.leftGunX.length][Const.RES];
+        lGunY = new float[shape.leftGunX.length][Const.RES];
+        rotateAll(shape.leftGunX, shape.leftGunY, lGunX, lGunY);
+        rGunX = new float[shape.rightGunX.length][Const.RES];
+        rGunY = new float[shape.rightGunX.length][Const.RES];
+        rotateAll(shape.rightGunX, shape.rightGunY, rGunX, rGunY);
+        lrGunX = new float[shape.leftRearGunX.length][Const.RES];
+        lrGunY = new float[shape.leftRearGunX.length][Const.RES];
+        rotateAll(shape.leftRearGunX, shape.leftRearGunY, lrGunX, lrGunY);
+        rrGunX = new float[shape.rightRearGunX.length][Const.RES];
+        rrGunY = new float[shape.rightRearGunX.length][Const.RES];
+        rotateAll(shape.rightRearGunX, shape.rightRearGunY, rrGunX, rrGunY);
+        if (shape.missileRackX.length > 0) {
+            rackX = new float[shape.missileRackX.length][Const.RES];
+            rackY = new float[shape.missileRackX.length][Const.RES];
+            rotateAll(shape.missileRackX, shape.missileRackY, rackX, rackY);
+        } else {
+            rackX = new float[1][Const.RES];
+            rackY = new float[1][Const.RES];
+            rotate(shape.mainGunX, shape.mainGunY, rackX[0], rackY[0]);
+        }
+    }
+
+    private static void rotateAll(int[] x, int[] y, float[][] outX, float[][] outY) {
+        for (int i = 0; i < x.length; i++) {
+            rotate(x[i], y[i], outX[i], outY[i]);
+        }
     }
 
     /**

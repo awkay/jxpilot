@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Concentrator;
@@ -78,18 +79,8 @@ public final class Asteroids {
     static final int PLACE_BLOCKS = (SPACE_BLOCKS & ~(BlockType.bit(BlockType.BASE) | BlockType.bit(BlockType.WORMHOLE)))
         | BlockType.bit(BlockType.FRICTION);
 
-    /**
-     * Item drop of a broken asteroid (C: {@code Choose_random_item}, its direction, speed, pack size and
-     * {@code Make_item}); installed by the item code. Called once per item.
-     */
-    public interface ItemDrop {
-        void drop(int px, int py, float vx, float vy);
-    }
-
     private final World w;
     private final Simulation sim;
-    /** Item drops of broken asteroids, or null (no items). */
-    public ItemDrop itemDrop;
     /**
      * C {@code AsteroidCollision}'s {@code damage}: declared once per call and not reset for every object (a
      * mine leaves the previous value), so it is kept across the loop as in C.
@@ -342,8 +333,10 @@ public final class Asteroids {
      * BEHAVIOR: bigger: two asteroids one size smaller, split RES/4 off the flight direction at their radius,
      * flying RES/32-RES/16 to either side at (1 - dust) * speed / tcos(angle); the dust (mass * dust fraction)
      * becomes wreckage and debris like a size 1 asteroid.
-     * BEHAVIOR: with asteroidMaxItems and probability asteroidItemProb, 1..asteroidMaxItems items drop
-     * ({@link ItemDrop}).
+     * BEHAVIOR: with asteroidMaxItems and probability asteroidItemProb, 1..asteroidMaxItems items drop at the
+     * asteroid (C Choose_random_item, Make_item): a random kind, the asteroid's velocity plus up to 10 in a random
+     * direction (as C ints), GRAVITY, RANDOM_ITEM with randomItemProb, a random pack size. With no item
+     * probabilities (C indexes past its item table) that item is skipped after its draws.
      * BEHAVIOR: the asteroid leaves the list and the count shrinks by 2^(size-1).
      */
     public void broken(int h) {
@@ -385,8 +378,20 @@ public final class Asteroids {
         }
         if (mp.asteroidMaxItems > 0 && w.rfrac() < mp.asteroidItemProb) {
             int nitems = (int) (w.rfrac() * mp.asteroidMaxItems) + 1;
-            for (int i = 0; i < nitems && itemDrop != null; i++) {
-                itemDrop.drop((int) x, (int) y, vx, vy);
+            for (int i = 0; i < nitems; i++) {
+                int item = sim.items.chooseRandom();
+                int itemDir = (int) (w.rfrac() * Const.RES);
+                float itemSpeed = (float) (w.rfrac() * 10);
+                float ivx = vx + itemSpeed * Trig.tcos(itemDir);
+                float ivy = vy + itemSpeed * Trig.tsin(itemDir);
+                int status = Obj.GRAVITY;
+                if (w.rfrac() < w.items.randomItemProb) {
+                    status |= Obj.RANDOM_ITEM;
+                }
+                if (item >= Item.COUNT) {
+                    continue;
+                }
+                sim.items.make((int) x, (int) y, (int) ivx, (int) ivy, item, sim.items.packSize(item), status);
             }
         }
         Sounds.play(w, x, y, SoundEvent.ASTEROID_BREAK);

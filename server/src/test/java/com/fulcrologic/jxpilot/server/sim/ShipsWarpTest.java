@@ -191,7 +191,7 @@ class ShipsWarpTest {
             p.wormHoleHit = 4;
             s.ships.warp(p);
             assertAll(
-                () -> assertEquals(0, noHit, "hit -2 (-1 is a hyperjump): WARPING cleared, not WARPED"),
+                () -> assertEquals(0, noHit, "hit below -1 (-1 is a hyperjump): WARPING cleared, not WARPED"),
                 () -> assertEquals(0, p.status & (Obj.WARPING | Obj.WARPED), "hit past the last wormhole: same"),
                 () -> assertEquals(x, p.cx, "the ship stays put"),
                 () -> assertEquals(-1, p.wormHoleDest, "no destination"));

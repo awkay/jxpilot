@@ -158,7 +158,7 @@ class SnapshotModesTest {
             () -> assertEquals(List.of("0:1"), o.treasures(), "the near treasure has its ball"),
             () -> assertEquals(List.of("0:1:25"), dead.targets(), "dead flag"),
             () -> assertEquals(List.of("0:0"), dead.treasures(), "no ball at home"),
-            () -> assertEquals(List.of(), o.timers(), "no timer active: no TIMERS"));
+            () -> assertEquals(List.of("0:0:-1"), o.timers(), "TIMERS every snapshot: nothing running"));
     }
 
     @Test
@@ -232,12 +232,13 @@ class SnapshotModesTest {
         w.roundDelaySend = 5;
         w.roundDelay = 9;
         s.asteroids.make(30 * 35, 3 * 35, 1, 0, 0f);
+        v.sensorRange = 100_000;
         Out o = build(s, v, true);
         v.damaged = 0;
         w.roundTime = -1;
         w.roundDelaySend = 0;
-        Out clear = build(s, v, false);
-        Out after = build(s, v, false);
+        v.sensorRange = 30 * 35;
+        Out clear = build(s, v, true);
         Simulation off = TestWorlds.sim("teamPlay: yes\ngravity: 0\n", ROWS);
         Player q = TestWorlds.join(off, "Q", 1);
         off.asteroids.make(30 * 35, 3 * 35, 1, 0, 0f);
@@ -246,8 +247,9 @@ class SnapshotModesTest {
         long asts = o.radar().stream().filter(f -> f.equals(String.valueOf(Records.Radar.FLAG_ASTEROID))).count();
         assertAll(
             () -> assertEquals(List.of("3:9:11"), o.timers(), "damaged, round delay, 141 frames = 11 s rounded up"),
-            () -> assertEquals(List.of("0:0:-1"), clear.timers(), "once all stopped: one all-clear record"),
-            () -> assertEquals(List.of(), after.timers(), "then nothing"),
+            () -> assertEquals(List.of("0:0:-1"), clear.timers(), "all stopped: none"),
+            () -> assertEquals(1, clear.radar().stream().filter(f -> f.equals(String.valueOf(Records.Radar.FLAG_BALL))).count(),
+                "within 30 blocks of sensor range only the near ball"),
             () -> assertEquals(2, balls, "both treasure balls on the radar"),
             () -> assertEquals(1, asts, "the asteroid on the radar"),
             () -> assertTrue(o2.radar().stream().noneMatch(f -> !f.equals(String.valueOf(Records.Radar.FLAG_SELF))),

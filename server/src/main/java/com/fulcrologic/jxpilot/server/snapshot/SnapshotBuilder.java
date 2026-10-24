@@ -46,8 +46,9 @@ import java.nio.ByteBuffer;
  * Fills SNAPSHOT bodies for one viewer from the {@link World} with common's {@link SnapshotWriter}.
  * Allocation free; one instance per server thread.
  * <p>
- * Sections in order: SELF, SOUND (the viewer's queued sounds; the caller clears the queue once sent), SHIP (other ships in view), CANNON, FUEL, RADAR (whole world, when requested),
- * TARGET, TREASURE, TEMP_WORMHOLE, TIMERS, BURST (bursts made since the viewer's cursor, in view), WRECKAGE (in
+ * Sections in order: SELF, SOUND (the viewer's queued sounds; the caller clears the queue once sent), SHIP (other ships in view), CANNON, FUEL,
+ * TARGET, TREASURE, TEMP_WORMHOLE, RADAR (when requested), the item sections ({@link ItemSections}: TIMERS, SELF_ITEMS, ITEM, MINE,
+ * MISSILE, LASER, ECM, beams, TRANSPORTER), BURST (bursts made since the viewer's cursor, in view), WRECKAGE (in
  * view), the game-mode objects (BALL, ASTEROID, ball CONNECTOR) and last SHOT, which fills the remaining room
  * nearest first ({@link ShotHash}, grouped by kind/colour relative to the viewer). Objects farther than the
  * view half-size from the viewer (or not encodable, {@link SnapshotWriter#inView}) are culled. When a
@@ -71,16 +72,12 @@ public final class SnapshotBuilder {
     /** Wreckage handles of this round ({@link #beginRound}), {@code wrecks[0..wreckCount)}. */
     private final int[] wrecks;
     private int wreckCount;
-    /** C {@code playersOnRadar}: other teams' ships appear on the radar (frame.c:1152-1170). */
-    private final boolean playersOnRadar;
     private final SnapshotWriter wr = new SnapshotWriter();
     private final ShotHash hash;
     /** {@link World#frames} when {@link #hash} was last rebuilt (-1: never). */
     private long hashFrames = -1;
     private final int[] shotList;
     private final int[] shotVariant;
-    /** Per player slot: the last TIMERS sent had an active timer (one all-clear record follows). */
-    private final boolean[] timersSent;
     private double viewHalfX = DEFAULT_VIEW_HALF;
     private double viewHalfY = DEFAULT_VIEW_HALF;
 
@@ -99,17 +96,23 @@ public final class SnapshotBuilder {
     private int lastInputSeq;
     private double cx;
     private double cy;
+    /** The item sections (server-items). */
+    private final ItemSections itemSections;
 
     public SnapshotBuilder(World w) {
         this.w = w;
-        this.playersOnRadar = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.PLAYERS_ON_RADAR);
         wr.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
         shotList = new int[w.objects.capacity];
         shotVariant = new int[w.objects.capacity];
-        timersSent = new boolean[w.players.length];
         wrecks = new int[w.objects.capacity];
         hash = new ShotHash(w);
+        itemSections = new ItemSections(w, this);
         initRecordClasses();
+    }
+
+    /** The section writer (for {@link ItemSections}). */
+    SnapshotWriter writer() {
+        return wr;
     }
 
     /**
@@ -187,11 +190,11 @@ public final class SnapshotBuilder {
         writeTargets();
         writeTreasures();
         writeTempWormholes();
-        writeTimers(viewer);
         if (radar) {
             writeRadar(viewer);
-            writeModeRadar();
+            writeModeRadar(viewer);
         }
+        itemSections.write(viewer);
         writeBursts(burstFrom);
         writeWreckage();
         writeModeObjects();
@@ -227,7 +230,7 @@ public final class SnapshotBuilder {
      * BEHAVIOR: returns false when the record fits in none of the buffers: only that record is dropped;
      * records of the same or a larger size are skipped from then on, smaller ones are still tried.
      */
-    private boolean need(int type, int variant) {
+    boolean need(int type, int variant) {
         if (curType == type && curVariant == variant && wr.hasRoom()) {
             return true;
         }
@@ -252,7 +255,7 @@ public final class SnapshotBuilder {
         return true;
     }
 
-    private boolean visible(double x, double y, double margin) {
+    boolean visible(double x, double y, double margin) {
         double dx = w.wrapDx(x - cx);
         double dy = w.wrapDy(y - cy);
         return Math.abs(dx) <= viewHalfX + margin && Math.abs(dy) <= viewHalfY + margin && wr.inView(x, y);
@@ -285,6 +288,24 @@ public final class SnapshotBuilder {
         if ((pl.have & Has.BALL) != 0) {
             f |= Records.ShipFlags.HAS_BALL;
         }
+        if ((pl.used & Has.CLOAKING_DEVICE) != 0) {
+            f |= Records.ShipFlags.CLOAKED;
+        }
+        if ((pl.used & Has.PHASING_DEVICE) != 0) {
+            f |= Records.ShipFlags.PHASING;
+        }
+        if ((pl.used & Has.EMERGENCY_SHIELD) != 0) {
+            f |= Records.ShipFlags.EMERGENCY_SHIELD;
+        }
+        if ((pl.used & Has.DEFLECTOR) != 0) {
+            f |= Records.ShipFlags.DEFLECTOR;
+        }
+        if ((pl.used & Has.AUTOPILOT) != 0 || (pl.status & Obj.HOVERPAUSE) != 0) {
+            f |= Records.ShipFlags.AUTOPILOT;
+        }
+        if ((pl.used & Has.EMERGENCY_THRUST) != 0) {
+            f |= Records.ShipFlags.EMERGENCY_THRUST;
+        }
         if (pl == viewer || w.sameTeam(pl, viewer)) {
             f |= Records.ShipFlags.FRIENDLY;
         }
@@ -299,10 +320,14 @@ public final class SnapshotBuilder {
         if (!need(Section.SELF, 0)) {
             return;
         }
-        Records.Self.put(wr, v.id, shipFlags(v, v), (float) cx, (float) cy, (float) v.vx, (float) v.vy,
-            (float) heading(v), (float) (v.fuel / 256), (float) (v.fuelMax / 256), Protocol.NO_ID, 0, 0,
+        int flags = (shipFlags(v, v) & ~Records.ShipFlags.AUTOPILOT)
+            | (itemSections.autopilotLight(v) ? Records.ShipFlags.AUTOPILOT : 0);
+        Records.Self.put(wr, v.id, flags, (float) cx, (float) cy, (float) v.vx, (float) v.vy,
+            (float) heading(v), (float) (v.fuel / 256), (float) (v.fuelMax / 256),
+            (v.lockTagged & Player.LOCK_PLAYER) != 0 && (v.used & Has.COMPASS) != 0 ? v.lockPlId : Protocol.NO_ID,
+            v.numTanks, v.currentTank,
             (v.status & Obj.PLAYING) == 0 && v.count > 0 ? v.count : 0, v.power, v.turnSpeed, v.turnResistance,
-            0, 0, 0, 0);
+            itemSections.lockDist(v), itemSections.lockDir(v), 0, ItemSections.selfMods(v.mods));
     }
 
     private void writeSounds(Player v) {
@@ -327,6 +352,9 @@ public final class SnapshotBuilder {
             if (pl == v || !shown(pl)) {
                 continue;
             }
+            if ((pl.status & Obj.PAUSE) == 0 && !itemSections.shipShown(pl, v)) {
+                continue;
+            }
             double x = pl.cx / (double) Click.CLICK;
             double y = pl.cy / (double) Click.CLICK;
             if (!visible(x, y, 0) || !need(Section.SHIP, 0)) {
@@ -337,14 +365,17 @@ public final class SnapshotBuilder {
     }
 
     /**
-     * BEHAVIOR: the SHOT section variant of a shot relative to the viewer: kind, colour, and
+     * BEHAVIOR: the SHOT section variant of a shot relative to the viewer: kind (NUCLEAR for any shot with
+     * nuclear modifiers, C frame.c:830, the client blinks it), colour, and
      * {@code FLAG_HARMLESS} when C frame.c would draw it as harmless to the viewer (team immune owner, paused
      * owner, an unowned shot of the viewer's team in team play, or the viewer's own shot with selfImmunity).
      */
     int shotVariant(int h, Player v) {
         Objects o = w.objects;
         int kind;
-        if (o.type[h] == Obj.CANNON_SHOT) {
+        if (com.fulcrologic.jxpilot.server.world.Mods.isNuclear(o.mods[h])) {
+            kind = Records.ShotKind.NUCLEAR;
+        } else if (o.type[h] == Obj.CANNON_SHOT) {
             kind = Records.ShotKind.CANNON_SHOT;
         } else if ((o.mods[h] & Obj.MOD_CLUSTER) != 0) {
             kind = Records.ShotKind.CLUSTER;
@@ -556,35 +587,6 @@ public final class SnapshotBuilder {
     }
 
     /**
-     * BEHAVIOR: the viewer's HUD timers, sent while any is active and once more after they all stopped (so the
-     * client, which keeps the last values, sees them cleared): ECM damage frames, the round delay while C
-     * would send it (round_delay_send, which runs one second past the delay so clients see 0), and the time
-     * left: the gameDuration timer's wall-clock seconds while it runs, else the round timer with
-     * maxRoundTime, rounded up to seconds, else -1; and the shutdown countdown after a gameDuration game
-     * over (C Send_shutdown: frames left and ShutdownDelay), -1 without one.
-     */
-    void writeTimers(Player v) {
-        int delay = w.roundDelaySend > 0 ? w.roundDelay : 0;
-        int fps = w.params.fps;
-        int left;
-        if (w.gameDuration > 0 && w.oldTimeLeft > 0) {
-            left = (int) w.oldTimeLeft;
-        } else {
-            left = w.params.maxRoundTime > 0 && w.roundTime >= 0 ? (w.roundTime + fps - 1) / fps : -1;
-        }
-        boolean active = w.roundDelaySend > 0 || left >= 0 || v.damaged > 0 || w.shutdownServer >= 0;
-        if (!active && !timersSent[v.slot]) {
-            return;
-        }
-        if (!need(Section.TIMERS, 0)) {
-            return;
-        }
-        timersSent[v.slot] = active;
-        Records.Timers.put(wr, Math.max(0, v.damaged), delay, left, 0, 0, 0, 0, 0, 0, 0, w.shutdownServer,
-            World.SHUTDOWN_DELAY);
-    }
-
-    /**
      * Balls, connectors and asteroids in view (C {@code Frame_shots}, {@code Frame_ships}).
      * <p>
      * BEHAVIOR: a ball: its handle, team (its treasure's), and the ship it is connected to (or NO_ID); a ship
@@ -634,9 +636,9 @@ public final class SnapshotBuilder {
 
     /**
      * BEHAVIOR: radar blips for balls (with treasuresOnRadar, FLAG_BALL) and asteroids (with asteroidsOnRadar,
-     * FLAG_ASTEROID), whole world (C also limits them to the viewer's sensor range).
+     * FLAG_ASTEROID) within the viewer's sensor range (C Frame_radar).
      */
-    private void writeModeRadar() {
+    private void writeModeRadar(Player v) {
         boolean balls = w.modeParams.treasuresOnRadar;
         boolean asteroids = w.modeParams.asteroidsOnRadar;
         if (!balls && !asteroids) {
@@ -653,6 +655,9 @@ public final class SnapshotBuilder {
             } else {
                 continue;
             }
+            if (w.wrapLength(v.px - o.px[h], v.py - o.py[h]) > v.sensorRange) {
+                continue;
+            }
             if (!need(Section.RADAR, 0)) {
                 return;
             }
@@ -663,7 +668,7 @@ public final class SnapshotBuilder {
     private void writeRadar(Player v) {
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
-            if (!pl.isAlive() || (!playersOnRadar && pl != v && !w.sameTeam(pl, v)) || !need(Section.RADAR, 0)) {
+            if (!pl.isAlive() || !itemSections.onRadar(pl, v) || !need(Section.RADAR, 0)) {
                 continue;
             }
             int flags = 0;
@@ -675,5 +680,6 @@ public final class SnapshotBuilder {
             }
             Records.Radar.put(wr, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK, flags);
         }
+        itemSections.writeRadarObjects(v);
     }
 }

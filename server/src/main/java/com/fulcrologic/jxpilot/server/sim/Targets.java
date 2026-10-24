@@ -32,6 +32,7 @@ import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.ModeState;
+import com.fulcrologic.jxpilot.server.world.Mods;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
@@ -201,24 +202,24 @@ public final class Targets {
         damage(target, Obj.PLAYER, pl.id, pl.team, pl.vx, pl.vy, pl.mass, false, 0, 1.0f, playerCost);
     }
 
-    /** C {@code BIT(mods.nuclear, NUCLEAR)} of an object (no warhead modifiers until missiles are ported). */
+    /** C {@code BIT(mods.nuclear, NUCLEAR)} of an object. */
     boolean nuclear(int h) {
-        return false;
+        return Mods.isNuclear(w.objects.mods[h]);
     }
 
-    /** C {@code mods.mini} of an object (0 until the modifiers are ported). */
+    /** C {@code mods.mini} of an object. */
     int mini(int h) {
-        return 0;
+        return Mods.mini(w.objects.mods[h]);
     }
 
-    /** C {@code mods.power} of an object (0 until the modifiers are ported). */
+    /** C {@code mods.power} of an object. */
     int power(int h) {
-        return 0;
+        return Mods.power(w.objects.mods[h]);
     }
 
-    /** C {@code SHOT_MULT(obj)}: nukeClusterDamage for nuclear cluster shots, else 1 (no nukes yet). */
+    /** C {@code SHOT_MULT(obj)}: nukeClusterDamage for nuclear cluster shots, else 1. */
     float shotMult(int h) {
-        return 1.0f;
+        return sim.collisions.shotMult(h);
     }
 
     /**
