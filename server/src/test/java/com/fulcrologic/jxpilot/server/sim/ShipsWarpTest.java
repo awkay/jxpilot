@@ -183,7 +183,7 @@ class ShipsWarpTest {
         void anInvalidWormholeJustEndsTheWarp() {
             Simulation s = sim(C_FRAMES, WORMS);
             Player p = warping(s, 5, 0, seed(false));
-            p.wormHoleHit = -1;
+            p.wormHoleHit = -2;
             int x = p.cx;
             s.ships.warp(p);
             int noHit = p.status & (Obj.WARPING | Obj.WARPED);
@@ -191,7 +191,7 @@ class ShipsWarpTest {
             p.wormHoleHit = 4;
             s.ships.warp(p);
             assertAll(
-                () -> assertEquals(0, noHit, "hit -1: WARPING cleared, not WARPED"),
+                () -> assertEquals(0, noHit, "hit -2 (-1 is a hyperjump): WARPING cleared, not WARPED"),
                 () -> assertEquals(0, p.status & (Obj.WARPING | Obj.WARPED), "hit past the last wormhole: same"),
                 () -> assertEquals(x, p.cx, "the ship stays put"),
                 () -> assertEquals(-1, p.wormHoleDest, "no destination"));

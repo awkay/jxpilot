@@ -85,6 +85,8 @@ public final class World {
     public final int[] targetDeadTime;
     public final int[] wormLastDest;
     public final int[] wormCountdown;
+    /** Every wormhole, the map's and the temporary ones (server-modes). */
+    public final WormTable worms;
 
     // ---- teams (C World.teams)
     public final double[] teamScore = new double[Const.MAX_TEAMS];
@@ -152,6 +154,7 @@ public final class World {
         wormLastDest = new int[map.wormholes().size()];
         wormCountdown = new int[map.wormholes().size()];
         initWormholes();
+        worms = new WormTable(this);
         gameDuration = params.gameDuration;
         if (gameDuration > 0) {
             gameOverFrame = frames + (long) (gameDuration * 60 * params.fps);

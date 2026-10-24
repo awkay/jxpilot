@@ -166,7 +166,7 @@ class SnapshotBuilderTest {
                             d.radar.add(rd.cellX() + "," + rd.cellY() + ":" + rd.flags());
                         }
                         case Section.TARGET, Section.TREASURE, Section.TIMERS, Section.BALL, Section.CONNECTOR,
-                             Section.ASTEROID, Section.WRECKAGE -> d.modes.add(r.type());
+                             Section.ASTEROID, Section.WRECKAGE, Section.TEMP_WORMHOLE -> d.modes.add(r.type());
                         default -> throw new AssertionError("unexpected section " + r.type());
                     }
                 }

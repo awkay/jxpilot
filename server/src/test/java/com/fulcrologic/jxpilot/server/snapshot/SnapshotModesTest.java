@@ -217,4 +217,35 @@ class SnapshotModesTest {
             () -> assertEquals(Protocol.NO_ID, 0xFFFF, "(NO_ID)"),
             () -> assertTrue(Obj.BALL > 0, "(ball)"));
     }
+
+    @Test
+    @DisplayName("every temporary wormhole is sent with its block and type")
+    void tempWormholes() {
+        Simulation s = TestWorlds.sim("teamPlay: yes\ngravity: 0\nwormTime: 5\n", ROWS);
+        World w = s.world;
+        Player v = TestWorlds.join(s, "V", 1);
+        w.worms.addTemp(20, 3, 50, 2);
+        for (int i = 0; i < parts.length; i++) {
+            parts[i] = ByteBuffer.allocate(1200);
+        }
+        int n = new SnapshotBuilder(w).build(v, 1, w.events.burstSeq(), false, parts);
+        List<String> got = new ArrayList<>();
+        SnapshotReader r = new SnapshotReader();
+        r.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
+        Records.TempWormhole t = new Records.TempWormhole();
+        for (int p = 0; p < n; p++) {
+            ByteBuffer b = parts[p].duplicate();
+            b.flip();
+            r.begin(b);
+            while (r.nextSection()) {
+                for (int i = 0; i < r.count(); i++) {
+                    if (r.type() == Section.TEMP_WORMHOLE) {
+                        t.wrap(r, i);
+                        got.add(t.bx() + "," + t.by() + ":" + t.type());
+                    }
+                }
+            }
+        }
+        assertEquals(List.of("20,3:1", "50,2:2"), got, "IN (type 1) and OUT (type 2), even out of view");
+    }
 }

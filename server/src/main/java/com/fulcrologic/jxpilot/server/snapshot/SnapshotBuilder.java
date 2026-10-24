@@ -163,6 +163,7 @@ public final class SnapshotBuilder {
         writeFuel();
         writeTargets();
         writeTreasures();
+        writeTempWormholes();
         writeTimers(viewer);
         if (radar) {
             writeRadar(viewer);
@@ -466,6 +467,17 @@ public final class SnapshotBuilder {
                 continue;
             }
             Records.TreasureState.put(wr, i, w.modes.treasureHave[i] ? Records.TreasureState.FLAG_HAS_BALL : 0);
+        }
+    }
+
+    /** BEHAVIOR: every temporary wormhole (few, map-like): its block and type (Wormhole.Type ordinal). */
+    private void writeTempWormholes() {
+        com.fulcrologic.jxpilot.server.world.WormTable worms = w.worms;
+        for (int i = worms.mapCount; i < worms.count(); i++) {
+            if (!need(Section.TEMP_WORMHOLE, 0)) {
+                return;
+            }
+            Records.TempWormhole.put(wr, worms.bx(i), worms.by(i), worms.type(i));
         }
     }
 

@@ -215,14 +215,12 @@ public final class Simulation {
         asteroids.update();
     }
 
-    /** Wormhole countdowns run down by one frame (update.c:1222-1230). */
+    /**
+     * Wormhole countdowns run down by one frame and expired temporary wormholes go (update.c:1222-1230,
+     * {@link com.fulcrologic.jxpilot.server.world.WormTable#countDown}).
+     */
     void countDownWormholes() {
-        int[] c = world.wormCountdown;
-        for (int i = c.length - 1; i >= 0; i--) {
-            if (c[i] > 0) {
-                c[i]--;
-            }
-        }
+        world.worms.countDown();
     }
 
     /**

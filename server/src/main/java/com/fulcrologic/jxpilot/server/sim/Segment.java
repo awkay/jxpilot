@@ -27,11 +27,11 @@ import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Dir;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
-import com.fulcrologic.jxpilot.common.map.Wormhole;
 import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.World;
+import com.fulcrologic.jxpilot.server.world.WormTable;
 
 import static com.fulcrologic.jxpilot.server.sim.MoveState.*;
 
@@ -331,7 +331,8 @@ public final class Segment {
                         break;
                     }
                     int hole = map.itemId(blockX, blockY);
-                    if (map.wormholes().get(hole).type() == Wormhole.Type.OUT) {
+                    WormTable worms = world.worms;
+                    if (worms.type(hole) == WormTable.OUT) {
                         break;
                     }
                     if (ms.pl != null) {
@@ -340,7 +341,7 @@ public final class Segment {
                         if ((ms.pl.status & Obj.WARPED) != 0) {
                             if (inMap(b2x, b2y) && map.block(b2x, b2y) == BlockType.WORMHOLE) {
                                 int oldhole = map.itemId(b2x, b2y);
-                                if (map.wormholes().get(oldhole).type() == Wormhole.Type.NORMAL
+                                if (worms.type(oldhole) == WormTable.NORMAL
                                     && ms.pl.wormHoleDest == oldhole) {
                                     break;
                                 }
@@ -353,18 +354,18 @@ public final class Segment {
                             return;
                         }
                     } else {
-                        int last = world.wormLastDest[hole];
+                        int last = worms.lastDest(hole);
                         Objects o = world.objects;
                         int obx = Math.floorDiv(o.px[ms.obj], Const.BLOCK_SZ);
                         int oby = Math.floorDiv(o.py[ms.obj], Const.BLOCK_SZ);
                         if (last >= 0
-                            && (world.wormCountdown[hole] > 0 || world.params.wormTime == 0)
-                            && last < map.wormholes().size()
-                            && map.wormholes().get(last).type() != Wormhole.Type.IN
+                            && (worms.countdown(hole) > 0 || world.params.wormTime == 0)
+                            && last < worms.count()
+                            && worms.type(last) != WormTable.IN
                             && last != hole
                             && (obx != blockX || oby != blockY)) {
-                            ms.doneX += (map.wormholes().get(last).bx() - map.wormholes().get(hole).bx()) * BC;
-                            ms.doneY += (map.wormholes().get(last).by() - map.wormholes().get(hole).by()) * BC;
+                            ms.doneX += (worms.bx(last) - worms.bx(hole)) * BC;
+                            ms.doneY += (worms.by(last) - worms.by(hole)) * BC;
                         }
                     }
                     break;

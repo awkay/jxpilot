@@ -39,6 +39,7 @@ import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
+import com.fulcrologic.jxpilot.server.world.WormTable;
 
 /**
  * Ship rules: the per-player part of C {@code Update_objects} ({@code src/server/update.c}), and from
@@ -978,40 +979,73 @@ public final class Ships {
     }
 
     /**
-     * Wormhole travel (update.c:1041-1188, hyperjump excluded).
+     * Wormhole travel and hyperjumps (update.c:1041-1188).
      * <p>
-     * BEHAVIOR: a wormhole still counting down sends to its last destination; otherwise 10% of the time a
-     * random non-IN other wormhole, else the non-IN wormhole closest to the line of flight ahead (or a random
-     * one if none is ahead).
-     * BEHAVIOR: the ship appears at the destination's centre, the source remembers the destination for
-     * wormTime frames (WORMCOUNT without wormTime), and the ship is WARPED (not WARPING).
+     * BEHAVIOR: a wormhole index past the current wormholes (a temporary one that went away) ends the warp.
+     * BEHAVIOR: through a wormhole: one still counting down sends to its last destination; otherwise 10% of the
+     * time a random other wormhole that is neither IN nor temporary, else the non-IN, non-temporary wormhole
+     * closest to the line of flight ahead (or a random non-IN one if none is ahead); the ship appears at its
+     * centre, and the source remembers the destination for wormTime frames (WORMCOUNT without wormTime)
+     * unless the destination is temporary.
+     * BEHAVIOR: a hyperjump (wormHoleHit -1): up to 20 random positions are tried for a space-like block (else
+     * the ship stays); with wormTime, between two plain SPACE blocks, a temporary IN/OUT wormhole pair is made.
+     * BEHAVIOR: towed balls come along ({@link #warpBalls}); the ship is WARPED (not WARPING).
      */
     void warp(Player pl) {
+        WormTable worms = w.worms;
         int hit = pl.wormHoleHit;
-        int n = w.map.wormholes().size();
-        if (hit < 0 || hit >= n) {
+        int n = worms.count();
+        if (hit >= n || hit < -1) {
             pl.status &= ~Obj.WARPING;
             return;
         }
         int j;
-        if (w.wormCountdown[hit] > 0) {
-            j = w.wormLastDest[hit];
-        } else if (w.rfrac() < 0.10f) {
-            do {
-                j = (int) (w.rfrac() * n);
-            } while (w.map.wormholes().get(j).type() == Wormhole.Type.IN || hit == j);
+        float wx;
+        float wy;
+        if (hit != -1) {
+            if (worms.countdown(hit) > 0) {
+                j = worms.lastDest(hit);
+            } else if (w.rfrac() < 0.10f) {
+                do {
+                    j = (int) (w.rfrac() * n);
+                } while (worms.type(j) == WormTable.IN || hit == j || worms.temporary(j));
+            } else {
+                j = nearestAhead(pl, hit, n);
+            }
+            wx = (float) ((worms.bx(j) + 0.5) * Const.BLOCK_SZ);
+            wy = (float) ((worms.by(j) + 0.5) * Const.BLOCK_SZ);
         } else {
-            j = nearestAhead(pl, hit, n);
+            int counter;
+            wx = 0;
+            wy = 0;
+            for (counter = 20; counter > 0; counter--) {
+                wx = (int) (w.rfrac() * w.pixelWidth);
+                wy = (int) (w.rfrac() * w.pixelHeight);
+                if ((BlockType.bit(w.map.block((int) (wx / Const.BLOCK_SZ), (int) (wy / Const.BLOCK_SZ)))
+                    & Asteroids.SPACE_BLOCKS) != 0) {
+                    break;
+                }
+            }
+            if (counter == 0) {
+                wx = pl.px;
+                wy = pl.py;
+            }
+            int toBx = (int) (wx / Const.BLOCK_SZ);
+            int toBy = (int) (wy / Const.BLOCK_SZ);
+            if (counter != 0 && w.params.wormTime != 0 && w.map.block(pl.bx, pl.by) == BlockType.SPACE
+                && w.map.block(toBx, toBy) == BlockType.SPACE) {
+                worms.addTemp(pl.bx, pl.by, toBx, toBy);
+            }
+            j = -2;
         }
-        Wormhole dest = w.map.wormholes().get(j);
-        float wx = (float) ((dest.bx() + 0.5) * Const.BLOCK_SZ);
-        float wy = (float) ((dest.by() + 0.5) * Const.BLOCK_SZ);
         warpBalls(pl, wx, wy);
         pl.wormHoleDest = j;
         pl.initPixels(wx, wy);
-        if (j != hit) {
-            w.wormLastDest[hit] = j;
-            w.wormCountdown[hit] = w.params.wormTime != 0 ? w.params.wormTime : WORMCOUNT;
+        if (j != hit && hit != -1) {
+            worms.setLastDest(hit, j);
+            if (!worms.temporary(j)) {
+                worms.setCountdown(hit, w.params.wormTime != 0 ? w.params.wormTime : WORMCOUNT);
+            }
         }
         pl.status &= ~Obj.WARPING;
         pl.status |= Obj.WARPED;
@@ -1046,16 +1080,15 @@ public final class Ships {
 
     /** The RANDOM_REAR_WORM choice of update.c:1065-1110 (note: C wraps the y offset with WRAP_DX). */
     private int nearestAhead(Player pl, int hit, int n) {
-        Wormhole from = w.map.wormholes().get(hit);
+        WormTable worms = w.worms;
         int nearestFront = -1;
         int proxFront = 10000000;
         for (int j = 0; j < n; j++) {
-            Wormhole h = w.map.wormholes().get(j);
-            if (j == hit || h.type() == Wormhole.Type.IN) {
+            if (j == hit || worms.type(j) == WormTable.IN || worms.temporary(j)) {
                 continue;
             }
-            int wx = (int) w.wrapDx((h.bx() - from.bx()) * Const.BLOCK_SZ);
-            int wy = (int) w.wrapDx((h.by() - from.by()) * Const.BLOCK_SZ);
+            int wx = (int) w.wrapDx((worms.bx(j) - worms.bx(hit)) * Const.BLOCK_SZ);
+            int wy = (int) w.wrapDx((worms.by(j) - worms.by(hit)) * Const.BLOCK_SZ);
             int proximity = Math.abs((int) (pl.vy * wx + pl.vx * wy));
             if (!(pl.vx * wx + pl.vy * wy < 0) && proximity < proxFront) {
                 nearestFront = j;
@@ -1068,7 +1101,7 @@ public final class Ships {
         int j;
         do {
             j = (int) (w.rfrac() * n);
-        } while (w.map.wormholes().get(j).type() == Wormhole.Type.IN || j == hit);
+        } while (worms.type(j) == WormTable.IN || j == hit);
         return j;
     }
 
