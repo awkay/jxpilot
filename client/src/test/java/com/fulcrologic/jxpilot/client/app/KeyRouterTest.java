@@ -32,6 +32,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.lwjgl.glfw.GLFW.*;
 
@@ -54,6 +56,58 @@ class KeyRouterTest {
     void open() {
         press(GLFW_KEY_M);
         r.character('m');
+    }
+
+    @Nested
+    @DisplayName("implemented() matches the handlers")
+    class Implemented {
+        /** True when a key bound only to {@code a} does something: an event, a macro, the talk line or its editing. */
+        boolean reacts(ClientAction a) {
+            com.fulcrologic.jxpilot.client.game.input.KeyBindings b = new com.fulcrologic.jxpilot.client.game.input.KeyBindings();
+            b.bind(a, "F13");
+            InputState in = new InputState(b);
+            TalkLine t = new TalkLine();
+            KeyRouter kr = new KeyRouter(in, t);
+            if (a.talkCursor()) {
+                t.open();
+                for (char c : "old".toCharArray()) {
+                    t.type(c);
+                }
+                t.submit(new StringBuilder());
+                t.open();
+                in.setTalking(true);
+                t.type('a');
+                t.type('b');
+                if (a == ClientAction.TALK_CURSOR_RIGHT) {
+                    t.left();
+                }
+                if (a == ClientAction.TALK_CURSOR_DOWN) {
+                    t.historyUp();
+                }
+            }
+            String text = t.text().toString();
+            int cursor = t.cursor();
+            boolean open = t.isOpen();
+            int ev = kr.key(GLFW_KEY_F13, GLFW_PRESS, 0);
+            return ev != KeyRouter.NONE || kr.takeMacros() != 0 || t.isOpen() != open || t.cursor() != cursor
+                || !t.text().toString().equals(text);
+        }
+
+        @Test
+        @DisplayName("every client action with a handler is marked implemented, and only those (no drift)")
+        void noDrift() {
+            List<String> wrong = new java.util.ArrayList<>();
+            for (ClientAction a : ClientAction.values()) {
+                if (reacts(a) != a.implemented()) {
+                    wrong.add(a + (a.implemented() ? " is marked implemented but does nothing" : " works but is not marked"));
+                }
+            }
+            assertAll(
+                () -> assertEquals(List.of(), wrong, "ClientAction.implemented() agrees with KeyRouter"),
+                () -> assertFalse(reacts(ClientAction.TOGGLE_RECORD), "recording has no handler (not in JXPilot)"),
+                () -> assertTrue(reacts(ClientAction.TOGGLE_OWNED_ITEMS) && reacts(ClientAction.MSG_20)
+                    && reacts(ClientAction.TALK_CURSOR_DOWN), "the probe sees handlers"));
+        }
     }
 
     @Nested
