@@ -52,7 +52,10 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  *   --scale-factor F           C scaleFactor: zoom 1/F (default 1.0)
  *   --alt-scale-factor F       C altScaleFactor, the zoom the swap key switches to (default 2.0)
  *   --swap-scale-key KEYSYM    bind C keySwapScaleFactor (unbound by default, as in C)
- *   --font FILE, --font-size PX text font (default: bundled, 13)
+ *   --font FILE|NAME           one font for every text, replacing the per-role C fonts (gameFont, messageFont,
+ *                              scoreListFont, ...): a TrueType file, or a bundled name (FiraCode, LiberationSerif,
+ *                              LiberationSans-Bold, ...), optionally with :SIZE; also any font resource value
+ *   --font-size PX             the size of that one font (default 13); alone, it selects bundled Fira Code
  *   --screenshot FILE.png      save a PNG after --frames N frames (default 300) and exit
  *   --no-vsync                 render as fast as possible
  *   --sound, --no-sound        play sound effects (default on; JXPilot only: C chose this when it was built)
@@ -74,7 +77,9 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  * @param localMap   map name or file for {@link Mode#LOCAL}, else null
  * @param screenshot PNG path, or null
  * @param swapScaleKey X11 keysym bound to the scale-factor swap, or null
- * @param fontFile   TrueType file, or null for the bundled font
+ * @param fontFile   {@code --font}: a TrueType file or bundled font name, or null when not given
+ * @param fontSize   {@code --font-size} in logical pixels, or {@link #FONT_SIZE_UNSET} when not given; with neither
+ *                   font option the per-role C fonts apply ({@link #fontOverride()})
  * @param sound      play sound effects
  * @param maxVolume  {@code --volume} (C {@code maxVolume}), 0..{@value SoundPlayer#MAX_MAX_VOLUME}, or {@link #VOLUME_UNSET}
  * @param keysFile   key file given with {@code --keys}, or null for {@code ~/.xpilotrc}
@@ -110,14 +115,21 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
     public static final int DEFAULT_FRAMES = 300;
     /** {@link #maxVolume()} when {@code --volume} was not given (the key file or C's 100 decide). */
     public static final int VOLUME_UNSET = -1;
-    /** Default font size in logical pixels. */
+    /** Size of the {@code --font} override when {@code --font-size} is not given, in logical pixels. */
     public static final double DEFAULT_FONT_SIZE = 13;
+    /** {@link #fontSize()} when {@code --font-size} was not given. */
+    public static final double FONT_SIZE_UNSET = 0;
+
+    /** BEHAVIOR: true iff {@code --font} or {@code --font-size} was given: one font replaces every role's. */
+    public boolean fontOverride() {
+        return fontFile != null || fontSize > 0;
+    }
 
     public static final String USAGE = """
         usage: ClientMain --connect HOST[:PORT] [--protocol xpilot|jxpilot] [--bind ADDR[:PORT]] [--name NAME]
                           [--team T] [--shape|--shipShape SHAPE|NAME] [--shipShapeFile FILE]
                           [--size WxH] [--scale-factor F] [--alt-scale-factor F]
-                          [--swap-scale-key KEYSYM] [--font FILE] [--font-size PX] [--screenshot FILE.png]
+                          [--swap-scale-key KEYSYM] [--font FILE|NAME] [--font-size PX] [--screenshot FILE.png]
                           [--frames N] [--no-vsync] [--sound | --no-sound] [--volume 0..255] [--keys FILE]
                           [--RESOURCE VALUE ...]  (any ~/.xpilotrc resource, e.g. --showHUDRadar yes)
                ClientMain --local --map MAP [same options as --connect, except --protocol and --bind]
@@ -139,7 +151,8 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
      * characters; the team is 0..9; a shape holding '(' must parse ({@link ShipShape#parse}; without one it
      * is a name for the shape file, see {@link ShipShapeResource}); {@code --shipShape} is {@code --shape};
      * the shape and shape file stay null when not given; the swap key must be
-     * a known keysym; frames, sizes, scale factors and the font size must be positive.
+     * a known keysym; frames, sizes, scale factors and the font size must be positive; the font and font size
+     * stay null and {@link #FONT_SIZE_UNSET} when not given.
      * BEHAVIOR: {@code --keys FILE} names the key file; {@code --list-keys} selects {@link Mode#LIST_KEYS}
      * (keeping {@code --keys} and {@code --swap-scale-key}, ignoring the launch mode).
      * BEHAVIOR: {@code --list-maps} selects {@link Mode#LIST_MAPS}, ignoring the launch mode ({@code --list-keys}
@@ -156,13 +169,13 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         for (String a : args) {
             if (a.equals("--view-map")) {
                 return new AppOptions(Mode.VIEW_MAP, LaunchOptions.parse(args), null, null, null, Protocol.NO_TEAM,
-                    "", null, null, DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true,
+                    "", null, null, DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, FONT_SIZE_UNSET, true,
                     VOLUME_UNSET, null, null, java.util.List.of());
             }
         }
         if (args.length == 0) {
             return new AppOptions(Mode.HELP, null, null, null, null, Protocol.NO_TEAM, "", null, null,
-                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, VOLUME_UNSET,
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, FONT_SIZE_UNSET, true, VOLUME_UNSET,
                 null, null, java.util.List.of());
         }
         String connect = null;
@@ -183,7 +196,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         double alt = 2;
         String swapKey = null;
         String font = null;
-        double fontSize = DEFAULT_FONT_SIZE;
+        double fontSize = FONT_SIZE_UNSET;
         boolean sound = true;
         int maxVolume = VOLUME_UNSET;
         String keys = null;
@@ -273,12 +286,12 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         ConnectTarget target = null;
         if (listKeys) {
             return new AppOptions(Mode.LIST_KEYS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
-                DEFAULT_FRAMES, 1280, 800, true, 1, 2, swapKey, null, DEFAULT_FONT_SIZE, sound, maxVolume, keys, null,
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, swapKey, null, FONT_SIZE_UNSET, sound, maxVolume, keys, null,
                 java.util.List.copyOf(resources));
         }
         if (listMaps) {
             return new AppOptions(Mode.LIST_MAPS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
-                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, SoundPlayer.DEFAULT_MAX_VOLUME,
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, FONT_SIZE_UNSET, true, SoundPlayer.DEFAULT_MAX_VOLUME,
                 null, null, java.util.List.of());
         }
         if (connect != null && local) {

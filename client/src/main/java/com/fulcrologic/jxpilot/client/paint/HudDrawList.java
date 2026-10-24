@@ -38,6 +38,8 @@ public interface HudDrawList {
     int SOLID = 0;
     /** Dashed line style (same value as {@code HudFrame.DASHED}). */
     int DASHED = 1;
+    /** X11 default dashes {4, 4}, unscaled (same value as {@code HudFrame.DASHED_X}). */
+    int DASHED_X = 2;
 
     int lineCount();
 
@@ -49,7 +51,7 @@ public interface HudDrawList {
 
     float lineY1(int i);
 
-    /** {@link #SOLID} or {@link #DASHED}. */
+    /** {@link #SOLID}, {@link #DASHED} or {@link #DASHED_X}. */
     int lineStyle(int i);
 
     int lineColor(int i);
@@ -84,4 +86,12 @@ public interface HudDrawList {
     float textY(int i);
 
     int textColor(int i);
+
+    /**
+     * The font of run {@code i}: an index into the {@link HudListPainter}'s text writers (the client HUD's
+     * {@code FontRole} ordinal); 0, the game font, by default.
+     */
+    default int textFont(int i) {
+        return 0;
+    }
 }

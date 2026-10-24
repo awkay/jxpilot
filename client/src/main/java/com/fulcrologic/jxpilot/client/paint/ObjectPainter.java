@@ -70,8 +70,8 @@ public final class ObjectPainter {
     static final int CIRCLE_SEGMENTS = 24;
     /** Half side of the paused marker (C {@code 3*BLOCK_SZ/7}). */
     static final int HALF_PAUSE = 3 * Const.BLOCK_SZ / 7;
-    /** Width of the UI atlas the item symbols live in. */
-    public static final int ATLAS_SIZE = 1024;
+    /** Width of the UI atlas the item symbols live in (gl.UiAtlas.SIZE). */
+    public static final int ATLAS_SIZE = 2048;
     /** C {@code Gui_paint_mine_name}: the name's baseline is {@code WINSCALE(y + 4) + ascent + 1}. */
     static final int MINE_NAME_OFFSET = 4;
 

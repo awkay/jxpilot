@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.client.app;
 
 import com.fulcrologic.jxpilot.client.game.ClientGame;
 import com.fulcrologic.jxpilot.client.game.ClientWorld;
+import com.fulcrologic.jxpilot.client.game.hud.FontRole;
 import com.fulcrologic.jxpilot.client.game.hud.Hud;
 import com.fulcrologic.jxpilot.client.game.hud.HudFrame;
 import com.fulcrologic.jxpilot.client.game.hud.KeyHelp;
@@ -35,6 +36,7 @@ import com.fulcrologic.jxpilot.client.game.input.InputState;
 import com.fulcrologic.jxpilot.client.game.input.KeyConfig;
 import com.fulcrologic.jxpilot.client.game.input.KeyFunctions;
 import com.fulcrologic.jxpilot.client.game.input.ClientAction;
+import com.fulcrologic.jxpilot.client.game.options.ClientOption;
 import com.fulcrologic.jxpilot.client.net.ConnectionState;
 import com.fulcrologic.jxpilot.client.paint.SceneData;
 import com.fulcrologic.jxpilot.client.xp.GameConnection;
@@ -54,7 +56,7 @@ import com.fulcrologic.jxpilot.common.net.Records;
  * and the score list panel. Key and character events go through {@link #key}/{@link #character}.
  */
 public final class ClientFrame {
-    /** Spacing under the radar before the score list (C: buttons + 2; the buttons are not drawn). */
+    /** Spacing under the radar before the score list without the button bar (C: buttons + 2). */
     public static final int SCORE_GAP = 2;
 
     private final ClientGame game;
@@ -64,7 +66,8 @@ public final class ClientFrame {
     private final KeyRouter router;
     private final Hud hud = new Hud();
     private final HudFrame viewHud = new HudFrame();
-    private final HudFrame panelHud = new HudFrame();
+    /** The panel: score list, button bar and CONFIG (whose arrows take one rectangle per pixel row). */
+    private final HudFrame panelHud = new HudFrame(128, 1536, 320, 256);
     private final HudFrame helpHud = new HudFrame(4, 4, 320, 160);
     private final KeyHelp help;
     /** The server's MOTD panel once it arrived (C's MOTD viewer), else null. */
@@ -80,6 +83,13 @@ public final class ClientFrame {
     private final WorldMapState mapState;
     /** The C client options (client-ui): pushed into the HUD, messages and talk line when they change. */
     private final LiveOptions liveOptions;
+    /** The button bar, CONFIG panel and information window (client-ui). */
+    private final ClientUi ui;
+    /** C {@code showRealName} (MENU / SCORE and PLAYER; keyIdMode toggles it too). */
+    private boolean showRealName;
+    private String[] modifierBanks;
+    /** The resource file "Save Configuration" writes (C {@code Get_xpilotrc_file}). */
+    private java.nio.file.Path rcFile = java.nio.file.Path.of(System.getProperty("user.home", "."), ".xpilotrc");
 
     private WorldMap lastMap;
     private int mapVersion;
@@ -91,6 +101,9 @@ public final class ClientFrame {
     private boolean swapScale;
     private boolean toggleSound;
     private int talkWidthFor = -1;
+    /** {@link #step(long, int, int, double, TextMetrics, int, int)}'s one-metrics adapter, made once per metrics. */
+    private TextMetrics singleFor;
+    private FontRole.Metrics single;
     /** World view size last given to {@link GameConnection#sendDisplay} (-1: never). */
     private int displayW = -1;
     private int displayH = -1;
@@ -116,12 +129,16 @@ public final class ClientFrame {
         this.router = new KeyRouter(input, talk, settings);
         this.mapState = new WorldMapState(game);
         this.liveOptions = new LiveOptions(keys.options());
+        this.ui = new ClientUi(new UiHost(), keys.options(), settings, keys.maxVolume() >= 0 ? keys.maxVolume()
+            : com.fulcrologic.jxpilot.client.sound.SoundPlayer.DEFAULT_MAX_VOLUME);
+        this.ui.saveContext("", input.bindings(), keys.modifierBanks());
         java.util.List<String> helpKeys = input.bindings().keysyms(KeyFunctions.of(ClientAction.HELP));
         this.helpHint = helpKeys.isEmpty() ? null : helpKeys.get(0) + ": keys";
         this.help = new KeyHelp("Keys (" + keys.source() + ")" + (helpHint != null ? " - " + helpKeys.get(0)
             + " closes" : ""), keys.helpLines());
         conn.sendSettings(settings.copyTo(settingsMsg), 0);
         conn.setModifierBanks(keys.modifierBanks());
+        this.modifierBanks = keys.modifierBanks();
     }
 
     /**
@@ -139,13 +156,20 @@ public final class ClientFrame {
      * BEHAVIOR: lays out the key help overlay ({@link #helpHud()}), or the server MOTD panel while it is open (it opens
      * once, when the whole MOTD has arrived).
      * BEHAVIOR: fills the scene, radar, view HUD, HUD extras (item timers aged by {@code dt * gameFps} original
-     * frames, with the lose-item outline of the {@link KeyRouter#loseSelection}, aged by dt) and the score list panel (at
-     * {@code (0, scoreTop)}, {@code panelW} wide).
+     * frames, with the lose-item outline of the
+     * {@link KeyRouter#loseSelection}, aged by dt) and the panel under the radar ({@code radarHeight} tall,
+     * {@code panelW} wide): the button bar, then the score list window (not while CONFIG covers it), CONFIG and
+     * the windows' overlays ({@link ClientUi}).
+     * BEHAVIOR: each part uses its role's metrics from {@code fonts}: the HUD as {@link Hud#build}, the talk
+     * line's width limit {@link FontRole#TALK} (the line keeps that metrics object, which follows rebakes), the score
+     * list {@link FontRole#SCORE_LIST}, the key help {@link FontRole#KEY_LIST}, the MOTD panel {@link FontRole#MOTD},
+     * CONFIG's labels and values {@link FontRole#TEXT}, buttons {@link FontRole#BUTTON}.
      */
-    public void step(long nowNanos, int viewW, int viewH, double zoom, TextMetrics m, int panelW, int scoreTop) {
+    public void step(long nowNanos, int viewW, int viewH, double zoom, FontRole.Metrics fonts, int panelW,
+                     int radarHeight) {
         double dt = started ? (nowNanos - lastNow) / 1e9 : 0;
         started = true;
-        liveOptions.apply(hud, game, extras, talk, filler);
+        liveOptions.apply(hud, game, extras, talk, filler, input);
         lastNow = nowNanos;
         conn.update(nowNanos);
         game.frame(nowNanos, dt);
@@ -178,25 +202,42 @@ public final class ClientFrame {
             }
         }
         if (talkWidthFor != viewW) {
-            talk.limitWidth(m, Hud.talkWindowWidth(viewW));
+            talk.limitWidth(fonts.of(FontRole.TALK), Hud.talkWindowWidth(viewW));
             talkWidthFor = viewW;
         }
         hud.zoom = zoom;
-        hud.build(viewHud, game, talk, viewW, viewH, m, dt * game.gameFps());
+        hud.build(viewHud, game, talk, viewW, viewH, fonts, dt * game.gameFps());
         extras.step(dt * game.gameFps(), game.gameFps());
         extras.fill(game, hud, viewW, viewH, zoom, centreX, centreY, scene.loops);
         extras.loseItem(router.loseSelection(), dt);
         panelHud.clear();
-        hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, m);
+        TextMetrics textFont = fonts.of(FontRole.TEXT);
+        TextMetrics buttonFont = fonts.of(FontRole.BUTTON);
+        ui.layout(radarHeight, viewH, viewW, viewH, map != null && map.edgeWrap(), textFont, buttonFont);
+        int scoreTop = ui.scoreTop();
+        if (!ui.coversScores()) {
+            hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, Math.max(0, viewH - scoreTop),
+                fonts.of(FontRole.SCORE_LIST));
+        }
+        ui.draw(panelHud, textFont, buttonFont, 0);
         String motdText = game.takeMotd();
         if (motdText != null) {
             motd = motdPanel(motdText);
         }
         if (motd != null && motd.visible()) {
-            motd.layout(helpHud, viewW, viewH, m);
+            motd.layout(helpHud, viewW, viewH, fonts.of(motd.role()));
         } else {
-            help.layout(helpHud, viewW, viewH, m);
+            help.layout(helpHud, viewW, viewH, fonts.of(help.role()));
         }
+    }
+
+    /** {@link #step(long, int, int, double, FontRole.Metrics, int, int)} with one metrics for every role (tests). */
+    public void step(long nowNanos, int viewW, int viewH, double zoom, TextMetrics m, int panelW, int radarHeight) {
+        if (m != singleFor) {
+            singleFor = m;
+            single = role -> m;
+        }
+        step(nowNanos, viewW, viewH, zoom, single, panelW, radarHeight);
     }
 
     /** C's MOTD viewer ("XPilot motd from SERVER"), open until the help key closes it. */
@@ -206,7 +247,7 @@ public final class ClientFrame {
             lines.add(new String[] {"", line});
         }
         KeyHelp k = new KeyHelp("XPilot motd from " + game.serverName() + (helpHint != null
-            ? " - " + helpHint.substring(0, helpHint.indexOf(':')) + " closes" : ""), lines);
+            ? " - " + helpHint.substring(0, helpHint.indexOf(':')) + " closes" : ""), lines, FontRole.MOTD);
         k.toggle();
         return k;
     }
@@ -275,14 +316,104 @@ public final class ClientFrame {
             toggleSound = true;
         }
         if ((ev & KeyRouter.TOGGLE_ITEMS) != 0) {
-            extras.showItems = !extras.showItems;
+            // C Key_press_toggle_owned_items flips the showItems instrument itself (CONFIG and Save see it)
+            liveOptions.options().setFlag(ClientOption.SHOW_ITEMS, !liveOptions.options().flag(ClientOption.SHOW_ITEMS));
+            liveOptions.apply(hud, game, extras, talk, filler, input);
         }
         if ((ev & KeyRouter.FUEL_NOTIFY) != 0) {
             hud.notifyFuel(game.gameFps());
         }
         if ((ev & KeyRouter.TOGGLE_MESSAGES) != 0) {
-            hud.showMessages = !hud.showMessages;
+            // C Key_press_toggle_messages flips the showMessages instrument
+            liveOptions.options().setFlag(ClientOption.SHOW_MESSAGES,
+                !liveOptions.options().flag(ClientOption.SHOW_MESSAGES));
+            liveOptions.apply(hud, game, extras, talk, filler, input);
         }
+    }
+
+    /**
+     * A GLFW mouse button event at window position (x, y) (logical pixels, origin top-left).
+     * <p>
+     * BEHAVIOR: the C windows ({@link ClientUi#mouseButton}) get it first; returns whether they used it (an
+     * unused event belongs to the game view, e.g. pointer control).
+     *
+     * @param viewX where the game view starts (the panel's width plus the gap)
+     */
+    public boolean mouseButton(int button, int action, double x, double y, int viewX) {
+        return ui.mouseButton(button, action, x, y, viewX);
+    }
+
+    /** BEHAVIOR: pointer motion: the C windows first ({@link ClientUi#mouseMove}); returns whether they used it. */
+    public boolean mouseMove(double x, double y, int viewX) {
+        return ui.mouseMove(x, y, viewX);
+    }
+
+    /** The client frame as the C windows' {@link ClientUi.Host}. */
+    private final class UiHost implements ClientUi.Host {
+        @Override
+        public void quit() {
+            quit = true;
+        }
+
+        @Override
+        public void toggleKeys() {
+            help.toggle();
+        }
+
+        @Override
+        public void showMotd(boolean refresh) {
+            if (refresh || motd == null) {
+                conn.requestMotd(lastNow);
+            }
+            if (motd != null && !motd.visible()) {
+                motd.toggle();
+            }
+        }
+
+        @Override
+        public void showRealName(boolean on) {
+            showRealName = on;
+        }
+
+        @Override
+        public void settingsChanged(boolean meters) {
+            conn.sendSettings(settings.copyTo(settingsMsg), lastNow);
+            if (meters) {
+                hud.showControls();
+            }
+        }
+
+        @Override
+        public int serverFps() {
+            return (int) Math.round(game.gameFps());
+        }
+
+        @Override
+        public boolean save(java.util.List<com.fulcrologic.jxpilot.client.game.options.RcWriter.Resource> resources) {
+            try {
+                com.fulcrologic.jxpilot.client.game.options.RcWriter.save(rcFile, resources);
+                game.messages().add(Msg.Text.KIND_SERVER, "Configuration saved to " + rcFile + ".");
+                return true;
+            } catch (java.io.IOException | RuntimeException e) {
+                game.messages().add(Msg.Text.KIND_SERVER, "Saving failed: " + e.getMessage());
+                return false;
+            }
+        }
+    }
+
+    /** The button bar, CONFIG panel and information window. */
+    public ClientUi ui() { return ui; }
+
+    /** C {@code showRealName}: the score list shows NICK=USER@HOST (MENU / PLAYER) instead of nicks (MENU / SCORE). */
+    public boolean showRealName() { return showRealName; }
+
+    /** BEHAVIOR: sets C {@code showRealName} (keyIdMode toggles it). */
+    public void setShowRealName(boolean on) { showRealName = on; }
+
+    /** The file "Save Configuration" writes, and the player name it saves. */
+    public void setSaveTarget(java.nio.file.Path file, String playerName) {
+        rcFile = file;
+        ui.saveContext(playerName, input.bindings(), modifierBanks);
     }
 
     /** A GLFW character event ({@link KeyRouter#character}). */
@@ -302,7 +433,7 @@ public final class ClientFrame {
         }
     }
 
-    /** Escape was pressed outside the talk line. */
+    /** A quit was asked for: keyQuit, Command-Q on macOS, or the QUIT button. */
     public boolean quitRequested() { return quit; }
 
     /** BEHAVIOR: true once per press of the scale-factor swap key. */

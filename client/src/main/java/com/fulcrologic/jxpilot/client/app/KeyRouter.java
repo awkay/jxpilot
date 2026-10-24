@@ -38,7 +38,8 @@ import static org.lwjgl.glfw.GLFW.*;
  * Routes GLFW key and character events to the game keys ({@link InputState}) or, while the talk line is
  * open, to the {@link TalkLine} editor (C {@code xevent.c} / {@code talk.c}): the talk key opens it,
  * printable characters are typed, Return sends, Escape cancels, Up/Down browse the history, Left/Right
- * move the cursor, Backspace/Delete erase and Ctrl-letters edit. Escape outside the talk line quits.
+ * move the cursor, Backspace/Delete erase and Ctrl-letters edit. Outside the talk line Escape is an ordinary key
+ * (C's keySwapSettings by default); keyQuit (unbound by default) and, on macOS, Command-Q quit.
  * Returns what the app must do as event bits. Pure (only GLFW constants); allocation free except for
  * sending a chat line.
  */
@@ -75,6 +76,8 @@ public final class KeyRouter {
     private final StringBuilder chat = new StringBuilder(TalkLine.MAX_CHARS);
     private final LoseItemSelection loseSelection = new LoseItemSelection();
     private boolean swallowChar;
+    /** Command-Q quits (the macOS application quit shortcut). */
+    private final boolean commandQuits;
 
     public KeyRouter(InputState input, TalkLine talk) {
         this(input, talk, new ControlSettings());
@@ -82,15 +85,23 @@ public final class KeyRouter {
 
     /** @param settings the control settings the power/turn-speed/swap keys change */
     public KeyRouter(InputState input, TalkLine talk, ControlSettings settings) {
+        this(input, talk, settings, MAC);
+    }
+
+    /** @param commandQuits whether Command(Super)-Q quits (true on macOS) */
+    public KeyRouter(InputState input, TalkLine talk, ControlSettings settings, boolean commandQuits) {
         this.input = input;
         this.talk = talk;
         this.settings = settings;
+        this.commandQuits = commandQuits;
     }
+
+    /** Running on macOS. */
+    static final boolean MAC = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("mac");
 
     /**
      * The game's default key bindings ({@link KeyConfig#defaults}): XPilot's defaults plus the JXPilot
-     * supplement, with Escape taken from C's swap-settings key, since Escape quits here (SPEC "Default
-     * controls"), and the scale-factor swap bound to {@code swapKey} (unbound when null, as C's default).
+     * supplement, and the scale-factor swap bound to {@code swapKey} (unbound when null, as C's default).
      */
     public static KeyBindings bindings(String swapKey) {
         return KeyConfig.defaults(swapKey).bindings();
@@ -117,7 +128,9 @@ public final class KeyRouter {
     /**
      * A GLFW key event.
      * <p>
-     * BEHAVIOR (playing): Escape press is {@link #QUIT}; other presses go to {@link InputState#press};
+     * BEHAVIOR (playing): a QUIT action (keyQuit) is {@link #QUIT}, and so is Command(Super)-Q when Command-Q
+     * quits (macOS; the key is not sent); presses go to {@link InputState#press} (Escape included: C's
+     * keySwapSettings);
      * a TALK action opens the talk line (game keys released, the key's character is not typed); a
      * SWAP_SCALEFACTOR action is {@link #SWAP_SCALE}, a TOGGLE_SOUND action {@link #TOGGLE_SOUND}, a HELP action
      * {@link #HELP}, a TOGGLE_OWNED_ITEMS action {@link #TOGGLE_ITEMS}, a TOGGLE_MESSAGES action {@link #TOGGLE_MESSAGES};
@@ -148,7 +161,7 @@ public final class KeyRouter {
         if (action != GLFW_PRESS) {
             return NONE;
         }
-        if (key == GLFW_KEY_ESCAPE) {
+        if (commandQuits && key == GLFW_KEY_Q && (mods & GLFW_MOD_SUPER) != 0) {
             return QUIT;
         }
         for (int i = loseKeys(key); i > 0; i--) {
@@ -169,6 +182,9 @@ public final class KeyRouter {
         }
         if (KeyBindings.has(acts, ClientAction.HELP)) {
             ev |= HELP;
+        }
+        if (KeyBindings.has(acts, ClientAction.QUIT)) {
+            ev |= QUIT;
         }
         if (KeyBindings.has(acts, ClientAction.TOGGLE_OWNED_ITEMS)) {
             ev |= TOGGLE_ITEMS;

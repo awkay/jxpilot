@@ -330,7 +330,34 @@ class HudTest {
                     texts(f), "heading then rows 16 px apart"),
                 () -> assertEquals(List.of("6,16-294,16", "6,38-294,38"), lines(f), "heading rule and best underline"),
                 () -> assertEquals(HudColor.SCORE_DIM, f.textColor(1), "paused row dimmed"),
-                () -> assertEquals(HudColor.SCORE, f.textColor(2), "normal row"));
+                () -> assertEquals(HudColor.SCORE, f.textColor(2), "normal row"),
+                () -> assertEquals(HudColor.SCORE, f.textColor(0), "heading shadowed white"),
+                () -> assertEquals(HudFrame.SOLID, f.lineStyle(0), "heading rule solid"),
+                () -> assertEquals(HudColor.WHITE, f.lineColor(0), "heading rule white"),
+                () -> assertEquals(HudFrame.DASHED_X, f.lineStyle(1), "best underline dashed (C LineOnOffDash)"),
+                () -> assertEquals(HudColor.SCORE_DIM, f.lineColor(1), "best underline in its (dim) row's colour"),
+                () -> assertEquals(0, f.rectCount(), "no window background without a height"));
+        }
+
+        @Test
+        @DisplayName("score list window: blue background; a normal best row is underlined in white")
+        void scoreWindow() {
+            Players p = new Players();
+            Msg.PlayerJoin j = new Msg.PlayerJoin();
+            j.id = 1;
+            j.name.append("Ann");
+            p.join(j);
+            p.setScore(1, 5, -1, 0);
+            Scoreboard sb = new Scoreboard();
+            sb.configure(false, false, false, 1);
+            sb.update(p);
+            HudFrame f = new HudFrame();
+            new Hud().scoreboard(f, sb, 0, 300, 256, 500, M);
+            assertAll(
+                () -> assertEquals(List.of("fill 0,300 256x500"), rects(f), "the whole window is filled"),
+                () -> assertEquals(HudColor.WINDOW, f.rectColor(0), "in windowColor"),
+                () -> assertEquals(HudColor.WHITE, f.lineColor(1), "a white row's underline is white"),
+                () -> assertEquals(HudFrame.DASHED_X, f.lineStyle(1), "dashed"));
         }
     }
 

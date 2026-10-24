@@ -34,8 +34,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-import static org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE;
-
 /**
  * The effective key bindings and control settings: C's defaults, the JXPilot supplement, then a
  * {@code ~/.xpilotrc}-format file (per-function override, empty value = unbound), then the
@@ -45,7 +43,8 @@ import static org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE;
  * <p>
  * The JXPilot supplement (added to C's defaults on all platforms; it overlaps nothing C binds): Option/Alt
  * (left and right) is also the connector, so a Mac laptop's single Control key can stay refuel; {@code 0} is
- * also self-destruct (C's End needs fn on a Mac laptop). Escape always quits JXPilot, so it is never bound.
+ * also self-destruct (C's End needs fn on a Mac laptop). Escape is C's keySwapSettings, as in C (it cancels the
+ * talk line while that is open); JXPilot's own quit key, keyQuit, is unbound by default.
  */
 public final class KeyConfig {
     /** Keysyms added to C's defaults: resource, keysyms. */
@@ -77,7 +76,7 @@ public final class KeyConfig {
         }
     }
 
-    /** BEHAVIOR: defaults and supplement, Escape unbound, the swap key (when not null) bound. */
+    /** BEHAVIOR: defaults and supplement (Escape swaps settings, as in C), the swap key (when not null) bound. */
     public static KeyConfig defaults(String swapKey) {
         return defaults(swapKey, List.of());
     }
@@ -133,7 +132,7 @@ public final class KeyConfig {
      * BEHAVIOR: every {@link ClientOption} resource goes to {@link #options()} ({@link ClientOptions#apply}; its
      * problems are reported).
      * BEHAVIOR: an unknown {@code key...} resource is reported; other resources are reported as ignored.
-     * BEHAVIOR: binding Escape is reported (it always quits); parse problems of the file are reported.
+     * BEHAVIOR: parse problems of the file are reported.
      *
      * @param sourceName file name used in problem messages
      */
@@ -205,10 +204,6 @@ public final class KeyConfig {
             }
             if (KeySyms.glfwKey(s) == KeySyms.NONE) {
                 problem(src, e.line(), e.name() + ": keysym '" + s + "' has no key JXPilot can read, skipped");
-                continue;
-            }
-            if (KeySyms.glfwKey(s) == GLFW_KEY_ESCAPE) {
-                problem(src, e.line(), e.name() + ": Escape always quits JXPilot, skipped");
                 continue;
             }
             ok.append(ok.isEmpty() ? "" : " ").append(s);
@@ -296,7 +291,6 @@ public final class KeyConfig {
     }
 
     private void finish(String swapKey) {
-        bindings.unbind(GLFW_KEY_ESCAPE);
         if (swapKey != null) {
             bindings.bind(ClientAction.SWAP_SCALEFACTOR, swapKey);
         }

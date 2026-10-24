@@ -90,8 +90,9 @@ class AppOptionsTest {
                 () -> assertEquals(1.0, o.scaleFactor(), "scaleFactor 1"),
                 () -> assertEquals(2.0, o.altScaleFactor(), "altScaleFactor 2"),
                 () -> assertNull(o.swapScaleKey(), "swap key unbound"),
-                () -> assertNull(o.fontFile(), "bundled font"),
-                () -> assertEquals(13.0, o.fontSize(), "font size 13"),
+                () -> assertNull(o.fontFile(), "no --font"),
+                () -> assertEquals(AppOptions.FONT_SIZE_UNSET, o.fontSize(), "no --font-size"),
+                () -> assertFalse(o.fontOverride(), "neither: the per-role C fonts"),
                 () -> assertNull(o.keysFile(), "keys from ~/.xpilotrc"),
                 () -> assertTrue(o.sound(), "sound on"),
                 () -> assertEquals(AppOptions.VOLUME_UNSET, o.maxVolume(), "no --volume (the key file or 100 decide)"));
@@ -167,7 +168,10 @@ class AppOptionsTest {
                 () -> assertEquals(3.0, o.altScaleFactor(), "alt scale factor"),
                 () -> assertEquals("F12", o.swapScaleKey(), "swap key"),
                 () -> assertEquals("f.ttf", o.fontFile(), "font"),
-                () -> assertEquals(16.0, o.fontSize(), "font size"));
+                () -> assertEquals(16.0, o.fontSize(), "font size"),
+                () -> assertTrue(o.fontOverride(), "both: one font for every role"),
+                () -> assertTrue(parse("--connect", "h", "--font", "FiraCode").fontOverride(), "--font alone overrides"),
+                () -> assertTrue(parse("--connect", "h", "--font-size", "9").fontOverride(), "--font-size alone overrides"));
         }
 
         @Test
