@@ -35,14 +35,17 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
 /**
  * Parsed command line of {@code ClientMain}: which launch mode, and its settings.
  * <pre>
- *   --view-map FILE ...        the map viewer (all other arguments go to {@link LaunchOptions})
+ *   --view-map MAP ...         the map viewer (all other arguments go to {@link LaunchOptions})
  *   --connect TARGET           play on a server: host[:port], [v6addr]:port, xp://host:port, jx://host:port
  *   --protocol P               xpilot or jxpilot (default jxpilot; a TARGET scheme wins)
- *   --local --map FILE         play on an embedded server for FILE (loopback only)
+ *   --local --map MAP          play on an embedded server for MAP (loopback only); MAP is a bundled map name,
+ *                              or a file when it has a path in it (see MapLocator)
  *   --bind ADDR[:PORT]         local source address for --connect
  *   --name NAME                player name (default: the user name)
  *   --team T                   team 0..9 (default: none, the server picks)
- *   --shape SHAPE              ship shape string (default: the standard ship)
+ *   --shape SHAPE              ship shape string, or a name in the shape file (C shipShape; default: the
+ *                              shipShape resource of ~/.xpilotrc, else the standard ship); alias --shipShape
+ *   --shipShapeFile FILE       file of named shapes, one per line (C shipShapeFile; default: ~/.xpilotrc's)
  *   --size WxH                 window size in logical pixels (default 1280x800)
  *   --scale-factor F           C scaleFactor: zoom 1/F (default 1.0)
  *   --alt-scale-factor F       C altScaleFactor, the zoom the swap key switches to (default 2.0)
@@ -55,25 +58,28 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  *                              the key file's maxVolume, else 100
  *   --keys FILE                key bindings and control settings in ~/.xpilotrc format (default: ~/.xpilotrc)
  *   --list-keys                print the effective key bindings and exit
+ *   --list-maps                print the bundled maps and exit
  * </pre>
  *
  * @param viewer     the viewer's options in {@link Mode#VIEW_MAP}, else null
  * @param target     server for {@link Mode#CONNECT}, else null
  * @param bind       local address, or null for any
  * @param team       0..9 or {@link Protocol#NO_TEAM}
- * @param shape      ship shape string, "" for the default ship
- * @param localMap   map file for {@link Mode#LOCAL}, else null
+ * @param shape      ship shape string or shape name from the command line, or null when not given
+ * @param localMap   map name or file for {@link Mode#LOCAL}, else null
  * @param screenshot PNG path, or null
  * @param swapScaleKey X11 keysym bound to the scale-factor swap, or null
  * @param fontFile   TrueType file, or null for the bundled font
  * @param sound      play sound effects
  * @param maxVolume  {@code --volume} (C {@code maxVolume}), 0..{@value SoundPlayer#MAX_MAX_VOLUME}, or {@link #VOLUME_UNSET}
  * @param keysFile   key file given with {@code --keys}, or null for {@code ~/.xpilotrc}
+ * @param shipShapeFile shape file given with {@code --shipShapeFile}, or null when not given
  */
 public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, Endpoint bind, String name, int team,
                          String shape, String localMap, String screenshot, int frames, int width, int height,
                          boolean vsync, double scaleFactor, double altScaleFactor, String swapScaleKey,
-                         String fontFile, double fontSize, boolean sound, int maxVolume, String keysFile) {
+                         String fontFile, double fontSize, boolean sound, int maxVolume, String keysFile,
+                         String shipShapeFile) {
     /** Launch modes. */
     public enum Mode {
         /** No mode chosen: print usage. */
@@ -85,7 +91,9 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         /** Play on an embedded server ({@code --local --map}). */
         LOCAL,
         /** Print the effective key bindings ({@code --list-keys}). */
-        LIST_KEYS
+        LIST_KEYS,
+        /** Print the bundled maps ({@code --list-maps}). */
+        LIST_MAPS
     }
 
     /** Longest player name accepted (the client keeps {@link Players#MAX_NAME} characters). */
@@ -99,12 +107,15 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
 
     public static final String USAGE = """
         usage: ClientMain --connect HOST[:PORT] [--protocol xpilot|jxpilot] [--bind ADDR[:PORT]] [--name NAME]
-                          [--team T] [--shape SHAPE] [--size WxH] [--scale-factor F] [--alt-scale-factor F]
+                          [--team T] [--shape|--shipShape SHAPE|NAME] [--shipShapeFile FILE]
+                          [--size WxH] [--scale-factor F] [--alt-scale-factor F]
                           [--swap-scale-key KEYSYM] [--font FILE] [--font-size PX] [--screenshot FILE.png]
                           [--frames N] [--no-vsync] [--sound | --no-sound] [--volume 0..255] [--keys FILE]
-               ClientMain --local --map FILE [same options as --connect, except --protocol and --bind]
+               ClientMain --local --map MAP [same options as --connect, except --protocol and --bind]
                ClientMain --list-keys [--keys FILE] [--swap-scale-key KEYSYM]
-               ClientMain --view-map FILE [--demo] [viewer options: --screenshot --frames --size --zoom ...]""";
+               ClientMain --list-maps
+               ClientMain --view-map MAP [--demo] [viewer options: --screenshot --frames --size --zoom ...]
+        MAP is a bundled map name (see --list-maps), or a map file when it contains a path (maps/my.xp, ./my.xp).""";
 
     /**
      * Parse arguments; {@code userName} supplies the default player name.
@@ -116,10 +127,14 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
      * BEHAVIOR: {@code --protocol} and {@code --bind} only with {@code --connect}; the protocol of a
      * scheme in the target wins over {@code --protocol}.
      * BEHAVIOR: the name defaults to {@link #defaultName(String)}; a given name must have 1..{@link #MAX_NAME}
-     * characters; the team is 0..9; the shape must parse ({@link ShipShape#parse}); the swap key must be
+     * characters; the team is 0..9; a shape holding '(' must parse ({@link ShipShape#parse}; without one it
+     * is a name for the shape file, see {@link ShipShapeResource}); {@code --shipShape} is {@code --shape};
+     * the shape and shape file stay null when not given; the swap key must be
      * a known keysym; frames, sizes, scale factors and the font size must be positive.
      * BEHAVIOR: {@code --keys FILE} names the key file; {@code --list-keys} selects {@link Mode#LIST_KEYS}
      * (keeping {@code --keys} and {@code --swap-scale-key}, ignoring the launch mode).
+     * BEHAVIOR: {@code --list-maps} selects {@link Mode#LIST_MAPS}, ignoring the launch mode ({@code --list-keys}
+     * wins when both are given).
      * BEHAVIOR: sound is on unless {@code --no-sound} (the last of --sound/--no-sound wins); {@code --volume}
      * is an integer 0..{@value SoundPlayer#MAX_MAX_VOLUME}, {@link #VOLUME_UNSET} when not given.
      * BEHAVIOR: unknown options and missing values throw IllegalArgumentException naming the option.
@@ -129,13 +144,13 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
             if (a.equals("--view-map")) {
                 return new AppOptions(Mode.VIEW_MAP, LaunchOptions.parse(args), null, null, null, Protocol.NO_TEAM,
                     "", null, null, DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true,
-                    VOLUME_UNSET, null);
+                    VOLUME_UNSET, null, null);
             }
         }
         if (args.length == 0) {
             return new AppOptions(Mode.HELP, null, null, null, null, Protocol.NO_TEAM, "", null, null,
                 DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, VOLUME_UNSET,
-                null);
+                null, null);
         }
         String connect = null;
         String protocol = null;
@@ -144,7 +159,8 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         Endpoint bind = null;
         String name = null;
         int team = Protocol.NO_TEAM;
-        String shape = "";
+        String shape = null;
+        String shipShapeFile = null;
         String screenshot = null;
         int frames = DEFAULT_FRAMES;
         int width = 1280;
@@ -159,6 +175,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         int maxVolume = VOLUME_UNSET;
         String keys = null;
         boolean listKeys = false;
+        boolean listMaps = false;
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
             switch (a) {
@@ -179,12 +196,13 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                         throw new IllegalArgumentException(a + " must be 0..9: " + team);
                     }
                 }
-                case "--shape" -> {
+                case "--shape", "--shipShape" -> {
                     shape = value(args, ++i, a);
-                    if (ShipShape.parse(shape) == null) {
+                    if (shape.indexOf('(') >= 0 && ShipShape.parse(shape) == null) {
                         throw new IllegalArgumentException(a + " is not a valid ship shape: " + shape);
                     }
                 }
+                case "--shipShapeFile" -> shipShapeFile = value(args, ++i, a);
                 case "--screenshot" -> screenshot = value(args, ++i, a);
                 case "--frames" -> frames = positiveInt(value(args, ++i, a), a);
                 case "--size" -> {
@@ -217,6 +235,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                 }
                 case "--keys" -> keys = value(args, ++i, a);
                 case "--list-keys" -> listKeys = true;
+                case "--list-maps" -> listMaps = true;
                 default -> throw new IllegalArgumentException("Unknown option: " + a);
             }
         }
@@ -224,7 +243,12 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         ConnectTarget target = null;
         if (listKeys) {
             return new AppOptions(Mode.LIST_KEYS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
-                DEFAULT_FRAMES, 1280, 800, true, 1, 2, swapKey, null, DEFAULT_FONT_SIZE, sound, maxVolume, keys);
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, swapKey, null, DEFAULT_FONT_SIZE, sound, maxVolume, keys, null);
+        }
+        if (listMaps) {
+            return new AppOptions(Mode.LIST_MAPS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, SoundPlayer.DEFAULT_MAX_VOLUME,
+                null, null);
         }
         if (connect != null && local) {
             throw new IllegalArgumentException("--connect and --local exclude each other");
@@ -238,7 +262,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         } else if (local) {
             mode = Mode.LOCAL;
             if (map == null) {
-                throw new IllegalArgumentException("--local needs --map FILE");
+                throw new IllegalArgumentException("--local needs --map MAP (a bundled name from --list-maps, or a file)");
             }
             if (protocol != null || bind != null) {
                 throw new IllegalArgumentException("--protocol and --bind are only used with --connect");
@@ -247,7 +271,8 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
             throw new IllegalArgumentException("nothing to do: give --connect, --local or --view-map");
         }
         return new AppOptions(mode, null, target, bind, name != null ? name : defaultName(userName), team, shape,
-            map, screenshot, frames, width, height, vsync, scale, alt, swapKey, font, fontSize, sound, maxVolume, keys);
+            map, screenshot, frames, width, height, vsync, scale, alt, swapKey, font, fontSize, sound, maxVolume, keys,
+            shipShapeFile);
     }
 
     /**

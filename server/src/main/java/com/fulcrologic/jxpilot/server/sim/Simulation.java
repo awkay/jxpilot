@@ -74,6 +74,8 @@ public final class Simulation {
     public final Cannons cannons;
     public final Keys keys;
     public final Rounds rounds;
+    /** server-commands: alliances between players (C alliance.c). */
+    public final Alliances alliances;
     /** Robot players (C {@code Robot_update}); off until {@link RobotManager#setEnabled enabled}. */
     public final RobotManager robots;
     // ---- game modes (server-modes)
@@ -124,6 +126,7 @@ public final class Simulation {
         this.cannonWeapons = new CannonWeapons(world, this);
         com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder.initRecordClasses();
         Sounds.initClasses();
+        this.alliances = new Alliances(world, this);
         this.robots = new RobotManager(world, this);
         this.ecm.robotProgrammer = robots::program;
         this.ecm.ballDetacher = balls;
@@ -134,6 +137,7 @@ public final class Simulation {
         com.fulcrologic.jxpilot.server.robot.DefaultRobot.warmSwitches();
         ShotNames.warm();
         balls.init();
+        com.fulcrologic.jxpilot.common.math.ThrustSparks.wirePos(0f);
     }
 
     /**
@@ -191,12 +195,6 @@ public final class Simulation {
         }
         rounds.checkGameDuration();
         emitScores();
-        for (int k = 0; k < w.numPlayers; k++) {
-            Player pl = w.playerAt(k);
-            if (!pl.robot && !pl.tank) {
-                locks.hudLock(pl);
-            }
-        }
         w.frames++;
     }
 

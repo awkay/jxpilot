@@ -37,6 +37,7 @@ import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder;
 import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
+import com.fulcrologic.jxpilot.server.world.ModifierBanks;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -71,12 +72,19 @@ public final class SimGameHost implements GameHost {
     static final String KICK_FULL_GAME = "no pause with full game";
     static final String KICK_FULL_TEAM = "no pause with full team";
     static final String KICK_NO_BASE = "no free base";
+    static final String KICK_COMMAND = "kicked out";
 
     private final Simulation sim;
     private final World w;
     private final SnapshotBuilder builder;
     private final Talk talk;
-    private final boolean rawMode;
+    /** server-commands: the talk commands (C command.c) and run-time option changes. */
+    private final Tuning tuning;
+    private final Commands commands;
+    /** C {@code game_lock}: an operator's {@code /lock 1} refuses new players. */
+    boolean gameLock;
+    /** C {@code RawMode} (idleRun; an operator may change it). */
+    private boolean rawMode;
     /** The server log (C {@code xpprintf}), or null. */
     public java.util.function.Consumer<CharSequence> log;
     private boolean shutdown;
@@ -99,6 +107,11 @@ public final class SimGameHost implements GameHost {
     /** SETTINGS that arrived before the spawn, applied at the spawn. */
     private final boolean[] pendingSettings = new boolean[IDS];
     private final float[][] settings = new float[IDS][6];
+    /** MODIFIER_BANKs that arrived before the spawn (parsed, {@code Mods}), put in place at the spawn. */
+    private final int[][] pendingBanks = new int[IDS][Player.BANKS];
+    /** server-commands: the ship from CONNECT (C {@code connp->ship}), put on the player at its spawn; null without allowShipShapes. */
+    private final com.fulcrologic.jxpilot.server.world.ShipGeom[] shipOf = new com.fulcrologic.jxpilot.server.world.ShipGeom[IDS];
+    private final boolean allowShipShapes;
 
     // ---- per sim slot
     private final long[] keysBySlot;
@@ -125,8 +138,14 @@ public final class SimGameHost implements GameHost {
     private final Msg.GameEvent gameEvent = new Msg.GameEvent();
     private final Msg.PlayerThrust thrust = new Msg.PlayerThrust();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
+    private final Msg.Seek seek = new Msg.Seek();
     private final Msg.Timing timing = new Msg.Timing();
     private final Msg.Settings settingsMsg = new Msg.Settings();
+    private final Msg.Display displayMsg = new Msg.Display();
+    private final Msg.ModifierBank bankMsg = new Msg.ModifierBank();
+    private final Msg.ChangeTeam changeTeam = new Msg.ChangeTeam();
+    private final Msg.PlayerAlliance allianceMsg = new Msg.PlayerAlliance();
+    private final StringBuilder teamCommand = new StringBuilder(16);
     private final StringBuilder nameBuf = new StringBuilder(Const.MAX_CHARS);
 
     /**
@@ -142,6 +161,7 @@ public final class SimGameHost implements GameHost {
         this.rawMode = w.options.getBool(Opt.IDLE_RUN);
         this.mapName = w.options.getString(Opt.MAP_NAME);
         this.mapAuthor = w.options.getString(Opt.MAP_AUTHOR);
+        this.allowShipShapes = w.options.getBool(Opt.ALLOW_SHIP_SHAPES);
         this.keysBySlot = new long[w.players.length];
         for (int i = 0; i < SNAPSHOT_PARTS; i++) {
             scratch[i] = ByteBuffer.allocateDirect(Protocol.MAX_PACKET);
@@ -151,8 +171,17 @@ public final class SimGameHost implements GameHost {
         }
         scoreObject.text.ensureCapacity(Msg.MSG_LEN);
         join.name.ensureCapacity(Const.MAX_CHARS);
+        join.shape.ensureCapacity(Msg.MAX_SHAPE_LEN);
         sim.robots.applyMaxRobots();
         sim.ships.enterListener = this::entered;
+        this.tuning = new Tuning(sim, this::optionChanged);
+        this.commands = new Commands(this, sim, tuning);
+    }
+
+    /** After an operator changed {@code o} at run time: what this host and the network layer keep is re-read. */
+    private void optionChanged(Opt o) {
+        rawMode = w.options.getBool(Opt.IDLE_RUN);
+        sessions.optionChanged(o, w.options);
     }
 
     @Override
@@ -170,6 +199,8 @@ public final class SimGameHost implements GameHost {
     /**
      * C contact.c {@code Check_queue} + {@code Check_names}, then {@code Ships.reserve}.
      * <p>
+     * BEHAVIOR: a game an operator locked refuses everyone with REASON_LOCKED (C {@code E_GAME_LOCKED}, checked
+     * first, contact.c:743).
      * BEHAVIOR: a full game (no free slot, reserved ones included) first kicks a robot
      * ({@code Kick_robot_players}), else every paused human ({@code Kick_paused_players}, "The paused "X" was
      * kicked because the game is full."), else refuses with REASON_FULL.
@@ -179,10 +210,16 @@ public final class SimGameHost implements GameHost {
      * teamAssign; with it C {@code Pick_team} chooses, kicking a robot when only the robots' teams have room. A
      * full requested team kicks one of its robots, else its paused humans, else is refused (REASON_FULL), and
      * the team is picked again (as C). Outside team play the request is ignored.
-     * BEHAVIOR: otherwise the player is reserved, its input and drain state reset, and its id returned.
+     * BEHAVIOR: otherwise the player is reserved, its input and drain state reset, its view size set to C
+     * DEF_VIEW_SIZE (768 x 768, C {@code Setup_connection}) until DISPLAY, and its id returned. With
+     * allowShipShapes its ship is the shape (C {@code Parse_shape_str}: the limits apply; empty or invalid gives
+     * the built-in ship), worn from the spawn on; without, the defaultShipShape ({@code Ships.defaultShipShape}).
      */
     @Override
     public int join(CharSequence name, int team, CharSequence shape) {
+        if (gameLock) {
+            return -Msg.Reject.REASON_LOCKED;
+        }
         if (!hasFreeSlot() && sim.robots.kickRobotPlayers(Const.TEAM_NOT_SET) == 0
             && kickPausedPlayers(Const.TEAM_NOT_SET) == 0) {
             return -Msg.Reject.REASON_FULL;
@@ -213,6 +250,10 @@ public final class SimGameHost implements GameHost {
         spawnTeam[id] = t;
         queued[id] = 0;
         pendingSettings[id] = false;
+        java.util.Arrays.fill(pendingBanks[id], 0);
+        pl.viewWidth = Msg.Display.DEF_VIEW_SIZE;
+        pl.viewHeight = Msg.Display.DEF_VIEW_SIZE;
+        shipOf[id] = allowShipShapes ? com.fulcrologic.jxpilot.server.world.ShipGeom.parse(shape) : null;
         keysBySlot[pl.slot] = 0;
         cursor[id] = w.events.seq();
         burstCursor[id] = w.events.burstSeq();
@@ -378,9 +419,20 @@ public final class SimGameHost implements GameHost {
     /**
      * BEHAVIOR: READY spawns the reserved player on its login team ({@code Ships.spawn}, which sets the welcome
      * message and applies settings that came early); no base: kicked at the next tick ("no free base").
-     * BEHAVIOR: CHAT from a player in the game goes through C {@code Handle_talk} ({@link Talk}).
+     * BEHAVIOR: CHAT from a player in the game is a command when it starts with '/' (C {@code Receive_talk}:
+     * {@link Commands}, the line without the '/'), else goes through C {@code Handle_talk} ({@link Talk}).
      * BEHAVIOR: SETTINGS go to {@code Ships.applySettings} (kept for the spawn before it).
-     * BEHAVIOR: CHANGE_TEAM, SHAPE, unknown types and messages of unbound ids are ignored.
+     * BEHAVIOR: DISPLAY, before or after READY, sets the player's view size, each axis limited to
+     * [MIN_VIEW_SIZE 384, MAX_VIEW_SIZE 1024] (C {@code Receive_display}); it applies from the next snapshot
+     * and HUD lock test.
+     * BEHAVIOR: MODIFIER_BANK is parsed as C {@code Receive_modifier_bank} ({@link ModifierBanks}) with the rules
+     * at arrival: in play into the player's bank; before READY kept and put in place by the spawn (C receives the
+     * banks after Init_player has cleared them, so they are there when the player plays). A bank above 3 or an
+     * over-long text is ignored.
+     * BEHAVIOR: CHANGE_TEAM from a player in the game is the command "/team N" (C has no team-change packet; the
+     * C client changes teams with that talk command).
+     * BEHAVIOR: SHAPE (the shape came with CONNECT; C takes PKT_SHAPE only before the player is in the game),
+     * unknown types and messages of unbound ids are ignored.
      */
     @Override
     public void clientMessage(int playerId, int type, ByteBuffer payload) {
@@ -393,7 +445,11 @@ public final class SimGameHost implements GameHost {
             case ReliableType.CHAT -> {
                 text.read(payload);
                 if (p.spawned) {
-                    talk.say(p, text.text);
+                    if (!text.text.isEmpty() && text.text.charAt(0) == '/') {
+                        commands.handle(p, text.text.subSequence(1, text.text.length()));
+                    } else {
+                        talk.say(p, text.text);
+                    }
                 }
             }
             case ReliableType.SETTINGS -> {
@@ -411,7 +467,21 @@ public final class SimGameHost implements GameHost {
                     pendingSettings[playerId] = true;
                 }
             }
-            default -> { } // CHANGE_TEAM and SHAPE are not supported; newer types are ignored
+            case ReliableType.DISPLAY -> {
+                displayMsg.read(payload);
+                p.viewWidth = limitView(displayMsg.viewWidth);
+                p.viewHeight = limitView(displayMsg.viewHeight);
+            }
+            case ReliableType.MODIFIER_BANK -> modifierBank(p, payload);
+            case ReliableType.CHANGE_TEAM -> {
+                changeTeam.read(payload);
+                if (p.spawned) {
+                    teamCommand.setLength(0);
+                    teamCommand.append("team ").append(changeTeam.team);
+                    commands.handle(p, teamCommand);
+                }
+            }
+            default -> { } // SHAPE comes with CONNECT; newer types are ignored
         }
     }
 
@@ -423,16 +493,57 @@ public final class SimGameHost implements GameHost {
             kickLater(p.id, KICK_NO_BASE);
             return;
         }
+        if (shipOf[p.id] != null) {
+            p.ship = shipOf[p.id];
+        }
         keysBySlot[p.slot] = 0;
+        System.arraycopy(pendingBanks[p.id], 0, p.modBank, 0, Player.BANKS);
         if (pendingSettings[p.id]) {
             pendingSettings[p.id] = false;
             applySettings(p);
         }
     }
 
+    private void modifierBank(Player p, ByteBuffer payload) {
+        bankMsg.read(payload);
+        if (!ModifierBanks.accepted(bankMsg.bank, bankMsg.text)) {
+            return;
+        }
+        var ip = w.items;
+        int m = ModifierBanks.parse(bankMsg.text, ip.allowModifiers, ip.allowNukes, ip.allowClusters,
+            ip.allowLaserModifiers);
+        if (p.spawned) {
+            p.modBank[bankMsg.bank] = m;
+        } else {
+            pendingBanks[p.id][bankMsg.bank] = m;
+        }
+    }
+
+    /** C {@code LIMIT(size, MIN_VIEW_SIZE, MAX_VIEW_SIZE)} of {@code Receive_display}. */
+    static int limitView(int size) {
+        return Math.max(Msg.Display.MIN_VIEW_SIZE, Math.min(Msg.Display.MAX_VIEW_SIZE, size));
+    }
+
     private void applySettings(Player p) {
         float[] s = settings[p.id];
         sim.ships.applySettings(p, s[0], s[1], s[2], s[3], s[4], s[5]);
+    }
+
+    /** server-commands: C {@code conn != NOT_CONNECTED}: a connection holds {@code p} (it is not a robot). */
+    boolean connected(Player p) {
+        return boundPlayer(p.id) == p;
+    }
+
+    /**
+     * server-commands: C {@code Destroy_connection(conn, "kicked out")} for {@code /kick}: another player's
+     * connection is dropped now; the commanding player's own at the next tick (its message is being delivered).
+     */
+    void kickByCommand(Player target, Player by) {
+        if (target == by) {
+            kickLater(target.id, KICK_COMMAND);
+        } else {
+            kickNow(target, KICK_COMMAND);
+        }
     }
 
     private void kickLater(int id, String reason) {
@@ -623,6 +734,29 @@ public final class SimGameHost implements GameHost {
     }
 
     /**
+     * C frame.c:1275-1294: without allowViewing a paused player gets every 4th frame and an out-of-the-game
+     * (GAME_OVER) one every 2nd, counted on the frame counter after the tick (C {@code frame_loops}, raised at
+     * the start of {@code Frame_update}); the server owner's exception has no equivalent.
+     * <p>
+     * BEHAVIOR: PAUSE: due iff {@code frames & 3 == 0}; else GAME_OVER: iff {@code frames & 1 == 0}; else, for
+     * unknown viewers, or with allowViewing: always.
+     */
+    @Override
+    public boolean snapshotDue(int viewerId) {
+        Player p = boundPlayer(viewerId);
+        if (p == null || w.items.allowViewing) {
+            return true;
+        }
+        if ((p.status & Obj.PAUSE) != 0) {
+            return (w.frames & 3) == 0;
+        }
+        if ((p.status & Obj.GAME_OVER) != 0) {
+            return (w.frames & 1) == 0;
+        }
+        return true;
+    }
+
+    /**
      * BEHAVIOR: part 0 builds the viewer's snapshot ({@link SnapshotBuilder}, bursts since its cursor, which then
      * moves to the newest) into scratch parts; each part p copies the sections of scratch part p after the
      * network layer's header and returns whether more parts follow. A viewer not yet in the game gets no
@@ -631,6 +765,8 @@ public final class SimGameHost implements GameHost {
      * each sound goes out in one snapshot.
      * BEHAVIOR: a viewer out of the game (or paused, see {@code Locks.viewOf}) gets the snapshot, sounds included,
      * of the player it has locked on (C frame.c:1314-1336).
+     * BEHAVIOR: culling uses the viewer's own view size (DISPLAY) around the shown player's position, as C's
+     * {@code Frame_parameters(conn, ind)} takes the size from the connection and the position from {@code ind}.
      */
     @Override
     public boolean fillSnapshot(int viewerId, int part, boolean radar, SnapshotWriter out) {
@@ -644,6 +780,8 @@ public final class SimGameHost implements GameHost {
                 b.position(PacketHeader.SIZE);
             }
             Player view = sim.locks.viewOf(p);
+            builder.setViewSize(p.viewWidth, p.viewHeight);
+            sim.locks.hudLock(view, p.viewWidth, p.viewHeight);
             scratchParts = builder.build(view, 0, burstCursor[viewerId], radar, scratch);
             burstCursor[viewerId] = w.events.burstSeq();
             view.audio.clear();
@@ -666,19 +804,20 @@ public final class SimGameHost implements GameHost {
      * Everything a newcomer needs (C Handle_login's sends to the new player).
      * <p>
      * BEHAVIOR: for each player in the game, in order: PLAYER_JOIN (SELF for the viewer, ROBOT, PAUSED; power,
-     * afterburners, name, default shape), BASE_OWNER (its home), SCORE (score, lives with limitedLives else
-     * -1, status) and in race mode TIMING (check, round); then in team play TEAM_SCORE for every team with
-     * members. The event cursor starts at the
+     * afterburners, name, its ship's shape), BASE_OWNER (its home), SCORE (score, lives with limitedLives else
+     * -1, status), for a player in an alliance PLAYER_ALLIANCE with the viewer's mark, and in race mode TIMING
+     * (check, round); then in team play TEAM_SCORE for every team with members. The event cursor starts at the
      * newest event (the burst cursor at the newest burst).
      */
     @Override
     public void initialState(int viewerId, ReliableChannel out) {
-        fullState(viewerId, out);
+        fullState(viewerId, out, false);
         cursor[viewerId] = w.events.seq();
         burstCursor[viewerId] = w.events.burstSeq();
     }
 
-    private void fullState(int viewerId, ReliableChannel out) {
+    /** @param allMarks PLAYER_ALLIANCE for every player (a resync), else only for marked ones (a newcomer). */
+    private void fullState(int viewerId, ReliableChannel out, boolean allMarks) {
         for (int k = 0; k < w.numPlayers; k++) {
             Player p = w.playerAt(k);
             sendJoin(viewerId, p, out);
@@ -692,6 +831,9 @@ public final class SimGameHost implements GameHost {
             score.lives = w.params.limitedLives ? p.life : -1;
             score.status = Simulation.scoreStatus(p);
             score.send(out);
+            if (allMarks || p.alliance != Player.ALLIANCE_NOT_SET) {
+                sendAlliance(viewerId, p.id, p.alliance, out);
+            }
             if (w.modeParams.timing) {
                 timing.id = p.id;
                 timing.check = p.check;
@@ -721,9 +863,7 @@ public final class SimGameHost implements GameHost {
         join.name.setLength(0);
         join.name.append(p.name);
         join.shape.setLength(0);
-        if (p.tank && w.items.allowShipShapes) {
-            join.shape.append(w.options.getString(com.fulcrologic.jxpilot.common.config.Opt.TANK_SHIP_SHAPE));
-        }
+        join.shape.append(p.ship.wire);
         join.send(out);
         announced[viewerId][p.id >> 6] |= 1L << (p.id & 63);
     }
@@ -738,11 +878,11 @@ public final class SimGameHost implements GameHost {
      * The sim's events since the viewer's cursor as reliable messages.
      * <p>
      * BEHAVIOR: a viewer whose cursor fell out of the ring gets PLAYER_LEAVE for every announced id no longer
-     * in the game, then the full state, and continues from the newest event.
+     * in the game, then the full state (PLAYER_ALLIANCE for every player), and continues from the newest event.
      * BEHAVIOR: JOIN: PLAYER_JOIN of the player as it is now (none when it already left); LEAVE: PLAYER_LEAVE;
      * TEAM: PLAYER_TEAM; SCORE / TEAM_SCORE; MESSAGE for everyone or this viewer (from mapped); BASE_OWNER
      * (NO_ID = released); GAME_EVENT (ids mapped, value kept); THRUST: PLAYER_THRUST; TIMING (race progress);
-     * SCORE_OBJECT only to its player.
+     * SCORE_OBJECT only to its player; ALLIANCE: PLAYER_ALLIANCE with the viewer's mark ({@link #allianceMark}).
      */
     @Override
     public void drainEvents(int viewerId, ReliableChannel out) {
@@ -770,7 +910,7 @@ public final class SimGameHost implements GameHost {
                 }
             }
         }
-        fullState(viewerId, out);
+        fullState(viewerId, out, true);
     }
 
     private void event(int viewerId, int i, ReliableChannel out) {
@@ -827,6 +967,7 @@ public final class SimGameHost implements GameHost {
                 thrust.power = e.value[i];
                 thrust.send(out);
             }
+            case Events.ALLIANCE -> sendAlliance(viewerId, e.a[i], e.b[i], out);
             case Events.TIMING -> {
                 timing.id = e.a[i];
                 timing.check = e.b[i];
@@ -843,8 +984,37 @@ public final class SimGameHost implements GameHost {
                     scoreObject.send(out);
                 }
             }
+            case Events.SEEK -> {
+                seek.programmerId = wireId(e.a[i]);
+                seek.robotId = wireId(e.b[i]);
+                seek.soughtId = wireId(e.c[i]);
+                seek.send(out);
+            }
             default -> { }
         }
+    }
+
+    /** PLAYER_ALLIANCE of player {@code id} in alliance {@code alliance} as {@code viewerId} sees it. */
+    private void sendAlliance(int viewerId, int id, int alliance, ReliableChannel out) {
+        allianceMsg.id = id;
+        allianceMsg.mark = allianceMark(boundPlayer(viewerId), alliance, w.options.getBool(Opt.ANNOUNCE_ALLIANCES));
+        allianceMsg.send(out);
+    }
+
+    /**
+     * C {@code Send_score}'s alliance character (netserver.c:1670-1678) for a player in {@code alliance}.
+     * <p>
+     * BEHAVIOR: ' ' outside alliances; with announceAlliances the digit '0' + alliance; otherwise '+' when the
+     * viewer is in that alliance, else ' '.
+     */
+    static char allianceMark(Player viewer, int alliance, boolean announce) {
+        if (alliance == Player.ALLIANCE_NOT_SET) {
+            return Msg.PlayerAlliance.NONE;
+        }
+        if (announce) {
+            return (char) ('0' + alliance);
+        }
+        return viewer != null && viewer.alliance == alliance ? Msg.PlayerAlliance.ALLY : Msg.PlayerAlliance.NONE;
     }
 
     // ================================================================ helpers

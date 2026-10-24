@@ -250,6 +250,19 @@ class ModelsTest {
         }
 
         @Test
+        @DisplayName("other players' shapes are read without limits (C Handle_player's Convert_shape_str)")
+        void shapeWithoutLimits() {
+            Players p = new Players();
+            int tiny = p.join(join(1, 0, 0, "t", "(SH: 1,1 2,2 3,3)"));
+            int notch = p.join(join(2, 0, 0, "n", "(SH: 15,0 -9,8 0,0 -9,-8)"));
+            int bad = p.join(join(3, 0, 0, "b", "(SH: 1,1 2,2)"));
+            assertAll(
+                () -> assertArrayEquals(new int[] {1, 2, 3}, p.shape(tiny).ptX, "a ship below the size limits is kept"),
+                () -> assertEquals(-9, p.engineX(notch), "an engine outside the hull is kept"),
+                () -> assertSame(ShipShape.defaultShip(), p.shape(bad), "fewer than 3 points give the default ship"));
+        }
+
+        @Test
         @DisplayName("status char priority D, P, W, T, R, blank")
         void statusChar() {
             Players p = new Players();

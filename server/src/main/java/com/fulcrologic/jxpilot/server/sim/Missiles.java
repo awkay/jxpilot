@@ -46,6 +46,13 @@ import com.fulcrologic.jxpilot.server.world.World;
  * velocities and speeds are C floats, the direction a C {@code u_byte} taken modulo RES.
  */
 public final class Missiles {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_FUEL_UNITS_TO_FIRE = Texts.of(" fuel units to fire ");
+    private static final String T_HAS_LAUNCHED = Texts.of(" has launched ");
+    private static final String T_MISSILES_TO_FIRE = Texts.of(" missiles to fire ");
+    private static final String T_YOU_NEED_AT_LEAST = Texts.of("You need at least ");
+
     static final double MISSILE_POWER_SPEED_FACT = 0.25;
     static final double MISSILE_POWER_TURNSPEED_FACT = 0.75;
     static final int MINI_TORPEDO_SPREAD_TIME = 6;
@@ -208,7 +215,7 @@ public final class Missiles {
                 used = Mods.isFullNuclear(mods) ? pl.items[Item.MISSILE.ordinal()] : ip.nukeMinSmarts;
                 if (pl.items[Item.MISSILE.ordinal()] < ip.nukeMinSmarts) {
                     StringBuilder m = w.events.playerMessage(Msg.Text.KIND_GAME, Obj.NO_ID, pl.id)
-                        .append("You need at least ").append(ip.nukeMinSmarts).append(" missiles to fire ");
+                        .append(T_YOU_NEED_AT_LEAST).append(ip.nukeMinSmarts).append(T_MISSILES_TO_FIRE);
                     ShotNames.append(m, type, status, mods, false).append('!');
                     return;
                 }
@@ -256,7 +263,7 @@ public final class Missiles {
                     Player t = w.byId(pl.lockPlId);
                     if ((pl.lockTagged & Player.LOCK_PLAYER) == 0
                         || (pl.lockDistance > pl.sensorRange && ip.limitedVisibility)
-                        || t == null || !pl.canSee[t.slot]) {
+                        || t == null || !pl.canSee[t.ind]) {
                         return;
                     }
                     lock = pl.lockPlId;
@@ -272,7 +279,7 @@ public final class Missiles {
         if (pl != null) {
             if (pl.fuel < -drain) {
                 StringBuilder m = w.events.playerMessage(Msg.Text.KIND_GAME, Obj.NO_ID, pl.id)
-                    .append("You need at least ").append((-drain) >> 8).append(" fuel units to fire ");
+                    .append(T_YOU_NEED_AT_LEAST).append((-drain) >> 8).append(T_FUEL_UNITS_TO_FIRE);
                 ShotNames.append(m, type, status, mods, false).append('!');
                 return;
             }
@@ -280,7 +287,7 @@ public final class Missiles {
             pl.items[Item.MISSILE.ordinal()] -= used;
             if (used > 1) {
                 StringBuilder m = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name)
-                    .append(" has launched ");
+                    .append(T_HAS_LAUNCHED);
                 ShotNames.append(m, type, status, mods, false).append('!');
                 Sounds.playAll(w, SoundEvent.NUKE_LAUNCH);
             } else if (type == Obj.SMART_SHOT) {
@@ -312,21 +319,9 @@ public final class Missiles {
         }
         int fired = 0;
         for (int r = 0, i = 0; i < minis; i++, r++) {
-            int h = o.alloc();
-            if (h < 0) {
+            if (!o.hasFree()) {
                 break;
             }
-            o.life[h] = life / minis;
-            o.fuseLife[h] = o.life[h] - fuse;
-            o.mass[h] = mass / minis;
-            o.counter[h] = 0;
-            o.info[h] = lock;
-            o.type[h] = type;
-            o.owner[h] = pl != null ? pl.id : Obj.NO_ID;
-            o.team[h] = team;
-            o.color[h] = Records.ObjColor.WHITE;
-            o.turnSpeed[h] = turnspeed;
-            o.maxSpeed[h] = maxSpeed;
             float sx = (float) x;
             float sy = (float) y;
             if (pl != null) {
@@ -346,9 +341,22 @@ public final class Missiles {
             }
             sx = (float) w.wrapXPixel(sx);
             sy = (float) w.wrapYPixel(sy);
-            if (sx < 0 || sx >= w.pixelWidth || sy < 0 || sy >= w.pixelHeight) {
-                // C leaves the allocated object unset here; free it instead (it would never have been seen)
-                o.free(h);
+            boolean outside = sx < 0 || sx >= w.pixelWidth || sy < 0 || sy >= w.pixelHeight;
+            // C allocates first and fills these fields; off the world (no edge wrap) it continues with the object
+            // allocated and the rest of it left as its previous use left it (shot.c:991-994)
+            int h = outside ? o.allocStale() : o.alloc();
+            o.life[h] = life / minis;
+            o.fuseLife[h] = o.life[h] - fuse;
+            o.mass[h] = mass / minis;
+            o.counter[h] = 0;
+            o.info[h] = lock;
+            o.type[h] = type;
+            o.owner[h] = pl != null ? pl.id : Obj.NO_ID;
+            o.team[h] = team;
+            o.color[h] = Records.ObjColor.WHITE;
+            o.turnSpeed[h] = turnspeed;
+            o.maxSpeed[h] = maxSpeed;
+            if (outside) {
                 continue;
             }
             o.initPixels(h, sx, sy);

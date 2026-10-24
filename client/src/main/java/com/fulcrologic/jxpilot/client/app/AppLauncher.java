@@ -30,7 +30,11 @@ import com.fulcrologic.jxpilot.client.gl.MapViewerApp;
 import com.fulcrologic.jxpilot.client.net.Endpoint;
 import com.fulcrologic.jxpilot.client.xp.ConnectTarget;
 import com.fulcrologic.jxpilot.client.xp.GameConnection;
+import com.fulcrologic.jxpilot.common.map.BundledMaps;
+import com.fulcrologic.jxpilot.common.map.MapLocator;
+import com.fulcrologic.jxpilot.common.map.MapSource;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
@@ -64,8 +68,19 @@ public final class AppLauncher {
                 System.err.println(AppOptions.USAGE);
                 return 2;
             }
+            case LIST_MAPS -> {
+                System.out.print(BundledMaps.listing(BundledMaps.standard().infos()));
+                return 0;
+            }
             case VIEW_MAP -> {
-                new MapViewerApp(o.viewer()).run();
+                MapSource map;
+                try {
+                    map = MapLocator.resolve(o.viewer().viewMap());
+                } catch (FileNotFoundException e) {
+                    System.err.println(e.getMessage());
+                    return 2;
+                }
+                new MapViewerApp(o.viewer(), map).run();
                 return 0;
             }
             case CONNECT -> {
@@ -74,7 +89,7 @@ public final class AppLauncher {
             case LOCAL -> {
                 EmbeddedServer server;
                 try {
-                    server = EmbeddedServer.start(Path.of(o.localMap()));
+                    server = EmbeddedServer.start(o.localMap());
                 } catch (UnsupportedOperationException e) {
                     System.err.println(e.getMessage());
                     return 3;
@@ -93,7 +108,9 @@ public final class AppLauncher {
 
     private static int play(AppOptions o, ConnectTarget target, KeyConfig keys) throws Exception {
         ClientGame game = new ClientGame();
-        GameConnection conn = GameConnector.open(target, o.bind(), game, o.name(), o.team(), o.shape(),
+        String shape = ShipShapeResource.resolve(o.shape(), o.shipShapeFile(), keys.shipShape(), keys.shipShapeFile(),
+            ShipShapeResource::readLatin1, System.err);
+        GameConnection conn = GameConnector.open(target, o.bind(), game, o.name(), o.team(), shape,
             o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime());
         new GameApp(o, game, conn, target.toString(), null, keys).run();
         return 0;

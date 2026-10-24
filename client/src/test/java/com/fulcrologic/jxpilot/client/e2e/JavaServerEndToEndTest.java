@@ -382,14 +382,14 @@ class JavaServerEndToEndTest {
 
     @Test
     @Timeout(value = 60, unit = TimeUnit.SECONDS)
-    @DisplayName("--local: the embedded server (found through ServiceLoader) serves doggy.xp on loopback; a client"
+    @DisplayName("--local: the embedded server (found through ServiceLoader) serves the bundled doggy on loopback; a client"
         + " joins and sees the default 4 robots")
     void localServer() throws Exception {
         com.fulcrologic.jxpilot.client.net.Endpoint ep;
         E2eClient a;
         int robots;
         try (com.fulcrologic.jxpilot.client.app.EmbeddedServer server =
-                 com.fulcrologic.jxpilot.client.app.EmbeddedServer.start(Path.of("..", "maps", "doggy.xp"))) {
+                 com.fulcrologic.jxpilot.client.app.EmbeddedServer.start("doggy")) {
             ep = server.endpoint();
             a = new E2eClient(ep.host(), ep.port(), "Local", 31);
             long t0 = System.nanoTime();

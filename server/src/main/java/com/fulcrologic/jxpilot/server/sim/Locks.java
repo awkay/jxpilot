@@ -42,9 +42,6 @@ public final class Locks {
     static final int UPDATE_RATE = 100;
     /** C {@code ENERGY_RANGE_FACTOR}. */
     static final double ENERGY_RANGE_FACTOR = 2.5 / 256;
-    /** View half size for C's {@code inview} without playersOnRadar (the C client's default 1024x768 view). */
-    static final int VIEW_HALF_X = 512;
-    static final int VIEW_HALF_Y = 384;
 
     private final World w;
     /** C {@code minVisibilityDistance}, {@code maxVisibilityDistance} and {@code EnergyRangeFactor}. */
@@ -99,32 +96,38 @@ public final class Locks {
         for (int k = 0; k < w.numPlayers; k++) {
             Player o = w.playerAt(k);
             if (pl.forceVisible != 0) {
-                o.canSee[pl.slot] = true;
+                o.canSee[pl.ind] = true;
             }
             if (o == pl || (o.used & Has.CLOAKING_DEVICE) == 0) {
-                pl.canSee[o.slot] = true;
+                pl.canSee[o.ind] = true;
             } else if (pl.updateVisibility || o.updateVisibility
-                || (int) (w.rfrac() * UPDATE_RATE) < Math.abs(w.frames - pl.visLastChange[o.slot])) {
-                pl.visLastChange[o.slot] = w.frames;
-                pl.canSee[o.slot] = (w.rfrac() * (pl.items[Item.SENSOR.ordinal()] + 1))
+                || (int) (w.rfrac() * UPDATE_RATE) < Math.abs(w.frames - pl.visLastChange[o.ind])) {
+                pl.visLastChange[o.ind] = w.frames;
+                pl.canSee[o.ind] = (w.rfrac() * (pl.items[Item.SENSOR.ordinal()] + 1))
                     > (w.rfrac() * (o.items[Item.CLOAK.ordinal()] + 1));
             }
         }
     }
 
-    /** Go_home's visibility reset: update requested and the last-change times toward and from {@code pl} zeroed. */
+    /**
+     * Go_home's visibility reset (player.c:210-214): update requested and the last-change times toward and from
+     * {@code pl} zeroed, by player index; a player not yet in the game uses the index it is about to get (C's
+     * Init_player runs Go_home with ind = NumPlayers).
+     */
     public void resetVisibility(Player pl) {
         pl.updateVisibility = true;
+        int ind = pl.ind >= 0 ? pl.ind : w.numPlayers;
         for (int k = 0; k < w.numPlayers; k++) {
             Player o = w.playerAt(k);
-            pl.visLastChange[o.slot] = 0;
-            o.visLastChange[pl.slot] = 0;
+            pl.visLastChange[k] = 0;
+            o.visLastChange[ind] = 0;
         }
     }
 
     /** C {@code visibility[].canSee} with the team, alliance and own-tank exceptions of the frame code. */
     public boolean sees(Player viewer, Player target) {
-        return viewer.canSee[target.slot] || viewer == target || w.sameTeam(viewer, target) || ownsTank(viewer, target);
+        return viewer.canSee[target.ind] || viewer == target || w.sameTeam(viewer, target) || ownsTank(viewer, target)
+            || w.allied(viewer, target);
     }
 
     /** C {@code OWNS_TANK(i, j)}: {@code tank} is a tank released by {@code pl}. */
@@ -197,7 +200,7 @@ public final class Locks {
      * C {@code Player_lock_closest}: lock on the closest allowed playing player farther than the current lock
      * ({@code next}), or the closest at all.
      * <p>
-     * BEHAVIOR: own tanks and team mates are skipped. Returns false (the lock is cleared unless {@code next})
+     * BEHAVIOR: own tanks, team mates and allies are skipped. Returns false (the lock is cleared unless {@code next})
      * when nobody qualifies.
      */
     public boolean lockClosest(Player pl, boolean next) {
@@ -217,7 +220,7 @@ public final class Locks {
         for (int k = 0; k < w.numPlayers; k++) {
             Player p = w.playerAt(k);
             if (p == lock || (p.status & (Obj.PLAYING | Obj.PAUSE | Obj.GAME_OVER)) != Obj.PLAYING
-                || !lockAllowed(pl, p) || ownsTank(pl, p) || w.sameTeam(pl, p)) {
+                || !lockAllowed(pl, p) || ownsTank(pl, p) || w.sameTeam(pl, p) || w.allied(pl, p)) {
                 continue;
             }
             float l = w.wrapLength(p.px - pl.px, p.py - pl.py);
@@ -326,14 +329,24 @@ public final class Locks {
     }
 
     /**
-     * The lock part of C {@code Frame_status}, run for every human after the frame (C computes it when the frame is
-     * sent; robots set LOCK_VISIBLE themselves).
+     * The lock part of C {@code Frame_status} (frame.c:395-422), run by the host when it builds a client's
+     * snapshot, on the player whose eyes the snapshot shows, with that client's view size (C
+     * {@code Frame_status(conn, ind)}).
      * <p>
      * BEHAVIOR: LOCK_VISIBLE is cleared, then set when locked with the compass on and the target is within sensor
      * range (limited visibility), seen (or a team mate or own tank), playing, on radar or in view, and not at
      * distance 0.
+     * BEHAVIOR: in view is C's {@code inview} with the client's view size ({@link Player#viewWidth} x
+     * {@link Player#viewHeight}, from DISPLAY): the view starts {@code size / 2} (integer division) before the
+     * player, so the target's wrapped offset must be in {@code (-(w/2), w - w/2)} and {@code (-(h/2), h - h/2)},
+     * both ends excluded.
      */
     public void hudLock(Player pl) {
+        hudLock(pl, pl.viewWidth, pl.viewHeight);
+    }
+
+    /** {@link #hudLock(Player)} with the receiving client's view size. */
+    public void hudLock(Player pl, int viewWidth, int viewHeight) {
         pl.lockTagged &= ~Player.LOCK_VISIBLE;
         if ((pl.lockTagged & Player.LOCK_PLAYER) == 0 || (pl.used & Has.COMPASS) == 0) {
             return;
@@ -343,15 +356,20 @@ public final class Locks {
             return;
         }
         if ((!w.items.limitedVisibility || pl.lockDistance <= pl.sensorRange)
-            && (pl.canSee[t.slot] || ownsTank(pl, t) || w.sameTeam(pl, t))
+            && (pl.canSee[t.ind] || ownsTank(pl, t) || w.sameTeam(pl, t) || w.allied(pl, t))
             && (t.status & (Obj.PLAYING | Obj.GAME_OVER)) == Obj.PLAYING
-            && (w.items.playersOnRadar || inView(pl, t))
+            && (w.items.playersOnRadar || inView(pl, t, viewWidth, viewHeight))
             && pl.lockDistance != 0) {
             pl.lockTagged |= Player.LOCK_VISIBLE;
         }
     }
 
-    private boolean inView(Player pl, Player t) {
-        return Math.abs(w.wrapDx(t.px - pl.px)) < VIEW_HALF_X && Math.abs(w.wrapDy(t.py - pl.py)) < VIEW_HALF_Y;
+    /** C frame.c {@code inview} after {@code Frame_parameters} (view origin {@code pos - view_size / 2}). */
+    private boolean inView(Player pl, Player t, int vw, int vh) {
+        double dx = w.wrapDx(t.px - pl.px);
+        double dy = w.wrapDy(t.py - pl.py);
+        int hx = vw / 2;
+        int hy = vh / 2;
+        return dx > -hx && dx < vw - hx && dy > -hy && dy < vh - hy;
     }
 }

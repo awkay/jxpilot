@@ -69,6 +69,9 @@ public final class World {
     public final int[] order;
     public int numPlayers;
     private final int[] slotOfId = new int[MAX_IDS];
+    /** Freed slots, most recent last (see {@link #takeSlot}). */
+    private int[] recycled;
+    private int recycledTop;
     private int pseudoTeamNext;
 
     public final Objects objects;
@@ -166,6 +169,7 @@ public final class World {
             players[i].initVisibility(cap);
         }
         order = new int[cap];
+        recycled = new int[2 * cap];
         Arrays.fill(slotOfId, -1);
         objects = new Objects(params.maxObjects);
         grid = new Grid(width, height, wrap, params.maxObjects);
@@ -282,21 +286,36 @@ public final class World {
         return p;
     }
 
+    /**
+     * C reuses player structs last-deleted-first (Delete_player swaps the leaver to Players[NumPlayers], the next
+     * one Init_player takes), and with them their visibility tables: the most recently freed slot is taken
+     * first, then never-used ones.
+     */
     private Player takeSlot() {
+        while (recycledTop > 0) {
+            Player p = players[recycled[--recycledTop]];
+            if (!p.inUse) {
+                return claim(p);
+            }
+        }
         for (Player p : players) {
             if (!p.inUse) {
-                int id = 1;
-                while (slotOfId[id] >= 0) {
-                    id++;
-                }
-                slotOfId[id] = p.slot;
-                p.inUse = true;
-                p.spawned = false;
-                p.id = id;
-                return p;
+                return claim(p);
             }
         }
         return null;
+    }
+
+    private Player claim(Player p) {
+        int id = 1;
+        while (slotOfId[id] >= 0) {
+            id++;
+        }
+        slotOfId[id] = p.slot;
+        p.inUse = true;
+        p.spawned = false;
+        p.id = id;
+        return p;
     }
 
     /**
@@ -313,6 +332,7 @@ public final class World {
         p.spawned = true;
         p.audio.clear();
         p.pseudoTeam = pseudoTeamNext++;
+        p.ind = numPlayers;
         order[numPlayers++] = p.slot;
     }
 
@@ -332,7 +352,11 @@ public final class World {
                 k++;
             }
             order[k] = order[--numPlayers];
+            players[order[k]].ind = k;
+            order[numPlayers] = p.slot;
+            p.ind = -1;
         }
+        recycled[recycledTop++] = p.slot;
         slotOfId[p.id] = -1;
         p.inUse = false;
         p.spawned = false;
@@ -428,13 +452,18 @@ public final class World {
         return params.teamPlay && a.team == b.team && a.team != Const.TEAM_NOT_SET;
     }
 
-    /** C {@code Team_immune}: different ids, team immunity on and team mates. */
+    /** C {@code Team_immune}: different ids, team immunity on, and team mates or allies (player.c:1998). */
     public boolean teamImmune(int id1, int id2) {
         if (id1 == id2 || !params.teamImmunity || id1 == Obj.NO_ID || id2 == Obj.NO_ID) {
             return false;
         }
         Player a = byId(id1);
         Player b = byId(id2);
-        return a != null && b != null && sameTeam(a, b);
+        return a != null && b != null && (sameTeam(a, b) || allied(a, b));
+    }
+
+    /** server-commands: C {@code ALLIANCE(i, j)}: {@code a} is in an alliance and {@code b} is in the same one. */
+    public boolean allied(Player a, Player b) {
+        return a.alliance != Player.ALLIANCE_NOT_SET && b.alliance == a.alliance;
     }
 }

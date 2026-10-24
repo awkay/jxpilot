@@ -27,6 +27,7 @@ import com.fulcrologic.jxpilot.common.config.ConfigParser;
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.OptionOrigin;
 import com.fulcrologic.jxpilot.common.config.Options;
+import com.fulcrologic.jxpilot.common.map.MapLocator;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
 import com.fulcrologic.jxpilot.common.net.ConfigTransfer;
 
@@ -80,7 +81,7 @@ public final class Server implements AutoCloseable {
     }
 
     /**
-     * Parse {@code --map <file> [--port N] [--bind sel ...] [--bindWait] [config file]} (plus any
+     * Parse {@code [--map NAME|FILE] [--port N] [--bind sel ...] [--bindWait] [config file]} (plus any
      * XPilot option), load the map, bind, and start the loop.
      * Sources are read in C {@code Parser}'s order: command line, the defaults file ({@link DefaultsFile}:
      * XPilot's lib/defaults unless {@code --defaults FILE|none}), the optional positional config file (also
@@ -146,10 +147,17 @@ public final class Server implements AutoCloseable {
      * Every option source of {@link #start}, in C {@code Parser}'s order (edge: reads files).
      * <p>
      * BEHAVIOR: command line, then the defaults file ({@link DefaultsFile#apply}), then the positional config
-     * file (origin DEFAULTS), then the map (origin MAP), then the {@code expand} list; precedence per
-     * {@link Options#setValue}.
+     * file (origin DEFAULTS), then the password file named by {@code passwordFileName} (origin PASSWORD, C
+     * {@code parsePasswordFile}; none without the option), then the map (origin MAP), then the {@code expand}
+     * list; precedence per {@link Options#setValue}.
+     * BEHAVIOR: the map is {@code mapFileName} (from {@code --map} or the config file) as {@link MapLocator} resolves
+     * it: a bundled map by name, else a file. Without one it is {@link MapLocator#DEFAULT_MAP} (C's default map,
+     * cmdline.c {@code Conf_default_map()}).
      *
-     * @throws IllegalArgumentException for an unknown option, two config files or no {@code --map}
+     * @throws IllegalArgumentException for an unknown option or two config files
+     * @throws java.io.FileNotFoundException when the map is neither bundled nor a file (the message lists the
+     *                                       bundled maps)
+     * @throws IOException when a named password file cannot be read (as a named defaults file)
      */
     public static Options readOptions(String[] args) throws IOException {
         Options opts = new Options();
@@ -159,11 +167,16 @@ public final class Server implements AutoCloseable {
         if (config != null) {
             ConfigParser.parseFile(config, OptionOrigin.DEFAULTS, opts);
         }
-        String mapFile = opts.getString(Opt.MAP_FILE_NAME);
-        if (mapFile == null) {
-            throw new IllegalArgumentException("--map <file> is required");
+        String passwordFile = opts.getString(Opt.PASSWORD_FILE_NAME);
+        if (passwordFile != null && !passwordFile.isEmpty()) {
+            try {
+                ConfigParser.parseFile(Path.of(passwordFile), OptionOrigin.PASSWORD, opts);
+            } catch (IOException e) {
+                throw new IOException("cannot read password file " + passwordFile + " (" + e + ")", e);
+            }
         }
-        ConfigParser.parseFile(Path.of(mapFile), OptionOrigin.MAP, opts);
+        String mapFile = opts.getString(Opt.MAP_FILE_NAME);
+        MapLocator.resolve(mapFile == null ? MapLocator.DEFAULT_MAP : mapFile).parseInto(opts);
         opts.finishParsing();
         return opts;
     }

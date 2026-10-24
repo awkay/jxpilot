@@ -3,7 +3,7 @@
 // by dist/src/test/java/com/fulcrologic/jxpilot/dist/docs/GuideTables.java. Do not edit:
 // run `make -C docs/guide generate` instead. The build fails when this file is stale.
 
-The server knows *301* options: 282 implemented, 1 in progress, 5 not yet, 6 not supported, 2 no effect, 5 not applicable. In these groups:
+The server knows *301* options: 288 implemented, 2 not yet, 4 not supported, 2 no effect, 5 not applicable. In these groups:
 
 * <<opts-files,Command line and server files>> (11)
 * <<opts-network,Server and network>> (23)
@@ -78,7 +78,7 @@ Switches of the server process itself and the files it reads.
 |text
 |_(none)_
 |command line, config file
-|*Not supported:* no operator commands yet (C command.c). The filename of the password file to read on startup.
+|*Implemented.* The filename of the password file to read on startup.
 
 |[[opt-motdFileName]]`+motdFileName+`
 |`+motd+`
@@ -257,7 +257,7 @@ Where and how the server listens, who may connect and how much traffic it accept
 |text
 |_(none)_
 |command line, config file, password file
-|*Not supported:* no operator commands yet (C command.c). The password needed to obtain operator privileges. If specified on the command line, on many systems other users will be able to see the password. Therefore, using the password file instead is recommended.
+|*Implemented.* The password needed to obtain operator privileges. If specified on the command line, on many systems other users will be able to see the password. Therefore, using the password file instead is recommended.
 
 |[[opt-clientPortStart]]`+clientPortStart+`
 |
@@ -1537,14 +1537,14 @@ Team play and player alliances.
 |boolean
 |`+yes+`
 |command line, map, config file
-|*Not yet:* alliances (alliance.c, the /ally commands and client support) are not in any M2 agent's list. Are alliances between players allowed? Alliances are like teams, except they can be formed and dissolved at any time. Notably, teamImmunity and teamShareScore work for alliances too. To manage alliances, use the '/ally' talk command: '/ally invite <player name>' to invite another player to join you. '/ally cancel' to cancel such an invitation. '/ally refuse <player name>' to decline an invitation from a player. '/ally refuse' to decline all the invitations you received. '/ally accept <player name>' to join the other player. '/ally accept' to accept all the invitations you received. '/ally leave' to leave the alliance you are currently in. '/ally list' lists the members of your current alliance. If members from different alliances join, all their allies do so.
+|*Implemented.* Are alliances between players allowed? Alliances are like teams, except they can be formed and dissolved at any time. Notably, teamImmunity and teamShareScore work for alliances too. To manage alliances, use the '/ally' talk command: '/ally invite <player name>' to invite another player to join you. '/ally cancel' to cancel such an invitation. '/ally refuse <player name>' to decline an invitation from a player. '/ally refuse' to decline all the invitations you received. '/ally accept <player name>' to join the other player. '/ally accept' to accept all the invitations you received. '/ally leave' to leave the alliance you are currently in. '/ally list' lists the members of your current alliance. If members from different alliances join, all their allies do so.
 
 |[[opt-announceAlliances]]`+announceAlliances+`
 |
 |boolean
 |`+no+`
 |command line, map, config file
-|*Not yet:* alliances (alliance.c, the /ally commands and client support) are not in any M2 agent's list. Are changes in alliances made public? If this option is on, changes in alliances are sent to all players and all alliances are shown in the score list. Invitations for alliances are never sent to anyone but the invited players.
+|*Implemented.* Are changes in alliances made public? If this option is on, changes in alliances are sent to all players and all alliances are shown in the score list. Invitations for alliances are never sent to anyone but the invited players.
 
 |[[opt-teamPlay]]`+teamPlay+`
 |`+teams+`
@@ -2148,14 +2148,14 @@ Ship shapes, shields, lives, visibility and other per-player rules.
 |text
 |`+(NM:Default)(AU:Unknown)(SH: 15,0 -9,8 -9,-8)(MG: 15,0)(LG: 15,0)(RG: 15,0)(EN: -9,0)(LR: -9,8)(RR: -9,-8)(LL: -9,8)(RL: -9,-8)(MR: 15,0)+`
 |command line, map, config file
-|*Not yet:* a player or robot without a valid shape gets the built-in standard ship, which is also this option's default. What is the default ship shape for people who do not have a ship shape defined?
+|*Implemented.* What is the default ship shape for people who do not have a ship shape defined?
 
 |[[opt-tankShipShape]]`+tankShipShape+`
 |
 |text
 |`+(NM:fueltank)(AU:John E. Norlin)(SH: 15,0 14,-5 9,-8 -5,-8 -3,-8 -3,0 2,0 2,2 -3,2 -3,6 5,6 5,8 -5,8 -5,-8 -9,-8 -14,-5 -15,0 -14,5 -9,8 9,8 14,5)(EN: -15,0)(MG: 15,0)+`
 |command line, map, config file
-|*In progress (M2).* What is the ship shape used for tanks?
+|*Implemented.* What is the ship shape used for tanks?
 
 |[[opt-allowPlayerKilling]]`+allowPlayerKilling+`
 |`+killings+`

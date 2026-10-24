@@ -62,8 +62,17 @@ public final class ConfigParser {
 
     /** Parse a file (Latin-1) into {@code opts} with the given origin. Thin I/O wrapper around {@link #parse}. */
     public static void parseFile(Path file, OptionOrigin origin, Options opts) throws IOException {
-        byte[] bytes = Files.readAllBytes(file);
-        parse(new String(bytes, StandardCharsets.ISO_8859_1), file.getFileName().toString(), origin, opts);
+        parseBytes(Files.readAllBytes(file), file.getFileName().toString(), origin, opts);
+    }
+
+    /**
+     * Parse the raw bytes of a file, e.g. a bundled map resource.
+     * <p>
+     * BEHAVIOR: the bytes are decoded as Latin-1 (every byte is one char, as C reads them) and handed to
+     * {@link #parse}.
+     */
+    public static void parseBytes(byte[] bytes, String fileName, OptionOrigin origin, Options opts) {
+        parse(new String(bytes, StandardCharsets.ISO_8859_1), fileName, origin, opts);
     }
 
     /**

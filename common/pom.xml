@@ -9,6 +9,21 @@
   <artifactId>jxpilot-common</artifactId>
 
   <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <!-- The standard maps (com.fulcrologic.jxpilot.common.map.BundledMaps), copied byte for byte from the
+           repository's maps/ so git holds one copy. xpilot/maps/index.txt lists them. -->
+      <resource>
+        <directory>${project.basedir}/../maps</directory>
+        <includes>
+          <include>*.xp</include>
+          <include>README.md</include>
+        </includes>
+        <targetPath>xpilot/maps</targetPath>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

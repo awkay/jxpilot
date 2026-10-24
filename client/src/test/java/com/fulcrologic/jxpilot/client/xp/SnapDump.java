@@ -132,6 +132,9 @@ final class SnapDump {
                 for (int k = 0; k < XpProto.NUM_ITEMS; k++) {
                     sb.append(' ').append(c.count(k));
                 }
+                if (c.loseItem() != 0) {
+                    sb.append(" lose=").append(c.loseItem());
+                }
                 yield sb.toString();
             }
             case Section.ITEM -> {

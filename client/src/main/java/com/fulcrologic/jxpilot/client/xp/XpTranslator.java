@@ -64,11 +64,14 @@ public final class XpTranslator {
     private final ByteBuffer pay = ByteBuffer.allocate(2048);
     private final DebrisBurst burst = new DebrisBurst();
     private final int[] selfItems = new int[XpProto.NUM_ITEMS];
+    /** C client {@code lose_item}: the last PKT_LOSEITEM value (kept between frames; 0 until one arrives). */
+    private int loseItem;
 
     private final Msg.PlayerJoin join = new Msg.PlayerJoin();
     private final Msg.PlayerLeave leave = new Msg.PlayerLeave();
     private final Msg.Score score = new Msg.Score();
     private final Msg.Timing timingMsg = new Msg.Timing();
+    private final Msg.PlayerAlliance allianceMsg = new Msg.PlayerAlliance();
     private final Msg.TeamScore teamScore = new Msg.TeamScore();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
     private final Msg.Text text = new Msg.Text();
@@ -124,7 +127,7 @@ public final class XpTranslator {
      * Use a freshly built map (after the setup).
      * <p>
      * BEHAVIOR: world size and wrap from the map, limited lives from the setup mode, no base owners,
-     * no players, no previous frame.
+     * no players, no previous frame, lose item 0.
      */
     public void configure(XpMap.Built built, int setupMode, int protocolVersion) {
         map = built;
@@ -140,6 +143,7 @@ public final class XpTranslator {
         selfId = Protocol.NO_ID;
         expectSelf = false;
         prevCount = 0;
+        loseItem = 0;
         viewX = worldW / 2;
         viewY = worldH / 2;
     }
@@ -171,7 +175,8 @@ public final class XpTranslator {
      * BEHAVIOR: tick = C frame number, one part; the view centre is the own ship (else the last one).
      * BEHAVIOR: sections: SELF (with PKT_SELF), SHIP (ships, paused ships), SHOT (fast shots by colour),
      * BURST (debris), CANNON/FUEL/TARGET (updates, C numbers mapped to WorldMap indices), RADAR,
-     * SELF_ITEMS (with PKT_SELF), the M2 object sections and TIMERS (with PKT_SELF: damaged, round delay
+     * SELF_ITEMS (with PKT_SELF; its loseItem is the last PKT_LOSEITEM of any frame, which the C client keeps),
+     * the M2 object sections and TIMERS (with PKT_SELF: damaged, round delay
      * (none = 0) and the time left of a PKT_TIME_LEFT in this frame, else -1).
      * BEHAVIOR: the frame's PKT_AUDIO become the SOUND section (C {@code Handle_audio}: type and volume as
      * sent), with or without PKT_SELF.
@@ -180,6 +185,9 @@ public final class XpTranslator {
     public void frame(XpFrame f, long nowNanos) {
         if (map == null) {
             return;
+        }
+        if (f.loseItem >= 0) {
+            loseItem = f.loseItem;
         }
         if (f.hasSelf) {
             viewX = wrapX(f.selfX);
@@ -203,7 +211,7 @@ public final class XpTranslator {
         writeRadar(f, selfShip);
         if (f.hasSelf && w.beginSection(Section.SELF_ITEMS)) {
             System.arraycopy(f.items, 0, selfItems, 0, XpProto.NUM_ITEMS);
-            Records.SelfItems.put(w, selfItems);
+            Records.SelfItems.put(w, selfItems, loseItem);
             w.endSection();
         }
         writeObjects(f);
@@ -631,7 +639,7 @@ public final class XpTranslator {
                 double y = wrapY(f.mineY[k]);
                 if (visible(x, y)) {
                     int id = f.mineId[k];
-                    int owner = id == 0 || id == XpProto.EXPIRED_MINE_ID ? Protocol.NO_ID : id;
+                    int owner = id == 0 ? Protocol.NO_ID : id; // EXPIRED_MINE_ID passes through, as on the native path
                     Records.Mine.put(w, x, y, f.mineTeam[k] != 0 ? Records.Mine.FLAG_FRIENDLY : 0, owner);
                 }
             }
@@ -805,7 +813,7 @@ public final class XpTranslator {
         join.name.setLength(0);
         join.name.append(name);
         join.shape.setLength(0);
-        join.shape.append(shape, 0, Math.min(shape.length(), Msg.MAX_SHAPE_LEN * 2));
+        join.shape.append(shape, 0, Math.min(shape.length(), Msg.MAX_SHAPE_LEN));
         deliver(join, ReliableType.PLAYER_JOIN);
     }
 
@@ -847,6 +855,17 @@ public final class XpTranslator {
         timingMsg.check = check;
         timingMsg.round = round;
         deliver(timingMsg, ReliableType.TIMING);
+    }
+
+    /**
+     * server-commands: the alliance character of C {@code Handle_score} (blank before 0x4500) as PLAYER_ALLIANCE.
+     * <p>
+     * BEHAVIOR: delivers the id and the mark as received.
+     */
+    public void alliance(int id, char mark) {
+        allianceMsg.id = id & 0xFFFF;
+        allianceMsg.mark = mark;
+        deliver(allianceMsg, ReliableType.PLAYER_ALLIANCE);
     }
 
     /**

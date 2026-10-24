@@ -94,6 +94,11 @@ final class Recorder implements ConnectionListener, XpReliableDecoder.Control {
                 t.read(p);
                 yield "timing id=" + t.id + " check=" + t.check + " round=" + t.round;
             }
+            case ReliableType.PLAYER_ALLIANCE -> {
+                Msg.PlayerAlliance a = new Msg.PlayerAlliance();
+                a.read(p);
+                yield "alliance id=" + a.id + " mark=" + a.mark;
+            }
             case ReliableType.TEAM_SCORE -> {
                 Msg.TeamScore s = new Msg.TeamScore();
                 s.read(p);
