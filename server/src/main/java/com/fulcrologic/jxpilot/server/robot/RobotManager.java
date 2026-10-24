@@ -72,6 +72,13 @@ public final class RobotManager {
     /** C {@code NumRobots}. */
     int numRobots;
 
+    /** Server log for C's {@code logRobots} lines (robot.c:835-837); null logs nothing. */
+    public java.util.function.Consumer<CharSequence> log;
+    /** The log line, reused (robots join during play: no allocation here). */
+    private final StringBuilder logLine = new StringBuilder(80);
+    final boolean logRobots;
+    final String robotRealName;
+
     final boolean allowShipShapes;
     final int robotLeaveLife;
     final int robotLeaveScore;
@@ -89,6 +96,8 @@ public final class RobotManager {
         this.items = new RobotItems();
         this.robot = new DefaultRobot(w, sim, items);
         allowShipShapes = w.options.getBool(Opt.ALLOW_SHIP_SHAPES);
+        logRobots = w.options.getBool(Opt.LOG_ROBOTS);
+        robotRealName = w.options.getString(Opt.ROBOT_REAL_NAME);
         robotLeaveLife = w.options.getInt(Opt.ROBOT_LEAVE_LIFE);
         robotLeaveScore = w.options.getInt(Opt.ROBOT_LEAVE_SCORE);
         robotLeaveRatio = w.options.getInt(Opt.ROBOT_LEAVE_RATIO);
@@ -244,10 +253,11 @@ public final class RobotManager {
      * React to the sim's events since the last update.
      * <p>
      * BEHAVIOR: SPAWN of a robot: C Robot_go_home (mode TAKE_OFF).
-     * BEHAVIOR: KILL by another player: C Robot_war(victim, killer) (C calls it for shot and ball kills; the
-     * event does not tell run-overs and explosions apart, which C does not call it for).
-     * BEHAVIOR: CRASH of two ships (b = crasher, c = other): each robot at war with the other stops the war
-     * (collision.c).
+     * BEHAVIOR: KILL by its cause ({@code Events.KILL_*}): a weapon kill (shots, balls, lasers) is C
+     * Robot_war(victim, killer); a shove is Robot_war(victim, the drawn pusher in aux); a run-over victim robot
+     * at war with its killer stops that war (collision.c:447-460); explosions do nothing.
+     * BEHAVIOR: CRASH of two ships (b = crasher, c = other): both died, so each robot at war with the other stops
+     * the war (collision.c:447-460).
      * BEHAVIOR: a deadly crash of walls.c {@code Player_crash} (CRASH alone with a sub-type other than
      * CRASH_UNIVERSE, which is collision.c's; or a KILL with a crash sub-type in value, a shove into a wall):
      * a robot victim with a negative score gets a new home base.
@@ -272,8 +282,8 @@ public final class RobotManager {
                 } else if (g == Msg.GameEvent.KILL) {
                     Player killer = w.byId(ev.b[i]);
                     Player victim = w.byId(ev.c[i]);
-                    if (killer != null && victim != null) {
-                        war(victim, killer);
+                    if (victim != null) {
+                        killed(victim, killer, ev.cause[i], w.byId(ev.aux[i]));
                     }
                     if (victim != null && ev.value[i] != 0) {
                         rehomeIfLosing(victim);
@@ -294,6 +304,30 @@ public final class RobotManager {
             }
         }
         cursor = to;
+    }
+
+    /** The C robot hooks of a kill, by cause (see {@link #handleEvents}). */
+    private void killed(Player victim, Player killer, int cause, Player warTarget) {
+        switch (cause) {
+            case Events.KILL_WEAPON -> {
+                if (killer != null) {
+                    war(victim, killer);
+                }
+            }
+            case Events.KILL_SHOVE -> {
+                if (warTarget != null) {
+                    war(victim, warTarget);
+                }
+            }
+            case Events.KILL_RUNOVER -> {
+                if (killer != null) {
+                    resetWarIfOn(victim, killer.id);
+                }
+            }
+            default -> {
+                // explosions: C calls no robot hook
+            }
+        }
     }
 
     private void resetWarIfOn(Player pl, int id) {
@@ -499,7 +533,8 @@ public final class RobotManager {
      * BEHAVIOR: picks a robot ({@link #pick}), joins it (its ship shape with allowShipShapes; team per
      * {@link #pickTeam} in team play) with turnspeed 64, power 55, turnresistance 0.12 (also the alternate
      * settings) and fuel levels 100/200/500 units, then lets the robot type initialise it.
-     * BEHAVIOR: says ENTER (even without robotsTalk), then C's round part ({@code Rounds.robotEntered}: as the
+     * BEHAVIOR: says ENTER (even without robotsTalk); with logRobots logs "NAME (players, robotRealName) starts at
+     * startpos BASE." (robot.c:835-837); then C's round part ({@code Rounds.robotEntered}: as the
      * first player, or during a round delay, it (re)starts and announces the round delay).
      * BEHAVIOR: returns null (nothing changes) when the join fails.
      */
@@ -530,6 +565,12 @@ public final class RobotManager {
         robot.create(d, def.config());
         numRobots++;
         talk.says(RobotTalk.ENTER, pl.name, null);
+        if (logRobots && log != null) {
+            logLine.setLength(0);
+            logLine.append(pl.name).append(" (").append(w.numPlayers).append(", ").append(robotRealName)
+                .append(") starts at startpos ").append(pl.homeBase).append('.');
+            log.accept(logLine);
+        }
         sim.rounds.robotEntered();
         w.events.add(Events.THRUST, pl.id, pl.afterburners(), 0, (float) pl.power);
         return pl;
@@ -596,6 +637,22 @@ public final class RobotManager {
         w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(reason);
         delete(pl, false);
         return true;
+    }
+
+    /**
+     * player.c:1938-1951 ({@code Player_death_reset}): a robot has just lost its last life (limited lives).
+     * <p>
+     * BEHAVIOR: outside race and team play, or with robotsLeave and a score below robotLeaveScore, the robot is
+     * deleted (C {@code Robot_delete(ind, false)}: no message) and true is returned; {@link #update} later
+     * replaces it as usual. Otherwise false: the caller ends its game (GAME_OVER).
+     */
+    public boolean leaveOutOfLives(Player pl) {
+        Params p = w.params;
+        if (!(w.map.timing() || p.teamPlay) || (p.robotsLeave && pl.score < robotLeaveScore)) {
+            delete(pl, false);
+            return true;
+        }
+        return false;
     }
 
     // ================================================================ API for the server

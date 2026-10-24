@@ -31,7 +31,7 @@ import java.util.concurrent.CompletionException;
 
 /**
  * Headless server entry point:
- * {@code ServerMain --map <file> [--port N] [--bind sel ...] [--bindWait] [config file]}.
+ * {@code ServerMain --map <file> [--port N] [--bind sel ...] [--bindWait] [--defaults FILE|none] [config file]}.
  * Any XPilot server option may also be given as {@code -name value}. Runs until interrupted (Ctrl-C)
  * or until the server loop dies, in which case the process exits with status 2 instead of lingering.
  */
@@ -58,12 +58,24 @@ public final class ServerMain {
      * on Ctrl-C) returns 0. The shutdown hook is removed again when the server stops on its own.
      */
     static int run(String[] args, Server.Settings settings, PrintStream err) {
+        return run(args, settings, System.out, err);
+    }
+
+    /** BEHAVIOR: an information request ({@link ServerInfo}: -help, -version, -dump...) prints to out and returns 0. */
+    static int run(String[] args, Server.Settings settings, PrintStream out, PrintStream err) {
+        String info = ServerInfo.request(args, ServerInfo.version());
+        if (info != null) {
+            out.print(info);
+            out.flush();
+            return 0;
+        }
         Server server;
         try {
             server = Server.start(args, settings);
         } catch (IllegalArgumentException | IOException e) {
             err.println("jxpilot server: " + e.getMessage());
-            err.println("usage: ServerMain --map <file> [--port N] [--bind sel ...] [--bindWait] [config file]");
+            err.println("usage: ServerMain --map <file> [--port N] [--bind sel ...] [--bindWait] [--defaults FILE|none]"
+                + " [config file]");
             return EXIT_USAGE;
         }
         Thread hook = new Thread(() -> {

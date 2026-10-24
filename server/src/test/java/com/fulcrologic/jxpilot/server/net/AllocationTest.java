@@ -267,7 +267,7 @@ class AllocationTest {
         java.util.concurrent.atomic.AtomicReference<com.fulcrologic.jxpilot.server.host.SimGameHost> hostRef =
             new java.util.concurrent.atomic.AtomicReference<>();
         com.fulcrologic.jxpilot.server.host.SimGameHostFactory real =
-            new com.fulcrologic.jxpilot.server.host.SimGameHostFactory(() -> 77);
+            new com.fulcrologic.jxpilot.server.host.SimGameHostFactory(() -> 77, line -> { }); // robot log is I/O
         s.factory = (o, m) -> {
             com.fulcrologic.jxpilot.server.host.SimGameHost h =
                 (com.fulcrologic.jxpilot.server.host.SimGameHost) real.create(o, m);

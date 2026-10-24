@@ -111,6 +111,7 @@ public final class ServerNet {
     private long malformed;
     private long rateLimited;
     private long stray;
+    private long denied;
     private long truncatedSnapshots;
     private long versionRejects;
 
@@ -224,7 +225,8 @@ public final class ServerNet {
      * {@link #versionRejects()} and, if at least as large as a bare REJECT, gets REJECT VERSION; any other
      * bad header is dropped as {@link #malformed()}.
      * BEHAVIOR: bodies that do not decode are dropped as malformed; no exception escapes.
-     * BEHAVIOR: CONNECT goes to the join logic; other types need a known peer on this channel and its
+     * BEHAVIOR: CONNECT goes to the join logic (a source in denyHosts is ignored, counting {@link #denied()});
+     * other types need a known peer on this channel and its
      * session id, else they are dropped (counting {@link #stray()}).
      * BEHAVIOR: the first packet with the session id verifies an unverified session and queues WELCOME.
      * BEHAVIOR: any valid packet from a peer refreshes its timeout and feeds the header ack to its
@@ -295,6 +297,10 @@ public final class ServerNet {
     }
 
     private void onConnect(int channel, SocketAddress from, Connection existing, ByteBuffer data, int size, long now) {
+        if (DenyList.denied(cfg.denyHosts, from)) {
+            denied++;
+            return;
+        }
         if (!connect.tryRead(data)) {
             malformed++;
             return;
@@ -675,6 +681,9 @@ public final class ServerNet {
 
     /** Non-CONNECT packets from unknown peers or with a wrong session. */
     public long stray() { return stray; }
+
+    /** CONNECTs ignored because their source is in denyHosts (C contact.c Check_address). */
+    public long denied() { return denied; }
 
     /** Snapshots cut short at {@link #MAX_SNAPSHOT_PARTS}. */
     public long truncatedSnapshots() { return truncatedSnapshots; }

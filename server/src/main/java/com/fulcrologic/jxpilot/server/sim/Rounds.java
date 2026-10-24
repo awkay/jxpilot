@@ -538,7 +538,8 @@ public final class Rounds {
     /**
      * C {@code Reset_all_players}.
      * <p>
-     * BEHAVIOR: with endOfRoundReset (option {@code reset}) every ship is killed (paused ones only reset)
+     * BEHAVIOR: with endOfRoundReset (option {@code reset}) every ship is killed (paused ones only reset; a
+     * robot that loses its last life this way may leave, and the loop goes on with the player moved into its place)
      * and every shot, mine, debris, spark, cannon shot, missile and item dies (explosives lose their mass, so
      * nothing explodes); targets are repaired in team play.
      * BEHAVIOR: every player leaves GAME_OVER with kills and deaths 0; players that are not paused are busy
@@ -555,6 +556,10 @@ public final class Rounds {
                     sim.ships.deathReset(pl);
                 } else {
                     sim.ships.kill(pl);
+                    if (!pl.inUse) {
+                        k--; // a robot out of lives was deleted (player.c:690-694)
+                        continue;
+                    }
                 }
             }
             pl.status &= ~Obj.GAME_OVER;
