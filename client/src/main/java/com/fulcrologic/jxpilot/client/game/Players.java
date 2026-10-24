@@ -70,6 +70,46 @@ public final class Players {
         java.util.Arrays.fill(slotOf, -1);
     }
 
+    /** Shapes seen recently, matched by content without a String (R7/R10: a rejoin allocates nothing). */
+    private static final int SHAPE_CACHE = 32;
+    private final StringBuilder[] shapeKey = new StringBuilder[SHAPE_CACHE];
+    private final ShipShape[] shapeVal = new ShipShape[SHAPE_CACHE];
+    private int shapeNext;
+
+    /**
+     * BEHAVIOR: the parsed shape of {@code s}: a shape string seen among the last {@value #SHAPE_CACHE} is
+     * reused without parsing or allocating; a new one is parsed ({@link ShipShape#parseOrDefault}) and kept.
+     */
+    ShipShape shape(CharSequence s) {
+        for (int i = 0; i < SHAPE_CACHE; i++) {
+            if (shapeKey[i] != null && contentEquals(shapeKey[i], s)) {
+                return shapeVal[i];
+            }
+        }
+        ShipShape sh = ShipShape.parseOrDefault(s.toString());
+        int k = shapeNext;
+        shapeNext = (shapeNext + 1) % SHAPE_CACHE;
+        if (shapeKey[k] == null) {
+            shapeKey[k] = new StringBuilder(s.length());
+        }
+        shapeKey[k].setLength(0);
+        shapeKey[k].append(s);
+        shapeVal[k] = sh;
+        return sh;
+    }
+
+    private static boolean contentEquals(CharSequence a, CharSequence b) {
+        if (a.length() != b.length()) {
+            return false;
+        }
+        for (int i = 0; i < a.length(); i++) {
+            if (a.charAt(i) != b.charAt(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** BEHAVIOR: forgets every player and the self id. */
     public void clear() {
         for (int i = 0; i < count; i++) {
@@ -136,7 +176,7 @@ public final class Players {
         flags[s] = j.flags;
         power[s] = j.power;
         afterburners[s] = j.afterburners;
-        ShipShape sh = j.shape.length() == 0 ? ShipShape.defaultShip() : ShipShape.parseOrDefault(j.shape.toString());
+        ShipShape sh = j.shape.length() == 0 ? ShipShape.defaultShip() : shape(j.shape);
         shape[s] = sh;
         engineX[s] = sh.engineX;
         engineY[s] = sh.engineY;
