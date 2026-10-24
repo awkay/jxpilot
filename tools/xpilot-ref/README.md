@@ -35,6 +35,7 @@ untested.
 | `Dockerfile` | Two stages. The builder runs Imake, applies the patches and runs `make install`. The runtime stage has Xvfb, xdotool, xwd and ImageMagick. |
 | `patches/0001-client-rename-getline.patch` | The only change needed to build. |
 | `patches/0002-server-physics-trace.patch` | Opt-in trace and seed hooks. Inert unless their environment variables are set. |
+| `patches/0003-server-object-trace.patch` | Opt-in trace of balls, asteroids, wreckage, race progress, treasures and targets (`XPILOT_TRACE_OBJS`). Inert unless set. |
 | `build.sh` | Builds image `xpilot-ref:4.5.5`. |
 | `server.sh` | Runs a headless server and prints its log. |
 | `screenshot.sh` | Runs server and client on Xvfb and saves one PNG. |
@@ -50,6 +51,8 @@ Environment variables used by all scripts:
 - `XPREF_IMAGE`: the image tag. Default `xpilot-ref:4.5.5`.
 - `DOCKER`: the docker CLI. The default is `docker` on PATH, then
   `/Users/tonykay/.docker/bin/docker`.
+- `XPREF_PREFIX`: the container name prefix. Default `xpilot-ref`. Agents running in parallel use their own
+  (for example `XPREF_PREFIX=server-modes`).
 
 ## Usage
 
@@ -175,6 +178,28 @@ tools/xpilot-ref/trace.sh --map default --seed 42 --after 1 \
   generator. With the same seed, robot names and start positions repeat.
   For example, seed 42 on default.xp always puts the ship at 4252,1452.
 
+Game-mode traces (patch 0003): `--trace-objs` adds, after every update tick,
+
+```
+XPOBJ  loop frame ptr type cx cy prevx prevy vx vy life id team status mass extra...
+XPPL2  loop frame id used have ball check round time best_lap last_lap last_lap_time mychar
+XPTRS  loop frame index have destroyed
+XPTGT  loop frame index damage dead_time
+XPTEAM loop frame team treasures_left treasures_destroyed score
+```
+
+for every ball, asteroid and wreckage object (balls: `owner treasure length`; asteroids and wreckage:
+`size rotation turnspeed info`), every player, treasure, target and team with treasures. `ptr` is the C
+object's address: an object keeps it while it lives. `--map-file FILE` runs a map from the host (it is
+copied next to the outputs). The C server also reads `lib/defaults` (gravity -0.25, random items), so pin
+those options in such a map. Example (the ball connector trace of `ModeTraceTest`):
+
+```sh
+XPREF_IMAGE=xpilot-ref:server-modes tools/xpilot-ref/trace.sh \
+    --map-file server/src/test/resources/ctrace/ball-tow.xp --seed 42 --after 1 --trace-objs \
+    --keys "down:Control_L down:Shift_L sleep:0.6 up:Shift_L sleep:3 up:Control_L sleep:0.5" --out /tmp/ball.txt
+```
+
 You can also run the server in raw mode with only robots and trace them:
 `server.sh --trace --seed 1 ...`.
 
@@ -241,6 +266,11 @@ GPL-2.0-or-later, and why.
 
    Without those environment variables, the server behaves exactly as
    upstream.
+3. `0003-server-object-trace.patch`, in `src/server/server.c` only, on top of
+   0002: adds `Trace_objects()` after `Trace_players()`, which prints the
+   XPOBJ/XPPL2/XPTRS/XPTGT/XPTEAM lines when `XPILOT_TRACE_OBJS` is set
+   (`trace.sh --trace-objs`). Inert otherwise. The image `xpilot-ref:4.5.5`
+   built before this patch existed does not have it; rebuild with `build.sh`.
 
 ## Known quirks
 
@@ -295,7 +325,7 @@ GPL-2.0-or-later, and why.
   - on the host, a deadline stops that container by name and then kills
     the docker CLI process that the script started, by PID.
 - Nothing kills by pattern.
-- The only image created is `xpilot-ref:4.5.5`.
+- The only image created is `xpilot-ref:4.5.5` (or the tag in `XPREF_IMAGE`).
 
 ## GPL provenance
 

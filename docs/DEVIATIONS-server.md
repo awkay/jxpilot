@@ -2,7 +2,8 @@
 
 The simulation runs one tick per C frame at the map's `framesPerSecond` and uses C's float (`DFLOAT`)
 arithmetic, so with the same map, options and inputs it matches the C server frame for frame. The golden
-traces in `server/src/test/resources/ctrace/` check that bit for bit (`CTraceTest`). The deviations below
+traces in `server/src/test/resources/ctrace/` check that bit for bit (`CTraceTest`; `ModeTraceTest` for the ball
+connector, race checkpoints and lap times, and asteroid motion). The deviations below
 are deliberate.
 
 | Area | C | JXPilot | Why |
@@ -16,7 +17,15 @@ are deliberate.
 | Score | `DFLOAT` | double | Not physics; scores agree to float display precision. |
 | `teamShareScore` when a player leaves | `TEAM_SCORE(team, -score)` runs after `NumPlayers--` but before the array swap, so the last player in the array misses the re-share | the leaver is removed first, then every remaining member gets the new share | C ordering bug. |
 | `Init_player` limited-lives "too late" check | uses the slot's stale `team` | runs after the team is chosen | Lead decision S10. |
-| Rounds | race mode (`Race_game_over`), treasure destruction and hover pause | not ported (S1 has no race scoring, treasures or autopilot); timing maps play without rounds | Scope. Team rounds end by lives or by `maxRoundTime`. |
+| Rounds: `gameDuration` | `Frame_update` ends the game `gameDuration` minutes of wall-clock time after the server started, then shuts the server down 30 s later | counted in simulated frames from the map load (the simulation runs only while humans play, or with `rawMode`); `World.shutdownDelay` counts the 30 s, but the host does not yet stop the server | Deterministic time model. |
+| Ball life | `LONG_MAX`, counted down every frame; "loose for N frames" is `LONG_MAX - life` | 2^52 (exact in a double), the same countdown and message | `Objects.life` is a double. |
+| Connector reach (`pl->ball`) | a plain pointer: after the ball is deleted the slot may hold another object, and C can then "connect" to it | the handle is checked to still be a live ball | C undefined behaviour. |
+| Radar balls and asteroids | only within the viewer's `sensor_range` | the whole world | Sensor range is not ported (items). |
+| Wreckage on the wire | sent when the client's `sparkProb` is not 0 or with `wreckageCollisionMayKill` | always sent | `sparkProb` is a client display setting. |
+| Temporary wormholes | unlimited (`realloc`); `remove_temp_wormhole` leaves the moved wormhole's `itemID` stale | at most 64 at a time; the moved wormhole's object index is updated | Fixed pool; C bug. |
+| Warp of a removed temporary wormhole | `break` leaves the whole player loop for this frame | only this ship's warp ends | C bug. |
+| Asteroid item drops | `Choose_random_item` + `Make_item` | an `Asteroids.ItemDrop` hook, called once per item after C's rolls; nothing drops until the item code installs it | Items are ported separately. |
+| Race respawn and asteroid placement | `rfrac()` draws (Mersenne Twister) | the world RNG (xorshift) | As "Random numbers" above. |
 | `Give_best_player_bonus` with nobody eligible | reads an unset array entry | announces nothing | C undefined behaviour. |
 | Login messages (`Handle_login`) | "Welcome to ...", "X (realname) has entered ..." | the network layer (`SimGameHost`) sets them in C's place (before the round-delay message), without the real name: "X has entered ..." / "X (team N) has entered ..." | Our CONNECT carries no real name. |
 | Login name check (`Check_names`) | nick must start with 'A'..'Z' (the C client capitalizes it), else E_INVAL | any non-empty name; duplicates are refused case-insensitively | Clients other than C's do not capitalize. |

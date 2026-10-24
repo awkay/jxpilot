@@ -169,7 +169,7 @@ u16 viewX, u16 viewY` — the receiver's view centre in half pixels. `tick` T is
 one C frame, whose result the snapshot shows: the number the network layer passed to `GameHost.tick(T)`
 and on to the simulation, so bursts' `age` and thrust-spark seeds use the same numbers. Parts are numbered
 0..63; the client treats a higher part as malformed. If a tick does not fit one datagram it is split into
-self-contained parts. Sections are written SELF, SHIP, CANNON, FUEL, RADAR, BURST, then SHOT, which fills
+self-contained parts. Sections are written SELF, SHIP, CANNON, FUEL, TARGET, TREASURE, TEMP_WORMHOLE, TIMERS, RADAR, BURST, BALL/ASTEROID/WRECKAGE/CONNECTOR, then SHOT, which fills
 the remaining room nearest first; a record that does not fit drops only itself, smaller records of later
 sections are still sent.
 
@@ -222,7 +222,8 @@ second past the delay so the client sees 0; time left = the round timer rounded 
 treasure, holder = the connected ship or NO_ID: the client draws the ball connector from it); CONNECTOR kind
 BALL only for a ship still *reaching* for a ball with its connector (C `pl->ball`); ASTEROID (size 1-4,
 rotation) and WRECKAGE (shape, size 0-255, rotation); RADAR blips with FLAG_BALL (`treasuresOnRadar`) and
-FLAG_ASTEROID (`asteroidsOnRadar`). SHIP flags carry HAS_BALL and REPAIRING. Game-mode snapshot section ids
+FLAG_ASTEROID (`asteroidsOnRadar`); TEMP_WORMHOLE for every temporary (hyperjump) wormhole, whole world,
+type = `Wormhole.Type` ordinal (1 IN, 2 OUT). SHIP flags carry HAS_BALL and REPAIRING. Game-mode snapshot section ids
 30-36 are reserved for future mode sections (none used yet). A BURST of one particle with no speed and no life is a
 position-only point particle (C debris on the XPilot path) that the client tracks across frames. Indices refer to the `WorldMap` lists, which both sides build
 identically from the same config text.

@@ -614,7 +614,8 @@ public final class Ships {
      * ship with a ball drops it.
      * BEHAVIOR: off (when paused and the count has run out): PAUSE off; with limitedLives, if a non-team player
      * has lost a life it is too late: life 0, 'W', GAME_OVER; otherwise ' ', Go_home, PLAYING, and full lives
-     * with limitedLives. Otherwise nothing happens.
+     * with limitedLives; in race mode the race progress starts over (after Go_home, as C). Otherwise nothing
+     * happens.
      */
     public void pause(Player pl, boolean on) {
         Params p = w.params;
@@ -651,6 +652,11 @@ public final class Ships {
                 if (p.limitedLives) {
                     pl.life = p.worldLives;
                 }
+            }
+            if (w.modeParams.timing) {
+                int count = pl.count;
+                sim.race.resetPlayer(pl);
+                pl.count = count;
             }
         }
     }

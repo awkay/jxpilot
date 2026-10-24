@@ -367,6 +367,30 @@ class RaceTest {
     }
 
     @Nested
+    @DisplayName("pause (event.c Pause_player off in race mode)")
+    class Pause {
+        @Test
+        @DisplayName("unpausing respawns at the last checkpoint passed, then the race progress starts over")
+        void unpause() {
+            Simulation s = raceSim("");
+            Player p = ship(s, "P", 0, 100, 100);
+            p.status |= Obj.PAUSE;
+            p.status &= ~Obj.PLAYING;
+            p.count = 0;
+            p.round = 2;
+            p.check = 1;
+            p.time = 50;
+            p.bestLap = 20;
+            s.ships.pause(p, false);
+            assertAll(
+                () -> assertEquals(10.5 * 35, p.px, 1, "Go_home ran first: at checkpoint A"),
+                () -> assertEquals(0, p.round + p.check + p.time + p.bestLap, "then progress cleared"),
+                () -> assertEquals(0, p.count, "no start delay"),
+                () -> assertTrue((p.status & Obj.PLAYING) != 0, "playing"));
+        }
+    }
+
+    @Nested
     @DisplayName("round integration (Rounds, Simulation)")
     class Integration {
         @Test

@@ -43,3 +43,9 @@ break. ModeTraceTest injects each asteroid C creates into the Java world and com
 (with the life and brake factors), spin and life until the first one breaks.
   XPREF_IMAGE=xpilot-ref:server-modes tools/xpilot-ref/trace.sh
     --map-file server/src/test/resources/ctrace/asteroid-box.xp --seed 42 --after 1 --trace-objs --keys "sleep:14"
+
+ball-drop.txt (112 frames): as ball-tow, then the ball is dropped ('d') and flies free, bouncing off the
+floor and the right wall (balls keep their life on bounces).
+  XPREF_IMAGE=xpilot-ref:server-modes tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/ball-tow.xp --seed 42 --after 1 --trace-objs
+    --keys "down:Control_L down:Shift_L sleep:0.6 up:Shift_L sleep:0.8 up:Control_L key:d sleep:5"

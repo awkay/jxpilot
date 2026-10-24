@@ -46,8 +46,9 @@ import java.nio.ByteBuffer;
  * Fills SNAPSHOT bodies for one viewer from the {@link World} with common's {@link SnapshotWriter}.
  * Allocation free; one instance per server thread.
  * <p>
- * Sections in order: SELF, SHIP (other ships in view), CANNON, FUEL, RADAR (whole world, when requested),
- * BURST (bursts made since the viewer's cursor, in view) and last SHOT, which fills the remaining room
+ * Sections in order: SELF, SHIP (other ships in view), CANNON, FUEL, TARGET, TREASURE, TEMP_WORMHOLE, TIMERS,
+ * RADAR (whole world, when requested), BURST (bursts made since the viewer's cursor, in view), the game-mode
+ * objects (BALL, ASTEROID, WRECKAGE, ball CONNECTOR) and last SHOT, which fills the remaining room
  * nearest first ({@link ShotHash}, grouped by kind/colour relative to the viewer). Objects farther than the
  * view half-size from the viewer (or not encodable, {@link SnapshotWriter#inView}) are culled. When a
  * datagram fills up, the snapshot continues in the next buffer as a new self-contained part (same tick,

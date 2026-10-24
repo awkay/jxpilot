@@ -131,6 +131,7 @@ class ModeTraceTest {
         s.ships.applySettings(p, 45f, 35f, 30 / 256f, 35f, 25f, 30 / 256f);
         long[] in = new long[w.players.length];
         List<String> bad = new ArrayList<>();
+        boolean wasConnected = false;
         for (ModeTrace.Frame f : t.frames) {
             CTraceTest.Frame c = f.ship;
             long keys = c.thrusting() ? ControlKey.THRUST.mask() : 0;
@@ -139,6 +140,15 @@ class ModeTraceTest {
             if ((pl2.used() & Has.CONNECTOR) != 0) {
                 keys |= ControlKey.CONNECTOR.mask();
             }
+            boolean connected = false;
+            for (ModeTrace.Obj o : f.objs) {
+                connected |= o.type() == Obj.BALL && o.id() == p.id;
+            }
+            if (wasConnected && !connected) {
+                // the ball came loose this frame: C's player pressed DROP_BALL ('d')
+                keys |= ControlKey.DROP_BALL.mask();
+            }
+            wasConnected = connected;
             in[p.slot] = keys;
             s.tick(in);
             if (bad.size() >= 6) {
@@ -293,5 +303,17 @@ class ModeTraceTest {
         assertAll(
             () -> assertTrue(r.frames() > 100, "more than 100 frames compared (" + r.frames() + ")"),
             () -> assertEquals(List.of(), r.mismatches(), "no asteroid differs from C"));
+    }
+
+    @Test
+    @DisplayName("tow, drop the ball, and its free flight with wall bounces (no life factor for balls): bit-identical")
+    void ballDrop() throws Exception {
+        ModeTrace t = ModeTrace.load("ball-drop.txt");
+        Simulation s = resourceMap("ball-tow.xp", 1);
+        Result r = replay(s, t);
+        assertAll(
+            () -> assertEquals(112, r.frames(), "112 C frames are compared"),
+            () -> assertTrue(t.frames.get(t.frames.size() - 1).objs.get(0).id() == -1, "(the ball was dropped)"),
+            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }
 }
