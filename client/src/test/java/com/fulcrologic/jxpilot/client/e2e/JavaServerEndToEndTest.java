@@ -369,11 +369,13 @@ class JavaServerEndToEndTest {
             // speed per tick of the client's own clock (the tick the ship is drawn at), not per wall-clock interval:
             // a frame the scheduler delays moves the ship and the clock alike, a sawtooth moves only the ship
             double dTick = drawn[i] - drawn[i - 1];
-            if (dy <= 0) {
-                monotonic = false;
-            }
-            if (dTick < 1e-3) {
+            if (Math.abs(dTick) < 1e-3) {
+                // two frames at (almost) the same clock tick, e.g. a late frame caught up: nothing to measure
                 continue;
+            }
+            if (dy * Math.signum(dTick) <= 0) {
+                // the ship stops or moves against its own clock (a clock that snaps back moves it back with it)
+                monotonic = false;
             }
             double v = dy / dTick;
             sum += v;
@@ -393,7 +395,7 @@ class JavaServerEndToEndTest {
         assertAll(
             () -> assertTrue(frames > 500, "rendered about 6 s at 120 Hz (" + frames + ")"),
             () -> assertTrue(mean > 3, "the ship coasts upward (" + mean + " px/tick)"),
-            () -> assertTrue(mono, "the drawn ship never stops or moves back"),
+            () -> assertTrue(mono, "the drawn ship never stops or moves back against the client's clock"),
             () -> assertTrue(worstChange < 1.0, "the drawn speed changes by less than 1 px/tick between frames ("
                 + worstChange + ")"));
     }
