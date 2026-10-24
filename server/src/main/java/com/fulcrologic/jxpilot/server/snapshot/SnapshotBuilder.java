@@ -646,7 +646,9 @@ public final class SnapshotBuilder {
                         o.owner[h] == Obj.NO_ID ? Protocol.NO_ID : o.owner[h]);
                 }
             } else if (need(Section.ASTEROID, 0)) {
-                Records.Asteroid.put(wr, x, y, o.size[h], o.rotation[h] * (2 * Math.PI / Const.RES));
+                // C Send_asteroid's type_size: the outline type (info, frame.c:812) above the size (netserver.c:1871)
+                Records.Asteroid.put(wr, x, y, (o.info[h] & 0x0F) << 4 | (o.size[h] & 0x0F),
+                    o.rotation[h] * (2 * Math.PI / Const.RES));
             }
         }
         for (int k = 0; k < w.numPlayers; k++) {

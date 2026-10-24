@@ -743,6 +743,7 @@ public final class Records {
 
         public float y() { return relY(2); }
 
+        /** C {@code type_size}: the outline type in the high nibble, the size (1-4) in the low one. */
         public int size() { return u8(4); }
 
         public float rotation() { return Wire.u16ToAngle(b.getShort(o + 5)); }
