@@ -249,6 +249,11 @@ final class HostFx {
                 m.read(p);
                 yield "SEEK " + m.programmerId + " " + m.robotId + " " + m.soughtId;
             }
+            case ReliableType.WAR -> {
+                Msg.War m = new Msg.War();
+                m.read(p);
+                yield "WAR " + m.robotId + " " + m.killerId;
+            }
             default -> "type " + type;
         };
         if (p.hasRemaining()) {

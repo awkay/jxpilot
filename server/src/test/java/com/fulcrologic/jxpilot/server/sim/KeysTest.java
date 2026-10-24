@@ -63,6 +63,68 @@ class KeysTest {
     }
 
     @Nested
+    @DisplayName("pointerMove (C Receive_pointer_move)")
+    class PointerMove {
+        @Test
+        @DisplayName("turnVel -= dir * movement * turnSpeed / 64, limited to 4..64 with turn resistance")
+        void withResistance() {
+            Simulation s = room();
+            Player p = s.ships.join("a", 0);
+            p.turnSpeed = 32;
+            p.turnResistance = 0.12f;
+            p.turnVel = 0;
+            s.keys.pointerMove(p, 20);
+            float right = p.turnVel;
+            p.turnVel = 0;
+            s.keys.pointerMove(p, -20);
+            float left = p.turnVel;
+            p.turnVel = 0;
+            s.keys.pointerMove(p, 2);
+            float small = p.turnVel;
+            p.turnVel = 0;
+            s.keys.pointerMove(p, 500);
+            float big = p.turnVel;
+            p.turnVel = 5;
+            s.keys.pointerMove(p, 20);
+            assertAll(
+                () -> assertEquals(-10f, right, "20 px at turnSpeed 32: 10, subtracted"),
+                () -> assertEquals(10f, left, "the other way adds"),
+                () -> assertEquals(-4f, small, "at least MIN_PLAYER_TURNSPEED (C's odd minimum)"),
+                () -> assertEquals(-64f, big, "at most MAX_PLAYER_TURNSPEED"),
+                () -> assertEquals(-5f, p.turnVel, "it adds to the current turn velocity"));
+        }
+
+        @Test
+        @DisplayName("without turn resistance: 0..5*RES; hover pause ignores it; the autopilot is switched off")
+        void noResistanceHoverAutopilot() {
+            Simulation s = room();
+            Player p = s.ships.join("a", 0);
+            p.turnSpeed = 64;
+            p.turnResistance = 0;
+            p.turnVel = 0;
+            s.keys.pointerMove(p, 2);
+            float small = p.turnVel;
+            p.turnVel = 0;
+            s.keys.pointerMove(p, 1000);
+            float big = p.turnVel;
+            p.turnVel = 0;
+            p.status |= Obj.HOVERPAUSE;
+            s.keys.pointerMove(p, 50);
+            float hovering = p.turnVel;
+            p.status &= ~Obj.HOVERPAUSE;
+            s.devices.autopilot(p, true);
+            boolean engaged = (p.used & Has.AUTOPILOT) != 0;
+            s.keys.pointerMove(p, 3);
+            assertAll(
+                () -> assertEquals(-2f, small, "no minimum without turn resistance"),
+                () -> assertEquals(-5f * 128, big, "at most 5 * RES"),
+                () -> assertEquals(0f, hovering, "ignored in hover pause"),
+                () -> assertTrue(engaged, "the autopilot was on"),
+                () -> assertEquals(0, p.used & Has.AUTOPILOT, "a pointer move switches it off (C Autopilot(ind, 0))"));
+        }
+    }
+
+    @Nested
     @DisplayName("apply: edges, order, dead ships")
     class Apply {
         @Test

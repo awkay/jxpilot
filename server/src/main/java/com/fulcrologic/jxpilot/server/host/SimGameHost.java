@@ -149,6 +149,7 @@ public final class SimGameHost implements GameHost {
     private final Msg.PlayerThrust thrust = new Msg.PlayerThrust();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
     private final Msg.Seek seek = new Msg.Seek();
+    private final Msg.War war = new Msg.War();
     private final Msg.Timing timing = new Msg.Timing();
     private final Msg.Settings settingsMsg = new Msg.Settings();
     private final Msg.Display displayMsg = new Msg.Display();
@@ -627,13 +628,18 @@ public final class SimGameHost implements GameHost {
 
     /**
      * BEHAVIOR: a spawned player's mask is queued for the next tick (the newest replaces the last entry when
-     * {@link #INPUT_QUEUE} are waiting); input before READY and for unbound ids is dropped; aimTurn is unused.
+     * {@link #INPUT_QUEUE} are waiting); input before READY and for unbound ids is dropped.
+     * BEHAVIOR: a non-zero aimTurn is pointer control's movement: applied at once, as C applies PKT_POINTER_MOVE
+     * when it reads it ({@link com.fulcrologic.jxpilot.server.sim.Keys#pointerMove}).
      */
     @Override
     public void input(int playerId, int seq, long keys, int aimTurn) {
         Player p = boundPlayer(playerId);
         if (p == null || !p.spawned) {
             return;
+        }
+        if (aimTurn != 0) {
+            sim.keys.pointerMove(p, aimTurn);
         }
         int n = queued[playerId];
         if (n == INPUT_QUEUE) {
@@ -956,7 +962,8 @@ public final class SimGameHost implements GameHost {
      * BEHAVIOR: for each player in the game, in order: PLAYER_JOIN (SELF for the viewer, ROBOT, PAUSED; power,
      * afterburners, name, its ship's shape), BASE_OWNER (its home), SCORE (score, lives with limitedLives else
      * -1, status), for a player in an alliance PLAYER_ALLIANCE with the viewer's mark, and in race mode TIMING
-     * (check, round); then in team play TEAM_SCORE for every team with members. The event cursor starts at the
+     * (check, round); then WAR for every robot at war (C Handle_login's Send_war); then in team play TEAM_SCORE for
+     * every team with members. The event cursor starts at the
      * newest event (the burst cursor at the newest burst).
      */
     @Override
@@ -990,6 +997,15 @@ public final class SimGameHost implements GameHost {
                 timing.check = p.check;
                 timing.round = p.round;
                 timing.send(out);
+            }
+        }
+        for (int k = 0; k < w.numPlayers; k++) {
+            Player p = w.playerAt(k);
+            int target = sim.robots.warOnPlayer(p);
+            if (target != Obj.NO_ID) { // C Handle_login: "tell him about the relationships others have"
+                war.robotId = p.id;
+                war.killerId = target;
+                war.send(out);
             }
         }
         if (w.params.teamPlay) {
@@ -1030,6 +1046,7 @@ public final class SimGameHost implements GameHost {
      * <p>
      * BEHAVIOR: a viewer whose cursor fell out of the ring gets PLAYER_LEAVE for every announced id no longer
      * in the game, then the full state (PLAYER_ALLIANCE for every player), and continues from the newest event.
+     * BEHAVIOR: SEEK and WAR go to everyone.
      * BEHAVIOR: JOIN: PLAYER_JOIN of the player as it is now (none when it already left); LEAVE: PLAYER_LEAVE;
      * TEAM: PLAYER_TEAM; SCORE / TEAM_SCORE; MESSAGE for everyone or this viewer (from mapped); BASE_OWNER
      * (NO_ID = released); GAME_EVENT (ids mapped, value kept); THRUST: PLAYER_THRUST; TIMING (race progress);
@@ -1156,6 +1173,11 @@ public final class SimGameHost implements GameHost {
                 seek.robotId = wireId(e.b[i]);
                 seek.soughtId = wireId(e.c[i]);
                 seek.send(out);
+            }
+            case Events.WAR -> {
+                war.robotId = wireId(e.a[i]);
+                war.killerId = wireId(e.b[i]);
+                war.send(out);
             }
             default -> { }
         }
