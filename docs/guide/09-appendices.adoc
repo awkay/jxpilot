@@ -121,11 +121,12 @@ server; the JXPilot client can still join XPilot servers
 |Area |XPilot |JXPilot
 |Quitting |the QUIT button or closing the window; no quit key |the same, plus kbd:[Cmd+Q] on macOS and an
 optional `keyQuit` (unbound by default)
-|kbd:[F1] |talk macro 1 |key help; talk macros are not supported
+|kbd:[F1] |talk macro 1 |key help; talk macro 1 has no key (kbd:[F2] to kbd:[F12] send macros 2 to 12, as
+in XPilot)
 |Extra keys |- |kbd:[-] mutes sound, kbd:[Alt]/kbd:[Option] also connects, kbd:[0] also self-destructs
 |Turn speed default |35 |40
 |Engine sound |a short sound every frame |a loop while you thrust
-|ID mode, pointer control, recording |available |not supported
+|Recording (`keyToggleRecord`) |available |not supported
 |Showing frames |each frame as it arrives |smooth motion at your screen's refresh rate: other ships about
 90 ms behind the latest frame, your own ship predicted forward from it
 |===

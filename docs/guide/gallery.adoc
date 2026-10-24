@@ -254,6 +254,8 @@ blue) and objects such as asteroids.
 |*Score list*: team, score and name; `*` marks you, `R` a robot, `D` a player out of lives, `P` a
 paused player and `W` one waiting for the next round. Outside team play the first column shows
 alliances: `+` for your allies, or each player's alliance number when the server announces alliances.
+A robot at war shows its target, as `Robot (Target)`. In ID mode (kbd:[U]) the rows show
+`NICK=USER@HOST`.
 
 |image:gallery/talk-line.png[Talk line,width=420]
 |*Talk line*, opened with kbd:[M].

@@ -179,9 +179,12 @@ The client knows all of the XPilot client's resources: the key bindings and cont
 
 These take effect:
 
-* `name`, `team`, `user` and `host`;
+* `name`, `team`, `user` and `host` (and `display`, sent to XPilot servers at login);
 * the fonts (<<client-fonts>>) and `scaleFactor`, `altScaleFactor`;
 * `toggleShield` and `autoShield`;
+* the talk macros `msg1` to `msg20` (<<03-playing.adoc#talk-macros,Talk macros>>), `pointerControl`
+  and `pointerButton1` to `pointerButton5` (<<03-playing.adoc#pointer-control,Pointer control>>);
+* `messagesToStdout`: 1 also prints chat lines to standard output, 2 every message;
 * the HUD: `showHUD`, `verticalHUDLine`, `horizontalHUDLine`, `speedFactHUD`, `speedFactPTR`,
   `fuelMeter`, `fuelGauge`, `fuelNotify`, `fuelWarning`, `fuelCritical`, `turnSpeedMeter`, `powerMeter`;
 * items and mines: `showItems`, `showItemsTime`, `showMineName`;
@@ -191,7 +194,7 @@ These take effect:
 The CONFIG panel changes them while you play and saves them
 (<<03-playing.adoc#button-bar,The button bar, CONFIG and ABOUT>>). XPilot's look options, such as the
 packet meters, the clock, textures and colours, are read and kept but do not change the picture yet,
-and the X11-only ones (`display`, `keyboard` and so on) never will.
+and the X11-only ones (`keyboard`, `geometry` and so on) never will.
 
 [[client-fonts]]
 ==== Fonts
@@ -364,8 +367,12 @@ game; the JXPilot client draws it with the same painters, HUD and keys. Known di
 
 * XPilot sends only what is within 1024 x 1024 pixels of your ship.
 * Paused ships carry no name on the wire, so the client cannot show their names or shapes.
-* Bases on maps with a global gravity angle may be drawn facing the wrong way.
-* Mouse (pointer) steering is not supported.
+
+As the XPilot client does, the client logs in with your real name (`$XPILOTUSER`, else your login
+name), host (`$XPILOTHOST`, else this computer's name) and display (`$DISPLAY`, else `:0.0`); the `user`,
+`host` and `display` resources override them. Network errors do not end the game: while the server is
+silent, "No response from server" appears every 10 seconds. A server host name that cannot be resolved
+ends the client with a message and exit status 1.
 * XPilot server versions older than 4.5.5's protocol (0x4203 to 0x44ff) should work but were not
   tested.
 

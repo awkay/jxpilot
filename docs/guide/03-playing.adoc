@@ -94,8 +94,8 @@ QUIT:: Leave the game.
 ABOUT:: XPilot's information window, four pages: the bonus items (two pages, with their pictures),
 the game objective and about XPilot. NEXT, PREV and CLOSE page through it.
 MENU:: Hold the mouse button and release over an entry: KEYS shows the key help (as kbd:[F1]),
-CONFIG opens the settings panel, SCORE and PLAYER switch the score list between player names and real
-names, and MOTD shows the server's message of the day again.
+CONFIG opens the settings panel, SCORE and PLAYER switch the score list between player names and ID
+mode (`NICK=USER@HOST`), and MOTD shows the server's message of the day again.
 
 *CONFIG* covers the score list with XPilot's settings, in XPilot's order, a page at a time (NEXT, PREV,
 CLOSE). A Yes/No setting toggles when clicked; a number changes with its left and right arrows. Changes
@@ -135,10 +135,19 @@ endif::[]
 
 include::generated/keys.adoc[]
 
-kbd:[Keypad 8] (`keyToggleOwnedItems`) switches the HUD's list of your items between always shown and
-shown only for a moment after a count changes (`showItems`), and kbd:[Keypad 9] (`keyToggleMessages`)
-hides or shows the messages. XPilot's talk macros (`keySendMsg1` to `keySendMsg20`), ID mode, pointer
-control, recording and printing messages are not in JXPilot.
+Some of these keys need a word more:
+
+* kbd:[F2] to kbd:[F12] send your talk macros 2 to 12 (<<talk-macros>>). `keySendMsg1` and
+  `keySendMsg13` to `keySendMsg20` have no key by default (kbd:[F1] is the key help).
+* kbd:[U] (`keyIdMode`) switches the score list to ID mode: each row shows `NICK=USER@HOST`, the
+  player's real name and host. MENU / SCORE and PLAYER switch it too (<<button-bar>>).
+* kbd:[Keypad 8] (`keyToggleOwnedItems`) switches the HUD's list of your items between always shown and
+  shown only for a moment after a count changes (`showItems`); kbd:[Keypad 9] (`keyToggleMessages`)
+  hides or shows the messages.
+* kbd:[Keypad Enter] (`keyPointerControl`) turns pointer control on and off (<<pointer-control>>).
+* kbd:[Print] prints the current messages to standard output, as XPilot does.
+
+Only recording (`keyToggleRecord`) is not in JXPilot.
 
 [[key-bindings]]
 === Changing the keys: `~/.xpilotrc`
@@ -182,7 +191,8 @@ effective bindings, the control settings and any problems, and exits.
 
 This file (`docs/examples/xpilotrc.mac-laptop` in the source) moves the keypad and other hard-to-reach
 functions to keys a Mac laptop has, and frees kbd:[F9] to kbd:[F12] from the talk macros. Copy it to
-`~/.xpilotrc` and adjust to taste.
+`~/.xpilotrc` and adjust to taste. It puts detonate on kbd:[U] and leaves ID mode without a key; use MENU /
+PLAYER for it (<<button-bar>>).
 
 ifdef::env-github[]
 See link:../examples/xpilotrc.mac-laptop[docs/examples/xpilotrc.mac-laptop].
@@ -236,6 +246,47 @@ an address.
 |===
 
 If nobody matches, the server tells you: "Message not sent, ace does not match any player!".
+
+[[talk-macros]]
+==== Talk macros
+
+As in XPilot, the resources `msg1` to `msg20` in `~/.xpilotrc` hold prepared messages, and
+`keySendMsg1` to `keySendMsg20` send them (kbd:[F2] to kbd:[F12] send 2 to 12 by default). A macro is
+sent as if typed, so the prefixes above work. `#` starts an escape, as in XPilot:
+
+[cols="1,4",options="header"]
+|===
+|Escape |Becomes
+|`##` |A `#`.
+|`#t` |Your team digit (team play).
+|`#h` |Your home directory.
+|`#s` `#l` followed by `n`, `s`, `t` or `l` |The name, score, team or lives of yourself (`#s`) or of the
+player you have locked on (`#l`); without a locked player the macro is not sent.
+|`#n` |Sends what came before as a line of its own.
+|`#r[a\|b\|c]` |One of the fields, at random.
+|`#=[x\|y\|then\|else]` |`then` if x and y expand to the same text, else `else`.
+|`#f[FILE]` |The contents of a file.
+|===
+
+A line that grows to 78 characters is sent and a new one started.
+
+[source,text]
+----
+xpilot.msg2:   #ln: watch out, you are at #ls points
+xpilot.msg3:   gg #r[all|everyone|folks]
+----
+
+[[pointer-control]]
+=== Pointer control: steering with the mouse
+
+With pointer control on (kbd:[Keypad Enter], or `pointerControl: yes` to start with it), moving the
+mouse left and right turns your ship, on JXPilot and XPilot servers. The window takes the pointer and
+hides it. Opening the talk line or leaving the window suspends pointer control until you come back.
+
+The mouse buttons press key functions only under pointer control: `pointerButton1` to `pointerButton3`
+default to `keyFireShot`, `keyThrust` and `keyShield`, and `pointerButton4` and `pointerButton5` are
+the wheel, unbound by default. Each takes up to three function names (`xpilot.pointerButton2:
+keyThrust keyShield`). Without pointer control, clicks go to the button bar and CONFIG.
 
 [[map-viewer-keys]]
 === Map viewer keys
