@@ -132,6 +132,7 @@ Server → client:
 | 10 | GAME_EVENT | u8 kind (kill, crash, spawn, round end, target/treasure destroyed, checkpoint), u16 a, u16 b, f32 value. TARGET_DESTROYED: a = the player credited, b = target index. TREASURE_DESTROYED: a = the player who cashed the ball, b = the destroyed treasure's index. CHECKPOINT: a = player, b = the next checkpoint, value = the last lap time in frames (0 before a lap completes). A ball, asteroid or (unowned) explosion kill is a KILL with a = NO_ID unless the ball had an owner. CRASH: a = the player who crashed, b = the other ship in a two-ship crash or NO_ID, value = crash sub-type `Msg.GameEvent.CRASH_*`: 1 wall, 2 target, 3 treasure, 4 cannon, 5 universe, 6 ships, 7 unknown. A shove into a wall is a KILL by the last pusher with the sub-type in value. SPAWN: a = player, b = base index. A KILL or CRASH is always sent before the SCORE_OBJECT / SCORE it causes, in the same tick |
 | 11 | PLAYER_THRUST | u16 id, f32 power, u8 afterburners — sent when they change (thrust sparks are generated client-side). `afterburners` is the effective value (C forces MAX_AFTERBURNER for emergency thrust, ship.c:75-77); the server seeds with the f32 power the client receives |
 | 12 | SCORE_OBJECT | f32 score (points gained, negative when lost), u16 bx, u16 by (block where they were made), str8 label (C `Send_score_object`: a player name, "[Wall]", "[Shove]", "Cannon", "[Deadliest]"...). Sent only to the player whose score changed; drives the HUD score popups (the client's ScoreObjects stack) |
+| 13 | SEEK | u16 programmerId, u16 robotId, u16 soughtId — a player's ECM reprogrammed a robot to hunt someone (C `Send_seek`, item.c:1207), sent to everyone; the client logs "PROGRAMMER has programmed ROBOT to seek SOUGHT." (C `Handle_seek`) |
 | 20 | TIMING | race mode only (C `Send_timing`): u16 id, u8 check (the next checkpoint the player must pass, C `pl->check`), u16 round (laps started, 0 before the first checkpoint). Sent for every player in the initial state and whenever a player passes a checkpoint or race progress is reset. The last checkpoint passed is check - 1 (wrapping); the own player's check is the checkpoint the client highlights. Ids 20-26 are the game-mode block |
 | 31 | PLAYER_ALLIANCE | u16 id, u8 mark (Latin-1): the alliance mark of player id as this receiver sees it, C `Send_score`'s alliance character (netserver.c:1670-1678): ' ' not in an alliance, '+' in the receiver's own alliance (when `announceAlliances` is off; other alliances then show ' '), '0'-'9' the alliance number (when `announceAlliances` is on). Sent when a player's alliance changes (C resends the score then), and in the initial state for players in alliances (every player after a resync). The client shows it in the score list's team column outside team play and treats equal non-blank marks as friends (blue ship, friendly lock). Ids 32-33 are reserved for server-commands |
 
@@ -144,6 +145,10 @@ Client → server:
 | 66 | SETTINGS | f32 power, turnSpeed, turnResistance, altPower, altTurnSpeed, altTurnResistance, u8 flags (1 autoShield). The client sends it before READY on every join (C sends the settings with PKT_PLAY) and again whenever a power or turn-speed key changes them (C Send_power ...); those keys themselves are never sent |
 | 67 | CHANGE_TEAM | u8 team. Handled exactly as the talk command "/team N" (C has no team-change packet; the C client changes teams with that command) |
 | 68 | SHAPE | str16 shape. Ignored: the shape comes with CONNECT (C accepts PKT_SHAPE only before the player is in the game) |
+| 15 | DISPLAY | u16 viewWidth, u16 viewHeight: the world area the client shows, in world pixels (C PKT_DISPLAY's `view_width`/`view_height`: window size times scaleFactor). Sent before READY on every join and again whenever it changes (resize, scale swap). The server limits each axis to 384..1024 (C `Receive_display`, MIN/MAX_VIEW_SIZE) and uses it for the HUD lock's in-view test and for culling the receiver's snapshots; until it arrives the view is 768 x 768 (DEF_VIEW_SIZE) |
+| 14 | MODIFIER_BANK | u8 bank (0..3), str8 text: one of the client's weapon modifier banks as C text (the `modifierBank1..4` resources, e.g. `FN C V2 X4 LS`; C PKT_MODIFIERBANK). The client sends all four before READY on every join (C sends them once at login, after PKT_DISPLAY). The server parses the text as C `Receive_modifier_bank` into the player's bank, before READY (kept for the spawn) or in play: nothing without allowModifiers; `N` nuclear and `FN` full nuclear need allowNukes, `C` cluster allowClusters, `LS`/`LB` stun/blind laser allowLaserModifiers (the char after `L` is always consumed); `I` implosion, `V#` velocity 0..3, `X#` mini 2..4 (stored 1..3), `Z#` spread 0..3, `B#` power 0..3 (a number out of range is the minimum); other chars are skipped, case is ignored, the text ends at a NUL. A bank above 3 is ignored; a text of 80 chars or more (C MAX_CHARS string overflow) is dropped |
+
+DISPLAY and MODIFIER_BANK are client → server messages although their ids are below 64 (13 is SEEK).
 
 ## INPUT — `InputHistory` (client) / `InputReader` (server)
 
@@ -212,7 +217,7 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 | 16 | ECM | 6 | rel x, rel y, u16 radius |
 | 17 | CONNECTOR | 9 | rel x0, y0, x1, y1, u8 kind (0 ball, 1 tractor, 2 pressor, 3 refuel: station to ship, 4 repair: ship to target) |
 | 18 | TRANSPORTER | 8 | rel x0, y0, x1, y1 |
-| 19 | SELF_ITEMS | 21 | u8 count per `Item` |
+| 19 | SELF_ITEMS | 22 | u8 count per `Item` (21), u8 loseItem (the `Item` KEY_LOSE_ITEM drops, C `pl->lose_item` / PKT_LOSEITEM). loseItem was appended; an older 21-byte record reads 0 |
 | 20 | TREASURE | 3 | u16 index, u8 flags (has ball) |
 | 21 | TEMP_WORMHOLE | 5 | u16 bx, u16 by, u8 type |
 | 22 | TIMERS | 26 | u16 damaged (frames of ECM damage left), u16 roundDelay (frames, 0 none), i32 timeLeft (seconds, -1 none), u16 destruct (self-destruct frames left, 0 none), u16 thrustLeft, thrustMax, shieldLeft, shieldMax, phasingLeft, phasingMax (C meters; max 0 = no meter), i16 shutdownCount (frames until the server stops after a gameDuration game over, C `ShutdownServer`; -1 none), u16 shutdownDelay (C `ShutdownDelay`, 1000) — the receiver's HUD timers. Fields from destruct on were appended; an older 8-byte record reads as none |
@@ -229,7 +234,9 @@ M1 uses 1-8; 9-22 are defined for M2; 37 is SOUND. Item sections as the server f
   the round time rounded up to seconds, else -1; the emergency thrust, emergency shield and phasing meters while each
   is in use, the self-destruct countdown while self-destructing; the shutdown countdown after a `gameDuration` game
   over.
-- SELF_ITEMS: one record per snapshot with the receiver's item counts (TANK = its tank count).
+- SELF_ITEMS: one record per snapshot with the receiver's item counts (TANK = its tank count) and its lose item (C sends
+  PKT_LOSEITEM only while the selection is shown; the value only changes with KEY_SELECT_ITEM, so every record carries
+  it and the client draws the selection box itself from its own SELECT_ITEM / LOSE_ITEM key presses, C xevent.c).
 - ITEM: floating items in view; a random item (`randomItemProb`) shows a random kind each snapshot.
 - MINE: flags ARMED (no longer owner-immune), FRIENDLY (C `laid_by_team`: the controller is paused, team-immune with
   the receiver, or it is the receiver's own fused mine; random for a confused identified mine), NUCLEAR, OWN (the

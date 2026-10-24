@@ -37,6 +37,7 @@ import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder;
 import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
+import com.fulcrologic.jxpilot.server.world.ModifierBanks;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -108,6 +109,8 @@ public final class SimGameHost implements GameHost {
     /** SETTINGS that arrived before the spawn, applied at the spawn. */
     private final boolean[] pendingSettings = new boolean[IDS];
     private final float[][] settings = new float[IDS][6];
+    /** MODIFIER_BANKs that arrived before the spawn (parsed, {@code Mods}), put in place at the spawn. */
+    private final int[][] pendingBanks = new int[IDS][Player.BANKS];
     /** server-commands: the ship from CONNECT (C {@code connp->ship}), put on the player at its spawn; null without allowShipShapes. */
     private final com.fulcrologic.jxpilot.server.world.ShipGeom[] shipOf = new com.fulcrologic.jxpilot.server.world.ShipGeom[IDS];
     private final boolean allowShipShapes;
@@ -137,8 +140,11 @@ public final class SimGameHost implements GameHost {
     private final Msg.GameEvent gameEvent = new Msg.GameEvent();
     private final Msg.PlayerThrust thrust = new Msg.PlayerThrust();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
+    private final Msg.Seek seek = new Msg.Seek();
     private final Msg.Timing timing = new Msg.Timing();
     private final Msg.Settings settingsMsg = new Msg.Settings();
+    private final Msg.Display displayMsg = new Msg.Display();
+    private final Msg.ModifierBank bankMsg = new Msg.ModifierBank();
     private final Msg.ChangeTeam changeTeam = new Msg.ChangeTeam();
     private final Msg.PlayerAlliance allianceMsg = new Msg.PlayerAlliance();
     private final StringBuilder teamCommand = new StringBuilder(16);
@@ -206,7 +212,8 @@ public final class SimGameHost implements GameHost {
      * teamAssign; with it C {@code Pick_team} chooses, kicking a robot when only the robots' teams have room. A
      * full requested team kicks one of its robots, else its paused humans, else is refused (REASON_FULL), and
      * the team is picked again (as C). Outside team play the request is ignored.
-     * BEHAVIOR: otherwise the player is reserved, its input and drain state reset, and its id returned. With
+     * BEHAVIOR: otherwise the player is reserved, its input and drain state reset, its view size set to C
+     * DEF_VIEW_SIZE (768 x 768, C {@code Setup_connection}) until DISPLAY, and its id returned. With
      * allowShipShapes its ship is the shape (C {@code Parse_shape_str}: the limits apply; empty or invalid gives
      * the built-in ship), worn from the spawn on; without, the defaultShipShape ({@code Ships.defaultShipShape}).
      */
@@ -291,6 +298,9 @@ public final class SimGameHost implements GameHost {
         spawnTeam[id] = t;
         queued[id] = 0;
         pendingSettings[id] = false;
+        java.util.Arrays.fill(pendingBanks[id], 0);
+        pl.viewWidth = Msg.Display.DEF_VIEW_SIZE;
+        pl.viewHeight = Msg.Display.DEF_VIEW_SIZE;
         shipOf[id] = allowShipShapes ? com.fulcrologic.jxpilot.server.world.ShipGeom.parse(shape) : null;
         keysBySlot[pl.slot] = 0;
         cursor[id] = w.events.seq();
@@ -460,6 +470,13 @@ public final class SimGameHost implements GameHost {
      * BEHAVIOR: CHAT from a player in the game is a command when it starts with '/' (C {@code Receive_talk}:
      * {@link Commands}, the line without the '/'), else goes through C {@code Handle_talk} ({@link Talk}).
      * BEHAVIOR: SETTINGS go to {@code Ships.applySettings} (kept for the spawn before it).
+     * BEHAVIOR: DISPLAY, before or after READY, sets the player's view size, each axis limited to
+     * [MIN_VIEW_SIZE 384, MAX_VIEW_SIZE 1024] (C {@code Receive_display}); it applies from the next snapshot
+     * and HUD lock test.
+     * BEHAVIOR: MODIFIER_BANK is parsed as C {@code Receive_modifier_bank} ({@link ModifierBanks}) with the rules
+     * at arrival: in play into the player's bank; before READY kept and put in place by the spawn (C receives the
+     * banks after Init_player has cleared them, so they are there when the player plays). A bank above 3 or an
+     * over-long text is ignored.
      * BEHAVIOR: CHANGE_TEAM from a player in the game is the command "/team N" (C has no team-change packet; the
      * C client changes teams with that talk command).
      * BEHAVIOR: SHAPE (the shape came with CONNECT; C takes PKT_SHAPE only before the player is in the game),
@@ -498,6 +515,12 @@ public final class SimGameHost implements GameHost {
                     pendingSettings[playerId] = true;
                 }
             }
+            case ReliableType.DISPLAY -> {
+                displayMsg.read(payload);
+                p.viewWidth = limitView(displayMsg.viewWidth);
+                p.viewHeight = limitView(displayMsg.viewHeight);
+            }
+            case ReliableType.MODIFIER_BANK -> modifierBank(p, payload);
             case ReliableType.CHANGE_TEAM -> {
                 changeTeam.read(payload);
                 if (p.spawned) {
@@ -522,10 +545,31 @@ public final class SimGameHost implements GameHost {
             p.ship = shipOf[p.id];
         }
         keysBySlot[p.slot] = 0;
+        System.arraycopy(pendingBanks[p.id], 0, p.modBank, 0, Player.BANKS);
         if (pendingSettings[p.id]) {
             pendingSettings[p.id] = false;
             applySettings(p);
         }
+    }
+
+    private void modifierBank(Player p, ByteBuffer payload) {
+        bankMsg.read(payload);
+        if (!ModifierBanks.accepted(bankMsg.bank, bankMsg.text)) {
+            return;
+        }
+        var ip = w.items;
+        int m = ModifierBanks.parse(bankMsg.text, ip.allowModifiers, ip.allowNukes, ip.allowClusters,
+            ip.allowLaserModifiers);
+        if (p.spawned) {
+            p.modBank[bankMsg.bank] = m;
+        } else {
+            pendingBanks[p.id][bankMsg.bank] = m;
+        }
+    }
+
+    /** C {@code LIMIT(size, MIN_VIEW_SIZE, MAX_VIEW_SIZE)} of {@code Receive_display}. */
+    static int limitView(int size) {
+        return Math.max(Msg.Display.MIN_VIEW_SIZE, Math.min(Msg.Display.MAX_VIEW_SIZE, size));
     }
 
     private void applySettings(Player p) {
@@ -801,6 +845,29 @@ public final class SimGameHost implements GameHost {
     }
 
     /**
+     * C frame.c:1275-1294: without allowViewing a paused player gets every 4th frame and an out-of-the-game
+     * (GAME_OVER) one every 2nd, counted on the frame counter after the tick (C {@code frame_loops}, raised at
+     * the start of {@code Frame_update}); the server owner's exception has no equivalent.
+     * <p>
+     * BEHAVIOR: PAUSE: due iff {@code frames & 3 == 0}; else GAME_OVER: iff {@code frames & 1 == 0}; else, for
+     * unknown viewers, or with allowViewing: always.
+     */
+    @Override
+    public boolean snapshotDue(int viewerId) {
+        Player p = boundPlayer(viewerId);
+        if (p == null || w.items.allowViewing) {
+            return true;
+        }
+        if ((p.status & Obj.PAUSE) != 0) {
+            return (w.frames & 3) == 0;
+        }
+        if ((p.status & Obj.GAME_OVER) != 0) {
+            return (w.frames & 1) == 0;
+        }
+        return true;
+    }
+
+    /**
      * BEHAVIOR: part 0 builds the viewer's snapshot ({@link SnapshotBuilder}, bursts since its cursor, which then
      * moves to the newest) into scratch parts; each part p copies the sections of scratch part p after the
      * network layer's header and returns whether more parts follow. A viewer not yet in the game gets no
@@ -809,6 +876,8 @@ public final class SimGameHost implements GameHost {
      * each sound goes out in one snapshot.
      * BEHAVIOR: a viewer out of the game (or paused, see {@code Locks.viewOf}) gets the snapshot, sounds included,
      * of the player it has locked on (C frame.c:1314-1336).
+     * BEHAVIOR: culling uses the viewer's own view size (DISPLAY) around the shown player's position, as C's
+     * {@code Frame_parameters(conn, ind)} takes the size from the connection and the position from {@code ind}.
      */
     @Override
     public boolean fillSnapshot(int viewerId, int part, boolean radar, SnapshotWriter out) {
@@ -822,6 +891,8 @@ public final class SimGameHost implements GameHost {
                 b.position(PacketHeader.SIZE);
             }
             Player view = sim.locks.viewOf(p);
+            builder.setViewSize(p.viewWidth, p.viewHeight);
+            sim.locks.hudLock(view, p.viewWidth, p.viewHeight);
             scratchParts = builder.build(view, 0, burstCursor[viewerId], radar, scratch);
             burstCursor[viewerId] = w.events.burstSeq();
             view.audio.clear();
@@ -1023,6 +1094,12 @@ public final class SimGameHost implements GameHost {
                     scoreObject.text.append(e.text[i]);
                     scoreObject.send(out);
                 }
+            }
+            case Events.SEEK -> {
+                seek.programmerId = wireId(e.a[i]);
+                seek.robotId = wireId(e.b[i]);
+                seek.soughtId = wireId(e.c[i]);
+                seek.send(out);
             }
             default -> { }
         }

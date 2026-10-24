@@ -91,6 +91,7 @@ final class RobotFixture {
         p.power = 55;
         p.turnResistance = 0.12f;
         s.robots.numRobots++;
+        com.fulcrologic.jxpilot.server.TestWorlds.seeAll(s);
         return p;
     }
 
@@ -102,6 +103,7 @@ final class RobotFixture {
         }
         p.used &= ~Has.SHIELD;
         place(p, x, y);
+        com.fulcrologic.jxpilot.server.TestWorlds.seeAll(s);
         return p;
     }
 

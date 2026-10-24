@@ -219,10 +219,10 @@ class MissilesTest {
             s.missiles.fire(p, 0, false, p.px, p.py, Obj.SMART_SHOT, 0, 0, -1);
             int noLock = o.count();
             lock();
-            p.canSee[q.slot] = false;
+            p.canSee[q.ind] = false;
             s.missiles.fire(p, 0, false, p.px, p.py, Obj.SMART_SHOT, 0, 0, -1);
             int unseen = o.count();
-            p.canSee[q.slot] = true;
+            p.canSee[q.ind] = true;
             w.items.limitedVisibility = true;
             p.lockDistance = 1001;
             s.missiles.fire(p, 0, false, p.px, p.py, Obj.SMART_SHOT, 0, 0, -1);
@@ -542,12 +542,19 @@ class MissilesTest {
         }
 
         @Test
-        @DisplayName("a rack position outside a flat world makes no missile but the missile and fuel are spent (C)")
+        @DisplayName("a rack position outside a flat world keeps C's unpositioned object: the last freed one's place and speed")
         void outside() {
             setup("");
             p.initPixels(5, 300);
             p.dir = 64;
+            int prev = o.alloc();
+            o.initPixels(prev, 222, 333);
+            o.vx[prev] = 3;
+            o.vy[prev] = -4;
+            o.status[prev] = Obj.GRAVITY;
+            o.free(prev);
             s.missiles.fire(p, 0, false, p.px, p.py, Obj.TORPEDO, 64, 0, -1);
+            int ghost = o.count() == 1 ? o.active[0] : -1;
             Simulation ws = sim(FRAME + "edgeWrap: yes\n", 20, 20, "_");
             Player wp = ready(ws, "W", 0, 5, 300);
             wp.items[MISSILE] = 1;
@@ -555,7 +562,13 @@ class MissilesTest {
             ws.missiles.fire(wp, 0, false, wp.px, wp.py, Obj.TORPEDO, 64, 0, -1);
             Objects wo = ws.world.objects;
             assertAll(
-                () -> assertEquals(0, o.count(), "x = 5 - 15 is outside: nothing"),
+                () -> assertEquals(1, o.count(), "x = 5 - 15 is outside: the object stays allocated (shot.c:991-994)"),
+                () -> assertEquals(prev, ghost, "it is the most recently freed object (C's LIFO pool)"),
+                () -> assertEquals(Obj.TORPEDO, o.type[ghost], "C's fields before the check are set: the type"),
+                () -> assertEquals(p.id, o.owner[ghost], "the owner"),
+                () -> assertEquals(Click.fromPixels(222), o.cx[ghost], "the position is the freed object's"),
+                () -> assertEquals(-4f, o.vy[ghost], "so is the speed"),
+                () -> assertEquals(Obj.GRAVITY, o.status[ghost], "and the status"),
                 () -> assertEquals(4, p.items[MISSILE], "the missile is used"),
                 () -> assertEquals(FUEL0 - SMART_FUEL, p.fuel, EPS, "the fuel is spent"),
                 () -> assertEquals(1, wo.count(), "a wrapping map wraps it"),
@@ -1287,19 +1300,24 @@ class MissilesTest {
             setup("");
             int[][] cases = {{15, 300, 64}, {685, 300, 0}, {300, 15, 96}, {300, 685, 32}};
             int[] made = new int[4];
+            boolean[] placed = new boolean[4];
             for (int c = 0; c < 4; c++) {
                 p.initPixels(cases[c][0], cases[c][1]);
                 p.dir = cases[c][2];
                 int before = o.count();
                 s.missiles.fire(p, 0, false, p.px, p.py, Obj.TORPEDO, p.dir, 0, -1);
                 made[c] = o.count() - before;
+                int h = o.active[o.count() - 1];
+                placed[c] = o.life[h] > 0 && (o.px[h] != 0 || o.py[h] != 0);
             }
             assertAll(
                 () -> assertEquals(-15f, p.ship.rackX[0][64], "the rack is 15 px ahead"),
-                () -> assertEquals(1, made[0], "x 15 - 15 = 0 is inside"),
-                () -> assertEquals(0, made[1], "x 685 + 15 = 700 is outside"),
-                () -> assertEquals(1, made[2], "y 0 is inside"),
-                () -> assertEquals(0, made[3], "y 700 is outside"));
+                () -> assertEquals("1 1 1 1", made[0] + " " + made[1] + " " + made[2] + " " + made[3],
+                    "every case allocates its missile (C keeps an off-world one allocated)"),
+                () -> assertTrue(placed[0], "x 15 - 15 = 0 is inside: positioned"),
+                () -> assertEquals(false, placed[1], "x 685 + 15 = 700 is outside: never positioned"),
+                () -> assertTrue(placed[2], "y 0 is inside: positioned"),
+                () -> assertEquals(false, placed[3], "y 700 is outside: never positioned"));
         }
 
         @Test

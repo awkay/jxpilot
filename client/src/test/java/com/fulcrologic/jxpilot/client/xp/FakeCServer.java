@@ -349,6 +349,12 @@ final class FakeCServer implements XpConnection.PortOpener {
                 case XpProto.PKT_DISPLAY -> {
                     loginPackets.add("display " + r.s16() + "x" + r.s16() + " colors=" + r.u8() + " spark=" + r.u8());
                 }
+                case XpProto.PKT_MODIFIERBANK -> {
+                    int bank = r.u8();
+                    StringBuilder s = new StringBuilder();
+                    r.string(s, XpProto.MAX_CHARS);
+                    loginPackets.add("modbank " + bank + "=" + s);
+                }
                 case XpProto.PKT_REQUEST_AUDIO -> loginPackets.add("audio " + r.u8());
                 case XpProto.PKT_ASYNC_FPS -> loginPackets.add("fps " + r.u8());
                 case XpProto.PKT_KEYBOARD -> {

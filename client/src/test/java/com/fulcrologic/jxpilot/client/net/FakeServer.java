@@ -108,6 +108,8 @@ public final class FakeServer {
     public final List<String> chats = new ArrayList<>();
     /** SETTINGS received, as "power/turnSpeed". */
     public final List<String> settings = new ArrayList<>();
+    /** Every DISPLAY received, as "width x height". */
+    public final List<String> displays = new ArrayList<>();
     public boolean reject;
     public boolean silent;
     public int disconnectsReceived;
@@ -176,6 +178,10 @@ public final class FakeServer {
                             Msg.Settings st = new Msg.Settings();
                             st.read(p);
                             settings.add(st.power + "/" + st.turnSpeed);
+                        } else if (type == ReliableType.DISPLAY) {
+                            Msg.Display d = new Msg.Display();
+                            d.read(p);
+                            displays.add(d.viewWidth + "x" + d.viewHeight);
                         } else if (type == ReliableType.CHAT) {
                             Msg.Text t = new Msg.Text();
                             t.read(p);

@@ -79,6 +79,11 @@ public final class Events {
      */
     public static final int SCORE_OBJECT = 10;
     /**
+     * An ECM reprogrammed a robot (C {@code Send_seek} to every connection, item.c:1207): a = the programmer, b =
+     * the robot, c = the sought player.
+     */
+    public static final int SEEK = 11;
+    /**
      * Race progress of a player (C {@code Send_timing}; game modes use kinds 20-26): a = player id, b = the next
      * checkpoint to pass (C {@code check}), c = laps started (C {@code round}).
      */

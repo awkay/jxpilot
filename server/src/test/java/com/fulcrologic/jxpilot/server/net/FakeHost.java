@@ -48,6 +48,8 @@ final class FakeHost implements GameHost {
     int team = Protocol.NO_TEAM;
     /** Parts the next snapshot of each viewer needs (default 1). */
     int partsNeeded = 1;
+    /** {@link #snapshotDue} answer per host tick parity: when set, only even host ticks are due. */
+    boolean evenTicksOnly;
     /**
      * Server events, broadcast: each viewer's drainEvents queues every entry it has not queued yet (a
      * per-viewer cursor), so several peers all receive every event.
@@ -178,6 +180,11 @@ final class FakeHost implements GameHost {
     @Override
     public double viewY(int viewerId) {
         return 2000 + viewerId;
+    }
+
+    @Override
+    public boolean snapshotDue(int viewerId) {
+        return !evenTicksOnly || (lastTick & 1) == 0;
     }
 
     @Override

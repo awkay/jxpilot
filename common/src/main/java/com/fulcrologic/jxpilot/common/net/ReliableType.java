@@ -56,6 +56,22 @@ public final class ReliableType {
     /** {@link Msg.ScoreObject}: a score popup for the receiver's HUD (C score objects). */
     public static final int SCORE_OBJECT = 12;
     /**
+     * {@link Msg.Display} (client to server, despite the id below 64): the client's view size in world pixels
+     * (C {@code PKT_DISPLAY}), sent before READY and whenever it changes.
+     */
+    public static final int DISPLAY = 15;
+    /**
+     * {@link Msg.ModifierBank} (client to server, despite the id below 64, like {@link #DISPLAY}): one of the
+     * client's four weapon modifier banks as C's text (C {@code PKT_MODIFIERBANK}, the {@code modifierBank1..4}
+     * resources), sent before READY; the server parses it (C {@code Receive_modifier_bank}) at login or in play.
+     */
+    public static final int MODIFIER_BANK = 14;
+    /**
+     * Server to client: a player's ECM reprogrammed a robot to seek someone (C {@code PKT_SEEK},
+     * {@code Send_seek}, item.c:1207); body {@link Msg.Seek}.
+     */
+    public static final int SEEK = 13;
+    /**
      * {@link Msg.Timing}: race progress of a player (C {@code Send_timing}). Game-mode messages use ids 20-26
      * (server-modes block).
      */

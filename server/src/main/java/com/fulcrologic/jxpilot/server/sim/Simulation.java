@@ -137,6 +137,7 @@ public final class Simulation {
         com.fulcrologic.jxpilot.server.robot.DefaultRobot.warmSwitches();
         ShotNames.warm();
         balls.init();
+        com.fulcrologic.jxpilot.common.math.ThrustSparks.wirePos(0f);
     }
 
     /**
@@ -192,12 +193,6 @@ public final class Simulation {
         }
         rounds.checkGameDuration();
         emitScores();
-        for (int k = 0; k < w.numPlayers; k++) {
-            Player pl = w.playerAt(k);
-            if (!pl.robot && !pl.tank) {
-                locks.hudLock(pl);
-            }
-        }
         w.frames++;
     }
 
