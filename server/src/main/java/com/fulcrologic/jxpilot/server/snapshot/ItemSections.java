@@ -272,10 +272,18 @@ final class ItemSections {
         return f;
     }
 
-    /** BEHAVIOR: the identified controller's id ({@link Protocol#NO_ID} when unknown, unowned or confused). */
+    /**
+     * BEHAVIOR: the identified controller's id ({@link Protocol#NO_ID} when unknown, unowned or confused; a
+     * confused mine of a paused controller still shows it, C frame.c:877-889 resets the id only outside the
+     * paused branch).
+     */
     int mineId(int h, Player v) {
         Objects o = w.objects;
-        if (!identified(h, v) || (o.status[h] & Obj.CONFUSED) != 0 || o.owner[h] == Obj.NO_ID) {
+        if (!identified(h, v) || o.owner[h] == Obj.NO_ID) {
+            return Protocol.NO_ID;
+        }
+        Player owner = w.byId(o.owner[h]);
+        if ((o.status[h] & Obj.CONFUSED) != 0 && (owner == null || (owner.status & Obj.PAUSE) == 0)) {
             return Protocol.NO_ID;
         }
         return o.owner[h];
@@ -327,12 +335,16 @@ final class ItemSections {
     /**
      * Tractor/pressor beams of players and cannons (three connectors to the target's hull points) and transporter
      * beams (from the victim to the thief, or to where a cannon fired it), when the target is in view.
+     * <p>
+     * BEHAVIOR: a player's beam needs the beamer playing (not paused, not GAME_OVER), in view, using its tractor
+     * beam on an existing lock target in view (C frame.c:1007-1015, 1064-1076).
      */
     void writeBeams(Player v) {
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
             if ((pl.status & (Obj.PLAYING | Obj.PAUSE)) == 0 || (pl.status & (Obj.GAME_OVER | Obj.PAUSE)) != 0
-                || (pl.used & Has.TRACTOR_BEAM) == 0) {
+                || (pl.used & Has.TRACTOR_BEAM) == 0 || !b.visible(pl.px, pl.py, 0)) {
+                // C frame.c:1015: only ships in view get their tractor beam drawn
                 continue;
             }
             Player t = w.byId(pl.lockPlId);

@@ -137,4 +137,59 @@ class RobotItemsTest {
             () -> assertTrue(fuel0 > p.fuel, "the weapons cost fuel"),
             () -> assertEquals(0, p.used & Has.CONNECTOR, "no connector after detaching"));
     }
+
+    @Test
+    @DisplayName("the random-item and reflected answers are false when the flags are clear")
+    void clearFlags() {
+        Simulation s = sim("");
+        RobotItems it = new RobotItems(s);
+        int h = s.world.objects.alloc();
+        s.world.objects.status[h] = Obj.GRAVITY;
+        int i = s.world.pulses.add();
+        s.world.pulses.refl[i] = false;
+        assertAll(
+            () -> assertFalse(it.randomItem(h), "an item without RANDOM_ITEM is not random"),
+            () -> assertFalse(it.pulseReflected(i), "an unreflected pulse is not reflected"));
+    }
+
+    @Test
+    @DisplayName("placeMine drops a still mine, or throws a GRAVITY (moving) mine (C Place_mine / Place_moving_mine)")
+    void mineKinds() {
+        Simulation s = sim("minMineSpeed: 0\n");
+        Player p = RobotFixture.robot(s, "R", 300, 300);
+        RobotItems it = new RobotItems(s);
+        p.items[Item.MINE.ordinal()] = 2;
+        it.placeMine(p, false);
+        int dropped = s.world.objects.active[0];
+        it.placeMine(p, true);
+        int thrown = s.world.objects.active[1];
+        assertAll(
+            () -> assertEquals(0, s.world.objects.status[dropped] & Obj.GRAVITY, "the dropped mine is not a moving mine"),
+            () -> assertEquals(Obj.GRAVITY, s.world.objects.status[thrown] & Obj.GRAVITY,
+                "the thrown mine is a GRAVITY mine (C Place_moving_mine)"));
+    }
+
+    @Test
+    @DisplayName("transporter with nobody in range spends the item and its fuel; detachTank drops a tank;"
+        + " detachBall clears only the connector")
+    void transporterTankBall() {
+        Simulation s = sim("");
+        Player p = RobotFixture.robot(s, "R", 300, 300);
+        RobotItems it = new RobotItems(s);
+        p.items[Item.TRANSPORTER.ordinal()] = 1;
+        double fuel0 = p.fuel;
+        it.transporter(p);
+        double fuel1 = p.fuel;
+        s.tanks.add(p, 0);
+        int players = s.world.numPlayers;
+        it.detachTank(p);
+        p.used = Has.CONNECTOR | Has.SHIELD;
+        it.detachBall(p);
+        assertAll(
+            () -> assertEquals(0, p.items[Item.TRANSPORTER.ordinal()], "the transporter is used (C Do_transporter)"),
+            () -> assertTrue(fuel1 < fuel0, "the transporter costs fuel"),
+            () -> assertEquals(0, p.numTanks, "the tank leaves the ship"),
+            () -> assertEquals(players + 1, s.world.numPlayers, "as a tank pseudo player"),
+            () -> assertEquals(Has.SHIELD, p.used, "detaching the ball clears the connector and keeps the shield"));
+    }
 }
