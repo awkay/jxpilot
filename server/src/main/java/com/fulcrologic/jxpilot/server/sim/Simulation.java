@@ -132,6 +132,7 @@ public final class Simulation {
         if (w.roundDelay == 0) {
             collisions.check();
         }
+        robots.afterCollisions();
         killPlayers();
         expireObjects();
         if (w.gameDuration >= 0 || w.params.maxRoundTime > 0) {

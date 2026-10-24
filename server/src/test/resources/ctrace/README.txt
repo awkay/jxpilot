@@ -19,8 +19,10 @@ wall blocks, turn velocity decay.
 wreckage-default.txt: every Make_wreckage of a 180 s game on default.xp (4 robots, seed 1,
 lib/defaults; 7 cannon and 4 ship explosions, 30 pieces, 659 piece-frames) with the rfrac()
 values each call drew, and every wreckage object after every frame (patch 0003, see
-tools/xpilot-ref/README.md). WreckageGoldenTest replays each call with those draws and compares
-every frame bit for bit.
+tools/xpilot-ref/README.md), plus the player lines (patch 0002, XPILOT_TRACE=1, same run) of every
+frame with wreckage and the frame before. WreckageGoldenTest replays each call with those draws and
+compares every frame bit for bit, checks that the 2 pieces C removes early were within a ship's reach,
+and checks Wreckage.ship's arguments (whole-pixel position cx >> 6) for the 4 ship explosions.
 
 thrust-turn-impact.txt (139 frames): thrust, turn while thrusting, coast through the
 gravity field, a 25 px/frame wall bounce, coast.

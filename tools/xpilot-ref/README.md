@@ -251,11 +251,10 @@ GPL-2.0-or-later, and why.
    `server/src/test/resources/ctrace/wreckage-default.txt`:
 
    ```sh
-   CDPATH= XPREF_IMAGE=xpilot-ref:4.5.5-sb2 tools/xpilot-ref/build.sh   # or rebuild the default tag
-   docker run --rm --network none -e XPILOT_TRACE_WRECK=1 -e XPILOT_SEED=1 xpilot-ref:4.5.5-sb2 \
+   docker run --rm --network none -e XPILOT_TRACE=1 -e XPILOT_TRACE_WRECK=1 -e XPILOT_SEED=1 xpilot-ref:4.5.5 \
        timeout -s INT -k 5 180 xpilots -map default -robots 4 -minRobots 4 -noQuit +reportToMetaServer \
        -rawMode 2> wreck.trace
-   grep -E '^XPW(MAKE|RAND|RECK) ' wreck.trace > wreckage-default.txt
+   # keep the XPW* lines and the XPTRACE lines of frames with wreckage (and the frame before)
    ```
 
    Images built before this patch lack it; rebuild with `build.sh`.
