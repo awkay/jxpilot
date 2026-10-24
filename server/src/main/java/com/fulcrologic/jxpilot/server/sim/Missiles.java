@@ -312,21 +312,9 @@ public final class Missiles {
         }
         int fired = 0;
         for (int r = 0, i = 0; i < minis; i++, r++) {
-            int h = o.alloc();
-            if (h < 0) {
+            if (!o.hasFree()) {
                 break;
             }
-            o.life[h] = life / minis;
-            o.fuseLife[h] = o.life[h] - fuse;
-            o.mass[h] = mass / minis;
-            o.counter[h] = 0;
-            o.info[h] = lock;
-            o.type[h] = type;
-            o.owner[h] = pl != null ? pl.id : Obj.NO_ID;
-            o.team[h] = team;
-            o.color[h] = Records.ObjColor.WHITE;
-            o.turnSpeed[h] = turnspeed;
-            o.maxSpeed[h] = maxSpeed;
             float sx = (float) x;
             float sy = (float) y;
             if (pl != null) {
@@ -346,9 +334,22 @@ public final class Missiles {
             }
             sx = (float) w.wrapXPixel(sx);
             sy = (float) w.wrapYPixel(sy);
-            if (sx < 0 || sx >= w.pixelWidth || sy < 0 || sy >= w.pixelHeight) {
-                // C leaves the allocated object unset here; free it instead (it would never have been seen)
-                o.free(h);
+            boolean outside = sx < 0 || sx >= w.pixelWidth || sy < 0 || sy >= w.pixelHeight;
+            // C allocates first and fills these fields; off the world (no edge wrap) it continues with the object
+            // allocated and the rest of it left as its previous use left it (shot.c:991-994)
+            int h = outside ? o.allocStale() : o.alloc();
+            o.life[h] = life / minis;
+            o.fuseLife[h] = o.life[h] - fuse;
+            o.mass[h] = mass / minis;
+            o.counter[h] = 0;
+            o.info[h] = lock;
+            o.type[h] = type;
+            o.owner[h] = pl != null ? pl.id : Obj.NO_ID;
+            o.team[h] = team;
+            o.color[h] = Records.ObjColor.WHITE;
+            o.turnSpeed[h] = turnspeed;
+            o.maxSpeed[h] = maxSpeed;
+            if (outside) {
                 continue;
             }
             o.initPixels(h, sx, sy);

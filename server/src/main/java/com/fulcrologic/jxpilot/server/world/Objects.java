@@ -147,6 +147,31 @@ public final class Objects {
         return count;
     }
 
+    /** True when {@link #alloc} would succeed. */
+    public boolean hasFree() {
+        return freeTop > 0;
+    }
+
+    /**
+     * C {@code Object_allocate} itself: the next free handle with only {@code type = DEBRIS} and {@code life = 0};
+     * every other field keeps what the handle's previous object left (the free list is LIFO like C's
+     * {@code Obj[]} pool, so this is the object C would reuse). Only for C code that uses an object it never
+     * initialises (shot.c:991-994).
+     * <p>
+     * BEHAVIOR: -1 when the pool is full.
+     */
+    public int allocStale() {
+        if (freeTop == 0) {
+            return -1;
+        }
+        int h = freeStack[--freeTop];
+        slot[h] = count;
+        active[count++] = h;
+        type[h] = Obj.DEBRIS;
+        life[h] = 0;
+        return h;
+    }
+
     /**
      * Allocate an object with all fields zeroed except {@code owner = NO_ID}.
      * <p>
