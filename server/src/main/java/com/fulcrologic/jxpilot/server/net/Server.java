@@ -154,12 +154,12 @@ public final class Server implements AutoCloseable {
      * file (origin DEFAULTS), then the map (origin MAP), then the {@code expand} list; precedence per
      * {@link Options#setValue}.
      *
-     * @throws IllegalArgumentException for an unknown option, two config files or no {@code --map}
+     * @throws IllegalArgumentException for two config files or no {@code --map} (unknown options are warnings)
      */
     public static Options readOptions(String[] args) throws IOException {
         Options opts = new Options();
         List<String> rest = opts.parseCommandLine(ServerArgs.joinRepeated(args, Opt.BIND));
-        Path config = ServerArgs.configFile(rest);
+        Path config = ServerArgs.configFile(rest, opts);
         DefaultsFile.apply(opts);
         if (config != null) {
             ConfigParser.parseFile(config, OptionOrigin.DEFAULTS, opts);

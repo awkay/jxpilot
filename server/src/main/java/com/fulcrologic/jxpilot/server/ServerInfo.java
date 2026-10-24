@@ -36,11 +36,20 @@ public final class ServerInfo {
 
     /**
      * BEHAVIOR: the text for the first information request among the arguments, or null when there is none.
-     * Arguments are scanned in order, so {@code --map X -help} still asks for help (C checks every argument).
+     * Arguments are scanned in C's order (parser.c Parser): an option that takes a value consumes the next
+     * argument first, so {@code -motd -h} sets motd to "-h"; {@code --map X -help} still asks for help.
      */
     public static String request(String[] args, String version) {
-        for (String a : args) {
+        for (int i = 0; i < args.length; i++) {
+            String a = args[i];
             String arg = a.startsWith("--") ? a.substring(1) : a;
+            if (arg.length() > 1 && (arg.charAt(0) == '-' || arg.charAt(0) == '+')) {
+                Opt o = Opt.find(arg.substring(1));
+                if (o != null && o.type() != OptionType.BOOL && o.type() != OptionType.VOID) {
+                    i++; // its value
+                    continue;
+                }
+            }
             switch (arg) {
                 case "-help", "-h" -> {
                     return help();
@@ -92,7 +101,10 @@ public final class ServerInfo {
                 sb.append(" or ").append(o.alias());
             }
             sb.append(' ').append(kind(o.type())).append('\n');
-            sb.append('\t').append(o.help()).append('\n');
+            String help = cHelp().getOrDefault(o.optionName(), o.help());
+            for (String line : help.split("\n")) {
+                sb.append('\t').append(line).append('\n');
+            }
             int all = Opt.F.ANY | Opt.F.VIS;
             int f = o.flags();
             if ((f & all) != all && f != 0) {
@@ -117,8 +129,40 @@ public final class ServerInfo {
         sb.append("    \n"
             + "    The probabilities are in the range [0.0-1.0] and they refer to the\n"
             + "    probability that an event will occur in a block per second.\n"
-            + "    Boolean options are turned off by using +<option>.\n");
+            + "    Boolean options are turned off by using +<option>.\n"
+            + "    \n"
+            + "    Please refer to the manual pages, xpilots(6) and xpilot(6),\n"
+            + "    for more specific help.\n");
         return sb.toString();
+    }
+
+    /** C's help text of every C option (resource xpilot/server-help.txt, from cmdline.c), line breaks kept. */
+    static java.util.Map<String, String> cHelp() {
+        java.util.Map<String, String> m = new java.util.HashMap<>();
+        try (java.io.InputStream in = ServerInfo.class.getResourceAsStream("/xpilot/server-help.txt")) {
+            String name = null;
+            StringBuilder text = new StringBuilder();
+            for (String line : new String(in.readAllBytes(), java.nio.charset.StandardCharsets.ISO_8859_1).split("\n")) {
+                if (line.startsWith("#")) {
+                    continue;
+                }
+                if (line.startsWith("@")) {
+                    if (name != null) {
+                        m.put(name, text.toString());
+                    }
+                    name = line.substring(1);
+                    text.setLength(0);
+                } else {
+                    text.append(line).append('\n');
+                }
+            }
+            if (name != null) {
+                m.put(name, text.toString());
+            }
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+        return m;
     }
 
     private static String kind(OptionType t) {

@@ -61,13 +61,16 @@ public final class ServerMain {
         return run(args, settings, System.out, err);
     }
 
-    /** BEHAVIOR: an information request ({@link ServerInfo}: -help, -version, -dump...) prints to out and returns 0. */
+    /**
+     * BEHAVIOR: an information request ({@link ServerInfo}: -help, -version, -dump...) prints to out and returns 1,
+     * as C exits 1 when Parser returns false after one (server.c:139-140).
+     */
     static int run(String[] args, Server.Settings settings, PrintStream out, PrintStream err) {
         String info = ServerInfo.request(args, ServerInfo.version());
         if (info != null) {
             out.print(info);
             out.flush();
-            return 0;
+            return EXIT_USAGE;
         }
         Server server;
         try {

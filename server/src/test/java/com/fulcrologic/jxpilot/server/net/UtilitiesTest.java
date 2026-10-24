@@ -221,18 +221,20 @@ class UtilitiesTest {
         }
 
         @Test
-        @DisplayName("configFile finds the single positional argument")
+        @DisplayName("configFile finds the single positional argument; unknown options only warn (parser.c:411-418)")
         void config() {
+            com.fulcrologic.jxpilot.common.config.Options o = new com.fulcrologic.jxpilot.common.config.Options();
+            Path withUnknown = ServerArgs.configFile(List.of("--nope", "server.cfg", "+nope"), o);
             assertAll(
-                () -> assertNull(ServerArgs.configFile(List.of()), "no positional argument, no config file"),
-                () -> assertEquals(Path.of("server.cfg"), ServerArgs.configFile(List.of("server.cfg")), "one positional is the file"),
-                () -> assertEquals(Path.of("-"), ServerArgs.configFile(List.of("-")), "a lone dash is a path"),
-                () -> assertThrows(IllegalArgumentException.class, () -> ServerArgs.configFile(List.of("--nope")),
-                    "an unconsumed option is unknown"),
-                () -> assertThrows(IllegalArgumentException.class, () -> ServerArgs.configFile(List.of("+nope")),
-                    "an unconsumed +option is unknown"),
-                () -> assertThrows(IllegalArgumentException.class, () -> ServerArgs.configFile(List.of("a", "b")),
-                    "two positionals are an error"));
+                () -> assertNull(ServerArgs.configFile(List.of(), o), "no positional argument, no config file"),
+                () -> assertEquals(Path.of("server.cfg"), ServerArgs.configFile(List.of("server.cfg"), o),
+                    "one positional is the file"),
+                () -> assertEquals(Path.of("-"), ServerArgs.configFile(List.of("-"), o), "a lone dash is a path"),
+                () -> assertEquals(Path.of("server.cfg"), withUnknown, "unknown options are skipped"),
+                () -> assertEquals(List.of("Unknown option '--nope'", "Unknown option '+nope'"), o.warnings(),
+                    "and warned about"),
+                () -> assertThrows(IllegalArgumentException.class,
+                    () -> ServerArgs.configFile(List.of("a", "b"), o), "two positionals are an error"));
         }
     }
 

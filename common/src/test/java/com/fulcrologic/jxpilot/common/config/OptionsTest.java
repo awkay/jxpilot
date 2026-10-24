@@ -499,6 +499,23 @@ class OptionsTest {
     @DisplayName("toConfigText")
     class ConfigText {
         @Test
+        @DisplayName("unknown names (macros, settings this server ignores) are shipped only when the map set them")
+        void unknownOrigins() {
+            Options o = parse("mapWidth: 1\nmapHeight: 1\nfromMap: m\nmapData: \\multiline: EOF\nx\nEOF\n");
+            o.setValue("fromDefaults", "d", false, OptionOrigin.DEFAULTS);
+            o.setValue("fromCommand", "c", false, OptionOrigin.COMMAND);
+            o.setValue("fromPassword", "p", false, OptionOrigin.PASSWORD);
+            ConfigParser.parse("define: Macro \\multiline: End\ngravity: 1\nEnd\n", "defaults", OptionOrigin.DEFAULTS, o);
+            String text = o.toConfigText();
+            assertAll(
+                () -> assertTrue(text.contains("fromMap: m\n"), "the map's own unknown name"),
+                () -> assertFalse(text.contains("fromDefaults"), "not the defaults file's"),
+                () -> assertFalse(text.contains("fromCommand"), "not the command line's"),
+                () -> assertFalse(text.contains("fromPassword"), "not the password file's"),
+                () -> assertFalse(text.contains("Macro"), "not the defaults file's macros (lib/defaults' SoftWalls...)"));
+        }
+
+        @Test
         @DisplayName("round trips through the parser exactly")
         void roundTrip() {
             Options o = parse("mapWidth: 3\nmapHeight: 2\nmapName: Test Map\nteamPlay: yes\ngravity: -0.3\n"
@@ -515,7 +532,7 @@ class OptionsTest {
                 {"crValue", "a\r\r\nb"},
                 {"plainValue", "\tleading tab"}};
             for (String[] v : values) {
-                o.setValue(v[0], v[1], true, OptionOrigin.COMMAND);
+                o.setValue(v[0], v[1], true, OptionOrigin.MAP);
             }
             String text = o.toConfigText();
             Options r = parse(text);

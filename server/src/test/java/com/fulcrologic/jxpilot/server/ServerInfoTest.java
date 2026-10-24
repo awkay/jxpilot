@@ -57,7 +57,13 @@ class ServerInfoTest {
             () -> assertEquals(ServerInfo.dumpOptions(), ServerInfo.request(new String[] {"-dumpWindows"}, "1"),
                 "-dumpWindows"),
             () -> assertEquals(ServerInfo.dumpFlags(), ServerInfo.request(new String[] {"-dumpFlags"}, "1"), "-dumpFlags"),
-            () -> assertEquals("dev", ServerInfo.version(), "no jar manifest in tests"));
+            () -> assertEquals("dev", ServerInfo.version(), "no jar manifest in tests"),
+            () -> assertNull(ServerInfo.request(new String[] {"-motdFileName", "-h"}, "1"),
+                "an option takes its value first, as C: -motdFileName -h sets the file name"),
+            () -> assertEquals(ServerInfo.help(), ServerInfo.request(new String[] {"-motdFileName", "x", "-h"}, "1"),
+                "the next argument is checked again"),
+            () -> assertEquals(ServerInfo.help(), ServerInfo.request(new String[] {"-idleRun", "-h"}, "1"),
+                "a boolean takes no value"));
     }
 
     @Test
@@ -86,6 +92,12 @@ class ServerInfoTest {
             () -> assertTrue(h.contains("\n    -/+shotsGravity <real>") == false && h.contains("\n    -/+shotsGravity \n"),
                 "booleans take -/+ and no value"),
             () -> assertTrue(h.contains("\n    -gravity <real>\n\tGravity strength.\n\n"), "an 'any' option has no flags line"),
+            () -> assertTrue(h.contains("\n    -expand <list>\n\tExpand a comma separated list of predefined settings.\n"
+                + "\tThese settings can be defined in either the defaults file\n"
+                + "\tor in a map file using the \"define:\" operator.\n"), "C's own multi-line help, each line tabbed"),
+            () -> assertTrue(h.contains("\n    -bind <list>\n\t"), "JXPilot-only options use their own help"),
+            () -> assertTrue(h.endsWith("    Please refer to the manual pages, xpilots(6) and xpilot(6),\n"
+                + "    for more specific help.\n"), "C's closing lines"),
             () -> assertTrue(h.contains("\n    -/+idleRun or rawMode \n\tDo robots keep on playing even if all human players quit?\n"
                 + "\t[ Flags: command, defaults ]\n"), "command+defaults"),
             () -> assertTrue(h.contains("\t[ Flags: command, passwordfile, defaults, invisible ]\n"), "password"),
@@ -97,14 +109,14 @@ class ServerInfoTest {
     }
 
     @Test
-    @DisplayName("ServerMain prints an information request to stdout and exits 0 without starting")
+    @DisplayName("ServerMain prints an information request to stdout and exits 1 without starting (server.c:139-140)")
     void main() {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         int status = ServerMain.run(new String[] {"-version"}, new Server.Settings(),
             new PrintStream(out, true, StandardCharsets.UTF_8), new PrintStream(err, true, StandardCharsets.UTF_8));
         assertAll(
-            () -> assertEquals(0, status, "exit 0"),
+            () -> assertEquals(1, status, "exit 1, as C"),
             () -> assertEquals("JXPilot server dev (a port of XPilot 4.5.5)\n", out.toString(StandardCharsets.UTF_8), "stdout"),
             () -> assertEquals("", err.toString(StandardCharsets.UTF_8), "nothing on stderr"));
     }
