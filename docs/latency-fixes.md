@@ -433,15 +433,18 @@ the default only if the friends prefer it. The numbers suggest they will at 200+
 
 **Fixes:** firing feels immediate.
 
-| RTT | Today, the shot appears after (estimate) | With prediction |
+| RTT | Today, the shot appears after (measured mean, p95) | With prediction |
 |---|---|---|
-| 100 ms | ≈ 235 ms | ≈ 10-45 ms |
-| 200 ms | ≈ 335 ms | ≈ 10-45 ms |
-| 300 ms | ≈ 435 ms | ≈ 10-45 ms |
+| 100 ms | ≈ 238 ms, 267 ms | ≈ 10-45 ms |
+| 200 ms | ≈ 338 ms, 367 ms | ≈ 10-45 ms |
+| 300 ms | ≈ 438 ms, 467 ms | ≈ 10-45 ms |
 
-The "today" column is still an estimate (phase 0 measured the own ship, not shots). It stays at RTT +
-~135 ms because shots are drawn on the interpolated timeline with the other objects (`ClientWorld.drawShots`
-at the render tick, 1.28 T behind), unlike the own ship since F1 (§2.1).
+Measured (latency-measurements.md, "Shots"): RTT + 138 ms on average, 95 ms more than the own ship's
+response to the same press. The fire lands on the same tick as a turn would, and the new shot is in the
+same snapshot as the SELF that shows its recoil. But shots are drawn on the interpolated timeline with
+the other objects (`ClientWorld.drawShots` at the render tick, 1.28 T ≈ 91 ms behind), unlike the own ship
+since F1 (§2.1): 11-12 render frames after the own ship. Drawing own shots on the own ship's timeline,
+even before predicting them, would take about 92 ms off at any RTT.
 
 **Does not fix:** hits. The server decides them, and you learn of a hit about RTT + interpolation later.
 
@@ -614,7 +617,7 @@ authority with own-entity prediction is the standard and right answer here.
 | 4.1 | Own-ship prediction, replay, speculative tick | own ship ≈ 143/243/343 (measured) → ≈ 10-45 ms | 1-1.5 wk | client | DO FIRST |
 | 4.2 | Correction smoothing | (makes 4.1 look right) | 2 d | client | DO FIRST |
 | 4.1 | View-cull margin for the lead | (no pop-in at the leading edge) | < 1 d | server | DO FIRST |
-| 4.7 | Predicted own shots and `OWN_SHOTS` | shot appears ≈ 235/335/435 (estimate) → ≈ 10-45 ms | 1 wk | all | LATER (phase 2) |
+| 4.7 | Predicted own shots and `OWN_SHOTS` | shot appears ≈ 238/338/438 (measured) → ≈ 10-45 ms | 1 wk | all | LATER (phase 2) |
 | 4.8 | Predicted sparks, sound and shield | thrust cue as 4.1 | 2 d | client | LATER (phase 2) |
 | 4.13 | Burst redundancy | no lost explosions | 1 d | server, client | LATER (phase 2) |
 | 4.6-A | Adaptive interpolation delay | 0-15 ms; fewer glitches | 2 d | client | LATER (phase 3) |

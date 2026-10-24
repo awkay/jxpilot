@@ -128,7 +128,10 @@ class HarnessPartsTest {
                 () -> assertEquals("tournament", Course.WALLS.map, "walls on tournament"),
                 () -> assertEquals("doggy", Course.DOGFIGHT.map, "the dogfight on the smallest map"),
                 () -> assertEquals(6, Course.DOGFIGHT.motionRobots, "with 6 robots, so they stay in view"),
-                () -> assertEquals(3, Course.FREE_FLIGHT.motionRobots, "3 robots elsewhere"));
+                () -> assertEquals(3, Course.FREE_FLIGHT.motionRobots, "3 robots elsewhere"),
+                () -> assertTrue(Course.FREE_FLIGHT.shotTrials && Course.WALLS.shotTrials, "shots on free flight and walls"),
+                () -> assertFalse(Course.GRAVITY_WELL.shotTrials || Course.DOGFIGHT.shotTrials,
+                    "not where the unshielded ship keeps crashing"));
         }
     }
 
@@ -149,6 +152,28 @@ class HarnessPartsTest {
                 () -> assertEquals(7_919_993L, InputToPhoton.tickPhase(1), "phase of seed 1"),
                 () -> assertTrue(InputToPhoton.tickPhase(-5) >= 0 && InputToPhoton.tickPhase(-5) < 71_000_000L,
                     "phase is within one 14 Hz tick for any seed"));
+        }
+
+        @Test
+        @DisplayName("shot trials: 2.5 s warm-up; the spawn shield is tapped off 100-200 ms after the spawn; parts")
+        void shotSchedule() {
+            long shield = ControlKey.SHIELD.mask();
+            InputToPhoton.Result r = new InputToPhoton.Result(List.of(
+                new InputToPhoton.Trial(ControlKey.FIRE_SHOT, 0, 140, InputToPhoton.Outcome.MEASURED, 0, Double.NaN, 48),
+                new InputToPhoton.Trial(ControlKey.FIRE_SHOT, 0, 99, InputToPhoton.Outcome.DIED, 0, Double.NaN, 9),
+                new InputToPhoton.Trial(ControlKey.TURN_LEFT, 0, 40, InputToPhoton.Outcome.MEASURED)), 0, 0, 0);
+            assertAll(
+                () -> assertEquals(1000 * MS + (2500 + 2 * 263) * MS, InputToPhoton.earliestShotT0(1000 * MS, 2),
+                    "third shot trial"),
+                () -> assertEquals(0, InputToPhoton.shotCourseKeys(Course.WALLS, 99 * MS), "no shield before 100 ms"),
+                () -> assertEquals(shield, InputToPhoton.shotCourseKeys(Course.WALLS, 100 * MS), "shield from 100 ms"),
+                () -> assertEquals(shield, InputToPhoton.shotCourseKeys(Course.WALLS, 199 * MS), "until 199 ms"),
+                () -> assertEquals(0, InputToPhoton.shotCourseKeys(Course.WALLS, 200 * MS), "released at 200 ms"),
+                () -> assertEquals(Course.THRUST, InputToPhoton.shotCourseKeys(Course.WALLS, 400 * MS),
+                    "the course's own keys still apply"),
+                () -> assertEquals(1, r.selfStats().count(), "own-ship part of measured fire trials only"),
+                () -> assertEquals(48, r.selfStats().max(), "its value"),
+                () -> assertEquals(92, r.drawDelayStats().max(), "shot minus own-ship part: 140 - 48"));
         }
 
         @Test
@@ -195,6 +220,8 @@ class HarnessPartsTest {
                 () -> assertTrue(Double.isNaN(none.mean()), "no trials: NaN mean"),
                 () -> assertEquals(1, r.positionStats().count(), "position delay of measured thrust trials only"),
                 () -> assertEquals(85, r.positionStats().max(), "its value"),
+                () -> assertEquals(0, r.selfStats().count(), "no fire trials: no own-ship part"),
+                () -> assertEquals(0, r.drawDelayStats().count(), "no fire trials: no draw delay"),
                 () -> assertEquals(2, r.stats(null).count(), "two measured"),
                 () -> assertEquals(40, r.stats(ControlKey.TURN_LEFT).max(), "turn trials"),
                 () -> assertEquals(60, r.stats(ControlKey.THRUST).max(), "thrust trials"),
@@ -299,6 +326,62 @@ class HarnessPartsTest {
         }
 
         @Test
+        @DisplayName("the press's shot: interpolated while it lives at both ticks, held where its last tick had it,"
+            + " none before it is fired or after it died")
+        void pressShot() {
+            ServerTruth t = new ServerTruth(1);
+            int born0 = t.pressBorn();
+            t.putPress(10, 100, 50, true);
+            t.putPress(11, 120, 50, true);
+            t.putPress(12, 140, 60, true);
+            t.putPress(13, 0, 0, false);
+            double[] out = new double[2];
+            boolean mid = t.pressShotAt(10.25, 1000, 1000, false, out);
+            double mx = out[0];
+            boolean last = t.pressShotAt(12.5, 1000, 1000, false, out);
+            double lx = out[0];
+            double ly = out[1];
+            ServerTruth wrap = new ServerTruth(1);
+            wrap.putPress(5, 995, 0, true);
+            wrap.putPress(6, 15, 0, true);
+            boolean w = wrap.pressShotAt(5.5, 1000, 1000, true, out);
+            double wx = out[0];
+            assertAll(
+                () -> assertEquals(-1, born0, "not fired yet"),
+                () -> assertEquals(10, t.pressBorn(), "fired at 10"),
+                () -> assertEquals(13, t.pressDied(), "dead from 13"),
+                () -> assertTrue(mid, "alive at 10 and 11"),
+                () -> assertEquals(105, mx, 1e-12, "a quarter of the way from 100 to 120"),
+                () -> assertTrue(last, "alive at 12, dead at 13"),
+                () -> assertEquals(140, lx, 1e-12, "held where tick 12 had it (died before 13)"),
+                () -> assertEquals(60, ly, 1e-12, "y too"),
+                () -> assertFalse(t.pressShotAt(9.5, 1000, 1000, false, out), "none before it was fired"),
+                () -> assertFalse(t.pressShotAt(13.2, 1000, 1000, false, out), "none once dead"),
+                () -> assertTrue(w, "across the wrap"),
+                () -> assertEquals(1005, wx, 1e-12, "995 -> 15 across the edge: halfway is 1005 (= 5)"));
+        }
+
+        @Test
+        @DisplayName("fire: the last fire frame differs, and live shots compare, for the own player")
+        void fired() {
+            ServerTruth a = new ServerTruth(1);
+            ServerTruth b = new ServerTruth(1);
+            a.putShots(5, 40, 1);
+            b.putShots(5, 4, 0);
+            a.putShots(6, 41, 0);
+            b.putShots(6, 4, 0);
+            a.putShots(7, 4, 2);
+            b.putShots(7, 4, 2);
+            assertAll(
+                () -> assertTrue(a.shotTimeDiffers(b, 5), "fired at 5"),
+                () -> assertTrue(a.moreShots(b, 5), "and the shot lives"),
+                () -> assertTrue(a.shotTimeDiffers(b, 6), "fired at 6"),
+                () -> assertFalse(a.moreShots(b, 6), "but no shot lives (died in a wall)"),
+                () -> assertFalse(a.shotTimeDiffers(b, 7), "same last fire"),
+                () -> assertFalse(a.moreShots(b, 7), "same shots"));
+        }
+
+        @Test
         @DisplayName("own heading and velocity compare as sent: dir, and the float bits of vx and vy")
         void differs() {
             ServerTruth a = new ServerTruth(1);
@@ -359,15 +442,19 @@ class HarnessPartsTest {
                 new InputToPhoton.Trial(ControlKey.THRUST, 0, Double.NaN, InputToPhoton.Outcome.DEAD_AT_T0)), 0, 0, 0);
             MotionMetrics.Result m = new MotionMetrics.Result(Stats.of(0.2, 1.0), Stats.of(9, 22), Stats.of(0.02, 5),
                 Stats.of(0.1), 0, Stats.of(), Double.NaN, 42, 2, 203.4, 4.25, Double.NaN);
+            InputToPhoton.Result shot = new InputToPhoton.Result(List.of(
+                new InputToPhoton.Trial(ControlKey.FIRE_SHOT, 0, 340, InputToPhoton.Outcome.MEASURED, 0, Double.NaN, 248),
+                new InputToPhoton.Trial(ControlKey.FIRE_SHOT, 0, 330, InputToPhoton.Outcome.MEASURED, 0, Double.NaN, 240),
+                new InputToPhoton.Trial(ControlKey.FIRE_SHOT, 0, Double.NaN, InputToPhoton.Outcome.SHOT_DIED)), 0, 0, 0);
             MetricTable.Row r = new MetricTable.Row(Course.WALLS, new Scenario(200, Scenario.Jitter.NONE,
-                Scenario.Loss.NONE), i, m);
+                Scenario.Loss.NONE), i, m, shot);
             MotionMetrics.Result noTeleport = new MotionMetrics.Result(Stats.of(0.2), Stats.of(), Stats.of(0.02),
                 Stats.of(), 1.5, Stats.of(3, 4), 97.5, 0, 0, 8, 4.1, 0);
             String quiet = MetricTable.line(new MetricTable.Row(Course.GRAVITY_WELL, new Scenario(0, Scenario.Jitter.PARETO,
-                Scenario.Loss.BURSTY_5), i, noTeleport));
+                Scenario.Loss.BURSTY_5), i, noTeleport, shot));
             String table = MetricTable.format(List.of(r));
             assertAll(
-                () -> assertEquals("| walls | 200/0/0 | 240 | 250 | 40 | 45.0 | 240 | 250 | 270 | 2/3 | 0.2/1.0 | 9.0/22.0 (42)"
+                () -> assertEquals("| walls | 200/0/0 | 240 | 250 | 40 | 45.0 | 240 | 250 | 270 | 2/3 | 135.0 | 330 | 340 | 90 | 2/3 | 0.2/1.0 | 9.0/22.0 (42)"
                     + " | 5.00/5.0 | 0.10 | 0.0 (2 tp) | 203/4.3/- | n/a (1c) | n/a (1c) |", MetricTable.line(r), "the row"),
                 () -> assertEquals(MetricTable.HEADER + "\n" + MetricTable.RULE + "\n" + MetricTable.line(r) + "\n", table,
                     "header, rule, rows"),
