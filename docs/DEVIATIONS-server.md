@@ -43,7 +43,6 @@ are deliberate.
 | Random parts of the frame code (`Frame_shots`: random items, confused mines' friendliness) | world `rfrac()` per client per frame | a snapshot-local RNG seeded from the tick and viewer | Snapshots must not change the simulation's random sequence. |
 | Radar blinking of mines, missiles and nukes (`Frame_radar`) | shown or hidden by frame number | always shown | Our radar goes out every few snapshots, so frame-number blinking would alias. |
 | HUD lock visibility (`Frame_status` sets LOCK_VISIBLE) | per connected client when its frame is built, with the client's view size | for every human at the end of the sim tick, with a 1024x768 view for the `inview` test | Keeps the simulation independent of snapshot timing; only matters with playersOnRadar off. |
-| Hyperjump with wormTime | makes a pair of temporary wormholes (`add_temp_wormholes`) | no temporary wormholes; the jump itself is C's | Not ported yet. |
 | Visibility of a new player | stale `canSee` entries of the slot until the next visibility update | everyone sees and is seen at join until the first update | Avoids an invisible first frame. |
 | ECM reprogramming a robot | `Send_seek` tells every client | the robot goes to war; no message | Our protocol has no seek message. |
 | Snapshot rate of paused / game-over players (frame.c:1275-1294) | without allowViewing, paused players get every 4th frame and game-over players every 2nd | every snapshot | A bandwidth saving only; our snapshot rate is set by the network layer. |
