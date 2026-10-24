@@ -25,7 +25,10 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.net.Records;
+import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.server.world.Mods;
+import com.fulcrologic.jxpilot.server.world.ShipGeom;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
@@ -43,6 +46,8 @@ public final class Shots {
     static final long ED_SHOT = (long) (-0.2 * 256);
     /** C {@code -ED_SHOT} uncast (51.2): the fuel a player needs to fire ({@code fuel.sum < -ED_SHOT}). */
     static final double SHOT_FUEL_NEEDED = 0.2 * 256;
+    /** C {@code ED_SHOT} uncast (-51.2), as C's cluster drain formulas use it. */
+    static final double ED_SHOT_F = -0.2 * 256;
     /** C {@code CANNON_SHOT_MASS} (assigned to a float). */
     static final float CANNON_SHOT_MASS = 0.4f;
     /** C {@code DEBRIS_MASS}. */
@@ -57,17 +62,82 @@ public final class Shots {
     }
 
     /**
-     * C {@code Fire_normal_shots} (main gun only).
+     * C {@code Fire_normal_shots}.
      * <p>
      * BEHAVIOR: fires iff at least fireRepeatRate original frames passed since the last shot; then
      * remembers the time and fires the main gun along the heading.
+     * BEHAVIOR: each wideangle adds a shot to each side, (i+1) * (3 - spread) RES units off the heading, from the
+     * side guns in turn (the main gun without side guns); rear shots fan around the tail by (3 - spread)/2 per
+     * shot, from the rear guns (the ship's centre without them), the middle one from the centre.
      */
     public void fireNormalShots(Player pl) {
         if (w.frames < pl.shotTime + w.params.fireRepeatRate) {
             return;
         }
         pl.shotTime = w.frames;
+        int shotAngle = Mods.SPREAD_MAX - Mods.spread(pl.mods);
         fireMainShot(pl, pl.dir);
+        int wide = pl.items[Item.WIDEANGLE.ordinal()];
+        ShipGeom s = pl.ship;
+        for (int i = 0; i < wide; i++) {
+            int left = Trig.mod(pl.dir + (1 + i) * shotAngle);
+            int right = Trig.mod(pl.dir - (1 + i) * shotAngle);
+            if (s.lGunX.length > 0) {
+                fireGun(pl, left, s.lGunX[i % s.lGunX.length], s.lGunY[i % s.lGunX.length]);
+            } else {
+                fireMainShot(pl, left);
+            }
+            if (s.rGunX.length > 0) {
+                fireGun(pl, right, s.rGunX[i % s.rGunX.length], s.rGunY[i % s.rGunX.length]);
+            } else {
+                fireMainShot(pl, right);
+            }
+        }
+        int rear = pl.items[Item.REARSHOT.ordinal()];
+        for (int i = 0; i < rear; i++) {
+            int k = rear - 1 - 2 * i;
+            int dir = Trig.mod(pl.dir + Const.RES / 2 + (k * shotAngle) / 2);
+            if (k < 0) {
+                if (s.lrGunX.length > 0) {
+                    int g = (i - (rear + 1) / 2) % s.lrGunX.length;
+                    fireGun(pl, dir, s.lrGunX[g], s.lrGunY[g]);
+                } else {
+                    fireShot(pl, dir);
+                }
+            }
+            if (k > 0) {
+                if (s.rrGunX.length > 0) {
+                    int g = (rear / 2 - i - 1) % s.rrGunX.length;
+                    fireGun(pl, dir, s.rrGunX[g], s.rrGunY[g]);
+                } else {
+                    fireShot(pl, dir);
+                }
+            }
+            if (k == 0) {
+                fireShot(pl, dir);
+            }
+        }
+    }
+
+    /**
+     * C {@code Fire_left_shot}/{@code Fire_right_shot}/{@code Fire_left_rshot}/{@code Fire_right_rshot}: a shot from
+     * a side or rear gun (rotated offsets {@code gx}/{@code gy}).
+     * <p>
+     * BEHAVIOR: nothing at the shot limit or shielded/phased.
+     */
+    void fireGun(Player pl, int dir, float[] gx, float[] gy) {
+        if (pl.shots >= pl.shotMax || (pl.used & (Has.SHIELD | Has.PHASING_DEVICE)) != 0) {
+            return;
+        }
+        fire(pl, pl.team, false, pl.px + gx[pl.dir], pl.py + gy[pl.dir], Obj.SHOT, dir, 0);
+    }
+
+    /** C {@code Fire_shot} for a bullet: from the ship's centre; nothing at the shot limit or shielded/phased. */
+    void fireShot(Player pl, int dir) {
+        if (pl.shots >= pl.shotMax || (pl.used & (Has.SHIELD | Has.PHASING_DEVICE)) != 0) {
+            return;
+        }
+        fire(pl, pl.team, false, pl.px, pl.py, Obj.SHOT, dir, 0);
     }
 
     /**
@@ -178,7 +248,11 @@ public final class Shots {
                     }
                 }
             }
-            case Obj.CANNON_SHOT -> explode(h);
+            case Obj.CANNON_SHOT, Obj.MINE, Obj.HEAT_SHOT, Obj.TORPEDO, Obj.SMART_SHOT -> explode(h);
+            case Obj.ITEM -> {
+                sim.items.delete(h);
+                return;
+            }
             default -> { }
         }
         o.free(h);
@@ -196,38 +270,79 @@ public final class Shots {
         if (o.mass[h] == 0) {
             return;
         }
+        int objType = o.type[h];
+        int m = o.mods[h];
         int status = Obj.GRAVITY;
+        if (objType == Obj.MINE) {
+            status |= Obj.COLLISIONSHOVE;
+        }
         if ((o.status[h] & Obj.FROMCANNON) != 0) {
             status |= Obj.FROMCANNON;
         }
         int type;
         int color;
         float mass;
+        float modv;
         float numModv;
         float lifeModv;
+        float speedModv;
         int intensity;
         int burstKind;
-        if ((o.mods[h] & Obj.MOD_CLUSTER) != 0) {
+        if (Mods.isCluster(m)) {
             type = Obj.SHOT;
             color = Records.ObjColor.WHITE;
             mass = w.params.shotMass;
             mass *= 3;
+            modv = 1 << Mods.velocity(m);
             numModv = 4;
-            lifeModv = 1 * 0.20f;
+            if (Mods.isNuclear(m)) {
+                modv *= 4.0f;
+                numModv = 1;
+            }
+            lifeModv = modv * 0.20f;
+            speedModv = 1.0f / modv;
             intensity = (int) (o.mass[h] * 0.9 / w.params.shotMass);
             burstKind = -1;
         } else {
             type = Obj.DEBRIS;
             color = Records.ObjColor.RED;
             mass = DEBRIS_MASS;
+            modv = 1;
             numModv = 1;
-            lifeModv = 1;
-            intensity = 32;
+            lifeModv = modv;
+            speedModv = modv;
+            intensity = objType == Obj.MINE ? 512 : 32;
+            numModv = numModv / ((float) Mods.mini(m) + 1.0f);
             burstKind = Records.BurstKind.DEBRIS;
+        }
+        if (Mods.isNuclear(m)) {
+            float nukeFactor;
+            if (objType == Obj.MINE) {
+                nukeFactor = (float) (NUKE_MINE_EXPL_MULT * o.mass[h] / Mines.MINE_MASS);
+            } else {
+                nukeFactor = (float) (NUKE_SMART_EXPL_MULT * o.mass[h] / Missiles.MISSILE_MASS);
+            }
+            nukeFactor = (nukeFactor * (Mods.mini(m) + 1)) / shotMult(m);
+            intensity = (int) (intensity * nukeFactor);
+        }
+        if (Mods.isImplosion(m)) {
+            mass = -mass;
+        }
+        if ((objType & (Obj.TORPEDO | Obj.HEAT_SHOT | Obj.SMART_SHOT)) != 0) {
+            intensity /= (1 + Mods.power(m));
         }
         sim.debris.make(o.prevX[h], o.prevY[h], o.vx[h], o.vy[h], o.owner[h], o.team[h], type, mass, status, color,
             burstKind, 6, (int) (0.20f * intensity * numModv), (int) (0.30f * intensity * numModv),
-            0, Const.RES - 1, 20, intensity >> 2, (int) (8 * lifeModv),
+            0, Const.RES - 1, 20 * speedModv, (intensity >> 2) * speedModv, (int) (8 * lifeModv),
             (int) ((intensity >> 1) * lifeModv));
     }
+
+    /** C {@code SHOT_MULT} of a modifier set: nukeClusterDamage for nuclear cluster warheads, else 1. */
+    float shotMult(int m) {
+        return Mods.isNuclear(m) && Mods.isCluster(m) ? w.items.nukeClusterDamage : 1.0f;
+    }
+
+    /** C {@code NUKE_MINE_EXPL_MULT}, {@code NUKE_SMART_EXPL_MULT}. */
+    static final int NUKE_MINE_EXPL_MULT = 3;
+    static final int NUKE_SMART_EXPL_MULT = 4;
 }

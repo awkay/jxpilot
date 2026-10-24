@@ -843,4 +843,57 @@ public final class Records {
 
         public int timeLeft() { return b.getInt(o + 4); }
     }
+
+    /**
+     * HUD state of the receiving player that SELF does not carry (C {@code Send_self} and its item timer packets;
+     * section {@link Section#SELF_STATUS}). {@code 0 u16 lockDist (px), 2 u8 lockDir (RES), 3 u8 flags, 4 u16 mods
+     * (the server's packed modifiers: warhead bits 0-1 cluster/implosion, nuclear 2-3 nuclear/full, velocity 4-5,
+     * mini 6-7, spread 8-9, power 10-11, laser 12-13 stun/blind), 6 u16 emergency thrust left, 8 max, 10 emergency
+     * shield left, 12 max, 14 phasing left, 16 max} (frames; 0 when not in use).
+     */
+    public static final class SelfStatus extends Fly {
+        public static final int SIZE = 18;
+        /** The lock is shown on the HUD: lockDist and lockDir are valid. */
+        public static final int FLAG_LOCK_VISIBLE = 1;
+        /** The autopilot light is on this frame. */
+        public static final int FLAG_AUTOPILOT = 2;
+
+        /** BEHAVIOR: writes the record; u16 fields are clamped to 0..65535. */
+        public static void put(SnapshotWriter w, int lockDist, int lockDir, int flags, int mods, int thrustLeft,
+                               int thrustMax, int shieldLeft, int shieldMax, int phasingLeft, int phasingMax) {
+            w.buffer().putShort((short) clampU16(lockDist)).put((byte) lockDir).put((byte) flags)
+                .putShort((short) mods).putShort((short) clampU16(thrustLeft)).putShort((short) clampU16(thrustMax))
+                .putShort((short) clampU16(shieldLeft)).putShort((short) clampU16(shieldMax))
+                .putShort((short) clampU16(phasingLeft)).putShort((short) clampU16(phasingMax));
+        }
+
+        static int clampU16(int v) {
+            return v < 0 ? 0 : Math.min(v, 0xFFFF);
+        }
+
+        public SelfStatus wrap(SnapshotReader r, int i) {
+            bind(r, i);
+            return this;
+        }
+
+        public int lockDist() { return u16(0); }
+
+        public int lockDir() { return u8(2); }
+
+        public int flags() { return u8(3); }
+
+        public int mods() { return u16(4); }
+
+        public int thrustLeft() { return u16(6); }
+
+        public int thrustMax() { return u16(8); }
+
+        public int shieldLeft() { return u16(10); }
+
+        public int shieldMax() { return u16(12); }
+
+        public int phasingLeft() { return u16(14); }
+
+        public int phasingMax() { return u16(16); }
+    }
 }

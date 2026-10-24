@@ -70,6 +70,18 @@ public final class World {
     public final Grid grid;
     public final Events events = new Events();
 
+    // ---- items (server-items)
+    /** Item, weapon and device options and the per-item table (C {@code World.items[]}). */
+    public final ItemParams items;
+    /** C {@code World.items[i].num}: floating items of each kind. */
+    public final int[] itemCount = new int[com.fulcrologic.jxpilot.common.Item.COUNT];
+    /** Laser pulses in flight. */
+    public final Pulses pulses = new Pulses();
+    /** ECM blasts and transporter beams. */
+    public final Ecms ecms = new Ecms();
+    /** Item and device state of the cannons. */
+    public final CannonItems cannonItems;
+
     // ---- dynamic map state
     /** Frames a cannon stays dead; 0 = alive. */
     public final int[] cannonDeadTime;
@@ -124,13 +136,16 @@ public final class World {
         players = new Player[cap];
         for (int i = 0; i < cap; i++) {
             players[i] = new Player(i);
+            players[i].initVisibility(cap);
         }
         order = new int[cap];
         Arrays.fill(slotOfId, -1);
         objects = new Objects(params.maxObjects);
         grid = new Grid(width, height, wrap, params.maxObjects);
+        items = ItemParams.from(options, width, height, params.fps);
 
         cannonDeadTime = new int[map.cannons().size()];
+        cannonItems = new CannonItems(map.cannons().size());
         fuelLevel = new double[map.fuels().size()];
         Arrays.fill(fuelLevel, Const.START_STATION_FUEL * 256);
         targetDeadTime = new int[map.targets().size()];

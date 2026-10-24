@@ -163,6 +163,9 @@ class SnapshotBuilderTest {
                             rd.wrap(r, i);
                             d.radar.add(rd.cellX() + "," + rd.cellY() + ":" + rd.flags());
                         }
+                        case Section.SELF_ITEMS, Section.SELF_STATUS, Section.TIMERS -> {
+                            // the receiver's HUD records (server-items), checked in ItemSectionsTest
+                        }
                         default -> throw new AssertionError("unexpected section " + r.type());
                     }
                 }

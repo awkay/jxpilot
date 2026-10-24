@@ -62,7 +62,10 @@ public final class Cannons {
      * One tick for every cannon.
      * <p>
      * BEHAVIOR: a dead cannon counts down and comes back (its block becomes CANNON again) at zero.
-     * BEHAVIOR: a live cannon looks for a target with probability 1/16 and fires if it finds one.
+     * BEHAVIOR: a live cannon may defend itself ({@link CannonWeapons#defend}); one that is not
+     * emergency-shielded, phased, damaged or holding a tractor beam looks for a target with probability 1/16 and
+     * fires if it finds one (the rfrac() is drawn only then, update.c:632), otherwise it may pick up an item; its
+     * damage and device timers then run ({@link CannonWeapons#tick}).
      */
     public void update() {
         for (int i = 0; i < w.cannonDeadTime.length; i++) {
@@ -73,9 +76,13 @@ public final class Cannons {
                 }
                 continue;
             }
-            if (w.rfrac() * 16 < 1) {
+            sim.cannonWeapons.defend(i);
+            if (sim.cannonWeapons.mayFire(i) && w.rfrac() * 16 < 1) {
                 checkFire(i);
+            } else {
+                sim.cannonWeapons.pickItem(i);
             }
+            sim.cannonWeapons.tick(i);
         }
     }
 

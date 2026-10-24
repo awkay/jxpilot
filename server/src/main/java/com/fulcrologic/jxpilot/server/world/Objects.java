@@ -60,8 +60,25 @@ public final class Objects {
     public final int[] plRadius;
     public final int[] color;
     public final int[] missileDir;
-    /** Modifier bits ({@link Obj#MOD_CLUSTER}). */
+    /** Modifier bits ({@link Mods}). */
     public final int[] mods;
+    // ---- C object.info / count and the mine/missile extensions (server-items)
+    /** C {@code info}: item type, missile target id (-1 none), mine fuse frames, torpedo frame counter. */
+    public final int[] info;
+    /** C {@code count}: item pack size, heat-seeker error counter, confusion counter. */
+    public final int[] counter;
+    /** C missile {@code turnspeed}. */
+    public final float[] turnSpeed;
+    /** C missile {@code max_speed}. */
+    public final float[] maxSpeed;
+    /** C mine/torpedo {@code spread_left}. */
+    public final int[] spreadLeft;
+    /** C mine/smart {@code ecm_range}. */
+    public final float[] ecmRange;
+    /** C smart {@code new_info}: the id an ECM-confused missile may re-lock on. */
+    public final int[] newInfo;
+    /** C mine {@code owner}: who laid the mine ({@link #owner} is who controls it after ECM reprogramming). */
+    public final int[] mineOwner;
 
     /** Dense list of live handles, {@code active[0..count)}. */
     public final int[] active;
@@ -94,6 +111,14 @@ public final class Objects {
         color = new int[capacity];
         missileDir = new int[capacity];
         mods = new int[capacity];
+        info = new int[capacity];
+        counter = new int[capacity];
+        turnSpeed = new float[capacity];
+        maxSpeed = new float[capacity];
+        spreadLeft = new int[capacity];
+        ecmRange = new float[capacity];
+        newInfo = new int[capacity];
+        mineOwner = new int[capacity];
         active = new int[capacity];
         slot = new int[capacity];
         freeStack = new int[capacity];
@@ -150,6 +175,14 @@ public final class Objects {
         color[h] = 0;
         missileDir[h] = 0;
         mods[h] = 0;
+        info[h] = 0;
+        counter[h] = 0;
+        turnSpeed[h] = 0;
+        maxSpeed[h] = 0;
+        spreadLeft[h] = 0;
+        ecmRange[h] = 0;
+        newInfo[h] = 0;
+        mineOwner[h] = Obj.NO_ID;
         return h;
     }
 

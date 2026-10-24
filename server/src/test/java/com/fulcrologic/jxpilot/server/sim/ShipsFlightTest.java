@@ -138,6 +138,7 @@ class ShipsFlightTest {
             unshield(p);
             p.have |= Has.EMERGENCY_THRUST;
             p.used |= Has.EMERGENCY_THRUST;
+            p.emergencyThrustLeft = 10;
             tick(s, p, THRUST);
             // a = MAX_AFTERBURNER = 15: power 45*(1+15*0.2) = 180, fuel (long)(0.036*46/16*256) = 26
             assertAll(
@@ -481,6 +482,7 @@ class ShipsFlightTest {
             Player p = s.ships.join("a", 0);
             p.have |= Has.EMERGENCY_SHIELD;
             p.used |= Has.EMERGENCY_SHIELD;
+            p.emergencyShieldLeft = 10;
             p.shieldTime = 1;
             tick(s, p, 0);
             assertAll(
@@ -591,6 +593,7 @@ class ShipsFlightTest {
             unshield(p);
             p.have |= Has.PHASING_DEVICE;
             p.used |= Has.PHASING_DEVICE;
+            p.phasingLeft = 10;
             int objs = s.world.objects.count();
             tick(s, p, LEFT);
             assertEquals(objs, s.world.objects.count(), "no exhaust while phased");

@@ -90,6 +90,8 @@ public final class SnapshotBuilder {
     private int lastInputSeq;
     private double cx;
     private double cy;
+    /** The item sections (server-items). */
+    private final ItemSections itemSections;
 
     public SnapshotBuilder(World w) {
         this.w = w;
@@ -97,7 +99,13 @@ public final class SnapshotBuilder {
         shotList = new int[w.objects.capacity];
         shotVariant = new int[w.objects.capacity];
         hash = new ShotHash(w);
+        itemSections = new ItemSections(w, this);
         initRecordClasses();
+    }
+
+    /** The section writer (for {@link ItemSections}). */
+    SnapshotWriter writer() {
+        return wr;
     }
 
     /**
@@ -163,6 +171,7 @@ public final class SnapshotBuilder {
         if (radar) {
             writeRadar(viewer);
         }
+        itemSections.write(viewer);
         writeBursts(burstFrom);
         writeShots(viewer);
         closeSection();
@@ -196,7 +205,7 @@ public final class SnapshotBuilder {
      * BEHAVIOR: returns false when the record fits in none of the buffers: only that record is dropped;
      * records of the same or a larger size are skipped from then on, smaller ones are still tried.
      */
-    private boolean need(int type, int variant) {
+    boolean need(int type, int variant) {
         if (curType == type && curVariant == variant && wr.hasRoom()) {
             return true;
         }
@@ -221,7 +230,7 @@ public final class SnapshotBuilder {
         return true;
     }
 
-    private boolean visible(double x, double y, double margin) {
+    boolean visible(double x, double y, double margin) {
         double dx = w.wrapDx(x - cx);
         double dy = w.wrapDy(y - cy);
         return Math.abs(dx) <= viewHalfX + margin && Math.abs(dy) <= viewHalfY + margin && wr.inView(x, y);
@@ -248,6 +257,24 @@ public final class SnapshotBuilder {
         if ((pl.used & Has.REFUEL) != 0) {
             f |= Records.ShipFlags.REFUELING;
         }
+        if ((pl.used & Has.CLOAKING_DEVICE) != 0) {
+            f |= Records.ShipFlags.CLOAKED;
+        }
+        if ((pl.used & Has.PHASING_DEVICE) != 0) {
+            f |= Records.ShipFlags.PHASING;
+        }
+        if ((pl.used & Has.EMERGENCY_SHIELD) != 0) {
+            f |= Records.ShipFlags.EMERGENCY_SHIELD;
+        }
+        if ((pl.used & Has.DEFLECTOR) != 0) {
+            f |= Records.ShipFlags.DEFLECTOR;
+        }
+        if ((pl.used & Has.AUTOPILOT) != 0 || (pl.status & Obj.HOVERPAUSE) != 0) {
+            f |= Records.ShipFlags.AUTOPILOT;
+        }
+        if ((pl.used & Has.EMERGENCY_THRUST) != 0) {
+            f |= Records.ShipFlags.EMERGENCY_THRUST;
+        }
         if (pl == viewer || w.sameTeam(pl, viewer)) {
             f |= Records.ShipFlags.FRIENDLY;
         }
@@ -263,7 +290,9 @@ public final class SnapshotBuilder {
             return;
         }
         Records.Self.put(wr, v.id, shipFlags(v, v), (float) cx, (float) cy, (float) v.vx, (float) v.vy,
-            (float) heading(v), (float) (v.fuel / 256), (float) (v.fuelMax / 256), Protocol.NO_ID, 0, 0,
+            (float) heading(v), (float) (v.fuel / 256), (float) (v.fuelMax / 256),
+            (v.lockTagged & Player.LOCK_PLAYER) != 0 && (v.used & Has.COMPASS) != 0 ? v.lockPlId : Protocol.NO_ID,
+            v.numTanks, v.currentTank,
             (v.status & Obj.PLAYING) == 0 && v.count > 0 ? v.count : 0);
     }
 
@@ -279,6 +308,9 @@ public final class SnapshotBuilder {
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
             if (pl == v || !shown(pl)) {
+                continue;
+            }
+            if ((pl.status & Obj.PAUSE) == 0 && !itemSections.shipShown(pl, v)) {
                 continue;
             }
             double x = pl.cx / (double) Click.CLICK;
@@ -431,7 +463,7 @@ public final class SnapshotBuilder {
     private void writeRadar(Player v) {
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
-            if (!pl.isAlive() || !need(Section.RADAR, 0)) {
+            if (!pl.isAlive() || !itemSections.onRadar(pl, v) || !need(Section.RADAR, 0)) {
                 continue;
             }
             int flags = 0;
@@ -443,5 +475,6 @@ public final class SnapshotBuilder {
             }
             Records.Radar.put(wr, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK, flags);
         }
+        itemSections.writeRadarObjects(v);
     }
 }

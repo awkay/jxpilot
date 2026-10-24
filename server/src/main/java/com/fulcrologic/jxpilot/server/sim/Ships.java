@@ -253,10 +253,24 @@ public final class Ships {
                     }
                 }
                 o.owner[h] = Obj.NO_ID;
+                if ((type & Obj.MINE) != 0) {
+                    o.mineOwner[h] = Obj.NO_ID;
+                }
+            } else if ((type & Obj.MINE) != 0) {
+                if (o.mineOwner[h] == id) {
+                    o.mineOwner[h] = Obj.NO_ID;
+                    if (!keep) {
+                        o.life[h] = 0;
+                        o.mass[h] = 0;
+                    }
+                }
             } else if (type == Obj.CANNON_SHOT && !keep) {
                 o.life[h] = 0;
                 o.mass[h] = 0;
             }
+        }
+        if (pl.numPulses != 0) {
+            sim.lasers.removeOwnedBy(pl);
         }
         int team = pl.team;
         w.removePlayer(pl);
@@ -271,6 +285,16 @@ public final class Ships {
             for (int i = 0; i < Player.MAX_SHOVES; i++) {
                 if (other.shovePusher[i] == id) {
                     other.shovePusher[i] = Obj.NO_ID;
+                }
+            }
+            if ((other.lockTagged & (Player.LOCK_PLAYER | Player.LOCK_VISIBLE)) != 0
+                && (other.lockPlId == id || w.numPlayers <= 1)) {
+                other.lockTagged &= ~(Player.LOCK_PLAYER | Player.LOCK_VISIBLE);
+                other.used &= ~Has.TRACTOR_BEAM;
+            }
+            for (int i = 0; i < Player.BANKS; i++) {
+                if (other.lockBank[i] == id) {
+                    other.lockBank[i] = -1;
                 }
             }
         }
@@ -460,7 +484,37 @@ public final class Ships {
         pl.keysCleared = false;
         pl.frameLastBusy = w.frames;
         pl.scoreDirty = false;
+        initItemState(pl);
         setMass(pl);
+    }
+
+    /** The item parts of C {@code Init_player} (server-items): locks, modifiers, banks, timers, sensors. */
+    void initItemState(Player pl) {
+        pl.tank = false;
+        pl.lockTagged = 0;
+        pl.lockPlId = 0;
+        pl.lockDistance = 0;
+        pl.mods = 0;
+        for (int i = 0; i < Player.BANKS; i++) {
+            pl.modBank[i] = 0;
+            pl.lockBank[i] = -1;
+        }
+        pl.missileRack = 0;
+        pl.forceVisible = 0;
+        pl.updateVisibility = false;
+        pl.numPulses = 0;
+        pl.ecmCount = 0;
+        pl.emergencyThrustLeft = pl.emergencyThrustMax = 0;
+        pl.emergencyShieldLeft = pl.emergencyShieldMax = 0;
+        pl.phasingLeft = pl.phasingMax = 0;
+        pl.loseItem = 0;
+        pl.loseItemState = 0;
+        pl.tractorIsPressor = false;
+        for (int i = 0; i < w.players.length; i++) {
+            pl.canSee[i] = true;
+            w.players[i].canSee[pl.slot] = true;
+        }
+        sim.locks.sensorRange(pl);
     }
 
     /**
@@ -485,14 +539,10 @@ public final class Ships {
     }
 
     /**
-     * C {@code Player_init_fuel} with a single tank: max = TANK_CAP(0), fuel = min(fuel, max), no extra tanks
-     * (item count 0; initialTanks is not supported), empty mass = shipMass.
+     * C {@code Player_init_fuel} ({@link Tanks#initFuel}): the main tank first, then initialTanks extra tanks.
      */
     void initFuel(Player pl, double fuel) {
-        pl.fuelMax = MAX_PLAYER_FUEL;
-        pl.fuel = Math.min(fuel, pl.fuelMax);
-        pl.emptyMass = w.params.shipMass;
-        pl.items[Item.TANK.ordinal()] = 0;
+        sim.tanks.initFuel(pl, fuel);
     }
 
     /**
@@ -571,8 +621,12 @@ public final class Ships {
                 pl.shieldTime = 2 * w.params.fps;
                 pl.have |= Has.SHIELD;
             }
+            if ((pl.have & Has.DEFLECTOR) != 0) {
+                sim.devices.deflector(pl, true);
+            }
         }
         pl.status &= ~Obj.THRUSTING;
+        sim.locks.resetVisibility(pl);
         if (pl.spawned) {
             w.events.add(Events.GAME_EVENT, Msg.GameEvent.SPAWN, pl.id, pl.homeBase, 0f);
         }
@@ -590,6 +644,7 @@ public final class Ships {
         Params p = w.params;
         if (on && (pl.status & Obj.PAUSE) == 0) {
             pl.count = 10 * p.fps;
+            pl.updateVisibility = true;
             pl.status &= ~(Obj.SELF_DESTRUCT | Obj.PLAYING);
             pl.status |= Obj.PAUSE;
             pl.mychar = 'P';
@@ -686,12 +741,16 @@ public final class Ships {
             pl.status &= ~Obj.THRUSTING;
         }
         updateShieldTime(pl);
+        sim.devices.timers(pl);
+        sim.devices.use(pl);
         long tf = turn(pl, p);
         sim.mover.turnPlayer(pl);
 
         if ((pl.used & Has.SHIELD) != 0) {
             pl.addFuel(ED_SHIELD);
         }
+        sim.devices.drain(pl);
+        sim.locks.updateVisibility(pl);
         refuel(pl);
         if (pl.fuel <= 0) {
             pl.used &= ~(Has.SHIELD | Has.CLOAKING_DEVICE | Has.DEFLECTOR);
@@ -723,6 +782,7 @@ public final class Ships {
                 sim.debris.turnThrust(pl, (int) (5 + (tf >> 2)));
             }
         }
+        sim.locks.sensorRange(pl);
         pl.used &= pl.have;
     }
 
@@ -791,8 +851,8 @@ public final class Ships {
      * <p>
      * BEHAVIOR: stops when more than 90 px from the station, full, the station is gone, phased, or (team play
      * with teamFuel) the station belongs to another team.
-     * BEHAVIOR: otherwise moves REFUEL_RATE from the station; a station with less gives the rest and
-     * refuelling stops.
+     * BEHAVIOR: otherwise moves REFUEL_RATE from the station into each tank in turn (numTanks + 1 times per
+     * frame); a station with less gives the rest and refuelling stops. The current tank is kept.
      */
     void refuel(Player pl) {
         if ((pl.used & Has.REFUEL) == 0) {
@@ -808,14 +868,25 @@ public final class Ships {
             pl.used &= ~Has.REFUEL;
             return;
         }
-        if (w.fuelLevel[pl.fs] > REFUEL_RATE) {
-            w.fuelLevel[pl.fs] -= REFUEL_RATE;
-            pl.addFuel(REFUEL_RATE);
-        } else {
-            pl.addFuel(w.fuelLevel[pl.fs]);
-            w.fuelLevel[pl.fs] = 0;
-            pl.used &= ~Has.REFUEL;
-        }
+        int i = pl.numTanks;
+        int ct = pl.currentTank;
+        do {
+            if (w.fuelLevel[pl.fs] > REFUEL_RATE) {
+                w.fuelLevel[pl.fs] -= REFUEL_RATE;
+                pl.addFuel(REFUEL_RATE);
+            } else {
+                pl.addFuel(w.fuelLevel[pl.fs]);
+                w.fuelLevel[pl.fs] = 0;
+                pl.used &= ~Has.REFUEL;
+                break;
+            }
+            if (pl.currentTank == pl.numTanks) {
+                pl.currentTank = 0;
+            } else {
+                pl.currentTank += 1;
+            }
+        } while (i-- != 0);
+        pl.currentTank = ct;
     }
 
     /**
@@ -931,6 +1002,7 @@ public final class Ships {
         }
         pl.status |= Obj.KILLED;
         w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" has committed suicide.");
+        sim.items.throwItems(pl);
         kill(pl);
     }
 
@@ -946,8 +1018,17 @@ public final class Ships {
     void warp(Player pl) {
         int hit = pl.wormHoleHit;
         int n = w.map.wormholes().size();
-        if (hit < 0 || hit >= n) {
+        if (hit >= n || hit < -1) {
             pl.status &= ~Obj.WARPING;
+            return;
+        }
+        if (hit == -1) {
+            sim.devices.hyperjumpDestination(pl);
+            pl.wormHoleDest = -2;
+            pl.initPixels(sim.devices.jumpX, sim.devices.jumpY);
+            pl.forceVisible += 15;
+            pl.status &= ~Obj.WARPING;
+            pl.status |= Obj.WARPED;
             return;
         }
         int j;
@@ -963,6 +1044,7 @@ public final class Ships {
         Wormhole dest = w.map.wormholes().get(j);
         pl.wormHoleDest = j;
         pl.initPixels((dest.bx() + 0.5) * Const.BLOCK_SZ, (dest.by() + 0.5) * Const.BLOCK_SZ);
+        pl.forceVisible += 15;
         if (j != hit) {
             w.wormLastDest[hit] = j;
             w.wormCountdown[hit] = w.params.wormTime != 0 ? w.params.wormTime : WORMCOUNT;
@@ -1021,6 +1103,10 @@ public final class Ships {
      */
     public void deathReset(Player pl) {
         Params p = w.params;
+        if ((pl.used & Has.AUTOPILOT) != 0 || (pl.status & Obj.HOVERPAUSE) != 0) {
+            pl.status &= ~Obj.HOVERPAUSE;
+            sim.devices.autopilot(pl, false);
+        }
         pl.vx = pl.vy = 0;
         pl.accX = pl.accY = 0;
         pl.emptyMass = pl.mass = p.shipMass;
@@ -1030,10 +1116,16 @@ public final class Ships {
                 pl.items[i] = p.initialItems[i];
             }
         }
+        pl.forceVisible = 0;
         pl.shotMax = p.maxPlayerShots;
         pl.count = Math.max(3 * p.fps, pl.count);
+        pl.ecmCount = 0;
+        pl.emergencyThrustLeft = pl.emergencyThrustMax = 0;
+        pl.emergencyShieldLeft = pl.emergencyShieldMax = 0;
+        pl.phasingLeft = pl.phasingMax = 0;
         pl.damaged = 0;
         pl.stunned = 0;
+        pl.lockDistance = 0;
         double fuel = (long) (pl.fuel * 0.90);
         double minFuel = p.initialFuel * 256;
         minFuel += (int) (w.rfrac() * (1 + minFuel) * 0.2f);
@@ -1046,6 +1138,7 @@ public final class Ships {
                     pl.life = 0;
                     pl.status |= Obj.GAME_OVER;
                     pl.mychar = 'D';
+                    sim.locks.lockClosest(pl, false);
                 }
             } else {
                 pl.life++;
@@ -1060,8 +1153,13 @@ public final class Ships {
 
     /** C {@code Record_shove}: remember who pushed this ship and when (ring of MAX_SHOVES). */
     public void recordShove(Player pl, Player pusher) {
+        recordShove(pl, pusher, w.frames);
+    }
+
+    /** C {@code Record_shove} with an explicit time (ECM blinding and blinding lasers count until it). */
+    public void recordShove(Player pl, Player pusher, long time) {
         pl.shovePusher[pl.shoveNext] = pusher.id;
-        pl.shoveTime[pl.shoveNext] = w.frames;
+        pl.shoveTime[pl.shoveNext] = time;
         if (++pl.shoveNext == Player.MAX_SHOVES) {
             pl.shoveNext = 0;
         }
