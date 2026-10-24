@@ -126,11 +126,17 @@ class GeneratedDocsTest {
                     }
                 },
                 () -> assertTrue(doc.contains("|[[opt-contactPort]]`+contactPort+`\n|`+port+`\n|integer\n|`+15345+`\n"
-                        + "|command line, config file\n|The server contact port number.\n"),
-                    "a row lists name, short name, type, default, sources and help"),
-                () -> assertTrue(doc.contains("|[[opt-gravity]]`+gravity+`\n|\n|real\n|`+-0.14+`\n"
+                        + "|command line, config file\n|*Implemented.* The server contact port number.\n"),
+                    "a row lists name, short name, type, default, sources, status and help"),
+                () -> assertTrue(doc.contains("|[[opt-gravity]]`+gravity+`\n|\n|real\n|`+-0.14+` +\nlib/defaults: `+-0.25+`\n"
                         + "|command line, map, config file\n"),
-                    "a short name equal to the name is left blank; ANY options list all three sources"),
+                    "a short name equal to the name is left blank; lib/defaults values follow the cmdline.c default;"
+                        + " ANY options list all three sources"),
+                () -> assertTrue(doc.contains("|[[opt-maxShieldedWallBounceSpeed]]`+maxShieldedWallBounceSpeed+`\n"
+                        + "|`+maxShieldedBounceSpeed+`\n|real\n|`+50+` +\nlib/defaults: `+180+`\n"),
+                    "values set by lib/defaults' expand: SoftWalls are shown too"),
+                () -> assertTrue(doc.contains("|*Not applicable:* JVM server (no mlock, no signal timer). If set to nonzero"),
+                    "a not-applicable option gives its reason before the help"),
                 () -> assertTrue(doc.contains("|[[opt-robotFile]]`+robotFile+`\n|\n|text\n|_(none)_\n"),
                     "a null default reads (none)"),
                 () -> assertTrue(doc.contains("|[[opt-denyHosts]]`+denyHosts+`\n|\n|text\n|_(empty)_\n"),
@@ -156,6 +162,33 @@ class GeneratedDocsTest {
 
         private List<Opt> in(Map<GuideTables.Category, List<Opt>> g, String id) {
             return g.entrySet().stream().filter(e -> e.getKey().id().equals(id)).findFirst().orElseThrow().getValue();
+        }
+    }
+
+    @Nested
+    @DisplayName("option status")
+    class OptionStatus {
+        @Test
+        void labelsAndTexts() {
+            assertAll(
+                () -> assertEquals("Implemented", GuideTables.statusLabel("implemented (Params)"), "implemented"),
+                () -> assertEquals("Implemented", GuideTables.statusLabel("used in the logRobots line only"), "used"),
+                () -> assertEquals("In progress", GuideTables.statusLabel("read (Params); the feature belongs to server-items"),
+                    "read but not built is in progress"),
+                () -> assertEquals("In progress", GuideTables.statusLabel("server-modes (balls/treasures)"),
+                    "an M2 work package is in progress"),
+                () -> assertEquals("Not applicable", GuideTables.statusLabel("not applicable: JVM"), "not applicable"),
+                () -> assertEquals("No effect", GuideTables.statusLabel("accepted, no effect: never read"), "no effect"),
+                () -> assertEquals("Not yet", GuideTables.statusLabel("not implemented, no owner: x"), "not yet"),
+                () -> assertEquals("Not supported", GuideTables.statusLabel("deliberately unsupported: x"),
+                    "deliberately unsupported"),
+                () -> assertEquals("*Not supported:* the server never quits (C quits unless -noQuit).",
+                    GuideTables.statusText("deliberately unsupported: the server never quits (C quits unless -noQuit). "
+                        + "Lead decision wanted; see report"), "developer notes are removed from reasons"),
+                () -> assertEquals("*In progress (M2).*", GuideTables.statusText("server-items (x)"),
+                    "in progress has no reason"),
+                () -> assertEquals(Opt.values().length, GuideTables.statusTexts().keySet().stream()
+                        .filter(n -> Opt.find(n) != null).count(), "every option has a status row"));
         }
     }
 

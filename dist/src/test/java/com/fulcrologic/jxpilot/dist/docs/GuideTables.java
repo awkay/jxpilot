@@ -24,12 +24,20 @@
 package com.fulcrologic.jxpilot.dist.docs;
 
 import com.fulcrologic.jxpilot.common.config.Opt;
+import com.fulcrologic.jxpilot.common.config.OptionOrigin;
+import com.fulcrologic.jxpilot.common.config.Options;
+import com.fulcrologic.jxpilot.server.net.DefaultsFile;
 import com.fulcrologic.jxpilot.common.config.OptionType;
 import com.fulcrologic.jxpilot.client.game.input.ControlSettings;
 import com.fulcrologic.jxpilot.client.game.input.KeyConfig;
 import com.fulcrologic.jxpilot.client.game.input.KeyFunctions;
 import com.fulcrologic.jxpilot.common.net.ControlKey;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -239,12 +247,30 @@ public final class GuideTables {
 
     /** The complete {@code options.adoc}. */
     public static String optionsAdoc() {
+        Map<String, String> status = statusTexts();
+        Options libDefaults = new Options();
+        DefaultsFile.applyBundled(libDefaults);
         StringBuilder sb = new StringBuilder();
-        sb.append("// GENERATED from common/src/main/java/com/fulcrologic/jxpilot/common/config/Opt.java\n")
+        sb.append("// GENERATED from common/src/main/java/com/fulcrologic/jxpilot/common/config/Opt.java,\n")
+            .append("// docs/server-options-status.md and the bundled lib/defaults (server/src/main/resources/xpilot/defaults)\n")
             .append("// by dist/src/test/java/com/fulcrologic/jxpilot/dist/docs/GuideTables.java. Do not edit:\n")
             .append("// run `make -C docs/guide generate` instead. The build fails when this file is stale.\n\n");
         Map<Category, List<Opt>> groups = grouped();
-        sb.append("The server knows *").append(Opt.values().length).append("* options, in these groups:\n\n");
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (String k : List.of(IMPLEMENTED, IN_PROGRESS, NOT_YET, NOT_SUPPORTED, NO_EFFECT, NOT_APPLICABLE)) {
+            counts.put(k, 0);
+        }
+        for (Opt o : Opt.values()) {
+            counts.merge(statusLabel(status.get(o.optionName())), 1, Integer::sum);
+        }
+        sb.append("The server knows *").append(Opt.values().length).append("* options: ");
+        List<String> parts = new ArrayList<>();
+        for (Map.Entry<String, Integer> e : counts.entrySet()) {
+            if (e.getValue() > 0) {
+                parts.add(e.getValue() + " " + e.getKey().toLowerCase(Locale.ROOT));
+            }
+        }
+        sb.append(String.join(", ", parts)).append(". In these groups:\n\n");
         for (Map.Entry<Category, List<Opt>> e : groups.entrySet()) {
             if (!e.getValue().isEmpty()) {
                 sb.append("* <<").append(e.getKey().id()).append(',').append(e.getKey().title()).append(">> (")
@@ -266,9 +292,10 @@ public final class GuideTables {
                 sb.append("|[[").append(anchor(o)).append("]]").append(literal(o.optionName())).append('\n');
                 sb.append('|').append(o.alias().equals(o.optionName()) ? "" : literal(o.alias())).append('\n');
                 sb.append('|').append(typeName(o.type())).append('\n');
-                sb.append('|').append(defaultText(o)).append('\n');
+                sb.append('|').append(defaultText(o)).append(libDefault(o, libDefaults)).append('\n');
                 sb.append('|').append(origins(o)).append('\n');
-                sb.append('|').append(cell(o.help())).append("\n\n");
+                sb.append('|').append(statusText(status.get(o.optionName()))).append(' ').append(cell(o.help()))
+                    .append("\n\n");
             }
             sb.append("|===\n\n");
         }
@@ -281,6 +308,98 @@ public final class GuideTables {
                 .append(i + 1 < sorted.size() ? " ·\n" : "\n");
         }
         return sb.toString();
+    }
+
+    static final String IMPLEMENTED = "Implemented";
+    static final String IN_PROGRESS = "In progress";
+    static final String NOT_YET = "Not yet";
+    static final String NOT_SUPPORTED = "Not supported";
+    static final String NO_EFFECT = "No effect";
+    static final String NOT_APPLICABLE = "Not applicable";
+
+    /**
+     * BEHAVIOR: option name to its "Java server status" text, read from {@code docs/server-options-status.md}
+     * (the last cell of each table row whose first cell is a backquoted option name).
+     */
+    static Map<String, String> statusTexts() {
+        Path file = Path.of(System.getProperty("jxpilot.repoRoot", ".."), "docs", "server-options-status.md");
+        Map<String, String> out = new LinkedHashMap<>();
+        try {
+            for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                if (!line.startsWith("| `")) {
+                    continue;
+                }
+                String[] cells = line.substring(1, line.lastIndexOf('|')).split("\\|", -1);
+                String name = cells[0].trim().replace("`", "");
+                out.put(name, cells[cells.length - 1].trim());
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return out;
+    }
+
+    /**
+     * BEHAVIOR: the status class of a status text: "implemented"/"used"/"none" are Implemented; "read ..." and
+     * texts starting with an M2 work package ("server-...") are In progress; "not applicable" is Not
+     * applicable; "accepted, no effect" is No effect; "not implemented" is Not yet; "unsupported" and
+     * "deliberately unsupported" are Not supported; a missing text is IllegalStateException.
+     */
+    static String statusLabel(String text) {
+        if (text == null) {
+            throw new IllegalStateException("docs/server-options-status.md has no row for an option");
+        }
+        String t = text.toLowerCase(Locale.ROOT);
+        if (t.startsWith("implemented") || t.startsWith("used") || t.startsWith("none")) {
+            return IMPLEMENTED;
+        }
+        if (t.startsWith("read") || t.startsWith("server-")) {
+            return IN_PROGRESS;
+        }
+        if (t.startsWith("not applicable")) {
+            return NOT_APPLICABLE;
+        }
+        if (t.startsWith("accepted, no effect")) {
+            return NO_EFFECT;
+        }
+        if (t.startsWith("not implemented")) {
+            return NOT_YET;
+        }
+        if (t.startsWith("unsupported") || t.startsWith("deliberately unsupported")) {
+            return NOT_SUPPORTED;
+        }
+        throw new IllegalStateException("unknown status in docs/server-options-status.md: " + text);
+    }
+
+    /**
+     * BEHAVIOR: the status as it starts a description cell: the label in bold, and for anything but
+     * implemented or in progress the reason after the first colon (developer notes such as "no owner",
+     * "Lead decision ..." and "see report" removed).
+     */
+    static String statusText(String text) {
+        String label = statusLabel(text);
+        if (label.equals(IMPLEMENTED)) {
+            return "*Implemented.*";
+        }
+        if (label.equals(IN_PROGRESS)) {
+            return "*In progress (M2).*";
+        }
+        int colon = text.indexOf(':');
+        String reason = colon < 0 ? "" : text.substring(colon + 1).trim();
+        reason = reason.replaceAll("\\s*Lead decision wanted;?\\s*see report\\.?", "").trim();
+        if (reason.endsWith(".")) {
+            reason = reason.substring(0, reason.length() - 1);
+        }
+        return "*" + label + (reason.isEmpty() ? ".*" : ":* " + cell(reason) + ".");
+    }
+
+    /** BEHAVIOR: " (lib/defaults: `v`)" when the bundled lib/defaults gives another value, else "". */
+    static String libDefault(Opt o, Options libDefaults) {
+        String v = libDefaults.getRaw(o.optionName());
+        if (v == null || v.equals(o.defaultValue()) || libDefaults.originOf(o) == OptionOrigin.INIT) {
+            return "";
+        }
+        return " +\nlib/defaults: " + literal(v.strip());
     }
 
     /** Friendly labels for X11 keysyms whose names are not obvious. */

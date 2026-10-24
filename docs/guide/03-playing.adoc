@@ -188,6 +188,9 @@ server works the same way):
 |`hello all` |Everyone. Lines show as `hello all [YourName]`.
 |`2: regroup at base` |Everyone on team 2 (and you).
 |`ace: nice shot` |The player whose name is `ace`, or starts with `ace` if only one does (and you).
+|`god: the map is broken` |The server operator, through the server's admin message file (on a JXPilot
+server, only if the operator set one up; <<04-running-a-server.adoc#admin-messages,Messages to the
+operator>>). Nobody else sees it.
 |`see you :-)` |Everyone: a colon followed by a smiley character, or at the end of the line, is not
 an address.
 |===

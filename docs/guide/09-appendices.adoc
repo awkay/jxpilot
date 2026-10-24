@@ -35,6 +35,8 @@ https://github.com/awkay/jxpilot.
 [cols="2,3,2",options="header"]
 |===
 |Component |Where |License
+|XPilot 4.5.5 server defaults file (`lib/defaults`), unmodified |Server and client jars
+(`xpilot/defaults`) |GPL v2 or later (part of the XPilot distribution)
 |XPilot 4.5.5 maps |`maps/*.xp`, the maps zip, the application downloads |GPL v2 or later; authors in
 <<06-config-and-maps.adoc#shipped-maps,Shipped maps>>
 |Fira Code font |Client jar (`fonts/`) |SIL Open Font License 1.1 (`fonts/FiraCode-LICENSE.txt`)
@@ -51,6 +53,63 @@ commit `90191edd20bb877c5cbddfdac7ec0fe49ad93727`.
 |Java runtime (OpenJDK, Eclipse Temurin build) |Application downloads only (`runtime/`) |GPL v2 with
 the Classpath Exception; texts in the runtime's `legal/` directory
 |JUnit 5, PIT |Build and tests only, not distributed |EPL 2.0 / Apache 2.0
+|===
+
+[appendix]
+[[differences]]
+== Differences from XPilot
+
+JXPilot aims to play exactly like XPilot 4.5.5, and its server matches the XPilot server frame for frame
+on recorded reference games. These are the deliberate differences a player or server operator may
+notice. The complete list for developers, with the reasons, is in `docs/DEVIATIONS-server.md` in the
+source.
+
+[[differences-server]]
+=== The JXPilot server
+
+[cols="2,3,3",options="header"]
+|===
+|Area |XPilot |JXPilot
+|Defaults file |`LIBDIR/defaults`; a missing file is skipped |XPilot's `lib/defaults` is in the jar;
+`--defaults FILE` replaces it, `--defaults none` skips it, and a named file that cannot be read is an
+error
+|Last player leaves |the server exits, unless started with `-noQuit` |the server keeps running (matching
+XPilot is being worked on)
+|Operator commands, password file |available |not yet
+|Player names |must start with a capital letter (the XPilot client capitalizes) |any non-empty name;
+names already in use are refused, ignoring case
+|Real names and host names |shown in the player list and join messages |not known; join messages show
+the player name only
+|Changing team or ship shape while playing |possible |not yet
+|Rounds |also end races and treasure games |race and treasure rounds come with those features (M2);
+team rounds end by lives or `maxRoundTime`
+|Keys |every key press in a client packet counts |the server sees your keys once per frame; a key
+pressed and released within one frame (1/14 s) is lost
+|Random events |XPilot's random number generator |another generator: random details (sparks, explosions, robot
+choices) differ, nothing else
+|Gravity of a `gravityPoint` on a non-square wrapping map; objects exactly half a world apart |XPilot bugs
+|fixed
+|`denyHosts` |IPv4; `:` also separates entries |IPv4 and IPv6, so `:` does not separate entries
+|`serverHost` |the address the contact socket binds |the bind selector when `--bind` is not given
+|`logRobots` |on standard output, with a time stamp |on the server log, without a time stamp
+|Network |XPilot's protocol, one port per player, meta server |JXPilot's protocol on one UDP port; no meta
+server; the JXPilot client can still join XPilot servers
+|===
+
+[[differences-client]]
+=== The JXPilot client
+
+[cols="2,3,3",options="header"]
+|===
+|Area |XPilot |JXPilot
+|kbd:[Esc] |swaps engine settings |quits (bind `keySwapSettings` to swap settings)
+|kbd:[F1] |talk macro 1 |key help; talk macros are not supported
+|Extra keys |- |kbd:[-] mutes sound, kbd:[Alt]/kbd:[Option] also connects, kbd:[0] also self-destructs
+|Turn speed default |35 |40
+|Engine sound |a short sound every frame |a loop while you thrust
+|ID mode, message and item toggles, pointer control, recording |available |not supported
+|Showing frames |each frame as it arrives |smooth motion at your screen's refresh rate, about 90 ms behind
+the latest frame
 |===
 
 [appendix]

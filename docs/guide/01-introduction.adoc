@@ -64,8 +64,9 @@ list, messages and talk line (<<07-client-reference.adoc#client-reference,Client
 |Java server: core game
 |Works
 |Movement, gravity, walls and crashes, shields, fuel, shots, cannons, wormholes, collisions, debris,
-scoring with score popups, rounds and limited lives, and pausing. It matches the C server frame for
-frame on recorded reference traces.
+wreckage, scoring with score popups, rounds and limited lives, and pausing, with XPilot's
+`lib/defaults` settings. It matches the C server frame for frame on recorded reference traces. Each
+option's status is in <<05-server-options.adoc#server-options,the option reference>>.
 
 |Java server: robots
 |Works
