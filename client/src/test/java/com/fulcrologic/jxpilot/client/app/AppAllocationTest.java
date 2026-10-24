@@ -113,6 +113,9 @@ class AppAllocationTest {
         return s;
     }
 
+    /** Most warm-up frames before measuring (the recorded server stream covers them). */
+    static final int WARM_MAX = 30_000;
+
     @Test
     void steadyStateFrameWithoutGlAllocatesZeroBytes() throws Exception {
         com.sun.management.ThreadMXBean mx = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
@@ -183,7 +186,7 @@ class AppAllocationTest {
                 return 0;
             }
         });
-        int frames = 26000;
+        int frames = WARM_MAX + 1500 + 4500; // the warm-up, the measured frames and slack: the ring must not run dry
         long genNow = now;
         long genTick = nextTick;
         for (int f = 0; f < frames; f++) {
@@ -214,21 +217,14 @@ class AppAllocationTest {
             cf.step(t[0], 1200, 800, 1, m, 256, 200);
             ring.frame++;
         };
-        // R7: warm up until the JIT is done (no compile time added over 1000 frames), at most 20000 frames
-        java.lang.management.CompilationMXBean jit = ManagementFactory.getCompilationMXBean();
-        long lastCompile = -1;
-        int warm = 0;
-        while (warm < 20_000) {
-            for (int i = 0; i < 1000; i++) {
-                frame.run();
-            }
-            warm += 1000;
-            long ct = jit.isCompilationTimeMonitoringSupported() ? jit.getTotalCompilationTime() : 0;
-            if (ct == lastCompile && warm >= 4000) {
-                break;
-            }
-            lastCompile = ct;
+        // R7: warm up until the JIT is done: no compilation (JFR jdk.Compilation) in 2 chunks of 1000 frames in a row
+        // (see JitQuiet: a late C2 request resolves its class's String constants on this thread)
+        int warm;
+        try (com.fulcrologic.jxpilot.client.JitQuiet jit = new com.fulcrologic.jxpilot.client.JitQuiet()) {
+            warm = jit.warm(frame, 1000, 4000, WARM_MAX, 2);
+            System.out.println("AppAllocationTest: warm-up " + warm + " frames, " + jit.compiles() + " compilations");
         }
+        int warmFrames = warm;
         long reliableBefore = game.reliableCount();
         long snapshotsBefore = conn.snapshotsReceived();
         // per frame (as XpNetAllocationTest): a bracket around the whole loop also catches the occasional
@@ -268,7 +264,7 @@ class AppAllocationTest {
             () -> assertTrue(uzi >= 0 && game.players().shape(uzi).numPoints() == 4,
                 "the rejoining robot has its custom shape"),
             () -> assertEquals(0, nz, "no frame allocates in steady state, joins, leaves and lock changes included"
-                + " (worst " + w + " bytes)"));
+                + " (worst " + w + " bytes, after " + warmFrames + " warm-up frames)"));
     }
 
     static byte[] copy(ByteBuffer b) {
