@@ -72,10 +72,8 @@ public final class Sounds {
             if (pl.robot) {
                 continue;
             }
-            int vol = volume(Math.abs(pl.px - x), Math.abs(pl.py - y), range(pl));
-            if (vol > 0) {
-                pl.audio.queue(e.ordinal(), vol);
-            }
+            // out of range is volume 0, which the queue ignores
+            pl.audio.queue(e.ordinal(), volume(Math.abs(pl.px - x), Math.abs(pl.py - y), range(pl)));
         }
     }
 
