@@ -603,6 +603,29 @@ public final class SimGameHost implements GameHost {
     }
 
     /**
+     * C frame.c:1275-1294: without allowViewing a paused player gets every 4th frame and an out-of-the-game
+     * (GAME_OVER) one every 2nd, counted on the frame counter after the tick (C {@code frame_loops}, raised at
+     * the start of {@code Frame_update}); the server owner's exception has no equivalent.
+     * <p>
+     * BEHAVIOR: PAUSE: due iff {@code frames & 3 == 0}; else GAME_OVER: iff {@code frames & 1 == 0}; else, for
+     * unknown viewers, or with allowViewing: always.
+     */
+    @Override
+    public boolean snapshotDue(int viewerId) {
+        Player p = boundPlayer(viewerId);
+        if (p == null || w.items.allowViewing) {
+            return true;
+        }
+        if ((p.status & Obj.PAUSE) != 0) {
+            return (w.frames & 3) == 0;
+        }
+        if ((p.status & Obj.GAME_OVER) != 0) {
+            return (w.frames & 1) == 0;
+        }
+        return true;
+    }
+
+    /**
      * BEHAVIOR: part 0 builds the viewer's snapshot ({@link SnapshotBuilder}, bursts since its cursor, which then
      * moves to the newest) into scratch parts; each part p copies the sections of scratch part p after the
      * network layer's header and returns whether more parts follow. A viewer not yet in the game gets no

@@ -497,7 +497,7 @@ public final class ServerNet {
             out.send(c.channel, c.addr, outBuf);
             sent = true;
         }
-        if (snapshot && c.snapshotsOn) {
+        if (snapshot && c.snapshotsOn && host.snapshotDue(c.playerId)) {
             sendSnapshot(c, radar);
             sent = true;
         }

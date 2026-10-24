@@ -136,6 +136,16 @@ public interface GameHost {
     boolean fillSnapshot(int viewerId, int part, boolean radar, SnapshotWriter w);
 
     /**
+     * Whether this tick's snapshot goes to this viewer at all (C {@code Frame_update} skips some frames for
+     * paused and dead players). The network layer asks once per due snapshot, before {@link #fillSnapshot}.
+     * <p>
+     * BEHAVIOR: true unless the host says otherwise.
+     */
+    default boolean snapshotDue(int viewerId) {
+        return true;
+    }
+
+    /**
      * Queue the full reliable game state for a client that has just received the map:
      * PLAYER_JOIN for every player (FLAG_SELF for the viewer), BASE_OWNER, SCORE, TEAM_SCORE, and so
      * on, using {@code Msg.*.send(out)}. Called once per connection, after the config transfer is

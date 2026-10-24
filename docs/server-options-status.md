@@ -341,7 +341,7 @@ follow C; the alias is the C command-line name.
 | `maxAutopilots` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
 | `maxEmergencyShields` |  | int | `10` | ANY+VIS | implemented (server-items): starting items and the item limit (C World.items[].initial / limit) |
 | `gameDuration` | time | real | `0.0` | ANY+VIS | implemented (Params) |
-| `allowViewing` |  | bool | `false` | ANY+VIS | implemented (server-items): a paused player with a lock sees through any locked player (Locks.viewOf); the lower snapshot rate for paused players is not ported |
+| `allowViewing` |  | bool | `false` | ANY+VIS | implemented (server-items): a paused player with a lock sees through any locked player (Locks.viewOf), and paused / dead players get every frame instead of every 4th / 2nd (SimGameHost.snapshotDue) |
 | `friction` |  | real | `0.0` | ANY+VIS | implemented (Params) |
 | `blockFriction` |  | real | `0.0` | ANY+VIS | implemented (Params) |
 | `blockFrictionVisible` |  | bool | `true` | ANY+VIS | implemented (server-batch2): friction is sent as filled decor, or blank when off |

@@ -37,7 +37,6 @@ are deliberate.
 | Snapshot culling (`Frame_parameters` view rectangle, `inview`) | objects strictly inside the connection's `view_width x view_height` | inside the DISPLAY view plus 128 px on each side (`SnapshotBuilder.VIEW_MARGIN`; bursts 400 px more) | The client interpolates ships and extrapolates shots between snapshots; without the margin objects would pop in or vanish inside the view. |
 | Hyperjump with wormTime | makes a pair of temporary wormholes (`add_temp_wormholes`) | no temporary wormholes; the jump itself is C's | Not ported yet. |
 | Visibility of a new player | stale `canSee` entries of the slot until the next visibility update | everyone sees and is seen at join until the first update | Avoids an invisible first frame. |
-| Snapshot rate of paused / game-over players (frame.c:1275-1294) | without allowViewing, paused players get every 4th frame and game-over players every 2nd | every snapshot | A bandwidth saving only; our snapshot rate is set by the network layer. |
 | Modifier banks | the C client sends its configured banks at login (PKT_MODIFIERBANK) | banks start empty; REPROGRAM + LOAD_MODIFIERS fills them in game | Our protocol has no bank message. |
 | Lose-item selection HUD (`Send_loseitem`) | sent while selecting | not sent | Our protocol; the client shows the item counts. |
 | Deflector object lookup | C's cells are kept current by every move | the spatial grid is rebuilt for each deflector (and cannon danger) query | Same objects in the same order. |
