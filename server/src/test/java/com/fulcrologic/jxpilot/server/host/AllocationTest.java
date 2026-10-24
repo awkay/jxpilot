@@ -59,7 +59,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AllocationTest {
     private static final com.sun.management.ThreadMXBean MX =
         (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
-    static final int WARMUP = 9_000;
+    // long enough for the C2 compiles of the once-per-tick item methods (a compile request shows up as a few
+    // hundred thread-allocated bytes on the measured thread)
+    static final int WARMUP = 20_000;
     static final int MEASURED = 5_000;
 
     /** What the client side of the reliable channel saw. */

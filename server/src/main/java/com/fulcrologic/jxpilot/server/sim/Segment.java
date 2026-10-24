@@ -371,6 +371,9 @@ public final class Segment {
                     }
                     int i = map.itemId(blockX, blockY);
                     ms.cannon = i;
+                    if ((world.cannonItems.used[i] & com.fulcrologic.jxpilot.server.world.Has.PHASING_DEVICE) != 0) {
+                        break;
+                    }
                     if (teamPlay && (world.params.teamImmunity || (ms.status & Obj.FROMCANNON) != 0)
                         && ms.team == map.cannons().get(i).team()) {
                         break;

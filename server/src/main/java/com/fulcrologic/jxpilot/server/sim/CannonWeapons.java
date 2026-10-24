@@ -80,45 +80,18 @@ public final class CannonWeapons {
 
     // ================================================================ inventory
 
-    /**
-     * C {@code Cannon_add_item}: fuel (in units) is stored as energy packs, a tank counts as one tank plus its
-     * fuel.
-     * <p>
-     * BEHAVIOR: a tank adds one tank (within the tank limit) and then its fuel as packs: (int)(amount / pack +
-     * 0.5), within the fuel limit in packs; other items add {@code amount} within their limit.
-     */
+    /** C {@code Cannon_add_item} ({@link CannonItems#addItem}). */
     public void addItem(int c, int item, int amount) {
-        CannonItems ci = w.cannonItems;
-        ItemParams ip = w.items;
-        if (item == Item.TANK.ordinal() || item == Item.FUEL.ordinal()) {
-            if (item == Item.TANK.ordinal()) {
-                ci.set(c, item, limit(ci.item(c, item) + 1, ip.limit[item]));
-            }
-            int f = Item.FUEL.ordinal();
-            int v = ci.item(c, f) + (int) (amount / energyPackUnits() + 0.5);
-            ci.set(c, f, limit(v, (int) (ip.limit[f] / energyPackUnits() + 0.5)));
-        } else {
-            ci.set(c, item, limit(ci.item(c, item) + amount, ip.limit[item]));
-        }
+        w.cannonItems.addItem(w.items, w.rng, c, item, amount);
     }
 
     private static int limit(int v, int max) {
         return v < 0 ? 0 : (v > max ? max : v);
     }
 
-    /**
-     * C {@code Cannon_init}: everything zeroed; with cannonsUseItems each kind gets
-     * (int)(rfrac * (initial + 1)) items (one rfrac() per kind, in item order).
-     */
+    /** C {@code Cannon_init} ({@link CannonItems#init}). */
     public void init(int c) {
-        CannonItems ci = w.cannonItems;
-        ci.clear(c);
-        ci.tractorTarget[c] = -1;
-        for (int i = 0; i < Item.COUNT; i++) {
-            if (useItems()) {
-                addItem(c, i, (int) (w.rfrac() * (w.items.initial[i] + 1)));
-            }
-        }
+        w.cannonItems.init(c, w.items, w.rng, useItems());
     }
 
     /**

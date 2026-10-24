@@ -228,8 +228,10 @@ public final class Ships {
      * without keepShots EVERY cannon shot in the world dies the same way (a C quirk, kept).
      * BEHAVIOR: team membership drops; with teamShareScore the leaver's score is taken back from the team
      * (C TEAM_SCORE(team, -score)) and the rest is shared among the remaining members.
-     * BEHAVIOR: shove records naming the player are cleared; the home base is released
-     * (BASE_OWNER(base, NO_ID)) and LEAVE is emitted.
+     * BEHAVIOR: shove records, locks and lock banks naming the player are cleared (locks with their tractor
+     * beam); the home base is released (BASE_OWNER(base, NO_ID)) and LEAVE is emitted; its laser pulses go.
+     * BEHAVIOR: tanks are not team members and own no base; the tanks a player released leave with it (with
+     * keepShots they stay, ownerless).
      */
     public void leave(Player pl) {
         if (!pl.inUse) {
@@ -273,8 +275,9 @@ public final class Ships {
             sim.lasers.removeOwnedBy(pl);
         }
         int team = pl.team;
+        boolean tank = pl.tank;
         w.removePlayer(pl);
-        if (team != Const.TEAM_NOT_SET) {
+        if (team != Const.TEAM_NOT_SET && !tank) {
             w.teamMembers[team]--;
             if (w.params.teamShareScore) {
                 sim.scoring.teamScore(team, -pl.score);
@@ -298,10 +301,20 @@ public final class Ships {
                 }
             }
         }
-        if (pl.homeBase >= 0) {
+        if (pl.homeBase >= 0 && !tank) {
             w.events.add(Events.BASE_OWNER, pl.homeBase, Obj.NO_ID, 0, 0f);
         }
         w.events.add(Events.LEAVE, id, 0, 0, 0f);
+        for (int k = w.numPlayers - 1; k >= 0; k--) {
+            Player t = w.playerAt(k);
+            if (t.tank && t.lockPlId == id) {
+                if (keep) {
+                    t.lockPlId = Obj.NO_ID;
+                } else {
+                    leave(t);
+                }
+            }
+        }
     }
 
     /**
@@ -1100,9 +1113,15 @@ public final class Ships {
      * BEHAVIOR: unless paused: deaths++; with limited lives a life is lost and the last one ends the game
      * (GAME_OVER, mychar 'D'), without limited lives life counts up (C).
      * BEHAVIOR: abilities reset to DEF_HAVE / DEF_USED minus USED_KILL.
+     * BEHAVIOR: a tank is deleted instead ({@link #leave}); an autopilot (or hover pause) is switched off first;
+     * the item timers, ECM count, forced visibility and lock distance are reset.
      */
     public void deathReset(Player pl) {
         Params p = w.params;
+        if (pl.tank) {
+            leave(pl);
+            return;
+        }
         if ((pl.used & Has.AUTOPILOT) != 0 || (pl.status & Obj.HOVERPAUSE) != 0) {
             pl.status &= ~Obj.HOVERPAUSE;
             sim.devices.autopilot(pl, false);

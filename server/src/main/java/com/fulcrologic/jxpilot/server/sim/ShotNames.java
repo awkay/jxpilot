@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.sim;
 
+import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.server.world.Mods;
 import com.fulcrologic.jxpilot.server.world.Obj;
 
@@ -90,5 +91,24 @@ public final class ShotNames {
             sb.append("cluster ");
         }
         return sb.append(name).append(plural);
+    }
+
+    /**
+     * Run every branch once (string literals are created the first time each one runs), so a first kill message
+     * in a tick does not allocate.
+     */
+    static void warm() {
+        StringBuilder sb = new StringBuilder(Const.MSG_LEN);
+        int[] types = {Obj.MINE, Obj.SMART_SHOT, Obj.TORPEDO, Obj.HEAT_SHOT, Obj.CANNON_SHOT, Obj.SHOT};
+        int all = Obj.MOD_CLUSTER | Obj.MOD_IMPLOSION | Mods.withNuclear(0, Mods.NUCLEAR | Mods.FULLNUCLEAR)
+            | Mods.withVelocity(0, 1) | Mods.withMini(0, 1);
+        for (int t : types) {
+            for (int m = 0; m < 2; m++) {
+                for (int s = 0; s < 2; s++) {
+                    sb.setLength(0);
+                    append(sb, t, s == 0 ? 0 : Obj.GRAVITY, m == 0 ? 0 : all, s == 0);
+                }
+            }
+        }
     }
 }

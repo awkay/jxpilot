@@ -63,8 +63,9 @@ class WorldTest {
             World w = world("", "xxxxx", "x#__x", "xxxxx");
             World none = world("", "xxx", "x x", "xxx");
             assertAll(
-                () -> assertEquals(2, w.players.length, "one player slot per base"),
-                () -> assertEquals(1, none.players.length, "at least one slot"),
+                () -> assertEquals(2, w.baseSlots, "one player slot per base"),
+                () -> assertEquals(2 + World.MAX_PSEUDO_PLAYERS, w.players.length, "plus the tank slots"),
+                () -> assertEquals(1, none.baseSlots, "at least one slot"),
                 () -> assertEquals(20 * 256.0, w.fuelLevel[0], "START_STATION_FUEL"),
                 () -> assertEquals(5 * 35, w.pixelWidth, "pixel width"),
                 () -> assertEquals(5 * 35 * 64, w.clickWidth, "click width"),

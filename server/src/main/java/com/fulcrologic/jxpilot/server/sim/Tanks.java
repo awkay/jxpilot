@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Item;
+import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 
@@ -228,7 +229,139 @@ public final class Tanks {
         }
     }
 
-    /** C {@code Tank_handle_detach} (KEY_TANK_DETACH): implemented with the tank pseudo-players. */
+    /** C {@code TANK_THRUST_FACT}. */
+    static final float TANK_THRUST_FACT = 0.7f;
+
+    /** The tank ship (C {@code tankShipShape}), parsed once. */
+    private com.fulcrologic.jxpilot.server.world.ShipGeom tankShip;
+
+    /** Wired by the simulation (detaching a tank logs in a pseudo player). */
+    Simulation sim;
+
+    private com.fulcrologic.jxpilot.server.world.ShipGeom tankShip() {
+        if (tankShip == null) {
+            String s = w.options.getString(com.fulcrologic.jxpilot.common.config.Opt.TANK_SHIP_SHAPE);
+            com.fulcrologic.jxpilot.common.math.ShipShape shape =
+                com.fulcrologic.jxpilot.common.math.ShipShape.parse(s == null ? "" : s);
+            tankShip = shape == null ? com.fulcrologic.jxpilot.server.world.ShipGeom.defaultShip()
+                : new com.fulcrologic.jxpilot.server.world.ShipGeom(shape);
+        }
+        return tankShip;
+    }
+
+    /**
+     * C {@code Tank_handle_detach} (KEY_TANK_DETACH; heat-seekers chase the tank instead of the ship).
+     * <p>
+     * BEHAVIOR: nothing while phased, without tanks, or when no pseudo player slot or id is free.
+     * BEHAVIOR: the current extra tank (the last one when the main tank is current) leaves as a pseudo player
+     * "NAME's tank" ('T', the owner's team, home and pseudo team, score - tankScoreDecrement, no tanks of its own,
+     * the tank ship with allowShipShapes) at the ship's position, velocity and heading, with the tank's fuel
+     * (its capacity as maximum), mass shipMass + fuel and power * 0.7; it thrusts and is shielded (with
+     * shield time 30*FPS when shields are not allowed). Its owner is remembered in its lock id.
+     * BEHAVIOR: heat-seekers chasing the ship retarget to the tank's position in the player order (C uses the
+     * index where it means an id; kept); the ship loses the tank (Player_remove_tank). JOIN and SCORE go out.
+     */
     public void detach(Player pl) {
+        if ((pl.used & com.fulcrologic.jxpilot.server.world.Has.PHASING_DEVICE) != 0 || pl.numTanks == 0) {
+            return;
+        }
+        int ct = pl.currentTank;
+        if (ct == 0) {
+            ct = pl.numTanks;
+        }
+        Player dummy = w.addTank();
+        if (dummy == null) {
+            return;
+        }
+        update(pl);
+        sim.ships.initPlayer(dummy);
+        dummy.tank = true;
+        dummy.ship = w.items.allowShipShapes ? tankShip() : com.fulcrologic.jxpilot.server.world.ShipGeom.defaultShip();
+        while (dummy.numTanks > 0) {
+            remove(dummy, dummy.numTanks);
+        }
+        dummy.initPixels(pl.px, pl.py);
+        dummy.vx = pl.vx;
+        dummy.vy = pl.vy;
+        dummy.accX = pl.accX;
+        dummy.accY = pl.accY;
+        dummy.dir = pl.dir;
+        dummy.turnSpeed = pl.turnSpeed;
+        dummy.velocity = pl.velocity;
+        dummy.floatDir = pl.floatDir;
+        dummy.turnResistance = pl.turnResistance;
+        dummy.turnVel = pl.turnVel;
+        dummy.oldTurnVel = pl.oldTurnVel;
+        dummy.turnAcc = pl.turnAcc;
+        dummy.power = pl.power;
+        dummy.name.setLength(0);
+        dummy.name.append(pl.name);
+        int max = com.fulcrologic.jxpilot.common.Const.MAX_CHARS - 1;
+        CharSequence suffix = "'s tank";
+        for (int i = 0; i < suffix.length() && dummy.name.length() < max; i++) {
+            dummy.name.append(suffix.charAt(i));
+        }
+        if (dummy.name.length() > max) {
+            dummy.name.setLength(max);
+        }
+        dummy.homeBase = pl.homeBase;
+        dummy.team = pl.team;
+        dummy.mychar = 'T';
+        dummy.score = pl.score - w.items.tankScoreDecrement;
+        dummy.fuel = pl.tankFuel[ct];
+        dummy.tankFuel[0] = dummy.fuel;
+        dummy.fuelMax = cap(ct);
+        dummy.currentTank = 0;
+        dummy.numTanks = 0;
+        dummy.emptyMass = w.params.shipMass;
+        dummy.mass = (float) (dummy.emptyMass + dummy.fuel * 0.005 / 256);
+        dummy.power *= TANK_THRUST_FACT;
+        dummy.updateVisibility = true;
+        dummy.lockPlId = pl.id;
+        w.enter(dummy);
+        dummy.pseudoTeam = pl.pseudoTeam;
+        sim.locks.resetVisibility(dummy);
+        dummy.status = com.fulcrologic.jxpilot.server.world.Obj.PLAYING | com.fulcrologic.jxpilot.server.world.Obj.GRAVITY
+            | com.fulcrologic.jxpilot.server.world.Obj.THRUSTING;
+        dummy.have = w.params.defHave;
+        dummy.used = (Has.DEF_USED & w.params.defHave & ~Has.USED_KILL & pl.have) | Has.SHIELD;
+        if (!w.params.playerShielding) {
+            dummy.shieldTime = 30 * w.params.fps;
+            dummy.have |= Has.SHIELD;
+        }
+        com.fulcrologic.jxpilot.server.world.Objects o = w.objects;
+        int tankIndex = w.numPlayers - 1;
+        for (int k = 0; k < o.count(); k++) {
+            int h = o.active[k];
+            if (o.type[h] == com.fulcrologic.jxpilot.server.world.Obj.HEAT_SHOT && o.info[h] > 0
+                && w.byId(o.info[h]) == pl) {
+                o.info[h] = tankIndex;
+            }
+        }
+        remove(pl, ct);
+        w.events.add(com.fulcrologic.jxpilot.server.world.Events.JOIN, dummy.id,
+            com.fulcrologic.jxpilot.common.net.Msg.PlayerJoin.FLAG_TANK, 0, 0f);
+        dummy.scoreDirty = true;
+    }
+
+    /**
+     * C {@code Tank_play} (robot.c): a tank thrusts in pulses, TANK_THRUST_TIME frames of every
+     * TANK_NOTHRUST_TIME + TANK_THRUST_TIME (frame clock), starting at 0 and stopping at TANK_THRUST_TIME.
+     */
+    public void play() {
+        int nothrust = (2 * w.params.fps) / 2 + 2;
+        int thrust = nothrust / 2 + 1;
+        int t = (int) (w.frames % (nothrust + thrust));
+        for (int k = 0; k < w.numPlayers; k++) {
+            Player p = w.playerAt(k);
+            if (!p.tank) {
+                continue;
+            }
+            if (t == 0) {
+                p.status |= com.fulcrologic.jxpilot.server.world.Obj.THRUSTING;
+            } else if (t == thrust) {
+                p.status &= ~com.fulcrologic.jxpilot.server.world.Obj.THRUSTING;
+            }
+        }
     }
 }

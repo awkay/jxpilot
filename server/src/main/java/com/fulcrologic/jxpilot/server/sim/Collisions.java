@@ -238,10 +238,16 @@ public final class Collisions {
         if (oDead && plDead) {
             w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" and ").append(o.name)
                 .append(" crashed.");
-            double sc = Scoring.rate(o.score, pl.score) * p.crashScoreMult;
-            double sc2 = Scoring.rate(pl.score, o.score) * p.crashScoreMult;
             w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, pl.id, o.id, Msg.GameEvent.CRASH_SHIPS);
-            sim.scoring.scorePlayers(pl, -sc, o.name, o, -sc2, pl.name);
+            if (!pl.tank && !o.tank) {
+                double sc = Scoring.rate(o.score, pl.score) * p.crashScoreMult;
+                double sc2 = Scoring.rate(pl.score, o.score) * p.crashScoreMult;
+                sim.scoring.scorePlayers(pl, -sc, o.name, o, -sc2, pl.name);
+            } else if (pl.tank) {
+                tankCrash(pl, o, p);
+            } else {
+                tankCrash(o, pl, p);
+            }
         } else if (oDead) {
             ranOver(pl, o, p);
         } else if (plDead) {
@@ -249,13 +255,39 @@ public final class Collisions {
         }
     }
 
+    /** Both ships died and {@code tank} is a tank: its owner scores tankKillScoreMult from the other (C, two tanks: none). */
+    private void tankCrash(Player tank, Player other, Params p) {
+        Player owner = w.byId(tank.lockPlId);
+        if (other.tank || owner == null) {
+            return;
+        }
+        double sc = Scoring.rate(owner.score, other.score) * p.tankKillScoreMult;
+        sim.scoring.scorePlayers(owner, sc, other.name, other, -sc, tank.name);
+    }
+
+    /**
+     * C's "ran over" branches of PlayerCollision.
+     * <p>
+     * BEHAVIOR: the winner gets the kill; a tank's score goes to its owner (unless the owner is the victim) with
+     * tankKillScoreMult, a ship's with runoverKillScoreMult.
+     */
     private void ranOver(Player winner, Player victim, Params p) {
         w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(winner.name).append(" ran over ")
             .append(victim.name).append('.');
         winner.kills++;
-        double sc = Scoring.rate(winner.score, victim.score) * p.runoverKillScoreMult;
+        Player scorer = winner;
+        double sc;
+        if (winner.tank) {
+            Player owner = w.byId(winner.lockPlId);
+            if (owner != null && owner != victim) {
+                scorer = owner;
+            }
+            sc = Scoring.rate(scorer.score, victim.score) * p.tankKillScoreMult;
+        } else {
+            sc = Scoring.rate(winner.score, victim.score) * p.runoverKillScoreMult;
+        }
         w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, winner.id, victim.id, 0f);
-        sim.scoring.scorePlayers(winner, sc, victim.name, victim, -sc, winner.name);
+        sim.scoring.scorePlayers(scorer, sc, victim.name, victim, -sc, winner.name);
     }
 
     /**

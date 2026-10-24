@@ -108,6 +108,12 @@ public final class Simulation {
         this.cannonWeapons = new CannonWeapons(world, this);
         com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder.initRecordClasses();
         this.robots = new RobotManager(world, this);
+        this.ecm.robotProgrammer = robots::program;
+        this.tanks.sim = this;
+        // load the item classes used only in rare branches now: the tick must not allocate when they first run
+        Items.warmSwitches();
+        Devices.warmSwitches();
+        ShotNames.warm();
     }
 
     /**
@@ -135,6 +141,7 @@ public final class Simulation {
             keys.apply(pl, input[pl.slot]);
         }
         robots.update();
+        tanks.play();
         autofire();
         items.spawn();
         regenerateFuel();
@@ -270,7 +277,7 @@ public final class Simulation {
     int humans() {
         int n = 0;
         for (int k = 0; k < world.numPlayers; k++) {
-            if (!world.playerAt(k).robot) {
+            if (!world.playerAt(k).robot && !world.playerAt(k).tank) {
                 n++;
             }
         }

@@ -76,7 +76,45 @@ public final class CannonItems {
         items[c * Item.COUNT + item.ordinal()] += n;
     }
 
-    /** BEHAVIOR: every count and timer of cannon {@code c} is 0 (C {@code Cannon_init}). */
+    /**
+     * C {@code Cannon_add_item}: fuel (in units) is stored as energy packs, a tank counts as one tank plus its fuel.
+     * <p>
+     * BEHAVIOR: a tank adds one tank (within the tank limit) and then its fuel as packs: (int)(amount / pack + 0.5)
+     * within the fuel limit in packs, where each use of C's ENERGY_PACK_FUEL draws 500 + (randomMT() &amp; 511);
+     * other items add {@code amount} within their limit.
+     */
+    public void addItem(ItemParams ip, com.fulcrologic.jxpilot.common.math.Rng rng, int c, int item, int amount) {
+        int fuel = Item.FUEL.ordinal();
+        if (item == Item.TANK.ordinal() || item == fuel) {
+            if (item == Item.TANK.ordinal()) {
+                set(c, item, limit(item(c, item) + 1, ip.limit[item]));
+            }
+            int v = item(c, fuel) + (int) (amount / (500 + (rng.nextInt() & 511)) + 0.5);
+            set(c, fuel, limit(v, (int) (ip.limit[fuel] / (500 + (rng.nextInt() & 511)) + 0.5)));
+        } else {
+            set(c, item, limit(item(c, item) + amount, ip.limit[item]));
+        }
+    }
+
+    private static int limit(int v, int max) {
+        return v < 0 ? 0 : (v > max ? max : v);
+    }
+
+    /**
+     * C {@code Cannon_init}: everything zeroed (no tractor target); with cannonsUseItems each kind gets
+     * (int)(rfrac * (initial + 1)) items (one rfrac() per kind, in item order).
+     */
+    public void init(int c, ItemParams ip, com.fulcrologic.jxpilot.common.math.Rng rng, boolean useItems) {
+        clear(c);
+        tractorTarget[c] = -1;
+        if (useItems) {
+            for (int i = 0; i < Item.COUNT; i++) {
+                addItem(ip, rng, c, i, (int) (rng.nextFloat() * (ip.initial[i] + 1)));
+            }
+        }
+    }
+
+    /** BEHAVIOR: every count and timer of cannon {@code c} is 0. */
     public void clear(int c) {
         for (int i = 0; i < Item.COUNT; i++) {
             items[c * Item.COUNT + i] = 0;

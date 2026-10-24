@@ -754,4 +754,15 @@ public final class Items {
             }
         }
     }
+
+    /**
+     * Initialize this class's enum switch table now (javac's synthetic SwitchMap class), so the first item switch
+     * in a tick does not allocate.
+     */
+    static int warmSwitches() {
+        return switch (Item.FUEL) {
+            case FUEL -> 0;
+            default -> 1;
+        };
+    }
 }
