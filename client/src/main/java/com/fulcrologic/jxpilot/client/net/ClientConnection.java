@@ -59,7 +59,7 @@ import java.nio.ByteBuffer;
  * <p>
  * Allocation free while {@link ConnectionState#PLAYING}; the handshake and map build allocate.
  */
-public final class ClientConnection {
+public final class ClientConnection implements com.fulcrologic.jxpilot.client.game.predict.PredictionSource {
     /** Most INPUT entries per packet ({@link InputHistory#MAX_REDUNDANCY}). */
     public static final int MAX_INPUT_REDUNDANCY = InputHistory.MAX_REDUNDANCY;
     /**
@@ -149,6 +149,8 @@ public final class ClientConnection {
     // INPUT per predicted tick (see sendInput)
     private final PredictedClock clock = new PredictedClock();
     private final KernelSync kernel = new KernelSync();
+    /** The server's visible options from the config transfer (null before it). */
+    private Options serverOptions;
     private long inputIntervalNanos = 1_000_000_000L / 60;
     private boolean inputSent;
     private long lastInputSend;
@@ -185,6 +187,7 @@ public final class ClientConnection {
         this.listener = listener;
         this.serverLabel = serverLabel;
         this.rng = new Rng(nonceSeed);
+        listener.predictionSource(this);
     }
 
     // ---------------------------------------------------------------- accessors
@@ -207,7 +210,36 @@ public final class ClientConnection {
     public ReliableChannel channel() { return channel; }
 
     /** The INPUT history (entries by tick). */
+    @Override
     public InputHistory input() { return input; }
+
+    /** BEHAVIOR: the predicted clock's tick now (NaN before it runs). */
+    @Override
+    public double predictedTick(long nowNanos) { return clock.tick(nowNanos); }
+
+    @Override
+    public int finalTick() { return finalTick; }
+
+    /** BEHAVIOR: true once an entry has been sent this session. */
+    @Override
+    public boolean haveFinal() { return inputSent; }
+
+    /** BEHAVIOR: the keys of the latest frame, which the entry after {@link #finalTick} is collecting. */
+    @Override
+    public long collectingKeys() { return frameKeys; }
+
+    /** BEHAVIOR: keys that went down since the last final entry and are up now. */
+    @Override
+    public long collectingTaps() { return pressedKeys & ~frameKeys; }
+
+    @Override
+    public int collectingAim() { return pendingAim; }
+
+    @Override
+    public int ownId() { return playerId; }
+
+    @Override
+    public NetDiagnostics diagnostics() { return diagnostics; }
 
     /** CONNECT datagrams sent in the current attempt cycle. */
     public int attempts() { return attempts; }
@@ -233,6 +265,33 @@ public final class ClientConnection {
 
     /** The own ship and kernel state from the PREDICT sections (protocol v2). */
     public KernelSync kernel() { return kernel; }
+
+    @Override
+    public boolean predictValid() { return kernel.valid(); }
+
+    @Override
+    public long predicts() { return kernel.predicts(); }
+
+    @Override
+    public int predictTick() { return kernel.tick(); }
+
+    @Override
+    public com.fulcrologic.jxpilot.common.sim.ShipBody predictBody() { return kernel.body(); }
+
+    @Override
+    public long predictFrames() { return kernel.frames(); }
+
+    @Override
+    public int predictRoundDelay() { return kernel.roundDelay(); }
+
+    @Override
+    public com.fulcrologic.jxpilot.common.sim.KernelWorld kernelWorld() { return kernel.world(); }
+
+    @Override
+    public com.fulcrologic.jxpilot.common.config.Options kernelOptions() { return kernel.kernelOptions(); }
+
+    @Override
+    public Options serverOptions() { return serverOptions; }
 
     public long snapshotsReceived() { return snapshots; }
 
@@ -846,6 +905,7 @@ public final class ClientConnection {
         }
         config = null;
         kernel.onConfig(opts);
+        serverOptions = opts;
         listener.onConfig(welcome, opts, map);
         settings.send(channel);
         display.send(channel);

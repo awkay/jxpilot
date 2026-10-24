@@ -32,8 +32,8 @@ import java.util.Locale;
  * reason ({@link #NA_PREDICTOR}); a sample without values prints "-". Pure.
  */
 final class MetricTable {
-    /** What the prediction metrics print until the phase 1c predictor exists. */
-    static final String NA_PREDICTOR = "n/a (1c)";
+    /** What the prediction metrics print without reconciliations (prediction off, or never active). */
+    static final String NA_PREDICTOR = "n/a (off)";
 
     /** One measured cell. */
     record Row(Course course, Scenario scenario, InputToPhoton.Result i2p, MotionMetrics.Result motion,
@@ -43,7 +43,7 @@ final class MetricTable {
         "| course | RTT/jitter/loss | I2P p50 | I2P p95 | p50 - RTT | mean - RTT | turn p50 | thrust p50 | thrust >1px p50 | trials"
             + " | shot mean - RTT | shot p50 | shot p95 | shot - own p50 | shot trials"
             + " | own err p50/p95 | aim err p50/p95 (frames) | smooth own p95/max | smooth others p95"
-            + " | snaps/min (teleports) | HUD rtt/jitter/loss | correction p95 | exact % |";
+            + " | snaps/min (teleports) | HUD rtt/jitter/loss | correction p95/max | exact % |";
     static final String RULE = "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
         + "---:|---:|---:|---:|---:|";
 
@@ -88,7 +88,8 @@ final class MetricTable {
             + " | " + num(m.otherSmooth().p95(), 2)
             + " | " + num(m.snapsPerMinute(), 1) + (m.teleports() == 0 ? "" : " (" + m.teleports() + " tp)")
             + " | " + num(m.hudRttMs(), 0) + "/" + num(m.hudJitterMs(), 1) + "/" + num(m.hudLossPercent(), 1)
-            + " | " + (m.correction().count() == 0 ? NA_PREDICTOR : num(m.correction().p95(), 1))
+            + " | " + (m.correction().count() == 0 ? NA_PREDICTOR
+                : num(m.correction().p95(), 1) + "/" + num(m.correction().max(), 1))
             + " | " + (Double.isNaN(m.exactPercent()) ? NA_PREDICTOR : num(m.exactPercent(), 1))
             + " |";
     }

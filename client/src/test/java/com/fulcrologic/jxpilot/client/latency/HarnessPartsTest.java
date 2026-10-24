@@ -434,7 +434,7 @@ class HarnessPartsTest {
         }
 
         @Test
-        @DisplayName("a row lists I2P, offsets, trial counts, motion metrics and n/a for the predictor metrics")
+        @DisplayName("a row lists I2P, offsets, trial counts, motion metrics and n/a for the predictor metrics without any")
         void row() {
             InputToPhoton.Result i = new InputToPhoton.Result(List.of(
                 new InputToPhoton.Trial(ControlKey.TURN_LEFT, 0, 240, InputToPhoton.Outcome.MEASURED),
@@ -455,13 +455,13 @@ class HarnessPartsTest {
             String table = MetricTable.format(List.of(r));
             assertAll(
                 () -> assertEquals("| walls | 200/0/0 | 240 | 250 | 40 | 45.0 | 240 | 250 | 270 | 2/3 | 135.0 | 330 | 340 | 90 | 2/3 | 0.2/1.0 | 9.0/22.0 (42)"
-                    + " | 5.00/5.0 | 0.10 | 0.0 (2 tp) | 203/4.3/- | n/a (1c) | n/a (1c) |", MetricTable.line(r), "the row"),
+                    + " | 5.00/5.0 | 0.10 | 0.0 (2 tp) | 203/4.3/- | n/a (off) | n/a (off) |", MetricTable.line(r), "the row"),
                 () -> assertEquals(MetricTable.HEADER + "\n" + MetricTable.RULE + "\n" + MetricTable.line(r) + "\n", table,
                     "header, rule, rows"),
                 () -> assertEquals(MetricTable.HEADER.split("\\|").length, MetricTable.RULE.split("\\|").length,
                     "the rule has a cell per column"),
                 () -> assertTrue(quiet.startsWith("| gravity well | 0/spk/5%b |"), quiet),
-                () -> assertTrue(quiet.endsWith("| 1.5 | 8/4.1/0.0 | 4.0 | 97.5 |"),
+                () -> assertTrue(quiet.endsWith("| 1.5 | 8/4.1/0.0 | 4.0/4.0 | 97.5 |"),
                     "no teleports: no '(tp)'; predictor figures once there are some: " + quiet),
                 () -> assertTrue(quiet.contains("| -/- (0) |"), "no robot seen: no aim error"));
         }

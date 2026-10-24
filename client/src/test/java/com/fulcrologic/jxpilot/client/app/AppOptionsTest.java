@@ -128,6 +128,17 @@ class AppOptionsTest {
         }
 
         @Test
+        @DisplayName("prediction: on by default, --no-predict / --predict (the last wins)")
+        void predict() {
+            assertAll(
+                () -> assertTrue(parse("--connect", "h").predict(), "on by default"),
+                () -> assertFalse(parse("--connect", "h", "--no-predict").predict(), "--no-predict turns it off"),
+                () -> assertTrue(parse("--local", "--map", "m.xp", "--no-predict", "--predict").predict(),
+                    "a later --predict turns it back on"),
+                () -> assertTrue(parse().predict(), "help: on"));
+        }
+
+        @Test
         @DisplayName("sound: --no-sound / --sound (the last wins) and --volume 0..255")
         void sound() {
             AppOptions off = parse("--connect", "h", "--no-sound", "--volume", "0");

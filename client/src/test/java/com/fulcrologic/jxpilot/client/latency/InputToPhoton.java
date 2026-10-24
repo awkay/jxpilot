@@ -59,6 +59,12 @@ import java.util.List;
  * <p>
  * For thrust trials it also records when the drawn position first moves more than 1 px away from the
  * baseline's ({@link Trial#positionMs}): the F1 error blending lets the ship drift into the new path.
+ * <p>
+ * <b>Predicted own ship</b> (phase 1c): a frame that draws the own ship from the predictor
+ * ({@link ClientWorld#selfPredicted}) shows the key without any SELF; its I2P frame is the first that draws what
+ * the key does and the baseline frame does not ({@link #showsKey}). The server tick of the key is still found
+ * the same way ({@link Trial#tickMs}). A fire press shows as a provisional own shot: its I2P frame is the first that
+ * draws one, which must be the one fired in the server's fire tick (else it counts in {@link Result#invisible}).
  */
 final class InputToPhoton {
     static final long MS = 1_000_000L;
@@ -441,6 +447,7 @@ final class InputToPhoton {
         boolean[] unseen = {false};
         boolean[] visible = {false};
         boolean[] died = {false};
+        int[] firedTick = {Integer.MIN_VALUE};
         double[] at = new double[2];
         rig.onTick = (r, t) -> {
             int tick = r.server.net.currentTick();
@@ -477,6 +484,23 @@ final class InputToPhoton {
                 r.stop();
                 return;
             }
+            if (shots && w.selfPredicted()) {
+                // phase 1c: the press shows as a provisional shot on the predicted timeline (the baseline never
+                // fires, so any provisional shot is the press's); it must be the one of the server's fire tick
+                if (found[0] < 0 && w.provisionalShotCount() > 0) {
+                    found[0] = t;
+                    firedTick[0] = r.client.game().predictor().shots().firedTick(0);
+                }
+                if (changed[0] >= 0 && !shotAlive[0]) {
+                    r.stop();
+                    return;
+                }
+                if (found[0] >= 0 && changed[0] >= 0) {
+                    visible[0] = firedTick[0] == changed[0];
+                    r.stop();
+                }
+                return;
+            }
             if (shots) {
                 if (changed[0] >= 0 && !shotAlive[0]) {
                     r.stop(); // the press's shot died in its first tick: nothing to see
@@ -507,12 +531,11 @@ final class InputToPhoton {
                 trace.x[frame], trace.y[frame], w.worldWidth(), w.worldHeight(), w.wraps()) > POSITION_PX) {
                 moved[0] = t;
             }
-            if (found[0] < 0 && changed[0] >= 0 && w.selfDrawnFromTick() - changed[0] >= 0) {
+            boolean shows = frame < trace.n && showsKey(w, trace, frame, thrust);
+            if (found[0] < 0 && (w.selfPredicted() ? shows
+                : changed[0] >= 0 && w.selfDrawnFromTick() - changed[0] >= 0)) {
                 found[0] = t;
-                visible[0] = frame < trace.n && (thrust
-                    ? (w.selfFlags() & Records.ShipFlags.THRUSTING) != 0
-                        && (trace.flags[frame] & Records.ShipFlags.THRUSTING) == 0
-                    : w.selfHeading() != trace.heading[frame]);
+                visible[0] = shows;
             }
             if (found[0] >= 0 && (!thrust || moved[0] >= 0)) {
                 r.stop();
@@ -538,6 +561,16 @@ final class InputToPhoton {
         return new Trial(key, t0, (found[0] - t0) / 1e6, Outcome.MEASURED, phase,
             moved[0] < 0 ? Double.NaN : (moved[0] - t0) / 1e6, selfAt[0] < 0 ? Double.NaN : (selfAt[0] - t0) / 1e6,
             (rig.tickTime(changed[0] - 1) - t0) / 1e6);
+    }
+
+    /**
+     * BEHAVIOR: whether the frame draws what the key does and the baseline frame does not: the THRUSTING flag
+     * (thrust), another heading (turn).
+     */
+    static boolean showsKey(ClientWorld w, Trace trace, int frame, boolean thrust) {
+        return thrust
+            ? (w.selfFlags() & Records.ShipFlags.THRUSTING) != 0 && (trace.flags[frame] & Records.ShipFlags.THRUSTING) == 0
+            : w.selfHeading() != trace.heading[frame];
     }
 
     /** BEHAVIOR: true when the frame draws a shot (the drawn list SceneFiller paints) within {@code px} of (x, y). */

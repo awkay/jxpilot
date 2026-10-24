@@ -215,7 +215,15 @@ public final class ClientWorld {
 
     // render outputs
     private double renderTick;
-    // own-ship prediction (F1)
+    // own-ship prediction: the kernel predictor (protocol v2), else F1
+    private com.fulcrologic.jxpilot.client.game.predict.OwnShipPredictor predictor;
+    private boolean predicted;
+    /** The snapshot's own bullets are left out (the predictor draws them). */
+    private boolean hideOwnShots;
+    /** The own normal bullet's SHOT variant without the harmless bit. */
+    private static final int OWN_SHOT = Records.ShotKind.variant(Records.ShotKind.SHOT, Records.ObjColor.OWN);
+    /** Provisional own shots the last update appended to the shot list (drawn after the snapshot shots). */
+    private int provisionalShots;
     private boolean havePrediction;
     private int predTick;
     private double predX;
@@ -503,6 +511,12 @@ public final class ClientWorld {
             decodeSection(f, newest);
         }
         generateSparks(f, firstShip, !selfBefore && f.hasSelf);
+        int partCount = reader.partCount();
+        long all = partCount >= 64 ? -1L : (1L << partCount) - 1;
+        if (predictor != null && !f.shotsConfirmed && partCount > 0 && (f.parts & all) == all) {
+            f.shotsConfirmed = true;
+            predictor.shots().confirm(f.tick, Math.min(f.shots, shotCap), f.shotX, f.shotY, f.shotVariant);
+        }
         if (f.hasSelf && (!haveSelfState || f.tick - selfStateTick >= 0)) {
             haveSelfState = true;
             selfStateTick = f.tick;
@@ -830,7 +844,7 @@ public final class ClientWorld {
             return;
         }
         int selfId = f.hasSelf ? f.selfId : players.selfId();
-        if (selfInPart && thrusting(f.selfFlags)) {
+        if (selfInPart && thrusting(f.selfFlags) && !ownSparksPredicted()) {
             emitTicks(f, f.selfId, ThrustSparkEmitter.quantizePos(f.selfX), ThrustSparkEmitter.quantizePos(f.selfY),
                 f.selfHeading, ThrustSparkEmitter.quantizeVel(f.selfVx), ThrustSparkEmitter.quantizeVel(f.selfVy),
                 true);
@@ -840,6 +854,11 @@ public final class ClientWorld {
                 emitTicks(f, f.shipId[i], f.shipX[i], f.shipY[i], f.shipHeading[i], f.shipVx[i], f.shipVy[i], false);
             }
         }
+    }
+
+    /** The predictor draws the own ship (and makes its exhaust from the predicted ticks). */
+    private boolean ownSparksPredicted() {
+        return predictor != null && predictor.active();
     }
 
     private static boolean thrusting(int flags) {
@@ -1145,6 +1164,7 @@ public final class ClientWorld {
      */
     private void drawShots(SnapshotFrame a, SnapshotFrame b) {
         outShots = 0;
+        hideOwnShots = ownSparksPredicted();
         if (a == null) {
             for (int i = 0; i < b.shots && i < shotCap; i++) {
                 putShot(b.shotX[i], b.shotY[i], b.shotVariant[i]);
@@ -1194,6 +1214,9 @@ public final class ClientWorld {
     }
 
     private void putShot(float x, float y, byte variant) {
+        if (outShots >= outShotX.length || hideOwnShots && (variant & 0x7F) == OWN_SHOT) {
+            return; // the predictor draws the own bullets (provisional shots) on the own ship's timeline
+        }
         int k = outShots++;
         outShotX[k] = x;
         outShotY[k] = y;
@@ -1260,10 +1283,19 @@ public final class ClientWorld {
         }
         if (n == null) {
             havePrediction = false;
+            predicted = false;
             return;
         }
         outSelf = true;
         drawnSelfTick = n.tick;
+        if (predictor != null && predictor.active() && n.selfId == players.selfId()) {
+            drawPredicted(n);
+            havePrediction = false;
+            return;
+        }
+        drainExhaust(n, false);
+        predicted = false;
+        provisionalShots = 0;
         double decay = havePrediction ? Math.exp(-Math.max(0, nowNanos - lastPredictNanos) / 1e9 / ERROR_DECAY_SECONDS)
             : 0;
         lastPredictNanos = nowNanos;
@@ -1324,6 +1356,71 @@ public final class ClientWorld {
         putSelf(n, wrapX(px + errX), wrapY(py + errY), n.selfHeading);
         outSelfVx = (float) (n.selfVx + ax * dt);
         outSelfVy = (float) (n.selfVy + ay * dt);
+    }
+
+    /**
+     * The own ship as the kernel predictor draws it ({@link com.fulcrologic.jxpilot.client.game.predict}): its
+     * position, heading, velocity, fuel and the bits the own keys decide, at its drawn (predicted) tick; the rest
+     * from the newest SELF. Its exhaust comes from the newly final predicted ticks.
+     * <p>
+     * BEHAVIOR: drawn at {@link #selfDrawnTick()} = the predictor's drawn tick; flags as
+     * {@link com.fulcrologic.jxpilot.client.game.predict.OwnShipPredictor#flags}; fuel in units (C / 256).
+     * BEHAVIOR: own exhaust: one emission per predicted thrusting tick, at that tick's predicted state (quantized
+     * as the server seeds); none from SELF records meanwhile.
+     * BEHAVIOR: the provisional own shots are appended to the drawn shots (own colour), as many as fit; the
+     * snapshots' own bullets (SHOT records of colour OWN) are left out meanwhile, and each complete snapshot
+     * confirms the provisional ones ({@link com.fulcrologic.jxpilot.client.game.predict.ProvisionalShots#confirm}).
+     */
+    private void drawPredicted(SnapshotFrame n) {
+        com.fulcrologic.jxpilot.client.game.predict.OwnShipPredictor p = predictor;
+        putSelf(n, (float) p.x(), (float) p.y(), (float) p.heading());
+        outSelfFlags = p.flags(n.selfFlags);
+        outSelfVx = p.vx();
+        outSelfVy = p.vy();
+        outSelfFuel = (float) (p.fuel() / 256);
+        outSelfFuelMax = (float) (p.fuelMax() / 256);
+        drawnTick = p.drawnTick();
+        predicted = true;
+        drainExhaust(n, true);
+        com.fulcrologic.jxpilot.client.game.predict.ProvisionalShots ps = p.shots();
+        hideOwnShots = false;
+        for (int i = 0; i < ps.count() && outShots < outShotX.length; i++) {
+            putShot(ps.x(i), ps.y(i), (byte) OWN_SHOT);
+        }
+        provisionalShots = ps.count();
+    }
+
+    private void drainExhaust(SnapshotFrame n, boolean emit) {
+        if (predictor == null) {
+            return;
+        }
+        int id = n.selfId;
+        int slot = players.slotOf(id);
+        float power = slot >= 0 ? players.power(slot) : 45f;
+        int ab = slot >= 0 ? players.afterburners(slot) : 0;
+        int ex = slot >= 0 ? players.engineX(slot) : defaultEngineX;
+        int ey = slot >= 0 ? players.engineY(slot) : defaultEngineY;
+        for (int i = predictor.takeExhaust(); i >= 0; i = predictor.takeExhaust()) {
+            if (emit) {
+                sparks.emit(predictor.exhaustTick(i), id, ThrustSparkEmitter.quantizePos(predictor.exhaustX(i)),
+                    ThrustSparkEmitter.quantizePos(predictor.exhaustY(i)), predictor.exhaustHeading(i),
+                    ThrustSparkEmitter.quantizeVel(predictor.exhaustVx(i)),
+                    ThrustSparkEmitter.quantizeVel(predictor.exhaustVy(i)), power, ab, ex, ey, true, particles);
+            }
+        }
+    }
+
+    /**
+     * Provisional own shots in the drawn shot list: its last this many entries (0 unless {@link #selfPredicted}).
+     */
+    public int provisionalShotCount() { return provisionalShots; }
+
+    /** Whether the last {@link #update} drew the own ship from the kernel predictor. */
+    public boolean selfPredicted() { return predicted; }
+
+    /** The own-ship predictor the own ship is drawn from when it is active (null: F1 only). */
+    public void setPredictor(com.fulcrologic.jxpilot.client.game.predict.OwnShipPredictor p) {
+        predictor = p;
     }
 
     private static double clampAccel(double a) {

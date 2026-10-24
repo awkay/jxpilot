@@ -41,7 +41,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the key reached plus the downlink, plus at most one frame for the draw. The stratified phases are still those
  * of the schedule. On a clean link the predicted clock settles before the first trial, at both RTTs to a slack
  * within the controller's deadband of the same target ({@link PredictedClock}), so RTT 100 adds 100 ms on average
- * within that band, and per trial within a tick.
+ * within that band, and per trial within a tick. It checks the snapshot timeline's figures (prediction off): the
+ * predicted own ship shows a key before any snapshot of it.
  */
 @DisplayName("InputToPhoton calibration")
 class InputToPhotonCalibrationTest {
@@ -53,10 +54,10 @@ class InputToPhotonCalibrationTest {
     @Timeout(value = 2, unit = TimeUnit.MINUTES)
     @DisplayName("per trial, I2P is the time to the tick the key reached plus the downlink, within one frame; RTT 100 adds 100 ms")
     void tickPlusDownlink() {
-        InputToPhoton.Result zero = InputToPhoton.measure(Course.WALLS,
-            new Scenario(0, Scenario.Jitter.NONE, Scenario.Loss.NONE), TRIALS, 3);
-        InputToPhoton.Result hundred = InputToPhoton.measure(Course.WALLS,
-            new Scenario(100, Scenario.Jitter.NONE, Scenario.Loss.NONE), TRIALS, 3);
+        InputToPhoton.Result zero = LatencyRig.withPrediction(false, () -> InputToPhoton.measure(
+            Course.WALLS, new Scenario(0, Scenario.Jitter.NONE, Scenario.Loss.NONE), TRIALS, 3));
+        InputToPhoton.Result hundred = LatencyRig.withPrediction(false, () -> InputToPhoton.measure(
+            Course.WALLS, new Scenario(100, Scenario.Jitter.NONE, Scenario.Loss.NONE), TRIALS, 3));
         double worst = 0;
         double low = Double.MAX_VALUE;
         double worstShift = 0;
@@ -107,10 +108,10 @@ class InputToPhotonCalibrationTest {
         + " interpolation delay; every press fires and shows; RTT 100 adds 100 ms")
     void shotTickPlusDownlinkPlusDelay() {
         // as tickPlusDownlink above (protocol v2: the client's lead decides the landing tick), plus the shot's part
-        InputToPhoton.Result zero = InputToPhoton.measureShots(Course.FREE_FLIGHT,
-            new Scenario(0, Scenario.Jitter.NONE, Scenario.Loss.NONE), TRIALS, 3);
-        InputToPhoton.Result hundred = InputToPhoton.measureShots(Course.FREE_FLIGHT,
-            new Scenario(100, Scenario.Jitter.NONE, Scenario.Loss.NONE), TRIALS, 3);
+        InputToPhoton.Result zero = LatencyRig.withPrediction(false, () -> InputToPhoton.measureShots(
+            Course.FREE_FLIGHT, new Scenario(0, Scenario.Jitter.NONE, Scenario.Loss.NONE), TRIALS, 3));
+        InputToPhoton.Result hundred = LatencyRig.withPrediction(false, () -> InputToPhoton.measureShots(
+            Course.FREE_FLIGHT, new Scenario(100, Scenario.Jitter.NONE, Scenario.Loss.NONE), TRIALS, 3));
         double low = Double.MAX_VALUE;
         double high = -Double.MAX_VALUE;
         int compared = 0;

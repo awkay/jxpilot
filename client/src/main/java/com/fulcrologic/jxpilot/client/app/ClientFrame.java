@@ -175,9 +175,10 @@ public final class ClientFrame {
      * <p>
      * BEHAVIOR: elapsed time (0 on the first step) ages messages and HUD timers by {@code dt * gameFps}
      * original frames.
-     * BEHAVIOR: order: receive, game frame, map check, shields ({@link InputState#setPlaying}: the newest
-     * SELF says the player is in play, C Game_over_action; frames without SELF change nothing), the view size
-     * in world pixels when it changed ({@code GameConnection.sendDisplay}), INPUT with the current keys, flush.
+     * BEHAVIOR: order: receive, shields ({@link InputState#setPlaying}: the newest SELF received says the player
+     * is in play, C Game_over_action; frames without SELF change nothing), the view size in world pixels when it
+     * changed ({@code GameConnection.sendDisplay}), INPUT with the current keys, game frame (so the predicted own
+     * ship shows this frame's keys), map check, flush.
      * BEHAVIOR: a new map object bumps {@link #mapVersion()} and centres the view on the first base
      * (the map centre without bases); afterwards the own ship, whenever it exists, is the centre.
      * BEHAVIOR: while not playing the HUD's status line shows the connection's current status; on the first
@@ -205,7 +206,14 @@ public final class ClientFrame {
         conn.update(nowNanos);
         serverClosed(nowNanos);
         lobbyStep(nowNanos);
-        game.frame(nowNanos, dt);
+        ClientWorld w = game.world();
+        boolean inPlay = w.selfPlaying();
+        input.setPlaying(inPlay);
+        connectionOptions(nowNanos);
+        sendDisplayIfChanged(viewW, viewH, zoom, nowNanos);
+        play.pointer().setWindow(viewW, viewH);
+        conn.sendInput(input.takeKeys(), play.takeAim(), nowNanos);
+        game.frame(nowNanos, dt);   // after the input: the own ship is predicted with this frame's keys
         WorldMap map = game.map();
         if (map != lastMap) {
             lastMap = map;
@@ -214,13 +222,6 @@ public final class ClientFrame {
                 centreOnStart(map);
             }
         }
-        ClientWorld w = game.world();
-        boolean inPlay = w.selfPlaying();
-        input.setPlaying(inPlay);
-        connectionOptions(nowNanos);
-        sendDisplayIfChanged(viewW, viewH, zoom, nowNanos);
-        play.pointer().setWindow(viewW, viewH);
-        conn.sendInput(input.takeKeys(), play.takeAim(), nowNanos);
         conn.flush(nowNanos);
         if (w.hasSelf()) {
             centreX = w.selfX();
@@ -481,7 +482,8 @@ public final class ClientFrame {
      * {@link #quitRequested()}; SWAP_SCALE sets {@link #takeSwapScale()}; TOGGLE_SOUND sets
      * {@link #takeToggleSound()}; SETTINGS sends the control settings ({@link GameConnection#sendSettings});
      * SHOW_CONTROLS shows the power and turn speed meters; HELP closes an open MOTD panel, else toggles the key help;
-     * NET_STATS toggles the network diagnostics line ({@link #netStats()});
+     * NET_STATS toggles the network diagnostics line ({@link #netStats()}); PREDICTION switches own-ship prediction
+     * ({@link com.fulcrologic.jxpilot.client.game.predict.OwnShipPredictor#enabled}), silently (blind A/B);
      * TOGGLE_ITEMS toggles {@link HudExtras#showItems} (C {@code Key_press_show_items}); FUEL_NOTIFY shows the fuel
      * ({@link Hud#notifyFuel}); TOGGLE_MESSAGES toggles {@link Hud#showMessages} (C {@code Key_press_show_messages}).
      * BEHAVIOR: the play events (ID mode, print, talk macros, pointer control) go to {@link PlayActions#handle};
@@ -549,6 +551,9 @@ public final class ClientFrame {
         }
         if ((ev & KeyRouter.NET_STATS) != 0) {
             netStats.toggle();
+        }
+        if ((ev & KeyRouter.PREDICTION) != 0) {
+            game.predictor().enabled = !game.predictor().enabled;
         }
         if ((ev & KeyRouter.CHAT) != 0) {
             conn.sendChat(router.chat(), nowNanos);

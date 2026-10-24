@@ -37,6 +37,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -52,7 +54,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * newest SELF; since phase 1b inputs tagged with the predicted tick and applied at that tick, sent ahead by the
  * input lead), so a change that adds own-ship latency fails here. Phase 1b restated them: the input lead's
  * slack (0.5 tick + 2 jitter) now comes on top of the wait for the tick (docs/latency-measurements.md).
- * Phase 1c (prediction) is expected to break the lower bounds on purpose and must restate them.
+ * <p>
+ * Phase 1c predicts the own ship: by default ({@code -Djxpilot.latency.predict=true}) the cells are measured with
+ * the predictor on and checked against its exit criteria (own-ship I2P p95 at most 50 ms at any RTT, corrections
+ * small, no snaps); {@code -Djxpilot.latency.predict=false} measures the snapshot timeline (the "before" columns of
+ * docs/latency-measurements.md) and checks the phase 1b bounds. With prediction on it also runs the exactness
+ * table: every course flown by an active pilot ({@link Course#pilot}) on clean links, with and without the server
+ * option predictableBounces.
  */
 @DisplayName("latency baseline (phase 0)")
 class LatencyBaselineTest {
@@ -65,12 +73,30 @@ class LatencyBaselineTest {
     static final int MOTION_SECONDS = Integer.getInteger("jxpilot.latency.seconds", 60);
     static final long SEED = Long.getLong("jxpilot.latency.seed", 1);
     static final int[] RTTS = {0, 100, 200, 300};
+    static final boolean PREDICT = Boolean.parseBoolean(System.getProperty("jxpilot.latency.predict", "true"));
+    static final int EXACT_SECONDS = Integer.getInteger("jxpilot.latency.exactSeconds", 60);
 
     static final List<MetricTable.Row> ROWS = new ArrayList<>();
+
+    /** One exactness run: a course on a clean link at {@code rtt}, predictableBounces on or off. */
+    record ExactRow(Course course, int rtt, boolean predictable, MotionMetrics.Result motion) { }
+
+    static final List<ExactRow> EXACT = new ArrayList<>();
 
     @BeforeAll
     @Timeout(value = 10, unit = TimeUnit.MINUTES)
     static void measure() throws IOException {
+        LatencyRig.withPrediction(PREDICT, () -> {
+            try {
+                measureAll();
+            } catch (IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+            return null;
+        });
+    }
+
+    static void measureAll() throws IOException {
         long t0 = System.nanoTime();
         for (Course c : Course.values()) {
             for (int rtt : RTTS) {
@@ -85,14 +111,43 @@ class LatencyBaselineTest {
                 }
             }
         }
-        String table = MetricTable.format(ROWS);
-        System.out.println("[latency baseline] " + ROWS.size() + " cells, " + TRIALS + " I2P and " + SHOT_TRIALS
-            + " shot trials each, "
-            + MOTION_SECONDS + " s motion runs, seed " + SEED + ", " + (System.nanoTime() - t0) / 1_000_000 + " ms");
+        if (PREDICT) {
+            for (Course c : Course.values()) {
+                for (int rtt : new int[] {0, 100, 300}) {
+                    for (boolean pb : new boolean[] {false, true}) {
+                        EXACT.add(new ExactRow(c, rtt, pb, MotionMetrics.measure(c,
+                            new Scenario(rtt, Scenario.Jitter.NONE, Scenario.Loss.NONE), 0, EXACT_SECONDS, SEED, pb,
+                            Course::pilot)));
+                    }
+                }
+            }
+        }
+        String table = MetricTable.format(ROWS) + (PREDICT ? "\n" + exactTable() : "");
+        System.out.println("[latency baseline] prediction " + (PREDICT ? "on" : "off") + ", " + ROWS.size() + " cells, "
+            + TRIALS + " I2P and " + SHOT_TRIALS + " shot trials each, " + MOTION_SECONDS + " s motion runs, seed "
+            + SEED + ", " + (System.nanoTime() - t0) / 1_000_000 + " ms");
         System.out.println(table);
-        Path out = Path.of("target", "latency-baseline.md");
+        Path out = Path.of("target", PREDICT ? "latency-baseline.md" : "latency-baseline-off.md");
         Files.createDirectories(out.getParent());
         Files.writeString(out, table);
+    }
+
+    /** The exactness table: per course, RTT and predictableBounces, the reconciliations and their corrections. */
+    static String exactTable() {
+        StringBuilder sb = new StringBuilder("| course | RTT | predictableBounces | reconciliations | exact % |"
+            + " correction p95/max | own err p95 | snaps/min |\n|---|---:|---|---:|---:|---:|---:|---:|\n");
+        for (ExactRow r : EXACT) {
+            MotionMetrics.Result m = r.motion();
+            sb.append("| ").append(r.course().name().toLowerCase(java.util.Locale.ROOT).replace('_', ' '))
+                .append(" | ").append(r.rtt()).append(" | ").append(r.predictable() ? "on" : "off")
+                .append(" | ").append(m.correction().count())
+                .append(" | ").append(MetricTable.num(m.exactPercent(), 2))
+                .append(" | ").append(MetricTable.num(m.correction().p95(), 2)).append('/')
+                .append(MetricTable.num(m.correction().max(), 1))
+                .append(" | ").append(MetricTable.num(m.ownError().p95(), 2))
+                .append(" | ").append(MetricTable.num(m.snapsPerMinute(), 1)).append(" |\n");
+        }
+        return sb.toString();
     }
 
     static boolean clean(Scenario s) {
@@ -159,6 +214,7 @@ class LatencyBaselineTest {
     @Test
     @DisplayName("own-ship I2P on clean links: mean RTT + 75..100 ms, p50 RTT + 70..100 ms, p95 at most RTT + 135 ms")
     void cleanI2p() {
+        assumeFalse(PREDICT, "the snapshot timeline's bounds (prediction off)");
         List<Executable> checks = new ArrayList<>();
         for (MetricTable.Row r : ROWS) {
             if (!clean(r.scenario())) {
@@ -189,6 +245,7 @@ class LatencyBaselineTest {
     @DisplayName("own-ship I2P with jitter and loss: p50 at most RTT + 180 ms; p95 at most RTT + 400 ms, + 600 ms"
         + " with bursty loss")
     void impairedI2p() {
+        assumeFalse(PREDICT, "the snapshot timeline's bounds (prediction off)");
         List<Executable> checks = new ArrayList<>();
         for (MetricTable.Row r : ROWS) {
             int rtt = r.scenario().rttMs();
@@ -226,6 +283,7 @@ class LatencyBaselineTest {
     @Test
     @DisplayName("own ship drawn close to the server's truth, smoothly, without snaps (dead reckoning, F1)")
     void ownMotion() {
+        assumeFalse(PREDICT, "the snapshot timeline's bounds (prediction off)");
         List<Executable> checks = new ArrayList<>();
         for (MetricTable.Row r : ROWS) {
             MotionMetrics.Result m = r.motion();
@@ -240,6 +298,70 @@ class LatencyBaselineTest {
                     + m.ownSmooth().p95()));
                 checks.add(() -> assertEquals(0, m.snapsPerMinute(), 1e-9, cell + "no snaps on a clean link"));
             }
+        }
+        assertAll(checks);
+    }
+
+    @Test
+    @DisplayName("predicted own-ship I2P: p95 at most 50 ms in every cell (any RTT, jitter and loss), never negative")
+    void predictedI2p() {
+        assumeTrue(PREDICT, "prediction on");
+        List<Executable> checks = new ArrayList<>();
+        for (MetricTable.Row r : ROWS) {
+            Stats s = r.i2p().stats(null);
+            String cell = r.course() + " " + r.scenario().label() + ": ";
+            // the key shows in the frame that polls it (sendInput runs before the draw) or the next: 0-8.3 ms, and a
+            // tap of less than a frame shows in the speculative tick's alpha
+            checks.add(() -> assertTrue(s.p95() <= 50, cell + "p95 " + s.p95()));
+            checks.add(() -> assertTrue(s.percentile(0) >= 0, cell + "min " + s.percentile(0)));
+            checks.add(() -> assertTrue(s.count() * 4 >= r.i2p().trials().size() * 3, cell + "measured "
+                + s.count()));
+        }
+        assertAll(checks);
+    }
+
+    @Test
+    @DisplayName("predicted own ship: drawn on the server's path (error p95 < 4 px on clean links), smooth, no snaps")
+    void predictedMotion() {
+        assumeTrue(PREDICT, "prediction on");
+        List<Executable> checks = new ArrayList<>();
+        for (MetricTable.Row r : ROWS) {
+            MotionMetrics.Result m = r.motion();
+            String cell = r.course() + " " + r.scenario().label() + ": ";
+            checks.add(() -> assertTrue(m.ownError().count() > 0, cell + "own error measured"));
+            checks.add(() -> assertTrue(m.correction().count() > 0, cell + "reconciliations reported"));
+            checks.add(() -> assertTrue(m.ownError().p95() < 20, cell + "own error p95 < 20 px: " + m.ownError().p95()));
+            if (clean(r.scenario()) && r.course() != Course.DOGFIGHT) {
+                checks.add(() -> assertTrue(m.ownError().p95() < 4, cell + "own error p95 < 4 px: "
+                    + m.ownError().p95()));
+                checks.add(() -> assertTrue(m.correction().p95() < 4, cell + "correction p95 < 4 px: "
+                    + m.correction().p95()));
+                checks.add(() -> assertTrue(m.ownSmooth().p95() < 0.5, cell + "own step change p95 < 0.5 px: "
+                    + m.ownSmooth().p95()));
+                checks.add(() -> assertEquals(0, m.snapsPerMinute(), 1e-9, cell + "no snaps on a clean link"));
+            }
+        }
+        assertAll(checks);
+    }
+
+    @Test
+    @DisplayName("exactness with an active pilot: 100% bit-equal with predictableBounces on contact-free courses,"
+        + " at least 99% without; corrections p95 < 4 px; no snaps")
+    void exactness() {
+        assumeTrue(PREDICT, "prediction on");
+        List<Executable> checks = new ArrayList<>();
+        for (ExactRow r : EXACT) {
+            MotionMetrics.Result m = r.motion();
+            String cell = r.course() + " RTT " + r.rtt() + (r.predictable() ? " predictableBounces: " : ": ");
+            boolean contactFree = r.course() == Course.WALLS || r.course() == Course.GRAVITY_WELL;
+            checks.add(() -> assertTrue(m.correction().count() > EXACT_SECONDS * 10, cell + "reconciled "
+                + m.correction().count()));
+            if (contactFree) {
+                checks.add(() -> assertTrue(m.exactPercent() >= (r.predictable() ? 100 : 99), cell + "exact "
+                    + m.exactPercent() + "%"));
+            }
+            checks.add(() -> assertTrue(m.correction().p95() < 4, cell + "correction p95 " + m.correction().p95()));
+            checks.add(() -> assertEquals(0, m.snapsPerMinute(), 1e-9, cell + "no snaps"));
         }
         assertAll(checks);
     }

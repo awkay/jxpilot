@@ -59,4 +59,11 @@ public interface ConnectionListener {
 
     /** The state changed; {@code status} is a human-readable line for the HUD (valid during the call). */
     void onStateChange(ConnectionState state, CharSequence status);
+
+    /**
+     * The connection's input and server-state feed for the own-ship predictor, given once when the connection is
+     * made (JXPilot protocol v2 only; an XPilot connection never calls it).
+     */
+    default void predictionSource(com.fulcrologic.jxpilot.client.game.predict.PredictionSource source) {
+    }
 }

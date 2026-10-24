@@ -70,9 +70,41 @@ enum Course {
         return sinceSpawn >= 300 * MS && sinceSpawn < 800 * MS ? THRUST : 0;
     }
 
+    /**
+     * BEHAVIOR: an active pilot for the exactness runs, repeating every 2 s after the spawn: turn left 0-300 ms,
+     * thrust 400-700 ms, fire 900-950 ms, shield 1200-1300 ms (its release also drops the spawn shield).
+     */
+    static long pilot(long sinceSpawn) {
+        if (sinceSpawn < 0) {
+            return 0;
+        }
+        long ms = (sinceSpawn / MS) % 2000;
+        long k = 0;
+        if (ms < 300) {
+            k |= ControlKey.TURN_LEFT.mask();
+        }
+        if (ms >= 400 && ms < 700) {
+            k |= THRUST;
+        }
+        if (ms >= 900 && ms < 950) {
+            k |= ControlKey.FIRE_SHOT.mask();
+        }
+        if (ms >= 1200 && ms < 1300) {
+            k |= ControlKey.SHIELD.mask();
+        }
+        return k;
+    }
+
     /** The server command line for this course with {@code robots} robots (min and max). */
     String[] serverArgs(int robots) {
+        return serverArgs(robots, false);
+    }
+
+    /** As {@link #serverArgs(int)}, with the server option predictableBounces when {@code predictable}. */
+    String[] serverArgs(int robots, boolean predictable) {
         String r = Integer.toString(robots);
-        return new String[] {"--map", "../maps/" + map + ".xp", "-maxRobots", r, "-minRobots", r};
+        return predictable
+            ? new String[] {"--map", "../maps/" + map + ".xp", "-maxRobots", r, "-minRobots", r, "-predictableBounces", "yes"}
+            : new String[] {"--map", "../maps/" + map + ".xp", "-maxRobots", r, "-minRobots", r};
     }
 }

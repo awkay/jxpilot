@@ -33,6 +33,8 @@ final class SnapshotFrame {
     long arrivalNanos;
     /** Bit p set once part p arrived (parts 0..63). */
     long parts;
+    /** The provisional own shots were reconciled with this (complete) frame. */
+    boolean shotsConfirmed;
     /** First tick whose thrust sparks this frame generates (later than {@link #tick} = none). */
     int sparkFrom;
 
@@ -138,6 +140,7 @@ final class SnapshotFrame {
         tick = t;
         arrivalNanos = now;
         parts = 0;
+        shotsConfirmed = false;
         sparkFrom = sparkFromTick;
         hasSelf = false;
         ships = 0;
