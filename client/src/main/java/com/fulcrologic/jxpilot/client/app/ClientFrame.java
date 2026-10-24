@@ -135,8 +135,8 @@ public final class ClientFrame {
      * PLAYING frame a message names the key help key ("F1: keys"), unless keyHelp is unbound.
      * BEHAVIOR: lays out the key help overlay ({@link #helpHud()}), or the server MOTD panel while it is open (it opens
      * once, when the whole MOTD has arrived).
-     * BEHAVIOR: fills the scene, radar, view HUD, HUD extras (with the lose-item outline of the
-     * {@link KeyRouter#loseSelection}, aged by dt) and the score list panel (at
+     * BEHAVIOR: fills the scene, radar, view HUD, HUD extras (item timers aged by {@code dt * gameFps} original
+     * frames, with the lose-item outline of the {@link KeyRouter#loseSelection}, aged by dt) and the score list panel (at
      * {@code (0, scoreTop)}, {@code panelW} wide).
      */
     public void step(long nowNanos, int viewW, int viewH, double zoom, TextMetrics m, int panelW, int scoreTop) {
@@ -179,7 +179,7 @@ public final class ClientFrame {
         }
         hud.zoom = zoom;
         hud.build(viewHud, game, talk, viewW, viewH, m, dt * game.gameFps());
-        extras.fill(game, hud, viewW, viewH, zoom, centreX, centreY, scene.loops);
+        extras.fill(game, hud, viewW, viewH, zoom, centreX, centreY, scene.loops, dt * game.gameFps());
         extras.loseItem(router.loseSelection(), dt);
         panelHud.clear();
         hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, m);
@@ -238,7 +238,9 @@ public final class ClientFrame {
      * BEHAVIOR: a finished chat line is sent with {@link GameConnection#sendChat}; QUIT sets
      * {@link #quitRequested()}; SWAP_SCALE sets {@link #takeSwapScale()}; TOGGLE_SOUND sets
      * {@link #takeToggleSound()}; SETTINGS sends the control settings ({@link GameConnection#sendSettings});
-     * SHOW_CONTROLS shows the power and turn speed meters; HELP closes an open MOTD panel, else toggles the key help.
+     * SHOW_CONTROLS shows the power and turn speed meters; HELP closes an open MOTD panel, else toggles the key help;
+     * TOGGLE_ITEMS toggles {@link HudExtras#showItems} (C {@code Key_press_show_items}); FUEL_NOTIFY shows the fuel
+     * ({@link Hud#notifyFuel}).
      */
     public void key(int key, int action, int mods, long nowNanos) {
         int ev = router.key(key, action, mods);
@@ -266,6 +268,12 @@ public final class ClientFrame {
         }
         if ((ev & KeyRouter.TOGGLE_SOUND) != 0) {
             toggleSound = true;
+        }
+        if ((ev & KeyRouter.TOGGLE_ITEMS) != 0) {
+            extras.showItems = !extras.showItems;
+        }
+        if ((ev & KeyRouter.FUEL_NOTIFY) != 0) {
+            hud.notifyFuel(game.gameFps());
         }
     }
 

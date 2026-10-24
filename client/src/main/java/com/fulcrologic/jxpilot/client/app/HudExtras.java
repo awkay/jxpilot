@@ -70,8 +70,16 @@ public final class HudExtras {
     public final float[] lockShipY = new float[ShipShape.MAX_SHIP_PTS];
     public int lockShipPoints;
 
-    /** Per {@link Item} ordinal: the count shown, or -1 (C {@code showItems}: counts above 0). */
+    /** Per {@link Item} ordinal: the count shown, or -1 ({@link #items}). */
     public final int[] itemCounts = new int[Item.COUNT];
+    /** C option {@code showItems} (default yes, KEY_TOGGLE_OWNED_ITEMS toggles it): list owned items permanently. */
+    public boolean showItems = true;
+    /** C option {@code showItemsTime} (default 2.0, limited to 0..10): seconds a changed count shows without showItems. */
+    public double showItemsTime = 2.0;
+    /** C {@code lastNumItems}: the count each item had on the previous HUD frame. */
+    private final int[] lastNumItems = new int[Item.COUNT];
+    /** C {@code numItemsTime}: original frames each changed count still shows (without showItems). */
+    private final double[] numItemsTime = new double[Item.COUNT];
     public boolean autopilot;
     /** Seconds of game time left, -1 when the server never said ({@link ClientWorld#timeLeft()}). */
     public int timeLeft = -1;
@@ -97,7 +105,7 @@ public final class HudExtras {
      * ({@link HudPainter#isFriend}, alliances included), its shape's points at heading 0; distance and RES
      * direction as the server sends them in SELF (C frame.c lock_dist/lock_dir) when non-zero, else from the
      * own ship when its ship is in the interpolated list (wrap-aware), else 0.
-     * BEHAVIOR: warningPhase is {@code loops} even; items: counts above 0, else -1; autopilot from the
+     * BEHAVIOR: warningPhase is {@code loops} even; items: {@link #items}; autopilot from the
      * own ship's AUTOPILOT flag; time left from the world; mods: the SELF modifier bits as C's string.
      * BEHAVIOR: score objects: see {@link #scoreObjects}.
      *
@@ -105,6 +113,16 @@ public final class HudExtras {
      */
     public void fill(ClientGame g, Hud hud, int viewW, int viewH, double zoom, double centreX, double centreY,
                      long loops) {
+        fill(g, hud, viewW, viewH, zoom, centreX, centreY, loops, 1);
+    }
+
+    /**
+     * {@link #fill(ClientGame, Hud, int, int, double, double, double, long)} for a painted frame
+     * {@code frames} original frames after the previous one (C paints once per frame: 1), which age the
+     * item timers ({@link #items}).
+     */
+    public void fill(ClientGame g, Hud hud, int viewW, int viewH, double zoom, double centreX, double centreY,
+                     long loops, double frames) {
         ClientWorld w = g.world();
         Players p = g.players();
         hud.zoom = zoom;
@@ -125,8 +143,7 @@ public final class HudExtras {
         timeLeft = w.timeLeft();
         Modifiers.format(w.selfMods(), mods.clear());
         for (int i = 0; i < Item.COUNT; i++) {
-            int n = w.selfItem(i);
-            itemCounts[i] = n > 0 ? n : -1;
+            itemCounts[i] = items(i, w.selfItem(i), frames, g.gameFps());
         }
         warningPhase = (loops & 1) == 0;
         int id = w.selfLockId();
@@ -162,6 +179,36 @@ public final class HudExtras {
                 break;
             }
         }
+    }
+
+    /**
+     * C {@code Paint_HUD}'s item count choice (painthud.c:527-546) for item {@code i} owning {@code num}, on a
+     * HUD frame {@code frames} original frames after the previous one.
+     * <p>
+     * BEHAVIOR: fuel is never listed (-1). With {@link #showItems}: {@code num} when above 0, else -1; the count is
+     * remembered.
+     * BEHAVIOR: without it, a count different from the remembered one restarts the item's timer at
+     * {@code (int)(showItemsTime * fps)} frames and is remembered; the count (also 0) is shown while the timer is
+     * above 0, and the timer then runs down by {@code frames}; at 0 it is -1.
+     */
+    int items(int i, int num, double frames, double fps) {
+        if (i == Item.FUEL.ordinal()) {
+            return -1;
+        }
+        if (showItems) {
+            lastNumItems[i] = num;
+            return num > 0 ? num : -1;
+        }
+        if (num != lastNumItems[i]) {
+            numItemsTime[i] = (int) (showItemsTime * (float) fps);
+            lastNumItems[i] = num;
+        }
+        if (numItemsTime[i] <= 0) {
+            numItemsTime[i] = 0;
+            return -1;
+        }
+        numItemsTime[i] -= frames;
+        return num;
     }
 
     /**

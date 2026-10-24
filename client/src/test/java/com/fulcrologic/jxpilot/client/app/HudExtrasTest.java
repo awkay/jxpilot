@@ -225,6 +225,78 @@ class HudExtrasTest {
     }
 
     @Nested
+    @DisplayName("items (C Paint_HUD showItems / showItemsTime, painthud.c:527-546)")
+    class Items {
+        static final int MINE = Item.MINE.ordinal();
+        static final int ECM = Item.ECM.ordinal();
+        static final int FUEL = Item.FUEL.ordinal();
+
+        @Test
+        @DisplayName("showItems on: counts above 0 are listed, others and fuel are not")
+        void permanent() {
+            assertAll(
+                () -> assertEquals(3, e.items(MINE, 3, 1, 50), "count above 0: listed"),
+                () -> assertEquals(-1, e.items(MINE, 0, 1, 50), "count 0: not listed"),
+                () -> assertEquals(-1, e.items(FUEL, 500, 1, 50), "fuel is never listed"));
+        }
+
+        @Test
+        @DisplayName("showItems off: a changed count (0 too) shows for (int)(showItemsTime * fps) frames")
+        void timed() {
+            e.showItems = false;
+            e.showItemsTime = 0.1; // 5 frames at 50 fps
+            int[] shown = new int[7];
+            for (int k = 0; k < shown.length; k++) {
+                shown[k] = e.items(MINE, 2, 1, 50);
+            }
+            int unchangedOther = e.items(ECM, 0, 1, 50);
+            int dropped = e.items(MINE, 0, 1, 50);
+            int halfFrames = e.items(MINE, 0, 2.5, 50);
+            int afterHalf = e.items(MINE, 0, 2.5, 50);
+            int expired = e.items(MINE, 0, 2.5, 50);
+            assertAll(
+                () -> assertArrayEquals(new int[] {2, 2, 2, 2, 2, -1, -1}, shown,
+                    "a new count shows on 5 frames, then disappears"),
+                () -> assertEquals(-1, unchangedOther, "a count that never changed (0) is not shown"),
+                () -> assertEquals(0, dropped, "a count that changed to 0 shows as 0"),
+                () -> assertEquals(0, halfFrames, "the timer runs down by the frames elapsed (4 left)"),
+                () -> assertEquals(0, afterHalf, "1.5 left"),
+                () -> assertEquals(-1, expired, "used up: hidden"));
+        }
+
+        @Test
+        @DisplayName("turning showItems off after a permanent listing shows nothing until a count changes")
+        void toggled() {
+            e.items(MINE, 3, 1, 50);
+            e.showItems = false;
+            int same = e.items(MINE, 3, 1, 50);
+            int changed = e.items(MINE, 4, 1, 50);
+            assertAll(
+                () -> assertEquals(-1, same, "the remembered count did not change: hidden"),
+                () -> assertEquals(4, changed, "a change shows it"));
+        }
+
+        @Test
+        @DisplayName("fill uses the timers, aged by its frames argument")
+        void viaFill() {
+            AppFixture f = new AppFixture(true).players().twice(x -> x.self(0, 100, 100, 0, FOE)
+                .items(items(MINE, 3)));
+            e.showItems = false;
+            e.showItemsTime = 1;
+            e.fill(f.game, hud, 800, 600, 1, 100, 100, 0, 1);
+            int first = e.itemCounts[MINE];
+            e.fill(f.game, hud, 800, 600, 1, 100, 100, 0, 1000);
+            int second = e.itemCounts[MINE];
+            e.fill(f.game, hud, 800, 600, 1, 100, 100, 0, 1);
+            int third = e.itemCounts[MINE];
+            assertAll(
+                () -> assertEquals(3, first, "the new count shows"),
+                () -> assertEquals(3, second, "still above 0 before this frame's ageing"),
+                () -> assertEquals(-1, third, "aged out by the 1000 frames"));
+        }
+    }
+
+    @Nested
     @DisplayName("loseItem (C painthud.c:558-566)")
     class LoseItem {
         static final int MINE = Item.MINE.ordinal();

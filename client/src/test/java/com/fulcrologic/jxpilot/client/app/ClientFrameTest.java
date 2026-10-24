@@ -297,8 +297,19 @@ class ClientFrameTest {
             cf.key(GLFW_KEY_MINUS, GLFW_PRESS, 0, T0);
             boolean sound1 = cf.takeToggleSound();
             boolean sound2 = cf.takeToggleSound();
+            boolean itemsBefore = cf.extras().showItems;
+            cf.key(GLFW_KEY_KP_8, GLFW_PRESS, 0, T0);
+            boolean itemsToggled = cf.extras().showItems;
+            double fuelBefore = cf.hud().fuelCount();
+            cf.key(GLFW_KEY_E, GLFW_PRESS, 0, T0);
+            double fuelShown = cf.hud().fuelCount();
             cf.key(GLFW_KEY_ESCAPE, GLFW_PRESS, 0, T0);
             assertAll(
+                () -> assertTrue(itemsBefore, "showItems on by default (C)"),
+                () -> assertFalse(itemsToggled, "the owned-items key toggles showItems"),
+                () -> assertEquals(0.0, fuelBefore, "no fuel notification at start"),
+                () -> assertEquals(3 * cf.game().gameFps(), fuelShown, 1e-9,
+                    "a tank key shows the fuel for FUEL_NOTIFY (3 s of frames)"),
                 () -> assertFalse(before, "no quit at start"),
                 () -> assertTrue(swap1, "swap reported"),
                 () -> assertFalse(swap2, "only once"),
