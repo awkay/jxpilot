@@ -345,7 +345,8 @@ The Java server admits players as the XPilot server does:
   refused. A full team makes room the same way as a full game, by removing one of its robots, then its
   paused players (`... was kicked because team N is full.`).
 * *Welcome.* The first player sees `Welcome to "MAP", made by AUTHOR.`; everyone sees later arrivals as
-  `NAME has entered "MAP", made by AUTHOR.` (with `(team N)` in team play).
+  `NAME (REALNAME) has entered "MAP", made by AUTHOR.` (`NAME (REALNAME, team N) ...` in team play). The
+  real name is the player's login name, or `--user` (<<07-client-reference.adoc#game-flags,Game flags>>).
 
 When the server refuses a player, the client shows `Rejected by SERVER:` and one of these reasons:
 
@@ -515,7 +516,7 @@ Of XPilot's other file options, `defaults` (`--defaults`) and `adminMessage`
 
 A player who types a chat line starting with `god:` writes to the operator rather than to the other
 players. As in XPilot, the line is appended to the file named by `adminMessageFileName` (short
-`adminMessage`), with the date, time and player name, if that file already exists and is writable, and
+`adminMessage`), with the date, time, player name, real name, host and address, if that file already exists and is writable, and
 only while the file stays below `adminMessageFileSizeLimit` bytes (default 20202). Without the option
 the line is dropped.
 
@@ -544,7 +545,8 @@ are in the game and a base is free. `0` turns robots off.
 |`restrictRobots` |true |Robots only join `robotTeam`.
 |`reserveRobotTeam` |true |Humans may not join the robot team.
 |`robotFile` |XPilot's robots |A file of robot personalities (below). Command line or config file.
-|`logRobots` |true |Log each robot that joins: `NAME (PLAYERS, robot) starts at startpos BASE.`
+|`logRobots` |true |Log each robot that joins: `DD Mon HH:MM:SS NAME (PLAYERS, REALNAME) starts at startpos BASE.`,
+with `robotRealName` as the real name.
 |===
 
 With limited lives, a robot that loses its last life leaves the game and is replaced by a new one
