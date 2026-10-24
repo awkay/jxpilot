@@ -86,7 +86,7 @@ final class Talk {
     }
 
     private void god(Player from, CharSequence line, int colon) {
-        if (admin.log(from.name, line, colon + 1)) {
+        if (admin.log(from, line, colon + 1)) {
             w.events.playerMessage(Msg.Text.KIND_PRIVATE, from.id, from.id).append(line, colon + 1, line.length())
                 .append(" [").append(from.name).append("]:[GOD]");
         } else {
@@ -131,7 +131,8 @@ final class Talk {
         if (to == null) {
             for (int k = 0; k < w.numPlayers; k++) {
                 Player p = w.playerAt(k);
-                if (p.name.length() >= colon && equalsIgnoreCase(p.name, line, 0, colon)) {
+                // netserver.c:2745-2749: a partial match on the nick or the real name
+                if (equalsIgnoreCase(p.name, line, 0, colon) || equalsIgnoreCase(p.realName, line, 0, colon)) {
                     ambiguous = to != null;
                     to = p;
                 }

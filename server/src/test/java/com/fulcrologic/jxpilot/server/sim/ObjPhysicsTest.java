@@ -173,4 +173,17 @@ class ObjPhysicsTest {
             () -> assertEquals(Obj.NO_ID, q.shovePusher[0] == 0 ? Obj.NO_ID : q.shovePusher[0],
                 "without COLLISIONSHOVE no shove"));
     }
+
+    @Test
+    @DisplayName("deltaMvElastic rounds in C's float order: 2 * m2 / ms * v2, not 2 * m2 * v2 / ms")
+    void elasticFloatOrder() {
+        Simulation s = sim();
+        World w = s.world;
+        Objects o = w.objects;
+        // two asteroids (size 1 and 2) with velocities from a C trace
+        int a = obj(w, Obj.ASTEROID, Obj.NO_ID, 100, 100, -6.4252863f, 0, 60, 100);
+        int b = obj(w, Obj.ASTEROID, Obj.NO_ID, 100, 100, -0.7746947f, 0, 135, 100);
+        s.objPhysics.deltaMvElastic(a, b);
+        assertEquals(1.3986096f, o.vx[a], "C's float result (the other order gives 1.3986098)");
+    }
 }

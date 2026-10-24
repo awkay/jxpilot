@@ -188,7 +188,7 @@ final class ItemSections {
             }
             double x = cx(h);
             double y = cy(h);
-            if (!b.visible(x, y, 0)) {
+            if (!b.visible(x, y, 0) || !b.cVisible(h)) {
                 continue;
             }
             if (type == Obj.ITEM) {

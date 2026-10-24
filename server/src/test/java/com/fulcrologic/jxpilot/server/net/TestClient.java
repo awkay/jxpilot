@@ -89,6 +89,11 @@ final class TestClient implements ReliableHandler {
     }
 
     ByteBuffer connect(String name, int team, String shape) {
+        return connect(name, team, shape, "", "");
+    }
+
+    /** A CONNECT with the real and host names (server-batch2). */
+    ByteBuffer connect(String name, int team, String shape, String realName, String hostName) {
         ByteBuffer b = buf();
         PacketHeader.write(b, PacketType.CONNECT, 0, 0);
         Msg.Connect c = new Msg.Connect();
@@ -96,6 +101,8 @@ final class TestClient implements ReliableHandler {
         c.team = team;
         c.name.append(name);
         c.shape.append(shape);
+        c.realName.append(realName);
+        c.hostName.append(hostName);
         c.write(b);
         return b.flip();
     }

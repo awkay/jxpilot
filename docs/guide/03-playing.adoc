@@ -105,7 +105,9 @@ endif::[]
 
 include::generated/keys.adoc[]
 
-XPilot's talk macros (`keySendMsg1` to `keySendMsg20`), ID mode, the message and item toggles, pointer
+kbd:[Keypad 8] (`keyToggleOwnedItems`) switches the HUD's list of your items between always shown and
+shown only for a moment after a count changes (`showItems`), and kbd:[Keypad 9] (`keyToggleMessages`)
+hides or shows the messages. XPilot's talk macros (`keySendMsg1` to `keySendMsg20`), ID mode, pointer
 control, recording and printing messages are not in JXPilot.
 
 [[key-bindings]]
@@ -273,8 +275,10 @@ when `playersOnRadar` is on, and other objects per the `...OnRadar` server optio
 also marks the next checkpoint.
 Scoreboard (left, under the radar):: Players with team, score and name. Your own line is marked.
 HUD (around your ship):: Dashed HUD lines, your fuel gauge and fuel meter, the items you carry with
-their counts, the player you have locked on (name and distance), time left in the round, weapon
-modifiers and an "Autopilot" note when it is on.
+their counts, the player you have locked on (name, and distance when the server sends one), time left
+in the round, weapon modifiers and an "Autopilot" note when it is on. The item list is always shown
+with `showItems` (the default); without it an item shows for `showItemsTime` seconds after its count
+changes. The refuel, repair and tank keys show your fuel on the HUD for 3 seconds.
 Messages (bottom left):: Game events ("pilot04 crashed into a wall.") and chat, which fade after a
 while. Crash messages say what you hit: a wall, a target, a treasure, a cannon, the edge of the world
 or another ship.
@@ -566,7 +570,7 @@ waiting player sees the game through the locked player's eyes.
 Each *tank* item adds a fuel tank: more fuel capacity and quicker refuelling, but more weight.
 kbd:[E] and kbd:[W] choose the active tank (the one fuel is used from); kbd:[R] detaches the active
 tank (or the last extra tank). A detached tank looks like your ship, carries your name, thrusts away and
-draws heat seekers after it.
+draws heat seekers after it. It never passes race checkpoints.
 
 [[devices]]
 === Devices

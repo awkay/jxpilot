@@ -14,7 +14,7 @@
   docker run --rm --network none -e XPILOT_TRACE=1 -e XPILOT_SEED=N xpilot-ref:4.5.5 \
       timeout -s INT -k 5 SECONDS xpilots -map default -robots R -minRobots R -noQuit +reportToMetaServer \
       -rawMode -defaults /usr/local/lib/xpilot/defaults 2> cRsN.trace
-  #   R=4: N=1, 2, 10, 12 (600 s), N=7, 8 (1200 s)
+  #   R=4: N=1, 2, 10, 12, 15, 17, 19, 21, 23, 25, 27, 29 (600 s), N=7, 8 (1200 s)
   #   R=8: N=3, 9, 10, 12, 14 (600 s), N=4, 6 (1200 s)
   java -cp server/target/test-classes:server/target/classes:common/target/classes \
       com.fulcrologic.jxpilot.server.robot.RobotStats maps/default.xp 12 TRACE...
@@ -22,7 +22,9 @@
 
   (`tools/xpilot-ref/server.sh --map default --robots R --seconds S --trace --seed N` runs the same
   command.) Seeds N and N|1 play the same game (the server's Mersenne Twister seeding ORs in bit 0), so each
-  file uses distinct N|1 only (runs 2026-10-23 and, for N >= 9, 2026-10-24).
+  file uses distinct N|1 only (runs 2026-10-23 and, for N >= 9, 2026-10-24; the 4-robot seeds 15-29 were added
+on 2026-10-24, because C's stuckThrustFraction rested on two stuck runs, both at the fuel station; they were
+recorded with the `xpilot-ref:4.5.5-sb2c` image, whose later patches are inert without their variables).
 - `c-default-4robots-noitems.properties`, `c-default-8robots-noitems.properties`: the same with
   `-itemProbMult 0` added (no items in the world), 600 s each: R=4: N=1, 2, 7, 8, 10; R=8: N=3, 4, 6, 9, 10.
   Recorded 2026-10-23.
@@ -40,9 +42,9 @@ ways Java's do: resting on a floor in an evade mode with the turn blocked by the
 check takes the gravity direction as the travel direction below 0.2 px/frame and sees the floor), or thrusting
 into a wall or slope in refuel, idle or climb mode with the turn blocked. Without items both sides spend the same
 share of time stuck, mostly in the first way (stuckThrustFraction 0.25/0.05 in C, 0.32/0.24 in Java). With
-items, C's long stuck runs are mostly the second way; they come from few episodes (2 of the 4 four-robot runs,
-both at the fuel station at 36,37), and Java's stuck runs thrust less (0.29/0.45 against 0.91/0.73). That is
-within the test's tolerance, because C has so few stuck runs. The harvest share and the thrust share of moving
+items, C's first six four-robot runs had only two stuck runs, both thrusting at the fuel station at 36,37
+(stuckThrustFraction 0.91); eight more runs show both ways in C too (0.00 to 0.56 per run), and the 14-run mean
+is the baseline. The harvest share and the thrust share of moving
 frames only matched C once the robot kept C's `Robot_default_play_check_objects` index mix-ups
 (robotdef.c:2089-2170; see `DefaultRobot.checkObjects`): the harvest target is the first object with the found
 item's owner, not the item itself, and the danger the evade check looks at is `Obj[cell-list position]`.

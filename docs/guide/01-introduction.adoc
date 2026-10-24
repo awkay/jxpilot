@@ -89,7 +89,8 @@ C server (<<03-playing.adoc#items,Items and weapons>>).
 |Java server: game modes
 |Works
 |Ball games and treasures (<<03-playing.adoc#ball-games,Ball games>>), targets, races, asteroids,
-temporary wormholes and `gameDuration`. Checked against 4 more recorded reference games of the C server.
+temporary wormholes and `gameDuration`. Checked against 15 recorded reference games of the C server,
+replayed with the C server's own random numbers.
 
 |Java server: commands and alliances
 |Works
@@ -97,9 +98,12 @@ temporary wormholes and `gameDuration`. Checked against 4 more recorded referenc
 alliances, custom ship shapes, the login queue and the message of the day
 (<<03-playing.adoc#commands,Commands>>, <<04-running-a-server.adoc#operators,Operator commands>>).
 
-|Temporary wormholes in the client
+|Client options
 |In progress
-|The client does not yet draw temporary (hyperjump) wormholes.
+|Every XPilot client resource is accepted in `~/.xpilotrc` or on the command line (`--RESOURCE VALUE`).
+`name`, `team` and the HUD, item and message options take effect
+(<<07-client-reference.adoc#client-resources,Client resources>>). XPilot's settings panel and its
+font resources are not built yet.
 
 |Map viewer
 |Works

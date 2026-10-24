@@ -215,7 +215,7 @@ class PauseAndLifecycleTest {
             w.frames = 64;
             s.ships.update(p);
             assertAll(
-                () -> assertEquals(-0.02, p.score, 1e-12, "0.01 per frame"),
+                () -> assertEquals(-0.02f, p.score, 1e-12, "0.01 per frame"),
                 () -> assertFalse(dirty63, "not reported at frame 63"),
                 () -> assertTrue(p.scoreDirty, "reported at frame 64 (C frame_loops & 63)"),
                 () -> assertEquals(Msg.Score.STATUS_DEAD | Msg.Score.STATUS_PAUSED, Simulation.scoreStatus(p),
@@ -448,6 +448,24 @@ class PauseAndLifecycleTest {
                 () -> assertEquals(15.0, a.score, "the remaining member holds the rest"),
                 () -> assertEquals(1, w.teamMembers[1], "one member left"));
         }
+
+        @Test
+        @DisplayName("teamShareScore: C re-shares before the leaver leaves its place, missing the last player in order")
+        void teamShareOrder() {
+            Simulation s = TestWorlds.sim(C_FRAMES + "teamPlay: yes\nteamShareScore: yes\n", "xxxxxxxxx",
+                "x 1 1 1 x", "xxxxxxxxx");
+            World w = s.world;
+            Player a = TestWorlds.join(s, "a", 1);
+            Player b = TestWorlds.join(s, "b", 1);
+            Player c = TestWorlds.join(s, "c", 1);
+            s.scoring.teamScore(1, 30);
+            a.score = 15;
+            s.ships.leave(a);
+            assertAll(
+                () -> assertEquals(15.0, w.teamScore[1], "30 - a's 15"),
+                () -> assertEquals(7.5, b.score, "b, inside C's shortened loop, gets the new share"),
+                () -> assertEquals(10.0, c.score, "c, last in the order, keeps its old share (player.c:1765-1773)"));
+        }
     }
 
     @Nested
@@ -545,19 +563,31 @@ class PauseAndLifecycleTest {
         }
 
         @Test
-        @DisplayName("S10: in team play the limited-lives check runs after the team is chosen (team mates' deaths don't count)")
+        @DisplayName("in team play the limited-lives check uses the slot's stale team, as C (player.c:505-521)")
         void teamTooLate() {
             Simulation s = TestWorlds.sim(C_FRAMES + "teamPlay: yes\nlimitedLives: yes\nworldLives: 3\n",
-                "xxxxxxxxx", "x 1 1 2 x", "xxxxxxxxx");
+                "xxxxxxxxxxxxx", "x 1 1 1 1 2 x", "xxxxxxxxxxxxx");
             Player a = TestWorlds.join(s, "a", 1);
             a.life = 2;
+            Player gone = TestWorlds.join(s, "gone", 1);
+            s.ships.leave(gone);
             Player mate = TestWorlds.join(s, "mate", 1);
+            Player mate2 = TestWorlds.join(s, "mate2", 1);
             Player foe = TestWorlds.join(s, "foe", 2);
+            Simulation z = TestWorlds.sim(C_FRAMES + "teamPlay: yes\nlimitedLives: yes\nworldLives: 3\n"
+                + "reserveRobotTeam: no\n", "xxxxxxx", "x 0 1 x", "xxxxxxx");
+            Player zero = TestWorlds.join(z, "zero", 0);
+            zero.life = 2;
+            Player fresh = TestWorlds.join(z, "fresh", 1);
             assertAll(
-                () -> assertEquals(3, mate.life, "a team mate lost the life: the joiner plays"),
+                () -> assertEquals(3, mate.life, "the slot a team-1 player left: stale team 1, the joiner plays"),
                 () -> assertEquals(' ', mate.mychar, "not waiting"),
-                () -> assertEquals('W', foe.mychar, "for the other team it is too late"),
-                () -> assertEquals(Const.TEAM_NOT_SET != foe.team, true, "(foe has a team)"));
+                () -> assertEquals('W', mate2.mychar, "a never-used slot (stale team 0): too late even for a mate"),
+                () -> assertEquals('W', foe.mychar, "and for the other team"),
+                () -> assertEquals(1, mate2.team, "(mate2 is on team 1)"),
+                () -> assertEquals(3, fresh.life, "stale team 0 matches a team-0 player who lost a life: plays"),
+                () -> assertEquals(1, fresh.team, "(though fresh is on team 1)"),
+            () -> assertEquals(0, zero.team, "(zero is on team 0)"));
         }
     }
 }

@@ -235,12 +235,23 @@ public final class ObjectPainter {
     // ------------------------------------------------------------------ dashed connectors
 
     /**
-     * Refuel line or transporter beam (C {@code Gui_paint_refuel}, {@code Gui_paint_transporter}):
+     * Refuel line (C {@code Gui_paint_refuel}; a transporter beam without a dash reset, see {@link #transporter}):
      * white, scaled {8, 4} dashes at the (scaled) ship dash offset, which crawls with {@code loops}.
      */
     public void dashedLink(VertexBatch b, float x1, float y1, float x2, float y2, long loops, double zoom) {
         Dashes.segment(b, x1, y1, x2, y2, WinScale.of(PaintConfig.DASH_ON, zoom), WinScale.of(PaintConfig.DASH_OFF, zoom),
             ShipPainter.dashOffset(loops, zoom), (float) (1 / zoom), palette.color(Palette.WHITE));
+    }
+
+    /**
+     * Transporter beam (C {@code Gui_paint_transporter}): white, scaled {8, 4} dashes; at the crawling ship dash
+     * offset like {@link #dashedLink}, or from offset 0 when a connector drawn earlier in the frame reset it
+     * ({@code dashReset}, C's {@code XSetDashes(gc, 0, ...)} in {@code Gui_paint_connector}).
+     */
+    public void transporter(VertexBatch b, float x1, float y1, float x2, float y2, long loops, double zoom,
+                            boolean dashReset) {
+        Dashes.segment(b, x1, y1, x2, y2, WinScale.of(PaintConfig.DASH_ON, zoom), WinScale.of(PaintConfig.DASH_OFF, zoom),
+            dashReset ? 0 : ShipPainter.dashOffset(loops, zoom), (float) (1 / zoom), palette.color(Palette.WHITE));
     }
 
     /**

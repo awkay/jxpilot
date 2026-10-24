@@ -1,0 +1,29 @@
+# JXPilot golden-trace map (GPL-2.0-or-later, see LICENSE): a treasure at the
+# bottom of a one-block shaft beside the base (as ball-shaft), for towing from
+# its treasure, with a connector that snaps at 5% stretch.
+mapName: ball-snap
+mapAuthor: JXPilot
+mapWidth: 12
+mapHeight: 12
+teamPlay: no
+edgeWrap: no
+maxBallConnectorRatio: 0.05
+# the C server also reads lib/defaults: pin what it sets there
+gravity: -0.25
+maxItemDensity: 0
+movingItemProb: 0
+framesPerSecond: 14
+mapData: \multiline: EndOfMapdata
+xxxxxxxxxxxx
+x          x
+x          x
+x          x
+x          x
+x          x
+x          x
+x    _     x
+xxxxxx xxxxx
+xxxxxx xxxxx
+xxxxxx*xxxxx
+xxxxxxxxxxxx
+EndOfMapdata

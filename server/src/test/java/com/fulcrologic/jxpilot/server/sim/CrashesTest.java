@@ -181,7 +181,7 @@ class CrashesTest {
             Player b = ready(s, "B", 0, 100, 100);
             b.score = 100;
             Player c = ready(s, "C", 0, 100, 100);
-            c.score = 100.5;
+            c.score = 100.5f;
             s.crashes.cannonDies(0, a.id);
             s.world.cannonDeadTime[0] = 0;
             s.crashes.cannonDies(0, b.id);
@@ -284,7 +284,7 @@ class CrashesTest {
             s.crashes.playerCrashed(a, ms(CRASH_WALL), 2);
             assertAll(
                 () -> assertTrue((a.status & Obj.KILLED) != 0, "the ship is killed"),
-                () -> assertEquals(-10.0 * 1024 / (2000 + 1024), a.score, EPS, "loses Rate(2000, 0)"),
+                () -> assertEquals(-10.0f * 1024 / (2000 + 1024), a.score, EPS, "loses Rate(2000, 0)"),
                 () -> assertEquals(List.of("2:" + a.id + ":-1"), gameEvents(w, seq), "emits CRASH"));
         }
 
@@ -349,7 +349,7 @@ class CrashesTest {
             s.crashes.playerCrashed(a, m, 0);
             boolean deadCannon = dead(w);
             int st = a.status;
-            double sc = a.score;
+            float sc = a.score;
             List<String> msgs = messages(w, seq);
             w.cannonDeadTime[0] = 0;
             a.used = Has.SHIELD;
@@ -387,11 +387,11 @@ class CrashesTest {
             assertAll(
                 () -> assertEquals(List.of("A crashed against a wall with help from B and C."), messages(w, seq),
                     "names the shovers in record order"),
-                () -> assertEquals(100 + 2 * CollisionsTest.rate(100, 0) * 0.5 / 3, b.score, EPS,
+                () -> assertEquals(100 + 2 * CollisionsTest.rate(100, 0) * 0.5f / 3, b.score, EPS,
                     "B gets 2/3 of Rate(B, A) * shoveKillScoreMult"),
-                () -> assertEquals(40 + CollisionsTest.rate(40, 0) * 0.5 / 3, c.score, EPS,
+                () -> assertEquals(40 + CollisionsTest.rate(40, 0) * 0.5f / 3, c.score, EPS,
                     "C gets 1/3 of Rate(C, A) * shoveKillScoreMult"),
-                () -> assertEquals(-CollisionsTest.rate(80, 0) * 0.5, a.score, EPS,
+                () -> assertEquals(-CollisionsTest.rate(80, 0) * 0.5f, a.score, EPS,
                     "A loses Rate(average pusher score, A) * shoveKillScoreMult"),
                 () -> assertEquals(1, c.kills, "the last shover gets the kill"),
                 () -> assertEquals(0, b.kills, "the others do not"),

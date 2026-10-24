@@ -101,13 +101,13 @@ public final class Rounds {
     private final int[] bestPlayers;
     private final int[] teamState = new int[Const.MAX_TEAMS];
     private final boolean[] teamWin = new boolean[Const.MAX_TEAMS];
-    private final double[] teamScoreSum = new double[Const.MAX_TEAMS];
+    private final float[] teamScoreSum = new float[Const.MAX_TEAMS];
     private final int[] teamScoreInt = new int[Const.MAX_TEAMS];
     private final StringBuilder reason = new StringBuilder(Rounds.MSG_LEN);
     private final StringBuilder names = new StringBuilder(Rounds.MSG_LEN);
     private int numBest;
-    private double bestRatio;
-    private double averageScore;
+    private float bestRatio;
+    private float averageScore;
 
     private static final int TEAM_EMPTY = 0;
     private static final int TEAM_DEAD = 1;
@@ -232,7 +232,7 @@ public final class Rounds {
             int teamsWithTreasure = 0;
             int maxDestroyed = 0;
             int maxLeft = 0;
-            double maxScore = 0;
+            float maxScore = 0;
             for (int i = 0; i < Const.MAX_TEAMS; i++) {
                 teamScoreSum[i] = 0;
                 if (teamState[i] != TEAM_ALIVE) {
@@ -374,7 +374,7 @@ public final class Rounds {
     void endOfRoundValues() {
         averageScore = 0;
         numBest = 0;
-        bestRatio = -1.0;
+        bestRatio = -1.0f;
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
             if (pl.tank || ((pl.status & Obj.PAUSE) != 0 && pl.count <= 0)) {
@@ -412,14 +412,14 @@ public final class Rounds {
             Player bp = w.playerAt(bestPlayers[0]);
             message().append(bp.name).append(T_IS_THE_DEADLIEST_PLAYER_WITH).append(bp.kills)
                 .append('/').append(bp.deaths).append('.');
-            double points = bestRatio * Scoring.rate(bp.score, averageScore);
+            float points = bestRatio * Scoring.rate(bp.score, averageScore);
             sim.scoring.score(bp, points, bp.bx, bp.by, T_DEADLIEST);
         } else {
             StringBuilder msg = names;
             msg.setLength(0);
             for (int i = 0; i < numBest; i++) {
                 Player bp = w.playerAt(bestPlayers[i]);
-                float ratio = (float) Scoring.rate(bp.score, averageScore);
+                float ratio = Scoring.rate(bp.score, averageScore);
                 float score = (ratio + numBest) / numBest;
                 if (msg.length() > 0) {
                     msg.append(i == numBest - 1 ? T_AND : T_PUNCT);
@@ -429,7 +429,7 @@ public final class Rounds {
                     msg.setLength(0);
                 }
                 msg.append(bp.name);
-                double points = (int) (bestRatio * score);
+                float points = (int) (bestRatio * score);
                 sim.scoring.score(bp, points, bp.bx, bp.by, T_DEADLY);
             }
             if (msg.length() + 64 >= MSG_LEN) {
@@ -446,7 +446,7 @@ public final class Rounds {
     /** C {@code Give_individual_bonus}: kills/(deaths+1) * Rate(score, average) points ("[Winner]"). */
     void individualBonus(Player pl) {
         float ratio = (float) pl.kills / (pl.deaths + 1);
-        double points = ratio * Scoring.rate(pl.score, averageScore);
+        float points = ratio * Scoring.rate(pl.score, averageScore);
         sim.scoring.score(pl, points, pl.bx, pl.by, T_WINNER);
     }
 
@@ -535,15 +535,18 @@ public final class Rounds {
      * objects move.
      * <p>
      * BEHAVIOR: the first frame with a human in the game starts the timer once: with gameDuration &gt; 0 the
-     * game ends at wall-clock second (time_t)(gameDuration * 60) + now ({@link World#gameOverTime}).
+     * game ends at wall-clock second (time_t)(gameDuration * 60) + now ({@link World#gameOverTime}), and the
+     * result is true (C then logs "Server will stop in N minutes.").
      */
-    public void startGameDuration(boolean humans) {
+    public boolean startGameDuration(boolean humans) {
         if (w.noPlayersEnteredYet && humans) {
             w.noPlayersEnteredYet = false;
             if (w.gameDuration > 0) {
                 w.gameOverTime = (long) (w.gameDuration * 60) + w.wallSeconds.getAsLong();
+                return true;
             }
         }
+        return false;
     }
 
     /**

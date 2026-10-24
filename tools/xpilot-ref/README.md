@@ -205,11 +205,16 @@ Each tick then also prints
 
 ```
 XPMOBJ loop frame ptr type cx cy prevx prevy vx vy life id team status mass extra...
-XPPL2  loop frame id used have ball check round time best_lap last_lap last_lap_time mychar
+XPPL2  loop frame id used have ball check round time best_lap last_lap last_lap_time mychar score
+XPMSG  loop frame to text    (every game message, Set_message/Set_player_message; to: * or the player id)
 XPTRS  loop frame index have destroyed
 XPTGT  loop frame index damage dead_time
 XPTEAM loop frame team treasures_left treasures_destroyed score
 ```
+
+With `--rand` (patch 0006) the trace also carries every random draw and keyboard update, so the game-mode
+traces replay with C's own draws and keys (`compact-rand.sh`, with `KEEP_THRUST=1` to keep the thrust
+exhaust's draws).
 
 for every ball, asteroid and wreckage object (balls: `owner treasure length`; asteroids and wreckage:
 `size rotation turnspeed info`), every player, treasure, target and team with treasures. `ptr` is the C
@@ -339,7 +344,8 @@ GPL-2.0-or-later, and why.
 5. `0005-server-mode-trace.patch`, in `src/server/server.c` only, on top of
    0004: adds `Trace_modes()`, called right after `Trace_objects()`, which prints the
    XPMOBJ/XPPL2/XPTRS/XPTGT/XPTEAM lines when `XPILOT_TRACE_MODES` is set
-   (`trace.sh --modes`). Inert otherwise.
+   (`trace.sh --modes`), and in `src/server/frame.c` the XPMSG game message trace. Inert
+   otherwise.
 6. `0006-server-random-trace.patch`, on top of 0005, in
    `src/common/commonproto.h`, `src/server/proto.h`, `server.c`, `play.c`
    and `netserver.c`: macros at the end of `proto.h` send every server

@@ -299,12 +299,30 @@ class ClientFrameTest {
             cf.key(GLFW_KEY_MINUS, GLFW_PRESS, 0, T0);
             boolean sound1 = cf.takeToggleSound();
             boolean sound2 = cf.takeToggleSound();
+            boolean itemsBefore = cf.extras().showItems;
+            cf.key(GLFW_KEY_KP_8, GLFW_PRESS, 0, T0);
+            boolean itemsToggled = cf.extras().showItems;
+            boolean messagesBefore = cf.hud().showMessages;
+            cf.key(GLFW_KEY_KP_9, GLFW_PRESS, 0, T0);
+            boolean messagesToggled = cf.hud().showMessages;
+            double fuelBefore = cf.hud().fuelCount();
+            cf.key(GLFW_KEY_E, GLFW_PRESS, 0, T0);
+            double fuelShown = cf.hud().fuelCount();
             cf.key(GLFW_KEY_ESCAPE, GLFW_PRESS, 0, T0);
             boolean afterEscape = cf.quitRequested();
             cf.input().bindings().bind(com.fulcrologic.jxpilot.client.game.input.ClientAction.QUIT, "F11");
             cf.key(GLFW_KEY_F11, GLFW_PRESS, 0, T0);
             assertAll(
                 () -> assertFalse(afterEscape, "Escape does not quit"),
+                () -> assertTrue(itemsBefore, "showItems on by default (C)"),
+                () -> assertFalse(itemsToggled, "the owned-items key toggles showItems"),
+                () -> assertFalse(cf.options().flag(com.fulcrologic.jxpilot.client.game.options.ClientOption.SHOW_ITEMS),
+                    "through the showItems option (CONFIG and Save see it)"),
+                () -> assertTrue(messagesBefore, "showMessages on by default (C)"),
+                () -> assertFalse(messagesToggled, "the messages key toggles showMessages"),
+                () -> assertEquals(0.0, fuelBefore, "no fuel notification at start"),
+                () -> assertEquals(3 * cf.game().gameFps(), fuelShown, 1e-9,
+                    "a tank key shows the fuel for FUEL_NOTIFY (3 s of frames)"),
                 () -> assertFalse(before, "no quit at start"),
                 () -> assertTrue(swap1, "swap reported"),
                 () -> assertFalse(swap2, "only once"),

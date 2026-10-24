@@ -178,6 +178,7 @@ class SnapshotModesTest {
         v.ball = ball;
         int ast = s.asteroids.make(15 * 35, 3 * 35, 3, 0, 0f);
         w.objects.rotation[ast] = 32;
+        w.objects.info[ast] = 0x35;
         s.wreckage.make(9 * 35, 3 * 35, 0f, 0f, -1, 0, 5f, 5f, 5f, 0, 6, 1, 0, 0, 0f, 0f, 5, 5);
         Out o = build(s, v, false);
         int bx = (int) Math.round(4.5 * 35);
@@ -186,11 +187,40 @@ class SnapshotModesTest {
                 "the treasure ball: handle, team of its treasure (1), connected to H"),
             () -> assertEquals(List.of(bx + ",80-350,105:" + Records.Connector.KIND_BALL), o.connectors(),
                 "V reaches for it: a connector from the ball to V"),
-            () -> assertEquals(List.of("525,105:3:32"), o.asteroids(), "asteroid with size and rotation"),
+            () -> assertEquals(List.of("525,105:" + (5 << 4 | 3) + ":32"), o.asteroids(),
+                "asteroid with C's type_size (outline type info & 15 above size 3) and rotation"),
             () -> assertEquals(1, o.wrecks().size(), "one wreckage piece"),
             () -> assertTrue(o.wrecks().get(0).startsWith("315,105:"), "at its place"),
             () -> assertEquals(List.of(Records.ShipFlags.HAS_BALL | Records.ShipFlags.REPAIRING), o.shipFlags(),
                 "H carries a ball and repairs"));
+    }
+
+    @Test
+    @DisplayName("reaching connectors only for playing ships in view: not paused, not game over (frame.c:1009-1024, 1078-1085)")
+    void reachingConnectorRules() {
+        Simulation s = TestWorlds.sim("teamPlay: yes\ngravity: 0\n", ROWS);
+        World w = s.world;
+        Player v = TestWorlds.join(s, "V", 1);
+        v.initPixels(10 * 35, 3 * 35);
+        int ball = 0;
+        v.ball = ball;
+        int playing = build(s, v, false).connectors().size();
+        v.status |= Obj.PAUSE;
+        int paused = build(s, v, false).connectors().size();
+        v.status &= ~Obj.PAUSE;
+        v.status |= Obj.GAME_OVER;
+        int over = build(s, v, false).connectors().size();
+        v.status &= ~Obj.GAME_OVER;
+        Player far = TestWorlds.join(s, "F", 2);
+        far.initPixels(55 * 35, 3 * 35);
+        far.ball = ball;
+        v.ball = -1;
+        int farAway = build(s, v, false).connectors().size();
+        assertAll(
+            () -> assertEquals(1, playing, "a playing ship reaching: one connector"),
+            () -> assertEquals(0, paused, "paused: none"),
+            () -> assertEquals(0, over, "game over: none"),
+            () -> assertEquals(0, farAway, "a ship out of view: none, though the ball is in view"));
     }
 
     @Test
@@ -212,12 +242,20 @@ class SnapshotModesTest {
         Out over = build(s, v, false);
         w.shutdownServer = -1;
         Out stopped = build(s, v, false);
+        w.gameDuration = 1;
+        w.oldTimeLeft = 1;
+        Out lastSecond = build(s, v, false);
+        w.oldTimeLeft = 0;
+        w.roundTime = 0;
+        Out roundZero = build(s, v, false);
         assertAll(
             () -> assertEquals(List.of("0:0:10"), before.timers(), "not started: the round timer"),
             () -> assertEquals(List.of("0:0:60"), running.timers(), "60 s left on the wall clock"),
             () -> assertEquals(List.of("0:0:-1 shutdown 420/1000"), over.timers(),
                 "game over: 30 * 14 frames to shutdown, against C's ShutdownDelay 1000"),
-            () -> assertEquals(List.of("0:0:-1"), stopped.timers(), "no countdown: the all-clear record"));
+            () -> assertEquals(List.of("0:0:-1"), stopped.timers(), "no countdown: the all-clear record"),
+            () -> assertEquals(List.of("0:0:1"), lastSecond.timers(), "1 s left still shows"),
+            () -> assertEquals(List.of("0:0:0"), roundZero.timers(), "timer at 0 left: the round time, 0 s"));
     }
 
     @Test
@@ -259,12 +297,82 @@ class SnapshotModesTest {
     }
 
     @Test
-    @DisplayName("every temporary wormhole is sent with its block and type")
+    @DisplayName("temporary wormholes (frame.c:611-636): only IN ends in view, and only with wormholeVisible")
     void tempWormholes() {
         Simulation s = TestWorlds.sim("teamPlay: yes\ngravity: 0\nwormTime: 5\n", ROWS);
         World w = s.world;
         Player v = TestWorlds.join(s, "V", 1);
-        w.worms.addTemp(20, 3, 50, 2);
+        v.initPixels(20 * 35, 3 * 35);
+        w.worms.addTemp(22, 3, 24, 3);
+        w.worms.addTemp(55, 3, 50, 2);
+        List<String> got = temps(w, v);
+        Simulation off = TestWorlds.sim("teamPlay: yes\ngravity: 0\nwormTime: 5\nwormholeVisible: no\n", ROWS);
+        Player q = TestWorlds.join(off, "Q", 1);
+        q.initPixels(20 * 35, 3 * 35);
+        off.world.worms.addTemp(22, 3, 24, 3);
+        assertAll(
+            () -> assertEquals(List.of("22,3:1"), got, "the near IN end; not its OUT end, not the far pair"),
+            () -> assertEquals(List.of(), temps(off.world, q), "wormholeVisible off: none"));
+    }
+
+    @Test
+    @DisplayName("radar: exactly at the sensor range is shown, a pixel beyond is not; each option alone shows only its kind")
+    void radarEdges() {
+        Simulation s = TestWorlds.sim("teamPlay: yes\ngravity: 0\ntreasuresOnRadar: yes\nasteroidsOnRadar: no\n", ROWS);
+        World w = s.world;
+        Player v = TestWorlds.join(s, "V", 1);
+        int ball = -1;
+        for (int k = 0; k < w.objects.count(); k++) {
+            if (w.objects.type[w.objects.active[k]] == Obj.BALL) {
+                ball = w.objects.active[k];
+                break;
+            }
+        }
+        v.initPixels(w.objects.px[ball] + 300, w.objects.py[ball]);
+        v.sensorRange = 300;
+        s.asteroids.make(30 * 35, 3 * 35, 1, 0, 0f);
+        long atRange = build(s, v, true).radar().stream().filter(f -> f.equals(String.valueOf(Records.Radar.FLAG_BALL))).count();
+        v.sensorRange = 299;
+        long beyond = build(s, v, true).radar().stream().filter(f -> f.equals(String.valueOf(Records.Radar.FLAG_BALL))).count();
+        v.sensorRange = 100_000;
+        Out ballsOnly = build(s, v, true);
+        Simulation a = TestWorlds.sim("teamPlay: yes\ngravity: 0\ntreasuresOnRadar: no\nasteroidsOnRadar: yes\n", ROWS);
+        Player q = TestWorlds.join(a, "Q", 1);
+        q.sensorRange = 100_000;
+        a.asteroids.make(30 * 35, 3 * 35, 1, 0, 0f);
+        Out astOnly = build(a, q, true);
+        assertAll(
+            () -> assertEquals(1, atRange, "at the range: shown"),
+            () -> assertEquals(0, beyond, "one pixel short of it: not"),
+            () -> assertTrue(ballsOnly.radar().stream().noneMatch(f -> f.equals(String.valueOf(Records.Radar.FLAG_ASTEROID))),
+                "treasuresOnRadar alone: no asteroid blips"),
+            () -> assertTrue(astOnly.radar().stream().anyMatch(f -> f.equals(String.valueOf(Records.Radar.FLAG_ASTEROID))),
+                "asteroidsOnRadar alone: asteroid blips"),
+            () -> assertTrue(astOnly.radar().stream().noneMatch(f -> f.equals(String.valueOf(Records.Radar.FLAG_BALL))),
+                "and no ball blips"));
+    }
+
+    @Test
+    @DisplayName("temporary wormholes are culled by their block centre, on both axes")
+    void tempWormholeCulling() {
+        String[] rows = new String[80];
+        java.util.Arrays.fill(rows, " ".repeat(80));
+        rows[79] = " 1" + " ".repeat(78);
+        Simulation s = TestWorlds.sim("teamPlay: yes\ngravity: 0\nwormTime: 5\n", rows);
+        World w = s.world;
+        Player v = TestWorlds.join(s, "V", 1);
+        v.initPixels(40 * 35, 40 * 35);
+        double half = SnapshotBuilder.DEFAULT_VIEW_HALF;
+        // the block whose centre is 10 px past the right view edge (its left half is inside)
+        int bxOut = (int) Math.floor((40 * 35 + half + 10) / 35.0 - 0.5);
+        int byOut = (int) Math.floor((40 * 35 + half + 10) / 35.0 - 0.5);
+        w.worms.addTemp(bxOut, 40, 2, 2);
+        w.worms.addTemp(40, byOut, 3, 3);
+        w.worms.addTemp(41, 41, 4, 4);
+        assertEquals(List.of("41,41:1"), temps(w, v), "only the one whose centre is in view");
+    }
+
+    List<String> temps(World w, Player v) {
         for (int i = 0; i < parts.length; i++) {
             parts[i] = ByteBuffer.allocate(1200);
         }
@@ -286,6 +394,6 @@ class SnapshotModesTest {
                 }
             }
         }
-        assertEquals(List.of("20,3:1", "50,2:2"), got, "IN (type 1) and OUT (type 2), even out of view");
+        return got;
     }
 }

@@ -174,7 +174,9 @@ public final class Simulation {
         cannons.update();
         targets.update();
         for (int k = 0; k < w.numPlayers; k++) {
-            ships.update(w.playerAt(k));
+            if (ships.update(w.playerAt(k))) {
+                break; // C's break in the warp code (update.c:1073)
+            }
         }
         countDownWormholes();
         devices.afterMove();

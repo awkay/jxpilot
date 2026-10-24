@@ -90,6 +90,12 @@ over a VPN.
 |Player name, 1 to 16 characters. The default keeps the letters, digits, `-`, `_` and `.` of your login
 name, with a capital first letter (`Pilot` if nothing is left).
 
+|`--user NAME`, `--host NAME`
+|your login name, this computer's name
+|The real and host names sent to JXPilot servers (C's `user` and `host` resources; also settable in
+`~/.xpilotrc`). The server shows the real name in its welcome line and log and matches it in its
+player-name commands; it keeps at most 15 characters of it and 63 of the host name.
+
 |`--team T`
 |none
 |Team 0 to 9 to join in team play. Without it the server picks one.
@@ -157,6 +163,30 @@ name, with a capital first letter (`Pilot` if nothing is left).
 |`jx://host[:port]` |A JXPilot server, whatever `--protocol` says.
 |`xp://host[:port]` |An original XPilot 4.5.5 server (<<xpilot-protocol>>).
 |===
+
+[[client-resources]]
+=== Client resources
+
+The client knows all of the XPilot client's resources: the key bindings and control settings
+(<<03-playing.adoc#key-bindings,Changing the keys>>) and 154 others. Set them in `~/.xpilotrc` (or the
+`--keys` file) as `xpilot.RESOURCE: VALUE`, or on the command line as `--RESOURCE VALUE` (XPilot's
+`-RESOURCE VALUE` works too), for example `--showMineName no`. The command line wins over the file.
+`--name`, `--team`, `--size`, `--scale-factor` and `--alt-scale-factor` set the `name`, `team`,
+`geometry`, `scaleFactor` and `altScaleFactor` resources. `join`, `noLocalMotd`,
+`text`, `list`, `mono` and `erase` take no value on the command line.
+
+These take effect:
+
+* `name` and `team`;
+* the HUD: `showHUD`, `verticalHUDLine`, `horizontalHUDLine`, `speedFactHUD`, `speedFactPTR`,
+  `fuelMeter`, `fuelGauge`, `fuelNotify`, `fuelWarning`, `fuelCritical`, `turnSpeedMeter`, `powerMeter`;
+* items and mines: `showItems`, `showItemsTime`, `showMineName`;
+* messages and scores: `showMessages`, `maxMessages`, `charsPerSecond`, `maxLinesInHistory`,
+  `showScoreDecimals`.
+
+The other resources are read and kept but change nothing yet, and the X11-only ones (`display`,
+`keyboard` and so on) never will. XPilot's settings panel, which changes these while you play, and its
+font resources are still being built.
 
 [[viewer-flags]]
 == Viewer flags (`--view-map`)

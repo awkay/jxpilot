@@ -112,6 +112,8 @@ public final class AppLauncher {
         ClientGame game = new ClientGame();
         String shape = ShipShapeResource.resolve(o.shape(), o.shipShapeFile(), keys.shipShape(), keys.shipShapeFile(),
             ShipShapeResource::readLatin1, System.err);
+        com.fulcrologic.jxpilot.client.xp.GameConnections.setUser(resource(keys, ClientOption.USER));
+        com.fulcrologic.jxpilot.client.xp.GameConnections.setHost(resource(keys, ClientOption.HOST));
         GameConnection conn = GameConnector.open(target, o.bind(), game, name(o, keys), team(o, keys), shape,
             o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime());
         new GameApp(o, game, conn, target.toString(), null, keys).saveTarget(rcFile(o,
@@ -137,6 +139,18 @@ public final class AppLauncher {
             return o.name();
         }
         return n.length() > AppOptions.MAX_NAME ? n.substring(0, AppOptions.MAX_NAME) : n;
+    }
+
+    /**
+     * The real or host name a launch sends (C {@code -user}, {@code -host}).
+     * <p>
+     * BEHAVIOR: the resource's trimmed text when the file or command line ({@code --user NAME}, {@code --host NAME})
+     * gave a non-blank one; else null, for the login name or the local host name.
+     */
+    static String resource(KeyConfig keys, ClientOption r) {
+        ClientOptions opts = keys.options();
+        String v = opts.given(r) ? opts.text(r).trim() : "";
+        return v.isEmpty() ? null : v;
     }
 
     /**

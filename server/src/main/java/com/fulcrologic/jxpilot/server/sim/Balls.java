@@ -379,9 +379,10 @@ public final class Balls implements Segment.TreasureHook, Ecm.BallDetacher {
         return false;
     }
 
-    /** C's "skip" test of Punish_team and Object_hits_target: tanks (none here), counted-out pause, waiting 0. */
+    /** C's "skip" test of Punish_team and Object_hits_target: tanks, counted-out pause, waiting with no score. */
     static boolean ignored(Player p) {
-        return ((p.status & Obj.PAUSE) != 0 && p.count <= 0)
+        return p.tank
+            || ((p.status & Obj.PAUSE) != 0 && p.count <= 0)
             || ((p.status & Obj.GAME_OVER) != 0 && p.mychar == 'W' && p.score == 0);
     }
 
@@ -444,8 +445,8 @@ public final class Balls implements Segment.TreasureHook, Ecm.BallDetacher {
             m.teamTreasuresDestroyed[ttTeam]++;
         }
         w.events.add(Events.GAME_EVENT, Msg.GameEvent.TREASURE_DESTROYED, pl.id, destroyed, 0f);
-        double sc = 3 * Scoring.rate(winScore, loseScore);
-        double por = (sc * loseMembers) / (2 * winMembers + 1);
+        float sc = 3 * Scoring.rate(winScore, loseScore);
+        float por = (sc * loseMembers) / (2 * winMembers + 1);
         for (int k = 0; k < w.numPlayers; k++) {
             Player p = w.playerAt(k);
             if (ignored(p)) {
@@ -515,7 +516,7 @@ public final class Balls implements Segment.TreasureHook, Ecm.BallDetacher {
                     pl.by, killer.name);
             } else {
                 killer.kills++;
-                double sc = Scoring.rate(killer.score, pl.score) * mult;
+                float sc = Scoring.rate(killer.score, pl.score) * mult;
                 w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, killer.id, pl.id, 0f);
                 sim.scoring.scorePlayers(killer, sc, pl.name, pl, -sc, killer.name);
             }

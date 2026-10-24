@@ -87,14 +87,10 @@ choices) differ, nothing else
 from the frame and the ship, so they are not sent; their push on other ships matches XPilot on
 average, not frame for frame
 |Gravity of a `gravityPoint` on a non-square wrapping map; objects exactly half a world apart; connecting
-to a ball that was just destroyed; a vanishing temporary wormhole cutting short every ship's warp |XPilot
-bugs |fixed
-|Temporary (hyperjump) wormholes |unlimited |at most 64 at a time
+to a ball that was just destroyed |XPilot bugs |fixed
 |`--map NAME` |a file in the current directory, then in the map directory (`MAPDIR`) |the 19 standard
 maps are built into the jars and a plain name means one of them first; a file of the same name in the
 current directory needs a path (`./default.xp`)
-|`gameDuration` |the server log says "Server will stop in N minutes." |no log line; the HUD shows the
-time left and, after the game, the shutdown countdown
 |`denyHosts` |only takes effect after an operator changes it during the game (an XPilot bug); IPv4; `:`
 also separates entries |applies from the start; IPv4 and IPv6, so `:` does not separate entries
 |`serverHost` |the address the contact socket binds |the bind selector when `--bind` is not given
@@ -108,6 +104,8 @@ got when they joined
 minutes
 |Option numbers |`inf` and `nan` are accepted |refused (the default at start-up, "invalid value" for
 `/set`)
+|`/get minVisibilityDistance`, `/get maxVisibilityDistance` |after the first use, the value in pixels
+the server computed from it |the configured value
 |Changing options over the network |an admin tool can list and change options through the contact port
 |not available; operators use `/get` and `/set` in the game
 |Password file |`LIBDIR/password` unless named otherwise; a missing file is skipped |read only when
@@ -128,7 +126,7 @@ optional `keyQuit` (unbound by default)
 |Extra keys |- |kbd:[-] mutes sound, kbd:[Alt]/kbd:[Option] also connects, kbd:[0] also self-destructs
 |Turn speed default |35 |40
 |Engine sound |a short sound every frame |a loop while you thrust
-|ID mode, message and item toggles, pointer control, recording |available |not supported
+|ID mode, pointer control, recording |available |not supported
 |Showing frames |each frame as it arrives |smooth motion at your screen's refresh rate: other ships about
 90 ms behind the latest frame, your own ship predicted forward from it
 |===

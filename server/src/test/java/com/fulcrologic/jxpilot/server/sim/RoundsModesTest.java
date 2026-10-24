@@ -101,7 +101,7 @@ class RoundsModesTest {
         Simulation points = two("maxRoundTime: 10\n");
         World pw = points.world;
         pw.roundTime = 0;
-        pw.playerAt(1).score = 7.5;
+        pw.playerAt(1).score = 7.5f;
         long from2 = pw.events.seq();
         points.rounds.computeGameStatus();
         Simulation draw = two("maxRoundTime: 10\n");

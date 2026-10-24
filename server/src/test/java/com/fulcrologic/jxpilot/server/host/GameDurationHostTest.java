@@ -53,6 +53,8 @@ class GameDurationHostTest {
         long[] now = {1000};
         w.wallSeconds = () -> now[0];
         SimGameHost h = new SimGameHost(s);
+        java.util.List<String> log = new java.util.ArrayList<>();
+        h.log = line -> log.add(line.toString());
         h.tick(1);
         long noHuman = w.gameOverTime;
         int id = enter(h, "Ann", 0);
@@ -76,6 +78,9 @@ class GameDurationHostTest {
         assertAll(
             () -> assertEquals(0, noHuman, "no human yet: no end time"),
             () -> assertEquals(1006, started, "the first human starts 6 s"),
+            () -> assertEquals(1, log.size(), "logged once"),
+            () -> assertTrue(log.get(0).matches("\\d\\d [A-Z][a-z]{2} \\d\\d:\\d\\d:\\d\\d Server will stop in 0.1 minutes."),
+                "C's line: " + log.get(0)),
             () -> assertEquals(30 * 60, countdown, "game over: 30 s of 60 fps frames"),
             () -> assertFalse(beforeEnd, "still counting after 1800 ticks"),
             () -> assertEquals(0, zero, "at 0"),
@@ -99,5 +104,22 @@ class GameDurationHostTest {
             () -> assertEquals(0, w.gameOverTime, "no end time without a human"),
             () -> assertTrue(w.noPlayersEnteredYet, "still waiting for one"),
             () -> assertEquals(30 * 60, w.shutdownServer, "game over on the first frame"));
+    }
+
+    @Test
+    @DisplayName("formatG is C's %g: 6 significant digits, no trailing zeros, exponent form outside 1e-4..1e6")
+    void formatG() {
+        assertAll(
+            () -> assertEquals("5", SimGameHost.formatG(5)),
+            () -> assertEquals("0.1", SimGameHost.formatG(0.1f), "a float 0.1 prints as 0.1"),
+            () -> assertEquals("1.5", SimGameHost.formatG(1.5)),
+            () -> assertEquals("123457", SimGameHost.formatG(123456.7)),
+            () -> assertEquals("1.23457e+06", SimGameHost.formatG(1234567)),
+            () -> assertEquals("0.0001", SimGameHost.formatG(0.0001)),
+            () -> assertEquals("1e-05", SimGameHost.formatG(0.00001)),
+            () -> assertEquals("100", SimGameHost.formatG(100)),
+            () -> assertEquals("1e+10", SimGameHost.formatG(1e10), "two exponent digits"),
+            () -> assertEquals("1.5e-10", SimGameHost.formatG(1.5e-10)),
+            () -> assertEquals("1e+09", SimGameHost.formatG(1e9), "one digit padded"));
     }
 }

@@ -36,6 +36,7 @@ import com.fulcrologic.jxpilot.client.game.input.InputState;
 import com.fulcrologic.jxpilot.client.game.input.KeyConfig;
 import com.fulcrologic.jxpilot.client.game.input.KeyFunctions;
 import com.fulcrologic.jxpilot.client.game.input.ClientAction;
+import com.fulcrologic.jxpilot.client.game.options.ClientOption;
 import com.fulcrologic.jxpilot.client.net.ConnectionState;
 import com.fulcrologic.jxpilot.client.paint.SceneData;
 import com.fulcrologic.jxpilot.client.xp.GameConnection;
@@ -154,7 +155,8 @@ public final class ClientFrame {
      * PLAYING frame a message names the key help key ("F1: keys"), unless keyHelp is unbound.
      * BEHAVIOR: lays out the key help overlay ({@link #helpHud()}), or the server MOTD panel while it is open (it opens
      * once, when the whole MOTD has arrived).
-     * BEHAVIOR: fills the scene, radar, view HUD, HUD extras (with the lose-item outline of the
+     * BEHAVIOR: fills the scene, radar, view HUD, HUD extras (item timers aged by {@code dt * gameFps} original
+     * frames, with the lose-item outline of the
      * {@link KeyRouter#loseSelection}, aged by dt) and the panel under the radar ({@code radarHeight} tall,
      * {@code panelW} wide): the button bar, then the score list window (not while CONFIG covers it), CONFIG and
      * the windows' overlays ({@link ClientUi}).
@@ -167,7 +169,7 @@ public final class ClientFrame {
                      int radarHeight) {
         double dt = started ? (nowNanos - lastNow) / 1e9 : 0;
         started = true;
-        liveOptions.apply(hud, game, extras, talk, input);
+        liveOptions.apply(hud, game, extras, talk, filler, input);
         lastNow = nowNanos;
         conn.update(nowNanos);
         game.frame(nowNanos, dt);
@@ -282,7 +284,9 @@ public final class ClientFrame {
      * BEHAVIOR: a finished chat line is sent with {@link GameConnection#sendChat}; QUIT sets
      * {@link #quitRequested()}; SWAP_SCALE sets {@link #takeSwapScale()}; TOGGLE_SOUND sets
      * {@link #takeToggleSound()}; SETTINGS sends the control settings ({@link GameConnection#sendSettings});
-     * SHOW_CONTROLS shows the power and turn speed meters; HELP closes an open MOTD panel, else toggles the key help.
+     * SHOW_CONTROLS shows the power and turn speed meters; HELP closes an open MOTD panel, else toggles the key help;
+     * TOGGLE_ITEMS toggles {@link HudExtras#showItems} (C {@code Key_press_show_items}); FUEL_NOTIFY shows the fuel
+     * ({@link Hud#notifyFuel}); TOGGLE_MESSAGES toggles {@link Hud#showMessages} (C {@code Key_press_show_messages}).
      */
     public void key(int key, int action, int mods, long nowNanos) {
         int ev = router.key(key, action, mods);
@@ -310,6 +314,20 @@ public final class ClientFrame {
         }
         if ((ev & KeyRouter.TOGGLE_SOUND) != 0) {
             toggleSound = true;
+        }
+        if ((ev & KeyRouter.TOGGLE_ITEMS) != 0) {
+            // C Key_press_toggle_owned_items flips the showItems instrument itself (CONFIG and Save see it)
+            liveOptions.options().setFlag(ClientOption.SHOW_ITEMS, !liveOptions.options().flag(ClientOption.SHOW_ITEMS));
+            liveOptions.apply(hud, game, extras, talk, filler, input);
+        }
+        if ((ev & KeyRouter.FUEL_NOTIFY) != 0) {
+            hud.notifyFuel(game.gameFps());
+        }
+        if ((ev & KeyRouter.TOGGLE_MESSAGES) != 0) {
+            // C Key_press_toggle_messages flips the showMessages instrument
+            liveOptions.options().setFlag(ClientOption.SHOW_MESSAGES,
+                !liveOptions.options().flag(ClientOption.SHOW_MESSAGES));
+            liveOptions.apply(hud, game, extras, talk, filler, input);
         }
     }
 
