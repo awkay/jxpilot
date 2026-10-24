@@ -120,7 +120,7 @@ Server → client:
 |---|---|---|
 | 1 | WELCOME | u16 playerId, u8 team, u8 simHz, u8 snapshotHz, u8 flags (1 teamPlay, 2 edgeWrap, 4 timing), f32 gameFps, u32 configLength, u32 configCompressedLength, u32 configCrc32, str8 serverName. *(Server S1 fix round: the server simulates at the map's framesPerSecond, so simHz = gameFps; one tick is one C frame.)* |
 | 2 | DATA_CHUNK | u32 offset, raw bytes (≤ 1024) to the end of the message |
-| 3 | PLAYER_JOIN | u16 id, u8 team, u8 flags (1 robot, 2 tank, 4 self, 8 paused), f32 power, u8 afterburners, str8 name, str16 shape (empty = default) |
+| 3 | PLAYER_JOIN | u16 id, u8 team, u8 flags (1 robot, 2 tank, 4 self, 8 paused), f32 power, u8 afterburners, str8 name, str16 shape (empty = default). A detached fuel tank is a pseudo player with flag 2, the name "NAME's tank" and the `tankShipShape` (with `allowShipShapes`); it owns no base |
 | 4 | PLAYER_LEAVE | u16 id |
 | 5 | PLAYER_TEAM | u16 id, u8 team |
 | 6 | SCORE | u16 id, f32 score, i16 lives (-1 = unlimited), u8 status (1 dead, 2 paused, 4 waiting, 8 out of lives). The first SCORE after PLAYER_JOIN is the starting value; a change of the own score is shown as a C score object, a change to exactly 0 is a reset and shows nothing |
@@ -212,8 +212,34 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 | 20 | TREASURE | 3 | u16 index, u8 flags (has ball) |
 | 21 | TEMP_WORMHOLE | 5 | u16 bx, u16 by, u8 type |
 | 22 | TIMERS | 8 | u16 damaged (frames of ECM damage left), u16 roundDelay (frames, 0 none), i32 timeLeft (seconds, -1 none) — the receiver's HUD timers |
+| 23 | SELF_STATUS | 18 | u16 lockDist (px), u8 lockDir (RES), u8 flags (1 lock shown on the HUD, 2 autopilot light on), u16 mods (packed modifiers, below), u16 emergency thrust left, u16 max, u16 emergency shield left, u16 max, u16 phasing left, u16 max (frames; 0 when not in use) — the parts of C's `Send_self`, `Send_thrusttime`, `Send_shieldtime` and `Send_phasingtime` that SELF lacks (server-items block 23-29) |
 
-M1 uses 1-8; 9-22 are defined for M2. A BURST of one particle with no speed and no life is a
+M1 uses 1-8; 9-23 are used by M2. Item sections as the server fills them (C `Frame_shots`/`Frame_ships`/`Frame_status`):
+
+- SELF: `lockId` is the locked player when the lock and the compass are on (else NO_ID); `numTanks` and `currentTank`
+  are the receiver's extra tanks and the tank fuel is taken from (0 = main).
+- SELF_ITEMS: one record per snapshot with the receiver's item counts (TANK = its tank count).
+- ITEM: floating items in view; a random item (`randomItemProb`) shows a random kind each snapshot.
+- MINE: flags ARMED (no longer owner-immune), FRIENDLY (C `laid_by_team`: the controller is paused, team-immune with
+  the receiver, or it is the receiver's own fused mine; random for a confused identified mine), NUCLEAR, OWN (the
+  receiver controls it); ownerId is the controller when `identifyMines` and the receiver is within mine-sensing range
+  (SHIP_SZ + 130 px + 30 px per sensor), else NO_ID.
+- MISSILE: id = owner (NO_ID unowned), kind SMART/HEAT/TORPEDO (+NUCLEAR), length 12/15/18 with `distinguishMissiles`,
+  else 15.
+- LASER: from the pulse start when in view, else from its end backwards; colour BLUE when harmless to the receiver
+  (team immune, or its own with `selfImmunity`), else RED.
+- ECM: centre and current radius (it halves every tick).
+- CONNECTOR: tractor/pressor beams of players and cannons, three lines from the beam source to the target's first three
+  hull points.
+- TRANSPORTER: from the victim to the thief (or where the cannon fired it), for 5 ticks.
+- RADAR: missiles and mines within the receiver's sensor range (FLAG_MISSILE/FLAG_MINE, FLAG_NUKE for nuclear ones with
+  `nukesOnRadar`); players follow C's visibility rules (cloaked opponents only when seen, sensor range with
+  `limitedVisibility`, the locked player blinks).
+- SHIP: cloaked opponents the receiver cannot see are not sent; flags CLOAKED, PHASING, EMERGENCY_SHIELD, DEFLECTOR,
+  AUTOPILOT (or hover pause), EMERGENCY_THRUST are set from the ship's state.
+
+SELF_STATUS `mods` packing (the server's `Mods`): bits 0-1 warhead (1 cluster, 2 implosion), 2-3 nuclear (1 nuclear,
+2 full), 4-5 velocity, 6-7 mini, 8-9 spread, 10-11 power, 12-13 laser (1 stun, 2 blind). A BURST of one particle with no speed and no life is a
 position-only point particle (C debris on the XPilot path) that the client tracks across frames. Indices refer to the `WorldMap` lists, which both sides build
 identically from the same config text.
 
