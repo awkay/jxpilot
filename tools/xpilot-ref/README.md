@@ -226,8 +226,9 @@ XPREF_IMAGE=xpilot-ref:server-modes tools/xpilot-ref/trace.sh \
 from this directory has it). The server then also prints every `rfrac()` and
 `randomMT()` draw with its C function and `file:line` (`XPRAND`), every
 `Make_debris` call with its caller and arguments (`XPDEBRIS`), every
-keyboard update a client sends (`XPKEYS`), the explosion particles
-(`XPDEB`, sparks and debris that are not owner-immune) and every cannon
+keyboard update a client sends (`XPKEYS`), the explosion debris and
+wall-bounce sparks (`XPDEB`, every spark and debris object but the
+exhaust) and every cannon
 that is not idle (`XPCANNON`). With these a reimplementation can replay the
 C game with C's own random numbers and keys and compare it exactly
 (`CTraceItemsTest`; the line formats are in
@@ -240,8 +241,8 @@ to the second client's window, `focus:1` back to the first. Use
 `--all-players` to trace both.
 
 ```sh
-XPREF_IMAGE=xpilot-ref:items2-traces tools/xpilot-ref/trace.sh --objs --rand --map default --seed 2 \
-    --after 1 --server-opt +cannonFlak --server-opt -initialMissiles --server-opt 4 \
+XPREF_IMAGE=xpilot-ref:items3-traces tools/xpilot-ref/trace.sh --objs --rand --map default --seed 2 \
+    --after 1 --server-opt -initialMissiles --server-opt 4 \
     --client-opt -autoShield --client-opt no --all-players --name2 target \
     --keys "down:space sleep:0.15 up:space sleep:0.3 down:Up sleep:0.15 up:Up sleep:0.3 down:backslash sleep:0.15 up:backslash sleep:6" \
     --out /tmp/smart.raw
@@ -346,8 +347,8 @@ GPL-2.0-or-later, and why.
    value and call site (the two declarations in `commonproto.h` are
    parenthesized so the macros cannot touch them), `Make_debris` learns and
    prints its caller, `Receive_keyboard_frame` prints each keyboard update,
-   and `Trace_cannons()` (after `Trace_modes()`) prints explosion particles
-   and busy cannons. Everything is inert unless `XPILOT_TRACE_RAND` is set;
+   and `Trace_cannons()` (after `Trace_modes()`) prints explosion debris,
+   wall-bounce sparks and busy cannons. Everything is inert unless `XPILOT_TRACE_RAND` is set;
    the random sequence and the game are unchanged.
 
 ## Known quirks
@@ -398,9 +399,10 @@ GPL-2.0-or-later, and why.
   (`Key_init`), and with its default `autoShield` it raises the shield again
   after firing. For an unshielded ship use `--client-opt -autoShield
   --client-opt no` and tap `space` once.
-- **Cannon flak.** On maps with cannons, `+cannonFlak` makes them fire plain
-  shots; flak fragments are made by `Make_debris`, whose particles JXPilot
-  expands from its own seed.
+- **Exhaust sparks.** JXPilot draws a ship's exhaust from a (tick, id) seed
+  that clients share, so a golden replay cannot give it C's sparks; keep
+  other ships out of a thrusting ship's exhaust (debris, wall-bounce sparks
+  and flak fragments are replayed exactly).
 - **Floating point.** This is an arm64 build, and `DFLOAT` is `float` in
   4.5.5. Low-order float digits could differ from an x86 build.
 - **Untagged images.** A rebuild leaves the previous `xpilot-ref:4.5.5`

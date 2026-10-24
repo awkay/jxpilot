@@ -51,7 +51,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("C golden traces of items")
 class CTraceItemsTest {
     /** The command line every default.xp recording shares (README.txt). */
-    static final String[] DEFAULT = {"gravity", "-0.14", "sparksWallBounce", "no", "cannonFlak", "no"};
+    static final String[] DEFAULT = {"gravity", "-0.14", "sparksWallBounce", "no"};
     /** The command line every items-arena.xp recording shares. */
     static final String[] ARENA = {"gravity", "0", "initialLasers", "3", "initialECMs", "1", "initialMissiles", "4",
         "itemConcentratorProb", "1", "itemConcentratorRadius", "1", "movingItemProb", "0"};
@@ -120,8 +120,8 @@ class CTraceItemsTest {
     @Test
     @DisplayName("an unlocked heat-seeker finds its ship when it starts thrusting at mid range (the search's error)")
     void heatSeekerSearch() throws IOException {
-        check(replay("heat-search.txt", "initialMissiles", "4"), 89,
-            has("a heat-seeker flight", r -> r.of(Obj.HEAT_SHOT) > 60));
+        check(replay("heat-search.txt", "initialMissiles", "4"), 88,
+            has("a heat-seeker flight", r -> r.of(Obj.HEAT_SHOT) > 40));
     }
 
     @Test
@@ -134,14 +134,14 @@ class CTraceItemsTest {
     @Test
     @DisplayName("a dropped and a thrown mine")
     void mines() throws IOException {
-        check(replay("mines.txt", "initialMines", "4", "mineFuseTime", "0"), 77,
+        check(replay("mines.txt", "initialMines", "4", "mineFuseTime", "0"), 78,
             has("mines", r -> r.of(Obj.MINE) > 50));
     }
 
     @Test
     @DisplayName("a fused mine: owner immunity runs out under its own ship, the explosion's debris")
     void mineFuse() throws IOException {
-        check(replay("mine-fuse.txt", "initialMines", "2", "mineFuseTime", "1"), 73,
+        check(replay("mine-fuse.txt", "initialMines", "2", "mineFuseTime", "1"), 74,
             has("the fused mine", r -> r.of(Obj.MINE) > 10),
             has("the mine explosion's particles", r -> r.particles() > 100 && r.particleFrames() > 0));
     }
@@ -149,7 +149,7 @@ class CTraceItemsTest {
     @Test
     @DisplayName("laser pulses cut short by a wall")
     void laser() throws IOException {
-        check(replay("laser.txt", "initialLasers", "2"), 67, has("pulses", r -> r.pulses() > 10));
+        check(replay("laser.txt", "initialLasers", "2"), 69, has("pulses", r -> r.pulses() > 10));
     }
 
     @Test
@@ -173,9 +173,16 @@ class CTraceItemsTest {
     @DisplayName("a killed player's picked-up mines detonate (detonateItemOnKillProb 1)")
     void detonateItems() throws IOException {
         check(arena("arena-detonate.txt", "itemMineProb", "0.01", "maxItemDensity", "0.05", "dropItemOnKillProb", "0",
-            "detonateItemOnKillProb", "1"), 92,
+            "detonateItemOnKillProb", "1"), 121,
             has("detonated mines", r -> r.of(Obj.MINE) > 0),
             has("their explosions' particles", r -> r.particles() > 300));
+    }
+
+    @Test
+    @DisplayName("an ECM makes a ship let go of the treasure ball it tows (C Fire_general_ecm, item.c:1167-1179)")
+    void ecmBallDetach() throws IOException {
+        check(CReplay.run("ball-ecm.txt", "ball-ecm.xp", Long.MAX_VALUE, "sparksWallBounce", "no", "initialECMs", "8"),
+            110, has("the towed ball", r -> r.of(Obj.BALL) > 100), has("ECMs", r -> r.ecms() > 20));
     }
 
     @Test
@@ -194,19 +201,19 @@ class CTraceItemsTest {
     @Test
     @DisplayName("afterburners")
     void afterburner() throws IOException {
-        check(replay("afterburner.txt", "initialAfterburners", "5"), 60);
+        check(replay("afterburner.txt", "initialAfterburners", "5"), 61);
     }
 
     @Test
     @DisplayName("emergency thrust")
     void emergencyThrust() throws IOException {
-        check(replay("emergency-thrust.txt", "initialEmergencyThrusts", "1"), 64);
+        check(replay("emergency-thrust.txt", "initialEmergencyThrusts", "1"), 63);
     }
 
     @Test
     @DisplayName("cloak, uncloak, phasing")
     void cloakPhasing() throws IOException {
-        check(replay("cloak-phasing.txt", "initialCloaks", "1", "initialPhasings", "1"), 108);
+        check(replay("cloak-phasing.txt", "initialCloaks", "1", "initialPhasings", "1"), 107);
     }
 
     @Test
@@ -226,6 +233,6 @@ class CTraceItemsTest {
     @Test
     @DisplayName("extra tanks: switching and fuel flow")
     void tanks() throws IOException {
-        check(replay("tanks.txt", "initialTanks", "2"), 74);
+        check(replay("tanks.txt", "initialTanks", "2"), 73);
     }
 }

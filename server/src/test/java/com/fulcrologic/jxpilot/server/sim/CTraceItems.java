@@ -244,6 +244,9 @@ final class CTraceItems {
                     debrisDraws.clear();
                     keys.clear();
                 }
+                if ("XPOBJ".equals(c[0]) && "16".equals(c[4])) { // shots: cluster fragments are synced like debris
+                    fr.debSlot.put(c[7] + "," + c[8] + " " + f(c[11]) + "," + f(c[12]), Integer.parseInt(c[3]));
+                }
                 switch (c[0]) {
                     case "XPTRACE" -> {
                         CTraceTest.Frame sh = CTraceTest.Frame.parse(l);

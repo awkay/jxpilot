@@ -34,26 +34,28 @@ usable frame number and belong to the tick of the next XPTRACE line:
            every Make_debris call: its caller and arguments (floats as %a).
   XPKEYS   frame id k1,k2,...|-   a keyboard update from a client: the keys_t held down.
 and, printed after the tick's other lines:
-  XPDEB    loop frame index type id cx cy vx vy mass life status   explosion particles
-           (sparks/debris that are not owner-immune), kept only in the frame of each
-           explosion and the frame after it.
+  XPDEB    loop frame index type id cx cy vx vy mass life status   explosion debris and
+           wall-bounce sparks (every spark and debris object but the exhaust), kept only in
+           the frame of each non-exhaust Make_debris call and the frame after it.
   XPCANNON loop frame index dead_time damaged tractor_count used emergency_shield_left
            phasing_left   every cannon that is not idle.
 
 The replay (CReplay, CDraws) feeds the Java world C's draws by call site, C's keys, and
-C's explosion particles; see CTraceItemsTest.
+C's particles (explosion debris, wall-bounce sparks, cluster/flak fragments, in C's Obj[]
+order); see CTraceItemsTest. The exhaust is the one thing it cannot give Java (its spark
+count comes from JXPilot's (tick, id) seed, see DEVIATIONS-server.md), so keep other ships
+out of a thrusting ship's exhaust.
 
-Image: XPREF_IMAGE=xpilot-ref:items2-traces tools/xpilot-ref/build.sh (all patches in
+Image: XPREF_IMAGE=xpilot-ref:items3-traces tools/xpilot-ref/build.sh (all patches in
 tools/xpilot-ref/patches). Recording, for every trace below:
-  XPREF_IMAGE=xpilot-ref:items2-traces tools/xpilot-ref/trace.sh --objs --rand --map default
+  XPREF_IMAGE=xpilot-ref:items3-traces tools/xpilot-ref/trace.sh --objs --rand --map default
     --seed <seed> --after 1 --server-opt -gravity --server-opt -0.14
-    --server-opt +sparksWallBounce --server-opt +cannonFlak <options> --keys "<keys>"
+    --server-opt +sparksWallBounce <options> --keys "<keys>"
     [<extra>] --out <name>.raw
   tools/xpilot-ref/compact-rand.sh <name>.raw [<last>] > <name>.txt
 with 0 robots. <options> are server words, each passed with its own --server-opt.
 +sparksWallBounce turns spark wall bounce off (exhaust sparks do not come back into the
-ship), +cannonFlak makes cannons fire plain shots (flak fragments are shots made by
-Make_debris, which JXPilot expands from its own seed). Only the human player is traced
+ship). Cannons fire flak (default.xp's default). Only the human player is traced
 unless <extra> has --all-players. Key timing is wall-clock: a re-recording differs by a
 frame or so, and a recording whose client sent two keyboard updates in one tick (the replay
 flags it) is redone. The C server and client default to autoShield (the shield is up unless
@@ -82,9 +84,9 @@ missile is at mid range (error 8), coasts.
          sleep:0.15 up:semicolon sleep:0.1 up:Shift_L sleep:1.2 down:Shift_L sleep:1.2
          up:Shift_L sleep:4"
 
-heat-search.txt (89 frames), seed 2: a heat-seeker fired at rest has no target (info -1);
+heat-search.txt (88 frames), seed 2: a heat-seeker fired at rest has no target (info -1);
 when the ship starts thrusting the missile is at mid range and its search locks on with the
-mid-range error (F41: info 1, count 8).
+mid-range error (F40: info 1, count 8).
   options: -initialMissiles 4   extra: --client-opt -autoShield --client-opt no
   keys: "down:space sleep:0.15 up:space sleep:0.3 down:semicolon sleep:0.15 up:semicolon
          sleep:1.4 down:Shift_L sleep:1.5 up:Shift_L sleep:2.5"
@@ -97,18 +99,18 @@ missile, which steers around the walls for about 70 frames.
   keys: "down:space sleep:0.15 up:space sleep:0.3 down:Up sleep:0.15 up:Up sleep:0.3
          down:backslash sleep:0.15 up:backslash sleep:6"
 
-mines.txt (77 frames), seed 42: drop a mine at rest, then detach (throw) one while thrusting.
+mines.txt (78 frames), seed 42: drop a mine at rest, then detach (throw) one while thrusting.
   options: -initialMines 4 -mineFuseTime 0
   keys: "sleep:0.5 down:Tab sleep:0.15 up:Tab sleep:0.6 down:Shift_L sleep:0.5
          down:bracketright sleep:0.15 up:bracketright sleep:0.2 up:Shift_L sleep:3"
 
-mine-fuse.txt (73 frames), seed 2: drop a mine under the unshielded ship with a one second
+mine-fuse.txt (74 frames), seed 2: drop a mine under the unshielded ship with a one second
 fuse: owner immunity runs out after 12 frames, the mine goes off and kills the ship
 (particles, wreckage).
   options: -initialMines 2 -mineFuseTime 1   extra: --client-opt -autoShield --client-opt no
   keys: "down:space sleep:0.15 up:space sleep:0.5 down:Tab sleep:0.15 up:Tab sleep:4"
 
-laser.txt (67 frames), seed 42: lift off, turn left, hold the laser; the pulses hit the wall.
+laser.txt (69 frames), seed 42: lift off, turn left, hold the laser; the pulses hit the wall.
   options: -initialLasers 2
   keys: "sleep:0.3 down:Shift_L sleep:0.25 up:Shift_L sleep:0.1 down:a sleep:0.55 up:a
          sleep:0.1 down:slash sleep:1 up:slash sleep:2"
@@ -123,16 +125,16 @@ rearshot.txt (68 frames), seed 42: thrust off the base, then hold fire with 3 re
   keys: "sleep:0.3 down:Shift_L sleep:0.8 up:Shift_L sleep:0.3 down:Return sleep:0.5
          up:Return sleep:2.5"
 
-afterburner.txt (60 frames), seed 42: thrust 1 s with 5 afterburners.
+afterburner.txt (61 frames), seed 42: thrust 1 s with 5 afterburners.
   options: -initialAfterburners 5
   keys: "sleep:0.3 down:Shift_L sleep:1 up:Shift_L sleep:2.5"
 
-emergency-thrust.txt (64 frames), seed 42: engage emergency thrust, then thrust.
+emergency-thrust.txt (63 frames), seed 42: engage emergency thrust, then thrust.
   options: -initialEmergencyThrusts 1
   keys: "sleep:0.3 down:j sleep:0.15 up:j sleep:0.2 down:Shift_L sleep:0.35 up:Shift_L
          sleep:3"
 
-cloak-phasing.txt (108 frames), seed 42: cloak 1 s, uncloak, thrust off the base, phase and
+cloak-phasing.txt (107 frames), seed 42: cloak 1 s, uncloak, thrust off the base, phase and
 wait out the phasing.
   options: -initialCloaks 1 -initialPhasings 1
   keys: "sleep:0.3 down:Delete sleep:0.15 up:Delete sleep:1 down:Delete sleep:0.15
@@ -152,7 +154,7 @@ mine, a pack of mines, then (after selecting the next item) a pack of missiles.
          down:KP_Delete sleep:0.15 up:KP_Delete sleep:0.4 down:KP_0 sleep:0.15 up:KP_0
          sleep:0.2 down:KP_Delete sleep:0.15 up:KP_Delete sleep:2.5"
 
-tanks.txt (74 frames), seed 42: switch tanks and thrust so that fuel moves between tanks.
+tanks.txt (73 frames), seed 42: switch tanks and thrust so that fuel moves between tanks.
   options: -initialTanks 2
   keys: "sleep:0.3 down:e sleep:0.15 up:e sleep:0.2 down:Shift_L sleep:0.5 up:Shift_L
          sleep:0.3 down:e sleep:0.15 up:e sleep:0.2 down:Shift_L sleep:0.4 up:Shift_L
@@ -178,16 +180,31 @@ arena-laser.txt (100 frames): energy packs picked up (C's ENERGY_PACK_FUEL draw,
 armoured target: the first laser hit costs it ED_LASER_HIT (F78), it dies at F79.
   options: -itemMineProb 0.01 -itemEnergyPackProb 0.01 -maxItemDensity 0.02 -initialArmors 1
 
-arena-throw.txt (100 frames): the target picks up 10 mines and is killed by the laser (F80);
+arena-throw.txt (100 frames): the target picks up 10 mines and is killed by the laser (F78);
 with dropItemOnKillProb 1 they are thrown as one pack with the dead ship's random push.
   options: -itemMineProb 9.4e-5 -maxItemDensity 0.1 -dropItemOnKillProb 1
            -detonateItemOnKillProb 0
 
-arena-detonate.txt (92 frames, <last> 92): the target picks up 9 mines and is killed by the
-laser (F78); with detonateItemOnKillProb 1 every mine above the initial count goes off
-(Detonate_items' random direction and speed) and explodes (512-particle mine explosions).
-The C trace goes on to F100; from F93 the first ship, pushed about by the debris between the
-walls, differs from Java: the same particles hit it but its velocity does not match (the order in
-which the debris pushes it is the suspect; not resolved), so the trace ends at F92.
+arena-detonate.txt (121 frames, to the end of the recording; keys end with sleep:2.5 instead
+of sleep:1.5, <last> 130): the target picks up 9 mines and is killed by the laser (F78); with
+detonateItemOnKillProb 1 every mine above the initial count goes off (Detonate_items' random
+direction and speed) and explodes, and the mine explosions' debris throws the first ship
+about between the walls. Particles made in one tick while older objects die are moved into
+the freed Obj[] slots (Delete_shot, object.c:97), and the order in which they push a ship
+(cell lists, cell.c:229-233) matters: the replay gives Java's particles C's states in C's
+slot order (XPDEB, which must cover every particle of the frame, wall-bounce sparks included).
   options: -itemMineProb 0.01 -maxItemDensity 0.05 -dropItemOnKillProb 0
            -detonateItemOnKillProb 1
+
+ball-ecm.txt (110 frames, <last> 110), on ball-ecm.xp (this directory; ball-tow.xp with a
+second base 6 blocks to the right), seed 1, two players: the second ("Target", id 2) joins
+on the base next to the treasure, grabs the ball with the connector while thrusting up,
+turns right and tows it towards the first, which fires ECMs: the second ECM draw (item.c:1175)
+is below 20 * range + 5 and the ball comes off (F65).
+  tools/xpilot-ref/trace.sh --objs --rand --map-file
+    server/src/test/resources/ctrace/items/ball-ecm.xp --seed 1 --after 1
+    --server-opt +sparksWallBounce --server-opt -initialECMs --server-opt 8
+    --all-players --name2 target --keys "focus:2 down:Control_L sleep:0.1 down:Shift_L
+    sleep:0.6 up:Shift_L sleep:0.4 up:Control_L sleep:0.1 down:s sleep:0.3 up:s sleep:0.1
+    down:Shift_L sleep:0.25 up:Shift_L sleep:0.2 focus:1 <8 x: down:bracketleft sleep:0.15
+    up:bracketleft sleep:0.3> sleep:1.5" --out ball-ecm.raw;  compact-rand.sh ball-ecm.raw 110

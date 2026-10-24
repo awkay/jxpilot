@@ -133,6 +133,17 @@ final class CReplay {
             for (int i = problems; i < draws.problems.size(); i++) {
                 d.add("draws: " + draws.problems.get(i));
             }
+            // C's own particles first: cluster fragments are shots, compared with the other objects below
+            List<CBurst> cb = cBursts(w, f);
+            bursts += cb.size();
+            List<String> jb = jBursts(w.events, seq);
+            List<String> ck = keys(cb);
+            if (ck.equals(jb)) {
+                d.addAll(syncParticles(w, cb, w.events, seq, before, f.debSlot));
+                for (CBurst b : cb) {
+                    particles += b.count();
+                }
+            }
             for (Map.Entry<Integer, CTraceTest.Frame> e : f.ships.entrySet()) {
                 Player p = players.get(e.getKey());
                 comparePlayer(f, e.getKey(), p, d);
@@ -156,23 +167,13 @@ final class CReplay {
             ecms += f.ecms.size();
             diff("pulses", cPulses(f), jPulses(w.pulses), d);
             diff("ecms", cEcms(f), jEcms(w.ecms), d);
-            List<CBurst> cb = cBursts(w, f);
-            bursts += cb.size();
-            List<String> jb = jBursts(w.events, seq);
-            List<String> ck = keys(cb);
-            if (ck.equals(jb)) {
-                d.addAll(syncParticles(w, cb, w.events, seq, before, f.debSlot));
-                for (CBurst b : cb) {
-                    particles += b.count();
-                }
-            }
             diff("debris", ck, jb, d);
             if (!f.debs.isEmpty()) { // traced around explosions (tools/xpilot-ref/compact-rand.sh)
                 List<String> jd = new ArrayList<>();
                 for (int k = 0; k < o.count(); k++) {
                     int h = o.active[k];
-                    if ((o.type[h] & (Obj.SPARK | Obj.DEBRIS)) != 0 && (o.status[h] & Obj.OWNERIMMUNE) == 0
-                        && o.life[h] > 0) {
+                    if ((o.type[h] & (Obj.SPARK | Obj.DEBRIS)) != 0 && o.life[h] > 0
+                        && ((o.status[h] & Obj.OWNERIMMUNE) == 0 || (o.status[h] & Obj.FROMBOUNCE) != 0)) {
                         jd.add(particle(o.type[h], o.owner[h], o.cx[h], o.cy[h], o.vx[h], o.vy[h], o.mass[h],
                             (long) o.life[h], o.status[h]));
                     }
@@ -268,7 +269,7 @@ final class CReplay {
     static String key(CObj c) {
         return key(c.type(), c.id(), c.cx(), c.cy(), c.prevX(), c.prevY(), c.vx(), c.vy(), c.ax(), c.ay(), c.mass(),
             c.life(), c.status() & 0xFFFFFF, c.info(), c.count(), dir(c.type(), c.dir()), c.plRange(), c.plRadius(),
-            Arrays.toString(c.mods())) + " " + norm(c.extra());
+            c.type() == Obj.ITEM ? "-" : Arrays.toString(c.mods())) + " " + norm(c.extra());
     }
 
     static String key(Objects o, int h) {
@@ -285,12 +286,13 @@ final class CReplay {
         };
         return key(o.type[h], o.owner[h], o.cx[h], o.cy[h], o.prevX[h], o.prevY[h], o.vx[h], o.vy[h], o.accX[h],
             o.accY[h], o.mass[h], (long) o.life[h], o.status[h] & 0xFFFFFF, o.info[h], o.counter[h], dir(o.type[h], o.missileDir[h]),
-            o.plRange[h], o.plRadius[h], Arrays.toString(mods)) + " " + (extra.isEmpty() ? "" : norm(extra.split(",")));
+            o.plRange[h], o.plRadius[h], o.type[h] == Obj.ITEM ? "-" : Arrays.toString(mods)) + " " + (extra.isEmpty() ? "" : norm(extra.split(",")));
     }
 
     /**
      * missile_dir only where C sets it (missiles): Object_allocate does not clear it, so other C objects show
-     * whatever an earlier object in their Obj[] slot left there.
+     * whatever an earlier object in their Obj[] slot left there. The same goes for an item's mods (Make_item,
+     * item.c:350-376, does not set them), which are not compared.
      */
     static int dir(int type, int dir) {
         return (type & (Obj.SMART_SHOT | Obj.HEAT_SHOT | Obj.TORPEDO)) != 0 ? dir : 0;
@@ -359,7 +361,12 @@ final class CReplay {
 
     /** One C Make_debris call that made particles, as Java would record and expand it. */
     record CBurst(String key, CDebris q, int type, float x, float y, int count, int minDir, int maxDir,
-                  float minSpeed, float maxSpeed, int minLife, int maxLife, List<CDraw> draws) {}
+                  float minSpeed, float maxSpeed, int minLife, int maxLife, List<CDraw> draws) {
+        /** Cluster fragments (cannon flak, cluster warheads): shots that Java does not record as a burst. */
+        boolean flak() {
+            return type == Obj.SHOT;
+        }
+    }
 
     /**
      * The bursts C's Make_debris calls of this frame made (thrust exhaust and cluster fragments excepted: Java
@@ -373,7 +380,7 @@ final class CReplay {
         for (int i = 0; i < f.debris.size(); i++) {
             CDebris q = f.debris.get(i);
             List<CDraw> r = f.debrisDraws.get(i);
-            if ("Thrust".equals(q.caller()) || r.isEmpty() || q.type() == Obj.SHOT) {
+            if ("Thrust".equals(q.caller()) || r.isEmpty()) {
                 continue;
             }
             float x = q.x();
@@ -437,7 +444,9 @@ final class CReplay {
     static List<String> keys(List<CBurst> bs) {
         List<String> out = new ArrayList<>();
         for (CBurst b : bs) {
-            out.add(b.key());
+            if (!b.flak()) {
+                out.add(b.key());
+            }
         }
         return out;
     }
@@ -458,30 +467,43 @@ final class CReplay {
         boolean[] claimed = new boolean[o.capacity];
         List<Integer> madeAt = new ArrayList<>();
         List<float[]> states = new ArrayList<>();
-        int bi = 0;
-        for (long seq = from; seq < e.burstSeq() && bi < cb.size(); seq++, bi++) {
-            int ei = Events.burstIndex(seq);
-            DebrisBurst jb = e.burst[ei];
-            CBurst c = cb.get(bi);
+        long seq = from;
+        for (CBurst c : cb) {
             int type = c.type();
-            int ocx = com.fulcrologic.jxpilot.server.world.Click.fromPixels(jb.x);
-            int ocy = com.fulcrologic.jxpilot.server.world.Click.fromPixels(jb.y);
+            int owner;
+            int ocx;
+            int ocy;
+            if (c.flak()) {
+                // flak fragments are shots, not a recorded burst: Java made them at the wire-rounded origin too
+                owner = c.q().id();
+                ocx = com.fulcrologic.jxpilot.server.world.Click.fromPixels(
+                    com.fulcrologic.jxpilot.common.math.ThrustSparks.wirePos(c.x()));
+                ocy = com.fulcrologic.jxpilot.server.world.Click.fromPixels(
+                    com.fulcrologic.jxpilot.common.math.ThrustSparks.wirePos(c.y()));
+            } else {
+                if (seq >= e.burstSeq()) {
+                    bad.add("particles: no Java burst for " + c.key());
+                    break;
+                }
+                int ei = Events.burstIndex(seq++);
+                DebrisBurst jb = e.burst[ei];
+                owner = e.burstOwner[ei];
+                ocx = com.fulcrologic.jxpilot.server.world.Click.fromPixels(jb.x);
+                ocy = com.fulcrologic.jxpilot.server.world.Click.fromPixels(jb.y);
+            }
             List<Integer> idx = new ArrayList<>();
             for (int k = 0; k < o.count(); k++) {
                 int h = o.active[k];
-                if (!claimed[h] && o.type[h] == type && o.owner[h] == e.burstOwner[ei] && o.cx[h] == ocx
-                    && o.cy[h] == ocy && o.mass[h] == c.q().mass() && o.status[h] == (int) c.q().status()
-                    && (!before[h] || o.fuseLife[h] - o.life[h] <= 1)) {
+                boolean kind = c.flak() ? (o.mods[h] & Obj.MOD_CLUSTER) != 0
+                    : o.mass[h] == c.q().mass() && o.status[h] == (int) c.q().status();
+                if (!claimed[h] && o.type[h] == type && o.owner[h] == owner && o.cx[h] == ocx && o.cy[h] == ocy
+                    && kind && (!before[h] || o.fuseLife[h] - o.life[h] <= 1)) {
                     idx.add(k);
                 }
             }
             if (idx.size() < c.count()) {
                 bad.add("particles: burst " + c.key() + " has " + idx.size() + " Java particles");
                 continue;
-            }
-            // several bursts at one origin (a ship and the mines it carried): each takes the next ones made
-            if (idx.size() > 1 && idx.get(1) - idx.get(0) > 1) {
-                idx.add(c.count() - 1, idx.remove(0)); // C moved this burst's last particle into the freed slot
             }
             idx = idx.subList(0, c.count());
             if (c.draws().size() < 1 + 4 * c.count()) {
@@ -510,37 +532,49 @@ final class CReplay {
                 o.initPixels(h, c.x(), c.y());
                 o.vx[h] = q.vx() + dx * speed;
                 o.vy[h] = q.vy() + dy * speed;
+                if (c.flak() && w.params.shotHitFuelDrainUsesKineticEnergy) {
+                    float r = speed / w.params.shotSpeed; // play.c:226-230
+                    o.mass[h] = q.mass() / (r * r);
+                }
                 o.life[h] = life - aged;
                 o.fuseLife[h] = life;
-                states.add(new float[] {o.cx[h], o.cy[h], o.vx[h], o.vy[h], (float) o.life[h], (float) o.fuseLife[h]});
+                states.add(new float[] {o.cx[h], o.cy[h], o.vx[h], o.vy[h], (float) o.life[h], (float) o.fuseLife[h],
+                    o.mass[h]});
             }
         }
-        // C's Obj[] order of the new particles (XPDEB slots): Java's are given C's states in that order, since the
-        // order in which particles push a ship changes the result
-        if (!cSlot.isEmpty() && bad.isEmpty() && !states.isEmpty()) {
+        if (seq != e.burstSeq() && bad.isEmpty()) {
+            bad.add("particles: Java made " + (e.burstSeq() - seq) + " bursts more than C");
+        }
+        // C's Obj[] order of the new particles (XPDEB / XPOBJ slots): Java's particles are given C's states in that
+        // order. When an explosion makes particles while older objects die (Delete_shot, update.c:1322-1324), several
+        // new particles are moved into freed slots (object.c:97), and the order in which they later push a ship
+        // (Cell lists, cell.c:229-233) changes the result.
+        if (bad.isEmpty() && !states.isEmpty()) {
             Integer[] order = new Integer[states.size()];
             int[] slot = new int[states.size()];
-            boolean all = true;
             for (int i = 0; i < order.length; i++) {
                 float[] st = states.get(i);
                 Integer sl = cSlot.get((int) st[0] + "," + (int) st[1] + " " + st[2] + "," + st[3]);
-                all &= sl != null;
-                slot[i] = sl == null ? 0 : sl;
+                if (sl == null) {
+                    bad.add("particles: C did not trace the particle at " + (int) st[0] + "," + (int) st[1] + " v"
+                        + st[2] + "," + st[3]);
+                    return bad;
+                }
+                slot[i] = sl;
                 order[i] = i;
             }
-            if (all) {
-                java.util.Arrays.sort(order, (a, b) -> Integer.compare(slot[a], slot[b]));
-                List<Integer> js = new ArrayList<>(madeAt);
-                js.sort(null);
-                for (int i = 0; i < order.length; i++) {
-                    float[] st = states.get(order[i]);
-                    int h = o.active[js.get(i)];
-                    o.setClicks(h, (int) st[0], (int) st[1]);
-                    o.vx[h] = st[2];
-                    o.vy[h] = st[3];
-                    o.life[h] = st[4];
-                    o.fuseLife[h] = st[5];
-                }
+            java.util.Arrays.sort(order, (a, b) -> Integer.compare(slot[a], slot[b]));
+            List<Integer> js = new ArrayList<>(madeAt);
+            js.sort(null);
+            for (int i = 0; i < order.length; i++) {
+                float[] st = states.get(order[i]);
+                int h = o.active[js.get(i)];
+                o.setClicks(h, (int) st[0], (int) st[1]);
+                o.vx[h] = st[2];
+                o.vy[h] = st[3];
+                o.life[h] = st[4];
+                o.fuseLife[h] = st[5];
+                o.mass[h] = st[6];
             }
         }
         return bad;
