@@ -42,6 +42,25 @@ class LiveOptionsTest {
     @DisplayName("apply")
     class Apply {
         @Test
+        @DisplayName("the 5-argument apply also sets the scene's showMineName, once per change")
+        void mineNames() {
+            ClientOptions o = new ClientOptions();
+            LiveOptions live = new LiveOptions(o);
+            SceneFiller f = new SceneFiller();
+            f.showMineName = false;
+            boolean first = live.apply(new Hud(), new ClientGame(), new HudExtras(), new TalkLine(), f);
+            boolean defaultOn = f.showMineName;
+            boolean again = live.apply(new Hud(), new ClientGame(), new HudExtras(), new TalkLine(), f);
+            o.apply(ClientOption.SHOW_MINE_NAME, "no");
+            live.apply(new Hud(), new ClientGame(), new HudExtras(), new TalkLine(), f);
+            assertAll(
+                () -> assertTrue(first, "the first call applies"),
+                () -> assertTrue(defaultOn, "C's default: mine names shown"),
+                () -> assertEquals(false, again, "no change, nothing applied"),
+                () -> assertEquals(false, f.showMineName, "showMineName no reaches the filler"));
+        }
+
+        @Test
         @DisplayName("copies every option into its consumer once per change")
         void copies() {
             ClientOptions o = new ClientOptions();
@@ -117,8 +136,9 @@ class LiveOptionsTest {
         @DisplayName("HUD items: always while showItems, else for showItemsTime after a change (zero counts too)")
         void items() {
             HudExtras x = new HudExtras();
-            int on0 = x.itemCount(0, 0);
-            int on3 = x.itemCount(0, 3);
+            int mine = com.fulcrologic.jxpilot.common.Item.MINE.ordinal(); // C skips fuel (painthud.c:531)
+            int on0 = x.itemCount(mine, 0);
+            int on3 = x.itemCount(mine, 3);
             x.showItems = false;
             x.showItemsTime = 1;
             x.step(20, 50);
@@ -127,7 +147,7 @@ class LiveOptionsTest {
             int left = x.itemCount(1, 2);
             int gone = x.itemCount(1, 2);
             int zero = x.itemCount(1, 0);
-            int sameAsBefore = x.itemCount(0, 3);
+            int sameAsBefore = x.itemCount(mine, 3);
             assertAll(
                 () -> assertEquals(-1, on0, "showItems: a zero count is hidden"),
                 () -> assertEquals(3, on3, "showItems: a count above 0 is shown"),

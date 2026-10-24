@@ -79,4 +79,18 @@ public final class LiveOptions {
         talk.setHistorySize(options.integer(MAX_LINES_IN_HISTORY));
         return true;
     }
+
+    /**
+     * {@link #apply(Hud, ClientGame, HudExtras, TalkLine)}, and the scene's item drawing options: showMineName (C
+     * SHOW_MINE_NAME instrument) into the {@link SceneFiller}.
+     * <p>
+     * BEHAVIOR: as the 4-argument apply; when it applies, the filler's showMineName is the option's value.
+     */
+    public boolean apply(Hud hud, ClientGame game, HudExtras extras, TalkLine talk, SceneFiller filler) {
+        boolean applied = apply(hud, game, extras, talk);
+        if (applied) {
+            filler.showMineName = options.flag(SHOW_MINE_NAME);
+        }
+        return applied;
+    }
 }

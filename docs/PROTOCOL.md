@@ -248,7 +248,8 @@ M1 uses 1-8; 9-22 are defined for M2; 37 is SOUND. Item sections as the server f
   else 15.
 - LASER: from the pulse start when in view, else from its end backwards; colour BLUE when harmless to the receiver
   (team immune, or its own with `selfImmunity`), else RED.
-- ECM: centre and current radius (it halves every tick).
+- ECM: centre and current radius (it halves every tick): C's `ecm->size`, also on the XPilot path (PKT_ECM's size
+  as sent). The client draws it as C does, a circle `size` pixels across (`Gui_paint_ecm`), i.e. half the blast radius.
 - CONNECTOR: tractor/pressor beams of players and cannons, three lines from the beam source to the target's first three
   hull points.
 - TRANSPORTER: from the victim to the thief (or where the cannon fired it), for 5 ticks.
