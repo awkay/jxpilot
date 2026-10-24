@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.List;
 
 import static com.fulcrologic.jxpilot.client.app.AppFixture.*;
 import static org.junit.jupiter.api.Assertions.*;

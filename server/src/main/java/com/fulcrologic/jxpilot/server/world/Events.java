@@ -84,6 +84,11 @@ public final class Events {
      */
     public static final int SEEK = 11;
     /**
+     * A robot's war target changed (C {@code Send_war} to every connection, robot.c {@code Robot_war}): a = the robot,
+     * b = its new target or {@link Obj#NO_ID} (war over).
+     */
+    public static final int WAR = 12;
+    /**
      * Race progress of a player (C {@code Send_timing}; game modes use kinds 20-26): a = player id, b = the next
      * checkpoint to pass (C {@code check}), c = laps started (C {@code round}).
      */

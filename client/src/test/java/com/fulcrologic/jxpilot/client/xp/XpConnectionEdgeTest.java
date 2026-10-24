@@ -95,6 +95,29 @@ class XpConnectionEdgeTest {
         assertEquals(ConnectionState.PLAYING, conn.state(), "fixture plays: " + rec.states);
     }
 
+    /** Read what the server still has queued; the time of the last datagram read. */
+    long drain() {
+        long last = now;
+        for (int i = 0; i < 3; i++) {
+            long seen = conn.packetsReceived();
+            at(now + FRAME);
+            if (conn.packetsReceived() != seen) {
+                last = now;
+            }
+        }
+        return last;
+    }
+
+    int noResponses() {
+        int n = 0;
+        for (int i = 0; i < game.messages().gameCount(); i++) {
+            if (game.messages().game(i).text().toString().equals(XpConnection.NO_RESPONSE)) {
+                n++;
+            }
+        }
+        return n;
+    }
+
     /** update() at an exact time, then let the server answer. */
     void at(long t) {
         now = t;
@@ -145,14 +168,40 @@ class XpConnectionEdgeTest {
             int before = server.contactRequests.size();
             at(q0 + XpConnection.QUEUE_RESEND_NANOS);
             int after = server.contactRequests.size();
-            at(q0 + XpConnection.QUEUE_TIMEOUT_NANOS - 1);
+            long lastReply = q0 + XpConnection.QUEUE_RESEND_NANOS - 2; // the queue reply is read here
+            at(lastReply + XpConnection.QUEUE_TIMEOUT_NANOS - 1);
             ConnectionState justBefore = conn.state();
-            at(q0 + XpConnection.QUEUE_TIMEOUT_NANOS);
+            at(lastReply + XpConnection.QUEUE_TIMEOUT_NANOS);
             assertAll(
                 () -> assertEquals(2, before, "contact + queue, no repeat before 2 s"),
                 () -> assertEquals(3, after, "repeat at 2 s"),
-                () -> assertEquals(ConnectionState.CONNECTING, justBefore, "still queued 1 ns before the timeout"),
-                () -> assertEquals(ConnectionState.CLOSED, conn.state(), "timeout at 120 s"));
+                () -> assertEquals(ConnectionState.CONNECTING, justBefore, "still queued 1 ns before 12 s without a reply"),
+                () -> assertEquals(ConnectionState.CLOSED, conn.state(), "timeout 12 s after the last reply"));
+        }
+
+        @Test
+        void aQueueReplyRestartsTheQueueTimeout() {
+            server.queueSteps = Integer.MAX_VALUE;
+            conn.start(T0);
+            server.step();
+            at(T0 + 1);
+            long q0 = now; // the first queue reply is read at the next update
+            at(q0 + 1);
+            long first = now;
+            server.queueAcks = true;
+            at(first + XpConnection.QUEUE_TIMEOUT_NANOS - 2);
+            server.queueAcks = false;
+            at(first + XpConnection.QUEUE_TIMEOUT_NANOS - 1);
+            long ack = now; // the re-ack is read here
+            at(first + XpConnection.QUEUE_TIMEOUT_NANOS);
+            ConnectionState afterFirstLimit = conn.state();
+            at(ack + XpConnection.QUEUE_TIMEOUT_NANOS - 1);
+            ConnectionState justBefore = conn.state();
+            at(ack + XpConnection.QUEUE_TIMEOUT_NANOS);
+            assertAll(
+                () -> assertEquals(ConnectionState.CONNECTING, afterFirstLimit, "a reply moved the limit"),
+                () -> assertEquals(ConnectionState.CONNECTING, justBefore, "alive 1 ns before 12 s after the reply"),
+                () -> assertEquals(ConnectionState.CLOSED, conn.state(), "closed 12 s after the reply"));
         }
 
         @Test
@@ -182,12 +231,46 @@ class XpConnectionEdgeTest {
             for (int i = 0; i < 3; i++) {
                 at(now + FRAME); // drain what is still queued
             }
-            at(last + XpConnection.TIMEOUT_NANOS - 1);
+            at(last + XpConnection.PLAY_TIMEOUT_NANOS - 1);
             ConnectionState before = conn.state();
-            at(last + XpConnection.TIMEOUT_NANOS + 3 * FRAME);
+            at(last + XpConnection.PLAY_TIMEOUT_NANOS + 3 * FRAME);
             assertAll(
-                () -> assertEquals(ConnectionState.PLAYING, before, "alive just before 15 s of silence"),
-                () -> assertEquals(ConnectionState.CLOSED, conn.state(), "lost after"));
+                () -> assertEquals(ConnectionState.PLAYING, before, "alive just before 60 s of silence"),
+                () -> assertEquals(ConnectionState.CLOSED, conn.state(), "lost after"),
+                () -> assertEquals("Connection to 127.0.0.1:15345 lost (timeout)", conn.status().toString(), "status"));
+        }
+
+        @Test
+        void noResponseEveryTenSecondsOfSilence() {
+            play();
+            server.silentFrames = true;
+            long last = drain();
+            int base = noResponses();
+            at(last + XpConnection.NO_RESPONSE_NANOS - 1);
+            int justBefore = noResponses() - base;
+            at(last + XpConnection.NO_RESPONSE_NANOS);
+            int atTen = noResponses() - base;
+            at(last + XpConnection.NO_RESPONSE_NANOS + FRAME);
+            int sameTen = noResponses() - base;
+            at(last + 2 * XpConnection.NO_RESPONSE_NANOS);
+            int atTwenty = noResponses() - base;
+            server.silentFrames = false;
+            at(now + FRAME);
+            at(now + FRAME);
+            server.silentFrames = true;
+            long back = drain();
+            at(back + XpConnection.NO_RESPONSE_NANOS - 1);
+            int beforeNext = noResponses() - base;
+            at(back + XpConnection.NO_RESPONSE_NANOS);
+            int next = noResponses() - base;
+            assertAll(
+                () -> assertEquals(0, justBefore, "none before 10 s"),
+                () -> assertEquals(1, atTen, "C's text at 10 s"),
+                () -> assertEquals(1, sameTen, "once per 10 s"),
+                () -> assertEquals(2, atTwenty, "again at 20 s"),
+                () -> assertEquals(2, beforeNext, "frames reset the silence"),
+                () -> assertEquals(3, next, "10 s after the last frame again"),
+                () -> assertEquals(ConnectionState.PLAYING, conn.state(), "still playing"));
         }
 
         @Test
@@ -215,6 +298,111 @@ class XpConnectionEdgeTest {
                 frame();
             }
             assertTrue(server.loginPackets.contains("fps 14"), "C default when the setup has no FPS");
+        }
+    }
+
+    @Nested
+    @DisplayName("pointer control (C Send_pointer_move)")
+    class PointerMoves {
+        @Test
+        void movesGoOutAsPointerMovePackets() {
+            play();
+            int changes = server.keyboardChanges.size();
+            now += FRAME;
+            conn.update(now);
+            int sent = conn.sendInput(0, -37, now);
+            conn.flush(now);
+            server.step();
+            now += FRAME;
+            conn.update(now);
+            conn.sendInput(0, 0, now);
+            conn.flush(now);
+            server.step();
+            now += FRAME;
+            conn.update(now);
+            conn.sendInput(0, 100_000, now);
+            conn.flush(now);
+            server.step();
+            assertAll(
+                () -> assertEquals(0, sent, "no keyboard change"),
+                () -> assertEquals(List.of(-37, (int) Short.MAX_VALUE), server.pointerMoves,
+                    "each non-zero move once, as %hd (clamped); none for 0"),
+                () -> assertEquals(changes, server.keyboardChanges.size(), "no new keyboard change for a move"),
+                () -> assertEquals(List.of(), server.violations, "fine for the server"));
+        }
+
+        @Test
+        void notBeforePlaying() {
+            server.ignorePlay = true;
+            conn.start(now);
+            server.step();
+            for (int i = 0; i < 30; i++) {
+                now += FRAME;
+                conn.update(now);
+                conn.sendInput(0, 12, now);
+                conn.flush(now);
+                server.step();
+            }
+            assertAll(
+                () -> assertEquals(XpConnection.Phase.START, conn.phase(), "still starting"),
+                () -> assertEquals(List.of(), server.pointerMoves, "no pointer moves"));
+        }
+    }
+
+    @Nested
+    @DisplayName("transport errors (C Sockbuf_read / Sockbuf_flush carry on)")
+    class TransportErrors {
+        @Test
+        void noServerAtAllEndsAfterMaxTriesWithoutThrowing() {
+            server.silentContact = true;
+            server.sendFailures = Integer.MAX_VALUE;
+            server.receiveFailures = Integer.MAX_VALUE;
+            conn.start(T0);
+            for (int i = 1; i <= XpConnection.MAX_TRIES; i++) {
+                at(T0 + i * XpConnection.RESEND_NANOS);
+            }
+            assertAll(
+                () -> assertEquals(ConnectionState.CLOSED, conn.state(), "MAX_TRIES ends the contact"),
+                () -> assertEquals("No answer from 127.0.0.1:15345", conn.status().toString(), "C's reason"),
+                () -> assertEquals(0, conn.packetsSent(), "failed sends are not counted as sent"),
+                () -> assertTrue(conn.ioErrors() >= 2L * XpConnection.MAX_TRIES,
+                    "every send and the receive after it failed: " + conn.ioErrors()));
+        }
+
+        @Test
+        void aFailedReceiveWhilePlayingIsNothingReceived() {
+            play();
+            long frames = conn.snapshotsReceived();
+            server.receiveFailures = 1;
+            server.sendFailures = 1;
+            frame();
+            ConnectionState during = conn.state();
+            for (int i = 0; i < 10; i++) {
+                frame();
+            }
+            assertAll(
+                () -> assertEquals(2, conn.ioErrors(), "one receive and one send error counted"),
+                () -> assertEquals(ConnectionState.PLAYING, during, "still playing"),
+                () -> assertTrue(conn.snapshotsReceived() > frames, "frames flow again afterwards"),
+                () -> assertEquals(List.of(), server.violations, "nothing the server rejects"));
+        }
+
+        @Test
+        void aFailedLoginSendIsResentByItsTimer() {
+            server.sendFailures = 0;
+            conn.start(T0);
+            server.step();
+            at(T0 + 1);
+            server.sendFailures = 1; // the first VERIFY is lost to the error
+            at(T0 + 2);
+            int afterFailure = server.verifies;
+            for (int i = 1; i <= 3 && conn.phase() == XpConnection.Phase.VERIFY; i++) {
+                at(T0 + 2 + i * XpConnection.RESEND_NANOS);
+            }
+            assertAll(
+                () -> assertEquals(0, afterFailure, "the verify that failed never reached the server"),
+                () -> assertTrue(server.verifies >= 1, "the resend timer sent it again"),
+                () -> assertEquals(1, conn.ioErrors(), "one error"));
         }
     }
 

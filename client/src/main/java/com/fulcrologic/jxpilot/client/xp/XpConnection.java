@@ -31,7 +31,6 @@ import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.net.Protocol;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 
 /**
@@ -101,14 +100,21 @@ public final class XpConnection implements GameConnection {
     public static final long RESEND_NANOS = SECOND;
     /** ENTER_QUEUE is repeated this often while queued (the server forgets after 30 s). */
     public static final long QUEUE_RESEND_NANOS = 2 * SECOND;
-    /** Give up when the queue has not admitted us after this long. */
-    public static final long QUEUE_TIMEOUT_NANOS = 120 * SECOND;
+    /** Queued: give up when the contact port has been silent this long (C textinterface.c: 12 s per reply). */
+    public static final long QUEUE_TIMEOUT_NANOS = 12 * SECOND;
     /** Contact, verify and play requests are tried this often before giving up (C uses 10). */
     public static final int MAX_TRIES = 10;
     /** C sends the ship shape only with the first 5 play requests. */
     public static final int SHAPE_TRIES = 5;
-    /** A connection that hears nothing for this long is lost. */
-    public static final long TIMEOUT_NANOS = 15 * SECOND;
+    /** Verify, setup or start: silence this long fails the login (C Net_setup: 10 reads of 2 s). */
+    public static final long TIMEOUT_NANOS = 20 * SECOND;
+    /** Playing: each this much silence says "No response from server" (C Input_loop's 10 s select). */
+    public static final long NO_RESPONSE_NANOS = 10 * SECOND;
+    /**
+     * Playing: silence this long closes the connection. C never gives up; this is twice the C server's
+     * IDLE_TIMEOUT, so the server has dropped us by then.
+     */
+    public static final long PLAY_TIMEOUT_NANOS = 60 * SECOND;
     /** Datagrams handled per {@link #update} call at most. */
     public static final int MAX_RECEIVE_PER_UPDATE = 256;
     /** Bytes kept free in the send buffer for keyboard and talk. */
@@ -148,6 +154,8 @@ public final class XpConnection implements GameConnection {
     private long lastSend;
     private long phaseStart;
     private long lastReceive;
+    /** Silence notices given since the last datagram while playing. */
+    private int noResponse;
     private long now;
     private int lastSendAnything;
     private boolean newFrame;
@@ -158,6 +166,7 @@ public final class XpConnection implements GameConnection {
     private long malformed;
     private long unknown;
     private long stale;
+    private long ioErrors;
     private long framesDone;
     private long badStream;
 
@@ -199,6 +208,9 @@ public final class XpConnection implements GameConnection {
 
     /** Frames older than the newest one (dropped). */
     public long staleFrames() { return stale; }
+
+    /** Transport IOExceptions on send or receive (each counts as not sent / nothing received). */
+    public long ioErrors() { return ioErrors; }
 
     @Override
     public long snapshotsReceived() { return framesDone; }
@@ -249,6 +261,7 @@ public final class XpConnection implements GameConnection {
         verified = false;
         version = XpProto.MY_VERSION;
         lastReceive = nowNanos;
+        noResponse = 0;
         try {
             contact = opener.open(portOf(label));
         } catch (IOException e) {
@@ -334,7 +347,12 @@ public final class XpConnection implements GameConnection {
      * is unacked and was not sent this frame, or as a keep-alive after 5 seconds of frames without a
      * send; pending acks are flushed.
      * BEHAVIOR: resends CONTACT / ENTER_QUEUE / VERIFY / the play request on their timers and gives up
-     * after {@link #MAX_TRIES}; {@link #TIMEOUT_NANOS} of silence on the login port closes.
+     * after {@link #MAX_TRIES}; queued, {@link #QUEUE_TIMEOUT_NANOS} without a contact reply closes (no cap
+     * while replies come, as C); verifying to starting, {@link #TIMEOUT_NANOS} of silence closes.
+     * BEHAVIOR: playing, each {@link #NO_RESPONSE_NANOS} of silence adds C's "No response from server" as a
+     * message; {@link #PLAY_TIMEOUT_NANOS} of silence closes.
+     * BEHAVIOR: a transport IOException (ICMP port unreachable, network down) counts in {@link #ioErrors()} and
+     * is "nothing received" / "not sent" (C Sockbuf_read / Sockbuf_flush retry and carry on); it never escapes.
      */
     @Override
     public void update(long nowNanos) {
@@ -378,8 +396,8 @@ public final class XpConnection implements GameConnection {
                 }
             }
             case QUEUE -> {
-                if (nowNanos - phaseStart >= QUEUE_TIMEOUT_NANOS) {
-                    fail("Not admitted by " + label + " (queued at " + queuePos + ")");
+                if (nowNanos - lastReceive >= QUEUE_TIMEOUT_NANOS) {
+                    fail("No answer from " + label + " (queued at " + queuePos + ")");
                     return;
                 }
                 if (nowNanos - lastSend >= QUEUE_RESEND_NANOS) {
@@ -406,22 +424,42 @@ public final class XpConnection implements GameConnection {
             }
             default -> { }
         }
-        if (phase.ordinal() >= Phase.VERIFY.ordinal() && nowNanos - lastReceive >= TIMEOUT_NANOS) {
-            fail(phase == Phase.PLAYING ? "Connection to " + label + " lost (timeout)"
-                : "No answer from " + label + " (timeout)");
+        long silent = nowNanos - lastReceive;
+        if (phase == Phase.PLAYING) {
+            if (silent >= PLAY_TIMEOUT_NANOS) {
+                fail("Connection to " + label + " lost (timeout)");
+            } else if (silent >= (noResponse + 1) * NO_RESPONSE_NANOS) {
+                noResponse++;
+                translator.message(NO_RESPONSE);
+            }
+        } else if (phase.ordinal() >= Phase.VERIFY.ordinal() && silent >= TIMEOUT_NANOS) {
+            fail("No answer from " + label + " (timeout)");
         }
     }
+
+    /** C Input_loop's error text for 10 s without a datagram. */
+    static final String NO_RESPONSE = "No response from server";
 
     /**
      * Keys for this frame.
      * <p>
      * BEHAVIOR: only while PLAYING; a changed key set is a new keyboard change sent at once (C
-     * {@code Net_key_change}); returns the change number when sent, else 0. Pointer turns are not sent.
+     * {@code Net_key_change}); returns the change number when sent, else 0.
+     * BEHAVIOR: a non-zero {@code aimTurn} (pointer movement in window pixels) is C's {@code Send_pointer_move}:
+     * {@code PKT_POINTER_MOVE %hd} queued for this frame's datagram, for servers above version 0x3201 only.
      */
     @Override
     public int sendInput(long keys, int aimTurn, long nowNanos) {
         now = nowNanos;
-        if (phase != Phase.PLAYING || !keyboard.setKeys(keys)) {
+        if (phase != Phase.PLAYING) {
+            return 0;
+        }
+        if (aimTurn != 0 && version > 0x3201) {
+            ensureRoom(3);
+            XpWriter.u8(tx, XpProto.PKT_POINTER_MOVE);
+            XpWriter.s16(tx, Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, aimTurn)));
+        }
+        if (!keyboard.setKeys(keys)) {
             return 0;
         }
         sendDatagram(true);
@@ -685,6 +723,7 @@ public final class XpConnection implements GameConnection {
             }
             packetsReceived++;
             lastReceive = now;
+            noResponse = 0;
             onDatagram(n);
         }
     }
@@ -941,7 +980,7 @@ public final class XpConnection implements GameConnection {
                 packetsSent++;
             }
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            ioErrors++;
         }
         tx.clear();
     }
@@ -951,7 +990,8 @@ public final class XpConnection implements GameConnection {
         try {
             return t.receive(rx);
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            ioErrors++;
+            return 0;
         }
     }
 

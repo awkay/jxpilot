@@ -416,9 +416,11 @@ public final class RobotManager {
      * C {@code Robot_war}: {@code victim} was killed by {@code killer}.
      * <p>
      * BEHAVIOR: nothing for a self kill.
-     * BEHAVIOR: a robot killer gloats (KILL talk) and ends any war on the victim.
+     * BEHAVIOR: a robot killer gloats (KILL talk) and ends any war; a war on the victim is announced over
+     * ({@link Events#WAR} with NO_ID, C {@code Send_war}).
      * BEHAVIOR: a robot victim declares war on the killer (WAR talk) when (int)(rfrac*100) is below the
-     * killer's score lead and they are neither team mates nor allies; the rfrac is drawn only for robot victims.
+     * killer's score lead and they are neither team mates nor allies; the rfrac is drawn only for robot victims. A new
+     * war is announced ({@link Events#WAR}) with C's declare-war sound.
      */
     public void war(Player victim, Player killer) {
         if (killer == victim) {
@@ -426,6 +428,9 @@ public final class RobotManager {
         }
         if (killer.robot) {
             talk.says(RobotTalk.KILL, killer.name, victim.name);
+            if (DefaultRobot.warOnPlayer(data[killer.slot]) == victim.id) {
+                w.events.add(Events.WAR, killer.id, Obj.NO_ID, 0, 0f); // C Send_war(kp->id, NO_ID)
+            }
             DefaultRobot.setWar(data[killer.slot], Obj.NO_ID);
         }
         if (victim.robot && (int) (w.rfrac() * 100) < killer.score - victim.score && !w.sameTeam(victim, killer)
@@ -433,6 +438,7 @@ public final class RobotManager {
             talk.says(RobotTalk.WAR, victim.name, killer.name);
             RobotData d = data[victim.slot];
             if (DefaultRobot.warOnPlayer(d) != killer.id) {
+                w.events.add(Events.WAR, victim.id, killer.id, 0, 0f); // C Send_war(pl->id, kp->id)
                 Sounds.playAll(w, SoundEvent.DECLARE_WAR);
                 DefaultRobot.setWar(d, killer.id);
             }

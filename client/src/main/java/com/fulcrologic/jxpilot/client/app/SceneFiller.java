@@ -82,7 +82,9 @@ public final class SceneFiller {
      * dead; paused ones become paused markers (countdown 0) instead (see {@link #addShip}).
      * BEHAVIOR: adds every shot ({@link #shotColor}, {@link #teamShot}), every visible particle
      * ({@link #particleColor}), every radar blip ({@link #radarSize}, hidden blink phases skipped; when the
-     * server already blinks them {@link #radarSizeUnblinked}) and the own radar ship while visible.
+     * server already blinks them {@link #radarSizeUnblinked}; an asteroid with a size is
+     * {@link RadarPainter#asteroidSizeByte} of it) and the own radar ship while visible.
+     * BEHAVIOR: in race mode the next checkpoint's block ({@link #radarCheckpoint}).
      */
     public void fill(SceneData out, RadarBlips radar, ClientGame g) {
         ClientWorld w = g.world();
@@ -126,10 +128,14 @@ public final class SceneFiller {
         boolean blinked = g.radarBlinked();
         for (int i = 0; i < w.radarCount(); i++) {
             int size = blinked ? radarSizeUnblinked(w.radarFlags(i)) : radarSize(w.radarFlags(i), loops);
+            if ((w.radarFlags(i) & Records.Radar.FLAG_ASTEROID) != 0 && w.radarAsteroidSize(i) > 0) {
+                size = RadarPainter.asteroidSizeByte(w.radarAsteroidSize(i)); // C size + 1 (frame.c Frame_radar)
+            }
             if (size != HIDDEN) {
                 radar.add(w.radarX(i), w.radarY(i), size);
             }
         }
+        radarCheckpoint(radar, g.timing(), map, w.selfCheck());
         if (selfAlive) {
             radar.selfVisible = true;
             radar.selfX = w.selfX();
@@ -308,6 +314,21 @@ public final class SceneFiller {
      * the own one: true when both have the same non-blank alliance mark (C guiobjects.c:680-684), or in team
      * play on the same team (not {@link Protocol#NO_TEAM}).
      */
+    /**
+     * C {@code Paint_checkpoint_radar}: only in race mode ({@code TIMING}), the checkpoint {@code nextCheckPoint}.
+     * <p>
+     * BEHAVIOR: marks the checkpoint's block iff timing is on, there is a map and {@code next} indexes one of its
+     * checkpoints; otherwise leaves the radar without one.
+     */
+    static void radarCheckpoint(RadarBlips radar, boolean timing, WorldMap m, int next) {
+        if (!timing || m == null || next < 0 || next >= m.checkpoints().size()) {
+            return;
+        }
+        radar.checkpointVisible = true;
+        radar.checkpointBx = m.checkpoints().get(next).bx();
+        radar.checkpointBy = m.checkpoints().get(next).by();
+    }
+
     static boolean friendly(int flags, Players p, int slot, boolean teamPlay) {
         if ((flags & Records.ShipFlags.FRIENDLY) != 0) {
             return true;

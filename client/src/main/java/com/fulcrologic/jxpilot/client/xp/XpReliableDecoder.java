@@ -56,6 +56,8 @@ public final class XpReliableDecoder {
     private final StringBuilder s1 = new StringBuilder(XpProto.MSG_LEN);
     private final StringBuilder s2 = new StringBuilder(XpProto.MSG_LEN);
     private final StringBuilder shape = new StringBuilder(2 * XpProto.MSG_LEN);
+    private final StringBuilder real = new StringBuilder(XpProto.MAX_CHARS);
+    private final StringBuilder host = new StringBuilder(XpProto.MAX_CHARS);
     private int version = XpProto.MY_VERSION;
     private long ignored;
     private int lastBad = -1;
@@ -209,11 +211,11 @@ public final class XpReliableDecoder {
         if (n <= 0) {
             return str(n);
         }
-        n = r.skipString(XpProto.MAX_CHARS);
+        n = r.string(real, XpProto.MAX_CHARS);
         if (n <= 0) {
             return str(n);
         }
-        n = r.skipString(XpProto.MAX_CHARS);
+        n = r.string(host, XpProto.MAX_CHARS);
         if (n <= 0) {
             return str(n);
         }
@@ -233,7 +235,7 @@ public final class XpReliableDecoder {
         if (s1.length() > XpProto.MAX_NAME_LEN - 1) {
             s1.setLength(XpProto.MAX_NAME_LEN - 1);
         }
-        events.player(id, team, mychar, s1, shape);
+        events.player(id, team, mychar, s1, shape, real, host);
         return OK;
     }
 

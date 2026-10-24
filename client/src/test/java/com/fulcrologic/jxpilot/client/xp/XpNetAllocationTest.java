@@ -173,7 +173,7 @@ class XpNetAllocationTest {
             long keys = fr % 40 < 20 ? thrust : thrust | left;
             conn.update(t[0]);
             game.frame(t[0], frameNs / 1e9);
-            conn.sendInput(keys, 0, t[0]);
+            conn.sendInput(keys, (int) (t[0] % 7) - 3, t[0]); // client-play: pointer moves (PKT_POINTER_MOVE) most frames
             if (fr % 300 == 150) {
                 conn.sendChat("hello robots", t[0]);
             }

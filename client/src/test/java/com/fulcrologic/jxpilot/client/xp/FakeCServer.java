@@ -60,7 +60,11 @@ final class FakeCServer implements XpConnection.PortOpener {
         }
 
         @Override
-        public boolean send(ByteBuffer p) {
+        public boolean send(ByteBuffer p) throws IOException {
+            if (sendFailures > 0) {
+                sendFailures--;
+                throw new java.net.PortUnreachableException("send");
+            }
             byte[] a = new byte[p.remaining()];
             p.get(a);
             if (dropToServer > 0) {
@@ -73,7 +77,11 @@ final class FakeCServer implements XpConnection.PortOpener {
         }
 
         @Override
-        public int receive(ByteBuffer b) {
+        public int receive(ByteBuffer b) throws IOException {
+            if (receiveFailures > 0) {
+                receiveFailures--;
+                throw new java.net.PortUnreachableException("receive");
+            }
             byte[] a = toClient.poll();
             if (a == null) {
                 return 0;
@@ -119,12 +127,19 @@ final class FakeCServer implements XpConnection.PortOpener {
     int mode = XpProto.MODE_WRAP_PLAY;
     int fps = 12;
     IOException openFailure;
+    /** Sends / receives that throw PortUnreachableException next (ICMP port unreachable), on any port. */
+    int sendFailures;
+    int receiveFailures;
+    /** C Queue_loop: re-ack the queue position every step while queued (the server does every 3 s). */
+    boolean queueAcks;
 
     // ---------------------------------------------------------------- recorded
     final List<String> violations = new ArrayList<>();
     final List<String> talk = new ArrayList<>();
     final List<String> contactRequests = new ArrayList<>();
     final List<Integer> keyboardChanges = new ArrayList<>();
+    /** Every PKT_POINTER_MOVE (C Receive_pointer_move's movement). */
+    final List<Integer> pointerMoves = new ArrayList<>();
     final List<String> loginPackets = new ArrayList<>();
     /** Every PKT_SHAPE received: its shape string and extension (C Receive_shape, version > 0x3200). */
     final List<List<String>> shapes = new ArrayList<>();
@@ -190,6 +205,8 @@ final class FakeCServer implements XpConnection.PortOpener {
             if (!admitted && nick != null && queueStatus == XpProto.SUCCESS && ++queueWait >= queueSteps) {
                 admitted = true;
                 contactReply(XpProto.ENTER_GAME_PACK, XpProto.SUCCESS, LOGIN_PORT);
+            } else if (!admitted && nick != null && queueAcks) {
+                contactReply(XpProto.ENTER_QUEUE_PACK, XpProto.SUCCESS, 1);
             }
         }
         if (login != null) {
@@ -391,6 +408,12 @@ final class FakeCServer implements XpConnection.PortOpener {
                         talk.add(s.toString());
                         streamAppend(new CPackets().talkAck(seq).message(s + " [" + verifiedNick + "]"));
                     }
+                }
+                case XpProto.PKT_POINTER_MOVE -> {
+                    if (!playing) {
+                        violations.add("pointer move in state " + state);
+                    }
+                    pointerMoves.add(r.s16());
                 }
                 case XpProto.PKT_ACK_CANNON, XpProto.PKT_ACK_FUEL, XpProto.PKT_ACK_TARGET -> {
                     if (!playing) {

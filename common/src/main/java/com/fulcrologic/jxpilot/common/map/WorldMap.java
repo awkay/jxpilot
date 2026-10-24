@@ -57,6 +57,8 @@ public final class WorldMap {
     final double[] gravX;
     final double[] gravY;
     final List<Base> bases;
+    /** The bases, replaced in place when a client takes their headings from the server ({@link #setBaseDir}). */
+    private final java.util.ArrayList<Base> baseList;
     final List<FuelStation> fuels;
     final List<Cannon> cannons;
     /** The cannons, replaced in place when an operator changes teamCannons ({@link #setCannonTeam}). */
@@ -86,7 +88,8 @@ public final class WorldMap {
         this.itemIds = l.itemIds;
         this.gravX = l.gravX;
         this.gravY = l.gravY;
-        this.bases = List.copyOf(l.bases);
+        this.baseList = new java.util.ArrayList<>(l.bases);
+        this.bases = java.util.Collections.unmodifiableList(baseList);
         this.fuels = List.copyOf(l.fuels);
         this.cannonList = new java.util.ArrayList<>(l.cannons);
         this.cannons = java.util.Collections.unmodifiableList(cannonList);
@@ -218,6 +221,18 @@ public final class WorldMap {
     public void setCannonTeam(int index, int team) {
         Cannon c = cannonList.get(index);
         cannonList.set(index, new Cannon(c.index(), c.bx(), c.by(), c.dir(), c.x(), c.y(), team));
+    }
+
+    /**
+     * Set base {@code index}'s heading (RES units). A client of an original XPilot server takes it from the
+     * setup's {@code SETUP_BASE_UP..LEFT} codes, which the server derived with gravity and attractors the
+     * client never sees.
+     * <p>
+     * BEHAVIOR: the base record is replaced by one with the new heading; everything else stays.
+     */
+    public void setBaseDir(int index, int dir) {
+        Base b = baseList.get(index);
+        baseList.set(index, new Base(b.index(), b.bx(), b.by(), dir, b.team(), b.teamDigit()));
     }
 
     /** C {@code Find_closest_team} for block (bx, by): see {@link MapLoader#closestTeam}. */

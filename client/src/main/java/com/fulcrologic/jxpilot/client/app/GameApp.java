@@ -241,8 +241,28 @@ public final class GameApp {
         glfwSetWindowFocusCallback(h, (w, focused) -> {
             if (!focused) {
                 frame.focusLost();
+            } else {
+                frame.focusGained();
             }
         });
+        glfwSetScrollCallback(h, (w, dx, dy) -> frame.scroll(dy, System.nanoTime()));
+    }
+
+    /** Left edge of the game view in window coordinates (the panel is on the left). */
+    private double viewLeft;
+    private boolean cursorGrabbed;
+
+    /** Pointer control: grab and hide the pointer while on (C XGrabPointer), and put it where C warps it. */
+    private void applyPointer() {
+        com.fulcrologic.jxpilot.client.game.input.PointerControl pc = frame.play().pointer();
+        long h = window.handle();
+        if (pc.grabbed() != cursorGrabbed) {
+            cursorGrabbed = pc.grabbed();
+            glfwSetInputMode(h, GLFW_CURSOR, cursorGrabbed ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        }
+        if (pc.takeWarp() && cursorGrabbed) {
+            glfwSetCursorPos(h, viewLeft + pc.mouseX(), pc.mouseY());
+        }
     }
 
     private final FramePacer pacer = new FramePacer();
@@ -369,7 +389,9 @@ public final class GameApp {
         int viewFbW = Math.max(1, fbW - panelFb);
         int viewW = (int) (viewFbW / ratio);
         int viewH = (int) (fbH / ratio);
+        viewLeft = panelFb / ratio;
         frame.step(now, viewW, viewH, zoom, fonts, PANEL_W, radarHeight);
+        applyPointer();
         if (frame.mapVersion() != mapVersion) {
             mapVersion = frame.mapVersion();
             loadMap(frame.game().map());
@@ -513,12 +535,12 @@ public final class GameApp {
         dyn.identity();
         dyn.texRect(left, bottom, right, top, u0, v1, u1, 0, palette.color(Palette.WHITE));
         radarPainter.begin(left, bottom, right, top, radarHeight, map.pixelWidth(), map.pixelHeight(), map.edgeWrap());
-        // server-modes: the next race checkpoint before the own ship (C Paint_checkpoint_radar, paintradar.c:133, 287)
-        int next = frame.mapState().nextCheckpoint();
-        if (frame.game().timing() && next >= 0 && next < map.checkpoints().size()) {
-            radarPainter.checkpoint(dyn, map.checkpoints().get(next).bx(), map.checkpoints().get(next).by());
-        }
         RadarBlips r = frame.radar();
+        // the next race checkpoint before the own ship (C Paint_checkpoint_radar, paintradar.c:133, 287;
+        // SceneFiller.radarCheckpoint decides it)
+        if (r.checkpointVisible) {
+            radarPainter.checkpoint(dyn, r.checkpointBx, r.checkpointBy);
+        }
         if (r.selfVisible) {
             radarPainter.self(dyn, r.selfX, r.selfY, r.selfHeading, loops);
             radarPainter.selfBlip(dyn, r.selfX, r.selfY);

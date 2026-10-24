@@ -137,6 +137,7 @@ Server → client:
 | 20 | TIMING | race mode only (C `Send_timing`): u16 id, u8 check (the next checkpoint the player must pass, C `pl->check`), u16 round (laps started, 0 before the first checkpoint). Sent for every player in the initial state and whenever a player passes a checkpoint or race progress is reset. The last checkpoint passed is check - 1 (wrapping); the own player's check is the checkpoint the client highlights. Ids 20-26 are the game-mode block |
 | 28 | MOTD | u32 offset, u32 total size, bytes: a piece of the server's message of the day (C `motdFileName`, Latin-1, at most 30 KB). *(server-batch2 block 28-30.)* The server sends all pieces once, with the first event drain after the initial state, when it has a MOTD; the client shows it (C's MOTD viewer) once every piece is in. Old clients skip it |
 | 31 | PLAYER_ALLIANCE | u16 id, u8 mark (Latin-1): the alliance mark of player id as this receiver sees it, C `Send_score`'s alliance character (netserver.c:1670-1678): ' ' not in an alliance, '+' in the receiver's own alliance (when `announceAlliances` is off; other alliances then show ' '), '0'-'9' the alliance number (when `announceAlliances` is on). Sent when a player's alliance changes (C resends the score then); when the receiver's own alliance changes it gets every player's mark again (its '+' marks may all have changed), and after an operator changes `announceAlliances` every player's mark goes to everyone. Also in the initial state for players in alliances (every player after a resync). The client shows it in the score list's team column outside team play and treats equal non-blank marks as friends (blue ship, friendly lock). Ids 32-33 are reserved for server-commands |
+| 40 | WAR | u16 robotId, u16 killerId: a robot's war target changed (C `Send_war`, the id is C's PKT_WAR); killerId NO_ID ends the war. The client keeps the target (C `war_id`, also set by SEEK, cleared when the target leaves), shows it in the score list as " (NAME)" after the robot's name and, for a new target, logs "ROBOT declares war on KILLER." (C `Handle_war`). Sent to everyone as C `Robot_war` does: when a robot declares war on its killer, and (NO_ID) when a robot kills the player it was at war with; the initial state sends it for every robot already at war |
 
 Client → server:
 
@@ -165,7 +166,10 @@ header's `lastInputSeq` (the newest the server applied), at least 1 and at most 
 (VPN drop, ICMP port unreachable) INPUT, reliable data and ACKs pause for 250 ms.
 `keys` is a `ControlKey` mask: bit = `keys_t` value − 1 (KEY_LOCK_NEXT … KEY_DEFLECTOR = 64 keys).
 The server applies entries newer than the last applied sequence, oldest first, and derives press/release
-edges by comparing consecutive masks. `aimTurn` is a pointer-control turn in u16 angle units (0 = none).
+edges by comparing consecutive masks. `aimTurn` is pointer control's horizontal mouse movement in window
+pixels (C `PKT_POINTER_MOVE`, 0 = none); held frames' movements are summed into the next INPUT. The server
+applies each entry when it reads it, as C `Receive_pointer_move`: ignored in hover pause, the autopilot switched off,
+`turnVel -= sign * clamp(|movement| * turnSpeed / 64)` with the clamp 4..64 under a turn resistance, else 0..5 * RES.
 `ackTick` is the newest snapshot tick received.
 
 ## SNAPSHOT — `SnapshotWriter` / `SnapshotReader` / `Records`
@@ -208,7 +212,7 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 | 5 | CANNON | 3 | u16 index, u8 flags (dead, phasing, shield) |
 | 6 | FUEL | 4 | u16 index, frac level (of 500) |
 | 7 | TARGET | 5 | u16 index, u8 flags (dead), frac strength left |
-| 8 | RADAR | 3 | u8 x, u8 y (1/256 of the world size, decoded to the cell centre), u8 flags (friendly, self, missile, mine, ball, nuke, asteroid, locked) — whole world |
+| 8 | RADAR | 3 | u8 x, u8 y (1/256 of the world size, decoded to the cell centre), u8 flags (friendly, self, missile, mine, ball, nuke, asteroid, locked) — whole world. Section variant: 0, or for a section of asteroid blips their size (C `Frame_radar` draws an asteroid size + 1 pixels; one section per size, so ordinary blips cost nothing extra). Readers that ignore the variant draw every asteroid at size 1 |
 | 9 | ITEM | 5 | rel x, rel y, u8 item (`Item`) |
 | 10 | MINE | 7 | rel x, rel y, u8 flags, u16 owner |
 | 11 | MISSILE | 10 | u16 id, rel x, rel y, ang heading, u8 kind (smart/heat/torpedo, 0x80 nuclear), u8 length |
