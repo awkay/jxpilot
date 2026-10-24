@@ -93,11 +93,13 @@ public final class SceneFiller {
         int lock = w.hasSelf() ? w.selfLockId() : Protocol.NO_ID;
         boolean selfAlive = w.hasSelf() && (w.selfFlags() & Records.ShipFlags.DEAD) == 0;
         if (selfAlive) {
+            pauseCount = 0;
             addShip(out, p, w.selfId(), w.selfFlags(), w.selfX(), w.selfY(), w.selfHeading(), true, teamPlay, false);
         }
         for (int i = 0; i < w.shipCount(); i++) {
             int flags = w.shipFlags(i);
             if ((flags & Records.ShipFlags.DEAD) == 0) {
+                pauseCount = w.shipVx(i);
                 addShip(out, p, w.shipId(i), flags, w.shipX(i), w.shipY(i), w.shipHeading(i), false, teamPlay,
                     w.shipId(i) == lock);
             }
@@ -129,7 +131,8 @@ public final class SceneFiller {
     /**
      * One ship.
      * <p>
-     * BEHAVIOR: a PAUSED ship becomes a paused marker at its position (countdown 0: steadily shown).
+     * BEHAVIOR: a PAUSED ship becomes a paused marker at its position; one without an id (C PKT_PAUSED) carries
+     * C's pause count in its vx (the P blinks while it is above 0), others count 0 (steadily shown).
      * BEHAVIOR: otherwise a ship with the player's shape (the default ship for unknown players), the
      * {@link #SHIP_PAINT_FLAGS} of its flags, colour {@link ShipPainter#shipColor}(friendly, self, round delay
      * pending) with friendly from {@link #friendly}, the lock flag, and the player's name (null when
@@ -138,7 +141,7 @@ public final class SceneFiller {
     void addShip(SceneData out, Players p, int id, int flags, float x, float y, float heading, boolean self,
                  boolean teamPlay, boolean locked) {
         if ((flags & Records.ShipFlags.PAUSED) != 0) {
-            out.addPaused(x, y, 0);
+            out.addPaused(x, y, id == Protocol.NO_ID ? Math.max(0, Math.round(pauseCount)) : 0);
             return;
         }
         int slot = p.slotOf(id);
@@ -150,6 +153,8 @@ public final class SceneFiller {
 
     private boolean roundDelay;
     private WorldMap map;
+    /** The vx of the ship being added: C's pause count for a paused ship without an id (see XpTranslator). */
+    private float pauseCount;
 
     /**
      * The M2 objects of {@link ClientWorld#objects()} into the scene.

@@ -33,6 +33,7 @@ import com.fulcrologic.jxpilot.common.map.Base;
 import com.fulcrologic.jxpilot.common.net.ControlKey;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.net.Records;
+import com.fulcrologic.jxpilot.common.net.Section;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -435,6 +436,44 @@ class ClientFrameTest {
                 () -> assertTrue(power, "Power meter after the key"),
                 () -> assertTrue(turn, "Turnspeed meter too"),
                 () -> assertFalse(after, "gone after CONTROL_DELAY frames"));
+        }
+    }
+
+    @Nested
+    @DisplayName("F3: playing state")
+    class PlayingState {
+        @Test
+        @DisplayName("frames without SELF (ECM damage) keep the playing state: the shields are not re-raised")
+        void damagedFrames() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = frame(f);
+            f.begin(100).self(0, 350, 175, 0, 0xFFFF).send(100);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            cf.key(GLFW_KEY_SPACE, GLFW_PRESS, 0, T0);
+            cf.key(GLFW_KEY_SPACE, GLFW_RELEASE, 0, T0);
+            long lowered = cf.input().keys() & ControlKey.SHIELD.mask();
+            for (int t = 101; t < 106; t++) {
+                f.begin(t);
+                f.w.beginSection(Section.TIMERS);
+                Records.Timers.put(f.w, 20, 0, -1);
+                f.w.endSection();
+                f.send(t);
+                cf.step(T0 + (t - 100) * 71_000_000L, 800, 600, 1, M, 256, 100);
+            }
+            long during = cf.input().keys() & ControlKey.SHIELD.mask();
+            boolean playing = f.game.world().selfPlaying();
+            f.begin(106).self(0, 350, 175, 0, 0xFFFF).send(106);
+            cf.step(T0 + 6 * 71_000_000L, 800, 600, 1, M, 256, 100);
+            long after = cf.input().keys() & ControlKey.SHIELD.mask();
+            f.begin(107).self(Records.ShipFlags.DEAD, 350, 175, 0, 0xFFFF).send(107);
+            cf.step(T0 + 7 * 71_000_000L, 800, 600, 1, M, 256, 100);
+            boolean deadPlaying = f.game.world().selfPlaying();
+            assertAll(
+                () -> assertEquals(0L, lowered, "the shield key released: shields down"),
+                () -> assertTrue(playing, "five frames without SELF: still playing"),
+                () -> assertEquals(0L, during, "shields stay down during the damage"),
+                () -> assertEquals(0L, after, "and after it (no false re-entry into play)"),
+                () -> assertFalse(deadPlaying, "a SELF that is DEAD (not PLAYING) ends play"));
         }
     }
 }

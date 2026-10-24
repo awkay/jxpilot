@@ -170,6 +170,9 @@ public final class ClientWorld {
     private int defaultEngineY = ShipShape.defaultShip().engineY;
 
     private boolean haveNewest;
+    private boolean haveSelfState;
+    private int selfStateTick;
+    private boolean selfPlaying;
     private int newestTick;
     private boolean samplePending;
     private int sampleTick;
@@ -369,6 +372,8 @@ public final class ClientWorld {
         outObjs.clear();
         outSelf = false;
         havePrediction = false;
+        haveSelfState = false;
+        selfPlaying = false;
     }
 
     /** Forget every frame's association (tests: time a fresh association in {@link #update}). */
@@ -456,6 +461,11 @@ public final class ClientWorld {
             decodeSection(f, newest);
         }
         generateSparks(f, firstShip, !selfBefore && f.hasSelf);
+        if (f.hasSelf && (!haveSelfState || f.tick - selfStateTick >= 0)) {
+            haveSelfState = true;
+            selfStateTick = f.tick;
+            selfPlaying = (f.selfFlags & Records.ShipFlags.DEAD) == 0;
+        }
         SnapshotFrame prev = frameFor(tick - 1);
         if (prev != null) {
             associate(prev, f);
@@ -803,7 +813,8 @@ public final class ClientWorld {
      * are drawn at B; ships only in A (B's part lost, or the ship left) are extrapolated from A like the
      * no-B case, so they do not flicker; ships that moved more than {@link #TELEPORT_PX} are snapped to B;
      * flags come from the nearer frame. With no B, ships are extrapolated from A by their velocity, at most
-     * 2 snapshot intervals; with no A, B is drawn as is. The own ship is not in the ship list.
+     * 2 snapshot intervals; with no A, B is drawn as is. The own ship is not in the ship list. Ships without
+     * an id (C paused ships) are never interpolated or extrapolated: drawn as A has them (F6).
      * BEHAVIOR: M2 objects (items, mines, missiles, balls, lasers, asteroids, wreckage, ECM, connectors,
      * transporters) come from A (else B), balls and missiles interpolated ({@link #drawObjects}).
      * BEHAVIOR: shots and point particles are linked from A to their continuations in B
@@ -862,15 +873,17 @@ public final class ClientWorld {
         if (a != null) {
             shipIndex.clear();
             for (int j = 0; j < a.ships; j++) {
-                shipIndex.put(a.shipId[j], j);
+                if (a.shipId[j] != Protocol.NO_ID) {
+                    shipIndex.put(a.shipId[j], j);
+                }
                 usedA[j] = false;
             }
         }
         double t = a == null ? 1 : (renderTick - a.tick) / (double) (b.tick - a.tick);
         for (int i = 0; i < b.ships; i++) {
             int id = b.shipId[i];
-            if (id == selfId) {
-                continue;
+            if (id == selfId || id == Protocol.NO_ID && a != null) {
+                continue; // F6: ships without an id (C paused ships) are drawn from the earlier frame as they are
             }
             int j = a == null ? -1 : shipIndex.get(id);
             if (j >= 0) {
@@ -900,6 +913,10 @@ public final class ClientWorld {
         double dt = clampExtrapolation(renderTick - a.tick) * frameFraction;
         for (int i = 0; i < a.ships; i++) {
             if (a.shipId[i] == selfId || onlyUnused && usedA[i]) {
+                continue;
+            }
+            if (a.shipId[i] == Protocol.NO_ID) {
+                putShip(a, i, a.shipX[i], a.shipY[i], a.shipHeading[i], a.shipFlags[i]);
                 continue;
             }
             putShip(a, i, wrapX(a.shipX[i] + a.shipVx[i] * dt), wrapY(a.shipY[i] + a.shipVy[i] * dt),
@@ -1326,6 +1343,12 @@ public final class ClientWorld {
 
     /** Estimated server tick at the last {@link #update}. */
     public double serverTickNow() { return serverTickNow; }
+
+    /**
+     * F3: the own player is in play according to the newest SELF ever received (not DEAD: C's status is
+     * PLAYING); frames without SELF (C sends an ECM-damaged player none) keep the last state.
+     */
+    public boolean selfPlaying() { return selfPlaying; }
 
     /** True when a SELF record exists (own ship accessors valid). */
     public boolean hasSelf() { return outSelf; }

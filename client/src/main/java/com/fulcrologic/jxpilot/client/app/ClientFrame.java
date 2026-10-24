@@ -120,8 +120,9 @@ public final class ClientFrame {
      * <p>
      * BEHAVIOR: elapsed time (0 on the first step) ages messages and HUD timers by {@code dt * gameFps}
      * original frames.
-     * BEHAVIOR: order: receive, game frame, map check, shields ({@link InputState#setPlaying}: own ship
-     * present and not dead), INPUT with the current keys, flush.
+     * BEHAVIOR: order: receive, game frame, map check, shields ({@link InputState#setPlaying}: the newest
+     * SELF says the player is in play, C Game_over_action; frames without SELF change nothing), INPUT with the
+     * current keys, flush.
      * BEHAVIOR: a new map object bumps {@link #mapVersion()} and centres the view on the first base
      * (the map centre without bases); afterwards the own ship, whenever it exists, is the centre.
      * BEHAVIOR: while not playing the HUD's status line shows the connection's current status; on the first
@@ -145,7 +146,7 @@ public final class ClientFrame {
             }
         }
         ClientWorld w = game.world();
-        boolean inPlay = w.hasSelf() && (w.selfFlags() & Records.ShipFlags.DEAD) == 0;
+        boolean inPlay = w.selfPlaying();
         input.setPlaying(inPlay);
         conn.sendInput(input.keys(), 0, nowNanos);
         conn.flush(nowNanos);

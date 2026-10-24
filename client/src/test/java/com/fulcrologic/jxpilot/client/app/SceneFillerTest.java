@@ -136,6 +136,24 @@ class SceneFillerTest {
         }
 
         @Test
+        @DisplayName("a paused ship without an id (C PKT_PAUSED) blinks with its pause count, carried in vx")
+        void pausedCount() {
+            AppFixture f = new AppFixture(true).players().twice(x -> {
+                x.self(0, 100, 100, 0, 0xFFFF);
+                x.w.beginSection(Section.SHIP);
+                Records.Ship.put(x.w, Protocol.NO_ID, PAUSED, 300, 200, 0, 7, 0);
+                Records.Ship.put(x.w, FOE, PAUSED, 400, 200, 0, 5, 0);
+                x.w.endSection();
+            });
+            fill(f);
+            assertAll(
+                () -> assertEquals(2, scene.pausedCount, "two markers"),
+                () -> assertEquals(7, scene.pausedCountdown[0], "the id-less one counts 7 (it blinks)"),
+                () -> assertEquals(300f, scene.pausedX[0], "drawn where sent: not extrapolated by its vx"),
+                () -> assertEquals(0, scene.pausedCountdown[1], "a paused ship with an id: steady (its vx is motion)"));
+        }
+
+        @Test
         @DisplayName("a paused own ship is a paused marker too")
         void pausedSelf() {
             AppFixture f = new AppFixture(true).players().twice(x -> x.self(PAUSED, 120, 110, 0, 0xFFFF));

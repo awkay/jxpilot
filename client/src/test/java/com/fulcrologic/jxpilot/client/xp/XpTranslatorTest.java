@@ -140,6 +140,23 @@ class XpTranslatorTest {
         }
 
         @Test
+        void statusOtherThanPlayingIsDeadEvenWithTheShipInView() {
+            List<String> paused = frame(c(1).self(10, 10, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 2, 768, 768, 0,
+                XpProto.STATUS_PLAYING | XpProto.STATUS_PAUSE, 0).ship(10, 10, 3, 0).end(1));
+            List<String> over = frame(c(2).self(10, 10, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 2, 768, 768, 0,
+                XpProto.STATUS_PLAYING | XpProto.STATUS_GAME_OVER, 0).ship(10, 10, 3, 0).end(2));
+            List<String> playing = frame(c(3).self(10, 10, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 2, 768, 768, 0,
+                XpProto.STATUS_PLAYING, 0).ship(10, 10, 3, 0).end(3));
+            assertAll(
+                () -> assertTrue(SnapDump.only(paused, "SELF").get(0).startsWith("SELF id=3 flags="
+                    + (Records.ShipFlags.DEAD | Records.ShipFlags.PAUSED) + " "), "PLAYING|PAUSE: not in play"),
+                () -> assertTrue(SnapDump.only(over, "SELF").get(0).startsWith("SELF id=3 flags="
+                    + Records.ShipFlags.DEAD + " "), "PLAYING|GAME_OVER: not in play"),
+                () -> assertTrue(SnapDump.only(playing, "SELF").get(0).startsWith("SELF id=3 flags=0 "),
+                    "PLAYING alone: in play"));
+        }
+
+        @Test
         void noSelfIdYetIsNoId() {
             XpTranslator t2 = new XpTranslator(rec);
             t2.configure(built, 0, XpProto.MY_VERSION);
@@ -268,7 +285,8 @@ class XpTranslatorTest {
         void pausedShipsHaveNoIdOnTheWire() {
             List<String> s = frame(c(1).self(1000, 1000).paused(1050, 1000, 3).end(1));
             assertEquals(List.of("SHIP id=" + Protocol.NO_ID + " flags=" + Records.ShipFlags.PAUSED
-                + " pos=1050.0,1000.0 h=0.000 vel=0.0,0.0"), SnapDump.only(s, "SHIP"), "paused ship");
+                + " pos=1050.0,1000.0 h=0.000 vel=3.0,0.0"), SnapDump.only(s, "SHIP"),
+                "paused ship: no id, C's pause count (3) as vx");
         }
     }
 

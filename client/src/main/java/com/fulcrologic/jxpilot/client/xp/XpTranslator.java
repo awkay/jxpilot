@@ -170,8 +170,9 @@ public final class XpTranslator {
      * BEHAVIOR: tick = C frame number, one part; the view centre is the own ship (else the last one).
      * BEHAVIOR: sections: SELF (with PKT_SELF), SHIP (ships, paused ships), SHOT (fast shots by colour),
      * BURST (debris), CANNON/FUEL/TARGET (updates, C numbers mapped to WorldMap indices), RADAR,
-     * SELF_ITEMS (with PKT_SELF), the M2 object sections and TIMERS (with PKT_SELF: damaged, round delay
-     * (none = 0) and the time left of a PKT_TIME_LEFT in this frame, else -1).
+     * SELF_ITEMS (with PKT_SELF), the M2 object sections and TIMERS in every frame (C sends an ECM-damaged
+     * player only PKT_DAMAGED: damaged, round delay (none = 0), the time left of a PKT_TIME_LEFT in this frame,
+     * else -1, and the meters).
      * BEHAVIOR: the frame's PKT_AUDIO become the SOUND section (C {@code Handle_audio}: type and volume as
      * sent), with or without PKT_SELF.
      * BEHAVIOR: does nothing before {@link #configure}.
@@ -206,7 +207,7 @@ public final class XpTranslator {
             w.endSection();
         }
         writeObjects(f);
-        if (f.hasSelf && w.beginSection(Section.TIMERS)) {
+        if (w.beginSection(Section.TIMERS)) {
             Records.Timers.put(w, Math.max(0, f.damaged), Math.max(0, f.roundDelay), f.timeLeft, Math.max(0, f.destruct),
                 meterLeft(f.thrustTime, f.thrustMax), meterMax(f.thrustTime, f.thrustMax),
                 meterLeft(f.shieldTime, f.shieldMax), meterMax(f.shieldTime, f.shieldMax),
@@ -259,7 +260,8 @@ public final class XpTranslator {
 
     /**
      * BEHAVIOR: flags from the own PKT_SHIP (shield, cloak...), DEAD when the own ship is not in the
-     * frame (C {@code selfVisible}), PAUSED / SELF_DESTRUCT from the status byte; fuel in C units; power,
+     * frame (C {@code selfVisible}) or the status is not PLAYING (C {@code Game_over_action}: PLAYING without
+     * PAUSE or GAME_OVER), PAUSED / SELF_DESTRUCT from the status byte; fuel in C units; power,
      * turn speed, turn resistance, lock distance/direction and checkpoint as sent; the PKT_MODIFIERS string
      * as {@link Modifiers#parse} bits.
      */
@@ -268,6 +270,10 @@ public final class XpTranslator {
             return;
         }
         int flags = selfShip >= 0 ? shipFlags(f.shipFlags[selfShip]) : Records.ShipFlags.DEAD;
+        if ((f.selfStat & (XpProto.STATUS_PLAYING | XpProto.STATUS_PAUSE | XpProto.STATUS_GAME_OVER))
+            != XpProto.STATUS_PLAYING) {
+            flags |= Records.ShipFlags.DEAD; // C Game_over_action: not in play
+        }
         if ((f.selfStat & XpProto.STATUS_PAUSE) != 0) {
             flags |= Records.ShipFlags.PAUSED;
         }
@@ -309,7 +315,7 @@ public final class XpTranslator {
     /**
      * BEHAVIOR: one SHIP record per PKT_SHIP with the derived velocity; a PKT_REFUEL ending at a ship
      * marks it REFUELING, one starting at a ship marks it REPAIRING; paused ships (no id on the wire)
-     * are SHIP records with id NO_ID and PAUSED.
+     * are SHIP records with id NO_ID and PAUSED, carrying C's pause count as vx (px/frame units).
      */
     private void writeShips(XpFrame f) {
         if (f.ships + f.paused == 0 || !w.beginSection(Section.SHIP)) {
@@ -329,7 +335,8 @@ public final class XpTranslator {
             double x = wrapX(f.pausedX[i]);
             double y = wrapY(f.pausedY[i]);
             if (visible(x, y)) {
-                Records.Ship.put(w, Protocol.NO_ID, Records.ShipFlags.PAUSED, x, y, 0, 0, 0);
+                // no id on the wire; C's pause count (the P blinks while it is above 0) rides in vx
+                Records.Ship.put(w, Protocol.NO_ID, Records.ShipFlags.PAUSED, x, y, 0, f.pausedCount[i], 0);
             }
         }
         w.endSection();
