@@ -154,6 +154,15 @@ mine, a pack of mines, then (after selecting the next item) a pack of missiles.
          down:KP_Delete sleep:0.15 up:KP_Delete sleep:0.4 down:KP_0 sleep:0.15 up:KP_0
          sleep:0.2 down:KP_Delete sleep:0.15 up:KP_Delete sleep:2.5"
 
+lose-item-right.txt (80 frames), seed 42: thrust, turn left, thrust again so that the ship
+moves right (vx > 0), select the mines and lose a pack (F40); a second pack is lost once
+gravity has turned vx negative (F48): both branches of Place_item's drop offset and speed.
+  options: -initialMines 3 -initialMissiles 2
+  keys: "sleep:0.3 down:Shift_L sleep:0.3 up:Shift_L sleep:0.1 down:a sleep:0.25 up:a
+         sleep:0.1 down:Shift_L sleep:0.3 up:Shift_L sleep:0.2 down:KP_0 sleep:0.15 up:KP_0
+         sleep:0.2 down:KP_Delete sleep:0.15 up:KP_Delete sleep:0.4 down:KP_Delete
+         sleep:0.15 up:KP_Delete sleep:2.5"
+
 tanks.txt (73 frames), seed 42: switch tanks and thrust so that fuel moves between tanks.
   options: -initialTanks 2
   keys: "sleep:0.3 down:e sleep:0.15 up:e sleep:0.2 down:Shift_L sleep:0.5 up:Shift_L

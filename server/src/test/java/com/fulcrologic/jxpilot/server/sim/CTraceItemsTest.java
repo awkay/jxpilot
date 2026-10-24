@@ -231,6 +231,13 @@ class CTraceItemsTest {
     }
 
     @Test
+    @DisplayName("mine packs lost while moving right, then left (both drop offset and speed branches)")
+    void loseItemRight() throws IOException {
+        check(replay("lose-item-right.txt", "initialMines", "3", "initialMissiles", "2"), 80,
+            has("dropped item packs", r -> r.of(Obj.ITEM) > 40));
+    }
+
+    @Test
     @DisplayName("extra tanks: switching and fuel flow")
     void tanks() throws IOException {
         check(replay("tanks.txt", "initialTanks", "2"), 73);
