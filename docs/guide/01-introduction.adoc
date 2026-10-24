@@ -98,12 +98,12 @@ replayed with the C server's own random numbers.
 alliances, custom ship shapes, the login queue and the message of the day
 (<<03-playing.adoc#commands,Commands>>, <<04-running-a-server.adoc#operators,Operator commands>>).
 
-|Client options
+|Client options and look
 |In progress
-|Every XPilot client resource is accepted in `~/.xpilotrc` or on the command line (`--RESOURCE VALUE`).
-`name`, `team` and the HUD, item and message options take effect
-(<<07-client-reference.adoc#client-resources,Client resources>>). XPilot's settings panel and its
-font resources are not built yet.
+|XPilot's button bar (QUIT, ABOUT, MENU), the CONFIG panel with "Save Configuration", XPilot's score
+list and per-role fonts are done, and every XPilot client resource is accepted in `~/.xpilotrc` or as
+`--RESOURCE VALUE` (<<07-client-reference.adoc#client-resources,Client resources>>). Still in progress:
+XPilot's look options, such as the packet meters, the clock, textures and colours.
 
 |Map viewer
 |Works

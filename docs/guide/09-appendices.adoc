@@ -41,6 +41,10 @@ https://github.com/awkay/jxpilot.
 `maps/*.xp`, the maps zip |GPL v2 or later (part of the XPilot distribution; `META-INF/LICENSE` in the
 jars); authors in <<06-config-and-maps.adoc#shipped-maps,Shipped maps>>
 |Fira Code font |Client jar (`fonts/`) |SIL Open Font License 1.1 (`fonts/FiraCode-LICENSE.txt`)
+|Liberation fonts 2.1.5 (Red Hat): Serif, Sans and Mono faces, from
+https://github.com/liberationfonts/liberation-fonts, unmodified |Client jar (`fonts/`) |SIL Open Font
+License 1.1 (`fonts/Liberation-LICENSE.txt`). The OFL lets the fonts be bundled with any software; they
+may not be sold on their own, and a modified version may not use the name Liberation.
 |Sound effects: Juhani Junkala, "The Essential Retro Video Game Sound Effects Collection [512
 sounds]" (21 clips), and Kenney, "Sci-Fi Sounds" `thrusterFire_004` (the engine loop) |Client jar
 (`sounds/`) |CC0 1.0 (public domain). Sources, checksums, the clip each came from and how it was
@@ -77,8 +81,6 @@ source.
 error
 |Player names |must start with a capital letter (the XPilot client capitalizes) |any non-empty name;
 names already in use are refused, ignoring case
-|Real names and host names |shown in the player list and join messages |not known; join messages show
-the player name only
 |Keys |every key press in a client packet counts |the server sees your keys once per frame; a key
 pressed and released within one frame (1/14 s) is lost
 |Random events |XPilot's random number generator |another generator: random details (sparks, explosions, robot
@@ -86,15 +88,14 @@ choices) differ, nothing else
 |Exhaust sparks |drawn from the server's random numbers |every client computes the server's sparks
 from the frame and the ship, so they are not sent; their push on other ships matches XPilot on
 average, not frame for frame
-|Gravity of a `gravityPoint` on a non-square wrapping map; objects exactly half a world apart; connecting
-to a ball that was just destroyed |XPilot bugs |fixed
+|Connecting to a ball that was just destroyed |an XPilot bug |fixed
 |`--map NAME` |a file in the current directory, then in the map directory (`MAPDIR`) |the 19 standard
 maps are built into the jars and a plain name means one of them first; a file of the same name in the
 current directory needs a path (`./default.xp`)
 |`denyHosts` |only takes effect after an operator changes it during the game (an XPilot bug); IPv4; `:`
 also separates entries |applies from the start; IPv4 and IPv6, so `:` does not separate entries
 |`serverHost` |the address the contact socket binds |the bind selector when `--bind` is not given
-|`logRobots` |on standard output, with a time stamp |on the server log, without a time stamp
+|`logRobots` |on standard output |on the server log (standard error), with the other server messages
 |Login queue |the client asks to join the queue and the server confirms its position every few
 seconds |the client keeps asking every second and is told its position; the queue rules are XPilot's
 |Ship shape |sent when you join |the same; a shape change during the game is ignored
@@ -104,8 +105,6 @@ got when they joined
 minutes
 |Option numbers |`inf` and `nan` are accepted |refused (the default at start-up, "invalid value" for
 `/set`)
-|`/get minVisibilityDistance`, `/get maxVisibilityDistance` |after the first use, the value in pixels
-the server computed from it |the configured value
 |Changing options over the network |an admin tool can list and change options through the contact port
 |not available; operators use `/get` and `/set` in the game
 |Password file |`LIBDIR/password` unless named otherwise; a missing file is skipped |read only when
