@@ -100,11 +100,16 @@ class AllocationTest {
         }
 
         void check(String phase, long before, boolean measured) {
+            check(phase, before, measured, -1, -1);
+        }
+
+        /** As {@link #check(String, long, boolean)} with two numbers for the report (no string building). */
+        void check(String phase, long before, boolean measured, long x1, long x2) {
             long d = MX.getCurrentThreadAllocatedBytes() - before;
             if (measured && d != 0 && bad < 0) {
                 bad = w.tick;
                 badBytes = d;
-                badPhase = phase;
+                badPhase = phase + " " + x1 + " " + x2;
             }
         }
 
@@ -270,5 +275,6 @@ class AllocationTest {
             () -> assertEquals("none", m.report(), "no measured tick allocates"),
             () -> assertTrue(f > 0, "racers finished in the window (" + f + ")"));
     }
+
 
 }

@@ -94,14 +94,20 @@ public final class Asteroids {
      */
     private float damage;
 
+    /** {@link #mass} by size 1..{@link #MAX_SIZE}. */
+    private final float[] masses = new float[MAX_SIZE + 1];
+
     public Asteroids(World w, Simulation sim) {
         this.w = w;
         this.sim = sim;
+        for (int size = 1; size <= MAX_SIZE; size++) {
+            masses[size] = (float) ((w.params.shipMass * 3) * StrictMath.pow(2.0 + DUST_MASS, size - 1.0));
+        }
     }
 
-    /** C {@code ASTEROID_MASS(size)}: (ShipMass * 3) * 2.25^(size-1), a float. */
+    /** C {@code ASTEROID_MASS(size)}: (ShipMass * 3) * 2.25^(size-1), a float (precomputed: pow allocates). */
     float mass(int size) {
-        return (float) ((w.params.shipMass * 3) * StrictMath.pow(2.0 + DUST_MASS, size - 1.0));
+        return masses[size];
     }
 
     /** C {@code ASTEROID_RADIUS(size)}: 0.8 * SHIP_SZ * size. */
