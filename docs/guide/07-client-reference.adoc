@@ -101,10 +101,10 @@ personalities>>). The server uses it if it allows ship shapes.
 
 |`--sound`, `--no-sound`
 |sound on
-|Play sound effects or not (XPilot's `sound` resource; <<03-playing.adoc#sound,Sound>>).
+|Play sound effects or not (JXPilot only; <<03-playing.adoc#sound,Sound>>).
 
 |`--volume N`
-|`100`
+|`maxVolume` from the keys file, else `100`
 |XPilot's `maxVolume`, 0 to 255: the loudest a sound plays. `0` is no sound; above 100 plays like 100.
 
 |`--keys FILE`
