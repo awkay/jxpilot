@@ -85,7 +85,7 @@ public final class ServerNetConfig {
     /** Reliable window slots kept free for game messages while the map streams. */
     public int configReserveSlots = 4;
     /** C {@code denyHosts}: CONNECTs from these networks are ignored ({@link DenyList}). */
-    public DenyList denyHosts = DenyList.NONE;
+    public volatile DenyList denyHosts = DenyList.NONE;
 
     /** BEHAVIOR: reliable datagrams per peer per tick: reliablePacketsPerSecond / simHz rounded up, at least 1. */
     public int reliablePacketsPerTick() {

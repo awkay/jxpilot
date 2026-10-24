@@ -697,6 +697,17 @@ public final class ServerNet {
     /** Non-CONNECT packets from unknown peers or with a wrong session. */
     public long stray() { return stray; }
 
+    /**
+     * C's denyHosts tuner ({@code Set_deny_hosts}, contact.c:1225-1260): a new deny list at runtime, e.g. from
+     * {@code /set denyHosts}.
+     * <p>
+     * BEHAVIOR: parsed exactly like the option at startup ({@link DenyList#parse}): networks with prefix /0 or a
+     * zero mask are skipped, as C skips mask 0 (contact.c:1242-1247); null or empty clears the list.
+     */
+    public void denyHosts(String list) {
+        cfg.denyHosts = DenyList.parse(list);
+    }
+
     /** Packets outside a session ignored because their source is in denyHosts (C contact.c Check_address). */
     public long denied() { return denied; }
 

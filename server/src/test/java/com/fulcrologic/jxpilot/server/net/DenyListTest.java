@@ -130,6 +130,29 @@ class DenyListTest {
     }
 
     @Test
+    @DisplayName("denyHosts set at runtime (/set denyHosts) parses like the option: /0 and zero masks are skipped")
+    void runtime() {
+        Harness h = new Harness(new ServerNetConfig(), "mapName: test\n");
+        InetSocketAddress bad = Harness.addr("10.9.9.9", 4000);
+        InetSocketAddress other = Harness.addr("192.0.2.1", 4000);
+        h.net.denyHosts("0.0.0.0/0, ::/0, 0.0.0.0/0.0.0.0, 10.9.9.9");
+        h.in(0, bad, new TestClient(1).connect("Bad", 255, ""));
+        h.in(0, other, new TestClient(2).connect("Other", 255, ""));
+        long deniedAfterSet = h.net.denied();
+        boolean otherJoined = h.isConnected(0, other);
+        int listed = h.cfg.denyHosts.size();
+        h.net.denyHosts("");
+        InetSocketAddress bad2 = Harness.addr("10.9.9.9", 4001);
+        h.in(0, bad2, new TestClient(3).connect("Back", 255, ""));
+        assertAll(
+            () -> assertEquals(1, deniedAfterSet, "only the listed host is denied: /0 does not deny everyone"),
+            () -> assertTrue(otherJoined, "an address outside the list joins"),
+            () -> assertEquals(1, listed, "the list holds only the host"),
+            () -> assertEquals(0, h.cfg.denyHosts.size(), "an empty value clears the list"),
+            () -> assertTrue(h.isConnected(0, bad2), "a cleared list lets the host in"));
+    }
+
+    @Test
     @DisplayName("ServerNet ignores a CONNECT from a denied source (no reply, counted); others still join")
     void serverNet() {
         ServerNetConfig cfg = new ServerNetConfig();

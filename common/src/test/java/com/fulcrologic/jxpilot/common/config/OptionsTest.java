@@ -516,6 +516,26 @@ class OptionsTest {
         }
 
         @Test
+        @DisplayName("nothing from the password file reaches clients: not the password, not a mistyped name, in either order")
+        void passwordFileNeverShipped() {
+            String pwd = "password: secret\npasswd: hunter2\n";
+            Options before = new Options();
+            ConfigParser.parse(pwd, "password", OptionOrigin.PASSWORD, before);
+            ConfigParser.parse("mapWidth: 1\nmapHeight: 1\npasswd: frommap\n", "map", OptionOrigin.MAP, before);
+            Options after = new Options();
+            ConfigParser.parse("mapWidth: 1\nmapHeight: 1\npasswd: frommap\n", "map", OptionOrigin.MAP, after);
+            ConfigParser.parse(pwd, "password", OptionOrigin.PASSWORD, after);
+            String a = before.toConfigText();
+            String b = after.toConfigText();
+            assertAll(
+                () -> assertFalse(a.contains("hunter2") || b.contains("hunter2"), "the mistyped line's value"),
+                () -> assertFalse(a.contains("secret") || b.contains("secret"), "the password"),
+                () -> assertFalse(b.contains("passwd"), "a map name the password file took over is not shipped"),
+                () -> assertFalse(a.contains("passwd"), "read first, the password file's value keeps its origin: the"
+                    + " map cannot change it (C option.c: PASSWORD beats MAP)"));
+        }
+
+        @Test
         @DisplayName("round trips through the parser exactly")
         void roundTrip() {
             Options o = parse("mapWidth: 3\nmapHeight: 2\nmapName: Test Map\nteamPlay: yes\ngravity: -0.3\n"
