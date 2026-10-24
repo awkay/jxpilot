@@ -140,6 +140,15 @@ public final class Options {
     }
 
     /**
+     * BEHAVIOR: replaces the value, keeping its origin and precedence, as C code writing an option's variable
+     * directly does (server-batch2: {@code Compute_sensor_range} scaling the visibility distances in place).
+     */
+    public void replaceValue(Opt o, String value) {
+        raw[o.ordinal()] = value;
+        convert(o, value, true);
+    }
+
+    /**
      * Port of the precedence switch in C {@code Option_change_node}.
      * <p>
      * BEHAVIOR: command line and INIT always win; nothing beats the command line except itself.
