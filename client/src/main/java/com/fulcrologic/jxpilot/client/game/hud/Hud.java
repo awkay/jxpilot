@@ -114,8 +114,13 @@ public final class Hud {
     /** Zoom, C {@code 1 / scaleFactor} (1 = unscaled). */
     public double zoom = 1.0;
 
+    /** The mouse selection in the talk line and messages (C selectionAndHistory). */
+    public final TextSelection selection = new TextSelection();
+
     // ---- state
     private double loops;
+    /** The game's frame rate of the last {@link #build} (the talk cursor blinks every FPS / 2 frames). */
+    private double fps = 1;
     private double fuelCount;
     private double controlCount;
     private float lastFuel = -1;
@@ -143,6 +148,7 @@ public final class Hud {
      */
     public void advance(double frames, float fuel, double fps, boolean selfVisible) {
         loops += frames;
+        this.fps = fps;
         fuelCount = Math.max(0, fuelCount - frames);
         controlCount = Math.max(0, controlCount - frames);
         if (lastFuel >= 0 && fuel > lastFuel && wasVisible) {
@@ -468,7 +474,7 @@ public final class Hud {
         int spacing = m.ascent() + m.descent() + 1;
         int y = MESSAGE_BORDER + m.ascent();
         for (int i = 0; i < log.talkCount(); i++) {
-            message(out, log, log.talk(i), y, fps);
+            message(out, log, log.talk(i), y, fps, TextSelection.TALK_MESSAGES, i, m);
             y += spacing;
         }
         if (!showMessages) {
@@ -476,17 +482,108 @@ public final class Hud {
         }
         y = viewH - m.descent() - MESSAGE_BORDER;
         for (int i = 0; i < log.gameCount(); i++) {
-            message(out, log, log.game(i), y, fps);
+            message(out, log, log.game(i), y, fps, TextSelection.GAME_MESSAGES, i, m);
             y -= spacing;
         }
     }
 
-    private static void message(HudFrame out, MessageLog log, MessageLog.Entry e, int y, double fps) {
-        CharBuf t = out.text(MESSAGE_BORDER, y, FontRole.MESSAGE, e.flashing() ? HudColor.RED : HudColor.OLD_MESSAGE);
-        if (t != null) {
-            t.append(e.text());
-            out.setTextLength(log.visibleChars(e, fps));
+    /**
+     * One message line; the part of it the {@link #selection} covers (within the typed-out chars) is drawn as its own
+     * run in EMPHASIZED (C {@code DRAW_EMPHASIZED}), the rest in the message's colour.
+     */
+    private void message(HudFrame out, MessageLog log, MessageLog.Entry e, int y, double fps, int area, int line,
+                         TextMetrics m) {
+        int color = e.flashing() ? HudColor.RED : HudColor.OLD_MESSAGE;
+        int vis = log.visibleChars(e, fps);
+        CharBuf s = e.text();
+        int a = Math.min(vis, selection.from(area, line, s.length()));
+        int b = Math.min(vis, selection.to(area, line, s.length()));
+        if (b <= a) {
+            CharBuf t = out.text(MESSAGE_BORDER, y, FontRole.MESSAGE, color);
+            if (t != null) {
+                t.append(s);
+                out.setTextLength(vis);
+            }
+            return;
         }
+        run(out, MESSAGE_BORDER, y, FontRole.MESSAGE, color, s, 0, a);
+        run(out, MESSAGE_BORDER + m.width(s, a), y, FontRole.MESSAGE, HudColor.EMPHASIZED, s, a, b);
+        run(out, MESSAGE_BORDER + m.width(s, b), y, FontRole.MESSAGE, color, s, b, vis);
+    }
+
+    /** A text run of {@code s[from, to)} at (x, y); nothing when empty. */
+    private static void run(HudFrame out, int x, int y, FontRole role, int color, CharSequence s, int from, int to) {
+        if (to <= from) {
+            return;
+        }
+        CharBuf t = out.text(x, y, role, color);
+        if (t != null) {
+            for (int k = from; k < to; k++) {
+                t.append(s.charAt(k));
+            }
+        }
+    }
+
+    /**
+     * The message under window point (x, y) and the char there (C {@code Talk_cut_from_messages}).
+     * <p>
+     * BEHAVIOR: rows as {@link #messages} lays them out, each from its baseline - ascent to + descent (+1 spacing);
+     * the talk list from the top, the game list (only with showMessages) from the bottom; the char is the first whose
+     * middle lies right of x ({@link #charAt}); {@code out} gets {area, line, char}. False when no message is there.
+     */
+    public boolean messageAt(int x, int y, MessageLog log, int viewH, TextMetrics m, int[] out) {
+        int spacing = m.ascent() + m.descent() + 1;
+        int base = MESSAGE_BORDER + m.ascent();
+        for (int i = 0; i < log.talkCount(); i++, base += spacing) {
+            if (y >= base - m.ascent() && y < base - m.ascent() + spacing) {
+                return hit(TextSelection.TALK_MESSAGES, i, x - MESSAGE_BORDER, log.talk(i).text(), m, out);
+            }
+        }
+        if (!showMessages) {
+            return false;
+        }
+        base = viewH - m.descent() - MESSAGE_BORDER;
+        for (int i = 0; i < log.gameCount(); i++, base -= spacing) {
+            if (y >= base - m.ascent() && y < base - m.ascent() + spacing) {
+                return hit(TextSelection.GAME_MESSAGES, i, x - MESSAGE_BORDER, log.game(i).text(), m, out);
+            }
+        }
+        return false;
+    }
+
+    private static boolean hit(int area, int line, int x, CharSequence s, TextMetrics m, int[] out) {
+        out[0] = area;
+        out[1] = line;
+        out[2] = charAt(s, x, m);
+        return true;
+    }
+
+    /** BEHAVIOR: the index of the first char of {@code s} whose middle is right of x (s.length() past the end; 0 left of it). */
+    public static int charAt(CharSequence s, int x, TextMetrics m) {
+        for (int i = 0; i < s.length(); i++) {
+            int left = m.width(s, i);
+            int right = m.width(s, i + 1);
+            if (x < (left + right) / 2.0) {
+                return i;
+            }
+        }
+        return s.length();
+    }
+
+    /**
+     * The talk-line char under window point (x, y) (C {@code Talk_place_cursor}), or -1 when (x, y) is outside the
+     * talk window ({@link #talk} geometry).
+     */
+    public int talkCharAt(int x, int y, TalkLine talk, int viewW, int viewH, TextMetrics m, TextMetrics text) {
+        int h = text.ascent() + text.descent();
+        int wh = h + 2 * TALK_INSIDE_BORDER;
+        int wy = viewH * 3 / 4 - wh / 2;
+        int ix = TALK_WINDOW_X + TALK_OUTSIDE_BORDER;
+        int iy = wy + TALK_OUTSIDE_BORDER;
+        if (x < ix || x >= ix + talkWindowWidth(viewW) || y < iy || y >= iy + wh) {
+            return -1;
+        }
+        return charAt(talk.text(), x - (ix + TALK_INSIDE_BORDER), m);
     }
 
     /** The talk window with one font for the text and the window height ({@link #talk(HudFrame, TalkLine, int, int, TextMetrics, TextMetrics)}). */
@@ -501,8 +598,10 @@ public final class Hud {
      * height H = h + 2*TALK_INSIDE_BORDER at x = TALK_WINDOW_X, y = viewH*3/4 - H/2, inner width
      * W = viewW - 2*(TALK_WINDOW_X + TALK_OUTSIDE_BORDER).
      * Emits a black filled inner rect, a white outline around the border, the text in {@link FontRole#TALK} at
-     * (inner x + TALK_INSIDE_BORDER, inner y + TALK_INSIDE_BORDER + {@code talk} ascent) and a cursor line of
-     * height h at the {@code talk} width of the text before the cursor.
+     * (inner x + TALK_INSIDE_BORDER, inner y + TALK_INSIDE_BORDER + {@code talk} ascent), its selected part (the
+     * {@link #selection}) as an EMPHASIZED run, and C's blinking cursor: an '_' at the {@code talk} width of the
+     * text before the cursor, shown in the first half of every FPS frames (C toggles it every FPS / 2 frames),
+     * EMPHASIZED when it sits on an unselected '_' (C's inverse cursor).
      *
      * @param m    talkFont metrics (the text and the cursor position)
      * @param text textFont metrics (the window height)
@@ -517,12 +616,35 @@ public final class Hud {
         out.rect(ix, iy, ww, wh, true, HudColor.BLACK);
         out.rect(TALK_WINDOW_X, wy, ww + 2 * TALK_OUTSIDE_BORDER, wh + 2 * TALK_OUTSIDE_BORDER, false, HudColor.WHITE);
         int tx = ix + TALK_INSIDE_BORDER;
-        CharBuf t = out.text(tx, iy + TALK_INSIDE_BORDER + m.ascent(), FontRole.TALK, HudColor.WHITE);
-        if (t != null) {
-            t.append(talk.text());
+        int ty = iy + TALK_INSIDE_BORDER + m.ascent();
+        CharBuf s = talk.text();
+        int a = selection.from(TextSelection.TALK_LINE, 0, s.length());
+        int b = selection.to(TextSelection.TALK_LINE, 0, s.length());
+        if (b <= a) {
+            CharBuf t = out.text(tx, ty, FontRole.TALK, HudColor.WHITE);
+            if (t != null) {
+                t.append(s);
+            }
+        } else {
+            run(out, tx, ty, FontRole.TALK, HudColor.WHITE, s, 0, a);
+            run(out, tx + m.width(s, a), ty, FontRole.TALK, HudColor.EMPHASIZED, s, a, b);
+            run(out, tx + m.width(s, b), ty, FontRole.TALK, HudColor.WHITE, s, b, s.length());
         }
-        int cx = tx + m.width(talk.text(), talk.cursor());
-        out.line(cx, iy + TALK_INSIDE_BORDER, cx, iy + TALK_INSIDE_BORDER + h, HudFrame.SOLID, HudColor.WHITE);
+        if (cursorVisible()) {
+            int c = talk.cursor();
+            boolean onUnderscore = c < s.length() && s.charAt(c) == '_' && (c < a || c >= b);
+            CharBuf u = out.text(tx + m.width(s, c), ty, FontRole.TALK,
+                onUnderscore ? HudColor.EMPHASIZED : HudColor.WHITE);
+            if (u != null) {
+                u.append('_');
+            }
+        }
+    }
+
+    /** BEHAVIOR: C's talk cursor phase: visible in the first half of every FPS original frames (loops). */
+    boolean cursorVisible() {
+        double half = Math.max(1, fps / 2);
+        return ((long) (loops / half) & 1) == 0;
     }
 
     /** BEHAVIOR: C {@code TALK_WINDOW_WIDTH} = viewW - 2 * (TALK_WINDOW_X + TALK_OUTSIDE_BORDER). */

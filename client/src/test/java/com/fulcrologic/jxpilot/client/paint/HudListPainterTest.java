@@ -166,9 +166,10 @@ class HudListPainterTest {
         @Test
         void hudColorsMapToTheXPilotPalette() {
             assertAll(
-                () -> assertArrayEquals(new int[] {4, 1, 3, 1, 0, 1, 0, 2, 3}, HudListPainter.XPILOT_PALETTE,
-                    "HUD 4, WHITE 1, RED 3, OLD_MESSAGE 1, BLACK 0, SCORE 1, SCORE_DIM 0 (C black), WINDOW 2, BUTTON 3"),
-                () -> assertArrayEquals(new boolean[] {false, false, false, false, false, true, false, false, false},
+                () -> assertArrayEquals(new int[] {4, 1, 3, 1, 0, 1, 0, 2, 3, 2}, HudListPainter.XPILOT_PALETTE,
+                    "HUD 4, WHITE 1, RED 3, OLD_MESSAGE 1, BLACK 0, SCORE 1, SCORE_DIM 0 (C black), WINDOW 2, BUTTON 3, "
+                        + "EMPHASIZED 2"),
+                () -> assertArrayEquals(new boolean[] {false, false, false, false, false, true, false, false, false, false},
                     HudListPainter.XPILOT_SHADOW, "only SCORE text is shadowed"),
                 () -> assertEquals(P.color(4), lp.rgba(HUD), "HUD is the default hudColor 4"),
                 () -> assertEquals(P.color(0), lp.rgba(SCORE_DIM), "SCORE_DIM is black, as C on its blue window"));

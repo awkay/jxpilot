@@ -169,12 +169,12 @@ class HudBuildTest {
             f.line(0, 0, 0, 0, 0, 0);
             new Hud().build(f, g, talk, 800, 600, M, 0);
             assertAll(
-                () -> assertEquals(List.of("310,230-490,230 dashed", "310,370-490,370 dashed", "53,446-53,459"), lines(f),
-                    "the frame was cleared; HUD lines then the talk cursor"),
+                () -> assertEquals(List.of("310,230-490,230 dashed", "310,370-490,370 dashed"), lines(f),
+                    "the frame was cleared; HUD lines"),
                 () -> assertEquals(List.of("box 475,235 11x131", "fill 477,327 8x38", "fill 50,443 700x19",
                     "box 48,441 704x23"), rects(f), "fuel gauge (38 px for 300/1000), talk window"),
-                () -> assertEquals(List.of("473,383 0300", "10,587 ", "53,456 "), texts(f),
-                    "fuel number, the untyped message, the empty talk line"));
+                () -> assertEquals(List.of("473,383 0300", "10,587 ", "53,456 ", "53,456 _"), texts(f),
+                    "fuel number, the untyped message, the empty talk line and its cursor"));
         }
 
         @Test

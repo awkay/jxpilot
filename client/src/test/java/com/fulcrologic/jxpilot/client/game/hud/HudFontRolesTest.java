@@ -95,8 +95,8 @@ class HudFontRolesTest {
                 "talk text at window top 426 + border 3 + talkFont ascent 30: " + r),
             () -> assertEquals(List.of("fill 50,426 700x52", "box 48,424 704x56"), rects(f),
                 "talk window height textFont 46 + 2*3, centred on 450"),
-            () -> assertEquals(List.of("75,429-75,475"), lines(f),
-                "cursor after 2 talkFont chars (2*11), textFont height 46"));
+            () -> assertTrue(r.contains("TALK 75,459 _"), "the '_' cursor after 2 talkFont chars (2*11): " + r),
+            () -> assertEquals(List.of(), lines(f), "no cursor line"));
     }
 
     @Test

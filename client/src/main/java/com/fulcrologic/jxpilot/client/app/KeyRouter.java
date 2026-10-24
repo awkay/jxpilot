@@ -69,6 +69,8 @@ public final class KeyRouter {
     public static final int FUEL_NOTIFY = 256;
     /** Toggle the game messages (C {@code Key_press_show_messages}: KEY_TOGGLE_MESSAGES, showMessages). */
     public static final int TOGGLE_MESSAGES = 512;
+    /** Paste the clipboard into the talk line (JXPilot: Control-V or Command-V; C pastes with mouse button 2). */
+    public static final int PASTE = 1024;
 
     private final InputState input;
     private final TalkLine talk;
@@ -244,7 +246,8 @@ public final class KeyRouter {
      * BEHAVIOR: Return/keypad Enter submits: a non-empty line is copied to {@link #chat()} and is
      * {@link #CHAT}; the line closes and game keys work again either way.
      * BEHAVIOR: Escape cancels (text cleared, line closed). Backspace and Delete erase; Home/End move to
-     * the ends; with Control, a letter key is a {@link TalkLine#control} edit.
+     * the ends; Control-V or Command-V is {@link #PASTE}; with Control, another letter key is a
+     * {@link TalkLine#control} edit.
      * BEHAVIOR: the talk cursor actions (default Left/Right/Up/Down) move the cursor or browse history.
      */
     int talkKey(int key, int mods) {
@@ -276,6 +279,9 @@ public final class KeyRouter {
                 return NONE;
             }
             default -> { }
+        }
+        if (key == GLFW_KEY_V && (mods & (GLFW_MOD_CONTROL | GLFW_MOD_SUPER)) != 0) {
+            return PASTE;
         }
         if ((mods & GLFW_MOD_CONTROL) != 0 && key >= GLFW_KEY_A && key <= GLFW_KEY_Z) {
             talk.control((char) ('A' + key - GLFW_KEY_A));

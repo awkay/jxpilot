@@ -30,6 +30,7 @@ import com.fulcrologic.jxpilot.client.game.hud.Hud;
 import com.fulcrologic.jxpilot.client.game.hud.HudFrame;
 import com.fulcrologic.jxpilot.client.game.hud.KeyHelp;
 import com.fulcrologic.jxpilot.client.game.hud.TalkLine;
+import com.fulcrologic.jxpilot.client.game.hud.TextSelection;
 import com.fulcrologic.jxpilot.client.game.hud.TextMetrics;
 import com.fulcrologic.jxpilot.client.game.input.ControlSettings;
 import com.fulcrologic.jxpilot.client.game.input.InputState;
@@ -221,6 +222,11 @@ public final class ClientFrame {
         extras.fill(game, hud, viewW, viewH, zoom, centreX, centreY, scene.loops);
         extras.loseItem(router.loseSelection(), dt);
         panelHud.clear();
+        lastViewW = viewW;
+        lastViewH = viewH;
+        messageFont = fonts.of(FontRole.MESSAGE);
+        talkFont = fonts.of(FontRole.TALK);
+        talkHeightFont = fonts.of(FontRole.TEXT);
         TextMetrics textFont = fonts.of(FontRole.TEXT);
         TextMetrics buttonFont = fonts.of(FontRole.BUTTON);
         ui.layout(radarHeight, viewH, viewW, viewH, map != null && map.edgeWrap(), textFont, buttonFont);
@@ -354,6 +360,9 @@ public final class ClientFrame {
                 help.toggle();
             }
         }
+        if ((ev & KeyRouter.PASTE) != 0) {
+            paste();
+        }
         if ((ev & KeyRouter.CHAT) != 0) {
             conn.sendChat(router.chat(), nowNanos);
         }
@@ -397,6 +406,106 @@ public final class ClientFrame {
     /** BEHAVIOR: pointer motion: the C windows first ({@link ClientUi#mouseMove}); returns whether they used it. */
     public boolean mouseMove(double x, double y, int viewX) {
         return ui.mouseMove(x, y, viewX);
+    }
+
+    /** The system clipboard (C's X selection): GLFW's in the game, a fake in tests. */
+    public interface Clipboard {
+        /** The clipboard text, or null. */
+        String get();
+
+        void set(String text);
+    }
+
+    private Clipboard clipboard = new Clipboard() {
+        private String text;
+
+        @Override
+        public String get() { return text; }
+
+        @Override
+        public void set(String t) { text = t; }
+    };
+    private final int[] hit = new int[3];
+    private int lastViewW;
+    private int lastViewH;
+    private TextMetrics messageFont;
+    private TextMetrics talkFont;
+    private TextMetrics talkHeightFont;
+
+    /** BEHAVIOR: the clipboard cut and paste use from now on. */
+    public void setClipboard(Clipboard c) { clipboard = c; }
+
+    /**
+     * C's cut and paste with the mouse in the game view ({@code selectionAndHistory}; {@code xeventhandlers.c}
+     * {@code ButtonPress_event}/{@code ButtonRelease_event}), for events the windows did not take; (x, y) in view
+     * coordinates.
+     * <p>
+     * BEHAVIOR: nothing (false) unless selectionAndHistory is on. Left press: in the open talk window starts a
+     * talk-line selection, on a message a message selection, elsewhere clears the selection; motion with the button
+     * down extends it; release ends it and puts its text on the clipboard when not empty. Middle press while the
+     * talk line is open: the cursor moves to the char under the pointer when inside the talk window, then the
+     * clipboard is pasted. Returns whether the event was used.
+     */
+    public boolean viewMouse(int button, int action, int x, int y) {
+        if (!liveOptions.options().flag(ClientOption.SELECTION_AND_HISTORY) || messageFont == null) {
+            return false;
+        }
+        TextSelection sel = hud.selection;
+        if (button == org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            if (action == org.lwjgl.glfw.GLFW.GLFW_PRESS) {
+                int c = talk.isOpen() ? hud.talkCharAt(x, y, talk, lastViewW, lastViewH, talkFont, talkHeightFont) : -1;
+                if (c >= 0) {
+                    sel.start(TextSelection.TALK_LINE, 0, c);
+                } else if (hud.messageAt(x, y, game.messages(), lastViewH, messageFont, hit)) {
+                    sel.start(hit[0], hit[1], hit[2]);
+                } else {
+                    sel.clear();
+                    return false;
+                }
+                return true;
+            }
+            if (action == org.lwjgl.glfw.GLFW.GLFW_RELEASE && sel.dragging()) {
+                sel.finish();
+                String text = sel.text(talk, game.messages());
+                if (!text.isEmpty()) {
+                    clipboard.set(text);
+                }
+                return true;
+            }
+            return false;
+        }
+        if (button == org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_MIDDLE && action == org.lwjgl.glfw.GLFW.GLFW_PRESS
+            && talk.isOpen()) {
+            int c = hud.talkCharAt(x, y, talk, lastViewW, lastViewH, talkFont, talkHeightFont);
+            if (c >= 0) {
+                talk.setCursor(c);
+            }
+            paste();
+            return true;
+        }
+        return false;
+    }
+
+    /** BEHAVIOR: pointer motion in the view extends a selection being dragged (view coordinates). */
+    public boolean viewMouseMove(int x, int y) {
+        TextSelection sel = hud.selection;
+        if (!sel.dragging() || messageFont == null) {
+            return false;
+        }
+        if (sel.area() == TextSelection.TALK_LINE) {
+            sel.drag(TextSelection.TALK_LINE, 0, Hud.charAt(talk.text(), x - (Hud.TALK_WINDOW_X
+                + Hud.TALK_OUTSIDE_BORDER + Hud.TALK_INSIDE_BORDER), talkFont));
+        } else if (hud.messageAt(x, y, game.messages(), lastViewH, messageFont, hit)) {
+            sel.drag(hit[0], hit[1], hit[2]);
+        }
+        return true;
+    }
+
+    private void paste() {
+        String text = clipboard.get();
+        if (text != null && talk.isOpen()) {
+            talk.paste(text);
+        }
     }
 
     /** The client frame as the C windows' {@link ClientUi.Host}. */

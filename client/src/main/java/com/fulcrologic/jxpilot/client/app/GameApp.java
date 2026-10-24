@@ -239,10 +239,26 @@ public final class GameApp {
         glfwSetCursorPosCallback(h, (w, x, y) -> {
             cursorX = x;
             cursorY = y;
-            frame.mouseMove(x, y, PANEL_W + PANEL_GAP);
+            if (!frame.mouseMove(x, y, PANEL_W + PANEL_GAP)) {
+                frame.viewMouseMove((int) x - (PANEL_W + PANEL_GAP), (int) y);
+            }
         });
-        glfwSetMouseButtonCallback(h, (w, button, action, mods) ->
-            frame.mouseButton(button, action, cursorX, cursorY, PANEL_W + PANEL_GAP));
+        glfwSetMouseButtonCallback(h, (w, button, action, mods) -> {
+            if (!frame.mouseButton(button, action, cursorX, cursorY, PANEL_W + PANEL_GAP) && cursorX >= PANEL_W + PANEL_GAP) {
+                frame.viewMouse(button, action, (int) cursorX - (PANEL_W + PANEL_GAP), (int) cursorY);
+            }
+        });
+        frame.setClipboard(new ClientFrame.Clipboard() {
+            @Override
+            public String get() {
+                return glfwGetClipboardString(h);
+            }
+
+            @Override
+            public void set(String text) {
+                glfwSetClipboardString(h, text);
+            }
+        });
         glfwSetWindowFocusCallback(h, (w, focused) -> {
             if (!focused) {
                 frame.focusLost();

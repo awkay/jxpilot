@@ -45,4 +45,6 @@ public final class HudColor {
     public static final int WINDOW = 7;
     /** C {@code buttonColor} (RED): button faces. */
     public static final int BUTTON = 8;
+    /** C {@code DRAW_EMPHASIZED} (BLUE): selected text in the talk line and messages, the inverse talk cursor. */
+    public static final int EMPHASIZED = 9;
 }

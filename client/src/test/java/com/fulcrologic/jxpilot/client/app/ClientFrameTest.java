@@ -241,6 +241,49 @@ class ClientFrameTest {
         }
 
         @Test
+        @DisplayName("cut and paste: drag over a message copies it; the paste key and the middle button paste into the talk line")
+        void cutAndPaste() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = frame(f);
+            String[] clip = {null};
+            cf.setClipboard(new ClientFrame.Clipboard() {
+                public String get() { return clip[0]; }
+
+                public void set(String t) { clip[0] = t; }
+            });
+            boolean before = cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 10, 10);
+            f.game.messages().add(com.fulcrologic.jxpilot.common.net.Msg.Text.KIND_CHAT, "hello there [x]");
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            int base = 10 + M.ascent();
+            boolean pressed = cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 10, base - 2);
+            boolean dragged = cf.viewMouseMove(10 + 5 * M.width("x", 1), base - 2);
+            boolean released = cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 10, base - 2);
+            String copied = clip[0];
+            boolean idleMove = cf.viewMouseMove(10, 10);
+            cf.key(GLFW_KEY_M, GLFW_PRESS, 0, T0);
+            cf.character('m');
+            cf.key(GLFW_KEY_V, GLFW_PRESS, GLFW_MOD_CONTROL, T0);
+            String afterKey = cf.talk().text().toString();
+            cf.step(T0 + 1000, 800, 600, 1, M, 256, 100);
+            boolean middle = cf.viewMouse(GLFW_MOUSE_BUTTON_MIDDLE, GLFW_PRESS, 0, 0);
+            boolean elsewhere = cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 400, 300);
+            cf.options().setFlag(com.fulcrologic.jxpilot.client.game.options.ClientOption.SELECTION_AND_HISTORY, false);
+            boolean off = cf.viewMouse(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 10, base - 2);
+            assertAll(
+                () -> assertFalse(before, "nothing before the first step (no fonts yet)"),
+                () -> assertTrue(pressed, "a press on a message starts a selection"),
+                () -> assertTrue(dragged, "dragging extends it"),
+                () -> assertTrue(released, "release ends it"),
+                () -> assertEquals("hello", copied, "the selected text went to the clipboard"),
+                () -> assertFalse(idleMove, "motion without a drag is not used"),
+                () -> assertEquals("hello", afterKey, "Control-V pasted into the talk line"),
+                () -> assertTrue(middle, "the middle button pastes while talking"),
+                () -> assertEquals("hellohello", cf.talk().text().toString(), "pasted again at the cursor"),
+                () -> assertFalse(elsewhere, "a press on nothing clears and is not used"),
+                () -> assertFalse(off, "selectionAndHistory off: no cut and paste"));
+        }
+
+        @Test
         @DisplayName("MENU / MOTD: asks the server when refreshing or when no MOTD came yet, and reopens a closed panel")
         void motdMenu() {
             AppFixture f = new AppFixture(true).players();

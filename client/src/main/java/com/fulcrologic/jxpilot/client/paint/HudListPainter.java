@@ -52,14 +52,14 @@ public final class HudListPainter {
      * WHITE 1, RED 3, OLD_MESSAGE 1 ({@code oldMessagesColor}), BLACK 0, SCORE 1 (white), SCORE_DIM 0
      * for 'D'/'P'/'W' players (C {@code paint.c} {@code Paint_score_entry}: black on the blue score window; grey
      * 12 with {@code blockBitmaps}, see {@link #setPaletteIndex}), WINDOW 2 (C {@code windowColor} BLUE) and
-     * BUTTON 3 (C {@code buttonColor} RED).
+     * BUTTON 3 (C {@code buttonColor} RED) and EMPHASIZED 2 (C {@code DRAW_EMPHASIZED} BLUE).
      */
     public static final int[] XPILOT_PALETTE = {
         PaintConfig.HUD_COLOR, Palette.WHITE, Palette.RED, PaintConfig.OLD_MESSAGES_COLOR, Palette.BLACK,
-        Palette.WHITE, Palette.BLACK, Palette.BLUE, Palette.RED
+        Palette.WHITE, Palette.BLACK, Palette.BLUE, Palette.RED, Palette.BLUE
     };
     /** Shadowed text colours of {@code HudColor}: only SCORE (index 5), C's {@code ShadowDrawString} white text. */
-    public static final boolean[] XPILOT_SHADOW = {false, false, false, false, false, true, false, false, false};
+    public static final boolean[] XPILOT_SHADOW = {false, false, false, false, false, true, false, false, false, false};
 
     /** X11's default dash list {4, 4} (a GC whose dashes were never set). */
     static final int X_DASH = 4;
