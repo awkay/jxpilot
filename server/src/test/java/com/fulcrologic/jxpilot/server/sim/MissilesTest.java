@@ -1144,8 +1144,13 @@ class MissilesTest {
     @DisplayName("look-ahead: depth, target distance, vertical and edges")
     class LookAheadEdges {
         @Test
-        @DisplayName("four steps deep: a wall at the fifth step is not seen; the wall step decides the target distance")
+        @DisplayName("four steps deep: a wall at the fourth step is seen, one at the fifth is not; the wall step decides the"
+            + " target distance")
         void depthAndDistance() {
+            // steps of 70 px from x 192 (block 5) reach blocks 7, 9, 11, 13, then 15
+            use(walledMap("", 20, 13, 10));
+            q.initPixels(192 + 400, 367);
+            float fourth = speedAfterMove(smartAt(192, 367, 0, 10, 0));
             use(walledMap("", 20, 15, 10));
             q.initPixels(192 + 400, 367);
             float fifth = speedAfterMove(smartAt(192, 367, 0, 10, 0));
@@ -1153,6 +1158,8 @@ class MissilesTest {
             q.initPixels(192 + 50, 367);
             float near50 = speedAfterMove(smartAt(192, 367, 0, 10, 0));
             assertAll(
+                () -> assertEquals(8.2f, fourth, 1e-4,
+                    "SMART_SHOT_LOOK_AH = 4 steps: the wall in block 13 (step 4) slows it by acc * 4"),
                 () -> assertEquals(10.6f, fifth, 1e-4, "SMART_SHOT_LOOK_AH = 4 steps: block 15 is beyond them"),
                 () -> assertEquals(8.2f, near50, 1e-4, "wall at step 2: a target 50 px away (> (4-3)*17) still slows it"));
         }
