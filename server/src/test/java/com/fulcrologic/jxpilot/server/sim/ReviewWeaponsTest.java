@@ -40,8 +40,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** Review findings (weapons), kept as regression tests: each assertion encodes what the cited C code computes. */
 class ReviewWeaponsTest {
 
-    static double rate(double winner, double loser) {
-        double t = (10.0 * 1024) / (Math.abs(loser - winner) + 1024);
+    static float rate(float winner, float loser) {
+        float t = (10 * 1024) / (Math.abs(loser - winner) + 1024); // C DFLOAT: float arithmetic
         return loser > winner ? 20 - t : t;
     }
 
@@ -78,7 +78,7 @@ class ReviewWeaponsTest {
         int h = obj(w, Obj.SHOT, p.id, 200, 200, 21, 0, 0.1, 10);
         w.grid.rebuild(w.objects);
         s.collisions.check();
-        double sc = rate(50, 100);
+        float sc = rate(50, 100);
         assertAll(
             () -> assertTrue((t.status & Obj.KILLED) != 0, "the tank dies"),
             () -> assertEquals(t.lockPlId, p.id, "tank belongs to P"),

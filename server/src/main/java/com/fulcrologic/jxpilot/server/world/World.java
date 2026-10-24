@@ -113,7 +113,7 @@ public final class World {
     public final WormTable worms;
 
     // ---- teams (C World.teams)
-    public final double[] teamScore = new double[Const.MAX_TEAMS];
+    public final float[] teamScore = new float[Const.MAX_TEAMS];
     public final int[] teamMembers = new int[Const.MAX_TEAMS];
     public final boolean[] teamScoreDirty = new boolean[Const.MAX_TEAMS];
 

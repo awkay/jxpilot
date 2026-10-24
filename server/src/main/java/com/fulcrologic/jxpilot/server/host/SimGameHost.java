@@ -300,6 +300,28 @@ public final class SimGameHost implements GameHost {
         return bind(pl, t, shape);
     }
 
+    /**
+     * server-batch2: the CONNECT's real and host names, cleaned as C (contact.c:351, 423), and the address.
+     * <p>
+     * BEHAVIOR: an unknown id is ignored; a client that sent no names gets C's "X" and "xxx.xxx".
+     */
+    @Override
+    public void identity(int playerId, CharSequence realName, CharSequence hostName, CharSequence address) {
+        Player pl = w.byId(playerId);
+        if (pl == null) {
+            return;
+        }
+        // contact.c:351, 423: C cleans what the client sent (Fix_real_name, Fix_host_name)
+        pl.realName.setLength(0);
+        pl.realName.append(realName);
+        com.fulcrologic.jxpilot.common.Names.fixRealName(pl.realName);
+        pl.hostName.setLength(0);
+        pl.hostName.append(hostName);
+        com.fulcrologic.jxpilot.common.Names.fixHostName(pl.hostName);
+        pl.address.setLength(0);
+        pl.address.append(address);
+    }
+
     /** The queue position of the last REASON_QUEUED answer of {@link #join}. */
     @Override
     public int queuePosition() {
@@ -321,6 +343,7 @@ public final class SimGameHost implements GameHost {
         cursor[id] = w.events.seq();
         burstCursor[id] = w.events.burstSeq();
         java.util.Arrays.fill(announced[id], 0L);
+        identity(id, "", "", ""); // C's names for a client that sends none; the network layer's identity follows
         return id;
     }
 
@@ -439,11 +462,11 @@ public final class SimGameHost implements GameHost {
         if (w.numPlayers == 1) {
             msg.append("Welcome to \"").append(mapName).append("\", made by ").append(mapAuthor).append('.');
         } else if (w.params.teamPlay) {
-            msg.append(pl.name).append(" (team ").append(pl.team).append(") has entered \"").append(mapName)
-                .append("\", made by ").append(mapAuthor).append('.');
+            msg.append(pl.name).append(" (").append(pl.realName).append(", team ").append(pl.team)
+                .append(") has entered \"").append(mapName).append("\", made by ").append(mapAuthor).append('.');
         } else {
-            msg.append(pl.name).append(" has entered \"").append(mapName).append("\", made by ").append(mapAuthor)
-                .append('.');
+            msg.append(pl.name).append(" (").append(pl.realName).append(") has entered \"").append(mapName)
+                .append("\", made by ").append(mapAuthor).append('.');
         }
     }
 
@@ -1015,6 +1038,10 @@ public final class SimGameHost implements GameHost {
         join.name.append(p.name);
         join.shape.setLength(0);
         join.shape.append(p.ship.wire);
+        join.realName.setLength(0);
+        join.realName.append(p.realName);
+        join.hostName.setLength(0);
+        join.hostName.append(p.hostName);
         join.send(out);
         announced[viewerId][p.id >> 6] |= 1L << (p.id & 63);
     }

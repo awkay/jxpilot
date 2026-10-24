@@ -650,7 +650,7 @@ class RoundsBranchTest {
             Player r = TestWorlds.join(s, "r", 2);
             r.robot = true;
             r.score = 99;
-            a.score = -3.7;
+            a.score = -3.7f;
             long seq = w.events.seq();
             s.rounds.gameOver();
             List<String> msgs = messages(w, seq);

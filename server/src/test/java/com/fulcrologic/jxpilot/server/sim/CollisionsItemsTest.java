@@ -56,8 +56,8 @@ class CollisionsItemsTest {
     static final int ECM = Item.ECM.ordinal();
     static final int MISSILE = Item.MISSILE.ordinal();
 
-    static double rate(double winner, double loser) {
-        double t = (10.0 * 1024) / (Math.abs(loser - winner) + 1024);
+    static float rate(float winner, float loser) {
+        float t = (10 * 1024) / (Math.abs(loser - winner) + 1024); // C DFLOAT: float arithmetic
         return loser > winner ? 20 - t : t;
     }
 
@@ -262,7 +262,7 @@ class CollisionsItemsTest {
             List<String> got = new java.util.ArrayList<>();
             List<String> want = new java.util.ArrayList<>();
             int[] types = {Obj.TORPEDO, Obj.SMART_SHOT, Obj.HEAT_SHOT};
-            double[] mult = {0.5, 0.25, 0.125};
+            float[] mult = {0.5f, 0.25f, 0.125f};
             String[] names = {"a torpedo", "a smart missile", "a heatseeker"};
             for (int i = 0; i < 3; i++) {
                 Simulation s2 = sim(FRAME + MULTS, 20, 20, "__");
@@ -275,7 +275,7 @@ class CollisionsItemsTest {
                 w2.objects.plRange[h] = 1;
                 long seq = w2.events.seq();
                 check(s2);
-                double sc = rate(50, 100) * mult[i];
+                float sc = rate(50, 100) * mult[i];
                 got.add(killed(v2) + " " + messages(w2, seq) + " " + k2.kills + " " + k2.score + " " + v2.score);
                 want.add(true + " " + List.of("V was killed by " + names[i] + " from K.") + " 1 " + (50 + sc) + " "
                     + (100 - sc));
@@ -389,7 +389,7 @@ class CollisionsItemsTest {
             o.score = 30;
             v.score = 100;
             check(s);
-            double sc = rate(30, 100) * 0.5;
+            float sc = rate(30, 100) * 0.5f;
             assertAll(
                 () -> assertTrue(killed(t) && killed(v), "both die"),
                 () -> assertEquals(30 + sc, o.score, EPS, "the owner gains"),
@@ -406,7 +406,7 @@ class CollisionsItemsTest {
             o.score = 30;
             v.score = 100;
             check(s);
-            double sc = rate(30, 100) * 0.5;
+            float sc = rate(30, 100) * 0.5f;
             assertAll(
                 () -> assertEquals(30 + sc, o.score, EPS, "the owner gains"),
                 () -> assertEquals(100 - sc, v.score, EPS, "the ship loses"),
@@ -423,7 +423,7 @@ class CollisionsItemsTest {
             o1.score = 30;
             t2.score = 70;
             check(s);
-            double sc = rate(30, 70) * 0.5;
+            float sc = rate(30, 70) * 0.5f;
             assertAll(
                 () -> assertTrue(killed(t1) && killed(t2), "both tanks die"),
                 () -> assertEquals(30 + sc, o1.score, EPS, "the first tank's owner gains (collision.c:378)"),
@@ -456,7 +456,7 @@ class CollisionsItemsTest {
             v.score = 100;
             long seq = w.events.seq();
             check(s);
-            double sc = rate(30, 100) * 0.5;
+            float sc = rate(30, 100) * 0.5f;
             assertAll(
                 () -> assertFalse(killed(t), "the tank survives"),
                 () -> assertTrue(killed(v), "the ship dies"),
@@ -475,7 +475,7 @@ class CollisionsItemsTest {
             o.score = 30;
             t.score = 10;
             check(s);
-            double sc = rate(10, 30) * 0.5;
+            float sc = rate(10, 30) * 0.5f;
             assertAll(
                 () -> assertTrue(killed(o), "the owner dies"),
                 () -> assertEquals(10 + sc, t.score, EPS, "the tank gets Rate(tank, owner) * tankKillScoreMult"),
@@ -493,7 +493,7 @@ class CollisionsItemsTest {
             t.score = 10;
             v.score = 30;
             check(s);
-            double sc = rate(10, 30) * 0.5;
+            float sc = rate(10, 30) * 0.5f;
             assertAll(
                 () -> assertEquals(10 + sc, t.score, EPS, "the tank scores with tankKillScoreMult"),
                 () -> assertEquals(30 - sc, v.score, EPS, "the ship loses it"));
@@ -509,7 +509,7 @@ class CollisionsItemsTest {
             v.score = 100;
             t.score = 40;
             check(s);
-            double sc = rate(100, 40) * 0.25;
+            float sc = rate(100, 40) * 0.25f;
             assertAll(
                 () -> assertTrue(killed(t), "the tank dies"),
                 () -> assertEquals(100 + sc, v.score, EPS, "the ship gains Rate * runoverKillScoreMult"),

@@ -288,6 +288,8 @@ class AllocationTest {
     @DisplayName("a saturated world (8000+ objects, 4-part snapshots) allocates zero bytes in every measured tick")
     void saturatedTicksAreAllocationFree() {
         Run r = new Run(5, 8400, 4);
+        // send every object in view (C's default maxVisibleObject 1000 would cap the snapshot before the 4 parts fill)
+        r.w.options.force(com.fulcrologic.jxpilot.common.config.Opt.MAX_VISIBLE_OBJECT, "100000");
         long parts0 = 0;
         for (int i = 0; i < 1500; i++) {
             if (i == 1000) {

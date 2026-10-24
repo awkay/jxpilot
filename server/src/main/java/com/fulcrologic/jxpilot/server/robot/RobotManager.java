@@ -88,8 +88,12 @@ public final class RobotManager {
     public java.util.function.Consumer<CharSequence> log;
     /** The log line, reused (robots join during play: no allocation here). */
     private final StringBuilder logLine = new StringBuilder(80);
+    /** Wall clock (epoch ms) and zone of the log lines' C {@code showtime()} stamp (tests replace them). */
+    public java.util.function.LongSupplier wallClock = System::currentTimeMillis;
+    public java.util.TimeZone logZone = java.util.TimeZone.getDefault();
     boolean logRobots;
     String robotRealName;
+    String robotHostName;
 
     final boolean allowShipShapes;
     int robotLeaveLife;
@@ -123,6 +127,7 @@ public final class RobotManager {
     public void reloadOptions() {
         logRobots = w.options.getBool(Opt.LOG_ROBOTS);
         robotRealName = w.options.getString(Opt.ROBOT_REAL_NAME);
+        robotHostName = w.options.getString(Opt.ROBOT_HOST_NAME);
         robotLeaveLife = w.options.getInt(Opt.ROBOT_LEAVE_LIFE);
         robotLeaveScore = w.options.getInt(Opt.ROBOT_LEAVE_SCORE);
         robotLeaveRatio = w.options.getInt(Opt.ROBOT_LEAVE_RATIO);
@@ -639,6 +644,9 @@ public final class RobotManager {
             return null;
         }
         roster.used[num]++;
+        // robot.c:784-785: the options as they are (their tuners clean them when an operator sets them)
+        com.fulcrologic.jxpilot.common.Names.copy(pl.realName, robotRealName);
+        com.fulcrologic.jxpilot.common.Names.copy(pl.hostName, robotHostName);
         if (allowShipShapes) {
             pl.ship = roster.ship(num); // else Init_player's defaultShipShape (robot.c:776)
         }
@@ -661,6 +669,7 @@ public final class RobotManager {
         talk.says(RobotTalk.ENTER, pl.name, null);
         if (logRobots && log != null) {
             logLine.setLength(0);
+            com.fulcrologic.jxpilot.server.world.ShowTime.append(logLine, wallClock.getAsLong(), logZone).append(' ');
             logLine.append(pl.name).append(T_PUNCT).append(w.numPlayers).append(T_PUNCT_2).append(robotRealName)
                 .append(T_STARTS_AT_STARTPOS).append(pl.homeBase).append('.');
             log.accept(logLine);

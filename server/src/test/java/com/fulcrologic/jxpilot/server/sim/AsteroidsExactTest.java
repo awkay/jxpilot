@@ -190,7 +190,7 @@ class AsteroidsExactTest {
         o.life[h] = 3;
         s.asteroids.playerHit(p, h);
         Player q = ready(s, "Q", 0, 400, 300);
-        q.score = 5.01;
+        q.score = 5.01f;
         q.used |= Has.SHIELD;
         int h2 = s.asteroids.make(420, 300, 1, 0, 0f);
         s.asteroids.playerHit(q, h2);
@@ -207,7 +207,7 @@ class AsteroidsExactTest {
         assertAll(
             () -> assertEquals(0.0, o.life[h], "life floors at 0"),
             () -> assertEquals(7.0, p.score, 1e-9, "score 5 <= max 5: points"),
-            () -> assertEquals(5.01, q.score, 1e-9, "score above max: none"),
+            () -> assertEquals(5.01f, q.score, 1e-9, "score above max: none"),
             () -> assertEquals("E was hit by an asteroid.", messages(w, from).get(0), "equal speed: hit by"),
             () -> assertTrue((f.status & Obj.KILLED) != 0, "a shielded ship out of fuel dies"));
     }

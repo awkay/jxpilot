@@ -546,7 +546,7 @@ class ShipsFlightTest {
             int x = p.cx;
             tick(s, p, 0);
             assertAll(
-                () -> assertEquals(-0.01, p.score, 1e-15, "score -= 0.01 per frame"),
+                () -> assertEquals(-0.01f, p.score, 1e-15, "score -= 0.01 per frame"),
                 () -> assertEquals(x, p.cx, "the ship does not move"),
                 () -> assertEquals(256000.0, p.fuel, "and uses no fuel"));
         }

@@ -287,8 +287,8 @@ class ModesEdgesTest {
             w.modes.targetDamage[1] = 1;
             s.targets.damage(1, Obj.PLAYER, k.id, 1, 0, 0, 1, false, 0, 1f, -1);
             var b = SimFixture.lastBurst(w);
-            double sc = Scoring.rate(40, 5);
-            double por = sc * 1 / 2;
+            float sc = Scoring.rate(40, 5);
+            float por = sc * 1 / 2;
             assertAll(
                 () -> assertEquals(15.5f * 35, b.x, 0.5, "debris from the target's centre (x)"),
                 () -> assertEquals(3.5f * 35, b.y, 0.5, "(y)"),
@@ -406,7 +406,7 @@ class ModesEdgesTest {
             v.score = 3;
             w.modes.ballOwner[h] = k.id;
             s.balls.playerHit(v, h, 26);
-            double sc = Scoring.rate(20, 3);
+            float sc = Scoring.rate(20, 3);
             Player z = ship(s, "Z", 0, 500, 200);
             z.used |= Has.SHIELD | Has.EMERGENCY_SHIELD;
             z.fuel = 0;
