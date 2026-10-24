@@ -14,6 +14,7 @@ FRAMES=8
 INTERVAL=0.5
 ROBOTS=""
 ALL_PLAYERS=0
+OBJS=0
 NAME=refpilot
 KEYS=""
 PASS=()
@@ -30,6 +31,7 @@ while [ $# -gt 0 ]; do
         --interval) INTERVAL="$2"; shift 2;;
         --robots) ROBOTS="$2"; shift 2;;
         --all-players) ALL_PLAYERS=1; shift;;
+        --objs) OBJS=1; shift;;
         --name) NAME="$2"; shift 2;;
         --keys) KEYS="$2"; shift 2;;
         --map|--size|--tile|--seed|--server-opt|--client-opt) PASS+=("$1" "$2"); shift 2;;
@@ -53,6 +55,7 @@ args=(--name "$NAME" --after "$AFTER" --robots "$ROBOTS" --out /out ${PASS[@]+"$
 [ "$MODE" = frames ] && args+=(--frames "$FRAMES" --interval "$INTERVAL")
 if [ "$MODE" = trace ]; then
     args+=(--trace)
+    [ "$OBJS" = 1 ] && args+=(--trace-objs)
     if [ "$ALL_PLAYERS" = 0 ]; then
         # The server capitalises the first letter of the nick.
         cap="$(printf '%s' "${NAME:0:1}" | tr '[:lower:]' '[:upper:]')${NAME:1}"

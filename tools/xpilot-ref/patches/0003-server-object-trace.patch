@@ -1,0 +1,171 @@
+xpilot-ref patch 0003: optional per-tick object, pulse, ECM and item trace.
+
+This patch modifies XPilot 4.5.5 (GPL-2.0-or-later, Copyright (C) 1991-2010
+by Bjoern Stabell, Ken Ronny Schouten, Bert Gijsbers, Dick Balaska et al.).
+It is a derivative work distributed under the same license.
+
+Why: to compare a reimplementation's weapons and devices (missiles, mines,
+items, lasers, ECM, cloak, phasing, tanks...) numerically against the
+original server.  Applies on top of 0002.  Adds Trace_objects() to
+src/server/server.c, called right after Trace_players() in Main_loop().
+It is inert unless the environment variable XPILOT_TRACE_OBJS is set; then
+it prints to stderr, per update tick: one "XPOBJ ..." line per object in
+Obj[] (sparks and debris excluded), one "XPPULSE ..." line per laser pulse,
+one "XPECM ..." line per active ECM and one "XPITEMS ..." line per player
+(filtered by XPILOT_TRACE_NAME like 0002).  Game logic is unchanged.
+
+--- a/src/server/server.c	2026-10-23 20:25:19
++++ b/src/server/server.c	2026-10-23 20:26:16
+@@ -288,7 +288,144 @@
+ 		pl->fuel.sum,
+ 		BIT(pl->status, THRUSTING) ? 1 : 0,
+ 		(unsigned long)pl->status, pl->name);
++    }
++    fflush(stderr);
++}
++
++/*
++ * xpilot-ref object trace hook (not part of upstream XPilot 4.5.5).
++ * When the environment variable XPILOT_TRACE_OBJS is set, print after each
++ * Update_objects() call one "XPOBJ" line for every object in Obj[] except
++ * sparks and debris, one "XPPULSE" line per laser pulse, one "XPECM" line
++ * per active ECM, and one "XPITEMS" line per player (or only the player
++ * named by XPILOT_TRACE_NAME) with its items, fuel tanks and device state.
++ * Header lines end in "_HDR".  Has no effect unless XPILOT_TRACE_OBJS is set.
++ */
++static void Trace_objects(void)
++{
++    static int		trace_init = 0;
++    static int		trace_on = 0;
++    static const char	*trace_name = NULL;
++    int			i, j;
++
++    if (!trace_init) {
++	trace_init = 1;
++	trace_on = (getenv("XPILOT_TRACE_OBJS") != NULL);
++	trace_name = getenv("XPILOT_TRACE_NAME");
++	if (trace_name != NULL && trace_name[0] == '\0') {
++	    trace_name = NULL;
++	}
++	if (trace_on) {
++	    fprintf(stderr, "XPOBJ_HDR loop frame index type id team cx cy"
++		    " prevx prevy vx vy ax ay mass life status info count"
++		    " missile_dir fuselife pl_range pl_radius"
++		    " nuclear warhead velocity mini spread power laser"
++		    " [mine: owner spread_left ecm_range]"
++		    " [torpedo: max_speed turnspeed spread_left]"
++		    " [heat: max_speed turnspeed]"
++		    " [smart: max_speed turnspeed new_info ecm_range]\n");
++	    fprintf(stderr, "XPPULSE_HDR loop frame index id team x y dir"
++		    " len life refl\n");
++	    fprintf(stderr, "XPECM_HDR loop frame index id x y size\n");
++	    fprintf(stderr, "XPITEMS_HDR loop frame id item[0..%d] used have"
++		    " fuel_sum fuel_max num_tanks current tank[0..%d]"
++		    " emergency_thrust_left emergency_shield_left"
++		    " phasing_left lock_tagged lock_pl_id lock_distance"
++		    " sensor_range forceVisible damaged stunned num_pulses"
++		    " ecmcount\n", NUM_ITEMS - 1, MAX_TANKS);
++	}
++    }
++    if (!trace_on) {
++	return;
++    }
++    for (i = 0; i < NumObjs; i++) {
++	object *obj = Obj[i];
++	if (obj->type == OBJ_SPARK || obj->type == OBJ_DEBRIS) {
++	    continue;
++	}
++	fprintf(stderr, "XPOBJ %ld %ld %d %d %d %d %d %d %d %d"
++		" %.9g %.9g %.9g %.9g %.9g %ld %#lx %ld %d %d %ld %d %d"
++		" %d %d %d %d %d %d %d",
++		main_loops, frame_loops, i, obj->type, (int)obj->id,
++		(int)obj->team, obj->pos.cx, obj->pos.cy,
++		obj->prevpos.x, obj->prevpos.y,
++		(double)obj->vel.x, (double)obj->vel.y,
++		(double)obj->acc.x, (double)obj->acc.y,
++		(double)obj->mass, obj->life, (unsigned long)obj->status,
++		obj->info, obj->count, (int)obj->missile_dir,
++		obj->fuselife, obj->pl_range, obj->pl_radius,
++		(int)obj->mods.nuclear, (int)obj->mods.warhead,
++		(int)obj->mods.velocity, (int)obj->mods.mini,
++		(int)obj->mods.spread, (int)obj->mods.power,
++		(int)obj->mods.laser);
++	switch (obj->type) {
++	case OBJ_MINE: {
++	    mineobject *mine = MINE_PTR(obj);
++	    fprintf(stderr, " %d %d %.9g", mine->owner, mine->spread_left,
++		    (double)mine->ecm_range);
++	    break;
++	}
++	case OBJ_TORPEDO: {
++	    torpobject *torp = TORP_PTR(obj);
++	    fprintf(stderr, " %.9g %.9g %d", (double)torp->max_speed,
++		    (double)torp->turnspeed, torp->spread_left);
++	    break;
++	}
++	case OBJ_HEAT_SHOT: {
++	    missileobject *missile = MISSILE_PTR(obj);
++	    fprintf(stderr, " %.9g %.9g", (double)missile->max_speed,
++		    (double)missile->turnspeed);
++	    break;
++	}
++	case OBJ_SMART_SHOT: {
++	    smartobject *smart = SMART_PTR(obj);
++	    fprintf(stderr, " %.9g %.9g %d %.9g", (double)smart->max_speed,
++		    (double)smart->turnspeed, smart->new_info,
++		    (double)smart->ecm_range);
++	    break;
++	}
++	default:
++	    break;
++	}
++	fputc('\n', stderr);
++    }
++    for (i = 0; i < NumPulses; i++) {
++	pulse_t *pulse = Pulses[i];
++	fprintf(stderr, "XPPULSE %ld %ld %d %d %d %.9g %.9g %d %d %d %d\n",
++		main_loops, frame_loops, i, pulse->id, (int)pulse->team,
++		(double)pulse->pos.x, (double)pulse->pos.y, pulse->dir,
++		pulse->len, pulse->life, pulse->refl ? 1 : 0);
+     }
++    for (i = 0; i < NumEcms; i++) {
++	ecm_t *ecm = Ecms[i];
++	fprintf(stderr, "XPECM %ld %ld %d %d %.9g %.9g %d\n",
++		main_loops, frame_loops, i, ecm->id,
++		(double)ecm->pos.x, (double)ecm->pos.y, ecm->size);
++    }
++    for (i = 0; i < NumPlayers; i++) {
++	player *pl = Players[i];
++	if (trace_name != NULL && strcmp(trace_name, pl->name) != 0) {
++	    continue;
++	}
++	fprintf(stderr, "XPITEMS %ld %ld %d", main_loops, frame_loops,
++		(int)pl->id);
++	for (j = 0; j < NUM_ITEMS; j++) {
++	    fprintf(stderr, " %d", pl->item[j]);
++	}
++	fprintf(stderr, " %#lx %#lx %ld %ld %d %d",
++		(unsigned long)pl->used, (unsigned long)pl->have,
++		pl->fuel.sum, pl->fuel.max, pl->fuel.num_tanks,
++		pl->fuel.current);
++	for (j = 0; j <= MAX_TANKS; j++) {
++	    fprintf(stderr, " %ld", pl->fuel.tank[j]);
++	}
++	fprintf(stderr, " %d %d %d %d %d %.9g %.9g %d %d %d %d %d\n",
++		pl->emergency_thrust_left, pl->emergency_shield_left,
++		pl->phasing_left, pl->lock.tagged, pl->lock.pl_id,
++		(double)pl->lock.distance, (double)pl->sensor_range,
++		pl->forceVisible, pl->damaged, pl->stunned,
++		pl->num_pulses, pl->ecmcount);
++    }
+     fflush(stderr);
+ }
+ 
+@@ -330,6 +467,7 @@
+ 
+ 	Update_objects();
+ 	Trace_players();
++	Trace_objects();
+ 
+ 	if ((main_loops % UPDATES_PR_FRAME) == 0) {
+ 	    Frame_update();

@@ -29,6 +29,7 @@ import com.fulcrologic.jxpilot.server.robot.DefaultRobotPlayTest.W;
 import com.fulcrologic.jxpilot.server.robot.RobotFixture.SpyItems;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.server.world.Mods;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.Trig;
@@ -285,8 +286,8 @@ class DefaultRobotEdgesTest {
             c.w.rng.seed(6);
             c.r.checkTarget(c.p, c.d, 1000, 700, DefaultRobot.RM_CANNON_KILL);
             assertAll(
-                () -> assertEquals(DefaultRobot.NUCLEAR | DefaultRobot.FULLNUCLEAR, t.d.modNuclear, "mine modifiers"),
-                () -> assertEquals((int) (RobotFixture.rfracs(6, 1)[0] * 4), c.d.modSpread, "shot spread drawn"),
+                () -> assertEquals(DefaultRobot.NUCLEAR | DefaultRobot.FULLNUCLEAR, Mods.nuclear(t.p.mods), "mine modifiers"),
+                () -> assertEquals((int) (RobotFixture.rfracs(6, 1)[0] * 4), Mods.spread(c.p.mods), "shot spread drawn"),
                 () -> assertEquals(1, c.p.shots, "and fired"));
         }
     }
@@ -719,8 +720,8 @@ class DefaultRobotEdgesTest {
             t.d.robotLockId = t.h.id;
             r.aimLaser(t.p, t.d);
             int visibleOnly = t.p.used & Has.LASER;
-            t.d.lockTagged = DefaultRobot.LOCK_VISIBLE;
-            t.d.lockPlId = t.h.id;
+            t.p.lockTagged = DefaultRobot.LOCK_VISIBLE;
+            t.p.lockPlId = t.h.id;
             r.aimLaser(t.p, t.d);
             assertAll(
                 () -> assertEquals(0, visibleOnly, "no LOCK_PLAYER war"),
@@ -735,15 +736,15 @@ class DefaultRobotEdgesTest {
             W t = new W("");
             RobotFixture.place(t.h, hx, hy);
             RobotFixture.velocity(t.h, hvx, hvy);
-            t.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            t.d.lockPlId = t.h.id;
-            t.d.lockDistance = lockDist;
+            t.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            t.p.lockPlId = t.h.id;
+            t.p.lockDistance = (float) lockDist;
             return t;
         }
 
         private String beam(W t) {
             t.r.tractorBeam(t.p, t.d);
-            return (t.p.used & Has.TRACTOR_BEAM) == 0 ? "off" : (t.d.tractorIsPressor ? "push" : "pull");
+            return (t.p.used & Has.TRACTOR_BEAM) == 0 ? "off" : (t.p.tractorIsPressor ? "push" : "pull");
         }
 
         @Test
@@ -765,7 +766,7 @@ class DefaultRobotEdgesTest {
             W max = setUp(850, 700, 30, 0, 150);
             W min = setUp(850, 700, 6, 0, 150);
             W visible = setUp(850, 700, 10, 0, 150);
-            visible.d.lockTagged = DefaultRobot.LOCK_VISIBLE;
+            visible.p.lockTagged = DefaultRobot.LOCK_VISIBLE;
             assertAll(
                 () -> assertEquals("pull", beam(range), "250 < 200 + 2*50"),
                 () -> assertEquals("off", beam(relX), "8 - 3 = 5 is not above normal speed"),
@@ -779,7 +780,7 @@ class DefaultRobotEdgesTest {
                 () -> assertEquals("off", beam(max), "away at exactly max speed"),
                 () -> assertEquals("off", beam(min), "away at exactly normal speed"),
                 () -> assertEquals("off", beam(visible), "LOCK_VISIBLE alone is no lock"),
-                () -> assertEquals(DefaultRobot.LOCK_VISIBLE, visible.d.lockTagged, "no beam: the lock is untouched"));
+                () -> assertEquals(DefaultRobot.LOCK_VISIBLE, visible.p.lockTagged, "no beam: the lock is untouched"));
         }
     }
 
@@ -849,13 +850,13 @@ class DefaultRobotEdgesTest {
             x.s.robots.robot().checkTarget(x.p, x.d, 1100, 700, DefaultRobot.RM_ATTACK);
             assertAll(
                 () -> assertEquals(Has.LASER, t.p.used & Has.LASER, "laser"),
-                () -> assertEquals((int) (f[0] * 3), t.d.modLaser, "laser setting drawn (count % 4 == 0)"),
+                () -> assertEquals((int) (f[0] * 3), Mods.laser(t.p.mods), "laser setting drawn (count % 4 == 0)"),
                 () -> assertEquals(List.of("missile:" + Obj.TORPEDO + ":0"), m.calls, "504 % 5 == 4: torpedo"),
-                () -> assertEquals((int) (f[0] * 4), u.d.modPower, "missile power drawn"),
+                () -> assertEquals((int) (f[0] * 4), Mods.power(u.p.mods), "missile power drawn"),
                 () -> assertEquals(List.of("missile:" + Obj.SMART_SHOT + ":0"), sm.calls, "the random smart missile"),
-                () -> assertEquals((int) (f[1] * 4), v.d.modPower, "its power drawn after the 64 roll"),
+                () -> assertEquals((int) (f[1] * 4), Mods.power(v.p.mods), "its power drawn after the 64 roll"),
                 () -> assertEquals(List.of("mine"), mi.calls, "509 % 32 = 29 < 31: a mine"),
-                () -> assertEquals(DefaultRobot.NUCLEAR, x.d.modNuclear, "a nuclear mine (9 <= attack 50)"));
+                () -> assertEquals(DefaultRobot.NUCLEAR, Mods.nuclear(x.p.mods), "a nuclear mine (9 <= attack 50)"));
         }
 
         @Test
@@ -864,7 +865,7 @@ class DefaultRobotEdgesTest {
             SpyItems a = new SpyItems().with(Item.MISSILE, 5);
             W t = new W("");
             t.s.robots.setItems(a);
-            t.d.lockPlId = t.h.id;
+            t.p.lockPlId = t.h.id;
             t.d.robotCount = 500;
             t.d.lastFiredMissile = 100;
             t.s.robots.robot().checkTarget(t.p, t.d, 900, 700, DefaultRobot.RM_ATTACK);
@@ -1252,10 +1253,10 @@ class DefaultRobotEdgesTest {
         @DisplayName("choosePlayerLock: LOCK_VISIBLE alone counts as no lock")
         void lockVisible() {
             W t = new W("");
-            t.d.lockTagged = DefaultRobot.LOCK_VISIBLE;
-            t.d.lockPlId = 0;
+            t.p.lockTagged = DefaultRobot.LOCK_VISIBLE;
+            t.p.lockPlId = 0;
             t.r.choosePlayerLock(t.p, t.d, t.h, 900);
-            assertEquals(t.h.id, t.d.lockPlId, "locked");
+            assertEquals(t.h.id, t.p.lockPlId, "locked");
         }
 
         @Test
@@ -1263,12 +1264,12 @@ class DefaultRobotEdgesTest {
         void releaseWar() {
             W t = new W("");
             Player g = RobotFixture.human(t.s, "G", 900, 700);
-            t.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            t.d.lockPlId = t.h.id;
+            t.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            t.p.lockPlId = t.h.id;
             t.d.robotLock = DefaultRobot.LOCK_VISIBLE;
             t.d.robotLockId = g.id;
             t.r.releasePlayerLock(t.p, t.d);
-            assertEquals(DefaultRobot.LOCK_PLAYER, t.d.lockTagged, "kept");
+            assertEquals(DefaultRobot.LOCK_PLAYER, t.p.lockTagged, "kept");
         }
 
         @Test
@@ -1316,11 +1317,11 @@ class DefaultRobotEdgesTest {
             t.d.attack = 41;
             t.d.robotCount = 41;
             r.chooseWeaponModifier(t.p, t.d, Obj.MINE);
-            int at = t.d.modNuclear;
+            int at = Mods.nuclear(t.p.mods);
             it.with(Item.MINE, 8);
             t.d.robotCount = 40;
             r.chooseWeaponModifier(t.p, t.d, Obj.MINE);
-            int even = t.d.modNuclear;
+            int even = Mods.nuclear(t.p.mods);
             int seed = RobotFixture.seedWithFirst(false, 0.4);
             t.w.rng.seed(seed);
             t.d.robotCount = 4;
@@ -1328,7 +1329,7 @@ class DefaultRobotEdgesTest {
             assertAll(
                 () -> assertEquals(DefaultRobot.NUCLEAR | DefaultRobot.FULLNUCLEAR, at, "41 <= 41; 5 < 8"),
                 () -> assertEquals(DefaultRobot.NUCLEAR | DefaultRobot.FULLNUCLEAR, even, "8 = 2*4 but even count"),
-                () -> assertEquals((int) (RobotFixture.rfracs(seed, 1)[0] * 3), t.d.modLaser, "laser 1..2"));
+                () -> assertEquals((int) (RobotFixture.rfracs(seed, 1)[0] * 3), Mods.laser(t.p.mods), "laser 1..2"));
         }
 
         @Test
@@ -1402,9 +1403,9 @@ class DefaultRobotEdgesTest {
                 t.p.used |= Has.REFUEL;
                 t.d.longtermMode = DefaultRobot.NEED_FUEL;
                 RobotFixture.place(t.h, 1000, 700);
-                t.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-                t.d.lockPlId = t.h.id;
-                t.d.lockDistance = 300;
+                t.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+                t.p.lockPlId = t.h.id;
+                t.p.lockDistance = 300;
                 RobotFixture.obj(t.w, Obj.ITEM, Obj.NO_ID, 800, 800, 0, 0);
                 t.d.robotCount = 101;
                 t.r.refreshCells();
@@ -1421,9 +1422,9 @@ class DefaultRobotEdgesTest {
             W t = new W("");
             RobotFixture.place(t.h, 920, 700);
             RobotFixture.velocity(t.h, 0, 10);
-            t.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            t.d.lockPlId = t.h.id;
-            t.d.lockDistance = 220;
+            t.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            t.p.lockPlId = t.h.id;
+            t.p.lockDistance = 220;
             t.d.robotCount = 101;
             t.r.play(t.p, t.d);
             W u = new W("");
@@ -1431,9 +1432,9 @@ class DefaultRobotEdgesTest {
             RobotFixture.velocity(u.h, 0, 10);
             RobotFixture.velocity(u.p, 0, 10);
             u.p.dir = 0;
-            u.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            u.d.lockPlId = u.h.id;
-            u.d.lockDistance = 220;
+            u.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            u.p.lockPlId = u.h.id;
+            u.p.lockDistance = 220;
             u.d.robotCount = 101;
             u.r.play(u.p, u.d);
             assertAll(
@@ -1456,7 +1457,7 @@ class DefaultRobotEdgesTest {
                 t.p.fuel = Integer.parseInt(c[1]) * 256;
                 t.d.robotCount = 31;
                 t.r.play(t.p, t.d);
-                out.add(c[1] + ":" + (t.d.lockPlId == t.h.id));
+                out.add(c[1] + ":" + (t.p.lockPlId == t.h.id));
             }
             assertEquals(List.of("600:true", "501:false", "500:false", "501:true"), out,
                 "1486 px: in range of 600 units (1500), not 501 (1252); at level 3 only visibility; "
@@ -1533,8 +1534,8 @@ class DefaultRobotEdgesTest {
             u.d.robotCount = 101;
             u.r.play(u.p, u.d);
             W v = new W("");
-            v.d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            v.d.lockPlId = v.h.id;
+            v.p.lockTagged = DefaultRobot.LOCK_PLAYER;
+            v.p.lockPlId = v.h.id;
             v.h.status &= ~Obj.PLAYING;
             v.d.robotCount = 102;
             v.d.robotMode = 0;
@@ -1542,7 +1543,7 @@ class DefaultRobotEdgesTest {
             assertAll(
                 () -> assertEquals(Has.SHIELD, t.p.used & Has.SHIELD, "a shot about to hit: shields"),
                 () -> assertEquals(Has.SHIELD, u.p.used & Has.SHIELD, "a pulse: shields"),
-                () -> assertEquals(0, v.d.lockTagged, "the dead lock target is dropped"),
+                () -> assertEquals(0, v.p.lockTagged, "the dead lock target is dropped"),
                 () -> assertEquals(DefaultRobot.RM_ROBOT_IDLE, v.d.robotMode, "idling (101 % 64 >= 32)"));
         }
 

@@ -27,7 +27,8 @@ package com.fulcrologic.jxpilot.server.robot;
  * Per-robot state, one preallocated instance per player slot: the robot manager's {@code robot_data_t}, the
  * default robot's {@code robot_default_data_t} ({@code src/server/robot.h}), and the parts of C
  * {@code player} that only robots use and that {@link com.fulcrologic.jxpilot.server.world.Player} does not
- * have (fuel levels, the player lock, weapon modifiers, the repair target).
+ * have (fuel levels, the repair target). The lock, the modifiers and the tractor beam direction are the
+ * player's own ({@code Player.lockTagged}, {@code Player.mods}, {@code Player.tractorIsPressor}).
  */
 public final class RobotData {
     /** The slot holds a robot. */
@@ -66,24 +67,8 @@ public final class RobotData {
     public double fuelL1;
     public double fuelL2;
     public double fuelL3;
-    /** C {@code lock.tagged}: LOCK_PLAYER / LOCK_VISIBLE bits. */
-    public int lockTagged;
-    /** C {@code lock.pl_id}. */
-    public int lockPlId;
-    /** C {@code lock.distance}. */
-    public double lockDistance;
-    /** C {@code pl->mods}: weapon modifiers chosen by {@code Choose_weapon_modifier}. */
-    public int modNuclear;
-    public int modWarhead;
-    public int modVelocity;
-    public int modMini;
-    public int modSpread;
-    public int modPower;
-    public int modLaser;
     /** C {@code repair_target}. */
     public int repairTarget;
-    /** C {@code tractor_is_pressor}. */
-    public boolean tractorIsPressor;
     /** Last engine power reported in a THRUST event (robots change power directly, not via keys). */
     public double reportedPower;
 
@@ -111,23 +96,7 @@ public final class RobotData {
         fuelL1 = 0;
         fuelL2 = 0;
         fuelL3 = 0;
-        lockTagged = 0;
-        lockPlId = 0;
-        lockDistance = 0;
-        clearMods();
         repairTarget = 0;
-        tractorIsPressor = false;
         reportedPower = 0;
-    }
-
-    /** C {@code CLEAR_MODS}. */
-    void clearMods() {
-        modNuclear = 0;
-        modWarhead = 0;
-        modVelocity = 0;
-        modMini = 0;
-        modSpread = 0;
-        modPower = 0;
-        modLaser = 0;
     }
 }

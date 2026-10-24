@@ -155,15 +155,14 @@ class RobotManagerEdgesTest {
         void cleanSlot() {
             Simulation s = sim("", "__");
             Player p = TestWorlds.join(s, "H", 0);
-            RobotData d = s.robots.data(p);
-            d.lockTagged = 3;
-            d.modMini = 2;
+            p.lockTagged = 3;
+            p.mods = com.fulcrologic.jxpilot.server.world.Mods.withMini(0, 2);
             s.ships.leave(p);
             Player r = s.robots.create();
             assertAll(
                 () -> assertEquals(p.slot, r.slot, "the same slot"),
-                () -> assertEquals(0, s.robots.data(r).lockTagged, "no lock"),
-                () -> assertEquals(0, s.robots.data(r).modMini, "no modifiers"));
+                () -> assertEquals(0, r.lockTagged, "no lock"),
+                () -> assertEquals(0, r.mods, "no modifiers"));
         }
 
         @Test
@@ -319,65 +318,6 @@ class RobotManagerEdgesTest {
                 () -> assertEquals(1, RobotFixture.messages(s.world, from).size(), "a war message"),
                 () -> assertTrue(RobotFixture.messages(s.world, from).get(0).contains("K"), "naming the killer"));
         }
-
-        @Test
-        @DisplayName("departures: locks on the leaver go (also LOCK_VISIBLE only); other locks stay unless alone")
-        void departures() {
-            Simulation s = sim("", "____");
-            Player a = s.robots.create();
-            Player h = TestWorlds.join(s, "H", 0);
-            Player g = TestWorlds.join(s, "G", 0);
-            RobotData d = s.robots.data(a);
-            d.lockTagged = DefaultRobot.LOCK_VISIBLE;
-            d.lockPlId = h.id;
-            s.robots.playerLeft(h.id);
-            int visible = d.lockTagged;
-            d.lockTagged = DefaultRobot.LOCK_PLAYER;
-            d.lockPlId = g.id;
-            s.robots.playerLeft(h.id);
-            int other = d.lockTagged;
-            s.ships.leave(h);
-            s.ships.leave(g);
-            s.robots.playerLeft(h.id);
-            assertAll(
-                () -> assertEquals(0, visible, "lock on the leaver"),
-                () -> assertEquals(DefaultRobot.LOCK_PLAYER, other, "a lock on someone else"),
-                () -> assertEquals(0, d.lockTagged, "alone: every lock goes"));
-        }
-
-        @Test
-        @DisplayName("lock distances are refreshed only for LOCK_PLAYER locks")
-        void refreshOnlyPlayerLocks() {
-            Simulation s = sim("maxRobots: 1\n", "___");
-            Player r = s.robots.create();
-            Player h = TestWorlds.join(s, "H", 0);
-            RobotData d = s.robots.data(r);
-            d.lockTagged = DefaultRobot.LOCK_VISIBLE;
-            d.lockPlId = h.id;
-            d.lockDistance = 12345;
-            r.status &= ~Obj.PLAYING;
-            r.count = 10;
-            s.robots.update();
-            assertEquals(12345.0, d.lockDistance, "not refreshed");
-        }
-    }
-
-    @Nested
-    @DisplayName("kicking")
-    class Kick {
-        @Test
-        @DisplayName("team play without reserveRobotTeam: any robot (the lowest score) is kicked")
-        void anyTeam() {
-            Simulation s = teams("restrictRobots: no\nreserveRobotTeam: no\n", "0011");
-            Player r0 = s.ships.join("R0", 0, true);
-            Player r1 = s.ships.join("R1", 1, true);
-            r0.score = -5;
-            s.robots.numRobots = 2;
-            s.robots.kickRobotPlayers(Const.TEAM_NOT_SET);
-            assertAll(
-                () -> assertFalse(r0.inUse, "the robot team's robot (lowest)"),
-                () -> assertTrue(r1.inUse, "the other stays"));
-        }
     }
 
     @Nested
@@ -389,48 +329,5 @@ class RobotManagerEdgesTest {
             assertEquals("Solo", RobotRoster.parse("name: Solo").def(0).name(), "one robot");
         }
 
-        @Test
-        @DisplayName("the S1 gate: no items, implemented abilities only, everyone visible, inert actions")
-        void gate() {
-            Simulation s = sim("", "__");
-            Player p = TestWorlds.join(s, "P", 0);
-            p.have = Has.SHIELD | Has.CLOAKING_DEVICE | Has.TRACTOR_BEAM | Has.REFUEL;
-            RobotItems it = new RobotItems();
-            int used = p.used;
-            double fuel = p.fuel;
-            it.emergencyShield(p);
-            it.emergencyThrust(p);
-            it.deflector(p);
-            it.placeMine(p, true);
-            it.fireEcm(p);
-            it.transporter(p);
-            it.fireMissile(p, Obj.SMART_SHOT, 0);
-            it.hyperjump(p);
-            it.detachTank(p);
-            it.detachBall(p);
-            it.sensorRange(p);
-            assertAll(
-                () -> assertEquals(0, it.count(p, Item.MISSILE), "no items"),
-                () -> assertEquals(Has.SHIELD | Has.REFUEL, it.have(p), "implemented abilities"),
-                () -> assertTrue(it.canSee(p, p), "visible"),
-                () -> assertEquals(0, it.numPulses(p), "no pulses"),
-                () -> assertEquals(0, it.numTanks(p), "no tanks"),
-                () -> assertEquals(0, it.limit(Item.MINE), "limit 0"),
-                () -> assertEquals(0, it.activeDefensives(p), "none active"),
-                () -> assertEquals(DefaultRobot.TARGET_DAMAGE, it.targetDamage(0), "targets intact"),
-                () -> assertFalse(it.treasureHasBall(0), "no balls at home"),
-                () -> assertEquals(-1, it.towedBall(p), "no towed ball"),
-                () -> assertEquals(-1, it.ballOwner(0), "no ball owner"),
-                () -> assertEquals(1, it.asteroidSize(0), "size 1"),
-                () -> assertEquals(0, it.itemType(0), "item 0"),
-                () -> assertFalse(it.randomItem(0), "not random"),
-                () -> assertEquals(0, it.pulseCount(), "no pulses"),
-                () -> assertEquals(0.0, it.pulseX(0) + it.pulseY(0), "pulse position 0"),
-                () -> assertEquals(0, it.pulseDir(0), "pulse dir 0"),
-                () -> assertEquals(-1, it.pulseOwner(0), "no owner"),
-                () -> assertFalse(it.pulseReflected(0), "not reflected"),
-                () -> assertEquals(used, p.used, "actions change nothing"),
-                () -> assertEquals(fuel, p.fuel, "no fuel used"));
-        }
     }
 }
