@@ -25,11 +25,15 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.net.ControlKey;
+import com.fulcrologic.jxpilot.server.sim.CTraceItems.CEcm;
 import com.fulcrologic.jxpilot.server.sim.CTraceItems.CFrame;
 import com.fulcrologic.jxpilot.server.sim.CTraceItems.CObj;
+import com.fulcrologic.jxpilot.server.sim.CTraceItems.CPulse;
+import com.fulcrologic.jxpilot.server.world.Ecms;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
+import com.fulcrologic.jxpilot.server.world.Pulses;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
@@ -92,7 +96,13 @@ class CTraceItemsTest {
     record Result(int frames, List<String> mismatches, int objects) {}
 
     static Result replay(String trace, String... opts) throws IOException {
+        return replay(trace, Long.MAX_VALUE, opts);
+    }
+
+    /** Replay the trace's frames up to and including C frame {@code last}. */
+    static Result replay(String trace, long last, String... opts) throws IOException {
         List<CFrame> c = CTraceItems.load(trace);
+        c.removeIf(f -> f.frame > last);
         Simulation s = CTraceItems.world(opts);
         World w = s.world;
         Player p = CTraceItems.join(s, c.get(0));
@@ -100,7 +110,8 @@ class CTraceItemsTest {
         List<String> bad = new ArrayList<>();
         int objects = 0;
         CFrame prev = null;
-        long shotHold = 0;
+        int lostItem = -1;
+        int lostPack = 0;
         for (CFrame f : c) {
             long keys = f.ship.thrusting() ? ControlKey.THRUST.mask() : 0;
             keys |= f.ship.turnAcc() > 0 ? ControlKey.TURN_LEFT.mask()
@@ -137,15 +148,12 @@ class CTraceItemsTest {
                 if (o.type() == Obj.HEAT_SHOT && prev != null && countType(prev, Obj.HEAT_SHOT) < countType(f, Obj.HEAT_SHOT)) {
                     keys |= ControlKey.FIRE_HEAT.mask();
                 }
-                if (o.type() == Obj.SHOT && o.id() == 1 && o.life() == w.params.shotLife - 1) {
-                    shotHold = f.frame + 2;
-                }
             }
             if (prev != null && countType(f, Obj.MINE) > countType(prev, Obj.MINE)) {
-                CObj m = newest(f, Obj.MINE);
+                CObj m = newest(f, prev, Obj.MINE);
                 keys |= (m.status() & Obj.GRAVITY) != 0 ? ControlKey.DETACH_MINE.mask() : ControlKey.DROP_MINE.mask();
             }
-            if (f.frame <= shotHold) {
+            if ((used & Has.SHOT) != 0) {
                 keys |= ControlKey.FIRE_SHOT.mask();
             }
             if (prev != null) {
@@ -159,12 +167,28 @@ class CTraceItemsTest {
                         | ControlKey.FIRE_HEAT.mask())) == 0 && i != Item.TANK.ordinal()) {
                         p.loseItem = i;
                         keys |= ControlKey.LOSE_ITEM.mask();
+                        // C drew the pack size at random (item.c:198): use the amount C lost
+                        lostPack = prev.items.items()[i] - f.items.items()[i];
+                        lostItem = i;
                     }
                 }
             }
             in[p.slot] = keys;
             int before = w.objects.count();
+            int min = 0;
+            int max = 0;
+            if (lostItem >= 0) {
+                min = w.items.minPerPack[lostItem];
+                max = w.items.maxPerPack[lostItem];
+                w.items.minPerPack[lostItem] = lostPack;
+                w.items.maxPerPack[lostItem] = lostPack;
+            }
             s.tick(in);
+            if (lostItem >= 0) {
+                w.items.minPerPack[lostItem] = min;
+                w.items.maxPerPack[lostItem] = max;
+                lostItem = -1;
+            }
             objects += syncNew(w, f, before);
             CTraceTest.Frame j = CTraceTest.Frame.of(f.ship.frame(), p);
             List<String> d = new ArrayList<>();
@@ -196,6 +220,35 @@ class CTraceItemsTest {
             if (!co.equals(jo)) {
                 d.add("objects\n    C    " + co + "\n    Java " + jo);
             }
+            List<String> cp = new ArrayList<>();
+            for (CPulse q : f.pulses) {
+                cp.add(q.x() + "," + q.y() + " d" + q.dir() + " l" + q.len() + " t" + q.life() + " r" + q.refl());
+            }
+            List<String> jp = new ArrayList<>();
+            Pulses ps = w.pulses;
+            for (int k = 0; k < ps.count(); k++) {
+                jp.add(ps.x[k] + "," + ps.y[k] + " d" + ps.dir[k] + " l" + ps.len[k] + " t" + ps.life[k] + " r"
+                    + ps.refl[k]);
+            }
+            cp.sort(null);
+            jp.sort(null);
+            if (!cp.equals(jp)) {
+                d.add("pulses\n    C    " + cp + "\n    Java " + jp);
+            }
+            List<String> ce = new ArrayList<>();
+            for (CEcm q : f.ecms) {
+                ce.add(q.x() + "," + q.y() + " s" + q.size());
+            }
+            List<String> je = new ArrayList<>();
+            Ecms es = w.ecms;
+            for (int k = 0; k < es.count(); k++) {
+                je.add(es.x[k] + "," + es.y[k] + " s" + es.size[k]);
+            }
+            ce.sort(null);
+            je.sort(null);
+            if (!ce.equals(je)) {
+                d.add("ecms\n    C    " + ce + "\n    Java " + je);
+            }
             if (!d.isEmpty()) {
                 bad.add("frame " + f.frame + ": " + String.join("\n  ", d));
             }
@@ -214,10 +267,15 @@ class CTraceItemsTest {
         return n;
     }
 
-    static CObj newest(CFrame f, int type) {
+    /** The object of the type in {@code f} that is at no position an object of that type had in {@code prev}. */
+    static CObj newest(CFrame f, CFrame prev, int type) {
         CObj best = null;
         for (CObj o : f.objs) {
-            if (o.type() == type && (best == null || o.life() > best.life())) {
+            boolean old = false;
+            for (CObj q : prev.objs) {
+                old |= q.type() == type && q.cx() == o.cx() && q.cy() == o.cy();
+            }
+            if (o.type() == type && !old) {
                 best = o;
             }
         }
@@ -258,5 +316,73 @@ class CTraceItemsTest {
         Result r = replay("torpedo.txt", "initialMissiles", "4");
         check(r, 85);
         assertTrue(r.objects() >= 2, "both torpedoes were made");
+    }
+
+    @Test
+    @DisplayName("heat-seeker locking on its own thrusting ship")
+    void heatSeeker() throws IOException {
+        // C frame 36: a (random, silenced in Java) cannon shot hits the ship; the missile flies from frame 24
+        check(replay("heat-seeker.txt", 35, "initialMissiles", "4"), 35);
+    }
+
+    @Test
+    @DisplayName("a dropped and a thrown mine")
+    void mines() throws IOException {
+        check(replay("mines.txt", "initialMines", "4", "mineFuseTime", "0"), 78);
+    }
+
+    @Test
+    @DisplayName("laser pulses cut short by a wall")
+    void laser() throws IOException {
+        check(replay("laser.txt", "initialLasers", "2"), 66);
+    }
+
+    @Test
+    @DisplayName("wideangle volleys (rear shots into the ceiling)")
+    void wideangle() throws IOException {
+        check(replay("wideangle-rearshot.txt", "initialWideangles", "2", "initialRearshots", "3"), 60);
+    }
+
+    @Test
+    @DisplayName("rear shots into open space")
+    void rearshot() throws IOException {
+        check(replay("rearshot.txt", "initialRearshots", "3"), 69);
+    }
+
+    @Test
+    @DisplayName("afterburners")
+    void afterburner() throws IOException {
+        check(replay("afterburner.txt", "initialAfterburners", "5"), 62);
+    }
+
+    @Test
+    @DisplayName("emergency thrust")
+    void emergencyThrust() throws IOException {
+        check(replay("emergency-thrust.txt", "initialEmergencyThrusts", "1"), 66);
+    }
+
+    @Test
+    @DisplayName("cloak, uncloak, phasing")
+    void cloakPhasing() throws IOException {
+        check(replay("cloak-phasing.txt", "initialCloaks", "1", "initialPhasings", "1"), 108);
+    }
+
+    @Test
+    @DisplayName("ECM blast")
+    void ecm() throws IOException {
+        check(replay("ecm.txt", "initialECMs", "2"), 53);
+    }
+
+    @Test
+    @DisplayName("lost mine and missile packs")
+    void loseItem() throws IOException {
+        // C frame 65: a (random, silenced in Java) cannon shot hits the ship after the last pack is lost
+        check(replay("lose-item.txt", 64, "initialMines", "3", "initialMissiles", "2"), 64);
+    }
+
+    @Test
+    @DisplayName("extra tanks: switching and fuel flow")
+    void tanks() throws IOException {
+        check(replay("tanks.txt", "initialTanks", "2"), 74);
     }
 }

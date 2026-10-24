@@ -166,6 +166,7 @@ final class CTraceItems {
             o.force(Opt.MAX_UNSHIELDED_PLAYER_WALL_BOUNCE_ANGLE, "180");
             o.force(Opt.MAX_SHIELDED_PLAYER_WALL_BOUNCE_ANGLE, "180");
             o.force(Opt.ALLOW_MODIFIERS, "yes");
+            o.force(Opt.SPARKS_WALL_BOUNCE, "no");
             o.force(Opt.ITEM_PROB_MULT, "0");
             for (int i = 0; i + 1 < opts.length; i += 2) {
                 o.force(Opt.find(opts[i]), opts[i + 1]);
