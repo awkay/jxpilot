@@ -77,7 +77,7 @@ public final class ServerNet {
     /** REJECT bytes before its text: header, u32 nonce, u8 reason, u8 text length. */
     static final int REJECT_OVERHEAD = PacketHeader.SIZE + 6;
     /** Limiter table size for per-source buckets. */
-    static final int SOURCE_SLOTS = 4096;
+    public static final int SOURCE_SLOTS = 4096;
 
     private final ServerNetConfig cfg;
     private final GameHost host;
@@ -320,7 +320,7 @@ public final class ServerNet {
     }
 
     /** BEHAVIOR: true for a datagram with the JX magic, type CONNECT and a protocol version other than ours. */
-    static boolean isOtherVersionConnect(ByteBuffer d) {
+    public static boolean isOtherVersionConnect(ByteBuffer d) {
         int p = d.position();
         return d.remaining() >= PacketHeader.SIZE
             && (d.getShort(p) & 0xFFFF) == Protocol.MAGIC
@@ -726,6 +726,9 @@ public final class ServerNet {
 
     /** {@link GameHost#humanEntered()} of the hosted game. */
     public boolean humanEntered() { return host.humanEntered(); }
+
+    /** {@link GameHost#humanCount()} of the hosted game. */
+    public int humans() { return host.humanCount(); }
 
     /** Packets dropped as malformed (including client messages the host could not decode). */
     public long malformed() { return malformed; }

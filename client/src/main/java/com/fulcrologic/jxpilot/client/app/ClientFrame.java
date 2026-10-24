@@ -29,6 +29,7 @@ import com.fulcrologic.jxpilot.client.game.hud.FontRole;
 import com.fulcrologic.jxpilot.client.game.hud.Hud;
 import com.fulcrologic.jxpilot.client.game.hud.HudFrame;
 import com.fulcrologic.jxpilot.client.game.hud.KeyHelp;
+import com.fulcrologic.jxpilot.client.game.hud.LobbyPanel;
 import com.fulcrologic.jxpilot.client.game.hud.TalkLine;
 import com.fulcrologic.jxpilot.client.game.hud.TextSelection;
 import com.fulcrologic.jxpilot.client.game.hud.TextMetrics;
@@ -71,6 +72,10 @@ public final class ClientFrame {
     private final HudFrame panelHud = new HudFrame(128, 1536, 320, 256);
     private final HudFrame helpHud = new HudFrame(4, 4, 320, 160);
     private final KeyHelp help;
+    /** The map list of a lobby server, shown (instead of the key help) while the connection is in the lobby. */
+    private final LobbyPanel lobbyPanel = new LobbyPanel();
+    /** {@code --lobby-map}: the map to pick by itself, or null (cleared once tried). */
+    private String lobbyPick;
     /** The server's MOTD panel once it arrived (C's MOTD viewer), else null. */
     private KeyHelp motd;
     private final String helpHint;
@@ -196,6 +201,7 @@ public final class ClientFrame {
         lastNow = nowNanos;
         conn.update(nowNanos);
         serverClosed(nowNanos);
+        lobbyStep(nowNanos);
         game.frame(nowNanos, dt);
         WorldMap map = game.map();
         if (map != lastMap) {
@@ -257,10 +263,95 @@ public final class ClientFrame {
         if (motdText != null) {
             motd = motdPanel(motdText);
         }
-        if (motd != null && motd.visible()) {
+        if (lobbyActive) {
+            lobbyPanel.layout(helpHud, viewW, viewH, fonts.of(FontRole.KEY_LIST));
+        } else if (motd != null && motd.visible()) {
             motd.layout(helpHud, viewW, viewH, fonts.of(motd.role()));
         } else {
             help.layout(helpHud, viewW, viewH, fonts.of(help.role()));
+        }
+    }
+
+    private boolean lobbyActive;
+
+    /**
+     * The lobby overlay's per-frame state.
+     * <p>
+     * BEHAVIOR: while the connection is in the lobby ({@link GameConnection#lobby()}) the panel takes the list,
+     * server name and message of the dialogue and is shown; otherwise it is not.
+     * BEHAVIOR: with {@link #setLobbyPick} set, the first frame the list is there picks the map of that name (compared
+     * without case) once; a name the lobby does not offer is reported to the error stream and the player chooses.
+     */
+    private void lobbyStep(long nowNanos) {
+        com.fulcrologic.jxpilot.client.net.LobbyClient lc = conn.lobby();
+        lobbyActive = lc != null;
+        if (lc == null) {
+            return;
+        }
+        lobbyPanel.update(lc.serverName(), lc.entries(), lc.message());
+        if (lobbyPick != null && lc.greeted() && !lc.entries().isEmpty()) {
+            String want = lobbyPick;
+            lobbyPick = null;
+            com.fulcrologic.jxpilot.common.lobby.LobbyEntry found = null;
+            for (com.fulcrologic.jxpilot.common.lobby.LobbyEntry e : lc.entries()) {
+                if (e.name().equalsIgnoreCase(want)) {
+                    found = e;
+                }
+            }
+            if (found != null) {
+                lc.select(found.id(), found.name(), nowNanos);
+            } else {
+                errors.println("The lobby has no map named '" + want + "'; choose one from the list.");
+            }
+        }
+    }
+
+    /** {@code --lobby-map}: pick this map by name as soon as a lobby server shows its list (null: never). */
+    public void setLobbyPick(String mapName) {
+        lobbyPick = mapName;
+    }
+
+    /** The lobby overlay (its list and cursor). */
+    public LobbyPanel lobbyPanel() { return lobbyPanel; }
+
+    /** True while the lobby overlay is up (the connection is in the lobby). */
+    public boolean lobbyActive() { return lobbyActive; }
+
+    /**
+     * A key while the lobby overlay is up: Up/Down/PageUp/PageDown/Home/End move the cursor (and repeat), Enter
+     * chooses the cursor's map, Escape and Command-Q quit; every other key does nothing (the game keys are not
+     * live in the lobby).
+     */
+    private void lobbyKey(int key, int action, int mods, long nowNanos) {
+        if (action != org.lwjgl.glfw.GLFW.GLFW_PRESS && action != org.lwjgl.glfw.GLFW.GLFW_REPEAT) {
+            return;
+        }
+        switch (key) {
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_UP -> lobbyPanel.move(-1);
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN -> lobbyPanel.move(1);
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_PAGE_UP -> lobbyPanel.page(-1);
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_PAGE_DOWN -> lobbyPanel.page(1);
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_HOME -> lobbyPanel.home();
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_END -> lobbyPanel.end();
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER, org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER -> {
+                if (action == org.lwjgl.glfw.GLFW.GLFW_PRESS) {
+                    lobbySelect(lobbyPanel.current(), nowNanos);
+                }
+            }
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE -> quit = true;
+            case org.lwjgl.glfw.GLFW.GLFW_KEY_Q -> {
+                if ((mods & org.lwjgl.glfw.GLFW.GLFW_MOD_SUPER) != 0 && KeyRouter.MAC) {
+                    quit = true;
+                }
+            }
+            default -> { }
+        }
+    }
+
+    private void lobbySelect(com.fulcrologic.jxpilot.common.lobby.LobbyEntry e, long nowNanos) {
+        com.fulcrologic.jxpilot.client.net.LobbyClient lc = conn.lobby();
+        if (e != null && lc != null) {
+            lc.select(e.id(), e.name(), nowNanos);
         }
     }
 
@@ -390,6 +481,10 @@ public final class ClientFrame {
      * the talk line's state to {@link PlayActions#talk}.
      */
     public void key(int key, int action, int mods, long nowNanos) {
+        if (lobbyActive) {
+            lobbyKey(key, action, mods, nowNanos);
+            return;
+        }
         events(router.key(key, action, mods), nowNanos);
     }
 
@@ -671,6 +766,10 @@ public final class ClientFrame {
 
     /** A GLFW character event ({@link KeyRouter#character}). */
     public void character(int codepoint) {
+        if (lobbyActive) {
+            lobbySelect(lobbyPanel.choose(codepoint), lastNow);
+            return;
+        }
         router.character(codepoint);
     }
 

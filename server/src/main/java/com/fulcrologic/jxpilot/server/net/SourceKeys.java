@@ -39,12 +39,12 @@ import java.net.SocketAddress;
  * computed for packets outside a session (CONNECT, strays), where the JDK has already allocated the
  * sender's address object anyway.
  */
-final class SourceKeys {
+public final class SourceKeys {
     private static final long V4 = 4;
     private static final long V6 = 6;
     private final long secret;
 
-    SourceKeys(long secret) {
+    public SourceKeys(long secret) {
         this.secret = secret;
     }
 
@@ -54,7 +54,7 @@ final class SourceKeys {
      * BEHAVIOR: keys depend on the secret (a different secret gives unrelated keys).
      * BEHAVIOR: an unresolved address keys by its hash.
      */
-    long of(SocketAddress from) {
+    public long of(SocketAddress from) {
         if (from instanceof InetSocketAddress isa) {
             InetAddress a = isa.getAddress();
             if (a instanceof Inet4Address) {

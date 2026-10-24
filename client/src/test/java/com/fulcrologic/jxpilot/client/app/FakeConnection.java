@@ -125,6 +125,11 @@ final class FakeConnection implements GameConnection {
         state = ConnectionState.CLOSED;
     }
 
+    /** What {@link #lobby()} returns (null: not in a lobby). */
+    com.fulcrologic.jxpilot.client.net.LobbyClient lobby;
+
+    @Override public com.fulcrologic.jxpilot.client.net.LobbyClient lobby() { return lobby; }
+
     @Override public ConnectionState state() { return state; }
 
     @Override public CharSequence status() { return status; }

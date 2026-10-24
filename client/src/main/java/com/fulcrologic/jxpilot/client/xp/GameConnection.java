@@ -118,6 +118,14 @@ public interface GameConnection extends AutoCloseable {
         return false;
     }
 
+    /**
+     * The lobby dialogue while the server is a lobby and the player has not yet chosen a map (state
+     * {@link ConnectionState#LOBBY}), else null. Only the native protocol has lobbies.
+     */
+    default com.fulcrologic.jxpilot.client.net.LobbyClient lobby() {
+        return null;
+    }
+
     /** Leave the game; the state becomes CLOSED. */
     void disconnect(long nowNanos);
 

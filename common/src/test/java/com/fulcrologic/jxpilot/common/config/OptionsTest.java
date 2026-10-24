@@ -73,7 +73,7 @@ class OptionsTest {
                 () -> assertEquals("unknown", o.getString(Opt.MAP_NAME), "mapName 'unknown'"),
                 () -> assertFalse(o.isSet(Opt.GRAVITY), "defaults are not 'set'"),
                 () -> assertEquals(OptionOrigin.INIT, o.originOf(Opt.GRAVITY), "defaults have INIT origin"),
-                () -> assertEquals(301, Opt.values().length, "all 293 cmdline.c options plus 8 JXPilot network options exist"));
+                () -> assertEquals(307, Opt.values().length, "all 293 cmdline.c options plus 8 JXPilot network options and 6 lobby options exist"));
         }
 
         @Test

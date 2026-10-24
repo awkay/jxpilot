@@ -180,6 +180,14 @@ public interface GameHost {
     }
 
     /**
+     * Human players in the game right now (robots and fuel tanks do not count; a client that has not sent READY
+     * yet is not in the game). The lobby lists it. Hosts that never report it (test stubs) say 0.
+     */
+    default int humanCount() {
+        return 0;
+    }
+
+    /**
      * Whether this tick's snapshot goes to this viewer at all (C {@code Frame_update} skips some frames for
      * paused and dead players). The network layer asks once per due snapshot, before {@link #fillSnapshot}.
      * <p>

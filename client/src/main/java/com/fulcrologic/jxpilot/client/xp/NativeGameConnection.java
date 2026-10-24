@@ -147,6 +147,9 @@ public final class NativeGameConnection implements GameConnection {
     public ConnectionState state() { return conn.state(); }
 
     @Override
+    public com.fulcrologic.jxpilot.client.net.LobbyClient lobby() { return conn.lobby(); }
+
+    @Override
     public CharSequence status() { return conn.status(); }
 
     @Override

@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server;
 
+import com.fulcrologic.jxpilot.server.lobby.LobbyServer;
 import com.fulcrologic.jxpilot.server.net.Server;
 
 import java.io.IOException;
@@ -74,19 +75,58 @@ public final class ServerMain {
             out.flush();
             return EXIT_USAGE;
         }
+        if (LobbyServer.requested(args)) {
+            return runLobby(args, settings, err);
+        }
         Server server;
         try {
             server = Server.start(args, settings);
         } catch (IllegalArgumentException | IOException e) {
             err.println("jxpilot server: " + e.getMessage());
-            err.println("usage: ServerMain [--map NAME|FILE] [--port N] [--bind sel ...] [--bindWait] [--defaults FILE|none]"
-                + " [config file]");
-            err.println("       ServerMain --list-maps");
+            err.println(USAGE);
             return EXIT_USAGE;
         }
+        return await(server.termination(), server::close, err, "server loop failed: ");
+    }
+
+    private static final String USAGE =
+        "usage: ServerMain [--map NAME|FILE] [--port N] [--bind sel ...] [--bindWait] [--defaults FILE|none]"
+            + " [config file]\n       ServerMain --lobby [--lobbyConfig FILE] [--lobbyMapsDir DIR] [--port N]"
+            + " [--bind sel ...]\n       ServerMain --list-maps";
+
+    /**
+     * BEHAVIOR: {@code --lobby} serves the lobby ({@link LobbyServer}) until the process is stopped; bad arguments
+     * or a failed start print the error and usage and return 1; a loop that dies returns 2.
+     */
+    private static int runLobby(String[] args, Server.Settings settings, PrintStream err) {
+        LobbyServer lobby;
+        try {
+            lobby = LobbyServer.start(args, settings);
+        } catch (IllegalArgumentException | IOException e) {
+            err.println("jxpilot server: " + e.getMessage());
+            err.println(USAGE);
+            return EXIT_USAGE;
+        }
+        return await(lobby.termination(), lobby::close, err, "lobby loop failed: ");
+    }
+
+    /** An action that may be interrupted. */
+    @FunctionalInterface
+    private interface Stopper {
+        void stop() throws InterruptedException;
+    }
+
+    /**
+     * Wait for a server's loop to end; Ctrl-C (the shutdown hook) stops it cleanly.
+     * <p>
+     * BEHAVIOR: a normal end returns 0; a loop that died prints its cause and returns 2 after stopping the server.
+     * The shutdown hook is removed again when the server stops on its own.
+     */
+    private static int await(java.util.concurrent.CompletableFuture<Void> termination, Stopper stopper,
+                             PrintStream err, String failedText) {
         Thread hook = new Thread(() -> {
             try {
-                server.close();
+                stopper.stop();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -94,13 +134,13 @@ public final class ServerMain {
         Runtime.getRuntime().addShutdownHook(hook);
         int status;
         try {
-            server.termination().join();
+            termination.join();
             status = 0;
         } catch (CompletionException e) {
-            err.println("jxpilot server: server loop failed: " + e.getCause());
+            err.println("jxpilot server: " + failedText + e.getCause());
             status = EXIT_LOOP_FAILED;
             try {
-                server.close();
+                stopper.stop();
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
             }

@@ -47,6 +47,18 @@ public final class PacketType {
     public static final int PING = 9;
     /** Either way: RTT probe reply ({@link Msg.Ping}, echoed). */
     public static final int PONG = 10;
+    /** C to S: lobby hello ({@link LobbyMsg.Hello}), padded to {@link LobbyMsg#MIN_HELLO_SIZE} bytes. */
+    public static final int LOBBY_HELLO = 11;
+    /** S to C: lobby greeting with the address cookie ({@link LobbyMsg.Info}). */
+    public static final int LOBBY_INFO = 12;
+    /** C to S: map list request and keep-alive ({@link LobbyMsg.ListRequest}). */
+    public static final int LOBBY_LIST_REQUEST = 13;
+    /** S to C: one page of the map list ({@link LobbyMsg.ListPage}). */
+    public static final int LOBBY_LIST = 14;
+    /** C to S: play this map ({@link LobbyMsg.Select}). */
+    public static final int LOBBY_SELECT = 15;
+    /** S to C: answer to a select ({@link LobbyMsg.Join}). */
+    public static final int LOBBY_JOIN = 16;
 
     /** Name for logs. */
     public static String name(int t) {
@@ -61,6 +73,12 @@ public final class PacketType {
             case ACK -> "ACK";
             case PING -> "PING";
             case PONG -> "PONG";
+            case LOBBY_HELLO -> "LOBBY_HELLO";
+            case LOBBY_INFO -> "LOBBY_INFO";
+            case LOBBY_LIST_REQUEST -> "LOBBY_LIST_REQUEST";
+            case LOBBY_LIST -> "LOBBY_LIST";
+            case LOBBY_SELECT -> "LOBBY_SELECT";
+            case LOBBY_JOIN -> "LOBBY_JOIN";
             default -> "UNKNOWN";
         };
     }

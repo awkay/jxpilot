@@ -751,6 +751,12 @@ public final class SimGameHost implements GameHost {
         kicks = 0;
     }
 
+    /** BEHAVIOR: the players in the world that are neither robots nor tanks. */
+    @Override
+    public int humanCount() {
+        return humans();
+    }
+
     private int humans() {
         int n = 0;
         for (int k = 0; k < w.numPlayers; k++) {

@@ -1,7 +1,8 @@
 # Server options: sources, precedence and status
 
 Every option of XPilot 4.5.5's `src/server/cmdline.c` table is known to the Java server
-(`common/.../config/Opt.java`), plus the JXPilot network options `bind`, `bindWait`, `snapshotDivisor`,
+(`common/.../config/Opt.java`), plus the JXPilot lobby options `lobby`, `lobbyConfig`, `lobbyMapsDir`, `lobbyBundled`, `lobbyExclude` and `lobbyName`
+(docs/LOBBY-SPEC.md), and the JXPilot network options `bind`, `bindWait`, `snapshotDivisor`,
 `radarDivisor`, `ipPacketRate`, `ipPacketBurst`, `sessionPacketRate` and `sessionPacketBurst`. An option the simulation does not use yet is still parsed, kept, and sent to clients
 in the configuration text. It just has no effect.
 
@@ -127,6 +128,12 @@ follow C; the alias is the C command-line name.
 | `contactPort` | port | int | `15345` | CMD+DEF+VIS | implemented (Server) |
 | `bind` |  | list | `all` | CMD+DEF | implemented (ServerArgs, Server) |
 | `bindWait` |  | bool | `false` | CMD+DEF | implemented (Server) |
+| `lobby` |  | bool | `false` | CMD+DEF | implemented (ServerMain, LobbyServer) |
+| `lobbyConfig` |  | string | `(none)` | CMD+DEF | implemented (LobbyServer, LobbyConfig) |
+| `lobbyMapsDir` |  | list | `` | CMD+DEF | implemented (LobbyCatalog) |
+| `lobbyBundled` |  | bool | `true` | CMD+DEF | implemented (LobbyCatalog) |
+| `lobbyExclude` |  | list | `` | CMD+DEF | implemented (LobbyCatalog) |
+| `lobbyName` |  | string | `JXPilot lobby` | CMD+DEF | implemented (LobbyServer) |
 | `snapshotDivisor` |  | int | `1` | CMD+DEF | implemented (ServerNetConfig) |
 | `radarDivisor` |  | int | `3` | CMD+DEF | implemented (ServerNetConfig) |
 | `ipPacketRate` |  | real | `400` | CMD+DEF | implemented (ServerNetConfig) |

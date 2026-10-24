@@ -22,6 +22,7 @@ It has the whole XPilot game (<<01-introduction.adoc#status,Status>>).
 ----
 java [JVM options] -jar jxpilot-server-VERSION.jar [--map MAP] [--port N] [--bind SELECTOR ...] [--bindWait]
      [--defaults FILE|none] [-OPTION VALUE ...] [CONFIGFILE]
+java -jar jxpilot-server-VERSION.jar --lobby [--lobbyConfig FILE] [--lobbyMapsDir DIR] [--port N] [--bind SELECTOR ...]
 java -jar jxpilot-server-VERSION.jar --list-maps
 java -jar jxpilot-server-VERSION.jar -help | -version | -dump | -dumpMan | -dumpWindows | -dumpFlags
 ----
@@ -33,6 +34,7 @@ running.
 `--map MAP`:: The map to serve (here or as `mapFileName` in the config file): the name of a map built
 into the jar, such as `default` or `tourmination`, or the path of an XPilot `.xp` file. Without it the
 server plays the built-in `default`, as the C server plays its `default.xp`. See <<map-selection>>.
+`--lobby`:: Run as a lobby: offer many maps on the one port and start them on demand. See <<lobby>>.
 `--list-maps`:: Print the maps built into the jar, with their size, title and author, and exit.
 `--port N`:: The UDP port to listen on, default 15345 (option `contactPort`).
 `--bind SELECTOR`:: Which local addresses to listen on, default `all`. Repeat it or give a comma list:
@@ -673,3 +675,173 @@ journalctl -u jxpilot -f
 To change the map, edit `ExecStart` (or set `mapFileName:` in the config file) and run
 `sudo systemctl restart jxpilot`. Adjust `/usr/bin/java` if Java 25 is installed elsewhere
 (`readlink -f "$(which java)"`).
+
+[[lobby]]
+== Running an always-on lobby server
+
+A lobby server is for one machine that friends can connect to whenever they like. It lists its maps; a player
+chooses one; if that map is not running the lobby starts it, otherwise the player joins the game already
+there. When the last human leaves a map, that map's game stops, and the lobby keeps
+running, ready for the next player. Everything runs in one process on *one UDP port*.
+
+[source,shell]
+----
+java -XX:+UseZGC -Xmx512m -jar jxpilot-server-VERSION.jar --lobby
+----
+
+That offers every map built into the jar (`--list-maps`) on port 15345. A JXPilot client that connects to it
+shows the list instead of a game; `ClientMain --connect host` needs no new flag.
+
+=== What players see
+
+The client opens with a list of the maps. Each row shows a one-key shortcut in square brackets, a `*` when a game of
+that map is running, the map's name, how many humans are playing it, and its title. Running maps come first,
+then the others, each group alphabetical. The list updates by itself while you look at it: a map moves up when
+somebody starts it, and its human count follows the players.
+
+[cols="1,3",options="header"]
+|===
+|Key |Does
+|kbd:[Up], kbd:[Down] |Move the cursor one row (kept on the same map when the list reorders).
+|kbd:[PageUp], kbd:[PageDown], kbd:[Home], kbd:[End] |Move a page, or to the first or last row.
+|kbd:[Enter] |Play the map under the cursor.
+|kbd:[0]-kbd:[9], kbd:[a]-kbd:[z], kbd:[A]-kbd:[Z] |Play the map with that shortcut at once. The first 62 rows have one; later rows are reached by scrolling.
+|kbd:[Esc] |Quit.
+|===
+
+The shortcuts follow the rows as they are listed, so they change when the order does; look at the bracket before
+pressing a key. After a choice the status line says `Starting NAME...` while the lobby loads a map that was not
+running (a second or two for the biggest maps), then the game begins as on any server. If the map stops
+before you join (its last player just left), you land back on the list.
+
+To skip the list in a script, pass `--lobby-map NAME` to the client (<<07-client-reference.adoc#game-flags,client flags>>).
+
+=== Options
+
+All options go on the command line or in the server config file (<<config-files>>), as for any server; the
+usual ones (`--port`, `--bind`, `-robots`, ...) apply to the lobby and to every game it starts.
+
+[cols="2,2,4",options="header"]
+|===
+|Option |Default |Meaning
+|`--lobby` |off |Run as a lobby. Also settable as `lobby: yes` in the positional config file.
+|`--lobbyConfig FILE` |none |The lobby config file (below): per-map options.
+|`--lobbyMapsDir DIR[,DIR...]` |none |Directories whose `.xp` and `.map` files are offered as well. A file replaces a built-in
+map of the same name (ignoring case). Only the directory itself is read, not its subdirectories.
+|`--lobbyBundled` / `+lobbyBundled` |on |Offer the maps built into the jar. Turn off to offer only your own maps.
+|`--lobbyExclude NAME[,NAME...]` |none |Names of maps not to offer (without `.xp`, any case).
+|`--lobbyName TEXT` |`JXPilot lobby` |The lobby's name, the heading of the client's list (at most 43 characters).
+|===
+
+`--map` is ignored in lobby mode. A map that does not load, or that has no bases, is reported in the log and left
+out of the list; if no map is left the lobby refuses to start.
+
+=== The lobby config file
+
+`--lobbyConfig FILE` names a text file in the same `name: value` format as a server config file
+(<<config-files>>), with `[section]` headers added:
+
+* Lines before the first header are *server-wide*: options that apply to every map's game, and the lobby options
+  above. They are defaults: a map that sets the same option itself keeps its own value, unless the line starts its
+  value with `\override:` (see <<precedence-summary>>).
+* A `[mapname]` section holds options for that map's game alone. Its values *override the map file* (as if each
+  had `\override:`) and the server-wide lines. Only the command line beats them. The name is the map's name as in
+  `--list-maps`, in any case, with or without `.xp`. A section naming no map on offer is reported in the log.
+* `#` starts a comment; `\multiline:` values work as in map files.
+
+[source,text]
+----
+# /etc/jxpilot/lobby.conf
+lobbyName: Friends' lobby
+lobbyMapsDir: /opt/jxpilot/maps
+lobbyExclude: wild
+
+maxRobots: 2           # every game, unless the map says otherwise
+robotsTalk: no
+
+[tourmination]
+maxRobots: 0           # no robots on this one, whatever the map says
+gravity: -0.2
+
+[doggy]
+teamPlay: yes
+----
+
+Each map's game starts from the command line, the defaults file, the positional config file and this file, so
+`-OPTION` flags on the command line apply to every game. The config file is read once, when the lobby starts:
+restart the lobby to apply a change to it.
+
+=== Ports and firewalls
+
+The lobby uses *one UDP port* (`--port`, default 15345) for everything: the list, and the games. It routes
+each player to the game of the chosen map by the player's address and port, so a game needs no port of its own, however
+many maps run. Open that one port as in <<firewalls>>; nothing else is needed.
+
+[cols="1,4",options="header"]
+|===
+|Firewall |Allow the lobby
+|ufw |`sudo ufw allow 15345/udp`
+|firewalld |`sudo firewall-cmd --permanent --add-port=15345/udp && sudo firewall-cmd --reload`
+|Cloud provider (Linode, ...) |If you use the provider's cloud firewall, add an inbound rule for UDP 15345 from anywhere.
+|===
+
+The lobby answers a stranger's first datagrams with replies that are never larger than the datagram that asked,
+so it cannot be used to amplify traffic aimed at somebody else, and a list is sent only to an address that proved it
+receives there (https://github.com/awkay/jxpilot/blob/main/docs/PROTOCOL.md[the protocol]). The same per-address limits as on a game server apply
+(<<abuse-limits>>), and `denyHosts` works too.
+
+=== Running it as a service
+
+Use the service of <<service>> with the lobby's command line. `-noQuit` is not needed: the lobby itself never quits,
+and each game stops by itself when its last human leaves.
+
+[source,ini]
+----
+# /etc/systemd/system/jxpilot-lobby.service
+[Unit]
+Description=JXPilot lobby server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=jxpilot
+Group=jxpilot
+WorkingDirectory=/opt/jxpilot
+ExecStart=/usr/bin/java -XX:+UseZGC -Xmx512m -jar /opt/jxpilot/jxpilot-server.jar \
+    --lobby --lobbyConfig /etc/jxpilot/lobby.conf --lobbyMapsDir /opt/jxpilot/maps
+# Java exits with 143 after SIGTERM (systemctl stop): that is a clean stop.
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+----
+
+[source,shell]
+----
+sudo systemctl daemon-reload
+sudo systemctl enable --now jxpilot-lobby
+journalctl -u jxpilot-lobby -f
+----
+
+The log shows `listening on` lines (what to tell your friends), `lobby: starting NAME` and `lobby: NAME ended` as
+games come and go, and every game's own lines prefixed with `[NAME]`.
+
+=== Sizing
+
+An idle lobby holds only the list of maps. Each running game costs what a game server costs: roughly 50 MB for
+a game with a few robots, plus about 70 KB per connected player. Start with `-Xmx512m`. The games of different
+maps run on their own threads, so a small VM with two cores can carry several at once.
+
+=== Limits
+
+* A player stays in the game of the map chosen; to change maps, quit and connect again.
+* Each game limits clients per address (`maxClientsPerIP`, default 2) and players (the map's bases) by itself; a
+  full map queues or refuses the player as a game server does.
+* At most 2048 maps are offered.

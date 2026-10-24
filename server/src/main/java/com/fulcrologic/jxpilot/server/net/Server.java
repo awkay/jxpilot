@@ -28,6 +28,7 @@ import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.OptionOrigin;
 import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.map.MapLocator;
+import com.fulcrologic.jxpilot.common.map.MapSource;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
 import com.fulcrologic.jxpilot.common.net.ConfigTransfer;
 
@@ -58,7 +59,9 @@ public final class Server implements AutoCloseable {
     }
 
     private final Settings s;
-    private final UdpTransport transport;
+    private final NetTransport transport;
+    /** The socket transport, null for a game hosted by a lobby ({@link #startHosted}). */
+    private final UdpTransport udp;
     private final ServerNet net;
     private final int hz;
     private final List<BindSelector> selectors;
@@ -66,6 +69,8 @@ public final class Server implements AutoCloseable {
     private final Thread loop;
     private final Thread rescan;
     private volatile boolean running = true;
+    /** Human players in the game, refreshed by the loop thread after every pass (any thread may read it). */
+    private volatile int humans;
     /** C {@code NoQuit}: keep running when the last human has left. */
     private final boolean noQuit;
     /** Loop start ({@link Settings#clock}), for the no-show timeout. */
@@ -73,9 +78,10 @@ public final class Server implements AutoCloseable {
     private final CompletableFuture<Void> terminated = new CompletableFuture<>();
     private final java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
 
-    private Server(Settings s, UdpTransport transport, ServerNet net, int hz, List<BindSelector> selectors,
-                   boolean rescans, boolean noQuit) {
+    private Server(Settings s, NetTransport transport, UdpTransport udp, ServerNet net, int hz,
+                   List<BindSelector> selectors, boolean rescans, boolean noQuit) {
         this.s = s;
+        this.udp = udp;
         this.noQuit = noQuit;
         this.hz = hz;
         this.transport = transport;
@@ -102,42 +108,42 @@ public final class Server implements AutoCloseable {
             s.log.log("option warning: " + w);
         }
         WorldMap map = WorldMap.fromOptions(opts);
-        int port = opts.getInt(Opt.CONTACT_PORT);
-        if (port < 0 || port > 0xFFFF) {
-            throw new IllegalArgumentException("port " + port + " out of range");
-        }
-        ConfigTransfer.Blob blob = ConfigTransfer.encode(opts.toConfigText(ClientMap.of(opts.mapData(), opts)));
+        ConfigTransfer.Blob blob = encodeConfig(opts);
+        Binding binding = Binding.open(opts, s);
+        return assemble(opts, map, blob, s, binding.transport(), binding.transport(), binding.selectors(),
+            binding.needsRescan(), opts.getBool(Opt.NO_QUIT));
+    }
 
-        List<String> warnings = new java.util.ArrayList<>();
-        List<BindSelector> selectors = BindPlan.resolveNames(
-            BindSelector.parseAll(ServerArgs.bindList(opts)), s.interfaces.snapshot(), s.resolver, warnings);
-        BindPlan.Choice choice = BindPlan.choose(selectors, s.interfaces.snapshot());
-        warnings.addAll(choice.warnings());
-        for (String w : warnings) {
-            s.log.log("bind warning: " + w);
+    /**
+     * Start the game of one map for a lobby: the map and options are given, the datagrams come from (and go
+     * to) {@code transport} instead of sockets of its own, and the server quits when its last human leaves
+     * (C's quit-when-empty, never -noQuit). Nothing is bound.
+     * <p>
+     * BEHAVIOR: the game's world, config blob and connection layer are built from {@code opts}; the loop thread
+     * runs until {@link #close()}, until no human is left after one has played, or after the C no-show timeout.
+     *
+     * @throws IllegalArgumentException when the options do not make a playable map
+     */
+    public static Server startHosted(Options opts, Settings s, NetTransport transport) {
+        for (String w : opts.warnings()) {
+            s.log.log("option warning: " + w);
         }
-        boolean bindWait = opts.getBool(Opt.BIND_WAIT);
-        switch (BindPlan.decide(choice, bindWait)) {
-            case FAIL -> throw new IllegalArgumentException(BindPlan.failureMessage(choice));
-            case WAIT -> choice = waitForTargets(selectors, choice, s);
-            case PROCEED -> {
-                if (!choice.unmatched().isEmpty()) {
-                    s.log.log("bindWait: " + choice.unmatched() + " match nothing yet; will bind when they appear");
-                }
-            }
-        }
+        WorldMap map = WorldMap.fromOptions(opts);
+        return assemble(opts, map, encodeConfig(opts), s, transport, null, List.of(), false, false);
+    }
 
-        UdpTransport transport = new UdpTransport(port, s.log, s.clock);
-        if (transport.apply(BindPlan.diff(List.of(), choice.targets())) == 0 && !bindWait) {
-            transport.close();
-            throw new IllegalArgumentException("could not bind any address");
-        }
+    private static ConfigTransfer.Blob encodeConfig(Options opts) {
+        return ConfigTransfer.encode(opts.toConfigText(ClientMap.of(opts.mapData(), opts)));
+    }
+
+    private static Server assemble(Options opts, WorldMap map, ConfigTransfer.Blob blob, Settings s,
+                                   NetTransport transport, UdpTransport udp, List<BindSelector> selectors,
+                                   boolean rescans, boolean noQuit) {
         GameHost host = s.factory.create(opts, map);
         ServerNetConfig cfg = ServerNetConfig.of(opts, map);
         ServerNet net = new ServerNet(cfg, host, transport, s.log, blob);
         transport.setReceiver(net::onDatagram);
-        boolean rescans = BindPlan.needsRescan(selectors, bindWait);
-        Server server = new Server(s, transport, net, cfg.simHz, selectors, rescans, opts.getBool(Opt.NO_QUIT));
+        Server server = new Server(s, transport, udp, net, cfg.simHz, selectors, rescans, noQuit);
         s.log.log("serving map '" + map.name() + "' (" + map.width() + "x" + map.height() + " blocks) at "
             + cfg.simHz + " frames/s");
         server.loop.start();
@@ -167,13 +173,27 @@ public final class Server implements AutoCloseable {
      * @throws IOException when a named password file cannot be read (as a named defaults file)
      */
     public static Options readOptions(String[] args) throws IOException {
+        return readOptions(args, OptionHooks.NONE);
+    }
+
+    /**
+     * {@link #readOptions(String[])} with {@code hooks} (the lobby's per-map sources).
+     * <p>
+     * BEHAVIOR: {@link OptionHooks#afterCommandLine} runs right after the command line, before the defaults file,
+     * so what it sets with {@code \override:} beats everything but the command line;
+     * {@link OptionHooks#afterConfig} runs after the positional config file; {@link OptionHooks#map} replaces the
+     * {@code mapFileName} lookup when it returns a map. Everything else is as without hooks.
+     */
+    public static Options readOptions(String[] args, OptionHooks hooks) throws IOException {
         Options opts = new Options();
         List<String> rest = opts.parseCommandLine(ServerArgs.joinRepeated(args, Opt.BIND));
         Path config = ServerArgs.configFile(rest, opts);
+        hooks.afterCommandLine(opts);
         DefaultsFile.apply(opts);
         if (config != null) {
             ConfigParser.parseFile(config, OptionOrigin.DEFAULTS, opts);
         }
+        hooks.afterConfig(opts);
         String passwordFile = opts.getString(Opt.PASSWORD_FILE_NAME);
         if (passwordFile != null && !passwordFile.isEmpty()) {
             try {
@@ -193,7 +213,9 @@ public final class Server implements AutoCloseable {
             opts.warn("The password is empty: '/password' without an argument gives operator status (as C).");
         }
         String mapFile = opts.getString(Opt.MAP_FILE_NAME);
-        MapLocator.resolve(mapFile == null ? MapLocator.DEFAULT_MAP : mapFile).parseInto(opts);
+        MapSource forced = hooks.map();
+        (forced != null ? forced : MapLocator.resolve(mapFile == null ? MapLocator.DEFAULT_MAP : mapFile))
+            .parseInto(opts);
         opts.finishParsing();
         return opts;
     }
@@ -221,21 +243,6 @@ public final class Server implements AutoCloseable {
         return null;
     }
 
-    private static BindPlan.Choice waitForTargets(List<BindSelector> selectors, BindPlan.Choice choice, Settings s)
-        throws IOException {
-        s.log.log("bindWait: nothing matches " + choice.unmatched() + " yet; waiting for an interface");
-        while (choice.targets().isEmpty()) {
-            try {
-                Thread.sleep(s.rescanMillis);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IOException("interrupted while waiting for a bind address", e);
-            }
-            choice = BindPlan.choose(selectors, s.interfaces.snapshot());
-        }
-        return choice;
-    }
-
     private void runLoop() {
         Throwable failure = null;
         TickScheduler sched = new TickScheduler(hz, TickScheduler.catchUpTicks(hz), s.clock.getAsLong());
@@ -243,8 +250,8 @@ public final class Server implements AutoCloseable {
         try {
             while (running) {
                 List<BindTarget> d = desired.getAndSet(null);
-                if (d != null) {
-                    transport.apply(BindPlan.diff(transport.boundTargets(), d));
+                if (d != null && udp != null) {
+                    udp.apply(BindPlan.diff(udp.boundTargets(), d));
                 }
                 transport.poll(sched.nanosUntilNext(s.clock.getAsLong()));
                 int n = sched.due(s.clock.getAsLong());
@@ -256,6 +263,7 @@ public final class Server implements AutoCloseable {
                         running = false;
                     }
                 }
+                humans = net.humans();
                 String quit = quitReason(noQuit, net.connections(), net.humanEntered(),
                     s.clock.getAsLong() - startNanos);
                 if (quit != null) {
@@ -290,7 +298,7 @@ public final class Server implements AutoCloseable {
             try {
                 Thread.sleep(s.rescanMillis);
                 List<BindTarget> now = BindPlan.choose(selectors, s.interfaces.snapshot()).targets();
-                if (!BindPlan.diff(transport.boundTargets(), now).isEmpty()) {
+                if (!BindPlan.diff(udp.boundTargets(), now).isEmpty()) {
                     desired.set(now);
                 }
             } catch (InterruptedException e) {
@@ -320,12 +328,17 @@ public final class Server implements AutoCloseable {
 
     /** Addresses bound right now. */
     public List<BindTarget> bound() {
-        return transport.boundTargets();
+        return udp == null ? List.of() : udp.boundTargets();
     }
 
     /** Actual socket address of a bound target (with its real port), or null. */
     public InetSocketAddress localAddress(BindTarget t) {
-        return transport.localAddress(t);
+        return udp == null ? null : udp.localAddress(t);
+    }
+
+    /** Human players in the game as of the loop's last pass; safe from any thread. */
+    public int humans() {
+        return humans;
     }
 
     /** Stop the loop (peers get DISCONNECT), close all channels and wait for the threads. Idempotent. */

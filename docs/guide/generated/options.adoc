@@ -3,7 +3,7 @@
 // by dist/src/test/java/com/fulcrologic/jxpilot/dist/docs/GuideTables.java. Do not edit:
 // run `make -C docs/guide generate` instead. The build fails when this file is stale.
 
-The server knows *301* options: 292 implemented, 2 not supported, 2 no effect, 5 not applicable. In these groups:
+The server knows *307* options: 298 implemented, 2 not supported, 2 no effect, 5 not applicable. In these groups:
 
 * <<opts-files,Command line and server files>> (11)
 * <<opts-network,Server and network>> (23)
@@ -21,6 +21,7 @@ The server knows *301* options: 292 implemented, 2 not supported, 2 no effect, 5
 * <<opts-weapons,Shots and weapons>> (33)
 * <<opts-ships,Ships and players>> (21)
 * <<opts-asteroids,Asteroids>> (5)
+* <<opts-other,Other options>> (6)
 
 [[opts-files]]
 == Command line and server files
@@ -2331,6 +2332,59 @@ Asteroid appearance and behaviour.
 
 |===
 
+[[opts-other]]
+== Other options
+
+Options not in any category above.
+
+[cols="3,2,2,3,2,7",options="header"]
+|===
+|Option |Short name |Type |Default |Set from |Description
+
+|[[opt-lobby]]`+lobby+`
+|
+|boolean
+|`+false+`
+|command line, config file
+|*Implemented.* JXPilot: run as an always-on lobby server. It offers a list of maps on one UDP port; a client picks one, the lobby starts that map's game if it is not running (or lets the client join it), and a map's game stops when its last human leaves while the lobby keeps running. Command line or server config file only.
+
+|[[opt-lobbyConfig]]`+lobbyConfig+`
+|
+|text
+|_(none)_
+|command line, config file
+|*Implemented.* JXPilot: the lobby config file: server options for every map before the first [section], then a [mapname] section of per-map options (they override the map file). Only with lobby.
+
+|[[opt-lobbyMapsDir]]`+lobbyMapsDir+`
+|
+|comma list
+|_(empty)_
+|command line, config file
+|*Implemented.* JXPilot: comma separated directories whose .xp and .map files the lobby offers in addition to the bundled maps. Only with lobby.
+
+|[[opt-lobbyBundled]]`+lobbyBundled+`
+|
+|boolean
+|`+true+`
+|command line, config file
+|*Implemented.* JXPilot: whether the lobby offers the maps bundled in the jar. Only with lobby.
+
+|[[opt-lobbyExclude]]`+lobbyExclude+`
+|
+|comma list
+|_(empty)_
+|command line, config file
+|*Implemented.* JXPilot: comma separated names of maps the lobby does not offer (names without .xp, compared without case). Only with lobby.
+
+|[[opt-lobbyName]]`+lobbyName+`
+|
+|text
+|`+JXPilot lobby+`
+|command line, config file
+|*Implemented.* JXPilot: the lobby's name, shown to clients (at most 43 characters). Only with lobby.
+
+|===
+
 [[opts-index]]
 == Alphabetical index
 
@@ -2482,6 +2536,12 @@ Asteroid appearance and behaviour.
 <<opt-laserKillScoreMult,laserKillScoreMult>> ·
 <<opt-limitedLives,limitedLives>> ·
 <<opt-limitedVisibility,limitedVisibility>> ·
+<<opt-lobby,lobby>> ·
+<<opt-lobbyBundled,lobbyBundled>> ·
+<<opt-lobbyConfig,lobbyConfig>> ·
+<<opt-lobbyExclude,lobbyExclude>> ·
+<<opt-lobbyMapsDir,lobbyMapsDir>> ·
+<<opt-lobbyName,lobbyName>> ·
 <<opt-lockOtherTeam,lockOtherTeam>> ·
 <<opt-logRobots,logRobots>> ·
 <<opt-loseItemDestroys,loseItemDestroys>> ·

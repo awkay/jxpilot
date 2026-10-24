@@ -209,6 +209,30 @@ class AppOptionsTest {
     }
 
     @Nested
+    @DisplayName("lobby")
+    class Lobby {
+        @Test
+        @DisplayName("--lobby-map NAME with --connect is kept; without the flag it is null")
+        void lobbyMap() {
+            assertAll(
+                () -> assertEquals("doggy", parse("--connect", "h", "--lobby-map", "doggy").lobbyMap(), "kept as given"),
+                () -> assertNull(parse("--connect", "h").lobbyMap(), "null when not given"),
+                () -> assertNull(parse("--list-maps").lobbyMap(), "null for the other modes"));
+        }
+
+        @Test
+        @DisplayName("--lobby-map without --connect, or without a value, is an error naming the option")
+        void lobbyMapErrors() {
+            assertAll(
+                () -> assertTrue(error("--local", "--map", "m", "--lobby-map", "x").contains("--lobby-map"),
+                    "with --local"),
+                () -> assertTrue(error("--name", "x", "--lobby-map", "y").contains("--lobby-map"), "without a mode"),
+                () -> assertTrue(error("--connect", "h", "--lobby-map").contains("--lobby-map needs a value"),
+                    "no value"));
+        }
+    }
+
+    @Nested
     @DisplayName("errors")
     class Errors {
         @Test
