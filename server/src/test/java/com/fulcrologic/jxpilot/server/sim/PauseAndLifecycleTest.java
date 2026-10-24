@@ -448,6 +448,24 @@ class PauseAndLifecycleTest {
                 () -> assertEquals(15.0, a.score, "the remaining member holds the rest"),
                 () -> assertEquals(1, w.teamMembers[1], "one member left"));
         }
+
+        @Test
+        @DisplayName("teamShareScore: C re-shares before the leaver leaves its place, missing the last player in order")
+        void teamShareOrder() {
+            Simulation s = TestWorlds.sim(C_FRAMES + "teamPlay: yes\nteamShareScore: yes\n", "xxxxxxxxx",
+                "x 1 1 1 x", "xxxxxxxxx");
+            World w = s.world;
+            Player a = TestWorlds.join(s, "a", 1);
+            Player b = TestWorlds.join(s, "b", 1);
+            Player c = TestWorlds.join(s, "c", 1);
+            s.scoring.teamScore(1, 30);
+            a.score = 15;
+            s.ships.leave(a);
+            assertAll(
+                () -> assertEquals(15.0, w.teamScore[1], "30 - a's 15"),
+                () -> assertEquals(7.5, b.score, "b, inside C's shortened loop, gets the new share"),
+                () -> assertEquals(10.0, c.score, "c, last in the order, keeps its old share (player.c:1765-1773)"));
+        }
     }
 
     @Nested

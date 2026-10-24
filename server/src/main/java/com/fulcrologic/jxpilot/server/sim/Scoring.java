@@ -96,6 +96,14 @@ public final class Scoring {
      * BEHAVIOR: no-op for TEAM_NOT_SET; with teamShareScore every member's score becomes team score / members.
      */
     public void teamScore(int team, double points) {
+        teamScore(team, points, w.numPlayers);
+    }
+
+    /**
+     * {@link #teamScore(int, double)} that shares among the first {@code n} players of the game order only (C's
+     * loop runs to NumPlayers, which {@code Delete_player} has already decremented, see {@link Ships#leave}).
+     */
+    void teamScore(int team, double points, int n) {
         if (team == Const.TEAM_NOT_SET || team < 0 || team >= Const.MAX_TEAMS) {
             return;
         }
@@ -103,7 +111,7 @@ public final class Scoring {
         w.teamScoreDirty[team] = true;
         if (w.params.teamShareScore && w.teamMembers[team] > 0) {
             double share = w.teamScore[team] / w.teamMembers[team];
-            for (int k = 0; k < w.numPlayers; k++) {
+            for (int k = 0; k < n; k++) {
                 Player p = w.playerAt(k);
                 if (p.team == team) {
                     p.score = share;

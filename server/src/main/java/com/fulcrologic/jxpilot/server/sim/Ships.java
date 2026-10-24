@@ -258,8 +258,9 @@ public final class Ships {
      * BEHAVIOR: the player's debris and sparks lose their owner and keep flying; its other objects lose their
      * owner and, without keepShots, die (life 0) and cannon shots lose their mass so they do not explode;
      * without keepShots EVERY cannon shot in the world dies the same way (a C quirk, kept).
-     * BEHAVIOR: team membership drops; with teamShareScore the leaver's score is taken back from the team
-     * (C TEAM_SCORE(team, -score)) and the rest is shared among the remaining members.
+     * BEHAVIOR: team membership drops; with teamShareScore the leaver's score is taken back from the team (C
+     * TEAM_SCORE(team, -score)) and the rest is shared among the members, in C's order: while the leaver still
+     * holds its place, so the last player in the game order keeps its old score unless it is the leaver.
      * BEHAVIOR: shove records, locks and lock banks naming the player are cleared (locks with their tractor
      * beam); the home base is released (BASE_OWNER(base, NO_ID)) and LEAVE is emitted; its laser pulses go.
      * BEHAVIOR: tanks are not team members and own no base; the tanks a player released leave with it (with
@@ -317,13 +318,16 @@ public final class Ships {
         }
         int team = pl.team;
         boolean tank = pl.tank;
-        w.removePlayer(pl);
         if (team != Const.TEAM_NOT_SET && !tank) {
             w.teamMembers[team]--;
             if (w.params.teamShareScore) {
-                sim.scoring.teamScore(team, -pl.score);
+                // C order (player.c:1765-1773, a C bug kept for parity): NumPlayers-- comes before TEAM_SCORE and
+                // the pointer swap after it, so the re-share still sees the leaver in its place and misses the
+                // last player in the game order (unless the leaver is that last player)
+                sim.scoring.teamScore(team, -pl.score, pl.spawned ? w.numPlayers - 1 : w.numPlayers);
             }
         }
+        w.removePlayer(pl);
         for (int k = 0; k < w.numPlayers; k++) {
             Player other = w.playerAt(k);
             for (int i = 0; i < Player.MAX_SHOVES; i++) {
