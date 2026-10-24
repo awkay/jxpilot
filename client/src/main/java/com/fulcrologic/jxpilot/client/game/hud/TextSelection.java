@@ -44,6 +44,13 @@ public final class TextSelection {
     private int headLine;
     private int headChar;
     private boolean dragging;
+    /** C reverseScroll: the message lists run the other way on the screen. */
+    private boolean reverse;
+
+    /** BEHAVIOR: whether the message lists are drawn reversed (C reverseScroll), which flips their screen order. */
+    public void setReverse(boolean r) {
+        reverse = r;
+    }
 
     /** BEHAVIOR: starts a selection at (line, char) of {@code area}, replacing any other; empty until dragged. */
     public void start(int area, int line, int ch) {
@@ -86,7 +93,8 @@ public final class TextSelection {
 
     /** Screen order of a line: top to bottom. */
     private int order(int line) {
-        return area == GAME_MESSAGES ? -line : line;
+        boolean up = area == GAME_MESSAGES;
+        return up != (reverse && area != TALK_LINE) ? -line : line;
     }
 
     private boolean anchorFirst() {
@@ -163,7 +171,7 @@ public final class TextSelection {
         } else if (selects(TALK_MESSAGES) || selects(GAME_MESSAGES)) {
             int top = topLine();
             int bottom = bottomLine();
-            int step = area == GAME_MESSAGES ? -1 : 1;
+            int step = (area == GAME_MESSAGES) != reverse ? -1 : 1;
             int count = area == GAME_MESSAGES ? log.gameCount() : log.talkCount();
             for (int line = top; ; line += step) {
                 if (line >= 0 && line < count) {

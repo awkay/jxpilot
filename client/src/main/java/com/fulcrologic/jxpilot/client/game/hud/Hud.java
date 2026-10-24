@@ -111,6 +111,8 @@ public final class Hud {
     public int fuelCritical = 100;
     /** Game messages shown (C SHOW_MESSAGES). */
     public boolean showMessages = true;
+    /** C {@code reverseScroll}: both message lists in reverse order (the newest talk message at the bottom of its block). */
+    public boolean reverseScroll;
     /** Zoom, C {@code 1 / scaleFactor} (1 = unscaled). */
     public double zoom = 1.0;
 
@@ -465,15 +467,18 @@ public final class Hud {
      * C {@code Paint_messages}.
      * <p>
      * BEHAVIOR: talk messages from the top (first baseline MESSAGE_BORDER + ascent), game messages from
-     * the bottom up (first baseline viewH - descent - MESSAGE_BORDER), newest nearest the edge, line
+     * the bottom up (first baseline viewH - descent - MESSAGE_BORDER), newest nearest the edge (with reverseScroll,
+     * C {@code SHOW_REVERSE_SCROLL}, oldest nearest the edge), line
      * spacing ascent + descent + 1, x = MESSAGE_BORDER; game messages only when showMessages.
      * BEHAVIOR: each shows {@link MessageLog#visibleChars} characters, RED while flashing, else OLD_MESSAGE,
      * in {@link FontRole#MESSAGE}.
      */
     void messages(HudFrame out, MessageLog log, int viewH, TextMetrics m, double fps) {
         int spacing = m.ascent() + m.descent() + 1;
+        selection.setReverse(reverseScroll);
         int y = MESSAGE_BORDER + m.ascent();
-        for (int i = 0; i < log.talkCount(); i++) {
+        for (int n = 0; n < log.talkCount(); n++) {
+            int i = reverseScroll ? log.talkCount() - 1 - n : n;
             message(out, log, log.talk(i), y, fps, TextSelection.TALK_MESSAGES, i, m);
             y += spacing;
         }
@@ -481,7 +486,8 @@ public final class Hud {
             return;
         }
         y = viewH - m.descent() - MESSAGE_BORDER;
-        for (int i = 0; i < log.gameCount(); i++) {
+        for (int n = 0; n < log.gameCount(); n++) {
+            int i = reverseScroll ? log.gameCount() - 1 - n : n;
             message(out, log, log.game(i), y, fps, TextSelection.GAME_MESSAGES, i, m);
             y -= spacing;
         }
@@ -534,8 +540,9 @@ public final class Hud {
     public boolean messageAt(int x, int y, MessageLog log, int viewH, TextMetrics m, int[] out) {
         int spacing = m.ascent() + m.descent() + 1;
         int base = MESSAGE_BORDER + m.ascent();
-        for (int i = 0; i < log.talkCount(); i++, base += spacing) {
+        for (int n = 0; n < log.talkCount(); n++, base += spacing) {
             if (y >= base - m.ascent() && y < base - m.ascent() + spacing) {
+                int i = reverseScroll ? log.talkCount() - 1 - n : n;
                 return hit(TextSelection.TALK_MESSAGES, i, x - MESSAGE_BORDER, log.talk(i).text(), m, out);
             }
         }
@@ -543,8 +550,9 @@ public final class Hud {
             return false;
         }
         base = viewH - m.descent() - MESSAGE_BORDER;
-        for (int i = 0; i < log.gameCount(); i++, base -= spacing) {
+        for (int n = 0; n < log.gameCount(); n++, base -= spacing) {
             if (y >= base - m.ascent() && y < base - m.ascent() + spacing) {
+                int i = reverseScroll ? log.gameCount() - 1 - n : n;
                 return hit(TextSelection.GAME_MESSAGES, i, x - MESSAGE_BORDER, log.game(i).text(), m, out);
             }
         }

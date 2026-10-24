@@ -82,6 +82,7 @@ class LiveOptionsTest {
             o.apply(ClientOption.FUEL_WARNING, "300");
             o.apply(ClientOption.FUEL_CRITICAL, "150");
             o.apply(ClientOption.SHOW_MESSAGES, "no");
+            o.apply(ClientOption.REVERSE_SCROLL, "yes");
             o.apply(ClientOption.SPEED_FACT_HUD, "1.5");
             o.apply(ClientOption.SPEED_FACT_PTR, "-2");
             o.apply(ClientOption.MAX_MESSAGES, "3");
@@ -106,6 +107,7 @@ class LiveOptionsTest {
                 () -> assertEquals(300, hud.fuelWarning, "fuelWarning"),
                 () -> assertEquals(150, hud.fuelCritical, "fuelCritical"),
                 () -> assertFalse(hud.showMessages, "showMessages"),
+                () -> assertTrue(hud.reverseScroll, "reverseScroll"),
                 () -> assertEquals(1.5, hud.hudMoveFact, "speedFactHUD"),
                 () -> assertEquals(-2.0, hud.ptrMoveFact, "speedFactPTR"),
                 () -> assertEquals(3, g.messages().maxMessages(), "maxMessages"),

@@ -114,6 +114,34 @@ class SelectionTest {
     }
 
     @Nested
+    @DisplayName("reverseScroll")
+    class Reverse {
+        @Test
+        @DisplayName("both lists reversed: the oldest talk message on top, the newest game message on top of its block")
+        void layoutAndHits() {
+            Hud h = new Hud();
+            h.reverseScroll = true;
+            MessageLog l = log();
+            HudFrame f = new HudFrame();
+            h.messages(f, l, 600, M, 1e9);
+            int[] out = new int[3];
+            boolean topHit = h.messageAt(10, 12, l, 600, M, out);
+            String top = out[0] + "/" + out[1];
+            h.selection.start(TextSelection.GAME_MESSAGES, 0, 0);
+            h.selection.drag(TextSelection.GAME_MESSAGES, 1, 4);
+            String cut = h.selection.text(new TalkLine(), l);
+            assertAll(
+                () -> assertEquals("talk old [a]", f.text(0).toString(), "first row: the older talk message"),
+                () -> assertEquals("talk new [b]", f.text(1).toString(), "then the newer"),
+                () -> assertEquals("game one", f.text(2).toString(), "bottom row: the older game message"),
+                () -> assertEquals("game two", f.text(3).toString(), "above it the newer"),
+                () -> assertTrue(topHit, "a hit on the top row"),
+                () -> assertEquals("1/1", top, "is the older talk message"),
+                () -> assertEquals("game two\ngame", cut, "newest (line 0) is now the top line of the game block"));
+        }
+    }
+
+    @Nested
     @DisplayName("TalkLine paste and cursor")
     class Paste {
         @Test
