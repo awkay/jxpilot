@@ -527,10 +527,6 @@ public final class Ships {
         pl.loseItem = 0;
         pl.loseItemState = 0;
         pl.tractorIsPressor = false;
-        for (int i = 0; i < w.players.length; i++) {
-            pl.canSee[i] = true;
-            w.players[i].canSee[pl.slot] = true;
-        }
         sim.locks.sensorRange(pl);
     }
 

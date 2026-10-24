@@ -39,6 +39,11 @@ public final class Player {
 
     /** Slot index in {@link World#players}. */
     public final int slot;
+    /**
+     * C {@code GetInd[id]}: position in {@link World#order} while in the game, else -1. The visibility tables
+     * ({@link #canSee}, {@link #visLastChange}) are indexed by it, as C's {@code visibility[]} by player index.
+     */
+    public int ind = -1;
     /** Wire id (stable while the player is in the game). */
     public int id;
     public boolean inUse;
@@ -172,6 +177,14 @@ public final class Player {
     /** C {@code modbank}. */
     public final int[] modBank = new int[BANKS];
 
+    /**
+     * C {@code connection_t.view_width} / {@code view_height}: the client's view size in world pixels, limited by
+     * {@code Receive_display} (reliable DISPLAY); C DEF_VIEW_SIZE until the client sends one. Per connection in C,
+     * held here because the sim's HUD lock test ({@code Locks.hudLock}) needs it; the host resets it at login.
+     */
+    public int viewWidth = com.fulcrologic.jxpilot.common.net.Msg.Display.DEF_VIEW_SIZE;
+    public int viewHeight = com.fulcrologic.jxpilot.common.net.Msg.Display.DEF_VIEW_SIZE;
+
     /** C {@code sensor_range}. */
     public float sensorRange;
     /** C {@code visibility[j].canSee}, indexed by the other player's {@link #slot}. */
@@ -278,7 +291,6 @@ public final class Player {
     /** Size the per-player visibility tables for {@code players} slots (called once by {@link World}). */
     public void initVisibility(int players) {
         canSee = new boolean[players];
-        java.util.Arrays.fill(canSee, true);
         visLastChange = new long[players];
     }
 }

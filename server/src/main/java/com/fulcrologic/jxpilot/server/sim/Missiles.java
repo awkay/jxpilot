@@ -256,7 +256,7 @@ public final class Missiles {
                     Player t = w.byId(pl.lockPlId);
                     if ((pl.lockTagged & Player.LOCK_PLAYER) == 0
                         || (pl.lockDistance > pl.sensorRange && ip.limitedVisibility)
-                        || t == null || !pl.canSee[t.slot]) {
+                        || t == null || !pl.canSee[t.ind]) {
                         return;
                     }
                     lock = pl.lockPlId;

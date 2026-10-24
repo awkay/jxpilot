@@ -487,6 +487,47 @@ class MessagesTest {
         }
 
         @Test
+        @DisplayName("DISPLAY: u16 width and height round trip with type 15; out-of-range values saturate")
+        void display() {
+            ReliableChannel tx = new ReliableChannel();
+            Msg.Display d = new Msg.Display();
+            Msg.Display defaults = new Msg.Display();
+            d.viewWidth = 1100;
+            d.viewHeight = 400;
+            d.send(tx);
+            d.viewWidth = 70000;
+            d.viewHeight = -5;
+            d.send(tx);
+            d.viewWidth = 0xFFFF;
+            d.viewHeight = 40000;
+            d.send(tx);
+            ReliableChannel rx = new ReliableChannel();
+            Capture cap = new Capture();
+            ByteBuffer p = buf();
+            tx.write(p, 0);
+            p.flip();
+            rx.read(p, cap);
+            int bodySize = cap.payloads.get(0).remaining();
+            Msg.Display a = new Msg.Display();
+            a.read(cap.payloads.get(0));
+            Msg.Display sat = new Msg.Display();
+            sat.read(cap.payloads.get(1));
+            Msg.Display top = new Msg.Display();
+            top.read(cap.payloads.get(2));
+            assertAll(
+                () -> assertEquals(List.of(15, 15, 15), cap.types, "DISPLAY is reliable type 15"),
+                () -> assertEquals(4, bodySize, "the body is two u16"),
+                () -> assertEquals(1100, a.viewWidth, "width round trips"),
+                () -> assertEquals(400, a.viewHeight, "height round trips"),
+                () -> assertEquals(0xFFFF, sat.viewWidth, "a width above 65535 saturates to 65535"),
+                () -> assertEquals(0, sat.viewHeight, "a negative height saturates to 0"),
+                () -> assertEquals(0xFFFF, top.viewWidth, "65535 is read unsigned"),
+                () -> assertEquals(40000, top.viewHeight, "values above 32767 are read unsigned"),
+                () -> assertEquals(768, defaults.viewWidth, "default width is C DEF_VIEW_SIZE"),
+                () -> assertEquals(768, defaults.viewHeight, "default height is C DEF_VIEW_SIZE"));
+        }
+
+        @Test
         @DisplayName("over-long texts are truncated to the slot and a failing payload leaves the channel usable")
         void longTextAndFailure() {
             ReliableChannel tx = new ReliableChannel(4, Protocol.MAX_RELIABLE_MESSAGE, 1);

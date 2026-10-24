@@ -140,6 +140,9 @@ Client → server:
 | 66 | SETTINGS | f32 power, turnSpeed, turnResistance, altPower, altTurnSpeed, altTurnResistance, u8 flags (1 autoShield). The client sends it before READY on every join (C sends the settings with PKT_PLAY) and again whenever a power or turn-speed key changes them (C Send_power ...); those keys themselves are never sent |
 | 67 | CHANGE_TEAM | u8 team |
 | 68 | SHAPE | str16 shape |
+| 15 | DISPLAY | u16 viewWidth, u16 viewHeight: the world area the client shows, in world pixels (C PKT_DISPLAY's `view_width`/`view_height`: window size times scaleFactor). Sent before READY on every join and again whenever it changes (resize, scale swap). The server limits each axis to 384..1024 (C `Receive_display`, MIN/MAX_VIEW_SIZE) and uses it for the HUD lock's in-view test and for culling the receiver's snapshots; until it arrives the view is 768 x 768 (DEF_VIEW_SIZE) |
+
+DISPLAY is a client → server message although its id is below 64; ids 13 (SEEK) and 14 (MODIFIER_BANK) are taken too.
 
 ## INPUT — `InputHistory` (client) / `InputReader` (server)
 

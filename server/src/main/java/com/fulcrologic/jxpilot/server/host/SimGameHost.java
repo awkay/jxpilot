@@ -123,6 +123,7 @@ public final class SimGameHost implements GameHost {
     private final Msg.PlayerThrust thrust = new Msg.PlayerThrust();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
     private final Msg.Settings settingsMsg = new Msg.Settings();
+    private final Msg.Display displayMsg = new Msg.Display();
     private final StringBuilder nameBuf = new StringBuilder(Const.MAX_CHARS);
 
     /**
@@ -175,7 +176,8 @@ public final class SimGameHost implements GameHost {
      * teamAssign; with it C {@code Pick_team} chooses, kicking a robot when only the robots' teams have room. A
      * full requested team kicks one of its robots, else its paused humans, else is refused (REASON_FULL), and
      * the team is picked again (as C). Outside team play the request is ignored.
-     * BEHAVIOR: otherwise the player is reserved, its input and drain state reset, and its id returned.
+     * BEHAVIOR: otherwise the player is reserved, its input and drain state reset, its view size set to C
+     * DEF_VIEW_SIZE (768 x 768, C {@code Setup_connection}) until DISPLAY, and its id returned.
      */
     @Override
     public int join(CharSequence name, int team, CharSequence shape) {
@@ -209,6 +211,8 @@ public final class SimGameHost implements GameHost {
         spawnTeam[id] = t;
         queued[id] = 0;
         pendingSettings[id] = false;
+        pl.viewWidth = Msg.Display.DEF_VIEW_SIZE;
+        pl.viewHeight = Msg.Display.DEF_VIEW_SIZE;
         keysBySlot[pl.slot] = 0;
         cursor[id] = w.events.seq();
         burstCursor[id] = w.events.burstSeq();
@@ -376,6 +380,9 @@ public final class SimGameHost implements GameHost {
      * message and applies settings that came early); no base: kicked at the next tick ("no free base").
      * BEHAVIOR: CHAT from a player in the game goes through C {@code Handle_talk} ({@link Talk}).
      * BEHAVIOR: SETTINGS go to {@code Ships.applySettings} (kept for the spawn before it).
+     * BEHAVIOR: DISPLAY, before or after READY, sets the player's view size, each axis limited to
+     * [MIN_VIEW_SIZE 384, MAX_VIEW_SIZE 1024] (C {@code Receive_display}); it applies from the next snapshot
+     * and HUD lock test.
      * BEHAVIOR: CHANGE_TEAM, SHAPE, unknown types and messages of unbound ids are ignored.
      */
     @Override
@@ -407,6 +414,11 @@ public final class SimGameHost implements GameHost {
                     pendingSettings[playerId] = true;
                 }
             }
+            case ReliableType.DISPLAY -> {
+                displayMsg.read(payload);
+                p.viewWidth = limitView(displayMsg.viewWidth);
+                p.viewHeight = limitView(displayMsg.viewHeight);
+            }
             default -> { } // CHANGE_TEAM and SHAPE are not supported; newer types are ignored
         }
     }
@@ -424,6 +436,11 @@ public final class SimGameHost implements GameHost {
             pendingSettings[p.id] = false;
             applySettings(p);
         }
+    }
+
+    /** C {@code LIMIT(size, MIN_VIEW_SIZE, MAX_VIEW_SIZE)} of {@code Receive_display}. */
+    static int limitView(int size) {
+        return Math.max(Msg.Display.MIN_VIEW_SIZE, Math.min(Msg.Display.MAX_VIEW_SIZE, size));
     }
 
     private void applySettings(Player p) {
@@ -593,6 +610,8 @@ public final class SimGameHost implements GameHost {
      * each sound goes out in one snapshot.
      * BEHAVIOR: a viewer out of the game (or paused, see {@code Locks.viewOf}) gets the snapshot, sounds included,
      * of the player it has locked on (C frame.c:1314-1336).
+     * BEHAVIOR: culling uses the viewer's own view size (DISPLAY) around the shown player's position, as C's
+     * {@code Frame_parameters(conn, ind)} takes the size from the connection and the position from {@code ind}.
      */
     @Override
     public boolean fillSnapshot(int viewerId, int part, boolean radar, SnapshotWriter out) {
@@ -606,6 +625,8 @@ public final class SimGameHost implements GameHost {
                 b.position(PacketHeader.SIZE);
             }
             Player view = sim.locks.viewOf(p);
+            builder.setViewSize(p.viewWidth, p.viewHeight);
+            sim.locks.hudLock(view, p.viewWidth, p.viewHeight);
             scratchParts = builder.build(view, 0, burstCursor[viewerId], radar, scratch);
             burstCursor[viewerId] = w.events.burstSeq();
             view.audio.clear();

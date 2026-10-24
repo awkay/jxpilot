@@ -103,6 +103,17 @@ public final class TestWorlds {
         if (p == null) {
             throw new IllegalStateException("no free base");
         }
+        seeAll(s);
         return p;
+    }
+
+    /**
+     * The visibility pass of a frame (C update.c:937-951) for every player, as the next tick would run it: a new
+     * player's tables start empty like C's calloc'ed ones, so fixtures that skip the tick run it here.
+     */
+    public static void seeAll(Simulation s) {
+        for (int k = 0; k < s.world.numPlayers; k++) {
+            s.locks.updateVisibility(s.world.playerAt(k));
+        }
     }
 }

@@ -78,8 +78,8 @@ class ShipsItemsTest {
         p.loseItem = 3;
         p.loseItemState = 2;
         p.tractorIsPressor = true;
-        p.canSee[q.slot] = false;
-        q.canSee[p.slot] = false;
+        p.canSee[q.ind] = false;
+        q.canSee[p.ind] = false;
         p.sensorRange = 0;
         s.ships.initItemState(p);
         assertAll(
@@ -100,8 +100,8 @@ class ShipsItemsTest {
             () -> assertEquals(0, p.loseItem, "lose item 0"),
             () -> assertEquals(0, p.loseItemState, "lose item state 0"),
             () -> assertFalse(p.tractorIsPressor, "not a pressor"),
-            () -> assertTrue(p.canSee[q.slot], "it sees everybody"),
-            () -> assertTrue(q.canSee[p.slot], "everybody sees it"),
+            () -> assertFalse(p.canSee[q.ind], "its visibility table is left as it was (C Init_player)"),
+            () -> assertFalse(q.canSee[p.ind], "and so are the others' entries for it"),
             () -> assertTrue(p.sensorRange > 0, "the sensor range is computed"));
     }
 
@@ -284,8 +284,8 @@ class ShipsItemsTest {
         p.items[it(Item.DEFLECTOR)] = 1;
         p.have |= Has.DEFLECTOR;
         p.updateVisibility = false;
-        p.visLastChange[q.slot] = 9;
-        q.visLastChange[p.slot] = 9;
+        p.visLastChange[q.ind] = 9;
+        q.visLastChange[p.ind] = 9;
         s.ships.goHome(p);
         boolean deflector = (p.used & Has.DEFLECTOR) != 0;
         q.items[it(Item.DEFLECTOR)] = 1;
@@ -298,8 +298,8 @@ class ShipsItemsTest {
         assertAll(
             () -> assertTrue(deflector, "a ship with a deflector starts with it on"),
             () -> assertTrue(p.updateVisibility, "visibility is to be updated"),
-            () -> assertEquals(0L, p.visLastChange[q.slot], "its visibility of others restarts"),
-            () -> assertEquals(0L, q.visLastChange[p.slot], "others' visibility of it restarts"),
+            () -> assertEquals(0L, p.visLastChange[q.ind], "its visibility of others restarts"),
+            () -> assertEquals(0L, q.visLastChange[p.ind], "others' visibility of it restarts"),
             () -> assertEquals(0, q.used & Has.DEFLECTOR, "without the ability no deflector"),
             () -> assertEquals(0, r.used & Has.DEFLECTOR, "without playerStartsShielded no deflector"));
     }

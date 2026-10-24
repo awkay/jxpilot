@@ -516,8 +516,8 @@ class TanksTest {
             Player d1 = tankOf(p);
             d1.kills = 5;
             d1.items[Item.ECM.ordinal()] = 3;
-            other.visLastChange[d1.slot] = 99;
-            d1.visLastChange[other.slot] = 98;
+            other.visLastChange[d1.ind] = 99;
+            d1.visLastChange[other.ind] = 98;
             w.removePlayer(d1);
             t.detach(p);
             Player d2 = tankOf(p);
@@ -526,8 +526,8 @@ class TanksTest {
                 () -> assertEquals("A's tank", d2.name.toString(), "the name is rebuilt, not appended"),
                 () -> assertEquals(0, d2.kills, "kills reset by Init_player"),
                 () -> assertEquals(0, d2.items[Item.ECM.ordinal()], "items reset by Init_player"),
-                () -> assertEquals(0L, other.visLastChange[d2.slot], "others' visibility time of the tank reset"),
-                () -> assertEquals(0L, d2.visLastChange[other.slot], "the tank's visibility times reset"));
+                () -> assertEquals(0L, other.visLastChange[d2.ind], "others' visibility time of the tank reset"),
+                () -> assertEquals(0L, d2.visLastChange[other.ind], "the tank's visibility times reset"));
         }
 
         @Test

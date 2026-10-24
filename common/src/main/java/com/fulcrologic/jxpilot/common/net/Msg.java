@@ -634,6 +634,40 @@ public final class Msg {
         }
     }
 
+    /**
+     * {@link ReliableType#DISPLAY}: the world area the client shows, in world pixels (C {@code PKT_DISPLAY}'s
+     * {@code view_width}, {@code view_height}; the C client sends its draw size times its scale factor).
+     * The server limits each to [{@link #MIN_VIEW_SIZE}, {@link #MAX_VIEW_SIZE}] (C {@code Receive_display}).
+     */
+    public static final class Display implements Payload {
+        /** C {@code MIN_VIEW_SIZE}, {@code MAX_VIEW_SIZE}, {@code DEF_VIEW_SIZE} (common/draw.h). */
+        public static final int MIN_VIEW_SIZE = 384;
+        public static final int MAX_VIEW_SIZE = 1024;
+        public static final int DEF_VIEW_SIZE = 768;
+
+        public int viewWidth = DEF_VIEW_SIZE;
+        public int viewHeight = DEF_VIEW_SIZE;
+
+        /** BEHAVIOR: u16 width, u16 height; values outside 0..65535 are saturated, never wrapped. */
+        public void write(ByteBuffer b) {
+            b.putShort((short) u16(viewWidth));
+            b.putShort((short) u16(viewHeight));
+        }
+
+        public void read(ByteBuffer b) {
+            viewWidth = b.getShort() & 0xFFFF;
+            viewHeight = b.getShort() & 0xFFFF;
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.DISPLAY);
+        }
+
+        private static int u16(int v) {
+            return Math.max(0, Math.min(0xFFFF, v));
+        }
+    }
+
     /** {@link ReliableType#CHANGE_TEAM}. */
     public static final class ChangeTeam implements Payload {
         public int team;

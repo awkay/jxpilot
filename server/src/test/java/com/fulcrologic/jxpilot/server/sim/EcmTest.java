@@ -213,7 +213,7 @@ class EcmTest {
                     pl.lockDistance = 600;
                     pl.sensorRange = 599;
                 },
-                pl -> pl.canSee[q.slot] = false,
+                pl -> pl.canSee[q.ind] = false,
                 pl -> pl.lockPlId = 200);
             int sd = 1;
             while (new Rng(sd).nextFloat() >= 0.5f) {

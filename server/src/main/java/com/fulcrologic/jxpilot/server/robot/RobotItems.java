@@ -56,7 +56,7 @@ public class RobotItems {
 
     /** BEHAVIOR: C {@code pl->visibility[j].canSee}. */
     public boolean canSee(Player viewer, Player target) {
-        return viewer.canSee[target.slot];
+        return viewer.canSee[target.ind];
     }
 
     /** BEHAVIOR: C {@code pl->num_pulses}: own laser pulses in flight. */

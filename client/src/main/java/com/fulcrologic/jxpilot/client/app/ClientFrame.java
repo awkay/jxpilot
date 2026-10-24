@@ -87,6 +87,9 @@ public final class ClientFrame {
     private boolean swapScale;
     private boolean toggleSound;
     private int talkWidthFor = -1;
+    /** World view size last given to {@link GameConnection#sendDisplay} (-1: never). */
+    private int displayW = -1;
+    private int displayH = -1;
 
     /** With the default key configuration and the given input (tests). */
     public ClientFrame(ClientGame game, GameConnection conn, InputState input, SceneData scene, RadarBlips radar) {
@@ -121,7 +124,8 @@ public final class ClientFrame {
      * BEHAVIOR: elapsed time (0 on the first step) ages messages and HUD timers by {@code dt * gameFps}
      * original frames.
      * BEHAVIOR: order: receive, game frame, map check, shields ({@link InputState#setPlaying}: own ship
-     * present and not dead), INPUT with the current keys, flush.
+     * present and not dead), the view size in world pixels when it changed ({@code GameConnection.sendDisplay}),
+     * INPUT with the current keys, flush.
      * BEHAVIOR: a new map object bumps {@link #mapVersion()} and centres the view on the first base
      * (the map centre without bases); afterwards the own ship, whenever it exists, is the centre.
      * BEHAVIOR: while not playing the HUD's status line shows the connection's current status; on the first
@@ -147,6 +151,7 @@ public final class ClientFrame {
         ClientWorld w = game.world();
         boolean inPlay = w.hasSelf() && (w.selfFlags() & Records.ShipFlags.DEAD) == 0;
         input.setPlaying(inPlay);
+        sendDisplayIfChanged(viewW, viewH, zoom, nowNanos);
         conn.sendInput(input.keys(), 0, nowNanos);
         conn.flush(nowNanos);
         if (w.hasSelf()) {
@@ -173,6 +178,21 @@ public final class ClientFrame {
         panelHud.clear();
         hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, m);
         help.layout(helpHud, viewW, viewH, m);
+    }
+
+    /**
+     * C {@code Send_display}: the world area of the view, {@code (int) (size / zoom + 0.5)} per axis (C: draw size
+     * times scaleFactor, rounded), goes to {@link GameConnection#sendDisplay} on the first step and whenever it
+     * changes (window resize, scale swap); never again for an unchanged size.
+     */
+    private void sendDisplayIfChanged(int viewW, int viewH, double zoom, long nowNanos) {
+        int w = (int) (viewW / zoom + 0.5);
+        int h = (int) (viewH / zoom + 0.5);
+        if (w != displayW || h != displayH) {
+            displayW = w;
+            displayH = h;
+            conn.sendDisplay(w, h, nowNanos);
+        }
     }
 
     private void centreOnStart(WorldMap map) {

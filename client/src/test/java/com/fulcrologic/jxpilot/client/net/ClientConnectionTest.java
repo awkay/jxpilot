@@ -338,10 +338,12 @@ class ClientConnectionTest {
         }
 
         @Test
-        @DisplayName("WELCOME and the config build the map, then SETTINGS and READY are sent and the state is PLAYING")
+        @DisplayName("WELCOME and the config build the map, then SETTINGS, DISPLAY and READY are sent and the state is PLAYING")
         void config() {
             c.settings.turnSpeed = 40f;
             c.settings.power = 50f;
+            c.display.viewWidth = 1100;
+            c.display.viewHeight = 700;
             playing(0);
             c.flush(MS);
             ByteBuffer p = t.last();
@@ -349,11 +351,14 @@ class ClientConnectionTest {
             h.read(p);
             List<Integer> types = new ArrayList<>();
             Msg.Settings sent = new Msg.Settings();
+            Msg.Display display = new Msg.Display();
             ReliableChannel rx = new ReliableChannel();
             rx.read(p, (type, b) -> {
                 types.add(type);
                 if (type == ReliableType.SETTINGS) {
                     sent.read(b);
+                } else if (type == ReliableType.DISPLAY) {
+                    display.read(b);
                 }
             });
             assertAll(
@@ -364,8 +369,10 @@ class ClientConnectionTest {
                     "welcome before config"),
                 () -> assertEquals(PacketType.RELIABLE, h.type(), "a RELIABLE datagram"),
                 () -> assertEquals(SESSION, h.session(), "with the session"),
-                () -> assertEquals(List.of(ReliableType.SETTINGS, ReliableType.READY), types,
-                    "carrying the control settings, then READY (C sends them with PKT_PLAY)"),
+                () -> assertEquals(List.of(ReliableType.SETTINGS, ReliableType.DISPLAY, ReliableType.READY), types,
+                    "carrying the control settings and the view size, then READY (C Net_start: PKT_PLAY ... PKT_DISPLAY)"),
+                () -> assertEquals(1100, display.viewWidth, "the connection's view width"),
+                () -> assertEquals(700, display.viewHeight, "and view height"),
                 () -> assertEquals(40f, sent.turnSpeed, "the connection's turn speed"),
                 () -> assertEquals(50f, sent.power, "and power"),
                 () -> assertEquals("Playing on srv:1", c.status().toString(), "status"));
@@ -627,12 +634,12 @@ class ClientConnectionTest {
             int s2 = c.sendInput(1, 0, MS + FRAME);
             c.flush(MS);
             int unackedBefore = c.channel().unacked();
-            t.in.add(pkt(PacketType.ACK, SESSION, 2, b -> { }));
+            t.in.add(pkt(PacketType.ACK, SESSION, 3, b -> { }));
             c.update(200 * MS);
             assertAll(
                 () -> assertEquals(1, s1, "first sequence"),
                 () -> assertEquals(2, s2, "second"),
-                () -> assertEquals(2, unackedBefore, "SETTINGS and READY in flight"),
+                () -> assertEquals(3, unackedBefore, "SETTINGS, DISPLAY and READY in flight"),
                 () -> assertEquals(0, c.channel().unacked(), "acked by the header"));
         }
 

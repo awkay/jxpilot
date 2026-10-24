@@ -241,6 +241,30 @@ class ClientFrameTest {
                 () -> assertEquals(life0 - 7.0, life1, 1e-9, "0.5 s at 14 fps = 7 frames"),
                 () -> assertEquals(7.0, cf.hud().loops() + 0.0, "HUD loops advanced 7 frames"));
         }
+
+        @Test
+        @DisplayName("DISPLAY: the view's world size (size / zoom, rounded) is sent on the first step and only when it changes")
+        void display() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = frame(f);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            List<String> first = List.copyOf(conn.displays);
+            cf.step(T0 + 1000, 800, 600, 1, M, 256, 100);
+            List<String> same = List.copyOf(conn.displays);
+            cf.step(T0 + 2000, 900, 600, 1, M, 256, 100);
+            cf.step(T0 + 3000, 900, 650, 1, M, 256, 100);
+            cf.step(T0 + 4000, 901, 601, 2, M, 256, 100);
+            cf.step(T0 + 5000, 902, 602, 2, M, 256, 100);
+            cf.step(T0 + 6000, 800, 600, 0.8, M, 256, 100);
+            assertAll(
+                () -> assertEquals(List.of("800x600"), first, "the first step sends the view size"),
+                () -> assertEquals(List.of("800x600"), same, "an unchanged size is not sent again"),
+                () -> assertEquals(List.of("800x600", "900x600", "900x650", "451x301", "1000x750"), conn.displays,
+                    "a wider, then taller view; zoom 2 halves it (450.5 rounds to 451, and 902/2 = 451 is unchanged); "
+                        + "zoom 0.8 (scaleFactor 1.25) shows 1000x750"),
+                () -> assertEquals(List.of("update", "input", "flush"), conn.calls.subList(0, 3),
+                    "the step order is unchanged"));
+        }
     }
 
     @Nested

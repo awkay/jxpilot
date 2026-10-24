@@ -55,6 +55,11 @@ public final class ReliableType {
     public static final int PLAYER_THRUST = 11;
     /** {@link Msg.ScoreObject}: a score popup for the receiver's HUD (C score objects). */
     public static final int SCORE_OBJECT = 12;
+    /**
+     * {@link Msg.Display} (client to server, despite the id below 64): the client's view size in world pixels
+     * (C {@code PKT_DISPLAY}), sent before READY and whenever it changes.
+     */
+    public static final int DISPLAY = 15;
 
     // ---- client -> server
     /** Empty body: client has the config/map and is ready to play. */

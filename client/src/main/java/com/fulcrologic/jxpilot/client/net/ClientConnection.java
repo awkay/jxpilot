@@ -101,6 +101,8 @@ public final class ClientConnection {
     public final Msg.Connect connect = new Msg.Connect();
     /** Control settings sent (reliable SETTINGS) before READY on every join, as C sends them with PKT_PLAY. */
     public final Msg.Settings settings = new Msg.Settings();
+    /** View size in world pixels sent (reliable DISPLAY) before READY on every join, as C Net_start's PKT_DISPLAY. */
+    public final Msg.Display display = new Msg.Display();
     /** Reconnect automatically when an established session times out (default true). */
     private boolean autoReconnect = true;
 
@@ -617,6 +619,7 @@ public final class ClientConnection {
         config = null;
         listener.onConfig(welcome, opts, map);
         settings.send(channel);
+        display.send(channel);
         Msg.sendReady(channel);
         status.setLength(0);
         status.append("Playing on ").append(serverLabel);

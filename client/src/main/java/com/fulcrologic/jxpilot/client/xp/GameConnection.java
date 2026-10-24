@@ -73,6 +73,17 @@ public interface GameConnection extends AutoCloseable {
      */
     boolean sendSettings(com.fulcrologic.jxpilot.common.net.Msg.Settings settings, long nowNanos);
 
+    /**
+     * The world area the game view shows changed, in world pixels (C {@code Send_display} after a resize or
+     * scale change: draw size times scaleFactor). It is also what the next (re)join sends. Protocols without it
+     * ignore it (the original protocol sends its fixed login size).
+     *
+     * @return true when it was sent now (else it goes with the next join)
+     */
+    default boolean sendDisplay(int viewWidth, int viewHeight, long nowNanos) {
+        return false;
+    }
+
     /** Leave the game; the state becomes CLOSED. */
     void disconnect(long nowNanos);
 

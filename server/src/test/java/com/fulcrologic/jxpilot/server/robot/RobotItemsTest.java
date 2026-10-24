@@ -53,7 +53,7 @@ class RobotItemsTest {
         RobotItems it = new RobotItems(s);
         p.items[Item.MINE.ordinal()] = 4;
         p.have = Has.SHIELD | Has.CLOAKING_DEVICE;
-        p.canSee[q.slot] = false;
+        p.canSee[q.ind] = false;
         p.numPulses = 2;
         p.numTanks = 3;
         p.emergencyShieldLeft = 5;

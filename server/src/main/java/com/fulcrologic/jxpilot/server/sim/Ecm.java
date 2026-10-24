@@ -80,6 +80,20 @@ public final class Ecm {
         this.sim = sim;
     }
 
+    /** {@code StrictMath.pow(0.75, n)} for item counts 0..255, computed once: pow allocates without escape analysis. */
+    private static final double[] POW075 = new double[256];
+
+    static {
+        for (int n = 0; n < POW075.length; n++) {
+            POW075[n] = StrictMath.pow(0.75, n);
+        }
+    }
+
+    /** BEHAVIOR: C's pow(0.75, n), from the table for 0..255. */
+    static double pow075(int n) {
+        return n >= 0 && n < POW075.length ? POW075[n] : StrictMath.pow(0.75, n);
+    }
+
     /**
      * C {@code Fire_ecm} (KEY_ECM).
      * <p>
@@ -162,7 +176,7 @@ public final class Ecm {
                 Player t = pl != null ? w.byId(pl.lockPlId) : null;
                 if (pl != null && (pl.lockTagged & Player.LOCK_PLAYER) != 0
                     && (pl.lockDistance <= pl.sensorRange || !w.items.limitedVisibility)
-                    && t != null && pl.canSee[t.slot]) {
+                    && t != null && pl.canSee[t.ind]) {
                     o.newInfo[h] = pl.lockPlId;
                 } else {
                     o.newInfo[h] = w.playerAt((int) (w.rfrac() * w.numPlayers)).id;
@@ -209,7 +223,7 @@ public final class Ecm {
                 if (lasers != 0) {
                     ci.add(i, Item.LASER, -(int) (damage * lasers + 0.5));
                 }
-                ci.damaged[i] += (int) (24 * range * StrictMath.pow(0.75, ci.item(i, Item.SENSOR)));
+                ci.damaged[i] += (int) (24 * range * pow075(ci.item(i, Item.SENSOR)));
             }
         }
         for (int k = 0; k < w.numPlayers; k++) {
@@ -236,7 +250,7 @@ public final class Ecm {
             if (cloaks <= 1) {
                 p.forceVisible += (int) damage;
             } else {
-                p.forceVisible += (int) (damage * StrictMath.pow(0.75, cloaks - 1));
+                p.forceVisible += (int) (damage * pow075(cloaks - 1));
             }
             if ((p.have & Has.BALL) != 0 && ballDetacher != null) {
                 ballDetacher.ecmDetach(p, range);
@@ -245,7 +259,7 @@ public final class Ecm {
                 p.items[Item.LASER.ordinal()] -= (int) (range * p.items[Item.LASER.ordinal()] + 0.5);
             }
             if (!p.robot || !w.items.ecmsReprogramRobots || pl == null) {
-                long duration = (int) (damage * StrictMath.pow(0.75, p.items[Item.SENSOR.ordinal()]));
+                long duration = (int) (damage * pow075(p.items[Item.SENSOR.ordinal()]));
                 p.damaged += (int) duration;
                 if (pl != null) {
                     sim.ships.recordShove(p, pl, w.frames + duration);
@@ -254,7 +268,7 @@ public final class Ecm {
                 Player t = w.byId(pl.lockPlId);
                 if ((pl.lockTagged & Player.LOCK_PLAYER) != 0
                     && (pl.lockDistance < pl.sensorRange || !w.items.limitedVisibility)
-                    && t != null && pl.canSee[t.slot] && pl.lockPlId != p.id && robotProgrammer != null) {
+                    && t != null && pl.canSee[t.ind] && pl.lockPlId != p.id && robotProgrammer != null) {
                     robotProgrammer.program(p, pl.lockPlId);
                 }
             }

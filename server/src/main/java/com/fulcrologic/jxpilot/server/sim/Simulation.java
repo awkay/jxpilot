@@ -169,12 +169,6 @@ public final class Simulation {
             rounds.computeGameStatus();
         }
         emitScores();
-        for (int k = 0; k < w.numPlayers; k++) {
-            Player pl = w.playerAt(k);
-            if (!pl.robot && !pl.tank) {
-                locks.hudLock(pl);
-            }
-        }
         w.frames++;
     }
 

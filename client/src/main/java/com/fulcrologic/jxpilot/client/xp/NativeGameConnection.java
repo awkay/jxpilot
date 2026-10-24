@@ -93,6 +93,21 @@ public final class NativeGameConnection implements GameConnection {
         return true;
     }
 
+    /**
+     * BEHAVIOR: stores the size in the connection's DISPLAY (sent before READY on every join); while PLAYING
+     * also queues it as a reliable DISPLAY now (true). (While JOINING the join itself sends it.)
+     */
+    @Override
+    public boolean sendDisplay(int viewWidth, int viewHeight, long nowNanos) {
+        conn.display.viewWidth = viewWidth;
+        conn.display.viewHeight = viewHeight;
+        if (conn.state() != ConnectionState.PLAYING) {
+            return false;
+        }
+        conn.display.send(conn.channel());
+        return true;
+    }
+
     static void copy(Msg.Settings from, Msg.Settings to) {
         to.power = from.power;
         to.turnSpeed = from.turnSpeed;

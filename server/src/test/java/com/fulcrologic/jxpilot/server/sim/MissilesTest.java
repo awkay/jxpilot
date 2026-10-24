@@ -219,10 +219,10 @@ class MissilesTest {
             s.missiles.fire(p, 0, false, p.px, p.py, Obj.SMART_SHOT, 0, 0, -1);
             int noLock = o.count();
             lock();
-            p.canSee[q.slot] = false;
+            p.canSee[q.ind] = false;
             s.missiles.fire(p, 0, false, p.px, p.py, Obj.SMART_SHOT, 0, 0, -1);
             int unseen = o.count();
-            p.canSee[q.slot] = true;
+            p.canSee[q.ind] = true;
             w.items.limitedVisibility = true;
             p.lockDistance = 1001;
             s.missiles.fire(p, 0, false, p.px, p.py, Obj.SMART_SHOT, 0, 0, -1);
