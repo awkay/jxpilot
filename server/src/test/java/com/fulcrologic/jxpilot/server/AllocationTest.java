@@ -233,7 +233,9 @@ class AllocationTest {
     @DisplayName("a busy 32-player world (3000 objects), rare paths included, allocates zero bytes in every measured tick")
     void busyTicksAreAllocationFree() {
         Run r = new Run(3, 3000, 8);
-        int warm = 3000;
+        // Warm-up past the C2 compile of methods called once per tick (~5000 calls): a compile request on the
+        // measured thread shows up as a few hundred to ~2000 thread-allocated bytes in rare runs.
+        int warm = 8000;
         int measured = 1200;
         long ev0 = 0;
         long bursts0 = 0;
