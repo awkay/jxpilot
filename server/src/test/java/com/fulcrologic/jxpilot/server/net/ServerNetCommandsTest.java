@@ -63,4 +63,27 @@ class ServerNetCommandsTest {
     void lockedText() {
         assertEquals("game locked", ServerNet.rejectText(Msg.Reject.REASON_LOCKED), "the text");
     }
+
+    @Test
+    @DisplayName("a queued join (C ENTER_QUEUE reply) answers REJECT QUEUED with the position; the host sees the source")
+    void queued() {
+        Harness h = new Harness();
+        h.host.joinAnswer = -Msg.Reject.REASON_QUEUED;
+        h.host.queuePos = 3;
+        TestClient c = new TestClient(1);
+        java.net.InetSocketAddress a = Harness.addr("10.0.0.5", 4000);
+        h.in(0, a, c.connect("Cid", 255, "(SH: a shape long enough for the full text)"));
+        h.deliver(c, a);
+        long first = h.host.lastSource;
+        TestClient again = new TestClient(1);
+        h.in(0, Harness.addr("10.0.0.5", 4001), again.connect("Cid", 255, ""));
+        h.deliver(again, Harness.addr("10.0.0.5", 4001));
+        assertAll(
+            () -> assertEquals(Msg.Reject.REASON_QUEUED, c.rejectReason, "QUEUED"),
+            () -> assertEquals(3, c.rejectPosition, "the position"),
+            () -> assertEquals("queued at position 3", c.rejectText, "C's words"),
+            () -> assertEquals(0, h.net.connections(), "no session while queued"),
+            () -> assertEquals(first, h.host.lastSource, "the same address is the same source"),
+            () -> assertEquals("queued", ServerNet.rejectText(Msg.Reject.REASON_QUEUED), "the reason's text"));
+    }
 }

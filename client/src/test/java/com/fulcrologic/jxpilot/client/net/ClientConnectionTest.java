@@ -387,6 +387,47 @@ class ClientConnectionTest {
         }
 
         @Test
+        @DisplayName("server-commands: REJECT QUEUED keeps waiting (same nonce, CONNECT every second) and shows the position;"
+            + " the ACCEPT that follows ends the queue")
+        void queued() {
+            c.start(0);
+            int nonce = c.connect.nonce;
+            t.in.add(pkt(PacketType.REJECT, 0, 0, b -> {
+                Msg.Reject r = new Msg.Reject();
+                r.nonce = nonce;
+                r.reason = Msg.Reject.REASON_QUEUED;
+                r.position = 2;
+                r.text.append("queued at position 2");
+                r.write(b);
+            }));
+            c.update(MS);
+            int sent = t.out.size();
+            c.update(500 * MS);
+            int at500 = t.out.size();
+            c.update(1002 * MS);
+            int at1002 = t.out.size();
+            String status = c.status().toString();
+            int pos = c.queuePosition();
+            ConnectionState waiting = c.state();
+            t.in.add(pkt(PacketType.ACCEPT, 77, 0, b -> {
+                Msg.Accept a = new Msg.Accept();
+                a.nonce = nonce;
+                a.playerId = 4;
+                a.write(b);
+            }));
+            c.update(1100 * MS);
+            assertAll(
+                () -> assertEquals(ConnectionState.CONNECTING, waiting, "still connecting"),
+                () -> assertEquals("Waiting in queue on srv:1 (position 2)", status, "the position"),
+                () -> assertEquals(2, pos, "queuePosition"),
+                () -> assertEquals(sent, at500, "no CONNECT at the usual 250 ms while queued"),
+                () -> assertEquals(sent + 1, at1002, "one a second later"),
+                () -> assertEquals(nonce, c.connect.nonce, "the same nonce"),
+                () -> assertEquals(ConnectionState.JOINING, c.state(), "accepted"),
+                () -> assertEquals(0, c.queuePosition(), "no longer queued"));
+        }
+
+        @Test
         @DisplayName("REJECT closes with the reason")
         void reject() {
             c.start(0);

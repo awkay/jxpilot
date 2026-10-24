@@ -205,4 +205,30 @@ class CommandsEndToEndTest {
             closeAll();
         }
     }
+
+    @Test
+    @Timeout(value = 60, unit = TimeUnit.SECONDS)
+    @DisplayName("login queue: a third player on a two-base map waits with its position, then plays when a base frees up")
+    void queue() throws Exception {
+        try (Running srv = new Running(map("", "x _   _   x"))) {
+            E2eClient a = client(srv, "Ann", 255, null, 31);
+            E2eClient b = client(srv, "Bob", 255, null, 32);
+            assertTrue(until(() -> inGame(a) && inGame(b), 15 * SEC), "two players");
+            E2eClient c = client(srv, "Cid", 255, null, 33);
+            boolean waiting = until(() -> c.game.status().toString().contains("Waiting in queue"), 10 * SEC);
+            String status = c.game.status().toString();
+            a.chat("/queue", System.nanoTime());
+            boolean listed = until(() -> said(a, "Queue: 1. Cid [*Server reply*]"), 10 * SEC);
+            b.close();
+            clients.remove(b);
+            boolean admitted = until(() -> inGame(c), 20 * SEC);
+            assertAll(
+                () -> assertTrue(waiting, "Cid waits"),
+                () -> assertTrue(status.endsWith("(position 1)"), "at position 1: " + status),
+                () -> assertTrue(listed, "/queue lists Cid"),
+                () -> assertTrue(admitted, "Cid plays after Bob left"));
+        } finally {
+            closeAll();
+        }
+    }
 }
