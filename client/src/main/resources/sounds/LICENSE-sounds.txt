@@ -2,7 +2,8 @@ JXPilot sound effects: client/src/main/resources/sounds/*.wav
 ======================================================================
 
 All clips are dedicated to the public domain under Creative Commons CC0 1.0 Universal
-(https://creativecommons.org/publicdomain/zero/1.0/), which the FSF lists as GPL-compatible. They
+(https://creativecommons.org/publicdomain/zero/1.0/; legal code in CC0-1.0.txt next to this file, from
+https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt), which the FSF lists as GPL-compatible. They
 were downloaded on 2026-10-23 from the two packs below, verified against the sha256 shown, and
 processed reproducibly by tools/sounds/build-sounds.sh (clip list: tools/sounds/clips.tsv). The
 historical XPilot sound packs were not used.

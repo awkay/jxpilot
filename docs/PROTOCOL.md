@@ -229,13 +229,16 @@ order first queued, at the loudest volume queued (C `queue_audio`). Simulation c
 - `Sounds.playAll(world, event)` (C `sound_play_all`): every human at 100;
 - `Sounds.playPlayer(player, event)` (C `sound_play_player`): one human at 100.
 
-Robots never hear sounds, and a player entering the game does not hear its own START (C plays it before
-the newcomer's audio request). Part 0 of the player's next snapshot carries the queue as the SOUND section right
+Robots never hear sounds. A player entering the game hears its own START too: C plays it to everyone in
+`Handle_login`, then the newcomer's `PKT_REQUEST_AUDIO`, in the same datagram, plays it to the newcomer
+(`sound_player_onoff`). Part 0 of the player's next snapshot carries the queue as the SOUND section right
 after SELF, and the queue is then emptied (C `sound_play_queued` after the frame's objects), so each sound is
 sent once; a lost snapshot loses its sounds, as a lost C frame does. A player's queue is emptied when it
 enters the game (C `sound_player_init`). The client plays SOUND records only from the newest tick it has
-received. On the XPilot path the client asks for audio with `PKT_REQUEST_AUDIO 1` (when its sound is on) and
-turns each `PKT_AUDIO` (type, volume) into the same SOUND record.
+received. On the XPilot path the client sends `PKT_REQUEST_AUDIO` once, with PKT_PLAY at `Net_start`: 1 when
+sound is enabled at startup (a C client built with SOUND always sends 1), 0 with `--no-sound` or volume 0; the
+mute key does not change it. It turns each `PKT_AUDIO` (type, volume) into the same SOUND record. Stock C
+builds have SOUND off, so most C servers send no `PKT_AUDIO` at all.
 
 ### Sparks and debris
 

@@ -13,4 +13,14 @@ Bundled third-party components:
   - Fira Code font (SIL Open Font License 1.1): fonts/FiraCode-LICENSE.txt (client jar)
   - LWJGL 3 and its native libraries, including OpenAL Soft (GNU LGPL 2 or later):
     META-INF/licenses/lwjgl/ (client jar)
-  - Sound effects by Juhani Junkala and Kenney (CC0 1.0): sounds/LICENSE-sounds.txt (client jar)
+  - Sound effects by Juhani Junkala and Kenney (CC0 1.0): sounds/LICENSE-sounds.txt and
+    sounds/CC0-1.0.txt (client jar)
+
+OpenAL Soft source (GNU LGPL version 2 or later): the client jar contains OpenAL Soft libraries
+(libopenal / OpenAL.dll) built by the LWJGL project from https://github.com/kcat/openal-soft at commit
+90191edd20bb877c5cbddfdac7ec0fe49ad93727. That source is attached to every JXPilot GitHub release as
+openal-soft-source-90191edd20bb877c5cbddfdac7ec0fe49ad93727.tar.gz. For at least three years after we
+distribute a release, anyone may also ask for that source by opening an issue at
+https://github.com/awkay/jxpilot; we will provide it for no more than the cost of providing it. You may
+replace the bundled library with your own build of OpenAL Soft (LWJGL loads it from
+-Dorg.lwjgl.openal.libname=PATH); the license text is in META-INF/licenses/lwjgl/openal_soft_license.txt.
