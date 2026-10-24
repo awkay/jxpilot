@@ -119,10 +119,34 @@ public final class ShipShape {
         return ptX.length;
     }
 
-    /** Parse, returning the default ship if the string is empty or invalid (C {@code Parse_shape_str}). */
+    /** Shapes kept by {@link #parseOrDefault} (R10: a player join parses no shape it has seen). */
+    static final int CACHE_SIZE = 64;
+    private static final java.util.Map<String, ShipShape> CACHE = new java.util.LinkedHashMap<>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(java.util.Map.Entry<String, ShipShape> eldest) {
+            return size() > CACHE_SIZE;
+        }
+    };
+
+    /**
+     * Parse, returning the default ship if the string is empty or invalid (C {@code Parse_shape_str}).
+     * <p>
+     * BEHAVIOR: results are cached by string (the {@link #CACHE_SIZE} most recently used; shapes are
+     * immutable), so the same shape string returns the same instance without parsing again; thread safe.
+     */
     public static ShipShape parseOrDefault(String s) {
+        synchronized (CACHE) {
+            ShipShape cached = CACHE.get(s);
+            if (cached != null) {
+                return cached;
+            }
+        }
         ShipShape sh = parse(s);
-        return sh == null ? DEFAULT : sh;
+        ShipShape result = sh == null ? DEFAULT : sh;
+        synchronized (CACHE) {
+            CACHE.put(s, result);
+        }
+        return result;
     }
 
     /** Rotate a ship-local point by heading (cos, sin): x component. */
@@ -558,12 +582,14 @@ public final class ShipShape {
         for (int done = 0; done < todo; done++) {
             int x = qx[done];
             int y = qy[done];
-            int[][] nb = {{x + 1, y}, {x - 1, y}, {x, y + 1}, {x, y - 1}};
-            for (int[] c : nb) {
-                if (c[0] >= -15 && c[0] <= 15 && c[1] >= -15 && c[1] <= 15 && g[c[0] + 15][c[1] + 15] == 0) {
-                    g[c[0] + 15][c[1] + 15] = 2;
-                    qx[todo] = c[0];
-                    qy[todo++] = c[1];
+            // the four neighbours without a per-cell array (R10: this loop allocated ~100 KB per shape)
+            for (int k = 0; k < 4; k++) {
+                int cx = x + (k == 0 ? 1 : k == 1 ? -1 : 0);
+                int cy = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+                if (cx >= -15 && cx <= 15 && cy >= -15 && cy <= 15 && g[cx + 15][cy + 15] == 0) {
+                    g[cx + 15][cy + 15] = 2;
+                    qx[todo] = cx;
+                    qy[todo++] = cy;
                 }
             }
         }
