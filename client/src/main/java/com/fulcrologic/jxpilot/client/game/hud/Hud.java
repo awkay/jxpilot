@@ -46,6 +46,11 @@ import com.fulcrologic.jxpilot.common.net.Records;
  * wraps in {@code WINSCALE} (directly or through {@code Rectangle_add}/{@code Segment_add}) are scaled with
  * {@link WinScale#of}, and font offsets (ascent, descent, text widths) are added unscaled afterwards.
  * Messages, the talk window and the status line are in plain window pixels, as in C.
+ * <p>
+ * Fonts by role, as C: the messages use {@code messageFont} ({@code Paint_messages}), the talk window
+ * {@code talkFont} with its height from {@code textFont} ({@code talk.c} {@code TALK_TEXT_HEIGHT}), the score
+ * list {@code scoreListFont} ({@code Paint_score_*}), everything else {@code gameFont}. Each text run carries
+ * its {@link FontRole}.
  */
 public final class Hud {
     /** C {@code HUD_SIZE}: half size of the HUD lines. */
@@ -116,6 +121,9 @@ public final class Hud {
     private float lastFuel = -1;
     private boolean wasVisible;
     private final CharBuf scratch = new CharBuf(32);
+    /** The one-metrics adapter of {@link #build(HudFrame, ClientGame, TalkLine, int, int, TextMetrics, double)}. */
+    private TextMetrics singleFor;
+    private FontRole.Metrics single;
 
     /** Original frames elapsed (C {@code loops}). */
     public long loops() { return (long) loops; }
@@ -164,9 +172,12 @@ public final class Hud {
      * dead (C paints them every frame); only the speed pointer needs a visible (not dead) ship (C
      * {@code selfVisible}); messages, the talk window (when open) and the connection status (when not
      * playing) always.
+     * BEHAVIOR: lays out the messages with {@link FontRole#MESSAGE}'s metrics, the talk window with
+     * {@link FontRole#TALK}'s and {@link FontRole#TEXT}'s, everything else with {@link FontRole#GAME}'s.
      */
-    public void build(HudFrame out, ClientGame g, TalkLine talk, int viewW, int viewH, TextMetrics m,
+    public void build(HudFrame out, ClientGame g, TalkLine talk, int viewW, int viewH, FontRole.Metrics fonts,
                       double frames) {
+        TextMetrics m = fonts.of(FontRole.GAME);
         out.clear();
         ClientWorld w = g.world();
         float fuel = w.hasSelf() ? w.selfFuel() : 0;
@@ -175,9 +186,9 @@ public final class Hud {
         if (w.hasSelf()) {
             shipHud(out, w, viewW, viewH, m, g, visible);
         }
-        messages(out, g.messages(), viewH, m, g.gameFps());
+        messages(out, g.messages(), viewH, fonts.of(FontRole.MESSAGE), g.gameFps());
         if (talk.isOpen()) {
-            talk(out, talk, viewW, viewH, m);
+            talk(out, talk, viewW, viewH, fonts.of(FontRole.TALK), fonts.of(FontRole.TEXT));
         }
         if (g.state() != ConnectionState.PLAYING) {
             CharBuf s = g.status();
@@ -187,6 +198,16 @@ public final class Hud {
                 t.append(s);
             }
         }
+    }
+
+    /** {@link #build(HudFrame, ClientGame, TalkLine, int, int, FontRole.Metrics, double)} with one metrics for every role. */
+    public void build(HudFrame out, ClientGame g, TalkLine talk, int viewW, int viewH, TextMetrics m,
+                      double frames) {
+        if (m != singleFor) {
+            singleFor = m;
+            single = role -> m;
+        }
+        build(out, g, talk, viewW, viewH, single, frames);
     }
 
     private void shipHud(HudFrame out, ClientWorld w, int viewW, int viewH, TextMetrics m, ClientGame g,
@@ -440,7 +461,8 @@ public final class Hud {
      * BEHAVIOR: talk messages from the top (first baseline MESSAGE_BORDER + ascent), game messages from
      * the bottom up (first baseline viewH - descent - MESSAGE_BORDER), newest nearest the edge, line
      * spacing ascent + descent + 1, x = MESSAGE_BORDER; game messages only when showMessages.
-     * BEHAVIOR: each shows {@link MessageLog#visibleChars} characters, RED while flashing, else OLD_MESSAGE.
+     * BEHAVIOR: each shows {@link MessageLog#visibleChars} characters, RED while flashing, else OLD_MESSAGE,
+     * in {@link FontRole#MESSAGE}.
      */
     void messages(HudFrame out, MessageLog log, int viewH, TextMetrics m, double fps) {
         int spacing = m.ascent() + m.descent() + 1;
@@ -460,24 +482,33 @@ public final class Hud {
     }
 
     private static void message(HudFrame out, MessageLog log, MessageLog.Entry e, int y, double fps) {
-        CharBuf t = out.text(MESSAGE_BORDER, y, e.flashing() ? HudColor.RED : HudColor.OLD_MESSAGE);
+        CharBuf t = out.text(MESSAGE_BORDER, y, FontRole.MESSAGE, e.flashing() ? HudColor.RED : HudColor.OLD_MESSAGE);
         if (t != null) {
             t.append(e.text());
             out.setTextLength(log.visibleChars(e, fps));
         }
     }
 
+    /** The talk window with one font for the text and the window height ({@link #talk(HudFrame, TalkLine, int, int, TextMetrics, TextMetrics)}). */
+    void talk(HudFrame out, TalkLine talk, int viewW, int viewH, TextMetrics m) {
+        talk(out, talk, viewW, viewH, m, m);
+    }
+
     /**
      * The talk window (C talk.c geometry).
      * <p>
-     * BEHAVIOR: text height h = ascent + descent; window height H = h + 2*TALK_INSIDE_BORDER at
-     * x = TALK_WINDOW_X, y = viewH*3/4 - H/2, inner width W = viewW - 2*(TALK_WINDOW_X + TALK_OUTSIDE_BORDER).
-     * Emits a black filled inner rect, a white outline around the border, the text at
-     * (inner x + TALK_INSIDE_BORDER, inner y + TALK_INSIDE_BORDER + ascent) and a cursor line at
-     * the width of the text before the cursor.
+     * BEHAVIOR: text height h = ascent + descent of {@code text} (C {@code TALK_TEXT_HEIGHT}, textFont); window
+     * height H = h + 2*TALK_INSIDE_BORDER at x = TALK_WINDOW_X, y = viewH*3/4 - H/2, inner width
+     * W = viewW - 2*(TALK_WINDOW_X + TALK_OUTSIDE_BORDER).
+     * Emits a black filled inner rect, a white outline around the border, the text in {@link FontRole#TALK} at
+     * (inner x + TALK_INSIDE_BORDER, inner y + TALK_INSIDE_BORDER + {@code talk} ascent) and a cursor line of
+     * height h at the {@code talk} width of the text before the cursor.
+     *
+     * @param m    talkFont metrics (the text and the cursor position)
+     * @param text textFont metrics (the window height)
      */
-    void talk(HudFrame out, TalkLine talk, int viewW, int viewH, TextMetrics m) {
-        int h = m.ascent() + m.descent();
+    void talk(HudFrame out, TalkLine talk, int viewW, int viewH, TextMetrics m, TextMetrics text) {
+        int h = text.ascent() + text.descent();
         int wh = h + 2 * TALK_INSIDE_BORDER;
         int wy = viewH * 3 / 4 - wh / 2;
         int ww = talkWindowWidth(viewW);
@@ -486,7 +517,7 @@ public final class Hud {
         out.rect(ix, iy, ww, wh, true, HudColor.BLACK);
         out.rect(TALK_WINDOW_X, wy, ww + 2 * TALK_OUTSIDE_BORDER, wh + 2 * TALK_OUTSIDE_BORDER, false, HudColor.WHITE);
         int tx = ix + TALK_INSIDE_BORDER;
-        CharBuf t = out.text(tx, iy + TALK_INSIDE_BORDER + m.ascent(), HudColor.WHITE);
+        CharBuf t = out.text(tx, iy + TALK_INSIDE_BORDER + m.ascent(), FontRole.TALK, HudColor.WHITE);
         if (t != null) {
             t.append(talk.text());
         }
@@ -504,12 +535,12 @@ public final class Hud {
      * <p>
      * BEHAVIOR: heading at baseline y0 + SCORE_BORDER + ascent with a line under it; entry n at baseline
      * y0 + 2*SCORE_BORDER + ascent + spacing*(n+1), spacing = ascent + descent + 3; the best row
-     * underlined; dimmed rows in SCORE_DIM.
+     * underlined; dimmed rows in SCORE_DIM; all text in {@link FontRole#SCORE_LIST}.
      */
     public void scoreboard(HudFrame out, Scoreboard sb, int x0, int y0, int width, TextMetrics m) {
         int spacing = m.ascent() + m.descent() + 3;
         int headY = y0 + SCORE_BORDER + m.ascent();
-        CharBuf h = out.text(x0 + SCORE_BORDER, headY, HudColor.SCORE);
+        CharBuf h = out.text(x0 + SCORE_BORDER, headY, FontRole.SCORE_LIST, HudColor.SCORE);
         if (h != null) {
             h.append(sb.heading());
         }
@@ -517,7 +548,8 @@ public final class Hud {
         int first = y0 + 2 * SCORE_BORDER + m.ascent() + spacing;
         for (int r = 0; r < sb.rowCount(); r++) {
             int y = first + spacing * sb.rowLine(r);
-            CharBuf t = out.text(x0 + SCORE_BORDER, y, sb.dimmed(r) ? HudColor.SCORE_DIM : HudColor.SCORE);
+            CharBuf t = out.text(x0 + SCORE_BORDER, y, FontRole.SCORE_LIST,
+                sb.dimmed(r) ? HudColor.SCORE_DIM : HudColor.SCORE);
             if (t != null) {
                 t.append(sb.label(r));
             }

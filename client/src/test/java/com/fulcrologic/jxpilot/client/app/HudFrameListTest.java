@@ -39,6 +39,7 @@ class HudFrameListTest {
         f.rect(5, 6, 7, 8, true, HudColor.WHITE);
         f.text(9, 10, HudColor.SCORE).append("hello");
         f.setTextLength(3);
+        f.text(0, 0, com.fulcrologic.jxpilot.client.game.hud.FontRole.TALK, HudColor.WHITE);
         HudFrameList l = new HudFrameList(f);
         assertAll(
             () -> assertSame(f, l.frame(), "the frame"),
@@ -56,12 +57,15 @@ class HudFrameListTest {
             () -> assertEquals(8f, l.rectH(0), "rect h"),
             () -> assertTrue(l.rectFilled(0), "filled"),
             () -> assertEquals(HudColor.WHITE, l.rectColor(0), "rect colour"),
-            () -> assertEquals(1, l.textCount(), "texts"),
+            () -> assertEquals(2, l.textCount(), "texts"),
             () -> assertEquals("hello", l.text(0).toString(), "text"),
             () -> assertEquals(3, l.textLength(0), "drawn length"),
             () -> assertEquals(9f, l.textX(0), "text x"),
             () -> assertEquals(10f, l.textY(0), "text y"),
-            () -> assertEquals(HudColor.SCORE, l.textColor(0), "text colour"));
+            () -> assertEquals(HudColor.SCORE, l.textColor(0), "text colour"),
+            () -> assertEquals(0, l.textFont(0), "a GAME run is font 0"),
+            () -> assertEquals(com.fulcrologic.jxpilot.client.game.hud.FontRole.TALK.ordinal(), l.textFont(1),
+                "a run's font is its role ordinal"));
     }
 
     @Test

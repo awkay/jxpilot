@@ -84,4 +84,12 @@ public interface HudDrawList {
     float textY(int i);
 
     int textColor(int i);
+
+    /**
+     * The font of run {@code i}: an index into the {@link HudListPainter}'s text writers (the client HUD's
+     * {@code FontRole} ordinal); 0, the game font, by default.
+     */
+    default int textFont(int i) {
+        return 0;
+    }
 }
