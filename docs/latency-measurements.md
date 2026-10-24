@@ -94,8 +94,9 @@ The lead controller itself (`LeadControlTest`, virtual time, real server and cli
 - **RTT step 300 → 100 ms:** no starvation; the 1.4 ticks of extra slack drain at 3% and reach the band
   after 4.6 s. The ±3% dilation limit bounds the drain at about 0.42 tick per second.
 - **The loss/jitter matrix** (RTT 0/100/200/300 × jitter none/σ15/Pareto × loss none/1%/5% bursty, 20 s
-  after a 6 s settle): no starvation in any loss-free cell at jitter ≤ σ 15 ms; 0-1 per 20 s with 1%
-  uniform loss; 3-8 per 20 s (1-3% of ticks) with 5% bursty loss; 0-3 with Pareto spikes.
+  after a 6 s settle): no starvation in any loss-free cell at jitter ≤ σ 15 ms, nor in any cell with 1%
+  uniform loss; 3-9 per 20 s (1-3% of ticks) with 5% bursty loss; 1-3 with Pareto spikes. Every late entry
+  was a starved tick's (late = starved in every cell).
 
 ## Method
 
