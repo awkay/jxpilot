@@ -140,6 +140,30 @@ class PlayActionsTest {
         }
 
         @Test
+        @DisplayName("#l while snooping follows the watched player (C talkmacros.c: eyesId when eyesId != self)")
+        void snoopingLock() {
+            AppFixture f = new AppFixture(true).players();
+            f.twice(x -> x.self(0, 100f, 100f, 0f, AppFixture.FOE));
+            PlayActions a = actions(f);
+            int locked = a.lockSlot();
+            conn.eyes = AppFixture.MATE;
+            int watching = a.lockSlot();
+            conn.eyes = AppFixture.SELF;
+            int ownEyes = a.lockSlot();
+            conn.eyes = 77;
+            int unknown = a.lockSlot();
+            conn.eyes = AppFixture.MATE;
+            options.apply(ClientOption.message(3), "watching #ln");
+            a.handle(KeyRouter.TALK_MACRO, 1 << 2, T0);
+            assertAll(
+                () -> assertEquals(f.game.players().slotOf(AppFixture.FOE), locked, "not snooping: the locked player"),
+                () -> assertEquals(f.game.players().slotOf(AppFixture.MATE), watching, "snooping: the watched player"),
+                () -> assertEquals(locked, ownEyes, "eyes on the own player: not snooping, the lock"),
+                () -> assertEquals(-1, unknown, "snooping on an unknown id: nobody (C drops the message)"),
+                () -> assertEquals(List.of("chat:watching Mate"), chats(), "#ln names the watched player"));
+        }
+
+        @Test
         @DisplayName("pointer buttons 1 and 5 work; a changed button option applies at once; an action's event returns")
         void buttonEdges() {
             AppFixture f = new AppFixture(true).players();

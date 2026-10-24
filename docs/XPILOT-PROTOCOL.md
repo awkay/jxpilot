@@ -57,8 +57,8 @@ Socket errors (an ICMP port unreachable, a network that went away) count as "not
 "not sent", as C's `Sockbuf_read`/`Sockbuf_flush` treat them; the retry limits and timers end the
 connection. While verifying, receiving the setup or starting, 20 seconds of silence fail the login
 (C `Net_setup`: 10 reads of 2 seconds). While playing, every 10 seconds of silence adds C's "No
-response from server" to the messages; 60 seconds close the connection (C never gives up; the C
-server has dropped the player after 30).
+response from server" to the messages, and the client keeps waiting as C does; the player leaves with QUIT,
+the window close or Command-Q.
 
 Truncated or unknown packets are counted and the rest of the datagram is dropped, as C does. A broken
 reliable stream (an unknown type, or a string over its limit) is fatal in C. It closes the connection
