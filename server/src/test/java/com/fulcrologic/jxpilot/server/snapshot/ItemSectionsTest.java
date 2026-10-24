@@ -347,6 +347,27 @@ class ItemSectionsTest {
     @DisplayName("objects")
     class Objs {
         @Test
+        @DisplayName("maxVisibleObject: only the viewer's nearest objects (any kind, sparks too) are sent, as C frame.c")
+        void maxVisibleObject() {
+            make("maxVisibleObject: 2\n");
+            obj(Obj.ITEM, 700, 120);
+            obj(Obj.ITEM, 300, 120);
+            obj(Obj.ITEM, 500, 120);
+            List<String> two = records(a, Section.ITEM, false);
+            obj(Obj.SPARK, 205, 120);
+            List<String> withSpark = records(a, Section.ITEM, false);
+            make("");
+            obj(Obj.ITEM, 700, 120);
+            obj(Obj.ITEM, 300, 120);
+            obj(Obj.ITEM, 500, 120);
+            List<String> all = records(a, Section.ITEM, false);
+            assertAll(
+                () -> assertEquals(List.of("300.0,120.0 0", "500.0,120.0 0"), two, "the two nearest of three"),
+                () -> assertEquals(List.of("300.0,120.0 0"), withSpark, "a spark next to the viewer takes a place"),
+                () -> assertEquals(3, all.size(), "C's default 1000 sends all three"));
+        }
+
+        @Test
         @DisplayName("items in view with their kind; out of view culled; random items show a valid kind")
         void items() {
             int h = obj(Obj.ITEM, 250, 120);
