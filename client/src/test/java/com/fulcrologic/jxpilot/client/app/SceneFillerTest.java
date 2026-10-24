@@ -136,7 +136,7 @@ class SceneFillerTest {
         }
 
         @Test
-        @DisplayName("a paused ship without an id (C PKT_PAUSED) blinks with its pause count, carried in vx")
+        @DisplayName("a paused ship, with or without an id, blinks with its pause count, carried in vx")
         void pausedCount() {
             AppFixture f = new AppFixture(true).players().twice(x -> {
                 x.self(0, 100, 100, 0, 0xFFFF);
@@ -150,7 +150,8 @@ class SceneFillerTest {
                 () -> assertEquals(2, scene.pausedCount, "two markers"),
                 () -> assertEquals(7, scene.pausedCountdown[0], "the id-less one counts 7 (it blinks)"),
                 () -> assertEquals(300f, scene.pausedX[0], "drawn where sent: not extrapolated by its vx"),
-                () -> assertEquals(0, scene.pausedCountdown[1], "a paused ship with an id: steady (its vx is motion)"));
+                () -> assertEquals(5, scene.pausedCountdown[1], "a paused ship with an id counts 5 as well (native wire)"),
+                () -> assertEquals(400f, scene.pausedX[1], "drawn where sent: not extrapolated by its count"));
         }
 
         @Test
@@ -274,6 +275,74 @@ class SceneFillerTest {
                 () -> assertEquals(100f, radar.selfX, "own x"),
                 () -> assertEquals(100f, radar.selfY, "own y"),
                 () -> assertEquals(0.5f, radar.selfHeading, 1e-6f, "own heading"));
+        }
+
+        @Test
+        @DisplayName("L4: watching another player's ship: a size-3 blip there, no own-ship line (C selfVisible, Handle_ship)")
+        void watchedShipBlip() {
+            AppFixture watching = new AppFixture(true).players().twice(x -> x
+                .selfOf(MATE, 0, 100f, 100f, 0.5f) // we are Me: the SELF record is the ship we look through
+                .radar(350, 175, Records.Radar.FLAG_FRIENDLY));
+            fill(watching);
+            boolean watchLine = radar.selfVisible;
+            int watchBlips = radar.count();
+            int lastSize = radar.sizeByte(watchBlips - 1);
+            float lastX = radar.x(watchBlips - 1);
+            float lastY = radar.y(watchBlips - 1);
+            AppFixture own = new AppFixture(true).players().twice(x -> x
+                .self(0, 100f, 100f, 0.5f, 0xFFFF)
+                .radar(350, 175, Records.Radar.FLAG_FRIENDLY));
+            fill(own);
+            assertAll(
+                () -> assertFalse(watchLine, "watching: no heading line"),
+                () -> assertEquals(2, watchBlips, "watching: the other radar blip plus one for the watched ship"),
+                () -> assertEquals(3, lastSize, "the watched ship is a plain size-3 blip"),
+                () -> assertEquals(100f, lastX, "at its x"),
+                () -> assertEquals(100f, lastY, "at its y"),
+                () -> assertTrue(radar.selfVisible, "our own eyes: the heading line"),
+                () -> assertEquals(1, radar.count(), "our own eyes: no extra blip"));
+        }
+
+        @Test
+        @DisplayName("L11: ECM-damaged, the radar keeps the blips, own ship and checkpoint last drawn (C Paint_radar skipped)")
+        void radarFrozenWhileDamaged() {
+            AppFixture before = new AppFixture(true).players().twice(x -> x
+                .self(0, 100f, 100f, 0.5f, 0xFFFF)
+                .radar(350, 175, Records.Radar.FLAG_FRIENDLY));
+            AppFixture hit = new AppFixture(true).players().twice(x -> x
+                .self(0, 500f, 250f, 1.5f, 0xFFFF)
+                .damaged(20)
+                .radar(10, 10, Records.Radar.FLAG_BALL)
+                .radar(600, 300, 0));
+            AppFixture after = new AppFixture(true).players().twice(x -> x
+                .self(0, 500f, 250f, 1.5f, 0xFFFF)
+                .radar(10, 10, Records.Radar.FLAG_BALL)
+                .radar(600, 300, 0));
+            fill(before);
+            float drawnX = radar.x(0);
+            float drawnY = radar.y(0);
+            int drawnSize = radar.sizeByte(0);
+            fill(hit);
+            int frozenDamage = scene.damaged;
+            int frozenCount = radar.count();
+            float frozenX = radar.x(0);
+            float frozenY = radar.y(0);
+            int frozenSize = radar.sizeByte(0);
+            boolean frozenSelf = radar.selfVisible;
+            float frozenSelfX = radar.selfX;
+            float frozenSelfHeading = radar.selfHeading;
+            fill(after);
+            assertAll(
+                () -> assertEquals(20, frozenDamage, "(the frame is damaged)"),
+                () -> assertEquals(1, frozenCount, "damaged: only the blip drawn before, none of the new ones"),
+                () -> assertEquals(drawnX, frozenX, "damaged: that blip's x as it was"),
+                () -> assertEquals(drawnY, frozenY, "damaged: that blip's y as it was"),
+                () -> assertEquals(drawnSize, frozenSize, "damaged: that blip's size as it was"),
+                () -> assertTrue(frozenSelf, "damaged: the own ship is still on the radar"),
+                () -> assertEquals(100f, frozenSelfX, "damaged: the own ship where it was last drawn"),
+                () -> assertEquals(0.5f, frozenSelfHeading, 1e-6f, "damaged: the own heading as it was"),
+                () -> assertEquals(2, radar.count(), "undamaged again: the radar follows the world"),
+                () -> assertEquals(500f, radar.selfX, "undamaged again: the own ship moves"));
         }
 
         @Test

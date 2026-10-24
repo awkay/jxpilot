@@ -833,6 +833,32 @@ class SnapshotBuilderTest {
         }
 
         @Test
+        @DisplayName("L7: a paused ship's vx carries its pause count (C Send_paused), vy 0; a flying ship sends its velocity")
+        void pausedShipCarriesCount() {
+            Player d1 = c;
+            d1.initPixels(260, 120);
+            d1.status = Obj.GRAVITY;
+            b.status = Obj.PAUSE | Obj.GRAVITY;
+            b.vx = 3;
+            b.vy = 2;
+            b.count = 37;
+            Decoded counting = decode(new SnapshotBuilder(w).build(a, 0, w.events.burstSeq(), true, parts));
+            b.count = -1;
+            parts[0].clear();
+            Decoded spent = decode(new SnapshotBuilder(w).build(a, 0, w.events.burstSeq(), false, parts));
+            b.status = Obj.PLAYING | Obj.GRAVITY;
+            parts[0].clear();
+            Decoded flying = decode(new SnapshotBuilder(w).build(a, 0, w.events.burstSeq(), false, parts));
+            assertAll(
+                () -> assertTrue(counting.ships.get(0).contains(" v37.0,0.0 "),
+                    "a paused ship sends its count in vx and 0 in vy: " + counting.ships.get(0)),
+                () -> assertTrue(spent.ships.get(0).contains(" v0.0,0.0 "),
+                    "a count that has run out (-1) is sent as 0: " + spent.ships.get(0)),
+                () -> assertTrue(flying.ships.get(0).contains(" v3.0,2.0 "),
+                    "a playing ship still sends its velocity: " + flying.ships.get(0)));
+        }
+
+        @Test
         @DisplayName("I3: on a wrapping map a shot across the seam is in view")
         void wrapCull() {
             Simulation ws = TestWorlds.sim("framesPerSecond: 60\ngravity: 0\nedgeWrap: yes", ROWS);

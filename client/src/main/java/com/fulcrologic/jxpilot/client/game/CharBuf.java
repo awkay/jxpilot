@@ -173,7 +173,8 @@ public final class CharBuf implements CharSequence {
      * {@code %*.*f}: the exact binary value is rounded to nearest, ties to even (glibc printf), so 2.25
      * prints 2.2 while 2.35 (really 2.35000000000000009) prints 2.4.
      * <p>
-     * BEHAVIOR: decimals 0 prints no decimal point; a value rounding to zero prints without a minus sign.
+     * BEHAVIOR: decimals 0 prints no decimal point; a negative value (or -0.0) keeps its minus sign even when
+     * it rounds to zero, as printf does: -0.04 prints "-0.0".
      * BEHAVIOR: decimals is clamped to 0..6.
      */
     public CharBuf appendFixed(double v, int decimals, int width) {
@@ -183,7 +184,7 @@ public final class CharBuf implements CharSequence {
             scale *= 10;
         }
         long q = roundScaled(Math.abs(v), scale);
-        boolean neg = v < 0 && q != 0;
+        boolean neg = Double.doubleToRawLongBits(v) < 0; // the sign bit, as printf: also -0.0
         long ip = q / scale;
         long fp = q % scale;
         int intDigits = 1;

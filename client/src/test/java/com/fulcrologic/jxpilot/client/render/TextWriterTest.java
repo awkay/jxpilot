@@ -74,6 +74,63 @@ class TextWriterTest {
         }
 
         @Test
+        void splitGlyphIsCutAtTheLineWithMatchingTexels() {
+            TextWriter t = new TextWriter(Fixtures.font());
+            VertexBatch b = batch();
+            int below = Palette.pack(9, 9, 9, 255);
+            float end = t.drawSplit(b, 'A', 100, 50, 54, below, C);
+            // 'A': quad x [101, 107], y [49, 58], v from 0.09 (bottom) to 0 (top); a cut at 54 is 5 of 9 px up
+            assertAll(
+                () -> assertEquals(107f, end, "pen advances by 7"),
+                () -> assertEquals(12, b.vertexCount(), "two quads"),
+                () -> assertEquals(49f, b.y(0), "lower quad starts at the glyph bottom"),
+                () -> assertEquals(54f, b.y(2), "lower quad ends at the cut"),
+                () -> assertEquals(below, b.color(0), "lower part in the below colour"),
+                () -> assertEquals(0.09f - 0.09f * 5 / 9, b.v(2), UV_EPS, "lower quad's texels end where the cut is"),
+                () -> assertEquals(54f, b.y(6), "upper quad starts at the cut"),
+                () -> assertEquals(58f, b.y(8), "upper quad ends at the glyph top"),
+                () -> assertEquals(C, b.color(6), "upper part in the above colour"),
+                () -> assertEquals(b.v(2), b.v(6), UV_EPS, "the texels meet at the cut: none lost or doubled"),
+                () -> assertEquals(0f, b.v(8), UV_EPS, "upper quad ends at the atlas top"));
+        }
+
+        @Test
+        void splitLineIsRoundedToAPixel() {
+            TextWriter t = new TextWriter(Fixtures.font());
+            VertexBatch b = batch();
+            t.drawSplit(b, 'A', 100, 50, 54.4f, C, C);
+            assertEquals(54f, b.y(2), "the cut snaps to the pixel row like the quads");
+        }
+
+        @Test
+        void splitLineOutsideTheGlyphColoursItWhole() {
+            TextWriter t = new TextWriter(Fixtures.font());
+            int below = Palette.pack(9, 9, 9, 255);
+            VertexBatch over = batch();
+            t.drawSplit(over, 'A', 100, 50, 80, below, C);
+            VertexBatch under = batch();
+            t.drawSplit(under, 'A', 100, 50, 10, below, C);
+            VertexBatch atTop = batch();
+            t.drawSplit(atTop, 'A', 100, 50, 58, below, C);
+            VertexBatch atBottom = batch();
+            t.drawSplit(atBottom, 'A', 100, 50, 49, below, C);
+            assertAll(
+                () -> assertEquals(6, over.vertexCount(), "a line over the glyph: one quad"),
+                () -> assertEquals(below, over.color(0), "the glyph is all under it: below colour"),
+                () -> assertEquals(6, under.vertexCount(), "a line under the glyph: one quad"),
+                () -> assertEquals(C, under.color(0), "the glyph is all over it: above colour"),
+                () -> assertEquals(below, atTop.color(0), "a line at the top edge: all below"),
+                () -> assertEquals(6, atBottom.vertexCount(), "a line at the bottom edge: one quad"),
+                () -> assertEquals(C, atBottom.color(0), "a line at the bottom edge: all above"),
+                () -> assertEquals(100f + 7, t.drawSplit(batch(), ' ', 100, 50, 54, below, C), "a space advances"),
+                () -> {
+                    VertexBatch sp = batch();
+                    t.drawSplit(sp, ' ', 0, 0, 0, below, C);
+                    assertEquals(0, sp.vertexCount(), "a space draws nothing");
+                });
+        }
+
+        @Test
         void emptyGlyphsAdvanceWithoutAQuad() {
             TextWriter t = new TextWriter(Fixtures.font());
             VertexBatch b = batch();

@@ -201,6 +201,21 @@ class ClientWorldTest {
         }
 
         @Test
+        @DisplayName("a paused ship's vx is its pause count, not motion: it stays put and keeps the count")
+        void pausedShipStays() {
+            WorldFixture f = new WorldFixture(true);
+            f.world.setInterpolationDelayTicks(0);
+            f.begin(100).ship(9, ShipFlags.PAUSED, 100, 100, 0, 8, 0).ship(10, 0, 200, 100, 0, 8, 0).ingestAtTick(100);
+            f.world.update(at(110));
+            int paused = f.world.shipId(0) == 9 ? 0 : 1;
+            int flying = 1 - paused;
+            assertAll(
+                () -> assertEquals(100.0, f.world.shipX(paused), CLOCK_EPS, "the paused ship is not moved by its count"),
+                () -> assertEquals(8f, f.world.shipVx(paused), "the count survives to the scene"),
+                () -> assertEquals(208.0, f.world.shipX(flying), CLOCK_EPS, "a flying ship with the same vx does move"));
+        }
+
+        @Test
         @DisplayName("the own ship is drawn at the render tick: the later SELF as is, the latest extrapolated (capped)")
         void self() {
             WorldFixture f = new WorldFixture(true);

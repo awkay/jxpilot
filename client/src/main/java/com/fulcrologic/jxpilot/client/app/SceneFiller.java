@@ -85,21 +85,27 @@ public final class SceneFiller {
     /**
      * Fill {@code out} and {@code radar} for the frame the world was last updated to.
      * <p>
-     * BEHAVIOR: clears both; sets the frame scalars: loops ({@link #loops}), fps (rounded game fps),
+     * BEHAVIOR: clears both (but not {@code radar} while the own ship is ECM-damaged: C's {@code Paint_radar}
+     * only runs undamaged, so the radar keeps the blips, own ship and checkpoint last drawn); sets the frame scalars: loops ({@link #loops}), fps (rounded game fps),
      * selfId (the own ship's id, else the player id, -1 when none), damaged and roundDelay from the world.
      * BEHAVIOR: adds the own ship first (unless absent or dead), then every interpolated ship that is not
      * dead; paused ones become paused markers (countdown 0) instead (see {@link #addShip}).
      * BEHAVIOR: adds every shot ({@link #shotColor}, {@link #teamShot}), every visible particle
      * ({@link #particleColor}), every radar blip ({@link #radarSize}, hidden blink phases skipped; when the
      * server already blinks them {@link #radarSizeUnblinked}; an asteroid with a size is
-     * {@link RadarPainter#asteroidSizeByte} of it) and the own radar ship while visible.
+     * {@link RadarPainter#asteroidSizeByte} of it) and the own radar ship while visible (C {@code selfVisible}:
+     * the own ship is in the frame; when the SELF record is another player's, whose eyes we watch through, it is
+     * an ordinary size-3 blip instead, as C {@code Handle_ship}).
      * BEHAVIOR: in race mode the next checkpoint's block ({@link #radarCheckpoint}).
      */
     public void fill(SceneData out, RadarBlips radar, ClientGame g) {
         ClientWorld w = g.world();
         Players p = g.players();
         out.clear();
-        radar.clear();
+        boolean radarLive = w.damaged() <= 0;
+        if (radarLive) {
+            radar.clear();
+        }
         long loops = loops(w);
         out.loops = loops;
         out.fps = Math.max(1, Math.round(g.gameFps()));
@@ -134,6 +140,9 @@ public final class SceneFiller {
         for (int i = 0; i < w.pointCount(); i++) {
             out.addParticle(w.pointX(i), w.pointY(i), pointColor(w.pointColor(i), style));
         }
+        if (!radarLive) {
+            return;
+        }
         boolean blinked = g.radarBlinked();
         for (int i = 0; i < w.radarCount(); i++) {
             int size = blinked ? radarSizeUnblinked(w.radarFlags(i)) : radarSize(w.radarFlags(i), loops);
@@ -145,19 +154,26 @@ public final class SceneFiller {
             }
         }
         radarCheckpoint(radar, g.timing(), map, w.selfCheck());
-        if (selfAlive) {
+        if (selfAlive && (p.selfId() == Protocol.NO_ID || w.selfId() == p.selfId())) {
             radar.selfVisible = true;
             radar.selfX = w.selfX();
             radar.selfY = w.selfY();
             radar.selfHeading = w.selfHeading();
+        } else if (selfAlive) {
+            // watching another player's ship (C Handle_ship: it is not us, so no heading line): a plain blip
+            radar.add(w.selfX(), w.selfY(), WATCHED_BLIP);
         }
     }
+
+    /** C {@code Handle_radar(.., 3)}: the blip of the ship at the view centre when it is not our own. */
+    static final int WATCHED_BLIP = 3;
 
     /**
      * One ship.
      * <p>
-     * BEHAVIOR: a PAUSED ship becomes a paused marker at its position; one without an id (C PKT_PAUSED) carries
-     * C's pause count in its vx (the P blinks while it is above 0), others count 0 (steadily shown).
+     * BEHAVIOR: a PAUSED ship becomes a paused marker at its position carrying C's pause count, which every
+     * paused ship has in its vx (the XP path's PKT_PAUSED and the native server's paused ships alike): the P
+     * blinks while it is above 0; our own ship counts 0 (steadily shown).
      * BEHAVIOR: otherwise a ship with the player's shape (the default ship for unknown players), the
      * {@link #SHIP_PAINT_FLAGS} of its flags, colour {@link ShipPainter#shipColor}(friendly, self, round delay
      * pending) with friendly from {@link #friendly}, the lock flag, and the player's name (null when
@@ -166,7 +182,7 @@ public final class SceneFiller {
     void addShip(SceneData out, Players p, int id, int flags, float x, float y, float heading, boolean self,
                  boolean teamPlay, boolean locked) {
         if ((flags & Records.ShipFlags.PAUSED) != 0) {
-            out.addPaused(x, y, id == Protocol.NO_ID ? Math.max(0, Math.round(pauseCount)) : 0);
+            out.addPaused(x, y, Math.max(0, Math.round(pauseCount)));
             return;
         }
         int slot = p.slotOf(id);
@@ -178,7 +194,7 @@ public final class SceneFiller {
 
     private boolean roundDelay;
     private WorldMap map;
-    /** The vx of the ship being added: C's pause count for a paused ship without an id (see XpTranslator). */
+    /** The vx of the ship being added: C's pause count for a paused ship (see XpTranslator, SnapshotBuilder). */
     private float pauseCount;
 
     /**

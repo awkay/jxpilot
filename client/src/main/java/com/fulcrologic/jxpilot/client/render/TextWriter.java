@@ -75,6 +75,42 @@ public final class TextWriter {
         return glyph(b, c, x, baseline, rgba);
     }
 
+    /**
+     * Draw one char in two colours, cut along the horizontal screen line {@code splitY}: {@code below} under it,
+     * {@code above} over it (a pixel-exact stand-in for C's GXxor text over a bar).
+     * <p>
+     * BEHAVIOR: the quad is placed as {@link #draw(VertexBatch, char, float, float, int)}; {@code splitY} is
+     * rounded to a whole pixel, and the texture is cut at the same line so no texel moves.
+     * BEHAVIOR: a line at or under the glyph's bottom draws all of it {@code above}; at or over its top, all of
+     * it {@code below}; otherwise two quads, the lower one first.
+     * BEHAVIOR: an empty glyph draws nothing.
+     *
+     * @return pen x after the char
+     */
+    public float drawSplit(VertexBatch b, char c, float x, float baseline, float splitY, int below, int above) {
+        int g = Font.slot(c);
+        float gw = font.x1[g] - font.x0[g];
+        float gh = font.y1[g] - font.y0[g];
+        if (gw > 0 && gh > 0) {
+            float left = Math.round(x + font.xoff[g]);
+            float top = Math.round(baseline - font.yoff[g]);
+            float bottom = top - gh;
+            float cut = Math.round(splitY);
+            float u0 = font.x0[g] / font.atlasW;
+            float u1 = font.x1[g] / font.atlasW;
+            float vBottom = font.y1[g] / font.atlasH;
+            float vTop = font.y0[g] / font.atlasH;
+            if (cut <= bottom || cut >= top) {
+                b.texRect(left, bottom, left + gw, top, u0, vBottom, u1, vTop, cut >= top ? below : above);
+            } else {
+                float vCut = vBottom + (vTop - vBottom) * ((cut - bottom) / gh);
+                b.texRect(left, bottom, left + gw, cut, u0, vBottom, u1, vCut, below);
+                b.texRect(left, cut, left + gw, top, u0, vCut, u1, vTop, above);
+            }
+        }
+        return x + font.advance[g];
+    }
+
     /** Draw an int in decimal. */
     public float drawInt(VertexBatch b, int v, float x, float baseline, int rgba) {
         int n = NumberText.formatInt(v, scratch, 0);

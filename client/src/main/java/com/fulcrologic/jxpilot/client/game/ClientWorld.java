@@ -971,7 +971,8 @@ public final class ClientWorld {
             if (a.shipId[i] == selfId || onlyUnused && usedA[i]) {
                 continue;
             }
-            if (a.shipId[i] == Protocol.NO_ID) {
+            if (a.shipId[i] == Protocol.NO_ID || (a.shipFlags[i] & Records.ShipFlags.PAUSED) != 0) {
+                // still: a paused ship's vx is C's pause count, not a velocity
                 putShip(a, i, a.shipX[i], a.shipY[i], a.shipHeading[i], a.shipFlags[i]);
                 continue;
             }
@@ -1103,8 +1104,9 @@ public final class ClientWorld {
                 if (d < bestD) {
                     bestD = d;
                     h = a.shipHeading[s];
-                    vx = a.shipVx[s];
-                    vy = a.shipVy[s];
+                    boolean still = (a.shipFlags[s] & Records.ShipFlags.PAUSED) != 0; // its vx is the pause count
+                    vx = still ? 0 : a.shipVx[s];
+                    vy = still ? 0 : a.shipVy[s];
                     found = true;
                 }
             }

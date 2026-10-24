@@ -95,10 +95,11 @@ class MapSymbolsTest {
         }
 
         @Test
-        void letterIsBlackOnlyWhenTheBarReachesTheCentre() {
+        void letterIsSplitAtTheBarTop() {
             assertAll(
-                () -> assertTrue(MapSymbols.fuelCoversCentre(250), "15 px bar spans [y+2, y+18): reaches 18 >= 17.5"),
-                () -> assertFalse(MapSymbols.fuelCoversCentre(240), "14 px bar stops at y 17"));
+                () -> assertEquals(34, MapSymbols.fuelBarTop(Const.MAX_STATION_FUEL), "full: [y+2, y+3+31) ends at 34"),
+                () -> assertEquals(18, MapSymbols.fuelBarTop(250), "half: 15 px bar ends at y+18"),
+                () -> assertEquals(3, MapSymbols.fuelBarTop(0), "empty: the 1-pixel line ends at y+3"));
         }
 
         @Test
@@ -243,6 +244,32 @@ class MapSymbolsTest {
                 () -> assertEquals(6, b.commandLength(2), "just the 'F'"),
                 () -> assertEquals(BLACK, b.color(b.commandFirst(2)), "F is black on a full station"),
                 () -> assertEquals(1f, b.scaleX(), "text leaves the batch in identity transform"));
+        }
+
+        @Test
+        void fuelLetterIsBlackOverTheBarAndRedAboveIt() {
+            WorldMap m = row(false);
+            Camera c = cam(m, 140, 35, 400, 200);
+            State half = new State();
+            half.fuel = 250;
+            State empty = new State();
+            empty.fuel = 0;
+            VertexBatch b = Segs.batch();
+            new MapSymbols(m, P).draw(b, TEXT, c, half);
+            VertexBatch e = Segs.batch();
+            new MapSymbols(m, P).draw(e, TEXT, c, empty);
+            int by = m.fuels().get(0).by();
+            float cutHalf = Math.round(c.screenY(by * 35 + 18, 0));
+            int f = b.commandFirst(2);
+            int fe = e.commandFirst(2);
+            assertAll(
+                () -> assertEquals(12, b.commandLength(2), "a bar inside the letter cuts it: two quads"),
+                () -> assertEquals(BLACK, b.color(f), "the lower part, over the bar, is black"),
+                () -> assertEquals(RED, b.color(f + 6), "the upper part, above the bar, is red"),
+                () -> assertEquals(cutHalf, b.y(f + 2), "the cut is at the bar top (y+18 of the block)"),
+                () -> assertEquals(cutHalf, b.y(f + 6), "the upper part starts at the cut"),
+                () -> assertEquals(6, e.commandLength(2), "a bar under the letter leaves it whole"),
+                () -> assertEquals(RED, e.color(fe), "the whole letter is red above an empty bar"));
         }
 
         @Test

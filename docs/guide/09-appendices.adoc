@@ -131,6 +131,8 @@ in XPilot)
 |Turn speed default |35 |40
 |Engine sound |a short sound every frame |a loop while you thrust
 |Recording (`keyToggleRecord`) |available |not supported
+|Race scoreboard |a row with no race progress shows the previous row's checkpoint letter (an XPilot bug: the
+client reuses one text buffer) |fixed: the column is blank
 |Showing frames |each frame as it arrives |smooth motion at your screen's refresh rate: other ships about
 90 ms behind the latest frame, your own ship predicted forward from it
 |===

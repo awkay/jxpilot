@@ -66,7 +66,11 @@ class ModelsTest {
             assertAll(
                 () -> assertEquals("   12.3", s(b -> b.appendFixed(12.34, 1, 7)), "%7.1f"),
                 () -> assertEquals("   -3.5", s(b -> b.appendFixed(-3.5, 1, 7)), "negative"),
-                () -> assertEquals("0.0", s(b -> b.appendFixed(-0.04, 1, 0)), "rounds to zero without a sign"),
+                () -> assertEquals("-0.0", s(b -> b.appendFixed(-0.04, 1, 0)), "rounds to zero keeping its sign, like printf"),
+                () -> assertEquals("  -0.0", s(b -> b.appendFixed(-0.04, 1, 6)), "the sign counts toward the width"),
+                () -> assertEquals("0.0", s(b -> b.appendFixed(0.04, 1, 0)), "a positive value rounding to zero has no sign"),
+                () -> assertEquals("-0", s(b -> b.appendFixed(-0.4, 0, 0)), "no decimals: -0.4 prints -0, like %.0f"),
+                () -> assertEquals("-0.0", s(b -> b.appendFixed(-0.0, 1, 0)), "negative zero prints its sign, like printf"),
                 () -> assertEquals("  2", s(b -> b.appendFixed(2.5, 0, 3)), "no decimals: no point; a tie goes to even"),
                 () -> assertEquals("4", s(b -> b.appendFixed(3.5, 0, 0)), "3.5 ties to 4"),
                 () -> assertEquals("2.2", s(b -> b.appendFixed(2.25, 1, 0)), "exact tie 2.25 to even, like printf"),
@@ -367,6 +371,22 @@ class ModelsTest {
                 l.add(sb.label(i).toString());
             }
             return l;
+        }
+
+        @Test
+        @DisplayName("L10: a negative score that rounds to zero shows its minus sign, as C's %*.*f")
+        void negativeZeroScore() {
+            Players p = new Players();
+            p.join(join(1, 0, 0, "Ann", ""));
+            p.join(join(2, 0, 0, "Bob", ""));
+            p.setScore(1, -0.04f, -1, 0);
+            p.setScore(2, 0.04f, -1, 0);
+            Scoreboard sb = new Scoreboard();
+            sb.configure(false, false, false, 1);
+            sb.update(p);
+            assertAll(
+                () -> assertEquals(List.of("       0.0  Bob", "      -0.0  Ann"), labels(sb),
+                    "-0.04 prints -0.0 (printf), +0.04 prints 0.0"));
         }
 
         @Test
