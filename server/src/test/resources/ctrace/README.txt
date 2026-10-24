@@ -76,3 +76,9 @@ remade at home. Thrust sparks' random draws are counted as C's Thrust makes them
   XPREF_IMAGE=xpilot-ref:4.5.5 tools/xpilot-ref/trace.sh
     --map-file server/src/test/resources/ctrace/treasure-cash.xp --seed 42 --after 1 --modes
     --keys "down:Control_L down:Shift_L sleep:0.5 up:Shift_L sleep:4 up:Control_L sleep:1"
+
+race-laps.txt (403 frames): race-laps.xp (race-climb with raceLaps 2): two climbs complete both laps, the race
+finishes (scores, Race_game_over resets everyone) and a new race starts. C's random stream is replayed.
+  XPREF_IMAGE=xpilot-ref:4.5.5 tools/xpilot-ref/trace.sh
+    --map-file server/src/test/resources/ctrace/race-laps.xp --seed 42 --after 1 --modes
+    --keys "down:Shift_L sleep:0.8 up:Shift_L sleep:13 down:Shift_L sleep:0.8 up:Shift_L sleep:13"

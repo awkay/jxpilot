@@ -64,6 +64,8 @@ class ModeTraceTest {
     /** Simulation over a map file from the test resources. */
     static Simulation resourceMap(String name, int seed) throws Exception {
         Options o = new Options();
+        // the C server reads lib/defaults too (e.g. SoftWalls' wall bounce speeds)
+        com.fulcrologic.jxpilot.server.net.DefaultsFile.applyBundled(o);
         Path p = Path.of(ModeTraceTest.class.getResource("/ctrace/" + name).toURI());
         ConfigParser.parseFile(p, OptionOrigin.MAP, o);
         return new Simulation(new World(o, seed));
@@ -336,6 +338,20 @@ class ModeTraceTest {
         assertAll(
             () -> assertEquals(FRAMES_TREASURE_CASH, r.frames(), "all C frames are compared"),
             () -> assertTrue(last > 0, "(team 1 scored " + last + ")"),
+            () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
+    }
+
+    @Test
+    @DisplayName("a 2 lap race: two climbs, lap times and best lap, the finish, Race_game_over's reset and a new "
+        + "race: bit-identical with C's random stream")
+    void raceLaps() throws Exception {
+        ModeTrace t = ModeTrace.load("race-laps.txt");
+        Simulation s = resourceMap("race-laps.xp", 1);
+        Result r = replay(s, t);
+        boolean reset = t.frames.stream().anyMatch(f -> f.frame > 200 && f.players.get(0).round() == 0);
+        assertAll(
+            () -> assertEquals(404, r.frames(), "404 C frames are compared"),
+            () -> assertTrue(reset, "(C finished the race and reset it)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }
 
