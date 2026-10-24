@@ -133,7 +133,7 @@ class ClientWorldTrackingTest {
         }
 
         @Test
-        @DisplayName("an unlinked shot moves on with its estimated velocity; with only an earlier frame all do")
+        @DisplayName("F14: a tracked shot missing from the later frame stays where it died; then it is gone")
         void unlinked() {
             WorldFixture f = new WorldFixture(true);
             shots(f, 98, TEAM, 100, 50);
@@ -144,8 +144,8 @@ class ClientWorldTrackingTest {
             List<String> dying = drawn(f.world);
             f.world.update(at(106.2));
             assertAll(
-                () -> assertEquals(List.of("115.00,50.00"), dying,
-                    "render tick 101: gone in 102, so 110 + 20 px/frame * 0.25 frames"),
+                () -> assertEquals(List.of("110.00,50.00"), dying,
+                    "render tick 101: gone in 102: drawn where 100 has it (no 20 px/frame overshoot)"),
                 () -> assertEquals(0, f.world.shotCount(), "render tick 103: the frame without it is the base"));
         }
 

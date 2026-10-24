@@ -149,7 +149,7 @@ public final class ClientFrame {
         ClientWorld w = game.world();
         boolean inPlay = w.selfPlaying();
         input.setPlaying(inPlay);
-        conn.sendInput(input.keys(), 0, nowNanos);
+        conn.sendInput(input.takeKeys(), 0, nowNanos);
         conn.flush(nowNanos);
         if (w.hasSelf()) {
             centreX = w.selfX();

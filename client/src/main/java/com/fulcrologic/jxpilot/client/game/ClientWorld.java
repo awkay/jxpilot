@@ -1068,7 +1068,9 @@ public final class ClientWorld {
 
     /**
      * BEHAVIOR: between two frames a linked shot is interpolated to its continuation (wrap-aware); an
-     * unlinked one moves by its velocity (the wire's, else the estimate) from the earlier frame; with only
+     * unlinked one with a KNOWN velocity has died (it would have been found) and stays where the earlier frame
+     * has it (no overshoot); other unlinked ones move by their velocity (the wire's, else the estimate) from
+     * the earlier frame; with only
      * an earlier frame every shot is extrapolated that way (at most 2 snapshot intervals); with only a later
      * frame shots are drawn where it has them.
      */
@@ -1087,6 +1089,12 @@ public final class ClientWorld {
             if (j >= 0) {
                 putShot(wrapX(a.shotX[i] + XMath.wrapDelta(b.shotX[j] - a.shotX[i], worldW, wrap) * t),
                     wrapY(a.shotY[i] + XMath.wrapDelta(b.shotY[j] - a.shotY[i], worldH, wrap) * t), a.shotVariant[i]);
+                continue;
+            }
+            if (b != null && a.shotState[i] == Tracker.KNOWN) {
+                // F14: a tracked shot with no continuation died between A and B (wall, ship): drawn where A had
+                // it, as C does, instead of flying on past the impact
+                putShot(a.shotX[i], a.shotY[i], a.shotVariant[i]);
                 continue;
             }
             double vx = a.shotEstVx[i];

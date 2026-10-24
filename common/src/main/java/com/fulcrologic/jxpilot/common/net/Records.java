@@ -715,7 +715,7 @@ public final class Records {
         public int color() { return u8(8); }
     }
 
-    /** Asteroid. {@code 0 rel x, 2 rel y, 4 u8 size, 5 u16 rotation}. */
+    /** Asteroid. {@code 0 rel x, 2 rel y, 4 u8 size (low 4 bits; the shape type in the high 4), 5 u16 rotation}. */
     public static final class Asteroid extends Fly {
         public static final int SIZE = 7;
 
@@ -738,7 +738,7 @@ public final class Records {
         public float rotation() { return Wire.u16ToAngle(b.getShort(o + 5)); }
     }
 
-    /** Wreckage. {@code 0 rel x, 2 rel y, 4 u8 shape, 5 u8 size, 6 u16 rotation}. */
+    /** Wreckage. {@code 0 rel x, 2 rel y, 4 u8 shape (bit 7 = deadly, as C), 5 u8 size, 6 u16 rotation}. */
     public static final class Wreckage extends Fly {
         public static final int SIZE = 8;
 

@@ -170,6 +170,7 @@ class ClientFrameTest {
             input.press(GLFW_KEY_SPACE);
             input.release(GLFW_KEY_SPACE);
             cf.step(T0 + Math.round(1e9 / 14) + 100_000_000L, 800, 600, 1, M, 256, 100);
+            cf.step(T0 + Math.round(1e9 / 14) + 110_000_000L, 800, 600, 1, M, 256, 100); // the tap went out first
             assertAll(
                 () -> assertEquals(420.0, cf.centreX(), "dead ship still the centre"),
                 () -> assertEquals(0L, conn.lastKeys & ControlKey.SHIELD.mask(),

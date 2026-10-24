@@ -157,14 +157,14 @@ class ClientWorldTest {
         }
 
         @Test
-        @DisplayName("shots are extrapolated from A by their whole-pixel velocity")
+        @DisplayName("F14: a shot with a (wire) velocity that B no longer has died: drawn where A has it, no overshoot")
         void shots() {
             WorldFixture f = twoSnapshots(true, 690, 10);
             f.world.update(at(101));
             assertAll(
                 () -> assertEquals(1, f.world.shotCount(), "A's one shot"),
-                () -> assertEquals(201.0, f.world.shotX(0), CLOCK_EPS, "x + 4 px/frame * 0.25 frames"),
-                () -> assertEquals(149.5, f.world.shotY(0), CLOCK_EPS, "y - 2 px/frame * 0.25 frames"),
+                () -> assertEquals(200.0, f.world.shotX(0), CLOCK_EPS, "x as in A (not + 4 px/frame * 0.25)"),
+                () -> assertEquals(150.0, f.world.shotY(0), CLOCK_EPS, "y as in A"),
                 () -> assertEquals(Records.ShotKind.CANNON_SHOT, f.world.shotKind(0), "kind from the variant"),
                 () -> assertEquals(Records.ObjColor.TEAM, f.world.shotColor(0), "colour from the variant"));
         }

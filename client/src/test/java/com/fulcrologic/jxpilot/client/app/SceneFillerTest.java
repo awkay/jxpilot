@@ -463,9 +463,11 @@ class SceneFillerTest {
                 w.endSection();
                 w.beginSection(Section.ASTEROID);
                 Records.Asteroid.put(w, 150, 50, 3, Math.PI / 2);
+                Records.Asteroid.put(w, 152, 50, 1 << 4 | 2, 0);
                 w.endSection();
                 w.beginSection(Section.WRECKAGE);
                 Records.Wreckage.put(w, 160, 50, 2, 8, Math.PI);
+                Records.Wreckage.put(w, 162, 50, 0x80 | 3, 8, 0);
                 w.endSection();
                 w.beginSection(Section.ECM);
                 Records.Ecm.put(w, 170, 50, 60);
@@ -497,6 +499,10 @@ class SceneFillerTest {
                 () -> assertEquals(32, scene.asteroidRot[0], "asteroid rotation RES"),
                 () -> assertEquals(3, scene.asteroidSize[0], "asteroid size"),
                 () -> assertFalse(scene.wreckDeadly[0], "wreck not deadly"),
+                () -> assertTrue(scene.wreckDeadly[1], "bit 7: deadly (C)"),
+                () -> assertEquals(3, scene.wreckType[1], "deadly wreck shape without bit 7"),
+                () -> assertEquals(1, scene.asteroidType[1], "asteroid shape type from the high nibble"),
+                () -> assertEquals(2, scene.asteroidSize[1], "asteroid size from the low nibble"),
                 () -> assertEquals(2, scene.wreckType[0], "wreck shape"),
                 () -> assertEquals(64, scene.wreckRot[0], "wreck rotation RES"),
                 () -> assertEquals(8, scene.wreckSize[0], "wreck size"),

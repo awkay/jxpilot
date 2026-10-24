@@ -162,7 +162,8 @@ public final class SceneFiller {
      * <p>
      * BEHAVIOR: items with their type; mines (team mine iff FRIENDLY, no name); missiles with their length
      * and RES direction; balls, each with its tether ({@link #ballTether}); lasers with RES direction and the object colour ({@link #pointColor});
-     * asteroids (type 0, RES rotation, size); wreckage (not deadly, its shape, RES rotation, size); ECM
+     * asteroids (shape type from the size byte's high nibble, RES rotation, size from its low nibble);
+     * wreckage (deadly iff its shape byte has bit 7 (C), the shape in the low 7 bits, RES rotation, size); ECM
      * flashes of diameter 2 * radius; connectors ({@link #linkKind}: ball pick-up lines, refuel/repair beams
      * from the server's endpoints, tractor/pressor beams) and transporter beams (LINK_TRANSPORTER), each the
      * short way ({@link #line}).
@@ -191,12 +192,14 @@ public final class SceneFiller {
                 res(o.get(ObjectLists.LASER, i, 2)), pointColor((int) o.get(ObjectLists.LASER, i, 4)));
         }
         for (int i = 0; i < o.count(ObjectLists.ASTEROID); i++) {
-            out.addAsteroid(o.get(ObjectLists.ASTEROID, i, 0), o.get(ObjectLists.ASTEROID, i, 1), 0,
-                res(o.get(ObjectLists.ASTEROID, i, 3)), (int) o.get(ObjectLists.ASTEROID, i, 2));
+            int sizeByte = (int) o.get(ObjectLists.ASTEROID, i, 2);
+            out.addAsteroid(o.get(ObjectLists.ASTEROID, i, 0), o.get(ObjectLists.ASTEROID, i, 1), sizeByte >> 4,
+                res(o.get(ObjectLists.ASTEROID, i, 3)), sizeByte & 0x0F);
         }
         for (int i = 0; i < o.count(ObjectLists.WRECK); i++) {
-            out.addWreck(o.get(ObjectLists.WRECK, i, 0), o.get(ObjectLists.WRECK, i, 1), false,
-                (int) o.get(ObjectLists.WRECK, i, 2), res(o.get(ObjectLists.WRECK, i, 4)), (int) o.get(ObjectLists.WRECK, i, 3));
+            int shape = (int) o.get(ObjectLists.WRECK, i, 2);
+            out.addWreck(o.get(ObjectLists.WRECK, i, 0), o.get(ObjectLists.WRECK, i, 1), (shape & 0x80) != 0,
+                shape & 0x7F, res(o.get(ObjectLists.WRECK, i, 4)), (int) o.get(ObjectLists.WRECK, i, 3));
         }
         for (int i = 0; i < o.count(ObjectLists.ECM); i++) {
             out.addEcm(o.get(ObjectLists.ECM, i, 0), o.get(ObjectLists.ECM, i, 1), 2 * o.get(ObjectLists.ECM, i, 2));

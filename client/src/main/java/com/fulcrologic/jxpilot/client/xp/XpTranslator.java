@@ -682,7 +682,9 @@ public final class XpTranslator {
                 double x = wrapX(f.astX[k]);
                 double y = wrapY(f.astY[k]);
                 if (visible(x, y)) {
-                    Records.Asteroid.put(w, x, y, f.astSize[k], f.astRot[k] * RAD_PER_DIR);
+                    // the C shape type rides in the high nibble of the size byte (sizes are 1..4)
+                    Records.Asteroid.put(w, x, y, (f.astType[k] & 0x0F) << 4 | f.astSize[k] & 0x0F,
+                        f.astRot[k] * RAD_PER_DIR);
                 }
             }
             w.endSection();
@@ -692,7 +694,8 @@ public final class XpTranslator {
                 double x = wrapX(f.wreckX[k]);
                 double y = wrapY(f.wreckY[k]);
                 if (visible(x, y)) {
-                    Records.Wreckage.put(w, x, y, f.wreckType[k] & 0x7F, f.wreckSize[k], f.wreckRot[k] * RAD_PER_DIR);
+                    // C wreck type: bit 7 = deadly (drawn red), the rest the shape
+                    Records.Wreckage.put(w, x, y, f.wreckType[k] & 0xFF, f.wreckSize[k], f.wreckRot[k] * RAD_PER_DIR);
                 }
             }
             w.endSection();
