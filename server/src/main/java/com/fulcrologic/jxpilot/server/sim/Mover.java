@@ -201,9 +201,4 @@ public final class Mover {
     public void turnPlayer(Player pl) {
         sim.kernel.mover.turnPlayer(pl, sim.effects);
     }
-
-    /** The wall-bounce rules of Move_player for one hull point ({@link ShipMover#wallBounce}). */
-    boolean wallBounce(Player pl, MoveState m, Params p) {
-        return sim.kernel.mover.wallBounce(pl, m, p, sim.effects);
-    }
 }

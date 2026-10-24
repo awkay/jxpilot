@@ -296,10 +296,6 @@ public final class Keys {
         sim.kernel.keys.pointerMove(pl, movement, sim.effects);
     }
 
-    /** BEHAVIOR: true while hover-paused or on autopilot ({@link ShipKeys#hoverOrAutopilot}). */
-    static boolean hoverOrAutopilot(Player pl) {
-        return ShipKeys.hoverOrAutopilot(pl);
-    }
 
     /**
      * The modifier keys (event.c:623-703), each only when the rules allow it.

@@ -64,30 +64,143 @@ final class KernelFx {
     }
 
     /**
-     * A {@link KernelWorld} for tests: C's {@code rfrac()} from a seeded {@link Rng} (the server world's sequence for
-     * the same seed), a few pool objects for the object branch of wormholes, and short names for the parameters
-     * and the map.
+     * A {@link ShipWorld} for tests: the map's geometry from a {@link KernelWorld} (sizes, wrap, wall distances,
+     * wormhole types and blocks), C's {@code rfrac()} from a seeded {@link Rng} (the server world's sequence for the
+     * same seed), a few pool objects for the object branch of wormholes, and the dynamic state as plain settable
+     * fields. A test-only implementation (KernelWorld is final, so runtime call sites stay bimorphic).
      */
-    static final class TestWorld extends KernelWorld {
+    static final class TestWorld implements ShipWorld {
+        final KernelWorld k;
         final ShipParams params;
         final WorldMap map;
         final Rng rng;
         final Objs objects = new Objs();
+        long frames = 1;
+        int roundDelay;
+        final boolean[] cannonPhased;
+        final int[] targetTeam;
+        final int[] wormLastDest;
+        final int[] wormCountdown;
 
         TestWorld(Options o, int seed) {
-            this(WorldMap.fromOptions(o), o, seed);
-        }
-
-        private TestWorld(WorldMap m, Options o, int seed) {
-            super(m, ShipParams.of(o, m));
-            this.params = shipParams();
-            this.map = m;
+            this.k = KernelWorld.of(o);
+            this.params = k.shipParams();
+            this.map = k.map();
             this.rng = new Rng(seed);
+            cannonPhased = new boolean[map.cannons().size()];
+            targetTeam = new int[map.targets().size()];
+            for (int i = 0; i < targetTeam.length; i++) {
+                targetTeam[i] = k.targetTeam(i);
+            }
+            int n = map.wormholes().size();
+            wormLastDest = new int[n];
+            java.util.Arrays.fill(wormLastDest, -1);
+            wormCountdown = new int[n];
         }
 
         /** C {@code rfrac()}. */
         double rfrac() {
             return rng.nextFloat();
+        }
+
+        @Override
+        public WorldMap map() {
+            return map;
+        }
+
+        @Override
+        public ShipParams shipParams() {
+            return params;
+        }
+
+        @Override
+        public int width() {
+            return k.width();
+        }
+
+        @Override
+        public int height() {
+            return k.height();
+        }
+
+        @Override
+        public int pixelWidth() {
+            return k.pixelWidth();
+        }
+
+        @Override
+        public int pixelHeight() {
+            return k.pixelHeight();
+        }
+
+        @Override
+        public int clickWidth() {
+            return k.clickWidth();
+        }
+
+        @Override
+        public int clickHeight() {
+            return k.clickHeight();
+        }
+
+        @Override
+        public boolean wrap() {
+            return k.wrap();
+        }
+
+        @Override
+        public int wallDist(int bx, int by) {
+            return k.wallDist(bx, by);
+        }
+
+        @Override
+        public long frames() {
+            return frames;
+        }
+
+        @Override
+        public int roundDelay() {
+            return roundDelay;
+        }
+
+        @Override
+        public boolean cannonPhased(int i) {
+            return cannonPhased[i];
+        }
+
+        @Override
+        public int targetTeam(int i) {
+            return targetTeam[i];
+        }
+
+        @Override
+        public int wormholeCount() {
+            return k.wormholeCount();
+        }
+
+        @Override
+        public int wormholeType(int i) {
+            return k.wormholeType(i);
+        }
+
+        @Override
+        public int wormholeBx(int i) {
+            return k.wormholeBx(i);
+        }
+
+        @Override
+        public int wormholeBy(int i) {
+            return k.wormholeBy(i);
+        }
+
+        @Override
+        public int wormholeLastDest(int i) {
+            return wormLastDest[i];
+        }
+
+        @Override
+        public int wormholeCountdown(int i) {
+            return wormCountdown[i];
         }
 
         @Override

@@ -49,15 +49,73 @@ class AllocationTest {
         ControlKey.SHIELD.mask(), ControlKey.FIRE_SHOT.mask(), ControlKey.SWAP_SETTINGS.mask(),
         ControlKey.INCREASE_POWER.mask(), ControlKey.DECREASE_POWER.mask(), ControlKey.CLOAK.mask()
     };
+    /** 16x10: walls, diagonals, a cannon, a target and a gravity source around an open middle. */
     static final String[] ROWS = {
-        "xxxxxxxxxxxx",
-        "x    a    sx",
-        "x  !    r  x",
-        "x     +    x",
-        "x  w    q  x",
-        "x _     x  x",
-        "xxxxxxxxxxxx"
+        "xxxxxxxxxxxxxxxx",
+        "x      a    s  x",
+        "x  !        r  x",
+        "x       +      x",
+        "x              x",
+        "x    _         x",
+        "x  w        q  x",
+        "x       xx     x",
+        "x              x",
+        "xxxxxxxxxxxxxxxx"
     };
+    /** The same open middle with no outer walls on a wrapping map. */
+    static final String[] WRAP_ROWS = {
+        "                ",
+        "       a    s   ",
+        "   !        r   ",
+        "        +       ",
+        "                ",
+        "     _          ",
+        "   w        q   ",
+        "        xx      ",
+        "                ",
+        "                "
+    };
+    static final int RING = 8;
+
+    /**
+     * A per-(frame, call) tie-break source (as predictableBounces would draw): the same frame gives the same draws, so
+     * a replay of a frame decides corner bounces as the original did.
+     */
+    static final class TieBreak implements java.util.function.DoubleSupplier {
+        final double[] table = new double[1024];
+        int base;
+        int n;
+
+        TieBreak() {
+            Rng r = new Rng(77);
+            for (int i = 0; i < table.length; i++) {
+                table[i] = r.nextFloat();
+            }
+        }
+
+        void frame(long f) {
+            base = (int) (f * 16);
+            n = 0;
+        }
+
+        @Override
+        public double getAsDouble() {
+            return table[(base + n++) & (table.length - 1)];
+        }
+    }
+
+    /** One run's counters. */
+    static final class Counts {
+        long allocated;
+        int bounces;
+        int touches;
+        int crashes;
+        int shots;
+        int wraps;
+        int blocks;
+        int replays;
+        int mismatches;
+    }
 
     /** Client-style effects: no-ops, except that a crash puts the ship back on its start, at rest. */
     static final class Events implements KernelEvents {
@@ -143,56 +201,145 @@ class AllocationTest {
     }
 
     @Test
-    @DisplayName("10k kernel steps with the wire codec allocate zero bytes")
+    @DisplayName("10k kernel steps with the codec, the predictor's copy, replay and compare allocate zero bytes")
     void kernelStepIsAllocationFree() {
-        KernelFx.TestWorld w = new KernelFx.TestWorld(KernelFx.options("gravity: -0.3\nturnThrust: yes", ROWS), 3);
-        ShipKernel k = new ShipKernel(w, w::rfrac);
+        Counts c = run("gravity: -0.3\nturnThrust: yes\nmaxUnshieldedWallBounceSpeed: 60\n"
+            + "maxUnshieldedPlayerWallBounceAngle: 180\nplayerWallBounceBrakeFactor: 0.9", ROWS);
+        assertAll(
+            () -> assertEquals(0, c.allocated, "10k kernel steps allocate no bytes"),
+            () -> assertTrue(c.bounces > 0, "the ship bounced off walls with a cost (" + c.bounces + ")"),
+            () -> assertTrue(c.touches > 50, "and touched walls often (" + c.touches + ")"),
+            () -> assertTrue(c.blocks >= 25, "it flew through many blocks (" + c.blocks + " of 160)"),
+            () -> assertTrue(c.crashes < 1000, "crashes were rare, so it was flying (" + c.crashes + " in 10k)"),
+            () -> assertTrue(c.shots > 0, "and fired (" + c.shots + ")"),
+            () -> assertTrue(c.replays > 1000, "the predictor's replays ran (" + c.replays + ")"),
+            () -> assertEquals(0, c.mismatches, "and every replay matched the live body"));
+    }
+
+    @Test
+    @DisplayName("on a wrapping map the measured steps wrap the ship and still allocate zero bytes")
+    void wrapIsAllocationFree() {
+        Counts c = run("edgeWrap: yes\ngravity: -0.3\nmaxUnshieldedWallBounceSpeed: 60\n"
+            + "maxUnshieldedPlayerWallBounceAngle: 180", WRAP_ROWS);
+        assertAll(
+            () -> assertEquals(0, c.allocated, "10k kernel steps allocate no bytes"),
+            () -> assertTrue(c.wraps > 0, "the ship wrapped round an edge (" + c.wraps + ")"),
+            () -> assertTrue(c.crashes < 1000, "crashes were rare (" + c.crashes + " in 10k)"),
+            () -> assertEquals(0, c.mismatches, "every replay matched the live body"));
+    }
+
+    /**
+     * 10k warm-up then 10k measured steps of a ship flying random keys from the open middle, as a predictor would
+     * run them: each step is encoded and decoded, kept in a ring of RING bodies with its key mask and frame, and every
+     * RING steps the oldest is re-seeded and the following steps replayed and compared with the live body.
+     */
+    static Counts run(String options, String[] rows) {
+        KernelFx.TestWorld w = new KernelFx.TestWorld(KernelFx.options(options, rows), 3);
+        TieBreak tb = new TieBreak();
+        ShipKernel k = new ShipKernel(w, tb);
         Events ev = new Events();
-        ShipBody b = KernelFx.ship(3 * Click.BLOCK_CLICKS, 2 * Click.BLOCK_CLICKS, 32, 0, 0);
+        ShipBody b = KernelFx.ship(5 * Click.BLOCK_CLICKS + 1120, 5 * Click.BLOCK_CLICKS + 1120, 32, 0, 0);
         b.status |= Obj.GRAVITY;
         b.have = Has.SHIELD | Has.SHOT;
         b.fuelMax = 1e7;
         ev.startX = b.cx;
         ev.startY = b.cy;
+        Events rev = new Events();
+        rev.startX = b.cx;
+        rev.startY = b.cy;
         ShipBody copy = new ShipBody();
+        ShipBody replay = new ShipBody();
+        ShipBody[] ring = new ShipBody[RING];
+        long[] ringMask = new long[RING];
+        long[] ringFrame = new long[RING];
+        for (int i = 0; i < RING; i++) {
+            ring[i] = new ShipBody();
+        }
+        boolean[] visited = new boolean[w.width() * w.height()];
         ByteBuffer buf = ByteBuffer.allocateDirect(ShipBody.WIRE_SIZE);
         Rng rng = new Rng(9);
         long[] mask = new long[1];
+        Counts c = new Counts();
         for (int i = 0; i < 10_000; i++) {
-            step(k, b, ev, copy, buf, rng, mask, w);
+            step(k, tb, b, ev, rev, copy, replay, ring, ringMask, ringFrame, buf, rng, mask, w, visited, c, i);
         }
-        int touches0 = ev.touches;
-        int crashes0 = ev.crashes;
-        int shots0 = ev.shots;
+        Counts warm = new Counts();
+        copyCounts(ev, c, warm);
+        java.util.Arrays.fill(visited, false);
         long start = MX.getCurrentThreadAllocatedBytes();
         for (int i = 0; i < 10_000; i++) {
-            step(k, b, ev, copy, buf, rng, mask, w);
+            step(k, tb, b, ev, rev, copy, replay, ring, ringMask, ringFrame, buf, rng, mask, w, visited, c, i);
         }
-        long allocated = MX.getCurrentThreadAllocatedBytes() - start;
-        int touches = ev.touches - touches0;
-        int crashes = ev.crashes - crashes0;
-        int shots = ev.shots - shots0;
-        assertAll(
-            () -> assertEquals(0, allocated, "10k kernel steps allocate no bytes"),
-            () -> assertTrue(touches > 0, "the ship touched walls (" + touches + ")"),
-            () -> assertTrue(crashes > 0, "and crashed (" + crashes + ")"),
-            () -> assertTrue(shots > 0, "and fired (" + shots + ")"),
-            () -> assertTrue(copy.sameState(b), "the decoded copy matches the body"));
+        c.allocated = MX.getCurrentThreadAllocatedBytes() - start;
+        c.bounces = ev.bounces - warm.bounces;
+        c.touches = ev.touches - warm.touches;
+        c.crashes = ev.crashes - warm.crashes;
+        c.shots = ev.shots - warm.shots;
+        c.wraps -= warm.wraps;
+        c.replays -= warm.replays;
+        c.mismatches -= warm.mismatches;
+        for (boolean v : visited) {
+            c.blocks += v ? 1 : 0;
+        }
+        System.out.printf("KERNEL-ALLOC bytes %d bounces %d touches %d crashes %d shots %d wraps %d blocks %d replays %d"
+            + " mismatches %d%n", c.allocated, c.bounces, c.touches, c.crashes, c.shots, c.wraps, c.blocks, c.replays,
+            c.mismatches);
+        return c;
     }
 
-    private static void step(ShipKernel k, ShipBody b, Events ev, ShipBody copy, ByteBuffer buf, Rng rng, long[] mask,
-                             KernelFx.TestWorld w) {
+    private static void copyCounts(Events ev, Counts c, Counts into) {
+        into.bounces = ev.bounces;
+        into.touches = ev.touches;
+        into.crashes = ev.crashes;
+        into.shots = ev.shots;
+        into.wraps = c.wraps;
+        into.replays = c.replays;
+        into.mismatches = c.mismatches;
+    }
+
+    private static void step(ShipKernel k, TieBreak tb, ShipBody b, Events ev, Events rev, ShipBody copy, ShipBody replay,
+                             ShipBody[] ring, long[] ringMask, long[] ringFrame, ByteBuffer buf, Rng rng, long[] mask,
+                             KernelFx.TestWorld w, boolean[] visited, Counts c, int i) {
         for (int j = 0; j < KEYS.length; j++) {
-            if (rng.nextFloat() < 0.06f) {
+            if (rng.nextFloat() < (j < 3 ? 0.08f : 0.03f)) {
                 mask[0] ^= KEYS[j];
             }
         }
+        int slot = i % RING;
+        ring[slot].copyFrom(b);
+        ringMask[slot] = mask[0];
+        ringFrame[slot] = w.frames;
+        int x0 = b.cx;
+        int y0 = b.cy;
+        tb.frame(w.frames);
         k.step(b, mask[0], ev);
         if (b.lastWallTouch == w.frames) {
             ev.touches++;
         }
+        if (Math.abs(b.cx - x0) > w.clickWidth() / 2 || Math.abs(b.cy - y0) > w.clickHeight() / 2) {
+            c.wraps++;
+        }
+        if (b.bx >= 0 && b.bx < w.width() && b.by >= 0 && b.by < w.height()) {
+            visited[b.by * w.width() + b.bx] = true;
+        }
         b.encode(buf, 0);
         copy.decode(buf, 0);
         w.frames++;
+        if (slot == RING - 1) {
+            // the predictor: re-seed from the oldest kept state and replay the kept frames; the result must match
+            long now = w.frames;
+            replay.copyFrom(ring[0]);
+            for (int r = 0; r < RING; r++) {
+                w.frames = ringFrame[r];
+                tb.frame(w.frames);
+                k.step(replay, ringMask[r], rev);
+                w.frames = ringFrame[r] + 1;
+            }
+            w.frames = now;
+            c.replays++;
+            if (!replay.sameState(b)) {
+                c.mismatches++;
+            }
+        }
     }
 }

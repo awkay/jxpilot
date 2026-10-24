@@ -29,9 +29,11 @@ import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.math.Rng;
 import com.fulcrologic.jxpilot.common.net.ControlKey;
 import com.fulcrologic.jxpilot.common.sim.KernelEvents;
+import com.fulcrologic.jxpilot.common.sim.KernelWorld;
 import com.fulcrologic.jxpilot.common.sim.MoveState;
 import com.fulcrologic.jxpilot.common.sim.ShipBody;
 import com.fulcrologic.jxpilot.common.sim.ShipKernel;
+import com.fulcrologic.jxpilot.common.sim.ShipParams;
 import com.fulcrologic.jxpilot.server.net.DefaultsFile;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -43,6 +45,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -52,14 +55,24 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The ship kernel run on its own ({@link ShipKernel} over the same read-only world, with client-style no-op
- * effects) against the full server simulation, phase by phase, on every shipped map: four humans pressing random
- * flight, shield, fire and item keys, and four robots, for {@value #TICKS} ticks.
+ * The ship kernel run on its own, with client-style no-op effects, against the full server simulation, phase by
+ * phase, on every shipped map: four humans pressing random flight, shield, fire and item keys, and four robots, for
+ * {@value #TICKS} ticks.
  * <p>
  * The rule: every kernel phase the server runs for a ship (key handling, autofire, the flying part of the player
- * loop) is replayed from the server's exact state at the start of that phase by a separate kernel, with the same
- * key mask and the same bounce tie-break draws (recorded from the server's source), and the resulting
- * {@link ShipBody} must equal the server's player in every field, bit for bit. A phase is excluded iff
+ * loop) is replayed from the server's exact state at the start of that phase, with the same key mask and the same
+ * bounce tie-break draws (recorded from the server's source), twice:
+ * <ul>
+ *   <li>the client path: the state is encoded with {@link ShipBody#encode} and decoded into a fresh body (only the
+ *   hull carried over), and run by a kernel over a {@link KernelWorld} built from {@link ShipParams#of} the same
+ *   options, with the dynamic state a snapshot would carry mirrored from the server (frame clock, round delay,
+ *   cannon phasing, target teams, the wormhole table); the result must be {@link ShipBody#sameState} with the
+ *   server's player (every wire field bit for bit). The map itself is the server's live map (its block changes are
+ *   what a client must be sent; 1b);</li>
+ *   <li>the server path: a copy of every field run by a kernel over the server's own world; the result must equal
+ *   the server's player in every one of its 49 fields.</li>
+ * </ul>
+ * A phase is excluded iff
  * <ul>
  *   <li>one of the server's {@link KernelEvents} callbacks changed that ship during the phase (devices, refuelling,
  *   target repair, warps, items destroyed by a bounce, missiles and mines fired by keys, an autopilot switched off,
@@ -71,8 +84,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * These are the interactions the kernel cannot know about. Whatever the server does to a ship between phases
  * (collisions, shoves, ECM, ball connectors, robots' steering, respawns) needs no rule: each phase starts from the
  * server's state. Two configurations per map: flight (the kernel's own keys, no items; at least 80% of fly phases
- * must be checked) and items (every device and weapon, so many phases interact; the checked ones must still
- * match).
+ * must be checked) and items (every device and weapon, temporary wormholes from hyperjumps; many phases interact,
+ * at least 10% of fly phases must still be checked, with wall contact, and match).
  */
 @DisplayName("Ship kernel against the server simulation (every shipped map)")
 class KernelDifferentialTest {
@@ -83,15 +96,17 @@ class KernelDifferentialTest {
         ControlKey.THRUST, ControlKey.TURN_LEFT, ControlKey.TURN_RIGHT, ControlKey.FIRE_SHOT, ControlKey.SHIELD
     };
     static final String FLIGHT = "maxRobots: 4\nminRobots: 4\nrobotLeaveLife: 0\nlimitedLives: no\n";
+    /** Every device and weapon (the parity test's item world) plus temporary wormholes from hyperjumps. */
+    static final String ITEMS = MapDigestParityTest.EXTRA + "wormTime: 3\n";
 
     /** The outcome for one map. */
     record Result(String map, int[] checked, int[] excluded, int wallTouches, int gravityPhases, int wraps,
-                  java.util.Map<String, Integer> why, List<String> mismatches) {
+                  int tempWormholePhases, java.util.Map<String, Integer> why, List<String> mismatches) {
         String line(String config) {
             return String.format(java.util.Locale.ROOT, "KERNEL %-6s %-16s keys %6d/%6d autofire %6d/%6d fly %6d/%6d"
-                    + " wallTouches %5d gravity %6d wraps %3d", config, map, checked[0], checked[0] + excluded[0],
-                checked[1], checked[1] + excluded[1], checked[2], checked[2] + excluded[2], wallTouches, gravityPhases,
-                wraps);
+                    + " wallTouches %5d gravity %6d wraps %3d tempWormholes %5d", config, map, checked[0],
+                checked[0] + excluded[0], checked[1], checked[1] + excluded[1], checked[2], checked[2] + excluded[2],
+                wallTouches, gravityPhases, wraps, tempWormholePhases);
         }
     }
 
@@ -118,7 +133,7 @@ class KernelDifferentialTest {
             }
         }
         long[] in = new long[w.players.length];
-        Checker c = new Checker(s, in);
+        Checker c = new Checker(s, in, o);
         Rng keys = new Rng(seed * 31 + 7);
         for (int t = 0; t < TICKS; t++) {
             for (int k = 0; k < w.numPlayers; k++) {
@@ -134,7 +149,8 @@ class KernelDifferentialTest {
             c.tick = t;
             s.tick(in);
         }
-        return new Result(map, c.checked, c.excluded, c.wallTouches, c.gravityPhases, c.wraps, c.why, c.mismatches);
+        return new Result(map, c.checked, c.excluded, c.wallTouches, c.gravityPhases, c.wraps, c.tempWormholePhases,
+            c.why, c.mismatches);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -158,11 +174,15 @@ class KernelDifferentialTest {
     @MethodSource("maps")
     @DisplayName("items: with every device and weapon in use, every checked phase is still reproduced bit for bit")
     void items(String map) throws IOException {
-        Result r = run(map, 5, MapDigestParityTest.EXTRA, MapDigestParityTest.KEYS);
+        Result r = run(map, 5, ITEMS, MapDigestParityTest.KEYS);
         System.out.println(r.line("items") + " excluded by " + r.why());
+        int fly = r.checked()[KernelEvents.PHASE_FLY];
+        int flyAll = fly + r.excluded()[KernelEvents.PHASE_FLY];
         assertAll(
             () -> assertEquals(List.of(), r.mismatches(), map + ": no checked phase differs from the server"),
-            () -> assertTrue(r.checked()[KernelEvents.PHASE_FLY] > 0, map + ": fly phases were checked"),
+            () -> assertTrue(fly * 10 >= flyAll, map + ": at least 10% of fly phases are checked (" + fly + " of "
+                + flyAll + ")"),
+            () -> assertTrue(r.wallTouches() > 0, map + ": checked phases include wall contact"),
             () -> assertTrue(r.checked()[KernelEvents.PHASE_KEYS] > 0, map + ": key phases were checked"));
     }
 
@@ -170,6 +190,117 @@ class KernelDifferentialTest {
         return List.of("blood-music2.xp", "CAMD.xp", "cloudscape.xp", "default.xp", "doggy.xp", "fireball.xp",
             "fuzz.xp", "fuzz2.xp", "globe.xp", "grandprix.xp", "newdarkhell.xp", "newdarkhell2.xp", "pad.xp", "pit.xp",
             "planetx.xp", "teamball.xp", "tourmination.xp", "tournament.xp", "war.xp");
+    }
+
+    /**
+     * Every ShipBody field, classified: on the wire (the prediction state {@link ShipBody#encode} carries and
+     * {@link ShipBody#sameState} compares) or off it (derived from the clicks, written but never read by the kernel,
+     * or the hull). A new field fails {@link #everyFieldClassified} until it is added here.
+     */
+    static final java.util.Map<String, Boolean> ON_WIRE = java.util.Map.ofEntries(
+        java.util.Map.entry("cx", true), java.util.Map.entry("cy", true), java.util.Map.entry("px", false),
+        java.util.Map.entry("py", false), java.util.Map.entry("bx", false), java.util.Map.entry("by", false),
+        java.util.Map.entry("prevX", false), java.util.Map.entry("prevY", false), java.util.Map.entry("vx", true),
+        java.util.Map.entry("vy", true), java.util.Map.entry("accX", false), java.util.Map.entry("accY", false),
+        java.util.Map.entry("velocity", true), java.util.Map.entry("mass", true),
+        java.util.Map.entry("emptyMass", true), java.util.Map.entry("status", true), java.util.Map.entry("have", true),
+        java.util.Map.entry("used", true), java.util.Map.entry("dir", true), java.util.Map.entry("floatDir", true),
+        java.util.Map.entry("turnVel", true), java.util.Map.entry("oldTurnVel", true),
+        java.util.Map.entry("turnAcc", true), java.util.Map.entry("turnSpeed", true),
+        java.util.Map.entry("turnResistance", true), java.util.Map.entry("power", true),
+        java.util.Map.entry("powerS", true), java.util.Map.entry("turnSpeedS", true),
+        java.util.Map.entry("turnResistanceS", true), java.util.Map.entry("fuel", true),
+        java.util.Map.entry("fuelMax", true), java.util.Map.entry("tankFuel", false),
+        java.util.Map.entry("numTanks", false), java.util.Map.entry("currentTank", false),
+        java.util.Map.entry("shieldTime", true), java.util.Map.entry("stunned", true), java.util.Map.entry("shots", true),
+        java.util.Map.entry("shotMax", true), java.util.Map.entry("shotTime", true), java.util.Map.entry("mods", true),
+        java.util.Map.entry("team", true), java.util.Map.entry("items", true), java.util.Map.entry("wormHoleDest", true),
+        java.util.Map.entry("lastWallTouch", false), java.util.Map.entry("frameLastBusy", false),
+        java.util.Map.entry("prevKeys", true), java.util.Map.entry("lastReceivedKeys", true),
+        java.util.Map.entry("keysCleared", true), java.util.Map.entry("ship", false));
+
+    @Test
+    @DisplayName("every ShipBody field is classified on or off the wire, and the codec agrees with the classification")
+    void everyFieldClassified() throws IllegalAccessException {
+        java.util.Set<String> declared = new java.util.TreeSet<>();
+        List<String> wrong = new ArrayList<>();
+        ByteBuffer buf = ByteBuffer.allocate(ShipBody.WIRE_SIZE);
+        for (Field f : ShipBody.class.getDeclaredFields()) {
+            if (Modifier.isStatic(f.getModifiers())) {
+                continue;
+            }
+            declared.add(f.getName());
+            ShipBody a = new ShipBody();
+            setDistinct(f, a);
+            a.encode(buf, 0);
+            ShipBody b = new ShipBody();
+            b.decode(buf, 0);
+            boolean carried = sameField(f, a, b);
+            boolean changed = !sameField(f, a, new ShipBody());
+            if (!changed || (ON_WIRE.containsKey(f.getName()) && carried != ON_WIRE.get(f.getName()))) {
+                wrong.add(f.getName() + (changed ? " carried=" + carried : " (could not set)"));
+            }
+        }
+        assertAll(
+            () -> assertEquals(new java.util.TreeSet<>(ON_WIRE.keySet()), declared,
+                "every ShipBody instance field is classified, and only those"),
+            () -> assertEquals(List.of(), wrong, "a field crosses the wire iff it is classified on the wire"));
+    }
+
+    /** Give field {@code f} of {@code b} a value different from a fresh body's, small enough for any wire width. */
+    private static void setDistinct(Field f, ShipBody b) throws IllegalAccessException {
+        Class<?> t = f.getType();
+        if (t == int.class) {
+            f.setInt(b, 77);
+        } else if (t == long.class) {
+            f.setLong(b, 77L);
+        } else if (t == float.class) {
+            f.setFloat(b, 1.5f);
+        } else if (t == double.class) {
+            f.setDouble(b, 2.5);
+        } else if (t == boolean.class) {
+            f.setBoolean(b, true);
+        } else if (t == int[].class) {
+            ((int[]) f.get(b))[0] = 7;
+        } else if (t == double[].class) {
+            ((double[]) f.get(b))[0] = 7;
+        } else if (f.getName().equals("ship")) {
+            f.set(b, com.fulcrologic.jxpilot.common.sim.ShipGeom.parse(
+                "(SH: 10,0 0,10 -10,0 0,-10)(EN: -10,0)(MG: 10,0)"));
+        }
+    }
+
+    private static boolean sameField(Field f, ShipBody a, ShipBody b) throws IllegalAccessException {
+        Object x = f.get(a);
+        Object y = f.get(b);
+        if (x instanceof int[] xi) {
+            return java.util.Arrays.equals(xi, (int[]) y);
+        }
+        if (x instanceof double[] xd) {
+            return java.util.Arrays.equals(xd, (double[]) y);
+        }
+        if (x instanceof Float xf) {
+            return Float.floatToRawIntBits(xf) == Float.floatToRawIntBits((Float) y);
+        }
+        if (x instanceof Double xd) {
+            return Double.doubleToRawLongBits(xd) == Double.doubleToRawLongBits((Double) y);
+        }
+        return f.getType().isPrimitive() ? x.equals(y) : x == y;
+    }
+
+    /** The first wire field that differs (for a client-path mismatch message). */
+    static String wireDiff(ShipBody a, ShipBody b) {
+        try {
+            for (Field f : ShipBody.class.getDeclaredFields()) {
+                if (!Modifier.isStatic(f.getModifiers()) && Boolean.TRUE.equals(ON_WIRE.get(f.getName()))
+                    && !sameField(f, a, b)) {
+                    return f.getName() + " " + (f.getType().isArray() ? "differs" : f.get(a) + " vs " + f.get(b));
+                }
+            }
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(e);
+        }
+        return "no wire field differs";
     }
 
     @Test
@@ -197,6 +328,11 @@ class KernelDifferentialTest {
         final KernelEvents real;
         final long[] input;
         final ShipKernel copy;
+        /** The client path: a kernel over a KernelWorld from ShipParams.of, fed decoded wire state. */
+        final KernelWorld kw;
+        final ShipKernel client;
+        final ByteBuffer wire = ByteBuffer.allocate(ShipBody.WIRE_SIZE);
+        int tempWormholePhases;
         final Replay replay = new Replay();
         final ShipBody pre = new ShipBody();
         final ShipBody k = new ShipBody();
@@ -216,7 +352,7 @@ class KernelDifferentialTest {
         int wraps;
         final List<String> mismatches = new ArrayList<>();
 
-        Checker(Simulation s, long[] input) {
+        Checker(Simulation s, long[] input, Options options) {
             this.s = s;
             this.w = s.world;
             this.real = s.effects;
@@ -230,6 +366,39 @@ class KernelDifferentialTest {
                 return d;
             });
             this.copy = new ShipKernel(w, () -> nextDraw < nDraws ? draws[nextDraw++] : Double.NaN);
+            this.kw = new KernelWorld(w.map, ShipParams.of(options, w.map));
+            this.client = new ShipKernel(kw, () -> nextDraw < nDraws ? draws[nextDraw++] : Double.NaN);
+        }
+
+        /** What a snapshot would carry for the client's world view, copied from the server now. */
+        private void mirror() {
+            kw.frames = w.frames;
+            kw.roundDelay = w.roundDelay;
+            for (int i = 0; i < kw.cannonPhased.length; i++) {
+                kw.cannonPhased[i] = w.cannonPhased(i);
+            }
+            for (int i = 0; i < kw.targetTeam.length; i++) {
+                kw.targetTeam[i] = w.targetTeam(i);
+            }
+            kw.setWormholeCount(w.worms.count());
+            int cap = w.worms.capacity();
+            for (int i = 0; i < cap; i++) {
+                if (i >= kw.mapWormholes()) {
+                    kw.setTempWormhole(i, w.worms.bx(i), w.worms.by(i), w.worms.type(i));
+                }
+                kw.setWormholeState(i, w.worms.lastDest(i), w.worms.countdown(i));
+            }
+        }
+
+        /** Run phase {@code ph} of {@code kernel} on {@code body} with the replayed draws and answers. */
+        private void replayPhase(ShipKernel kernel, ShipBody body, int ph, int slot) {
+            nextDraw = 0;
+            replay.rewind();
+            switch (ph) {
+                case PHASE_KEYS -> kernel.keys.apply(body, input[slot], replay);
+                case PHASE_AUTOFIRE -> kernel.shooter.autofire(body, replay);
+                default -> kernel.fly(body, replay);
+            }
         }
 
         @Override
@@ -251,17 +420,25 @@ class KernelDifferentialTest {
                 excluded[ph]++;
                 return;
             }
+            int slot = ((Player) b).slot;
             k.copyFrom(pre);
-            nextDraw = 0;
-            replay.rewind();
-            switch (ph) {
-                case PHASE_KEYS -> copy.keys.apply(k, input[((Player) b).slot], replay);
-                case PHASE_AUTOFIRE -> copy.shooter.autofire(k, replay);
-                default -> copy.fly(k, replay);
-            }
+            replayPhase(copy, k, ph, slot);
             String d = diff(k, b);
             if (d == null && nextDraw != nDraws) {
                 d = "tie-break draws " + nextDraw + " of " + nDraws;
+            }
+            if (d == null) {
+                ShipBody fresh = new ShipBody();
+                fresh.ship = pre.ship;
+                pre.encode(wire, 0);
+                fresh.decode(wire, 0);
+                mirror();
+                replayPhase(client, fresh, ph, slot);
+                if (!fresh.sameState(b)) {
+                    d = "client path: " + wireDiff(fresh, b);
+                } else if (nextDraw != nDraws) {
+                    d = "client path: tie-break draws " + nextDraw + " of " + nDraws;
+                }
             }
             if (d != null) {
                 if (mismatches.size() < 5) {
@@ -273,6 +450,9 @@ class KernelDifferentialTest {
                 return;
             }
             checked[ph]++;
+            if (w.worms.tempCount() > 0) {
+                tempWormholePhases++;
+            }
             if (ph == PHASE_FLY) {
                 if (b.lastWallTouch == w.frames) {
                     wallTouches++;

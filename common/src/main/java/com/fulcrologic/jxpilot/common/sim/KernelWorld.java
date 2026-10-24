@@ -31,11 +31,20 @@ import java.util.Arrays;
 
 /**
  * A {@link ShipWorld} over a map and its kernel parameters, with the dynamic state set explicitly: the frame clock,
- * the round delay, which cannons are phased, the targets' teams and the map wormholes' destinations. This is the
+ * the round delay, which cannons are phased, the targets' teams and the wormhole table. This is the
  * world a client predicts its own ship in (it fills the dynamic state from snapshots); tests use it too. It has no
- * pool objects and no temporary wormholes.
+ * pool objects.
+ * <p>
+ * Wormholes: the map's come first (their types and blocks from the map); temporary ones (hyperjumps with
+ * {@code wormTime}) are mirrored with {@link #setTempWormhole} and {@link #setWormholeCount}. The server's map blocks
+ * may name a wormhole index this table has not been told about (or one past the end, which C and the server read as
+ * a stale copy); such an index reads as an IN wormhole with no destination, so a ship entering it warps (the
+ * predictor stops predicting) instead of the kernel failing.
  */
-public class KernelWorld implements ShipWorld {
+public final class KernelWorld implements ShipWorld {
+    /** Temporary wormholes the table holds before it grows (the server's {@code WormTable} starts with as many). */
+    public static final int TEMP_CAPACITY = 64;
+
     private final WorldMap map;
     private final ShipParams params;
     private final byte[] wallDist;
@@ -46,7 +55,13 @@ public class KernelWorld implements ShipWorld {
     private final int clickWidth;
     private final int clickHeight;
     private final boolean wrap;
-    private final int[] wormType;
+    private final int mapWormholes;
+    private int wormCount;
+    private int[] wormBx;
+    private int[] wormBy;
+    private int[] wormType;
+    private int[] wormLastDest;
+    private int[] wormCountdown;
 
     /** C {@code frame_loops}. */
     public long frames = 1;
@@ -56,14 +71,10 @@ public class KernelWorld implements ShipWorld {
     public final boolean[] cannonPhased;
     /** Per map target: its team (initially the map's in team play, else 0, as the server starts them). */
     public final int[] targetTeam;
-    /** Per map wormhole: the last destination (initially -1). */
-    public final int[] wormLastDest;
-    /** Per map wormhole: frames until it picks a new destination (initially 0). */
-    public final int[] wormCountdown;
 
     /**
      * BEHAVIOR: the size, wrap and wall distances are the map's; targets start with their map team (0 outside team
-     * play), wormholes
+     * play), the map's wormholes
      * with no destination and no countdown, no cannon is phased, the frame clock is 1 (C's first frame).
      */
     public KernelWorld(WorldMap map, ShipParams params) {
@@ -83,14 +94,23 @@ public class KernelWorld implements ShipWorld {
             targetTeam[i] = map.teamPlay() ? map.targets().get(i).team() : 0;
         }
         int n = map.wormholes().size();
-        wormType = new int[n];
-        for (int i = 0; i < n; i++) {
-            Wormhole.Type t = map.wormholes().get(i).type();
-            wormType[i] = t == Wormhole.Type.IN ? WORM_IN : (t == Wormhole.Type.OUT ? WORM_OUT : WORM_NORMAL);
-        }
-        wormLastDest = new int[n];
+        mapWormholes = n;
+        wormCount = n;
+        int cap = n + TEMP_CAPACITY;
+        wormBx = new int[cap];
+        wormBy = new int[cap];
+        wormType = new int[cap];
+        wormLastDest = new int[cap];
+        wormCountdown = new int[cap];
         Arrays.fill(wormLastDest, -1);
-        wormCountdown = new int[n];
+        Arrays.fill(wormType, WORM_IN);
+        for (int i = 0; i < n; i++) {
+            Wormhole h = map.wormholes().get(i);
+            Wormhole.Type t = h.type();
+            wormType[i] = t == Wormhole.Type.IN ? WORM_IN : (t == Wormhole.Type.OUT ? WORM_OUT : WORM_NORMAL);
+            wormBx[i] = h.bx();
+            wormBy[i] = h.by();
+        }
     }
 
     /** BEHAVIOR: the world of the map in {@code o} with the kernel parameters {@link ShipParams#of} gives for it. */
@@ -169,34 +189,100 @@ public class KernelWorld implements ShipWorld {
         return targetTeam[i];
     }
 
+    /** The map's wormholes (indices below this are the map's). */
+    public int mapWormholes() {
+        return mapWormholes;
+    }
+
+    /**
+     * Mirror the wormhole count: the map's plus the temporary ones.
+     * <p>
+     * BEHAVIOR: never below the map's count (indices the table does not hold read as unknown, see the class doc).
+     */
+    public void setWormholeCount(int n) {
+        wormCount = Math.max(mapWormholes, n);
+    }
+
+    /**
+     * Mirror temporary wormhole {@code i} (an index at or above {@link #mapWormholes}): its block and type.
+     * <p>
+     * BEHAVIOR: a map wormhole's index is ignored (the map defines those); the table grows to hold {@code i}.
+     */
+    public void setTempWormhole(int i, int bx, int by, int type) {
+        if (i < mapWormholes) {
+            return;
+        }
+        ensure(i + 1);
+        wormBx[i] = bx;
+        wormBy[i] = by;
+        wormType[i] = type;
+    }
+
+    /**
+     * Mirror wormhole {@code i}'s last destination and countdown.
+     * <p>
+     * BEHAVIOR: the table grows to hold {@code i}.
+     */
+    public void setWormholeState(int i, int lastDest, int countdown) {
+        ensure(i + 1);
+        wormLastDest[i] = lastDest;
+        wormCountdown[i] = countdown;
+    }
+
+    /** Grow the table to at least {@code n} entries (doubling; never in a steady state). */
+    private void ensure(int n) {
+        if (n <= wormType.length) {
+            return;
+        }
+        int old = wormType.length;
+        int cap = Math.max(n, 2 * old);
+        wormBx = Arrays.copyOf(wormBx, cap);
+        wormBy = Arrays.copyOf(wormBy, cap);
+        wormType = Arrays.copyOf(wormType, cap);
+        wormLastDest = Arrays.copyOf(wormLastDest, cap);
+        wormCountdown = Arrays.copyOf(wormCountdown, cap);
+        Arrays.fill(wormType, old, cap, WORM_IN);
+        Arrays.fill(wormLastDest, old, cap, -1);
+    }
+
+    private boolean known(int i) {
+        return i >= 0 && i < wormType.length;
+    }
+
+    /** BEHAVIOR: the map's wormholes plus the mirrored temporary ones. */
     @Override
     public int wormholeCount() {
-        return wormType.length;
+        return wormCount;
     }
 
+    /** BEHAVIOR: the map's or mirrored type; an index the table never held reads as IN. */
     @Override
     public int wormholeType(int i) {
-        return wormType[i];
+        return known(i) ? wormType[i] : WORM_IN;
     }
 
+    /** BEHAVIOR: the block x; 0 for an index the table never held. */
     @Override
     public int wormholeBx(int i) {
-        return map.wormholes().get(i).bx();
+        return known(i) ? wormBx[i] : 0;
     }
 
+    /** BEHAVIOR: the block y; 0 for an index the table never held. */
     @Override
     public int wormholeBy(int i) {
-        return map.wormholes().get(i).by();
+        return known(i) ? wormBy[i] : 0;
     }
 
+    /** BEHAVIOR: the mirrored last destination; -1 (none) initially and for an index the table never held. */
     @Override
     public int wormholeLastDest(int i) {
-        return wormLastDest[i];
+        return known(i) ? wormLastDest[i] : -1;
     }
 
+    /** BEHAVIOR: the mirrored countdown; 0 initially and for an index the table never held. */
     @Override
     public int wormholeCountdown(int i) {
-        return wormCountdown[i];
+        return known(i) ? wormCountdown[i] : 0;
     }
 
     /** BEHAVIOR: 0: this world has no pool objects (only ships are moved in it). */

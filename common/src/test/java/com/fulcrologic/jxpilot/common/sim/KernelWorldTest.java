@@ -103,8 +103,7 @@ class KernelWorldTest {
                 };
             }
             w.cannonPhased[0] = true;
-            w.wormLastDest[1] = 2;
-            w.wormCountdown[1] = 7;
+            w.setWormholeState(1, 2, 7);
             w.frames = 99;
             w.roundDelay = 4;
             assertAll(
@@ -121,6 +120,90 @@ class KernelWorldTest {
                 () -> assertEquals(7, w.wormholeCountdown(1), "the set countdown"),
                 () -> assertEquals(99L, w.frames(), "the set clock"),
                 () -> assertEquals(4, w.roundDelay(), "the set round delay"));
+        }
+    }
+
+    @Nested
+    @DisplayName("KernelWorld wormhole table")
+    class Wormholes {
+        @Test
+        @DisplayName("temporary wormholes are mirrored after the map's; the table grows; a map index is not overwritten")
+        void temporary() {
+            KernelWorld w = KernelWorld.of(KernelFx.options("", FEATURES));
+            int n = w.mapWormholes();
+            w.setTempWormhole(n, 4, 0, ShipWorld.WORM_IN);
+            w.setTempWormhole(n + 1, 0, 2, ShipWorld.WORM_OUT);
+            w.setWormholeCount(n + 2);
+            w.setWormholeState(n, n + 1, 12);
+            int far = n + KernelWorld.TEMP_CAPACITY + 5;
+            w.setTempWormhole(far, 3, 1, ShipWorld.WORM_OUT);
+            int mapType = w.wormholeType(0);
+            int mapBx = w.wormholeBx(0);
+            w.setTempWormhole(0, 9, 9, ShipWorld.WORM_OUT);
+            KernelWorld low = KernelWorld.of(KernelFx.options("", FEATURES));
+            low.setWormholeCount(1);
+            KernelWorld big = KernelWorld.of(KernelFx.options("", FEATURES));
+            big.setTempWormhole(200, 2, 1, ShipWorld.WORM_OUT);
+            KernelWorld state = KernelWorld.of(KernelFx.options("", FEATURES));
+            state.setWormholeState(300, 4, 5);
+            state.setWormholeState(0, 2, 3);
+            assertAll(
+                () -> assertEquals(3, n, "(fixture: three map wormholes)"),
+                () -> assertEquals(n + 2, w.wormholeCount(), "the count includes the temporary ones"),
+                () -> assertEquals(ShipWorld.WORM_IN, w.wormholeType(n), "a mirrored IN"),
+                () -> assertEquals(4, w.wormholeBx(n), "at its block x"),
+                () -> assertEquals(0, w.wormholeBy(n), "and y"),
+                () -> assertEquals(ShipWorld.WORM_OUT, w.wormholeType(n + 1), "a mirrored OUT"),
+                () -> assertEquals(2, w.wormholeBy(n + 1), "at its block"),
+                () -> assertEquals(n + 1, w.wormholeLastDest(n), "the mirrored destination"),
+                () -> assertEquals(12, w.wormholeCountdown(n), "and countdown"),
+                () -> assertEquals(ShipWorld.WORM_OUT, w.wormholeType(far), "beyond the first capacity the table grew"),
+                () -> assertEquals(3, w.wormholeBx(far), "and holds the block"),
+                () -> assertEquals(ShipWorld.WORM_IN, w.wormholeType(far - 1), "a slot never mirrored reads as IN"),
+                () -> assertEquals(-1, w.wormholeLastDest(far - 1), "with no destination"),
+                () -> assertEquals(mapType, w.wormholeType(0), "a map wormhole keeps its map type"),
+                () -> assertEquals(mapBx, w.wormholeBx(0), "and block"),
+                () -> assertEquals(n, low.wormholeCount(), "the count never drops below the map's"),
+                () -> assertEquals(ShipWorld.WORM_IN, w.wormholeType(n + 5), "an unmirrored slot within capacity: IN"),
+                () -> assertEquals(-1, w.wormholeLastDest(n + 5), "with no destination"),
+                () -> assertEquals(ShipWorld.WORM_OUT, big.wormholeType(200), "a fresh table grows to a far index"),
+                () -> assertEquals(2, big.wormholeBx(200), "and holds its block"),
+                () -> assertEquals(4, state.wormholeLastDest(300), "state at a far index grows the table too"),
+                () -> assertEquals(5, state.wormholeCountdown(300), "with the countdown"),
+                () -> assertEquals(2, state.wormholeLastDest(0), "index 0 is a held index"),
+                () -> assertEquals(3, state.wormholeCountdown(0), "with its countdown"));
+        }
+
+        @Test
+        @DisplayName("an index the table never held reads as an IN wormhole with no destination, also when negative")
+        void unknown() {
+            KernelWorld w = KernelWorld.of(KernelFx.options("", FEATURES));
+            int huge = 100_000;
+            assertAll(
+                () -> assertEquals(ShipWorld.WORM_IN, w.wormholeType(huge), "type IN"),
+                () -> assertEquals(0, w.wormholeBx(huge), "block x 0"),
+                () -> assertEquals(0, w.wormholeBy(huge), "block y 0"),
+                () -> assertEquals(-1, w.wormholeLastDest(huge), "no destination"),
+                () -> assertEquals(0, w.wormholeCountdown(huge), "no countdown"),
+                () -> assertEquals(ShipWorld.WORM_IN, w.wormholeType(-1), "a negative index too"),
+                () -> assertEquals(ShipWorld.WORM_IN, w.wormholeType(3 + KernelWorld.TEMP_CAPACITY),
+                    "the first index past the initial table"),
+                () -> assertEquals(-1, w.wormholeLastDest(-1), "with no destination"));
+        }
+
+        @Test
+        @DisplayName("a ship flying into a mirrored wormhole block the table does not know warps instead of failing")
+        void mirroredBlock() {
+            // a wall at block (2,2) keeps (3,2) traced (wall distances are not recomputed for new blocks, as C)
+            KernelWorld w = KernelWorld.of(KernelFx.options("", "       ", "       ", " _x    ", "       ", "       "));
+            w.map().setBlock(3, 2, com.fulcrologic.jxpilot.common.map.BlockType.WORMHOLE);
+            w.map().setItemId(3, 2, 500);
+            ShipBody p = KernelFx.ship(3 * Click.BLOCK_CLICKS + 1120, 2 * Click.BLOCK_CLICKS + 1120, 0, 1, 0);
+            KernelFx.Rec r = new KernelFx.Rec();
+            new ShipMover(w, () -> 0.5).movePlayer(p, r);
+            assertAll(
+                () -> assertEquals(MoveState.CRASH_WORMHOLE, r.crashType, "the unknown hole warps the ship"),
+                () -> assertEquals(500, r.crashWormhole, "naming the block's index"));
         }
     }
 

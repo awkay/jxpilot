@@ -66,6 +66,14 @@ public final class WormTable {
         return mapCount + tempCount;
     }
 
+    /**
+     * Indices whose entries exist: the map's wormholes plus the temporary slots (a block may name a slot past
+     * {@link #count()}, which reads its stale copy, see {@link #removeTemp}).
+     */
+    public int capacity() {
+        return mapCount + tBx.length;
+    }
+
     /** Temporary wormholes now. */
     public int tempCount() {
         return tempCount;
