@@ -220,13 +220,12 @@ public final class ClientUi {
     /**
      * C's maxFPS as CONFIG shows it.
      * <p>
-     * BEHAVIOR: the maxFPS option limited to FPS/2..FPS (C {@code Check_client_fps}); JXPilot's default 0 (ask for
-     * the server's full rate, a documented deviation) shows the server's FPS.
+     * BEHAVIOR: the maxFPS option limited to FPS/2..FPS (C {@code Check_client_fps}).
      */
     int maxFps() {
         int fps = Math.max(1, host.serverFps());
         int v = options.integer(MAX_FPS);
-        return v <= 0 ? fps : Math.max(fps / 2, Math.min(fps, v));
+        return Math.max(fps / 2, Math.min(fps, v));
     }
 
     private ConfigEntry flag(String label, ClientOption o) {

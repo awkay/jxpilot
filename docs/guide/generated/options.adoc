@@ -237,7 +237,7 @@ Where and how the server listens, who may connect and how much traffic it accept
 |boolean
 |`+true+`
 |command line, config file
-|*Not applicable:* C uses it to ignore the 20 fps cap old C clients request; JXPilot clients ask for no frame rate (snapshots follow the map's framesPerSecond). Ignore client maxFPS request if it is 20 (the default setting).
+|*Not applicable:* C uses it to ignore the default 20 fps request of C clients; the JXPilot protocol has no frame-rate request, so every client gets every frame (the map's framesPerSecond). Ignore client maxFPS request if it is 20 (the default setting).
 
 |[[opt-pLockServer]]`+pLockServer+`
 |

@@ -88,8 +88,8 @@ public final class XpConnection implements GameConnection {
         public double sparkProb = 0.5;
         /** Ask for PKT_AUDIO (C {@code Send_audio_request(1)} in a client built with sound). */
         public boolean audio;
-        /** C {@code maxFPS}: 0 asks for the server's full rate (JXPilot), else limited to FPS/2..FPS (C). */
-        public int maxFps;
+        /** C {@code maxFPS}, limited to FPS/2..FPS when sent (C). */
+        public int maxFps = 20;
         /** C {@code modBankStr}: the modifier banks sent with every play request (PKT_MODIFIERBANK). */
         public final String[] modifierBanks = {"", "", "", ""};
     }
@@ -716,11 +716,11 @@ public final class XpConnection implements GameConnection {
     /**
      * The frame rate asked for (C {@code Check_client_fps}).
      * <p>
-     * BEHAVIOR: maxFps 0 (JXPilot's default, a documented deviation) asks for the server's rate; otherwise maxFps
-     * limited to serverFps / 2 .. serverFps, as C.
+     * BEHAVIOR: maxFps limited to serverFps / 2 .. serverFps, as C ({@code LIMIT(maxFPS, FPS / 2, FPS)}), so C's
+     * default 20 asks a server above 40 fps for half its rate and 0 asks for half.
      */
     static int requestedFps(int maxFps, int serverFps) {
-        return maxFps <= 0 ? serverFps : Math.max(serverFps / 2, Math.min(serverFps, maxFps));
+        return Math.max(serverFps / 2, Math.min(serverFps, maxFps));
     }
 
     /**

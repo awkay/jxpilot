@@ -144,15 +144,17 @@ class ClientUiTest {
                 () -> assertEquals(List.of("settings true", "settings false"), host.calls,
                     "power sends with meters, turnResistance without"),
                 () -> assertEquals(7, options.integer(ClientOption.HUD_COLOR), "colour limited to maxColors - 1"),
-                () -> assertEquals(50, fpsShown, "maxFPS 0 shows the server FPS"),
+                () -> assertEquals(25, fpsShown, "C's default maxFPS 20 shows limited to FPS/2 of a 50 fps server"),
                 () -> assertEquals(25, options.integer(ClientOption.MAX_FPS), "maxFPS limited to FPS/2"),
                 () -> assertEquals(95, ui.maxVolume(), "volume stepped down 5%"),
                 () -> assertEquals(0.525, options.real(ClientOption.SPARK_PROB), 1e-6, "sparkProb + 5% (float)"));
         }
 
         @Test
-        @DisplayName("maxFps: 0 means the server FPS, other values are limited to FPS/2..FPS")
+        @DisplayName("maxFps: limited to FPS/2..FPS, as C (the default 20 on a 50 fps server shows 25)")
         void maxFps() {
+            int dflt = ui.maxFps();
+            options.setInteger(ClientOption.MAX_FPS, 0);
             int zero = ui.maxFps();
             options.setInteger(ClientOption.MAX_FPS, 200);
             int high = ui.maxFps();
@@ -161,7 +163,8 @@ class ClientUiTest {
             options.setInteger(ClientOption.MAX_FPS, 3);
             int low = ui.maxFps();
             assertAll(
-                () -> assertEquals(50, zero, "full rate"),
+                () -> assertEquals(25, dflt, "C's default 20: FPS/2"),
+                () -> assertEquals(25, zero, "0: FPS/2, as C"),
                 () -> assertEquals(50, high, "at most FPS"),
                 () -> assertEquals(30, mid, "in range"),
                 () -> assertEquals(25, low, "at least FPS/2"));

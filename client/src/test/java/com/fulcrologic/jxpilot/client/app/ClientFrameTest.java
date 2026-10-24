@@ -208,8 +208,8 @@ class ClientFrameTest {
             cf.options().setInteger(com.fulcrologic.jxpilot.client.game.options.ClientOption.MAX_FPS, 30);
             cf.step(T0 + 2000, 800, 600, 1, M, 256, 100);
             assertAll(
-                () -> assertEquals(List.of("fps 0"), first, "the default once"),
-                () -> assertEquals(List.of("fps 0", "fps 30"), conn.requests, "then the change"),
+                () -> assertEquals(List.of("fps 20"), first, "C's default 20 once"),
+                () -> assertEquals(List.of("fps 20", "fps 30"), conn.requests, "then the change"),
                 () -> assertEquals(displays, conn.displays.size(),
                     "a sparkProb change sends nothing (the server sends every spark; the client thins them)"));
         }

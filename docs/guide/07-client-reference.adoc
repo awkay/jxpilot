@@ -193,8 +193,8 @@ These take effect:
   local port in that range, for firewalls that open only a range (0, the default, means any port);
 * `autoServerMotdPopup` (default on): open the server's message of the day when you join; MENU / MOTD
   shows it again, and with `refreshMotd` an XPilot server is asked for a fresh copy;
-* `maxFPS`: the frame rate asked of an XPilot server. JXPilot's default is 0, the full rate; another
-  value is kept between half the server's rate and its full rate, as in XPilot (<<client-maxfps>>);
+* `maxFPS`: the frame rate asked of an XPilot server, kept between half the server's rate and its full
+  rate, as in XPilot (<<client-maxfps>>);
 * the look options (<<client-look>>);
 * the fonts (<<client-fonts>>) and `scaleFactor`, `altScaleFactor`;
 * `toggleShield` and `autoShield`;
@@ -239,9 +239,11 @@ border around that area, in `hudColor`. In the last 10 seconds of a timed round 
 your own detached tanks are drawn blue outside team play, as in XPilot.
 
 [[client-maxfps]]
-NOTE: XPilot's default `maxFPS` is 20, which an XPilot server with its default `ignore20MaxFPS` ignores,
-so a default XPilot client gets the full frame rate. JXPilot's default 0 asks for the full rate directly:
-the same result.
+NOTE: `maxFPS` defaults to 20, as in XPilot, and is kept between half the server's rate and its full rate
+before it is sent. So the default asks a server running at 20 fps or less for its full rate, one running at
+21 to 40 fps for 20 (which an XPilot server with its default `ignore20MaxFPS` turns into the full rate),
+and one above 40 fps for half its rate. Set `maxFPS` to 255 for the full rate everywhere. A JXPilot server
+always sends every frame: its protocol has no frame-rate request.
 
 [[client-fonts]]
 ==== Fonts

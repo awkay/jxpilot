@@ -137,7 +137,7 @@ class LaunchResourcesTest {
         assertAll(
             () -> assertEquals(0, hidden, "not popped up"),
             () -> assertTrue(shown > 0, "MENU / MOTD shows it"),
-            () -> assertEquals(List.of("fps 0"), conn.requests,
+            () -> assertEquals(List.of("fps 20"), conn.requests,
                 "only the first step's fps request: a MOTD in hand needs no request without refreshMotd"));
     }
 

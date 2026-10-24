@@ -93,7 +93,7 @@ public interface GameConnection extends AutoCloseable {
     default void setModifierBanks(String[] banks) { }
 
     /**
-     * C {@code maxFPS} changed (CONFIG): ask the server for that frame rate (0: its full rate). Protocols without a
+     * C {@code maxFPS} changed (CONFIG): ask the server for that frame rate. Protocols without a
      * frame-rate request ignore it.
      *
      * @return true when the request went out

@@ -131,8 +131,6 @@ in XPilot)
 |Turn speed default |35 |40
 |Engine sound |a short sound every frame |a loop while you thrust
 |Recording (`keyToggleRecord`) |available |not supported
-|`maxFPS` default |20, which the server ignores by default (`ignore20MaxFPS`) |0: asks for the full rate,
-with the same result
 |Showing frames |each frame as it arrives |smooth motion at your screen's refresh rate: other ships about
 90 ms behind the latest frame, your own ship predicted forward from it
 |===

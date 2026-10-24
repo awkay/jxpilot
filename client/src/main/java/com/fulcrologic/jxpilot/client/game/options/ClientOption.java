@@ -200,7 +200,7 @@ public enum ClientOption {
         "The key to activate when pressing the third mouse button."),
     POINTER_BUTTON4("pointerButton4", Type.STRING, "", "The key to activate when pressing the fourth mouse button."),
     POINTER_BUTTON5("pointerButton5", Type.STRING, "", "The key to activate when pressing the fifth mouse button."),
-    MAX_FPS("maxFPS", Type.INT, "0", 0, 255, "Set client's maximum FPS supported."),
+    MAX_FPS("maxFPS", Type.INT, "20", 0, 255, "Set client's maximum FPS supported."),
     RECORD_FILE("recordFile", Type.STRING, "", "An optional file where a recording of a game can be made.",
         "the replay recorder is excluded from JXPilot"),
     CLIENT_PORT_START("clientPortStart", Type.INT, "0", 0, 65535,

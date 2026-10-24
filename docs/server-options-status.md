@@ -211,7 +211,7 @@ follow C; the alias is the C command-line name.
 | `treasureCollisionMayKill` | treasureUnshieldedCollisionKills | bool | `no` | ANY+VIS | implemented (server-modes): an unshielded ship without armor hit by a ball dies (Balls.playerHit, collision.c Player_collides_with_ball) |
 | `wreckageCollisionMayKill` | wreckageUnshieldedCollisionKills | bool | `no` | ANY+VIS | implemented (server-batch2): wreckage kills unshielded ships without armor, or takes one armor (collision.c:1099-1138); robots avoid it |
 | `asteroidCollisionMayKill` | asteroidUnshieldedCollisionKills | bool | `yes` | ANY+VIS | implemented (server-modes): an unshielded ship without armor or out of fuel hit by an asteroid dies (Asteroids.playerHit, collision.c Player_collides_with_asteroid) |
-| `ignore20MaxFPS` |  | bool | `true` | CMD+DEF+VIS | not applicable: C uses it to ignore the 20 fps cap old C clients request; JXPilot clients ask for no frame rate (snapshots follow the map's framesPerSecond) |
+| `ignore20MaxFPS` |  | bool | `true` | CMD+DEF+VIS | not applicable: C uses it to ignore the default 20 fps request of C clients; the JXPilot protocol has no frame-rate request, so every client gets every frame (the map's framesPerSecond) |
 | `timing` | race | bool | `no` | ANY+VIS | implemented (server-modes): race mode: checkpoints, laps, lap times, race scoring and the TIMING message (Race, collision.c, player.c) |
 | `ballrace` |  | bool | `false` | ANY+VIS | implemented (server-modes): in race mode a ball passing a checkpoint advances its owner (Balls.collide, collision.c BallCollision) |
 | `ballraceConnected` |  | bool | `false` | ANY+VIS | implemented (server-modes): with ballrace, only a connected ball counts (Balls.collide) |

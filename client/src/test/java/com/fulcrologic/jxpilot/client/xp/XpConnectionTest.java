@@ -508,7 +508,7 @@ class XpConnectionTest {
             List<String> joinFps = server.loginPackets.stream().filter(x -> x.startsWith("fps")).toList();
             int before = server.loginPackets.size();
             boolean motd = conn.requestMotd(now);
-            boolean fps = conn.sendFps(0, now);
+            boolean fps = conn.sendFps(99, now);
             server.step();
             List<String> later = List.copyOf(server.loginPackets.subList(before, server.loginPackets.size()));
             assertAll(
@@ -521,18 +521,21 @@ class XpConnectionTest {
                 () -> assertTrue(motd, "MOTD request sent"),
                 () -> assertTrue(fps, "fps request sent"),
                 () -> assertEquals(List.of("motd 0 30720", "fps " + (int) Math.round(game.gameFps())), later,
-                    "the whole MOTD again, then the full server rate for maxFPS 0"));
+                    "the whole MOTD again, then the full server rate for maxFPS 99"));
         }
 
         @Test
-        @DisplayName("requestedFps: 0 is the server rate, else limited to FPS/2..FPS")
+        @DisplayName("requestedFps: maxFPS limited to FPS/2..FPS, as C's LIMIT")
         void requestedFps() {
             assertAll(
-                () -> assertEquals(50, XpConnection.requestedFps(0, 50), "0: full rate"),
+                () -> assertEquals(25, XpConnection.requestedFps(20, 50), "C's default 20 on a 50 fps server: half"),
+                () -> assertEquals(20, XpConnection.requestedFps(20, 30), "C's default 20 in range: 20 (ignore20MaxFPS)"),
+                () -> assertEquals(14, XpConnection.requestedFps(20, 14), "C's default 20 above FPS: the full rate"),
+                () -> assertEquals(25, XpConnection.requestedFps(0, 50), "0: FPS/2, as C"),
                 () -> assertEquals(25, XpConnection.requestedFps(10, 50), "at least FPS/2"),
                 () -> assertEquals(30, XpConnection.requestedFps(30, 50), "in range"),
                 () -> assertEquals(50, XpConnection.requestedFps(99, 50), "at most FPS"),
-                () -> assertEquals(50, XpConnection.requestedFps(-1, 50), "negative counts as 0"));
+                () -> assertEquals(25, XpConnection.requestedFps(-1, 50), "negative: FPS/2"));
         }
 
         @Test
