@@ -55,6 +55,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("latency baseline (phase 0)")
 class LatencyBaselineTest {
     static final int TRIALS = Integer.getInteger("jxpilot.latency.trials", 48);
+    /** Seeds 1-3 measured clean shot means RTT + 133.4..142.1 ms and p95 at most RTT + 171 ms. */
+    static final int SHOT_LO = 120;
+    static final int SHOT_HI = 150;
+    static final int SHOT_P95 = 190;
+    static final int SHOT_TRIALS = Integer.getInteger("jxpilot.latency.shotTrials", 24);
     static final int MOTION_SECONDS = Integer.getInteger("jxpilot.latency.seconds", 60);
     static final long SEED = Long.getLong("jxpilot.latency.seed", 1);
     static final int[] RTTS = {0, 100, 200, 300};
@@ -71,13 +76,16 @@ class LatencyBaselineTest {
                     for (Scenario.Loss l : Scenario.Loss.values()) {
                         Scenario s = new Scenario(rtt, j, l);
                         ROWS.add(new MetricTable.Row(c, s, InputToPhoton.measure(c, s, TRIALS, SEED),
-                            MotionMetrics.measure(c, s, c.motionRobots, MOTION_SECONDS, SEED)));
+                            MotionMetrics.measure(c, s, c.motionRobots, MOTION_SECONDS, SEED),
+                            c.shotTrials ? InputToPhoton.measureShots(c, s, SHOT_TRIALS, SEED)
+                                : new InputToPhoton.Result(List.of(), 0, 0, 0)));
                     }
                 }
             }
         }
         String table = MetricTable.format(ROWS);
-        System.out.println("[latency baseline] " + ROWS.size() + " cells, " + TRIALS + " I2P trials each, "
+        System.out.println("[latency baseline] " + ROWS.size() + " cells, " + TRIALS + " I2P and " + SHOT_TRIALS
+            + " shot trials each, "
             + MOTION_SECONDS + " s motion runs, seed " + SEED + ", " + (System.nanoTime() - t0) / 1_000_000 + " ms");
         System.out.println(table);
         Path out = Path.of("target", "latency-baseline.md");
@@ -103,6 +111,46 @@ class LatencyBaselineTest {
             long lost = i.count(InputToPhoton.Outcome.DEAD_AT_T0) + i.count(InputToPhoton.Outcome.DIED);
             checks.add(() -> assertTrue(lost * 4 <= i.trials().size(), cell
                 + "at most a quarter of the trials lost to a crash at or after t0: " + lost));
+            InputToPhoton.Result sh = r.shot();
+            checks.add(() -> assertEquals(0, sh.preT0Mismatches(), cell + "shots: frames before the press equal the baseline"));
+            checks.add(() -> assertEquals(0, sh.invisible(), cell + "shots: none drawn before a snapshot of its tick"));
+            checks.add(() -> assertEquals(0, sh.count(InputToPhoton.Outcome.NO_DEPARTURE), cell
+                + "shots: every press fired a server shot that was drawn within 2 s"));
+            long shotLost = sh.count(InputToPhoton.Outcome.DEAD_AT_T0) + sh.count(InputToPhoton.Outcome.DIED)
+                + sh.count(InputToPhoton.Outcome.SHOT_DIED);
+            // on the walls course a press often fires into the box's wall (the shot dies in its first tick), and the
+            // unshielded ship crashes now and then: seeds 1-3 lost up to 8 of 24 there
+            checks.add(() -> assertTrue(shotLost * 5 <= sh.trials().size() * 2, cell
+                + "shots: at most 40% of the presses lost to a crash or a shot into a wall: " + shotLost));
+        }
+        assertAll(checks);
+    }
+
+    @Test
+    @DisplayName("shot I2P: on clean links mean RTT + 120..150 ms, p95 at most RTT + 190 ms, never under RTT + 91 ms;"
+        + " each shot drawn 11-12 frames (the interpolation delay) after its own-ship SELF")
+    void shotI2p() {
+        List<Executable> checks = new ArrayList<>();
+        for (MetricTable.Row r : ROWS) {
+            if (!r.course().shotTrials) {
+                continue;
+            }
+            int rtt = r.scenario().rttMs();
+            InputToPhoton.Result sh = r.shot();
+            Stats draw = sh.drawDelayStats();
+            String cell = r.course() + " " + r.scenario().label() + ": ";
+            checks.add(() -> assertTrue(sh.stats(null).count() * 2 >= sh.trials().size(), cell + "shots: half measured"));
+            if (clean(r.scenario())) {
+                // 1 snapshot interval + 20 ms = 91.4 ms at 14 Hz, drawn at the next 120 Hz frame: 11-12 frames
+                checks.add(() -> assertTrue(draw.percentile(0) >= 83 && draw.max() <= 101, cell + "shot - own "
+                    + draw.percentile(0) + ".." + draw.max()));
+                double mean = sh.mean();
+                checks.add(() -> assertTrue(mean >= rtt + SHOT_LO && mean <= rtt + SHOT_HI, cell + "shot mean " + mean));
+                checks.add(() -> assertTrue(sh.stats(null).p95() <= rtt + SHOT_P95, cell + "shot p95 "
+                    + sh.stats(null).p95()));
+                checks.add(() -> assertTrue(sh.stats(null).percentile(0) >= rtt + 91, cell
+                    + "no shot shows sooner than RTT + the interpolation delay: " + sh.stats(null).percentile(0)));
+            }
         }
         assertAll(checks);
     }

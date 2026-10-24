@@ -34,16 +34,16 @@ import com.fulcrologic.jxpilot.common.net.ControlKey;
  */
 enum Course {
     /** globe.xp: a long coast across open space under the map's gravity. */
-    FREE_FLIGHT("globe", 3),
+    FREE_FLIGHT("globe", 3, true),
     /** tournament.xp: a small walled box; the ship keeps bouncing off its walls. */
-    WALLS("tournament", 3),
+    WALLS("tournament", 3, true),
     /** pad.xp: no global gravity, but gravity attractor blocks pull the ship back and forth. */
-    GRAVITY_WELL("pad", 3),
+    GRAVITY_WELL("pad", 3, false),
     /**
      * doggy.xp: the smallest shipped map (49 x 50 blocks), so the robots of the motion runs stay in view and the
      * others' aim error is measured in every cell.
      */
-    DOGFIGHT("doggy", 6);
+    DOGFIGHT("doggy", 6, false);
 
     static final long MS = 1_000_000L;
     static final long THRUST = ControlKey.THRUST.mask();
@@ -51,10 +51,18 @@ enum Course {
     final String map;
     /** Robots in the motion runs (the I2P runs have none). */
     final int motionRobots;
+    /**
+     * Shot I2P is measured on this course. Shot trials drop the spawn shield (a shielded ship cannot fire), and
+     * unshielded the ship crashes within seconds on the gravity well (into the attractor field's blocks) and the
+     * dogfight (walls and robots), losing whole blocks of trials, which would bias the stratified phases. Shot I2P
+     * does not depend on the course, so free flight and walls measure it.
+     */
+    final boolean shotTrials;
 
-    Course(String map, int motionRobots) {
+    Course(String map, int motionRobots, boolean shotTrials) {
         this.map = map;
         this.motionRobots = motionRobots;
+        this.shotTrials = shotTrials;
     }
 
     /** BEHAVIOR: thrust from 300 to 800 ms after the spawn, nothing otherwise (also before the spawn). */

@@ -83,4 +83,43 @@ class InputToPhotonCalibrationTest {
             () -> assertTrue(w <= FRAME_MS, "every trial is exactly 100 ms later, within a frame: worst " + w + " ms"),
             () -> assertTrue(mean >= 40 && mean <= 48, "mean I2P at RTT 0 is about T/2 + one frame: " + mean));
     }
+
+    @Test
+    @Timeout(value = 2, unit = TimeUnit.MINUTES)
+    @DisplayName("shots: per trial, shot I2P at RTT 100 minus RTT 0 is 100 ms within one frame; every press fires and"
+        + " shows; the shot follows the own ship's SELF by the interpolation delay")
+    void shotRttShiftsEveryTrial() {
+        InputToPhoton.Result zero = InputToPhoton.measureShots(Course.FREE_FLIGHT,
+            new Scenario(0, Scenario.Jitter.NONE, Scenario.Loss.NONE), TRIALS, 3);
+        InputToPhoton.Result hundred = InputToPhoton.measureShots(Course.FREE_FLIGHT,
+            new Scenario(100, Scenario.Jitter.NONE, Scenario.Loss.NONE), TRIALS, 3);
+        double worst = 0;
+        int compared = 0;
+        for (int j = 0; j < TRIALS; j++) {
+            InputToPhoton.Trial a = zero.trials().get(j);
+            InputToPhoton.Trial b = hundred.trials().get(j);
+            if (a.outcome() == InputToPhoton.Outcome.MEASURED && b.outcome() == InputToPhoton.Outcome.MEASURED) {
+                worst = Math.max(worst, Math.abs(b.ms() - a.ms() - 100));
+                compared++;
+            }
+        }
+        double w = worst;
+        int n = compared;
+        Stats draw = zero.drawDelayStats();
+        // the interpolation delay: 1 snapshot interval + 20 ms = 1.28 ticks = 91.4 ms at 14 Hz, seen at 120 Hz frames
+        double delayMs = 1000.0 / 14 + 20;
+        System.out.printf(java.util.Locale.ROOT, "[shot calibration] worst |diff - 100| %.3f ms, mean at RTT 0 %.2f ms,"
+            + " own-ship part %.2f ms, shot after own ship %.1f..%.1f ms%n", worst, zero.mean(), zero.selfStats().p50(),
+            draw.percentile(0), draw.max());
+        assertAll(
+            () -> assertEquals(TRIALS, n, "every press fired a shot that was drawn, at both RTTs"),
+            () -> assertEquals(0, zero.invisible() + hundred.invisible(), "no shot drawn before a snapshot of its tick"),
+            () -> assertEquals(0, zero.preT0Mismatches() + hundred.preT0Mismatches(), "runs identical before t0"),
+            () -> assertTrue(w <= FRAME_MS, "every shot is exactly 100 ms later, within a frame: worst " + w + " ms"),
+            // the render tick passes the shot's tick 1.28 ticks after the clock's estimate of the tick now, which runs
+            // within a ms of the SELF's arrival; drawn on the next 120 Hz frame: 11 or 12 frames. Tolerance: a frame + 1 ms
+            () -> assertTrue(draw.percentile(0) >= delayMs - FRAME_MS - 1 && draw.max() <= delayMs + FRAME_MS + 1,
+                "each shot is drawn the interpolation delay (" + delayMs + " ms, within a frame) after the own ship's"
+                    + " SELF of its tick: " + draw.percentile(0) + ".." + draw.max()));
+    }
 }

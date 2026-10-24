@@ -42,6 +42,8 @@ final class ServerTruth {
     private final int[] dir = new int[MAX_TICKS];
     private final float[] vx = new float[MAX_TICKS];
     private final float[] vy = new float[MAX_TICKS];
+    private final long[] shotTime = new long[MAX_TICKS];
+    private final int[] shots = new int[MAX_TICKS];
     private final Map<Integer, double[]> xs = new HashMap<>();
     private final Map<Integer, double[]> ys = new HashMap<>();
     private final Map<Integer, boolean[]> present = new HashMap<>();
@@ -56,6 +58,9 @@ final class ServerTruth {
         for (int k = 0; k < w.numPlayers; k++) {
             Player p = w.playerAt(k);
             put(tick, p.id, VirtualServer.px(p.cx), VirtualServer.px(p.cy), p.isAlive(), p.dir, p.vx, p.vy);
+            if (p.id == ownId && tick < MAX_TICKS) {
+                putShots(tick, p.shotTime, p.shots);
+            }
         }
     }
 
@@ -77,6 +82,24 @@ final class ServerTruth {
 
     int lastTick() {
         return last;
+    }
+
+    /** Record the own player's last fire frame ({@code shotTime}) and live shot count after {@code tick}. */
+    void putShots(int tick, long lastFire, int liveShots) {
+        if (tick < MAX_TICKS) {
+            shotTime[tick] = lastFire;
+            shots[tick] = liveShots;
+        }
+    }
+
+    /** BEHAVIOR: true when the own player's last fire frame differs between the recordings at {@code tick}. */
+    boolean shotTimeDiffers(ServerTruth o, int tick) {
+        return shotTime[tick] != o.shotTime[tick];
+    }
+
+    /** BEHAVIOR: true when the own player has more live shots here than in {@code o} at {@code tick}. */
+    boolean moreShots(ServerTruth o, int tick) {
+        return shots[tick] > o.shots[tick];
     }
 
     /** BEHAVIOR: true when the own player's heading differs between the two recordings at {@code tick}. */

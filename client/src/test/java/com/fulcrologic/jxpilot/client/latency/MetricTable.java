@@ -36,13 +36,16 @@ final class MetricTable {
     static final String NA_PREDICTOR = "n/a (1c)";
 
     /** One measured cell. */
-    record Row(Course course, Scenario scenario, InputToPhoton.Result i2p, MotionMetrics.Result motion) { }
+    record Row(Course course, Scenario scenario, InputToPhoton.Result i2p, MotionMetrics.Result motion,
+               InputToPhoton.Result shot) { }
 
     static final String HEADER =
         "| course | RTT/jitter/loss | I2P p50 | I2P p95 | p50 - RTT | mean - RTT | turn p50 | thrust p50 | thrust >1px p50 | trials"
+            + " | shot mean - RTT | shot p50 | shot p95 | shot - own p50 | shot trials"
             + " | own err p50/p95 | aim err p50/p95 (frames) | smooth own p95/max | smooth others p95"
             + " | snaps/min (teleports) | HUD rtt/jitter/loss | correction p95 | exact % |";
-    static final String RULE = "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|";
+    static final String RULE = "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+        + "---:|---:|---:|---:|---:|";
 
     private MetricTable() {
     }
@@ -73,6 +76,11 @@ final class MetricTable {
             + " | " + num(thrust.p50(), 0)
             + " | " + num(r.i2p().positionStats().p50(), 0)
             + " | " + all.count() + "/" + r.i2p().trials().size()
+            + " | " + num(r.shot().mean() - r.scenario().rttMs(), 1)
+            + " | " + num(r.shot().stats(null).p50(), 0)
+            + " | " + num(r.shot().stats(null).p95(), 0)
+            + " | " + num(r.shot().drawDelayStats().p50(), 0)
+            + " | " + r.shot().stats(null).count() + "/" + r.shot().trials().size()
             + " | " + num(m.ownError().p50(), 1) + "/" + num(m.ownError().p95(), 1)
             + " | " + num(m.aimError().p50(), 1) + "/" + num(m.aimError().p95(), 1) + " (" + m.otherFrames() + ")"
             + " | " + num(m.ownSmooth().p95(), 2) + "/" + num(m.ownSmooth().max(), 1)
