@@ -84,7 +84,8 @@ public final class RobotManager {
         }
         this.talk = new RobotTalk(w);
         this.roster = RobotRoster.defaults();
-        this.items = new RobotItems();
+        this.items = new RobotItems(w);
+        this.items.setSimulation(sim);
         this.robot = new DefaultRobot(w, sim, items);
         allowShipShapes = w.options.getBool(Opt.ALLOW_SHIP_SHAPES);
         robotLeaveLife = w.options.getInt(Opt.ROBOT_LEAVE_LIFE);

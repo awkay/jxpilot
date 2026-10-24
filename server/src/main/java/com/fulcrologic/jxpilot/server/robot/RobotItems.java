@@ -26,19 +26,34 @@ package com.fulcrologic.jxpilot.server.robot;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.Player;
+import com.fulcrologic.jxpilot.server.world.World;
 
 /**
  * The capability gate between the robot AI and the parts of the game that do not exist yet (items, M2):
  * every item count, ability and item action the C robot code uses goes through here. This base class is
- * the S1 world: no item, special ability, pulse, ball or cloak is usable, so all gated branches of
- * {@link DefaultRobot} are inert, and their actions are no-ops. When items land, a subclass (or this class)
- * answers with the real counts and calls the real actions; tests use a spy subclass to exercise the
- * gated logic now.
+ * the S1 world for items: no item, special ability, pulse or cloak is usable, so those gated branches of
+ * {@link DefaultRobot} are inert, and their actions are no-ops. Over a world (game modes) balls, treasures,
+ * target damage and asteroid sizes are real, and dropping a ball detaches it. When items land, a subclass (or
+ * this class) answers with the real counts and calls the real actions; tests use a spy subclass to exercise
+ * the gated logic now.
  */
 public class RobotItems {
-    /** Ability bits the S1 simulation implements (shield, refuel, shots and the passive bits). */
+    /** Ability bits the simulation implements (shield, refuel, shots, the passive bits, balls). */
     public static final int IMPLEMENTED_ABILITIES = Has.SHIELD | Has.REFUEL | Has.SHOT | Has.COMPASS | Has.REPAIR
-        | Has.CONNECTOR | Has.LASER;
+        | Has.CONNECTOR | Has.LASER | Has.BALL;
+
+    /** The world whose balls, treasures, targets and asteroids the robot reads; null in tests of the gate. */
+    private final World world;
+
+    /** A gate without a world: no balls, full targets (tests). */
+    public RobotItems() {
+        this(null);
+    }
+
+    /** A gate over a world (game modes: balls, treasures, targets, asteroids are real). */
+    public RobotItems(World world) {
+        this.world = world;
+    }
 
     /**
      * Item count the robot may use (C {@code pl->item[i]}).
@@ -88,29 +103,29 @@ public class RobotItems {
         return 0;
     }
 
-    /** C {@code World.targets[i].damage} (fixed point); targets cannot be damaged yet, so always full. */
+    /** C {@code World.targets[i].damage} (fixed point). BEHAVIOR: full strength without a world. */
     public double targetDamage(int target) {
-        return DefaultRobot.TARGET_DAMAGE;
+        return world == null ? DefaultRobot.TARGET_DAMAGE : world.modes.targetDamage[target];
     }
 
-    /** C {@code World.treasures[i].have}: the treasure has its ball at home. */
+    /** C {@code World.treasures[i].have}: the treasure has its ball at home. BEHAVIOR: false without a world. */
     public boolean treasureHasBall(int treasure) {
-        return false;
+        return world != null && world.modes.treasureHave[treasure];
     }
 
-    /** C {@code pl->ball}: pool handle of the ball the player tows, or -1. */
+    /** C {@code pl->ball}: the ball the connector reaches for, or -1. */
     public int towedBall(Player pl) {
-        return -1;
+        return world == null ? -1 : pl.ball;
     }
 
-    /** C {@code ball->owner} of a ball object. */
+    /** C {@code ball->owner} of a ball object. BEHAVIOR: NO_ID (-1) without a world. */
     public int ballOwner(int h) {
-        return -1;
+        return world == null ? -1 : world.modes.ballOwner[h];
     }
 
-    /** C {@code WIRE_PTR(obj)->size} of an asteroid object. */
+    /** C {@code WIRE_PTR(obj)->size} of an asteroid object. BEHAVIOR: 1 without a world. */
     public int asteroidSize(int h) {
-        return 1;
+        return world == null ? 1 : world.modes.wireSize[h];
     }
 
     /** C {@code obj->info} of an item object: its {@link Item} ordinal. */
@@ -193,6 +208,17 @@ public class RobotItems {
 
     /** C {@code Detach_ball(ind, -1)}. */
     public void detachBall(Player pl) {
+        if (sim != null) {
+            sim.balls.detach(pl, -1);
+        }
+    }
+
+    /** The simulation for actions (balls); set by the robot manager. */
+    private com.fulcrologic.jxpilot.server.sim.Simulation sim;
+
+    /** Give the gate the simulation it acts on (ball detach). */
+    public void setSimulation(com.fulcrologic.jxpilot.server.sim.Simulation s) {
+        this.sim = s;
     }
 
     /** C {@code Compute_sensor_range}. */

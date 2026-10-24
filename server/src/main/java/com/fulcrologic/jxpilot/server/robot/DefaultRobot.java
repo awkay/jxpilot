@@ -1148,7 +1148,7 @@ public final class DefaultRobot {
     // ================================================================ Ball_handler
 
     /**
-     * C {@code Ball_handler} (gated: balls do not exist yet, see {@link RobotItems#towedBall}).
+     * C {@code Ball_handler}.
      * <p>
      * BEHAVIOR: carrying a ball: throw it (detach) when it flies straight at the nearest own treasure with a
      * clear path, faster than sqrt(60) and nobody is nearer to it; else navigate to that treasure.
@@ -1841,7 +1841,7 @@ public final class DefaultRobot {
      * The target repair check of {@code Robot_default_play} (team play).
      * <p>
      * BEHAVIOR: the first own damaged, live target within 90 px (unwrapped) becomes the repair target and
-     * REPAIR is used. Targets cannot be damaged in S1 ({@link RobotItems#targetDamage}), so this stays idle.
+     * REPAIR is used (the player's repair target, which the simulation repairs each frame).
      */
     void nearbyTarget(Player pl, RobotData d) {
         java.util.List<Target> targets = w.map.targets();
@@ -1852,6 +1852,7 @@ public final class DefaultRobot {
                 int dy = (t.by() * BLOCK_SZ + BLOCK_SZ / 2) - pl.py;
                 if (dx * dx + dy * dy <= 90 * 90) {
                     d.repairTarget = j;
+                    pl.repairTarget = j;
                     pl.used |= Has.REPAIR;
                     break;
                 }
@@ -1863,13 +1864,14 @@ public final class DefaultRobot {
      * The player lock choice of {@code Robot_default_play}.
      * <p>
      * BEHAVIOR: lock on the chosen enemy if not locked, if it is less than half the lock distance away (and in
-     * race mode not behind in checks/rounds, which S1 lacks: always true), if within twice the lock distance
-     * in team play with a ball, or if it has a higher score than the locked player.
+     * race mode not behind in checkpoint and lap), if within twice the lock distance in team play with a ball,
+     * or if it has a higher score than the locked player.
      */
     void choosePlayerLock(Player pl, RobotData d, Player ship, double enemyDist) {
         Player locked = w.byId(d.lockPlId);
         if ((d.lockTagged & LOCK_PLAYER) == 0
-            || enemyDist < d.lockDistance / 2
+            || (enemyDist < d.lockDistance / 2
+                && (!w.modeParams.timing || (ship.check >= pl.check && ship.round >= pl.round)))
             || (enemyDist < d.lockDistance * 2 && w.params.teamPlay && (ship.have & Has.BALL) != 0)
             || (locked != null && ship.score > locked.score)) {
             d.lockPlId = ship.id;
@@ -1931,17 +1933,13 @@ public final class DefaultRobot {
     }
 
     /**
-     * Race navigation to the next checkpoint (C {@code World.check[pl->check]}); S1 has no checkpoint
-     * progress per player, so the robot heads for checkpoint 0.
+     * Race navigation to the next checkpoint (C {@code World.check[pl->check]}, its block corner).
+     * <p>
+     * BEHAVIOR: aims at the corner of the checkpoint the robot must pass next.
      */
-    private boolean navigateToCheckpoint(Player pl, RobotData d) {
-        java.util.List<com.fulcrologic.jxpilot.common.map.Checkpoint> cs = w.map.checkpoints();
-        for (int i = 0; i < cs.size(); i++) {
-            if (cs.get(i).number() == 0) {
-                return checkTarget(pl, d, cs.get(i).bx() * BLOCK_SZ, cs.get(i).by() * BLOCK_SZ, RM_NAVIGATE);
-            }
-        }
-        return false;
+    boolean navigateToCheckpoint(Player pl, RobotData d) {
+        com.fulcrologic.jxpilot.common.map.Checkpoint c = w.map.checkpoints().get(pl.check);
+        return checkTarget(pl, d, c.bx() * BLOCK_SZ, c.by() * BLOCK_SZ, RM_NAVIGATE);
     }
 
     /** Fly to the item, leading it by its velocity (C {@code RM_HARVEST} call). */
