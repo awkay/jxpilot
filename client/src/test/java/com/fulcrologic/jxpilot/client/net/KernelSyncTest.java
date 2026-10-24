@@ -214,6 +214,7 @@ class KernelSyncTest {
         k.onConfig(o);
         com.fulcrologic.jxpilot.common.net.InputHistory in = new com.fulcrologic.jxpilot.common.net.InputHistory();
         k.onSnapshot(ownShots(50, 1, 2, 0), in);
+        k.onSnapshot(ownShots(50, 1, 2, 0), in);
         k.onSnapshot(ownShots(50, 0, 3, 2), in);
         k.onSnapshot(ownShots(50, 0, 3, 2), in);
         int n50 = k.ownShots();
@@ -226,8 +227,19 @@ class KernelSyncTest {
         k.onSnapshot(ownShots(51, 0, 100, 0), in);
         int many = k.ownShots();
         int tick = k.shotsTick();
+        ByteBuffer seam = ByteBuffer.allocate(64);
+        com.fulcrologic.jxpilot.common.net.SnapshotWriter sw = new com.fulcrologic.jxpilot.common.net.SnapshotWriter();
+        sw.setWorld(700, 700, true);
+        sw.begin(seam, 52, 52, 0, 1, 1, 690, 350);
+        sw.beginSection(com.fulcrologic.jxpilot.common.net.Section.OWN_SHOTS);
+        com.fulcrologic.jxpilot.common.net.Records.OwnShot.put(sw, 5, 350, 0, 0);
+        sw.endSection();
+        seam.flip();
+        k.onSnapshot(seam, in);
+        float wrapped = k.shotX(0);
         assertAll(
-            () -> assertEquals(5, n50, "parts 1 and 0 of tick 50: 2 + 3 shots, the repeated part 0 not again"),
+            () -> assertEquals(5, n50, "parts 1 and 0 of tick 50: 2 + 3 shots, a repeated part (1 or 0) not again"),
+            () -> assertEquals(5f, wrapped, "a shot across the seam of the client's wrapping map decodes inside it"),
             () -> assertEquals(49, spawn, "shot 1 has age 1: fired in tick 49"),
             () -> assertEquals(1, ordinal, "shot index 4 (i = 4) has ordinal 4 % 3"),
             () -> assertEquals(513f, x, "its x (510 + 3) relative to the view centre"),

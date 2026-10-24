@@ -47,7 +47,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * models), the ship the client decodes is bit-equal ({@link ShipBody#sameState}) to the server's player after that
  * tick, and the frame clock matches. OWN_SHOTS too: every decoded own bullet is one of the server's own bullets
  * after that tick, with its spawn tick, ordinal and position (to the half pixel), and every own bullet within
- * 300 px of the ship is in the list.
+ * 300 px of the ship is in the list. The flight's bullets end both ways, by expiry and against walls or ships,
+ * and a bullet gone from the server is gone from the next decoded list (it would not match).
  */
 @DisplayName("PREDICT round trip")
 class PredictRoundTripTest {
@@ -84,7 +85,11 @@ class PredictRoundTripTest {
     @DisplayName("every PREDICT decodes to the server player's state after its tick, bit for bit")
     void roundTrip() {
         Scenario s = new Scenario(100, Scenario.Jitter.NORMAL_15, Scenario.Loss.NONE);
-        LatencyRig rig = new LatencyRig(Course.FREE_FLIGHT.serverArgs(0), s.direction(), s.direction(), 21,
+        String[] base = Course.FREE_FLIGHT.serverArgs(0);
+        String[] args = java.util.Arrays.copyOf(base, base.length + 2);
+        args[base.length] = "-shotLife";
+        args[base.length + 1] = "20"; // bullets expire within the flight, as well as hitting walls
+        LatencyRig rig = new LatencyRig(args, s.direction(), s.direction(), 21,
             InputToPhoton.tickPhase(21));
         long spawn = rig.runUntilPlaying(LatencyRig.START + 30 * SEC);
         int id = rig.client.connection().playerId();
@@ -95,6 +100,8 @@ class PredictRoundTripTest {
         ByteBuffer enc = ByteBuffer.allocate(ShipBody.WIRE_SIZE);
         @SuppressWarnings("unchecked")
         List<double[]>[] shots = new List[ring];
+        java.util.Map<Long, Double> alive = new java.util.HashMap<>();
+        int[] ends = {0, 0};
         long touches0 = rig.server.world().byId(id).lastWallTouch;
         rig.onTick = (r, t) -> {
             int tick = r.server.net.currentTick();
@@ -109,6 +116,20 @@ class PredictRoundTripTest {
             truthTick[slot] = tick;
             List<double[]> own = new ArrayList<>();
             com.fulcrologic.jxpilot.server.world.Objects o = r.server.world().objects;
+            java.util.Map<Long, Double> now = new java.util.HashMap<>();
+            for (int k = 0; k < o.count(); k++) {
+                int h = o.active[k];
+                if (o.type[h] == com.fulcrologic.jxpilot.common.sim.Obj.SHOT && o.owner[h] == id && o.shotOrdinal[h] >= 0) {
+                    now.put((long) o.spawnTick[h] << 8 | o.shotOrdinal[h], o.life[h]);
+                }
+            }
+            for (java.util.Map.Entry<Long, Double> e : alive.entrySet()) {
+                if (!now.containsKey(e.getKey())) {
+                    ends[e.getValue() <= 1 ? 0 : 1]++;   // life ran out, or a wall or ship ended it early
+                }
+            }
+            alive.clear();
+            alive.putAll(now);
             for (int k = 0; k < o.count(); k++) {
                 int h = o.active[k];
                 if (o.type[h] == com.fulcrologic.jxpilot.common.sim.Obj.SHOT && o.owner[h] == id && o.shotOrdinal[h] >= 0) {
@@ -176,12 +197,15 @@ class PredictRoundTripTest {
         rig.runUntil(spawn + 5 * SEC);
         Player p = rig.server.world().byId(id);
         int n = compared[0];
-        System.out.printf("[predict round trip] %d ticks compared, %d own shots decoded%n", n, ownSeen[0]);
+        System.out.printf("[predict round trip] %d ticks compared, %d own shots decoded, %d expired, %d ended early%n",
+            n, ownSeen[0], ends[0], ends[1]);
         assertAll(
             () -> assertTrue(n > 60, "most ticks of 5 s at 14 Hz were compared (" + n + ")"),
             () -> assertEquals(List.of(), mismatches, "every decoded PREDICT is the server's state"),
             () -> assertEquals(List.of(), shotMismatches, "every decoded own shot is the server's, and none near is missing"),
             () -> assertTrue(ownSeen[0] > 20, "own shots were decoded (" + ownSeen[0] + " in all)"),
+            () -> assertTrue(ends[0] > 0, "some own bullets expired (" + ends[0] + ")"),
+            () -> assertTrue(ends[1] > 0, "some ended early, against a wall (" + ends[1] + ")"),
             () -> assertEquals(1, rig.server.world().numPlayers, "no other ship"),
             () -> assertTrue(p.lastWallTouch > touches0, "the flight touched a wall too (frame " + p.lastWallTouch + ")"),
             () -> assertTrue(rig.client.connection().kernel().predicts() >= n, "PREDICTs arrived"));
