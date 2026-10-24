@@ -273,7 +273,7 @@ class ProvisionalShotsTest {
     class MoverDetails {
         /** Open map with an UP_GRAV block at block (5, 5) (row 6 from the top). */
         static final String[] GRAV = {
-            "            ", "            ", "            ", "            ", "            ", "            ",
+            "            ", "            ", "            ", "            ", "            ", "      +     ",
             "     i      ", "            ", "            ", "            ", "            ", "            "};
         /** A wall column at x = 1 (pixels 35..70). */
         static final String[] EDGE_WALL = {
@@ -300,6 +300,8 @@ class ProvisionalShotsTest {
             c.confirm(1, 1, new float[] {cx / (float) Click.CLICK}, new float[] {cy / (float) Click.CLICK},
                 new byte[] {OWN});
             assertAll(
+                () -> assertTrue(gx != w.gravityX(0, 0) && gx != w.gravityX(11, 11) && gx != w.gravityX(5, 11)
+                    && gx != w.gravityX(11, 5), "and in x: " + gx),
                 () -> assertTrue(gy != w.gravityY(0, 0) && gy != w.gravityY(11, 11) && gy != w.gravityY(5, 11)
                     && gy != w.gravityY(11, 5), "the block's gravity differs from the others' here: " + gy),
                 () -> assertEquals(cx / (float) Click.CLICK, s.x(0), 1e-6, "x moved by its block's gravity"),
@@ -347,6 +349,28 @@ class ProvisionalShotsTest {
             s.draw(1, 0);
             assertEquals((Click.fromPixels(410f) + Click.fromPixels(15f) - 420 * Click.CLICK) / (float) Click.CLICK,
                 s.x(0), 1e-6, "right across x = 420: 5");
+        }
+
+        @Test
+        @DisplayName("traced next to a wall, a shot ending exactly on the far edge wraps to 0 (and moves on)")
+        void exactEdge() {
+            String r = "          x ";
+            ProvisionalShots s = shots("edgeWrap: yes", r, r, r, r, r, r, r, r, r, r, r, r);
+            s.fired(1, 0, 410, 200, 10, 0, false);
+            s.advanceTo(1);
+            s.draw(1, 0);
+            float x1 = s.x(0);
+            s.advanceTo(2);
+            s.draw(2, 0);
+            String c = " x          ";
+            ProvisionalShots d = shots("edgeWrap: yes", c, c, c, c, c, c, c, c, c, c, c, c);
+            d.fired(1, 0, 10, 10, 0, -10, false);
+            d.advanceTo(2);
+            d.draw(2, 0);
+            assertAll(
+                () -> assertEquals(0, x1, 1e-6, "410 + 10 = 420 is x 0"),
+                () -> assertEquals(10, s.x(0), 1e-6, "then 10"),
+                () -> assertEquals(410, d.y(0), 1e-6, "10 - 20 wraps to 410"));
         }
 
         @Test
@@ -407,6 +431,25 @@ class ProvisionalShotsTest {
         }
 
         @Test
+        @DisplayName("x is wrapped when drawn across the right edge; an adopted shot is stepped from its moved spawn")
+        void wrapXAndAdoptedSpawn() {
+            ProvisionalShots s = shots("edgeWrap: yes", OPEN);
+            s.fired(5, 0, 418, 100, 4, 0, false);
+            s.advanceTo(4);
+            s.draw(4, 0.75);
+            float wrapped = s.x(0);
+            ProvisionalShots a = shots("", OPEN);
+            a.fired(10, 0, 100, 100, 8, 0, false);
+            a.advanceTo(12);
+            a.confirm(11, 1, new float[] {after(100, 8, 2) + 3}, new float[] {100}, new byte[] {OWN});
+            a.confirm(12, 1, new float[] {after(100, 8, 3) + 3}, new float[] {100}, new byte[] {OWN});
+            assertAll(
+                () -> assertEquals(418 + 0.75 * 4 - 420, wrapped, 1e-4, "1 past the edge"),
+                () -> assertEquals(1, a.adopted(), "the second snapshot matches the moved shot exactly"),
+                () -> assertEquals(3, a.maxAdoptPx(), 1e-4, "3 px once"));
+        }
+
+        @Test
         @DisplayName("bullets are counted and numbered; a freed slot is reused; at most CAP shots")
         void slots() {
             ProvisionalShots s = shots("", OPEN);
@@ -447,7 +490,9 @@ class ProvisionalShotsTest {
             s.configure(KernelWorld.of(opt), opt);
             s.advanceTo(1);
             s.draw(1, 0);
-            assertEquals(0, s.count(), "dropped");
+            assertAll(
+                () -> assertEquals(0, s.count(), "dropped"),
+                () -> assertEquals(0, s.endingAt(60), "its end no longer counts"));
         }
 
         @Test
@@ -488,6 +533,51 @@ class ProvisionalShotsTest {
                 () -> assertEquals(2, s.confirmedShots(), "both matched"),
                 () -> assertEquals(1, s.adopted(), "only the 4 px one moved"),
                 () -> assertEquals(201 - 1, s.x(1), 1e-4, "1 px off: not moved"));
+        }
+    }
+
+    @Nested
+    @DisplayName("shot count give-back")
+    class GiveBack {
+        @Test
+        @DisplayName("a final shot ends at f + shotLife - 1, or in the tick it crashes; still counted after it ended")
+        void ends() {
+            ProvisionalShots s = shots("shotLife: 3", WALL);
+            s.fired(10, 0, 100, 200, 1, 0, false);
+            s.fired(10, 1, 270, 200, 20, 0, false);
+            s.fired(11, 0, 100, 100, 1, 0, true);
+            s.advanceTo(20);
+            assertAll(
+                () -> assertEquals(1, s.endingAt(12), "life 3: gone after tick 12"),
+                () -> assertEquals(1, s.endingAt(10), "the one into the wall ends in tick 10"),
+                () -> assertEquals(0, s.endingAt(13), "a speculative shot is not counted"),
+                () -> assertEquals(0, s.endingAt(11), "nothing else"));
+        }
+
+        @Test
+        @DisplayName("a replayed tick's shots and unconfirmed shots no longer count; a confirmed one gone from the"
+            + " snapshots (a hit, or out of their view) still does")
+        void uncounted() {
+            ProvisionalShots s = shots("", OPEN);
+            s.fired(10, 0, 100, 100, 0, 0, false);
+            s.fired(11, 0, 100, 200, 0, 0, false);
+            s.fired(12, 0, 100, 300, 0, 0, false);
+            int end = 10 + 60 - 1;
+            s.beginStep(10, false);
+            s.advanceTo(12);
+            s.confirm(12, 1, new float[] {100}, new float[] {300}, new byte[] {OWN});
+            s.confirm(12, 1, new float[] {100}, new float[] {300}, new byte[] {OWN});
+            ProvisionalShots h = shots("", OPEN);
+            h.fired(10, 0, 100, 100, 0, 0, false);
+            h.confirm(10, 1, new float[] {100}, new float[] {100}, new byte[] {OWN});
+            h.confirm(11, 0, new float[0], new float[0], new byte[0]);
+            h.confirm(12, 0, new float[0], new float[0], new byte[0]);
+            assertAll(
+                () -> assertEquals(1, s.endingAt(end + 2), "tick 12's, confirmed, still counts"),
+                () -> assertEquals(0, s.endingAt(end), "tick 10's was dropped by the replay"),
+                () -> assertEquals(0, s.endingAt(end + 1), "tick 11's was never confirmed"),
+                () -> assertEquals(1, h.endedOnServer(), "confirmed, then missing twice: ended on the server"),
+                () -> assertEquals(1, h.endingAt(end), "still counted (most often only out of the view)"));
         }
     }
 }

@@ -34,8 +34,12 @@ public final class CorrectionSmoother {
     public static final double HALF_LIFE_SECONDS = 0.1;
     /** Half-life while the ship touches walls. */
     public static final double WALL_HALF_LIFE_SECONDS = 0.03;
-    /** Offsets above this (pixels; 3 ship lengths) snap instead of gliding. */
-    public static final double SNAP_PX = 3 * 32;
+    /**
+     * Offsets above this (pixels; the snapshot timeline's teleport distance, ClientWorld.TELEPORT_PX, 10 blocks) snap
+     * instead of gliding. A contact the prediction could not know (a cannon shot, a robot) can move the ship 100 px
+     * at RTT 300; that glides. Respawns, wormholes and hyperjumps snap whatever their size (asked by the predictor).
+     */
+    public static final double SNAP_PX = 10 * 35;
     /** Offsets below this (pixels and RES units) are dropped. */
     public static final double EPSILON = 1e-3;
 

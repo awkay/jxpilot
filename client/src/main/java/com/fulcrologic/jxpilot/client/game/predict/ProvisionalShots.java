@@ -78,6 +78,13 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
     private final float[] spawnVx = new float[CAP];
     private final float[] spawnVy = new float[CAP];
     private final boolean[] confirmed = new boolean[CAP];
+    /** The tick after whose end the shot is gone (its life ran out or it crashed), as the server's expiry. */
+    private final int[] end = new int[CAP];
+    /** Final shots ending in each tick (a ring of ticks, tagged), kept after they ended for the replays. */
+    public static final int END_RING = 1024;
+    private final int[] endTag = new int[END_RING];
+    private final int[] endCount = new int[END_RING];
+    private PredictEvents.ShotSink tap;
     private final byte[] misses = new byte[CAP];
     private int used;
     private final boolean[] taken = new boolean[CAP];
@@ -129,6 +136,7 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
 
     /** BEHAVIOR: no shots. */
     public void clear() {
+        java.util.Arrays.fill(endTag, Integer.MIN_VALUE);
         used = 0;   // slots at or past used are never read: free() hands them out afresh
         outCount = 0;
     }
@@ -141,15 +149,25 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
     public void beginStep(int k, boolean speculative) {
         for (int i = 0; i < used; i++) {
             if (speculative ? state[i] == SPEC : state[i] != FREE && tick[i] == k) {
-                state[i] = FREE;
+                drop(i);
             }
         }
-        trim();
     }
 
-    /** BEHAVIOR: a bullet of tick {@code k} starts at its spawn (clicks of the float pixels, as the server's). */
+    /** Also told of every bullet (before it is kept); null for none. */
+    public void setTap(PredictEvents.ShotSink t) {
+        tap = t;
+    }
+
+    /**
+     * BEHAVIOR: a bullet of tick {@code k} starts at its spawn (clicks of the float pixels, as the server's); its end
+     * tick is stepped out at once ({@link #endingAt}). The tap hears of it first, also without a world.
+     */
     @Override
     public void fired(int k, int ord, float x, float y, float svx, float svy, boolean speculative) {
+        if (tap != null) {
+            tap.fired(k, ord, x, y, svx, svy, speculative);
+        }
         if (world == null) {
             return;
         }
@@ -172,7 +190,63 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
         spawnVy[i] = svy;
         confirmed[i] = false;
         misses[i] = 0;
+        end[i] = endOf(i);
+        if (!speculative) {
+            countEnd(end[i]);
+        }
         fired++;
+    }
+
+    /** The tick shot {@code i} ends in, stepped from its spawn: the first that crashes it or uses up its life. */
+    private int endOf(int i) {
+        int x = spawnCx[i];
+        int y = spawnCy[i];
+        float svx = spawnVx[i];
+        float svy = spawnVy[i];
+        long l = shotLife;
+        for (int k = tick[i];; k++) {
+            if (!oneTick(x, y, svx, svy, l)) {
+                return k;
+            }
+            l = nlife;
+            x = nx;
+            y = ny;
+            svx = nvx;
+            svy = nvy;
+        }
+    }
+
+    /**
+     * BEHAVIOR: the final shots that end in tick {@code k} (the server gives them back to the ship's shot count
+     * then); dropped and speculative shots do not count.
+     */
+    public int endingAt(int k) {
+        int j = k & (END_RING - 1);
+        return endTag[j] == k ? endCount[j] : 0;
+    }
+
+    private void countEnd(int k) {
+        int j = k & (END_RING - 1);
+        if (endTag[j] != k) {
+            endTag[j] = k;
+            endCount[j] = 0;
+        }
+        endCount[j]++;
+    }
+
+    private void uncountEnd(int k) {
+        int j = k & (END_RING - 1);
+        if (endTag[j] == k && endCount[j] > 0) {
+            endCount[j]--;
+        }
+    }
+
+    /** Drop shot {@code i}: a final one no longer ends anywhere (a replay fires it again, or the server had no such). */
+    private void drop(int i) {
+        if (state[i] == LIVE) {
+            uncountEnd(end[i]);
+        }
+        state[i] = FREE;
     }
 
     private int free() {
@@ -182,12 +256,6 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
             }
         }
         return used < CAP ? used++ : -1;
-    }
-
-    private void trim() {
-        while (used > 0 && state[used - 1] == FREE) {
-            used--;
-        }
     }
 
     /**
@@ -213,7 +281,6 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
                 }
             }
         }
-        trim();
     }
 
     /**
@@ -259,23 +326,35 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
      * (shotsGravity), then the move; false when it ends in that tick (crash, too fast a bounce, life out).
      */
     boolean next(int i) {
-        float svx = vx[i];
-        float svy = vy[i];
-        int px = cx[i] >> Click.SHIFT;
-        int py = cy[i] >> Click.SHIFT;
+        return oneTick(cx[i], cy[i], vx[i], vy[i], life[i]);
+    }
+
+    /**
+     * One server tick of a shot at clicks (x, y), velocity (svx, svy), life {@code l}, into the scratch fields: gravity
+     * at its block with shotsGravity, the move, the life tick; false when it ends in that tick.
+     */
+    private boolean oneTick(int x, int y, float svx, float svy, long l) {
         if (gravity) {
-            svx += world.gravityX(px / Const.BLOCK_SZ, py / Const.BLOCK_SZ);
-            svy += world.gravityY(px / Const.BLOCK_SZ, py / Const.BLOCK_SZ);
+            int bx = (x >> Click.SHIFT) / Const.BLOCK_SZ;
+            int by = (y >> Click.SHIFT) / Const.BLOCK_SZ;
+            svx += world.gravityX(bx, by);
+            svy += world.gravityY(bx, by);
         }
-        nlife = life[i];
-        return move(cx[i], cy[i], svx, svy) && --nlife > 0;
+        nlife = l;
+        return move(x, y, svx, svy) && --nlife > 0;
+    }
+
+    /** The server's block of a pixel, clamped into the map (Mover.blockOf). */
+    private static int blockOf(int pixel, int n) {
+        int b = Math.floorDiv(pixel, Const.BLOCK_SZ);
+        return b < 0 ? 0 : (b >= n ? n - 1 : b);
     }
 
     /** C {@code Move_object} for a SHOT, into the scratch fields; false on a crash or a fatal bounce. */
     private boolean move(int x, int y, float mvx, float mvy) {
         int tx = Click.fromPixels(mvx);
         int ty = Click.fromPixels(mvy);
-        int dist = world.wallDist((x >> Click.SHIFT) / Const.BLOCK_SZ, (y >> Click.SHIFT) / Const.BLOCK_SZ);
+        int dist = world.wallDist(blockOf(x >> Click.SHIFT, world.width()), blockOf(y >> Click.SHIFT, world.height()));
         if (dist > 2) {
             int max = ((dist - 2) * Const.BLOCK_SZ) >> 1;
             if ((float) (max * max) >= mvx * mvx + mvy * mvy) {
@@ -333,7 +412,20 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
                 break;
             }
         }
-        // Segment wraps the position it moves on an edge-wrapped map (Move_object's own wrap is a no-op here)
+        if (ms.edgeWrap) {   // Segment can end exactly on the far edge (C Move_object's wrap)
+            if (ms.posX < 0) {
+                ms.posX += world.clickWidth();
+            }
+            if (ms.posX >= world.clickWidth()) {
+                ms.posX -= world.clickWidth();
+            }
+            if (ms.posY < 0) {
+                ms.posY += world.clickHeight();
+            }
+            if (ms.posY >= world.clickHeight()) {
+                ms.posY -= world.clickHeight();
+            }
+        }
         nx = ms.posX;
         ny = ms.posY;
         nvx = ms.velX;
@@ -356,8 +448,8 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
      * and matched to the nearest unmatched own SHOT within {@link #MATCH_PX}: matched, it is confirmed, and when the
      * server's is more than {@link #ADOPT_PX} away the shot (and its spawn) moves by the difference (adoption).
      * BEHAVIOR: a shot unmatched in {@link #MISSES} complete snapshots in a row is dropped: never confirmed (and
-     * the snapshots past its fire tick), the server did not fire it ({@link #unconfirmed()}); confirmed, it ended on
-     * the server first (a hit, or out of the snapshots' view).
+     * the snapshots past its fire tick), the server did not fire it ({@link #unconfirmed()}) and its end no longer
+     * counts; confirmed, it ended on the server first or left the snapshots' view, and its end still counts.
      * BEHAVIOR: a shot whose own steps end before {@code t} is left to its own expiry.
      */
     public void confirm(int t, int n, float[] xs, float[] ys, byte[] variants) {
@@ -410,15 +502,16 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
                 }
             } else if (!confirmed[i]) {
                 if (t - tick[i] > 0 && ++misses[i] >= MISSES) {
-                    state[i] = FREE;
+                    drop(i);
                     unconfirmed++;
                 }
             } else if (++misses[i] >= MISSES) {
+                // gone from the snapshots: a hit, or out of the view they cover (limitedVisibility, the view size);
+                // the count keeps its end, right for the second and early by the rest of its life for a hit
                 state[i] = FREE;
                 ended++;
             }
         }
-        trim();
     }
 
     /** The own normal bullet's SHOT variant without the harmless bit. */
@@ -433,14 +526,7 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
         float svy = spawnVy[i];
         long l = shotLife;
         for (int k = tick[i]; k - t <= 0; k++) {
-            if (gravity) {
-                int bx = (x >> Click.SHIFT) / Const.BLOCK_SZ;
-                int by = (y >> Click.SHIFT) / Const.BLOCK_SZ;
-                svx += world.gravityX(bx, by);
-                svy += world.gravityY(bx, by);
-            }
-            nlife = l;
-            if (!move(x, y, svx, svy) || --nlife <= 0) {
+            if (!oneTick(x, y, svx, svy, l)) {
                 return false;
             }
             l = nlife;

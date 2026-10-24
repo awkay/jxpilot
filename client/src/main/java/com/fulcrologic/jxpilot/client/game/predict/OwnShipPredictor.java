@@ -53,10 +53,11 @@ import com.fulcrologic.jxpilot.common.sim.ShipKernel;
  *   alpha), K the newest final entry and alpha how far the predicted clock is past it (clamped to [0, 1]): a key
  *   change starts to show on the next frame and ramps over the rest of the tick.</li>
  *   <li><b>Own shots.</b> The kernel's bullets go to the {@link ProvisionalShots} (drawn on this timeline,
- *   confirmed by the snapshots), and the predictor gives each back to the ship's {@code shots} count shotLife ticks
- *   after it was fired, as the server's shot expiry does (the shot cap gates the guns). A bullet that ends early on
- *   the server (a hit) is given back early there: the next PREDICT corrects the count.</li>
- *   <li><b>Not predicted</b> (inactive, the snapshot timeline draws the ship): no valid PREDICT or kernel world, a
+ *   confirmed by the snapshots), and the predictor gives each back to the ship's {@code shots} count in the tick it
+ *   ends (its life runs out or it crashes into a wall), as the server's shot expiry does (the shot cap gates the
+ *   guns). A bullet that hits something on the server is given back earlier there: the next PREDICT corrects the
+ *   count.</li>
+ *   <li><b>Not predicted</b> (inactive, the snapshot timeline draws the ship): no valid PREDICT yet, no kernel world, a
  *   ship not playing (dead, paused, game over, hover-paused), the round delay, warping or warped, autopilot, a pause
  *   key, or a tick whose input entry the history no longer holds. A predicted crash freezes the ship where
  *   it crashed (still active) until a PREDICT rules.</li>
@@ -66,11 +67,6 @@ import com.fulcrologic.jxpilot.common.sim.ShipKernel;
 public final class OwnShipPredictor {
     /** Ticks in the ring (a power of two, more than the input history holds). */
     public static final int RING = 64;
-    /**
-     * Ticks of fire counts kept for shot expiry (a power of two). With a shotLife over this the predicted count is
-     * never lowered; the PREDICTs correct it.
-     */
-    public static final int FIRE_RING = 512;
     /** Ticks of exhaust kept for the drawer (a power of two). */
     public static final int EXHAUST_RING = 16;
     /** C {@code RES}: headings per turn. */
@@ -86,8 +82,6 @@ public final class OwnShipPredictor {
     private final int[] ringTick = new int[RING];
     private final boolean[] ringHas = new boolean[RING];
     private final ShipBody spec = new ShipBody();
-    private final int[] fires = new int[FIRE_RING];
-    private final int[] fireTick = new int[FIRE_RING];
     private final SeededTieBreak tieBreak = new SeededTieBreak();
     private final java.util.function.DoubleSupplier tieSource = this::tie;
     private final PredictEvents ev = new PredictEvents(tieBreak);
@@ -96,7 +90,7 @@ public final class OwnShipPredictor {
     private KernelWorld world;
     private ShipKernel kernel;
     private boolean predictable;
-    private int shotLife = DEFAULT_SHOT_LIFE;
+    private int roundDelay;
     /** C's default shotLife, while the server's options are not known. */
     static final int DEFAULT_SHOT_LIFE = 60;
     private int ownId;
@@ -167,9 +161,9 @@ public final class OwnShipPredictor {
         listener = l;
     }
 
-    /** Where the kernel's bullets go instead of the {@link #shots()} (tests). */
+    /** Also told of every bullet the kernel fires (tests and probes); the {@link #shots()} get them as well. */
     public void setShotSink(PredictEvents.ShotSink sink) {
-        ev.setShotSink(sink);
+        shots.setTap(sink);
     }
 
     /** The smoother (its half-life is tunable). */
@@ -183,6 +177,7 @@ public final class OwnShipPredictor {
         halted = false;
         smoother.clear();
         lastPredicts = -1;
+        roundDelay = 0;
         exRead = exWrite;
         shots.clear();
     }
@@ -203,11 +198,13 @@ public final class OwnShipPredictor {
      * One frame: reconcile with a new PREDICT, advance the ring to the newest final entry, and compute the drawn
      * ship for {@code nowNanos}.
      * <p>
-     * BEHAVIOR: inactive (and reset) when disabled, without a source, a valid PREDICT or a kernel world; the world
-     * changing rebuilds the kernel and drops the ring.
+     * BEHAVIOR: inactive (and reset) when disabled, without a source, a kernel world or a final entry; the world
+     * changing rebuilds the kernel and drops the ring. A PREDICT that is not valid (its rare part or key masks not
+     * known) is not compared: before the first valid one nothing is predicted, after it the ring rides on.
      * BEHAVIOR: a new PREDICT for tick S: with the ring holding S, it is compared ({@link Listener}) and on a
      * difference reseeded and replayed (the predicted ship's move is the smoother's correction); without, the ring is
-     * seeded at S (no correction).
+     * seeded at S (no correction). Only a comparison of a ship in play both in the ring and on the server is
+     * judged (counted, reported to the {@link Listener} and the diagnostics).
      * BEHAVIOR: the ring then steps to the newest final entry; the speculative partial tick is drawn from the
      * collected entry at alpha = clamp(predicted tick - K, 0, 1).
      * BEHAVIOR: inactive while the state at K is unpredictable (see the class comment); active and frozen at the
@@ -222,7 +219,7 @@ public final class OwnShipPredictor {
             }
             return;
         }
-        if (!src.predictValid() || src.kernelWorld() == null || !src.haveFinal()) {
+        if (src.kernelWorld() == null || !src.haveFinal()) {
             if (seeded) {
                 reset();
             }
@@ -233,7 +230,6 @@ public final class OwnShipPredictor {
             kernel = new ShipKernel(world, tieSource);
             com.fulcrologic.jxpilot.common.config.Options o = src.serverOptions();
             predictable = o != null && o.getBool(Opt.PREDICTABLE_BOUNCES);
-            shotLife = o == null ? DEFAULT_SHOT_LIFE : Math.max(1, o.getInt(Opt.SHOT_LIFE));
             shots.configure(world, o);
             reset();
         }
@@ -244,11 +240,13 @@ public final class OwnShipPredictor {
             return;
         }
         InputHistory h = src.input();
-        if (src.predicts() != lastPredicts) {
+        // a PREDICT that cannot be used (its rare part or key masks were lost) is skipped: the ring rides on
+        if (src.predictValid() && src.predicts() != lastPredicts) {
             lastPredicts = src.predicts();
+            roundDelay = src.predictRoundDelay();
             reconcile(src, h, was);
         }
-        if (!seeded || halted || src.predictRoundDelay() > 0) {
+        if (!seeded || halted || roundDelay > 0) {
             return;
         }
         int fin = src.finalTick();
@@ -273,8 +271,6 @@ public final class OwnShipPredictor {
         spec.copyFrom(cur);
         if (!frozen) {
             step(spec, head + 1, src.collectingKeys(), src.collectingTaps(), src.collectingAim(), true);
-        } else {
-            shots.beginStep(head + 1, true);
         }
         draw(cur, spec, alpha, nowNanos);
         shots.draw(head, alpha);
@@ -297,9 +293,6 @@ public final class OwnShipPredictor {
         b.copyFrom(ring[idx(head)]);
         if (frozen) {
             ev.beginStep(k, false);
-            int f = k & (FIRE_RING - 1);
-            fireTick[f] = k;
-            fires[f] = 0;
         } else {
             step(b, k, h.keys(k), h.taps(k), h.aimTurn(k), false);
         }
@@ -316,16 +309,23 @@ public final class OwnShipPredictor {
         double beforeY = 0;
         double beforeH = 0;
         int oldHead = head;
+        // only a prediction of a ship in play that the server also has in play is judged (a death on the server, a
+        // respawn or a pause is not a prediction error: those are drawn from the snapshots)
+        boolean judged = known && predictableState(server) && predictableState(ring[idx(sTick)]);
         if (known) {
             boolean same = ring[idx(sTick)].sameState(server, s.predictFrames());
-            reconciliations++;
+            if (judged) {
+                reconciliations++;
+            }
             if (same) {
-                exact++;
+                if (judged) {
+                    exact++;
+                    if (listener != null) {
+                        listener.reconciled(sTick, true, 0);
+                    }
+                }
                 base = sTick;
                 baseFrames = s.predictFrames();
-                if (listener != null) {
-                    listener.reconciled(sTick, true, 0);
-                }
                 return;
             }
             ShipBody old = ring[idx(head)];
@@ -354,27 +354,24 @@ public final class OwnShipPredictor {
         double dx = XMath.wrapDelta(now.cx / (double) (1 << Click.SHIFT) - beforeX, world.pixelWidth(), world.wrap());
         double dy = XMath.wrapDelta(now.cy / (double) (1 << Click.SHIFT) - beforeY, world.pixelHeight(), world.wrap());
         double dh = XMath.wrapDelta(now.dir - beforeH, RES, true);
-        boolean snap = !wasDrawn || head != oldHead || !predictableState(server)
-            || (server.status & (Obj.WARPING | Obj.WARPED)) != 0;
-        corrected(sTick, dx, dy, dh, snap);
-    }
-
-    private void corrected(int tick, double dx, double dy, double dh, boolean snap) {
-        corrections++;
-        windowCorrections++;
-        double px = Math.hypot(dx, dy);
-        lastCorrectionPx = px;
+        boolean snap = !wasDrawn || !predictableState(server);
         smoother.correct(dx, dy, dh, snap);
-        if (listener != null) {
-            listener.reconciled(tick, false, px);
+        if (judged) {
+            corrections++;
+            windowCorrections++;
+            double px = Math.hypot(dx, dy);
+            lastCorrectionPx = px;
+            if (listener != null) {
+                listener.reconciled(sTick, false, px);
+            }
         }
     }
 
     /**
      * One tick of the own ship, as the server applies entry {@code k}: the C frame clock of tick k, the pointer turn,
-     * keys | taps (when a tap went down and up), then the kernel step (keys, autofire, limits, fly); then the bullets fired shotLife - 1
-     * ticks before k expire at the end of k, as the server's object expiry gives them back (the speculative tick
-     * records none of its own). A wormhole or a pause key stops predicting (the server's world decides) and a crash
+     * keys | taps (when a tap went down and up), then the kernel step (keys, autofire, limits, fly); then the own
+     * bullets that end in tick k (their life runs out, or they crash: {@link ProvisionalShots#endingAt}) are given
+     * back, as the server's object expiry does. A wormhole or a pause key stops predicting (the server's world decides) and a crash
      * freezes the ship.
      */
     private void step(ShipBody b, int k, long keys, long taps, int aim, boolean speculative) {
@@ -389,16 +386,7 @@ public final class OwnShipPredictor {
             kernel.keys.apply(b, keys | down, ev);
         }
         kernel.step(b, keys, ev);   // its key handling releases the taps (the server's second apply)
-        if (!speculative) {
-            int f = k & (FIRE_RING - 1);
-            fireTick[f] = k;
-            fires[f] = ev.fired();
-        }
-        int born = k - shotLife + 1;
-        int f = born & (FIRE_RING - 1);
-        if (fireTick[f] == born) {
-            b.shots = Math.max(0, b.shots - fires[f]);
-        }
+        b.shots = Math.max(0, b.shots - shots.endingAt(k));
         if (!speculative) {
             if (ev.warped() || ev.pauseKey()) {
                 halted = true;
@@ -573,11 +561,14 @@ public final class OwnShipPredictor {
     /** Whether the drawn ship touches a wall (the smoother decays faster). */
     public boolean touchingWall() { return wall; }
 
+    /** Judged reconciliations: PREDICTs compared while the ship was in play in the ring and on the server. */
     public long reconciliations() { return reconciliations; }
 
     public long exactReconciliations() { return exact; }
 
-    /** Reconciliations that moved the prediction (also counting reseeds after an unpredictable spell). */
+    /**
+     * Judged reconciliations (a ship in play predicted and in play on the server) that moved the prediction.
+     */
     public long corrections() { return corrections; }
 
     public double lastCorrectionPx() { return lastCorrectionPx; }

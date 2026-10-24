@@ -168,26 +168,53 @@ class OwnShipPredictorTest {
             boolean during = p.active();
             s.roundDelay = 0;
             p.update(s, 0);
+            boolean stale = p.active();
+            s.predict(11, 100, ship(200, 200, 0));
+            p.update(s, 0);
             assertAll(
                 () -> assertFalse(during, "round delay: inactive"),
+                () -> assertFalse(stale, "until a PREDICT says it is over"),
                 () -> assertTrue(p.active(), "after it: active"));
         }
 
         @Test
-        @DisplayName("losing the source state forgets the ring: the next PREDICT seeds afresh")
+        @DisplayName("losing the kernel world forgets the ring: the next PREDICT seeds afresh")
         void reset() {
             Source s = open();
             s.hold(11, 12, 0, 0);
             OwnShipPredictor p = new OwnShipPredictor();
             p.update(s, 0);
-            s.valid = false;
+            com.fulcrologic.jxpilot.common.sim.KernelWorld w = s.world;
+            s.world = null;
             p.update(s, 0);
-            s.valid = true;
+            s.world = w;
             s.predict(12, 102, ship(100, 100, 0));
             p.update(s, 0);
             assertAll(
                 () -> assertEquals(0, p.reconciliations(), "the PREDICT after a reset is a seed, not a comparison"),
                 () -> assertEquals(100, p.x(), 1e-9, "drawn from the new seed"));
+        }
+
+        @Test
+        @DisplayName("an invalid PREDICT after a valid one is not compared; the ring rides on and is drawn")
+        void invalidRidesOn() {
+            Source s = open();
+            s.hold(11, 12, 0, 0);
+            OwnShipPredictor p = new OwnShipPredictor();
+            p.update(s, 0);
+            s.valid = false;
+            s.predict(12, 101, ship(100, 100, 0));
+            s.hold(13, 14, 0, 0);
+            p.update(s, 0);
+            boolean drawn = p.active();
+            double x = p.x();
+            s.valid = true;
+            p.update(s, 0);
+            assertAll(
+                () -> assertTrue(drawn, "still drawn"),
+                () -> assertEquals(200, x, 1e-9, "from the ring, not the invalid PREDICT"),
+                () -> assertEquals(14, p.headTick(), "advanced to 14"),
+                () -> assertEquals(1, p.reconciliations(), "compared once it is valid"));
         }
 
         @Test
@@ -221,6 +248,7 @@ class OwnShipPredictorTest {
             ShipBody want = reference(s, start, 16, THRUST | LEFT);
             assertAll(
                 () -> assertEquals(16, p.headTick(), "stepped to the newest final entry"),
+                () -> assertFalse(p.frozen(), "not frozen"),
                 () -> assertEquals(px(want), p.x(), 1e-9, "x as the reference after 6 thrusting, turning ticks"),
                 () -> assertEquals(py(want), p.y(), 1e-9, "y as the reference"),
                 () -> assertEquals(want.dir * 2 * Math.PI / Const.RES, p.heading(), 1e-9, "heading as the reference"),
@@ -370,6 +398,26 @@ class OwnShipPredictorTest {
         }
 
         @Test
+        @DisplayName("a ship dead on the server is not judged: no reconciliation, no correction, no listener call")
+        void deathNotJudged() {
+            Source s = open();
+            s.hold(11, 15, 0, 0);
+            OwnShipPredictor p = new OwnShipPredictor();
+            List<Integer> told = new ArrayList<>();
+            p.setListener((t, ex, px) -> told.add(t));
+            p.update(s, 0);
+            ShipBody dead = ship(100, 100, 0);
+            dead.status = 0;
+            s.predict(13, 102, dead);
+            p.update(s, 0);
+            assertAll(
+                () -> assertEquals(0, p.reconciliations(), "not judged"),
+                () -> assertEquals(0, p.corrections(), "no correction counted"),
+                () -> assertEquals(List.of(), told, "listener not told"),
+                () -> assertFalse(p.active(), "and not drawn"));
+        }
+
+        @Test
         @DisplayName("a correction while the ship was not drawn snaps")
         void snapWhenNotDrawn() {
             Source s = open();
@@ -383,6 +431,7 @@ class OwnShipPredictorTest {
             p.update(s, 0);
             assertAll(
                 () -> assertTrue(p.active(), "alive again: drawn"),
+                () -> assertEquals(0, p.reconciliations(), "a dead ring state is not judged"),
                 () -> assertEquals(0, p.smoother().offsetPx(), "no glide from the dead ship"),
                 () -> assertEquals(0, p.smoother().snaps(), "an asked-for snap (not counted)"));
         }
@@ -465,6 +514,29 @@ class OwnShipPredictorTest {
             assertAll(
                 () -> assertEquals(List.of("11/0", "12/0", "14/0", "15/0", "17/0", "18/0"), fired,
                     "two in the air at most: the one of tick 11 is back at the end of tick 13, so 14 fires"));
+        }
+    }
+
+    @Nested
+    @DisplayName("own bullets given back")
+    class GiveBack {
+        @Test
+        @DisplayName("a bullet into a wall is given back in the tick it crashes, so the gun fires again sooner")
+        void wallShot() {
+            Source s = new Source(options("fireRepeatRate: 1", WALL));
+            ShipBody start = ship(240, 200, 0);
+            start.shotMax = 1;
+            s.predict(10, 100, start);
+            s.hold(11, 16, FIRE, 0);
+            List<Integer> fired = new ArrayList<>();
+            OwnShipPredictor p = new OwnShipPredictor();
+            p.setShotSink((t, o, x, y, vx, vy, spec) -> {
+                if (!spec) {
+                    fired.add(t);
+                }
+            });
+            p.update(s, 0);
+            assertTrue(fired.size() >= 3, "shotMax 1, but each shot dies in the wall at x 280 at once: " + fired);
         }
     }
 

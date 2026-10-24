@@ -104,7 +104,7 @@ enum Course {
     String[] serverArgs(int robots, boolean predictable) {
         String r = Integer.toString(robots);
         return predictable
-            ? new String[] {"--map", "../maps/" + map + ".xp", "-maxRobots", r, "-minRobots", r, "-predictableBounces", "yes"}
+            ? new String[] {"--map", "../maps/" + map + ".xp", "-maxRobots", r, "-minRobots", r, "-predictableBounces"}
             : new String[] {"--map", "../maps/" + map + ".xp", "-maxRobots", r, "-minRobots", r};
     }
 }
