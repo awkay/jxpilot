@@ -215,12 +215,17 @@ class AppPartsTest {
         }
 
         @Test
-        @DisplayName("launcher: HELP exits 2; LOCAL with a map that does not load exits 3 without opening a window")
+        @DisplayName("launcher: HELP exits 2; LOCAL with a map that does not load exits 3 and VIEW_MAP with an unknown map"
+            + " exits 2, both without opening a window; LIST_MAPS exits 0")
         void launcher() throws Exception {
             assertAll(
                 () -> assertEquals(2, AppLauncher.run(AppOptions.parse(new String[0], "u")), "help: usage, exit 2"),
                 () -> assertEquals(3, AppLauncher.run(AppOptions.parse(new String[] {"--local", "--map",
-                    Path.of("no-such-map.xp").toString()}, "u")), "the local server cannot start: exit 3"));
+                    Path.of("no-such-map.xp").toString()}, "u")), "the local server cannot start: exit 3"),
+                () -> assertEquals(2, AppLauncher.run(AppOptions.parse(new String[] {"--view-map", "no-such-map"}, "u")),
+                    "the viewer's map is resolved before any window: exit 2"),
+                () -> assertEquals(0, AppLauncher.run(AppOptions.parse(new String[] {"--list-maps"}, "u")),
+                    "the bundled map list: exit 0"));
         }
     }
 

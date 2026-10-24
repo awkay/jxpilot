@@ -104,6 +104,36 @@ class ServerOptionsTest {
     }
 
     @Test
+    @DisplayName("--map NAME is the bundled map, in any case and with or without .xp: the same options as the file")
+    void bundledMapByName() throws IOException {
+        Options file = Server.readOptions(new String[] {"--map", DEFAULT_MAP});
+        Options named = Server.readOptions(new String[] {"--map", "default"});
+        Options upper = Server.readOptions(new String[] {"--map", "DEFAULT.XP"});
+        assertAll(
+            () -> assertEquals(file.toConfigText(), named.toConfigText(), "'default' is maps/default.xp"),
+            () -> assertEquals(file.toConfigText(), upper.toConfigText(), "'DEFAULT.XP' is the same map"),
+            () -> assertEquals("The Newbie Globe", named.getString(Opt.MAP_NAME), "its header"),
+            () -> assertEquals(OptionOrigin.MAP, named.originOf(Opt.MAP_NAME), "read as the map"));
+    }
+
+    @Test
+    @DisplayName("a config file's mapFileName is resolved the same way; an unknown map lists the bundled ones")
+    void configFileMapName() throws IOException {
+        Path cfg = file("server.cfg", "mapFileName: doggy\n");
+        Options o = Server.readOptions(new String[] {cfg.toString()});
+        String msg = assertThrows(java.io.FileNotFoundException.class,
+            () -> Server.readOptions(new String[] {"--map", "no-such-map"}), "an unknown map is an error").getMessage();
+        String none = assertThrows(IllegalArgumentException.class, () -> Server.readOptions(new String[0]),
+            "no map at all").getMessage();
+        assertAll(
+            () -> assertEquals("DoggyStyle", o.getString(Opt.MAP_NAME), "the bundled doggy"),
+            () -> assertTrue(msg.startsWith("map 'no-such-map' not found: it is not a bundled map"), "says why: " + msg),
+            () -> assertTrue(msg.contains("Bundled maps: blood-music2, CAMD, cloudscape, default,"), "lists them: " + msg),
+            () -> assertEquals("--map NAME|FILE is required (--list-maps shows the bundled maps)", none,
+                "no map names the option and --list-maps"));
+    }
+
+    @Test
     @DisplayName("--defaults none reads no defaults file: the cmdline.c defaults stay")
     void none() throws IOException {
         Options o = Server.readOptions(new String[] {"--map", bareMap(""), "--defaults", "NONE"});

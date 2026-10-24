@@ -27,6 +27,7 @@ import com.fulcrologic.jxpilot.common.config.ConfigParser;
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.OptionOrigin;
 import com.fulcrologic.jxpilot.common.config.Options;
+import com.fulcrologic.jxpilot.common.map.MapLocator;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
 import com.fulcrologic.jxpilot.common.net.ConfigTransfer;
 
@@ -80,7 +81,7 @@ public final class Server implements AutoCloseable {
     }
 
     /**
-     * Parse {@code --map <file> [--port N] [--bind sel ...] [--bindWait] [config file]} (plus any
+     * Parse {@code --map NAME|FILE [--port N] [--bind sel ...] [--bindWait] [config file]} (plus any
      * XPilot option), load the map, bind, and start the loop.
      * Sources are read in C {@code Parser}'s order: command line, the defaults file ({@link DefaultsFile}:
      * XPilot's lib/defaults unless {@code --defaults FILE|none}), the optional positional config file (also
@@ -148,8 +149,12 @@ public final class Server implements AutoCloseable {
      * BEHAVIOR: command line, then the defaults file ({@link DefaultsFile#apply}), then the positional config
      * file (origin DEFAULTS), then the map (origin MAP), then the {@code expand} list; precedence per
      * {@link Options#setValue}.
+     * BEHAVIOR: the map is {@code mapFileName} (from {@code --map} or the config file) as {@link MapLocator} resolves
+     * it: a bundled map by name, else a file.
      *
      * @throws IllegalArgumentException for an unknown option, two config files or no {@code --map}
+     * @throws java.io.FileNotFoundException when the map is neither bundled nor a file (the message lists the
+     *                                       bundled maps)
      */
     public static Options readOptions(String[] args) throws IOException {
         Options opts = new Options();
@@ -161,9 +166,9 @@ public final class Server implements AutoCloseable {
         }
         String mapFile = opts.getString(Opt.MAP_FILE_NAME);
         if (mapFile == null) {
-            throw new IllegalArgumentException("--map <file> is required");
+            throw new IllegalArgumentException("--map NAME|FILE is required (--list-maps shows the bundled maps)");
         }
-        ConfigParser.parseFile(Path.of(mapFile), OptionOrigin.MAP, opts);
+        MapLocator.resolve(mapFile).parseInto(opts);
         opts.finishParsing();
         return opts;
     }

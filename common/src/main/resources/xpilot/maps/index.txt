@@ -1,0 +1,21 @@
+# The maps bundled under xpilot/maps/, one file name per line (BundledMaps reads this; a jar cannot
+# list a directory). BundledMapsTest checks that it lists exactly the .xp files in the repository's maps/.
+blood-music2.xp
+CAMD.xp
+cloudscape.xp
+default.xp
+doggy.xp
+fireball.xp
+fuzz.xp
+fuzz2.xp
+globe.xp
+grandprix.xp
+newdarkhell.xp
+newdarkhell2.xp
+pad.xp
+pit.xp
+planetx.xp
+teamball.xp
+tourmination.xp
+tournament.xp
+war.xp
