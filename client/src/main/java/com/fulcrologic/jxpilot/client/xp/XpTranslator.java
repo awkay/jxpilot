@@ -582,8 +582,14 @@ public final class XpTranslator {
         if (f.radar == 0 && selfShip < 0 && eyesShip < 0 || !w.beginSection(Section.RADAR)) {
             return;
         }
+        int asteroidSizes = 0;
         for (int k = 0; k < f.radar; k++) {
-            Records.Radar.put(w, f.radarX[k], f.radarY[k], radarFlags(f.radarSize[k]));
+            int flags = radarFlags(f.radarSize[k]);
+            if (flags == Records.Radar.FLAG_ASTEROID) {
+                asteroidSizes |= 1 << asteroidSize(f.radarSize[k]);
+                continue;
+            }
+            Records.Radar.put(w, f.radarX[k], f.radarY[k], flags);
         }
         if (selfShip >= 0) {
             Records.Radar.put(w, wrapX(f.shipX[selfShip]), wrapY(f.shipY[selfShip]), Records.Radar.FLAG_SELF);
@@ -591,6 +597,24 @@ public final class XpTranslator {
             Records.Radar.put(w, wrapX(f.shipX[eyesShip]), wrapY(f.shipY[eyesShip]), radarFlags(3));
         }
         w.endSection();
+        // C sends an asteroid as (size + 1) | 0x80: one RADAR section per size, the size as its variant
+        for (int size = 0; size < 8; size++) {
+            if ((asteroidSizes & 1 << size) == 0 || !w.beginSection(Section.RADAR, size)) {
+                continue;
+            }
+            for (int k = 0; k < f.radar; k++) {
+                if (radarFlags(f.radarSize[k]) == Records.Radar.FLAG_ASTEROID && asteroidSize(f.radarSize[k]) == size
+                    && w.hasRoom()) {
+                    Records.Radar.put(w, f.radarX[k], f.radarY[k], Records.Radar.FLAG_ASTEROID);
+                }
+            }
+            w.endSection();
+        }
+    }
+
+    /** BEHAVIOR: the asteroid size of a C radar size byte {@code (size + 1) | 0x80}, at least 0. */
+    static int asteroidSize(int sizeByte) {
+        return Math.max(0, (sizeByte & 0x07) - 1);
     }
 
     /** BEHAVIOR: the first ship at exactly the SELF position (C {@code x == pos.x && y == pos.y}), -1 when none. */

@@ -50,7 +50,10 @@ public final class Section {
     public static final int FUEL = 6;
     /** {@link Records.TargetState}: visible targets. */
     public static final int TARGET = 7;
-    /** {@link Records.Radar}: radar blips for the whole world (not view culled). */
+    /**
+     * {@link Records.Radar}: radar blips for the whole world (not view culled). Variant 0 for most blips; a section
+     * of asteroid blips carries their size as its variant (1..15; C {@code Frame_radar} draws size + 1 pixels).
+     */
     public static final int RADAR = 8;
 
     // ---- M2

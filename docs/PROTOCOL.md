@@ -212,7 +212,7 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 | 5 | CANNON | 3 | u16 index, u8 flags (dead, phasing, shield) |
 | 6 | FUEL | 4 | u16 index, frac level (of 500) |
 | 7 | TARGET | 5 | u16 index, u8 flags (dead), frac strength left |
-| 8 | RADAR | 3 | u8 x, u8 y (1/256 of the world size, decoded to the cell centre), u8 flags (friendly, self, missile, mine, ball, nuke, asteroid, locked) — whole world |
+| 8 | RADAR | 3 | u8 x, u8 y (1/256 of the world size, decoded to the cell centre), u8 flags (friendly, self, missile, mine, ball, nuke, asteroid, locked) — whole world. Section variant: 0, or for a section of asteroid blips their size (C `Frame_radar` draws an asteroid size + 1 pixels; one section per size, so ordinary blips cost nothing extra). Readers that ignore the variant draw every asteroid at size 1 |
 | 9 | ITEM | 5 | rel x, rel y, u8 item (`Item`) |
 | 10 | MINE | 7 | rel x, rel y, u8 flags, u16 owner |
 | 11 | MISSILE | 10 | u16 id, rel x, rel y, ang heading, u8 kind (smart/heat/torpedo, 0x80 nuclear), u8 length |

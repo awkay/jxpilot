@@ -670,7 +670,8 @@ public final class SnapshotBuilder {
 
     /**
      * BEHAVIOR: radar blips for balls (with treasuresOnRadar, FLAG_BALL) and asteroids (with asteroidsOnRadar,
-     * FLAG_ASTEROID) within the viewer's sensor range (C Frame_radar).
+     * FLAG_ASTEROID) within the viewer's sensor range (C Frame_radar). Asteroids go in one RADAR section per size,
+     * the size as the section variant (C draws size + 1 pixels); balls in variant 0.
      */
     private void writeModeRadar(Player v) {
         boolean balls = w.modeParams.treasuresOnRadar;
@@ -678,25 +679,44 @@ public final class SnapshotBuilder {
         if (!balls && !asteroids) {
             return;
         }
+        if (balls && !writeModeBlips(v, Obj.BALL, -1)) {
+            return;
+        }
+        // one RADAR section per asteroid size, its variant the size (C size + 1 pixels); a single pass when they
+        // all have one size
+        int sizes = 0;
+        Objects o = w.objects;
+        for (int k = 0; asteroids && k < o.count(); k++) {
+            int h = o.active[k];
+            if (o.type[h] == Obj.ASTEROID) {
+                sizes |= 1 << Math.max(1, Math.min(15, o.size[h]));
+            }
+        }
+        for (int size = 1; size <= 15; size++) {
+            if ((sizes & 1 << size) != 0 && !writeModeBlips(v, Obj.ASTEROID, size)) {
+                return;
+            }
+        }
+    }
+
+    /** Ball (size -1) or asteroid blips of one size; false once the snapshot is full. */
+    private boolean writeModeBlips(Player v, int type, int size) {
         Objects o = w.objects;
         for (int k = 0; k < o.count(); k++) {
             int h = o.active[k];
-            int flag;
-            if (balls && o.type[h] == Obj.BALL) {
-                flag = Records.Radar.FLAG_BALL;
-            } else if (asteroids && o.type[h] == Obj.ASTEROID) {
-                flag = Records.Radar.FLAG_ASTEROID;
-            } else {
+            if (o.type[h] != type || size >= 0 && Math.max(1, Math.min(15, o.size[h])) != size) {
                 continue;
             }
             if (w.wrapLength(v.px - o.px[h], v.py - o.py[h]) > v.sensorRange) {
                 continue;
             }
-            if (!need(Section.RADAR, 0)) {
-                return;
+            if (!need(Section.RADAR, Math.max(0, size))) {
+                return false;
             }
-            Records.Radar.put(wr, o.px[h], o.py[h], flag);
+            Records.Radar.put(wr, o.px[h], o.py[h], type == Obj.BALL ? Records.Radar.FLAG_BALL
+                : Records.Radar.FLAG_ASTEROID);
         }
+        return true;
     }
 
     private void writeRadar(Player v) {

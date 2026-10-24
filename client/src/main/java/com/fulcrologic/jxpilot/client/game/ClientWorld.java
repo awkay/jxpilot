@@ -208,6 +208,7 @@ public final class ClientWorld {
     private final float[] radarX;
     private final float[] radarY;
     private final int[] radarFlags;
+    private final int[] radarAsteroidSize;
     private int radarCount;
     private int radarTick;
     private boolean haveRadar;
@@ -294,6 +295,7 @@ public final class ClientWorld {
         radarX = new float[radarCap];
         radarY = new float[radarCap];
         radarFlags = new int[radarCap];
+        radarAsteroidSize = new int[radarCap];
         outShipId = new int[shipCap];
         outShipFlags = new int[shipCap];
         outShipX = new float[shipCap];
@@ -811,6 +813,7 @@ public final class ClientWorld {
             radarX[radarCount] = radarRec.x();
             radarY[radarCount] = radarRec.y();
             radarFlags[radarCount] = radarRec.flags();
+            radarAsteroidSize[radarCount] = (radarRec.flags() & Records.Radar.FLAG_ASTEROID) != 0 ? reader.variant() : 0;
             radarCount++;
         }
     }
@@ -1602,6 +1605,12 @@ public final class ClientWorld {
 
     /** {@link Records.Radar} FLAG_* bits. */
     public int radarFlags(int i) { return radarFlags[i]; }
+
+    /**
+     * An asteroid blip's size (its RADAR section's variant: C's size, drawn size + 1 pixels), 0 when the server did not
+     * send one.
+     */
+    public int radarAsteroidSize(int i) { return radarAsteroidSize[i]; }
 
     /** {@link Records.CannonState} flags of cannon {@code index} (WorldMap.cannons()). */
     public int cannonFlags(int index) { return cannonFlags[index]; }

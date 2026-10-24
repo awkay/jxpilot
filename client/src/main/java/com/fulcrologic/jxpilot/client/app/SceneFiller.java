@@ -82,7 +82,8 @@ public final class SceneFiller {
      * dead; paused ones become paused markers (countdown 0) instead (see {@link #addShip}).
      * BEHAVIOR: adds every shot ({@link #shotColor}, {@link #teamShot}), every visible particle
      * ({@link #particleColor}), every radar blip ({@link #radarSize}, hidden blink phases skipped; when the
-     * server already blinks them {@link #radarSizeUnblinked}) and the own radar ship while visible.
+     * server already blinks them {@link #radarSizeUnblinked}; an asteroid with a size is
+     * {@link RadarPainter#asteroidSizeByte} of it) and the own radar ship while visible.
      * BEHAVIOR: in race mode the next checkpoint's block ({@link #radarCheckpoint}).
      */
     public void fill(SceneData out, RadarBlips radar, ClientGame g) {
@@ -127,6 +128,9 @@ public final class SceneFiller {
         boolean blinked = g.radarBlinked();
         for (int i = 0; i < w.radarCount(); i++) {
             int size = blinked ? radarSizeUnblinked(w.radarFlags(i)) : radarSize(w.radarFlags(i), loops);
+            if ((w.radarFlags(i) & Records.Radar.FLAG_ASTEROID) != 0 && w.radarAsteroidSize(i) > 0) {
+                size = RadarPainter.asteroidSizeByte(w.radarAsteroidSize(i)); // C size + 1 (frame.c Frame_radar)
+            }
             if (size != HIDDEN) {
                 radar.add(w.radarX(i), w.radarY(i), size);
             }

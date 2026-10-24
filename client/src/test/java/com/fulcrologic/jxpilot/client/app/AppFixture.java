@@ -209,7 +209,12 @@ final class AppFixture {
     }
 
     AppFixture radar(double x, double y, int flags) {
-        w.beginSection(Section.RADAR);
+        return radar(x, y, flags, 0);
+    }
+
+    /** A blip in its own RADAR section of {@code variant} (an asteroid's size). */
+    AppFixture radar(double x, double y, int flags, int variant) {
+        w.beginSection(Section.RADAR, variant);
         Records.Radar.put(w, x, y, flags);
         w.endSection();
         return this;

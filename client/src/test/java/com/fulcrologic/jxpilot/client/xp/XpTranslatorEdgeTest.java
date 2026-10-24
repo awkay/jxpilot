@@ -175,6 +175,22 @@ class XpTranslatorEdgeTest {
     }
 
     @Test
+    void asteroidBlipsKeepTheirSizeInPerSizeSections() {
+        // C Frame_radar: an asteroid is (size + 1) | 0x80
+        List<String> s = frame(c(1).self(1750, 1750).radar(35, 35, (3 + 1) | 0x80).radar(70, 70, 3)
+            .radar(105, 105, (1 + 1) | 0x80).radar(140, 140, (3 + 1) | 0x80).end(1));
+        List<String> radar = SnapDump.only(s, "RADAR");
+        assertAll(
+            () -> assertEquals(4, radar.size(), "four blips"),
+            () -> assertEquals("flags=0", radar.get(0).substring(radar.get(0).indexOf("flags=")), "the player first, variant 0"),
+            () -> assertEquals(List.of("flags=" + Records.Radar.FLAG_ASTEROID + " size=1",
+                    "flags=" + Records.Radar.FLAG_ASTEROID + " size=3", "flags=" + Records.Radar.FLAG_ASTEROID + " size=3"),
+                radar.subList(1, 4).stream().map(x -> x.substring(x.indexOf("flags="))).toList(),
+                "then one section per size, ascending"),
+            () -> assertEquals(0, XpTranslator.asteroidSize(0x80 | 0), "a size byte below 1 is size 0"));
+    }
+
+    @Test
     void aWatchedShipAtTheCentreGetsAPlayerBlip() {
         // C Handle_ship: !selfVisible and a ship exactly at the SELF position (spectating): Handle_radar(.., 3)
         List<String> watching = frame(c(1).self(1750, 1750).ship(1000, 1000, 7, 0).ship(1750, 1750, 8, 0).end(1));

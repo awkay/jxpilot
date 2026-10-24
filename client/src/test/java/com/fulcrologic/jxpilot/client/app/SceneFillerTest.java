@@ -277,6 +277,25 @@ class SceneFillerTest {
         }
 
         @Test
+        @DisplayName("asteroid blips: C size + 1 from the section variant (frame.c:1131); without one, size 1")
+        void asteroidSizes() {
+            AppFixture f = new AppFixture(true).players().twice(x -> x
+                .self(0, 100f, 100f, 0.5f, 0xFFFF)
+                .radar(350, 175, Records.Radar.FLAG_ASTEROID, 3)
+                .radar(360, 175, Records.Radar.FLAG_ASTEROID, 4)
+                .radar(370, 175, Records.Radar.FLAG_ASTEROID)
+                .radar(380, 175, 0, 2));
+            fill(f);
+            assertAll(
+                () -> assertEquals(4, radar.count(), "four blips"),
+                () -> assertEquals(4 | 0x80, radar.sizeByte(0), "size 3: 4 pixels, asteroid colour bit"),
+                () -> assertEquals(5 | 0x80, radar.sizeByte(1), "size 4: 5 pixels"),
+                () -> assertEquals(RadarPainter.asteroidSizeByte(SceneFiller.RADAR_ASTEROID_SIZE), radar.sizeByte(2),
+                    "no size from the server: the old default"),
+                () -> assertEquals(3, radar.sizeByte(3), "a variant on a player blip means nothing"));
+        }
+
+        @Test
         @DisplayName("loops is the newer whole tick around the render tick, in original frames")
         void loops() {
             AppFixture f = new AppFixture(true).players().twice(x -> x.self(0, 100, 100, 0, 0xFFFF));
