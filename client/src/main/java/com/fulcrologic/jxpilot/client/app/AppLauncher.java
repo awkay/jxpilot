@@ -113,7 +113,7 @@ public final class AppLauncher {
         String shape = ShipShapeResource.resolve(o.shape(), o.shipShapeFile(), keys.shipShape(), keys.shipShapeFile(),
             ShipShapeResource::readLatin1, System.err);
         GameConnection conn = GameConnector.open(target, o.bind(), game, name(o, keys), team(o, keys), shape,
-            o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime());
+            o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime(), GameConnector.debrisColors(keys.options()));
         new GameApp(o, game, conn, target.toString(), null, keys).run();
         return 0;
     }

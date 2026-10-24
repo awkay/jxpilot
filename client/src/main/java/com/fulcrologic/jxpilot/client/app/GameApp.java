@@ -31,10 +31,8 @@ import com.fulcrologic.jxpilot.client.gl.UiAtlas;
 import com.fulcrologic.jxpilot.client.gl.Window;
 import com.fulcrologic.jxpilot.client.map.MapSymbols;
 import com.fulcrologic.jxpilot.client.map.RadarImage;
-import com.fulcrologic.jxpilot.client.map.StaticMap;
 import com.fulcrologic.jxpilot.client.paint.HudListPainter;
 import com.fulcrologic.jxpilot.client.paint.HudPainter;
-import com.fulcrologic.jxpilot.client.paint.PaintConfig;
 import com.fulcrologic.jxpilot.client.paint.RadarPainter;
 import com.fulcrologic.jxpilot.client.paint.SceneData;
 import com.fulcrologic.jxpilot.client.paint.ScenePainter;
@@ -105,13 +103,14 @@ public final class GameApp {
     private final ClientFrame frame;
     private final Script script;
     private final String label;
-    private final Palette palette = Palette.xpilotDefault();
+    private final Palette palette;
+    private final com.fulcrologic.jxpilot.client.paint.PaintStyle style;
     private final Camera cam = new Camera();
     private final ScreenSpace viewScreen = new ScreenSpace();
     private final ScreenSpace panelScreen = new ScreenSpace();
     private final FontMetrics metrics = new FontMetrics();
-    private final ScenePainter scenePainter = new ScenePainter(palette);
-    private final RadarPainter radarPainter = new RadarPainter(palette);
+    private final ScenePainter scenePainter;
+    private final RadarPainter radarPainter;
     private final float[] xf = new float[4];
     private final HudFrameList viewList;
     private final HudFrameList panelList;
@@ -131,7 +130,10 @@ public final class GameApp {
     private ByteBuffer dynSeg;
     private ByteBuffer dynPt;
     private VertexBatch dyn;
-    private GlRenderer.Mesh mesh;
+    // client-ui-look: the map's static look, HUD radar blips, window titles
+    private MapLook mapLook;
+    private final HudRadarBlips hudRadar = new HudRadarBlips(1024);
+    private String normalTitle;
     private MapSymbols symbols;
     private WorldMap map;
     private int mapVersion;
@@ -157,6 +159,10 @@ public final class GameApp {
         this.label = label;
         this.script = script;
         this.frame = new ClientFrame(game, conn, keys, new SceneData(), new RadarBlips(1024));
+        this.palette = frame.palette();
+        this.style = frame.style();
+        this.scenePainter = new ScenePainter(palette, style);
+        this.radarPainter = new RadarPainter(palette, style);
         this.viewList = new HudFrameList(frame.viewHud());
         this.panelList = new HudFrameList(frame.panelHud());
         this.helpList = new HudFrameList(frame.helpHud());
@@ -170,10 +176,12 @@ public final class GameApp {
 
     /** Open the window, connect and run until quit, window close or the screenshot frame count. */
     public void run() throws IOException {
-        window = new Window("JXPilot - " + label, opts.width(), opts.height(), true, opts.vsync());
+        normalTitle = "JXPilot - " + label;
+        window = new Window(normalTitle, opts.width(), opts.height(), true, opts.vsync());
         try {
             atlas = new UiAtlas(opts.fontFile() == null ? null : Path.of(opts.fontFile()), fontPixels());
             gl = new GlRenderer(atlas.texture());
+            mapLook = new MapLook(gl, palette, style, frame.options(), System.out);
             makeText();
             dynTri = MemoryUtil.memAlloc(DYNAMIC_VERTICES * VertexBatch.STRIDE);
             dynSeg = MemoryUtil.memAlloc(Math.min(DYNAMIC_SEGMENTS, gl.maxSegments()) * VertexBatch.SEGMENT_STRIDE);
@@ -315,7 +323,9 @@ public final class GameApp {
             mapVersion = frame.mapVersion();
             loadMap(frame.game().map());
         }
-        updateRadarPicture();
+        boolean lookChanged = mapLook.update(atlas);
+        updateRadarPicture(lookChanged);
+        lookFrame(now);
         cam.setZoom(zoom);
         cam.setCentre(frame.centreX(), frame.centreY());
         cam.setViewport(viewFbW, fbH, ratio);
@@ -366,14 +376,14 @@ public final class GameApp {
         viewScreen.set(fbH, ratio);
         if (map != null) {
             gl.setPointScale(zoom);
-            for (int k = 0; k < cam.offsetCount(); k++) {
-                cam.worldToNdc(k, xf);
-                gl.setTransform(xf);
-                gl.draw(mesh);
-            }
+            mapLook.draw(cam, xf, zoom, frame.hud().extent((int) (cam.viewHeight() / ratio)));
             gl.setPointScale(0);
             cam.screenToNdc(xf);
             gl.setTransform(xf);
+            dyn.identity();
+            com.fulcrologic.jxpilot.client.paint.VisibleBorder.paint(dyn, viewScreen,
+                frame.hud().extent((int) (cam.viewWidth() / ratio)), frame.hud().extent((int) (cam.viewHeight() / ratio)),
+                zoom, palette.color(style.hudColor));
             symbols.draw(dyn, text, cam, frame.mapState());
             scenePainter.drawBody(dyn, text, cam, scene);
         }
@@ -393,13 +403,14 @@ public final class GameApp {
     /** The view HUD: the draw list and the directly painted parts; {@code arcs}: only C's Arc_add parts. */
     private void hud(boolean arcs) {
         HudExtras e = frame.extras();
-        int hudColor = PaintConfig.HUD_COLOR;
+        int hudColor = style.hudColor;
         dyn.identity();
         hudPainter.setScale(zoom);
         if (arcs) {
+            hudRadar(hudColor);
             if (e.active && e.lock && e.lockFriend) {
                 hudPainter.paintLockDisc(dyn, viewScreen, e.hx, e.hy, e.lockDist, e.lockDir, e.mapDiag, true,
-                    e.warningPhase, hudColor, PaintConfig.HUD_LOCK_COLOR);
+                    e.warningPhase, hudColor, style.hudLockColor);
             }
             return;
         }
@@ -421,7 +432,7 @@ public final class GameApp {
             }
             if (!e.lockFriend) {
                 hudPainter.paintLockDisc(dyn, viewScreen, e.hx, e.hy, e.lockDist, e.lockDir, e.mapDiag, false,
-                    e.warningPhase, hudColor, PaintConfig.HUD_LOCK_COLOR);
+                    e.warningPhase, hudColor, style.hudLockColor);
             }
         }
         hudPainter.paintItems(dyn, viewScreen, e.hx, e.hy, e.itemCounts, e.loseItem, e.loseActive, hudColor);
@@ -441,8 +452,11 @@ public final class GameApp {
         float u1 = u0 + (float) RadarImage.WIDTH / UiAtlas.SIZE;
         float v1 = (float) atlas.radarHeight() / UiAtlas.SIZE;
         dyn.identity();
-        dyn.texRect(left, bottom, right, top, u0, v1, u1, 0, palette.color(Palette.WHITE));
         radarPainter.begin(left, bottom, right, top, radarHeight, map.pixelWidth(), map.pixelHeight(), map.edgeWrap());
+        if (frame.options().flag(com.fulcrologic.jxpilot.client.game.options.ClientOption.SLIDING_RADAR)) {
+            radarPainter.slide(frame.centreX(), frame.centreY());
+        }
+        radarPainter.picture(dyn, u0, 0, u1, v1, palette.color(Palette.WHITE));
         RadarBlips r = frame.radar();
         if (r.selfVisible) {
             radarPainter.self(dyn, r.selfX, r.selfY, r.selfHeading, loops);
@@ -455,8 +469,7 @@ public final class GameApp {
 
     /** New map: static meshes, symbols, radar picture, camera world and window title. */
     private void loadMap(WorldMap m) {
-        gl.delete(mesh);
-        mesh = null;
+        mapLook.setMap(m);
         map = m;
         if (m == null) {
             return;
@@ -465,23 +478,62 @@ public final class GameApp {
         if (radarPixels.length < RadarImage.WIDTH * RadarImage.height(m)) {
             radarPixels = new int[RadarImage.WIDTH * RadarImage.height(m)];
         }
-        mesh = gl.upload(StaticMap.build(m, palette, false, true));
-        symbols = new MapSymbols(m, palette);
+        symbols = new MapSymbols(m, palette, style);
         radarHeight = RadarImage.height(m);
         cam.setWorld(m.pixelWidth(), m.pixelHeight(), m.edgeWrap());
-        window.setTitle("JXPilot - " + (m.name() != null ? m.name() : "untitled map") + " - " + label);
+        normalTitle = "JXPilot - " + (m.name() != null ? m.name() : "untitled map") + " - " + label;
+        window.setTitle(normalTitle);
     }
 
     private boolean targetAlive(int i) {
         return frame.mapState().targetAlive(i);
     }
 
-    /** Rebuild the radar picture when the set of destroyed targets changes (C redraws it then). */
-    private void updateRadarPicture() {
-        if (map == null || !targets.changed(frame.mapState())) {
+    /**
+     * Rebuild the radar picture when the set of destroyed targets changes (C redraws it then) or the look
+     * ({@code showDecor}, the radar colours, the palette) changed.
+     */
+    private void updateRadarPicture(boolean lookChanged) {
+        boolean targetsChanged = map != null && targets.changed(frame.mapState());
+        if (map == null || !targetsChanged && !lookChanged) {
             return;
         }
-        atlas.setRadar(RadarImage.build(map, palette, true, targetAlive, radarPixels), radarHeight);
+        atlas.setRadar(RadarImage.build(map, palette, style, targetAlive, radarPixels), radarHeight);
+    }
+
+    /**
+     * client-ui-look per frame: the live HUD list colours ({@code hudColor}, {@code oldMessagesColor}; dimmed
+     * score rows grey with {@code texturedObjects}), the bell ({@link ClientFrame#bell}) and the title flip.
+     */
+    private void lookFrame(long now) {
+        hudList.setPaletteIndex(com.fulcrologic.jxpilot.client.game.hud.HudColor.HUD, style.hudColor);
+        hudList.setPaletteIndex(com.fulcrologic.jxpilot.client.game.hud.HudColor.OLD_MESSAGE, style.oldMessagesColor);
+        if (frame.bell()) {
+            sound.bell(now);
+        }
+        switch (frame.titleChange()) {
+            case LookFrame.TITLE_NORMAL -> window.setTitle(normalTitle);
+            case LookFrame.TITLE_COPYRIGHT -> window.setTitle(COPYRIGHT_TITLE);
+            default -> { }
+        }
+    }
+
+    /** C {@code COPYRIGHT}, the title {@code titleFlip} alternates with the normal one. */
+    static final String COPYRIGHT_TITLE = "JXPilot, derived from XPilot 4.5.5, Copyright \u00a9 1991-2002 by "
+        + "Bj\u00f8rn Stabell, Ken Ronny Schouten, Bert Gijsbers & Dick Balaska";
+
+    /** C {@code Paint_hudradar} ({@code showHUDRadar}): enemy blips 3x around the view centre, in the HUD colour. */
+    private void hudRadar(int hudColor) {
+        if (map == null || !frame.options().flag(com.fulcrologic.jxpilot.client.game.options.ClientOption.SHOW_HUD_RADAR)) {
+            return;
+        }
+        hudRadar.fill(frame.radar(), map.pixelWidth(), map.pixelHeight(), radarHeight);
+        double ratio = window.pixelRatio();
+        int ew = frame.hud().extent((int) (cam.viewWidth() / ratio));
+        int eh = frame.hud().extent((int) (cam.viewHeight() / ratio));
+        hudPainter.paintHudRadar(dyn, viewScreen, ew, eh, hudRadar.x, hudRadar.y, hudRadar.size, hudRadar.count(),
+            radarHeight, map.pixelWidth(), map.pixelHeight(), (int) frame.centreX() - ew / 2,
+            (int) frame.centreY() - eh / 2, map.edgeWrap(), hudColor);
     }
 
     private void dispose() {
@@ -489,7 +541,7 @@ public final class GameApp {
             sound.close();
         }
         if (gl != null) {
-            gl.delete(mesh);
+            mapLook.dispose();
             gl.dispose();
         }
         if (atlas != null) {

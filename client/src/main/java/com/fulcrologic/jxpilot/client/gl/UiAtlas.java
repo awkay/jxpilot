@@ -150,6 +150,29 @@ public final class UiAtlas {
 
     public int radarHeight() { return radarHeight; }
 
+    /**
+     * Put the ball texture ({@code texturedBalls}) into its cell ({@code ObjectPainter.BALL_TEXTURE_X}, 64 x 64
+     * pixels), tiled from the cell's corner as X11 tiles a fill.
+     */
+    public void setBall(int width, int height, int[] pixels) {
+        int n = com.fulcrologic.jxpilot.client.paint.ObjectPainter.BALL_TEXTURE_SIZE;
+        IntBuffer b = MemoryUtil.memAllocInt(n * n);
+        try {
+            for (int y = 0; y < n; y++) {
+                for (int x = 0; x < n; x++) {
+                    b.put(pixels[(y % height) * width + x % width]);
+                }
+            }
+            b.flip();
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, com.fulcrologic.jxpilot.client.paint.ObjectPainter.BALL_TEXTURE_X,
+                com.fulcrologic.jxpilot.client.paint.ObjectPainter.BALL_TEXTURE_Y, n, n, GL_RGBA, GL_UNSIGNED_BYTE, b);
+        } finally {
+            MemoryUtil.memFree(b);
+        }
+    }
+
     public void dispose() {
         glDeleteTextures(texture);
     }

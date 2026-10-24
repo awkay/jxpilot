@@ -96,4 +96,22 @@ class PaletteTest {
             () -> assertEquals(4, Palette.HUD_COLOR, "hudColor default is 4"),
             () -> assertEquals(4, Palette.TARGET_RADAR_COLOR, "targetRadarColor default is 4"));
     }
+
+    @Nested
+    class Mutable {
+        @Test
+        void setChangesAnEntryAndBumpsTheVersionOnlyOnAChange() {
+            Palette p = Palette.xpilotDefault();
+            int v0 = p.version();
+            p.set(2, Palette.pack(1, 2, 3, 255));
+            int v1 = p.version();
+            p.set(2, Palette.pack(1, 2, 3, 255));
+            assertAll(
+                () -> assertEquals(Palette.pack(1, 2, 3, 255), p.color(2), "the entry changed"),
+                () -> assertEquals(v0 + 1, v1, "a change bumps the version"),
+                () -> assertEquals(v1, p.version(), "setting the same colour does not"),
+                () -> assertEquals(Palette.parseHex("#4E7CFF"), Palette.defaultColor(2), "C's default of entry 2"),
+                () -> assertEquals(Palette.defaultColor(15), Palette.xpilotDefault().color(15), "defaults equal a new palette"));
+        }
+    }
 }

@@ -129,6 +129,9 @@ public final class XpConnection implements GameConnection {
     private final XpFrameDecoder frames = new XpFrameDecoder(keyboard);
     private final XpReliableReceiver reliable = new XpReliableReceiver(64 * 1024);
     private final XpSetup setup = new XpSetup();
+    /** C's packet meter measurements (client-ui-look). */
+    private final com.fulcrologic.jxpilot.client.net.PacketStats stats =
+        new com.fulcrologic.jxpilot.client.net.PacketStats();
     private final XpTranslator translator;
     private final XpReliableDecoder events;
     private final Msg.Welcome welcome = new Msg.Welcome();
@@ -226,6 +229,9 @@ public final class XpConnection implements GameConnection {
     public XpTranslator translator() { return translator; }
 
     public XpReliableDecoder reliableDecoder() { return events; }
+
+    @Override
+    public com.fulcrologic.jxpilot.client.net.PacketStats packetStats() { return stats; }
 
     /** Newest frame number (C {@code last_loops}). */
     public int lastLoops() { return frames.lastLoops(); }
@@ -721,7 +727,18 @@ public final class XpConnection implements GameConnection {
                 unknown++;
                 return;
             }
+            // packet meters (C Receive_start: Net_measurement DROP of a stale frame, Net_lag_measurement)
+            boolean start = type == XpProto.PKT_START && reader.has(5);
+            int startLoops = start ? reader.buffer().getInt(reader.pos() + 1) : 0;
+            int drawnLoops = frames.lastLoops();
             int res = frames.decode(reader, frame);
+            if (start) {
+                if (res == XpFrameDecoder.STALE) {
+                    stats.measure(startLoops, com.fulcrologic.jxpilot.client.net.PacketStats.DROP);
+                } else if (res == XpFrameDecoder.OK) {
+                    stats.keyboardAck(frame.keyAck, drawnLoops);
+                }
+            }
             if (res != XpFrameDecoder.OK) {
                 switch (res) {
                     case XpFrameDecoder.STALE -> stale++;
@@ -734,6 +751,8 @@ public final class XpConnection implements GameConnection {
                 frame.started = false;
                 framesDone++;
                 newFrame = true;
+                stats.measure(frame.loops, com.fulcrologic.jxpilot.client.net.PacketStats.DRAW);
+                stats.frameSize(n);
                 translator.frame(frame, now);
             }
         }
@@ -816,6 +835,7 @@ public final class XpConnection implements GameConnection {
         }
         translator.configure(built, setup.mode, version);
         frames.setMap(setup.width, setup.height);
+        stats.reset(fps());
         events.setVersion(version);
         welcome.playerId = Protocol.NO_ID;
         welcome.team = login.team;
@@ -922,6 +942,7 @@ public final class XpConnection implements GameConnection {
         if (phase == Phase.PLAYING) {
             if (withKeyboard || keyboard.unacked()) {
                 keyboard.write(tx, loops);
+                stats.keyboardSent(keyboard.change(), loops);
             }
             if (talk.due(loops) && tx.remaining() >= talk.size()) {
                 talk.write(tx, loops);

@@ -268,4 +268,73 @@ class RadarPainterTest {
                 () -> assertEquals(0, b.vertexCount(), "squares starting on the right or bottom edge are empty"));
         }
     }
+
+    @Nested
+    class Sliding {
+        @Test
+        void theShiftCentresTheOwnShipOnAWrappingWorldOnly() {
+            RadarPainter centre = radar(true);
+            centre.slide(1280, 640);
+            RadarPainter off = radar(true);
+            off.slide(2000, 100);
+            RadarPainter left = radar(true);
+            left.slide(100, 1200);
+            RadarPainter hard = radar(false);
+            hard.slide(2000, 100);
+            RadarPainter reset = radar(true);
+            reset.slide(2000, 100);
+            reset.begin(0, 0, 256, 128, 128, 2560, 1280, true);
+            assertAll(
+                () -> assertEquals(0, centre.slideX(), "centred: no x shift"),
+                () -> assertEquals(127, centre.slideY(), "C's row quirk: 128 - 0 - 1"),
+                () -> assertEquals(72, off.slideX(), "xp 200: (int)(200 - 128 + 0.5)"),
+                () -> assertEquals(53, off.slideY(), "yp 10 < 64: (int)(128 + 10 - 64 + 0.5) = 74, then 128 - 74 - 1"),
+                () -> assertEquals(138, left.slideX(), "xp 10 < 128: (int)(256 + 10 - 128 + 0.5)"),
+                () -> assertEquals(71, left.slideY(), "yp 120: (int)(120 - 64 + 0.5) = 56, then 128 - 56 - 1"),
+                () -> assertEquals(0, hard.slideX(), "no wrap: no x shift"),
+                () -> assertEquals(0, hard.slideY(), "no wrap: no y shift"),
+                () -> assertEquals(0, reset.slideX(), "begin clears the shift"));
+        }
+
+        @Test
+        void blipsAndLinesMoveWithTheShiftAndWrapAround() {
+            RadarPainter r = radar(true);
+            r.slide(2000, 100);
+            VertexBatch blip = batch();
+            r.blip(blip, 2000, 100, 1, false);
+            VertexBatch wrapped = batch();
+            r.blip(wrapped, 100, 100, 1, false);
+            VertexBatch line = batch();
+            r.line(line, 200, 117, 204, 117, WHITE);
+            assertAll(
+                () -> assertEquals(List.of("128,63 129,63 129,64", "128,63 129,64 128,64"), tris(blip),
+                    "radar pixel (200, row 117) shifted by (72, 53) to (128, 64): the ship's own spot is the centre"),
+                () -> assertEquals(List.of("194,63 195,63 195,64", "194,63 195,64 194,64"), tris(wrapped),
+                    "pixel 10 - 72 wraps to 194"),
+                () -> assertEquals(List.of("128.5,63.5-132.5,63.5"), segs(line), "a line is shifted the same way"));
+        }
+
+        @Test
+        void thePictureIsSplitAtTheShift() {
+            RadarPainter plain = radar(true);
+            VertexBatch one = batch();
+            plain.picture(one, 0, 0, 1, 1, WHITE);
+            RadarPainter r = radar(true);
+            r.slide(2000, 100);
+            VertexBatch four = batch();
+            r.picture(four, 0, 0, 1, 1, WHITE);
+            assertAll(
+                () -> assertEquals(List.of("0,0 256,0 256,128", "0,0 256,128 0,128"), tris(one), "unshifted: one quad"),
+                () -> assertEquals(1f, one.v(0), 1e-4f, "its bottom samples the bottom of the picture"),
+                () -> assertEquals(List.of("0,53 184,53 184,128", "0,53 184,128 0,128", "0,0 184,0 184,53",
+                        "0,0 184,53 0,53", "184,53 256,53 256,128", "184,53 256,128 184,128", "184,0 256,0 256,53",
+                        "184,0 256,53 184,53"), tris(four),
+                    "four quads split at x 256 - 72 = 184 and row 128 - 53 = 75 (framebuffer y 53)"),
+                () -> assertEquals(72f / 256, four.u(0), 1e-4f, "the top-left piece starts at picture column 72"),
+                () -> assertEquals(1f, four.v(0), 1e-4f, "and reaches the picture's bottom row"),
+                () -> assertEquals(53f / 128, four.v(2), 1e-4f, "its top is picture row 53"),
+                () -> assertEquals(0f, four.u(12), 1e-4f, "the right pieces start at picture column 0"),
+                () -> assertEquals(0f, four.v(8), 1e-4f, "the lower-left piece's top is picture row 0"));
+        }
+    }
 }

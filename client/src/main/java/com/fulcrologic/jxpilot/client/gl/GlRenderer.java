@@ -72,6 +72,34 @@ public final class GlRenderer implements VertexBatch.Sink {
             o_col = v_col * texture(u_tex, v_uv);
         }
         """;
+    /**
+     * Tiled fills (C {@code FillTiled}, textured walls and decorations): the texture coordinate is the
+     * position times {@code u_tile.xy} plus {@code u_tile.zw}, sampled with GL_REPEAT from unit 3.
+     */
+    private static final String TILE_VS = """
+        #version 330 core
+        layout(location = 0) in vec2 a_pos;
+        layout(location = 2) in vec4 a_col;
+        uniform vec4 u_xf;
+        uniform vec4 u_tile;
+        out vec2 v_uv;
+        out vec4 v_col;
+        void main() {
+            gl_Position = vec4(a_pos * u_xf.xy + u_xf.zw, 0.0, 1.0);
+            v_uv = a_pos * u_tile.xy + u_tile.zw;
+            v_col = a_col;
+        }
+        """;
+    private static final String TILE_FS = """
+        #version 330 core
+        in vec2 v_uv;
+        in vec4 v_col;
+        uniform sampler2D u_tiletex;
+        out vec4 o_col;
+        void main() {
+            o_col = v_col * texture(u_tiletex, v_uv);
+        }
+        """;
     /** Shared helpers: quad corner per vertex (along, side), pixel-space transforms, colour unpacking. */
     private static final String COMMON = """
         const vec2 CORNER[6] = vec2[6](vec2(0.0, -1.0), vec2(1.0, -1.0), vec2(1.0, 1.0),
@@ -142,6 +170,7 @@ public final class GlRenderer implements VertexBatch.Sink {
     /** Texture units: the UI atlas, segment items, point items. */
     private static final int UNIT_SEGMENTS = 1;
     private static final int UNIT_POINTS = 2;
+    private static final int UNIT_TILE = 3;
     /** Buffer-texture texels per segment (RG32UI, 8 bytes each). */
     static final int SEGMENT_TEXELS = VertexBatch.SEGMENT_STRIDE / 8;
 
@@ -217,6 +246,8 @@ public final class GlRenderer implements VertexBatch.Sink {
     private final Program tri;
     private final Program seg;
     private final Program pt;
+    private final Program tile;
+    private final int uTile;
     private final int emptyVao;
     private final int maxTexels;
     private final Streams dyn = new Streams();
@@ -235,6 +266,10 @@ public final class GlRenderer implements VertexBatch.Sink {
         tri = new Program(link(compile(GL_VERTEX_SHADER, TRI_VS), compile(GL_FRAGMENT_SHADER, TRI_FS)));
         seg = new Program(link(compile(GL_VERTEX_SHADER, SEG_VS), compile(GL_FRAGMENT_SHADER, SOLID_FS)));
         pt = new Program(link(compile(GL_VERTEX_SHADER, PT_VS), compile(GL_FRAGMENT_SHADER, SOLID_FS)));
+        tile = new Program(link(compile(GL_VERTEX_SHADER, TILE_VS), compile(GL_FRAGMENT_SHADER, TILE_FS)));
+        uTile = glGetUniformLocation(tile.id, "u_tile");
+        glUseProgram(tile.id);
+        glUniform1i(glGetUniformLocation(tile.id, "u_tiletex"), UNIT_TILE);
         glUseProgram(tri.id);
         glUniform1i(glGetUniformLocation(tri.id, "u_tex"), 0);
         glUseProgram(seg.id);
@@ -435,6 +470,54 @@ public final class GlRenderer implements VertexBatch.Sink {
         }
     }
 
+    /**
+     * Draw a static mesh's triangles filled with a repeating texture (C {@code FillTiled}): a vertex at mesh
+     * position p samples the texture at {@code p * (su, sv) + (ou, ov)} (texture units, wrapping), modulated by
+     * the vertex colour. Other commands of the mesh are skipped.
+     */
+    public void drawTiled(Mesh m, int texture, float su, float sv, float ou, float ov) {
+        use(tile);
+        glUniform4f(uTile, su, sv, ou, ov);
+        glActiveTexture(GL_TEXTURE0 + UNIT_TILE);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glActiveTexture(GL_TEXTURE0);
+        glBindVertexArray(m.s.triVao);
+        for (int i = 0; i < m.mode.length; i++) {
+            if (m.mode[i] == VertexBatch.TRIANGLES) {
+                glDrawArrays(GL_TRIANGLES, m.first[i], m.count[i]);
+                drawCalls++;
+            }
+        }
+    }
+
+    /** A repeating, nearest-sampled RGBA texture from packed pixels (row 0 at the top) for {@link #drawTiled}. */
+    public static int tileTexture(int width, int height, int[] pixels) {
+        int t = glGenTextures();
+        glActiveTexture(GL_TEXTURE0 + UNIT_TILE);
+        glBindTexture(GL_TEXTURE_2D, t);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        java.nio.IntBuffer b = MemoryUtil.memAllocInt(width * height);
+        try {
+            b.put(pixels, 0, width * height).flip();
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, b);
+        } finally {
+            MemoryUtil.memFree(b);
+        }
+        glActiveTexture(GL_TEXTURE0);
+        return t;
+    }
+
+    /** Release a {@link #tileTexture} (0 is ignored). */
+    public static void deleteTexture(int t) {
+        if (t != 0) {
+            glDeleteTextures(t);
+        }
+    }
+
     /** Draw a static mesh with the current transform. */
     public void draw(Mesh m) {
         for (int i = 0; i < m.mode.length; i++) {
@@ -488,5 +571,6 @@ public final class GlRenderer implements VertexBatch.Sink {
         glDeleteProgram(tri.id);
         glDeleteProgram(seg.id);
         glDeleteProgram(pt.id);
+        glDeleteProgram(tile.id);
     }
 }

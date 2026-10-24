@@ -37,13 +37,17 @@ import com.fulcrologic.jxpilot.common.Const;
  * <ol>
  *   <li>{@code Paint_shots}' direct draws: mine blocks and item symbols (fills), then item triangles,
  *   mine outlines, wreckage, asteroids, missiles and lasers (lines);</li>
- *   <li>its queues: sparks (with the sparkle) and shots (points), then team-shot arms (lines);</li>
+ *   <li>its queues: sparks (with the sparkle) and shots (points), then team-shot arms (lines; with
+ *   {@code showNastyShots} every shot is drawn as arms);</li>
  *   <li>{@code Paint_ships}' direct draws: paused squares and locked hulls (fills), the text (paused
  *   "P", ship names, round-delay digits; mine names, which C draws in step 1), then paused frames,
  *   ships with their shields, and the connectors (lines);</li>
- *   <li>its queues: marking-light squares (points), then their crosses (lines);</li>
+ *   <li>its queues: marking-light squares (points), then their crosses (lines), only with
+ *   {@code markingLights};</li>
  *   <li>{@link #drawArcs}: the arc queue ({@code Arc_end}), balls and ECM bursts.</li>
  * </ol>
+ * With {@code texturedBalls} C fills each ball with its texture at once instead of queueing its arc, so textured
+ * balls come with the step 1 fills.
  * {@link #draw} is steps 1-5. A caller interleaving the map's and the HUD's parts in full C order
  * calls {@link #drawBody} (steps 1-4), its own non-arc HUD, then the map's arcs, {@link #drawArcs}
  * and the HUD's arcs. Each step loops over all copies, so the scene costs at most 8 draw commands
@@ -65,22 +69,32 @@ public final class ScenePainter {
     static final float SHOT_RADIUS = 2;
 
     private final Palette palette;
+    private final PaintStyle style;
     private final ShipPainter ships;
     private final ObjectPainter objects;
-    private int sparkRand = Particles.sparkRand(PaintConfig.SPARK_PROB);
 
+    /** With C's default look options. */
     public ScenePainter(Palette palette) {
+        this(palette, new PaintStyle());
+    }
+
+    /**
+     * @param style the live look options: {@code sparkProb}, {@code sparkSize}, {@code shotSize},
+     *              {@code showNastyShots}, {@code markingLights}, {@code showShipName}, {@code maxColors}
+     */
+    public ScenePainter(Palette palette, PaintStyle style) {
         this.palette = palette;
-        this.ships = new ShipPainter(palette);
-        this.objects = new ObjectPainter(palette);
+        this.style = style;
+        this.ships = new ShipPainter(palette, style);
+        this.objects = new ObjectPainter(palette, style);
     }
 
     /**
      * C option {@code sparkProb} (default {@link PaintConfig#SPARK_PROB}): the chance a spark or debris
-     * particle is drawn in a frame.
+     * particle is drawn in a frame (sets the style's {@link PaintStyle#sparkRand}).
      */
     public void setSparkProb(double prob) {
-        sparkRand = Particles.sparkRand(prob);
+        style.sparkRand = Particles.sparkRand(prob);
     }
 
     /** Draw the whole scene (steps 1-5; leaves the batch with the identity transform). */
@@ -136,7 +150,7 @@ public final class ScenePainter {
     public void drawArcs(VertexBatch b, Camera cam, SceneData s) {
         for (int k = 0; k < cam.offsetCount(); k++) {
             cam.applyTo(b, k);
-            for (int i = 0; i < s.ballCount; i++) {
+            for (int i = 0; i < s.ballCount && !style.texturedBalls; i++) {
                 if (visible(cam, s.ballX[i], s.ballY[i], Const.BALL_RADIUS, k, 0)) {
                     objects.ball(b, s.ballX[i], s.ballY[i]);
                 }
@@ -204,6 +218,11 @@ public final class ScenePainter {
                 objects.itemSymbol(b, s.itemType[i], s.itemX[i], s.itemY[i], zoom);
             }
         }
+        for (int i = 0; i < s.ballCount && style.texturedBalls; i++) {
+            if (visible(cam, s.ballX[i], s.ballY[i], Const.BALL_RADIUS, k, 0)) {
+                objects.texturedBall(b, s.ballX[i], s.ballY[i], zoom);
+            }
+        }
     }
 
     private void objectLines(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
@@ -244,11 +263,16 @@ public final class ScenePainter {
     // ------------------------------------------------------------------ step 2: Paint_shots, queued
 
     private void shotPoints(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
+        int sparkRand = style.sparkRand;
+        int sparkSize = style.sparkSize;
         for (int i = 0; i < s.particleCount; i++) {
             if (Particles.sparkShown(i, s.loops, sparkRand)
                 && visible(cam, s.particleX[i], s.particleY[i], SHOT_RADIUS, k, 2)) {
-                Particles.spark(b, palette, s.particleX[i], s.particleY[i], s.particleColor[i], zoom);
+                Particles.spark(b, palette, s.particleX[i], s.particleY[i], s.particleColor[i], sparkSize, zoom);
             }
+        }
+        if (style.nastyShots) {
+            return;
         }
         for (int i = 0; i < s.shotCount; i++) {
             if (!s.shotTeam[i] && visible(cam, s.shotX[i], s.shotY[i], SHOT_RADIUS, k, 2)) {
@@ -257,10 +281,17 @@ public final class ScenePainter {
         }
     }
 
+    /**
+     * C's Segment_add shots: team shots, and with {@code showNastyShots} the fast shots too (C
+     * {@code Gui_paint_fastshot}: an X or + in the fast shot's colour, white or blue, instead of the square).
+     */
     private void teamShots(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
+        boolean nasty = style.nastyShots;
         for (int i = 0; i < s.shotCount; i++) {
-            if (s.shotTeam[i] && visible(cam, s.shotX[i], s.shotY[i], SHOT_RADIUS, k, 2)) {
-                objects.teamShot(b, s.shotX[i], s.shotY[i], s.shotColor[i], diagonal(i, s.loops), zoom);
+            boolean team = s.shotTeam[i];
+            if ((team || nasty) && visible(cam, s.shotX[i], s.shotY[i], SHOT_RADIUS, k, 2)) {
+                int c = team ? s.shotColor[i] : ObjectPainter.fastShotColor(s.shotColor[i]);
+                objects.teamShot(b, s.shotX[i], s.shotY[i], c, diagonal(i, s.loops), zoom);
             }
         }
     }
@@ -294,7 +325,7 @@ public final class ScenePainter {
         }
         boolean delay = delayed(s);
         for (int i = 0; i < s.shipCount; i++) {
-            if (s.shipName[i] != null && s.shipId[i] != s.selfId
+            if (style.showShipName && s.shipName[i] != null && s.shipId[i] != s.selfId
                 && visible(cam, s.shipX[i], s.shipY[i], 0, k, LABEL_MARGIN)) {
                 ships.name(b, text, cam.screenX(s.shipX[i], k), cam.screenY(s.shipY[i], k), s.shipName[i], ratio, zoom);
             }
@@ -335,7 +366,7 @@ public final class ScenePainter {
     // ------------------------------------------------------------------ step 4: Paint_ships, queued
 
     private void lightSquares(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
-        if (delayed(s)) {
+        if (delayed(s) || !style.markingLights) {
             return;
         }
         for (int i = 0; i < s.shipCount; i++) {
@@ -347,7 +378,7 @@ public final class ScenePainter {
     }
 
     private void lightCrosses(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
-        if (delayed(s)) {
+        if (delayed(s) || !style.markingLights) {
             return;
         }
         for (int i = 0; i < s.shipCount; i++) {

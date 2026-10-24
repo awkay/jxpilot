@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.client.map;
 
+import com.fulcrologic.jxpilot.client.paint.PaintStyle;
 import com.fulcrologic.jxpilot.client.render.WinScale;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.client.render.Shapes;
@@ -69,17 +70,83 @@ public final class StaticMap {
      * block outlines; otherwise block outlines. Commands: [triangles,] points, segments.
      */
     public static VertexBatch build(WorldMap m, Palette p, boolean filled, boolean showDecor) {
+        PaintStyle st = new PaintStyle();
+        st.filledWorld = filled;
+        st.showDecor = showDecor;
+        return build(m, p, st, false, false);
+    }
+
+    /**
+     * The static mesh for the live look options ({@link PaintStyle}; C {@code Paint_world},
+     * {@code Gui_paint_decor}, {@code Map_blue}, {@code Map_dots}).
+     * <p>
+     * BEHAVIOR: walls: with {@code filledWorld} or {@code texturedWalls} solid {@code wallColor} triangles
+     * ({@link #wallFill}) unless {@code tiledWalls} (the caller draws {@link #wallTriangles} with the texture
+     * instead), and no outlines; otherwise block outlines, in outline mode iff {@code outlineWorld}.
+     * BEHAVIOR: decorations (only with {@code showDecor}): with {@code filledDecor} or {@code texturedDecor}
+     * solid {@code decorColor} block shapes ({@link #decorFill}) unless {@code tiledDecor}; otherwise outlines,
+     * in outline mode iff {@code outlineDecor}.
+     * BEHAVIOR: background dots ({@link #features}) and, on a hard-edged world, the border in the wall colour.
+     */
+    public static VertexBatch build(WorldMap m, Palette p, PaintStyle st, boolean tiledWalls, boolean tiledDecor) {
         VertexBatch b = VertexBatch.growable(4096);
-        int wall = p.color(Palette.WALL_COLOR);
-        if (filled) {
+        int wall = p.color(st.wallColor);
+        int decor = p.color(st.decorColor);
+        if (st.wallsFilled() && !tiledWalls) {
             wallFill(m, b, wall);
         }
-        features(m, p, showDecor, b);
-        if (!filled) {
-            MapEdges.walls(m, false, b, wall);
+        if (st.showDecor && st.decorFilled() && !tiledDecor) {
+            decorFill(m, b, decor);
+        }
+        features(m, p, st, b);
+        if (!st.wallsFilled()) {
+            MapEdges.walls(m, st.outlineWorld, b, wall);
         }
         MapEdges.border(m, b, wall);
         return b;
+    }
+
+    /** The wall fill triangles in white, for drawing with the wall texture ({@code texturedWalls}). */
+    public static VertexBatch wallTriangles(WorldMap m) {
+        VertexBatch b = VertexBatch.growable(1024);
+        wallFill(m, b, Palette.pack(255, 255, 255, 255));
+        return b;
+    }
+
+    /** The decoration block shapes in white, for drawing with the decor texture ({@code texturedDecor}). */
+    public static VertexBatch decorTriangles(WorldMap m) {
+        VertexBatch b = VertexBatch.growable(1024);
+        decorFill(m, b, Palette.pack(255, 255, 255, 255));
+        return b;
+    }
+
+    /**
+     * Filled decorations (C {@code Gui_paint_decor} with {@code filledDecor}/{@code texturedDecor}): each
+     * decoration block filled on its own as its shape.
+     * <p>
+     * BEHAVIOR: DECOR_FILLED a full block; DECOR_RU the triangle with the up and right sides, DECOR_RD down and
+     * right, DECOR_LU up and left, DECOR_LD down and left.
+     */
+    static void decorFill(WorldMap m, VertexBatch b, int rgba) {
+        for (int by = 0; by < m.height(); by++) {
+            for (int bx = 0; bx < m.width(); bx++) {
+                int t = m.block(bx, by);
+                if (!BlockType.isDecor(t)) {
+                    continue;
+                }
+                float x0 = bx * S;
+                float y0 = by * S;
+                float x1 = x0 + S;
+                float y1 = y0 + S;
+                switch (BlockType.decorShape(t)) {
+                    case BlockType.REC_RU -> b.triangle(x0, y1, x1, y1, x1, y0, rgba);
+                    case BlockType.REC_RD -> b.triangle(x0, y0, x1, y1, x1, y0, rgba);
+                    case BlockType.REC_LU -> b.triangle(x0, y0, x0, y1, x1, y1, rgba);
+                    case BlockType.REC_LD -> b.triangle(x0, y0, x0, y1, x1, y0, rgba);
+                    default -> b.fillRect(x0, y0, x1, y1, rgba);
+                }
+            }
+        }
     }
 
     /**
@@ -104,9 +171,21 @@ public final class StaticMap {
      * per frame ({@link #gravityArcs}).
      */
     public static void features(WorldMap m, Palette p, boolean showDecor, VertexBatch b) {
-        backgroundDots(m, showDecor, b, p.color(Palette.BLUE));
-        if (showDecor) {
-            MapEdges.decor(m, false, b, p.color(Palette.DECOR_COLOR));
+        PaintStyle st = new PaintStyle();
+        st.showDecor = showDecor;
+        features(m, p, st, b);
+    }
+
+    /**
+     * {@link #features(WorldMap, Palette, boolean, VertexBatch)} for the live look options: dots every
+     * {@code backgroundPointDist} blocks of {@code backgroundPointSize} pixels; decoration outlines only with
+     * {@code showDecor} and without {@code filledDecor}/{@code texturedDecor}, in outline mode iff
+     * {@code outlineDecor}, in {@code decorColor}.
+     */
+    public static void features(WorldMap m, Palette p, PaintStyle st, VertexBatch b) {
+        backgroundDots(m, st.showDecor, st.pointDist, st.pointSize, b, p.color(Palette.BLUE));
+        if (st.showDecor && !st.decorFilled()) {
+            MapEdges.decor(m, st.outlineDecor, b, p.color(st.decorColor));
         }
         int red = p.color(Palette.RED);
         for (GravitySource g : m.gravitySources()) {
@@ -118,19 +197,30 @@ public final class StaticMap {
         }
     }
 
-    /**
-     * True if block (bx, by) carries a background dot (C {@code Map_dots}): every
-     * {@link #POINT_DIST}th block in both axes from 0 on a hard-edged world; on a wrapping world the
-     * row y=0 and column x=0 plus every {@link #POINT_DIST}th block from {@link #POINT_DIST}.
-     */
+    /** {@link #dotPosition(int, int, boolean, int)} at the default distance {@link #POINT_DIST}. */
     public static boolean dotPosition(int bx, int by, boolean wrap) {
-        if (wrap) {
-            if (bx == 0 || by == 0) {
-                return true;
-            }
-            return bx >= POINT_DIST && by >= POINT_DIST && bx % POINT_DIST == 0 && by % POINT_DIST == 0;
+        return dotPosition(bx, by, wrap, POINT_DIST);
+    }
+
+    /**
+     * True if block (bx, by) carries a background dot (C {@code Map_dots}) at {@code backgroundPointDist}
+     * {@code dist}.
+     * <p>
+     * BEHAVIOR: on a wrapping world the row y=0 and the column x=0 always; otherwise (and further) every
+     * {@code dist}th block in both axes, from 0 on a hard-edged world and from {@code dist} on a wrapping one;
+     * with {@code dist} 0 only the wrapping world's row and column.
+     */
+    public static boolean dotPosition(int bx, int by, boolean wrap, int dist) {
+        if (wrap && (bx == 0 || by == 0)) {
+            return true;
         }
-        return bx % POINT_DIST == 0 && by % POINT_DIST == 0;
+        if (dist <= 0) {
+            return false;
+        }
+        if (wrap && (bx < dist || by < dist)) {
+            return false;
+        }
+        return bx % dist == 0 && by % dist == 0;
     }
 
     /** Block types that may become dots: space, and decorations when they are not shown. */
@@ -146,7 +236,18 @@ public final class StaticMap {
      * {@link #dot(VertexBatch, int, int, int, double)} does.
      */
     public static void dot(VertexBatch b, int x, int y, int rgba) {
-        b.point(x + HALF, y + HALF + 1, POINT_SIZE, rgba);
+        dot(b, x, y, POINT_SIZE, rgba);
+    }
+
+    /**
+     * A {@code size}-pixel background dot ({@code Gui_paint_decor_dot}: {@code Rectangle_add(X(x+17) - size/2,
+     * Y(y+17) - size/2, size, size)}).
+     * <p>
+     * BEHAVIOR: a point of side {@code size} centred on world {@code (x + 17 - size/2 + size/2.0,
+     * y + 18 + size/2 - size/2.0)} (integer halves as C's {@code >> 1}); size 2 is the default dot.
+     */
+    public static void dot(VertexBatch b, int x, int y, int size, int rgba) {
+        b.point(x + HALF - (size >> 1) + size / 2f, y + HALF + 1 + (size >> 1) - size / 2f, size, rgba);
     }
 
     /**
@@ -155,15 +256,32 @@ public final class StaticMap {
      * right and down (in world units: divided by the zoom).
      */
     public static void dot(VertexBatch b, int x, int y, int rgba, double zoom) {
-        float shift = (float) (WinScale.squareShift(POINT_SIZE, zoom) / zoom);
-        b.point(x + HALF + shift, y + HALF + 1 - shift, WinScale.of(POINT_SIZE, zoom), rgba);
+        dot(b, x, y, POINT_SIZE, rgba, zoom);
     }
 
+    /** {@link #dot(VertexBatch, int, int, int, double)} for a dot of C size {@code size}. */
+    public static void dot(VertexBatch b, int x, int y, int size, int rgba, double zoom) {
+        float shift = (float) (WinScale.squareShift(size, zoom) / zoom);
+        b.point(x + HALF - (size >> 1) + size / 2f + shift, y + HALF + 1 + (size >> 1) - size / 2f - shift,
+            WinScale.of(size, zoom), rgba);
+    }
+
+    /**
+     * BEHAVIOR: a dot ({@link #dot(VertexBatch, int, int, int, int)}) on every {@link #dotPosition} block that is
+     * {@link #dotType}; none at all when {@code size} is 0 (C {@code map_point_size > 0}).
+     */
     static void backgroundDots(WorldMap m, boolean showDecor, VertexBatch b, int rgba) {
+        backgroundDots(m, showDecor, POINT_DIST, POINT_SIZE, b, rgba);
+    }
+
+    static void backgroundDots(WorldMap m, boolean showDecor, int dist, int size, VertexBatch b, int rgba) {
+        if (size <= 0) {
+            return;
+        }
         for (int by = 0; by < m.height(); by++) {
             for (int bx = 0; bx < m.width(); bx++) {
-                if (dotPosition(bx, by, m.edgeWrap()) && dotType(m.block(bx, by), showDecor)) {
-                    dot(b, bx * S, by * S, rgba);
+                if (dotPosition(bx, by, m.edgeWrap(), dist) && dotType(m.block(bx, by), showDecor)) {
+                    dot(b, bx * S, by * S, size, rgba);
                 }
             }
         }

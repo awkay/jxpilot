@@ -67,11 +67,19 @@ public final class ShipPainter {
     static final int RIGHT_LIGHT_COLOR = 4;
 
     private final Palette palette;
+    private final PaintStyle style;
     private final float[] xs = new float[Math.max(ShipShape.MAX_SHIP_PTS, CIRCLE_SEGMENTS)];
     private final float[] ys = new float[Math.max(ShipShape.MAX_SHIP_PTS, CIRCLE_SEGMENTS)];
 
+    /** With C's default look options. */
     public ShipPainter(Palette palette) {
+        this(palette, new PaintStyle());
+    }
+
+    /** @param style the live look options ({@code maxColors} picks the right light colour) */
+    public ShipPainter(Palette palette, PaintStyle style) {
         this.palette = palette;
+        this.style = style;
     }
 
     /**
@@ -206,7 +214,7 @@ public final class ShipPainter {
 
     /**
      * C {@code Gui_paint_marking_lights}: on frames where {@code (loops + id) & 15} is 0 the left
-     * lights flash red, where it is 2 the right lights flash in colour 4; each light is a 6x6 square
+     * lights flash red, where it is 2 the right lights flash in colour 4 (blue with {@code maxColors} 4); each light is a 6x6 square
      * from (-2,-2) screen pixels and a cross of 8-pixel arms, both scaled.
      * <p>
      * BEHAVIOR: other frames draw nothing; squares first (one points command), then the crosses.
@@ -228,7 +236,7 @@ public final class ShipPainter {
             return;
         }
         int n = lights(s, x, y, heading, phase);
-        int rgba = palette.color(phase == 0 ? Palette.RED : RIGHT_LIGHT_COLOR);
+        int rgba = palette.color(phase == 0 ? Palette.RED : style.rightLightColor());
         int side = WinScale.of(LIGHT_SQUARE, zoom);
         for (int i = 0; i < n; i++) {
             b.point(ObjectPainter.squareCentreX(xs[i], -2, LIGHT_SQUARE, zoom),
@@ -244,7 +252,7 @@ public final class ShipPainter {
             return;
         }
         int n = lights(s, x, y, heading, phase);
-        int rgba = palette.color(phase == 0 ? Palette.RED : RIGHT_LIGHT_COLOR);
+        int rgba = palette.color(phase == 0 ? Palette.RED : style.rightLightColor());
         float arm = (float) (WinScale.of(LIGHT_ARM, zoom) / zoom);
         for (int i = 0; i < n; i++) {
             b.line(xs[i] - arm, ys[i], xs[i] + arm, ys[i], rgba);

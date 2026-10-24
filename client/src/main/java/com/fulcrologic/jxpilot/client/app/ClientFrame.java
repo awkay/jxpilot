@@ -80,6 +80,14 @@ public final class ClientFrame {
     private final WorldMapState mapState;
     /** The C client options (client-ui): pushed into the HUD, messages and talk line when they change. */
     private final LiveOptions liveOptions;
+    // ---- client-ui-look: the look options, live (palette, painter style, extras)
+    private final com.fulcrologic.jxpilot.client.render.Palette palette =
+        com.fulcrologic.jxpilot.client.render.Palette.xpilotDefault();
+    private final com.fulcrologic.jxpilot.client.paint.PaintStyle style =
+        new com.fulcrologic.jxpilot.client.paint.PaintStyle();
+    private final LookOptions lookOptions;
+    private final LookFrame look;
+    // ---- end client-ui-look
 
     private WorldMap lastMap;
     private int mapVersion;
@@ -116,6 +124,9 @@ public final class ClientFrame {
         this.router = new KeyRouter(input, talk, settings);
         this.mapState = new WorldMapState(game);
         this.liveOptions = new LiveOptions(keys.options());
+        this.lookOptions = new LookOptions(keys.options(), System.out);
+        this.look = new LookFrame(keys.options());
+        filler.setStyle(style);
         java.util.List<String> helpKeys = input.bindings().keysyms(KeyFunctions.of(ClientAction.HELP));
         this.helpHint = helpKeys.isEmpty() ? null : helpKeys.get(0) + ": keys";
         this.help = new KeyHelp("Keys (" + keys.source() + ")" + (helpHint != null ? " - " + helpKeys.get(0)
@@ -146,6 +157,7 @@ public final class ClientFrame {
         double dt = started ? (nowNanos - lastNow) / 1e9 : 0;
         started = true;
         liveOptions.apply(hud, game, extras, talk);
+        lookOptions.apply(palette, style);
         lastNow = nowNanos;
         conn.update(nowNanos);
         game.frame(nowNanos, dt);
@@ -188,6 +200,7 @@ public final class ClientFrame {
         extras.loseItem(router.loseSelection(), dt);
         panelHud.clear();
         hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, Math.max(0, viewH - scoreTop), m);
+        lookExtras(viewW, m, scoreTop, panelW);
         String motdText = game.takeMotd();
         if (motdText != null) {
             motd = motdPanel(motdText);
@@ -198,6 +211,28 @@ public final class ClientFrame {
             help.layout(helpHud, viewW, viewH, m);
         }
     }
+
+    /**
+     * client-ui-look: the packet meters in the view HUD (while PLAYING), the clock over the score window, the
+     * bell and the title flip of this frame ({@link LookFrame}).
+     */
+    private void lookExtras(int viewW, TextMetrics m, int scoreTop, int panelW) {
+        if (game.state() == ConnectionState.PLAYING) {
+            look.packetMeters(viewHud, hud, hud.extent(viewW), conn.packetStats(), m);
+        }
+        look.clock(panelHud, 0, scoreTop, panelW, m, scene.loops, scene.fps);
+        bell = look.bell(extras.timeLeft);
+        titleChange = look.title(scene.loops);
+    }
+
+    private boolean bell;
+    private int titleChange;
+
+    /** True when this frame rings the bell (last 10 s of game time, {@link LookFrame#bell}). */
+    public boolean bell() { return bell; }
+
+    /** This frame's window title change ({@link LookFrame#title}: KEEP, NORMAL or COPYRIGHT). */
+    public int titleChange() { return titleChange; }
 
     /** C's MOTD viewer ("XPilot motd from SERVER"), open until the help key closes it. */
     private KeyHelp motdPanel(String text) {
@@ -347,6 +382,15 @@ public final class ClientFrame {
     public com.fulcrologic.jxpilot.client.game.options.ClientOptions options() { return liveOptions.options(); }
 
     public SceneData scene() { return scene; }
+
+    /** The live palette ({@code color0..15}, {@code maxColors}). */
+    public com.fulcrologic.jxpilot.client.render.Palette palette() { return palette; }
+
+    /** The live look options the painters read. */
+    public com.fulcrologic.jxpilot.client.paint.PaintStyle style() { return style; }
+
+    /** The look extras of this frame: packet meters, clock, bell, title flip ({@link LookFrame}). */
+    public LookFrame look() { return look; }
 
     public RadarBlips radar() { return radar; }
 }

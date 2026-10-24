@@ -78,15 +78,27 @@ public final class Particles {
     }
 
     /**
+     * Palette index for a particle with the live spark colours ({@code sparkColors}: as many temperature levels
+     * as colours, {@link PaintStyle#levelColor}).
+     */
+    public static int colorIndex(int life, boolean blueOwner, PaintStyle style) {
+        return style.levelColor(level(life, blueOwner, style.sparkCount()));
+    }
+
+    /**
      * A spark (C {@code Gui_paint_spark}): {@code Rectangle_add} of a {@link PaintConfig#SPARK_SIZE}
      * square from {@code -size/2}, scaled ({@link WinScale}); at zoom 1 centred half a pixel left of
      * and above the particle.
      */
     public static void spark(VertexBatch b, Palette p, float x, float y, int colorIndex, double zoom) {
-        int z = -(PaintConfig.SPARK_SIZE / 2);
-        b.point(ObjectPainter.squareCentreX(x, z, PaintConfig.SPARK_SIZE, zoom),
-            ObjectPainter.squareCentreY(y, z, PaintConfig.SPARK_SIZE, zoom),
-            WinScale.of(PaintConfig.SPARK_SIZE, zoom), p.color(colorIndex));
+        spark(b, p, x, y, colorIndex, PaintConfig.SPARK_SIZE, zoom);
+    }
+
+    /** {@link #spark} with C's {@code sparkSize} {@code size}: a {@code size} square from {@code -size/2}, scaled. */
+    public static void spark(VertexBatch b, Palette p, float x, float y, int colorIndex, int size, double zoom) {
+        int z = -(size / 2);
+        b.point(ObjectPainter.squareCentreX(x, z, size, zoom), ObjectPainter.squareCentreY(y, z, size, zoom),
+            WinScale.of(size, zoom), p.color(colorIndex));
     }
 
     /**

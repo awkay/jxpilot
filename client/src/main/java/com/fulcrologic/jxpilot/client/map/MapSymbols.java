@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.client.map;
 
 import com.fulcrologic.jxpilot.client.render.Camera;
+import com.fulcrologic.jxpilot.client.paint.PaintStyle;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.client.render.Shapes;
 import com.fulcrologic.jxpilot.client.render.TextWriter;
@@ -81,12 +82,20 @@ public final class MapSymbols {
 
     private final WorldMap map;
     private final Palette palette;
+    private final PaintStyle style;
     private final float[] px = new float[4];
     private final float[] py = new float[4];
 
+    /** With C's default look options. */
     public MapSymbols(WorldMap map, Palette palette) {
+        this(map, palette, new PaintStyle());
+    }
+
+    /** @param style the live look options ({@code backgroundPointDist}, {@code backgroundPointSize}) */
+    public MapSymbols(WorldMap map, Palette palette, PaintStyle style) {
         this.map = map;
         this.palette = palette;
+        this.style = style;
     }
 
     /** Draw all symbols but the arcs for the camera's visible world copies. */
@@ -153,16 +162,21 @@ public final class MapSymbols {
 
     /**
      * A dead cannon on a background-dot position shows the dot instead (C {@code Paint_world}: the
-     * cannon case falls through to {@code Gui_paint_decor_dot} when the cannon is dead and has a dot).
+     * cannon case falls through to {@code Gui_paint_decor_dot} when the cannon is dead and has a dot), at the
+     * live {@code backgroundPointDist}; no dots with {@code backgroundPointSize} 0.
      */
     private void deadCannonDots(VertexBatch b, Camera cam, int k, MapState st, double zoom) {
+        int size = style.pointSize;
+        if (size <= 0) {
+            return;
+        }
         List<Cannon> cannons = map.cannons();
         int blue = palette.color(Palette.BLUE);
         for (int i = 0; i < cannons.size(); i++) {
             Cannon c = cannons.get(i);
-            if (!st.cannonAlive(i) && StaticMap.dotPosition(c.bx(), c.by(), map.edgeWrap())
+            if (!st.cannonAlive(i) && StaticMap.dotPosition(c.bx(), c.by(), map.edgeWrap(), style.pointDist)
                 && visible(cam, c.bx(), c.by(), k)) {
-                StaticMap.dot(b, c.bx() * S, c.by() * S, blue, zoom);
+                StaticMap.dot(b, c.bx() * S, c.by() * S, size, blue, zoom);
             }
         }
     }

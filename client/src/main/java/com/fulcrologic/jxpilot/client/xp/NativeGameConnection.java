@@ -162,6 +162,9 @@ public final class NativeGameConnection implements GameConnection {
     public long snapshotsReceived() { return conn.snapshotsReceived(); }
 
     @Override
+    public com.fulcrologic.jxpilot.client.net.PacketStats packetStats() { return conn.packetStats(); }
+
+    @Override
     public void close() {
         if (transport != null) {
             transport.close();

@@ -142,6 +142,16 @@ class AppAllocationTest {
         NativeGameConnection conn = new NativeGameConnection(cc, sw);
         ClientFrame cf = new ClientFrame(game, conn, new InputState(KeyRouter.bindings(null)), new SceneData(),
             new RadarBlips(1024));
+        // client-ui-look: every per-frame look option on (packet meters, clock, title flip, look options)
+        for (com.fulcrologic.jxpilot.client.game.options.ClientOption o : new com.fulcrologic.jxpilot.client.game.options
+            .ClientOption[] {com.fulcrologic.jxpilot.client.game.options.ClientOption.PACKET_SIZE_METER,
+            com.fulcrologic.jxpilot.client.game.options.ClientOption.PACKET_LOSS_METER,
+            com.fulcrologic.jxpilot.client.game.options.ClientOption.PACKET_DROP_METER,
+            com.fulcrologic.jxpilot.client.game.options.ClientOption.PACKET_LAG_METER,
+            com.fulcrologic.jxpilot.client.game.options.ClientOption.CLOCK,
+            com.fulcrologic.jxpilot.client.game.options.ClientOption.SHOW_NASTY_SHOTS}) {
+            cf.options().setFlag(o, true);
+        }
         Mono m = new Mono();
         long serverPeriod = 1_000_000_000L / server.fps;
         long now = 1_000_000_000L;
@@ -253,6 +263,9 @@ class AppAllocationTest {
             () -> assertTrue(cf.extras().lock, "lock shown"),
             () -> assertTrue(cf.viewHud().textCount() > 3, "HUD built"),
             () -> assertTrue(cf.panelHud().textCount() >= 5, "score list built"),
+            () -> assertTrue(ClientFrameLookTest.find(cf.viewHud(), "Lag") != null, "packet meters drawn while measured"),
+            () -> assertTrue(ClientFrameLookTest.find(cf.panelHud(), "\\d\\d:\\d\\d") != null, "clock drawn"),
+            () -> assertTrue(conn.packetStats().size() > 0, "frame sizes measured"),
             () -> assertTrue(lockSeen[0] && lockSeen[1], "R7: the lock target changed while measured"),
             () -> assertTrue(reliable >= 9, "R7: robot leaves and rejoins were received while measured (" + reliable
                 + " reliable messages)"),
