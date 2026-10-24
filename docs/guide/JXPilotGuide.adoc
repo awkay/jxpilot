@@ -34,6 +34,7 @@ chapters one by one, or build the single-page HTML book with `make -C docs/guide
 . link:01-introduction.adoc[Introduction]: what JXPilot is, its relationship to XPilot, and its status
 . link:02-quick-start.adoc[Quick start]: download, run the client and a server
 . link:03-playing.adoc[Playing]: controls, HUD, radar, scoring
+. link:gallery.adoc[What you see on screen]: a picture of every map feature, object and HUD element
 . link:04-running-a-server.adoc[Running a server]: command line, network binding, firewalls, services
 . link:05-server-options.adoc[Server configuration reference]: every option
 . link:06-config-and-maps.adoc[Config and map files]: file format, precedence, map symbols, shipped maps
@@ -48,8 +49,7 @@ ifndef::env-github[]
 
 This guide is for people who want to play JXPilot or run a JXPilot server; the last chapter is for
 people who want to build or change it. JXPilot is a work in progress, and the guide says plainly which
-features exist today and which are planned. Paragraphs marked *Unmerged branch* describe code that is
-written but not yet merged into the main line; they change when it is merged.
+features exist today and which are planned.
 
 This copy describes version *{revnumber}*.
 
@@ -58,6 +58,8 @@ include::01-introduction.adoc[leveloffset=+1]
 include::02-quick-start.adoc[leveloffset=+1]
 
 include::03-playing.adoc[leveloffset=+1]
+
+include::gallery.adoc[leveloffset=+1]
 
 include::04-running-a-server.adoc[leveloffset=+1]
 

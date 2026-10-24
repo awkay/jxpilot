@@ -28,6 +28,7 @@ import com.fulcrologic.jxpilot.client.paint.HudPainter;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
 import com.fulcrologic.jxpilot.common.net.Msg;
+import com.fulcrologic.jxpilot.common.net.Protocol;
 import com.fulcrologic.jxpilot.common.net.Records;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -149,12 +150,12 @@ class HudExtrasTest {
         AppFixture crashed() {
             AppFixture f = new AppFixture(true).players().score(SELF, 1, -1)
                 .twice(x -> x.self(0, 100, 100, 0, 0xFFFF));
-            f.event(Msg.GameEvent.CRASH, SELF, 0).score(SELF, -4, -1);
+            f.event(Msg.GameEvent.CRASH, SELF, Protocol.NO_ID).scoreObject(-5, 2, 2, "[Wall]").score(SELF, -4, -1);
             return f;
         }
 
         @Test
-        @DisplayName("an own score change at a block is placed at C's X()/Y() of the block centre")
+        @DisplayName("a SCORE_OBJECT at a block is placed at C's X()/Y() of the block centre")
         void placed() {
             AppFixture f = crashed();
             e.fill(f.game, hud, 800, 600, 1, 100, 100, 0);

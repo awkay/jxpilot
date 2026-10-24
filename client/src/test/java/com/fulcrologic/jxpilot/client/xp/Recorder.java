@@ -99,6 +99,11 @@ final class Recorder implements ConnectionListener, XpReliableDecoder.Control {
                 t.read(p);
                 yield "message kind=" + t.kind + " from=" + t.from + " " + t.text;
             }
+            case ReliableType.SCORE_OBJECT -> {
+                Msg.ScoreObject o = new Msg.ScoreObject();
+                o.read(p);
+                yield "scoreobject score=" + o.score + " at=" + o.bx + "," + o.by + " label=" + o.text;
+            }
             case ReliableType.BASE_OWNER -> {
                 Msg.BaseOwner b = new Msg.BaseOwner();
                 b.read(p);

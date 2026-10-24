@@ -11,11 +11,9 @@ ifdef::env-github[]
 :warning-caption: :warning:
 endif::[]
 
-NOTE: *Unmerged branch* (`server-net`). Everything in this chapter about starting the server, its
-command line and network binding describes `ServerMain` on the `server-net` branch. Until that branch
-is merged, the release server jar cannot be started. The server also still runs a stand-in game
-(players can connect and chat, ships just float); the real simulation is wired in later. The option
-and map file handling (precedence, `\override:`, `define:`/`expand:`) is on main.
+The JXPilot server runs the game: the simulation ported from the XPilot server, robots, and the
+network layer that JXPilot clients connect to. It is headless and runs on any system with Java 25.
+Items, balls, targets and races are not on it yet (<<01-introduction.adoc#status,Status>>).
 
 [[server-cli]]
 == Command line
@@ -85,7 +83,7 @@ leave: player 1 (timeout)
 ----
 <1> One line per bound address, with its interface. Tell players these addresses.
 <2> The map and the simulation rate, which is the map's `framesPerSecond`.
-<3> Players joining and leaving.
+<3> Players joining and leaving. Robots are not logged.
 
 Option problems appear as `option warning: ...`, binding problems as `bind warning: ...`, and changes
 found by the interface rescan as `listening on ...`, `unbound ...` or `interface renamed: ...`.
@@ -248,8 +246,8 @@ Each datagram is at most 1200 bytes, so it fits VPN and IPv6 paths without fragm
 [[abuse-limits]]
 === Connection and traffic limits
 
-NOTE: *Unmerged branch* (`server-net`). These options exist on that branch and join the option
-reference when it is merged.
+These JXPilot options protect the server; all are in the
+<<05-server-options.adoc#opts-network,option reference>>.
 
 [cols="2,1,5",options="header"]
 |===
@@ -269,6 +267,66 @@ and for packets outside a session.
 
 All of these can be set on the command line or in the config file, but not in a map. A player that
 sends nothing for 10 seconds, or does not acknowledge reliable messages for that long, is dropped.
+
+[[joining]]
+== Joining, leaving and full servers
+
+The Java server admits players as the XPilot server does:
+
+* *Slots.* A map has one player slot per home base, shared by humans and robots.
+* *Full game.* When a human joins a full game, a robot is removed to make room
+  (`"NAME" upset the gods and was kicked out of the game.`). With no robots left, every paused human is
+  removed instead (`The paused "NAME" was kicked because the game is full.`). Otherwise the join is
+  refused.
+* *Names.* A name must not be empty or already in use, compared without regard to case. Names are cut
+  to 16 characters.
+* *Teams.* In team play a player asks for a team (the client's `--team`). With `teamAssign` (the
+  default) the server picks one when none is given; without it, a player who gives no valid team is
+  refused. A full team makes room the same way as a full game, by removing one of its robots, then its
+  paused players (`... was kicked because team N is full.`).
+* *Welcome.* The first player sees `Welcome to "MAP", made by AUTHOR.`; everyone sees later arrivals as
+  `NAME has entered "MAP", made by AUTHOR.` (with `(team N)` in team play).
+
+When the server refuses a player, the client shows `Rejected by SERVER:` and one of these reasons:
+
+[cols="2,4",options="header"]
+|===
+|Reason |Why
+|`server is full` |No slot, and no robot or paused player to remove; or the requested team is full.
+|`too many players from your address` |More than `maxClientsPerIP` players from one address.
+|`name not accepted` |The name is empty or already in use.
+|`incompatible version` |The client speaks another JXPilot protocol version.
+|`join refused` |Team play without a valid team, and `teamAssign` is off.
+|===
+
+The server removes players with these reasons, shown to the player when they are disconnected:
+
+[cols="2,4",options="header"]
+|===
+|Reason |Why
+|`auto-kicked: paused too long` |Paused for longer than `maxPauseTime` seconds (default 3600).
+|`no pause with full game`, `no pause with full team` |Paused while a newcomer needed the slot.
+|`no free base` |No base was free when the player was ready to enter.
+|(timeout) |Nothing received from the player for 10 seconds.
+|===
+
+[[handshake]]
+=== The connection handshake
+
+A UDP server can be abused to flood a third party: an attacker sends small requests with a forged
+source address, and the server sends its answers to the victim. The JXPilot server is not useful for
+that:
+
+. The client sends CONNECT.
+. The server answers with a small ACCEPT that carries a session number, and nothing else. It repeats
+  the ACCEPT after 250, 500 and 1000 ms, and forgets the request about 3.75 seconds after the first.
+  Every ACCEPT is smaller than the CONNECT it answers.
+. The client proves that it really is at its address by answering with the session number. Only then
+  does the server send the map and the game.
+
+For operators this means: a client behind a firewall that blocks the replies cannot even start; and a
+burst of unanswered connection attempts in a log is harmless. CONNECTs also count against
+`ipPacketRate`.
 
 [[config-files]]
 == Configuration files
@@ -300,9 +358,83 @@ accepted, but the server does not read those files yet. Use the positional confi
 [[robots]]
 == Robots
 
-NOTE: *Planned* (milestone M1). Robots are not implemented yet. Their options (`maxRobots`, `minRobots`,
-`robotsTalk`, `robotsLeave`, ...) are parsed and listed in
-<<05-server-options.adoc#opts-robots,Robots>>, and will behave as in XPilot.
+The Java server has XPilot's default robot, ported from the C server: it hunts players, dodges walls,
+shields, refuels and declares war on whoever killed it. Robots look like human players; the score list
+marks them `R`.
+
+Robots play only while at least one human is in the game, unless `rawMode` (short for `idleRun`) is on,
+in which case the game, and the robots, run even when nobody is connected.
+
+[cols="2,1,5",options="header"]
+|===
+|Option |Default |Meaning
+|`maxRobots` (short `robots`) |4 |Robots join while fewer than this many players (humans and robots)
+are in the game and a base is free. `0` turns robots off.
+|`minRobots` |-1 |At least this many robots stay in the game, if there is room (never more than
+`maxRobots`).
+|`robotsTalk` |false |Robots taunt when they kill, die or declare war.
+|`robotsLeave` |true |Robots retire after `robotLeaveLife` lives or leave when their score drops below
+`robotLeaveScore` or their kill ratio below `robotLeaveRatio` (`NAME retired.`,
+`NAME left out of disappointment.`). New ones take their place.
+|`robotTeam` |0 |In team play with `restrictRobots`, the team robots join.
+|`restrictRobots` |true |Robots only join `robotTeam`.
+|`reserveRobotTeam` |true |Humans may not join the robot team.
+|`robotFile` |XPilot's robots |A file of robot personalities (below). Command line or config file.
+|===
+
+The full list, with every robot option, is in <<05-server-options.adoc#opts-robots,Robots>>.
+
+[[robot-file]]
+=== Robot personalities: `robotFile`
+
+Robots get their names, ship shapes and characters from a list of personalities. The built-in list is
+XPilot 4.5.5's `lib/robots` file, with 38 robots (Mad Max, Blackie, Kryten, Marvin, R2D2, ...).
+`robotFile` replaces it with your own file in the same format: one record per robot, records separated
+by blank lines.
+
+[source,text]
+----
+type:   default
+para:   94 20
+ship:   (15,8,7)(15,0)(7,1)(7,2)(2,4)(-1,11)(-3,11)(-2,3)(-8,6)(-8,-6)(-2,-3)(-3,-11)(-1,-11)(2,-4)(7,-2)(7,-1)
+name:   Mad Max
+
+type:   default
+para:   10 90
+ship:   (16,6,10)(15,0)(6,2)(-2,3)(-1,4)(-2,5)(-10,8)(-13,8)(-13,1)(-15,0)(-13,-1)(-13,-8)(-10,-8)(-2,-5)(-1,-4)(-2,-3)(6,-2)
+name:   Blackie
+----
+
+`type:` is the robot type (`default` is the only one), `para:` its attack and defense (0 to 100),
+`ship:` a ship shape in XPilot's format and `name:` the name players see. A record without a `name:`
+is ignored, and a field left out keeps the value of the previous record. If the file cannot be read,
+or has no named record, the built-in list is used.
+
+[[hosting]]
+== Hosting for friends far away
+
+A JXPilot server is small. Measured with six robots on `default.xp`, it uses about 50-60 MB of memory
+(resident) and under 1% of one CPU core. A virtual machine with 256 MB of memory is plenty; give Java
+`-Xmx128m`.
+
+* *One port.* Everything goes over one UDP port, the default 15345, or the one you set with `--port`.
+  Open that port in the firewall (<<firewalls>>), and nothing else.
+* *Where to host.* Every player's game lags by their round trip time to the server. For players on
+  different continents, a cheap cloud VM roughly half way between them is fairer and smoother than a
+  home server at one end: two players with 150 ms to a server in the middle each lag 150 ms, while a
+  server at one player's home gives the other the whole 300 ms.
+* *Today's lag.* Your own ship reacts to your keys after about one round trip plus 135 ms. Making that
+  faster with client-side prediction is planned; see
+  https://github.com/awkay/jxpilot/blob/main/docs/latency-fixes.md[docs/latency-fixes.md].
+* *Run it as a service* so it survives logouts and reboots (<<service>>), and give friends the address
+  from the `listening on` lines.
+
+A minimal setup on a fresh Linux VM:
+
+[source,shell]
+----
+java -XX:+UseZGC -Xmx128m -jar jxpilot-server-VERSION.jar --map maps/default.xp -robots 4
+----
 
 [[service]]
 == Running as a service (systemd)

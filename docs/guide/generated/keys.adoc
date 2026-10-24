@@ -131,7 +131,7 @@
 |`+Delete+`, `+BackSpace+` (pass:c[Backspace])
 
 |32
-|Ecm
+|ECM
 |`+bracketleft+` (pass:c[[])
 
 |33

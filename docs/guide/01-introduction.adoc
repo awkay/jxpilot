@@ -39,74 +39,73 @@ them bug reports about JXPilot; open an issue at https://github.com/awkay/jxpilo
 JXPilot is a derivative work of XPilot and, like XPilot, is free software under the GNU General Public
 License, version 2 or later (<<09-appendices.adoc#licensing,Licensing and credits>>).
 
-JXPilot uses its own network protocol, so today a JXPilot client cannot join an original XPilot server,
-and an original XPilot client cannot join a JXPilot server. Playing on original servers is planned
-(<<07-client-reference.adoc#xpilot-protocol,Playing on original XPilot servers>>).
+JXPilot servers and clients talk their own network protocol. The JXPilot client also speaks XPilot's
+protocol, so it can join an original XPilot 4.5.5 server
+(<<07-client-reference.adoc#xpilot-protocol,Playing on original XPilot servers>>). An original XPilot
+client cannot join a JXPilot server.
 
 [[status]]
 == Status: what works today
 
-JXPilot is a *work in progress*. It is not yet a playable game. This table is the honest state of
-things. "Main" means merged and in the release downloads. "Unmerged branch" means the code is written
-and tested on a development branch, but not yet merged or in a release.
+JXPilot is a *work in progress*, but it is playable: you can fly, fight and score against robots and
+other players on the JXPilot server, or play on an original XPilot server. This table is the honest
+state of things.
 
 [cols="3,2,5",options="header"]
 |===
 |Area |State |Notes
 
-|Map and option file parsing
-|Main
-|All XPilot map symbols, `\multiline:`, `\override:`, `define:`/`expand:`; all 19 shipped maps load.
+|Game client
+|Works
+|Joins a JXPilot server (`--connect`), starts its own server for a quick game (`--local`), or joins an
+original XPilot server (`xp://`). Draws the game as the XPilot client does, with the HUD, radar, score
+list, messages and talk line (<<07-client-reference.adoc#client-reference,Client reference>>).
+
+|Java server: core game
+|Works
+|Movement, gravity, walls and crashes, shields, fuel, shots, cannons, wormholes, collisions, debris,
+scoring with score popups, rounds and limited lives, and pausing. It matches the C server frame for
+frame on recorded reference traces.
+
+|Java server: robots
+|Works
+|XPilot's default robot, with the 38 robot personalities of XPilot's robots file
+(<<04-running-a-server.adoc#robots,Robots>>).
+
+|Java server: network
+|Works
+|One UDP port, flexible address binding for VPNs and multi-homed hosts, abuse limits
+(<<04-running-a-server.adoc#running-a-server,Running a server>>).
+
+|Items, balls and treasures, targets, race mode, asteroids
+|In progress (M2)
+|Not yet on the Java server: items cannot be picked up, targets cannot be destroyed, and race maps play
+without races. They all work when the client plays on an original XPilot server.
 
 |Map viewer
-|Main
-|`--view-map`: fly a free camera over any map, with the radar, filled or outlined walls, and a
-`--demo` mode that animates fake ships, shots, items and the HUD
+|Works
+|`--view-map`: a free camera over any map, and a `--demo` mode
 (<<07-client-reference.adoc#viewer-flags,Viewer flags>>).
 
-|Client drawing (ships, shots, items, radar, HUD)
-|Main
-|Ported from the C client's painters. Visible in `--demo`; in a real game once networking is merged.
-
-|Server simulation
-|Main, in progress
-|Movement, walls, ships, shots, cannons, collisions, debris and scoring are being ported from the C
-server. Not yet connected to the network server.
-
-|Network server (`ServerMain`), binding, rate limits
-|Unmerged branch (`server-net`)
-|Runs end to end with a stand-in game: players can connect and chat, ships float. See
-<<04-running-a-server.adoc#running-a-server,Running a server>>.
-
-|Client networking (connect, receive the map, snapshots, HUD models, key bindings)
-|Unmerged branch (`client-net`)
-|A headless test client exists; the windowed game client is not wired up yet.
-
-|Playing on original XPilot 4.5.5 servers
-|Unmerged branch (`xp-compat`), planned
-|The XPilot protocol codecs are written; there is no command-line option for it yet.
-
-|Robots
+|Lag hiding
 |Planned
-|Robot options are parsed; robots are not implemented.
-
-|Items, balls, treasures, targets, race mode, asteroids
-|Planned
-|Parsed from maps and drawn by the viewer; no game rules yet.
+|Your own ship responds after a full network round trip plus about 135 ms. Client-side prediction is
+designed (`docs/latency-fixes.md` in the source) but not built.
 
 |Configurable keys, sound
 |Planned
-|Default XPilot keys are built in (<<03-playing.adoc#controls,Controls>>).
+|XPilot's default keys are built in (<<03-playing.adoc#controls,Controls>>).
 |===
 
 The development plan has three milestones:
 
 M1, playable core:: map rendering, ship movement, gravity and walls, shields, fuel, shots, cannons,
-wormholes, death and respawn, scores, chat, robots, radar, HUD, basic team play.
-M2:: items, balls and treasures, targets, checkpoints and races, asteroids.
-M3:: polish: a configurable keys file; sound if it is cheap.
+wormholes, death and respawn, scores, chat, robots, radar, HUD, basic team play. Done.
+M2:: items, balls and treasures, targets, checkpoints and races, asteroids. In progress.
+M3:: polish: a configurable keys file; sound.
 
 Out of scope: the XPilot map editor, replay recording, the metaserver and server browser, and the
 X11-specific parts of the C client.
 
-image::map-viewer.png[The map viewer on Planet X,align=center]
+image::game-java-server.png[A game on the JXPilot server against six robots,align=center]
+

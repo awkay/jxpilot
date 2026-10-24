@@ -15,17 +15,11 @@ This chapter lists every server option. The tables are generated from the server
 (`Opt` in the `common` module), and the build fails if they fall out of date, so they always match the
 code of this release.
 
-IMPORTANT: The option set is XPilot 4.5.5's (plus a few JXPilot additions), with XPilot's defaults
-and help texts. JXPilot *accepts* all of them, in all the places listed, but many control features
+IMPORTANT: The option set is XPilot 4.5.5's, with XPilot's defaults and help texts, plus JXPilot's
+network options (their help starts with "JXPilot:", in <<opts-network,Server and network>>). JXPilot *accepts* all of them, in all the places listed, but many control features
 that are not implemented yet (<<01-introduction.adoc#status,Status>>). Those options are kept so that
 original XPilot maps and config files load unchanged, and take effect as the features arrive. Unknown
 option names are kept and ignored, as XPilot does.
-
-NOTE: *Unmerged branch* (`server-net`). The JXPilot network options `bind`, `bindWait`,
-`snapshotDivisor`, `radarDivisor`, `ipPacketRate`, `ipPacketBurst`, `sessionPacketRate` and
-`sessionPacketBurst`, and the JXPilot default of 4 for `maxClientsPerIP`, appear in these tables once
-that branch is merged. Until then they are described in
-<<04-running-a-server.adoc#abuse-limits,Connection and traffic limits>>.
 
 [[reading-the-tables]]
 == Reading the tables

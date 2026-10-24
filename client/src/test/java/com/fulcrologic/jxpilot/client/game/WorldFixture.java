@@ -127,6 +127,13 @@ final class WorldFixture {
         return this;
     }
 
+    WorldFixture shot(int variant, double x, double y) {
+        w.beginSection(Section.SHOT, variant);
+        Records.Shot.put(w, x, y, 0, 0);
+        w.endSection();
+        return this;
+    }
+
     WorldFixture cannon(int index, int flags) {
         w.beginSection(Section.CANNON);
         Records.CannonState.put(w, index, flags);

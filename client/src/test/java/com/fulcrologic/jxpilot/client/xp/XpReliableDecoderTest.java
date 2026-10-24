@@ -77,7 +77,8 @@ class XpReliableDecoderTest {
     void prefixesIncomplete(CPackets p) {
         byte[] a = p.bytes();
         for (int n = 1; n < a.length; n++) {
-            XpReader r = new XpReader().wrap(ByteBuffer.wrap(a), 0, n);
+            // an exact-length copy: a decoder reading past the limit fails instead of reading the rest
+            XpReader r = new XpReader().wrap(ByteBuffer.wrap(java.util.Arrays.copyOf(a, n)), 0, n);
             assertEquals(XpReliableDecoder.INCOMPLETE, dec.decode(r), "prefix " + n + " of type " + a[0]);
             assertEquals(0, r.pos(), "position kept");
         }
@@ -251,11 +252,13 @@ class XpReliableDecoderTest {
         @Test
         void oldScoreFormat() {
             configure(0, 0x4401);
-            decode(new CPackets().scoreOld(5, 42, 2, ' ').c(XpProto.PKT_SCORE_OBJECT).hd(3).hd(0).hd(0).s("x")
+            decode(new CPackets().scoreOld(5, 42, 2, ' ').c(XpProto.PKT_SCORE_OBJECT).hd(-3).hd(4).hd(0xFFFE).s("x")
                 .message("m"));
-            assertEquals(List.of("score id=5 score=42.0 lives=-1 status=0", "message kind=4 from=65535 m"), rec.events,
-                "16-bit integer scores and old score objects before 0x4500");
+            assertEquals(List.of("score id=5 score=42.0 lives=-1 status=0",
+                    "scoreobject score=-3.0 at=4,65534 label=x", "message kind=4 from=65535 m"), rec.events,
+                "16-bit integer scores and score objects (%hd whole points, %hu blocks) before 0x4500");
             prefixesIncomplete(new CPackets().scoreOld(5, 1, 1, ' '));
+            prefixesIncomplete(new CPackets().c(XpProto.PKT_SCORE_OBJECT).hd(3).hd(0).hd(0).s("x"));
         }
 
         @Test
@@ -277,16 +280,32 @@ class XpReliableDecoderTest {
 
         @Test
         void ignoredPacketsAreConsumedAndCounted() {
-            List<Integer> res = decode(new CPackets().timing(5, 3, 2).string(1, 2, 3).scoreObject(12.5, 100, 200, "+12")
-                .motd(0, "abc".getBytes(), 3));
+            List<Integer> res = decode(new CPackets().timing(5, 3, 2).string(1, 2, 3).motd(0, "abc".getBytes(), 3));
             assertAll(
-                () -> assertEquals(List.of(5, 6, 13, 14), res, "sizes"),
-                () -> assertEquals(4, dec.ignored(), "four ignored"),
+                () -> assertEquals(List.of(5, 6, 14), res, "sizes"),
+                () -> assertEquals(3, dec.ignored(), "three ignored"),
                 () -> assertEquals(List.of(), rec.events, "nothing for the model"));
             prefixesIncomplete(new CPackets().timing(1, 2, 3));
             prefixesIncomplete(new CPackets().string(1, 2, 3));
-            prefixesIncomplete(new CPackets().scoreObject(1, 2, 3, "s"));
             prefixesIncomplete(new CPackets().motd(0, "ab".getBytes(), 2));
+        }
+
+        @Test
+        @DisplayName("PKT_SCORE_OBJECT since 0x4500 becomes SCORE_OBJECT: score / 100, block, label (C Receive_score_object)")
+        void scoreObjects() {
+            List<Integer> res = decode(new CPackets().scoreObject(12.5, 40000, 65000, "Robby").scoreObject(-0.25, 3, 4, ""));
+            assertAll(
+                () -> assertEquals(List.of(15, 10), res, "sizes: 9-byte head plus the NUL-terminated label"),
+                () -> assertEquals(List.of("scoreobject score=12.5 at=40000,65000 label=Robby",
+                    "scoreobject score=-0.25 at=3,4 label="), rec.events,
+                    "delivered in order: score / 100, %hu blocks (40000 stays positive), empty label kept empty"),
+                () -> assertEquals(0, dec.ignored(), "not ignored"));
+            prefixesIncomplete(new CPackets().scoreObject(1, 2, 3, "s"));
+            configure(0, 0x4500);
+            rec.events.clear();
+            decode(new CPackets().scoreObject(1.5, 7, 8, "v"));
+            assertEquals(List.of("scoreobject score=1.5 at=7,8 label=v"), rec.events,
+                "version 0x4500 itself already has the two-decimal format");
         }
 
         @Test
