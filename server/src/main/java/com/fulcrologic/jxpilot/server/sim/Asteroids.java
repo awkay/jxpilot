@@ -95,13 +95,22 @@ public final class Asteroids {
     public Asteroids(World w, Simulation sim) {
         this.w = w;
         this.sim = sim;
+        reloadOptions();
+    }
+
+    /**
+     * Recompute the masses from {@code shipMass} (also after /set shipMass: C's macro reads ShipMass each time).
+     * <p>
+     * BEHAVIOR: asteroids already in the world keep their mass (C sets it when one is made).
+     */
+    public void reloadOptions() {
         for (int size = 1; size <= MAX_SIZE; size++) {
             masses[size] = (float) ((w.params.shipMass * 3) * StrictMath.pow(2.0 + DUST_MASS, size - 1.0));
         }
     }
 
     /** C {@code ASTEROID_MASS(size)}: (ShipMass * 3) * 2.25^(size-1), a float (precomputed: pow allocates). */
-    float mass(int size) {
+    public float mass(int size) {
         return masses[size];
     }
 
