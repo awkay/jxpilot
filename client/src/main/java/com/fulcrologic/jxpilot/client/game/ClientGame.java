@@ -194,6 +194,7 @@ public final class ClientGame implements ConnectionListener {
                 gameEvent.read(p);
                 events.add(gameEvent);
             }
+            case ReliableType.MOTD -> motdPiece(p);
             case ReliableType.SEEK -> {
                 seek.read(p);
                 seek(seek.programmerId, seek.robotId, seek.soughtId);
@@ -293,6 +294,37 @@ public final class ClientGame implements ConnectionListener {
     public boolean teamPlay() { return (welcomeFlags & Msg.Welcome.FLAG_TEAM_PLAY) != 0; }
 
     public CharBuf serverName() { return serverName; }
+
+    // ---- the server's message of the day (C motd), assembled from MOTD pieces
+    private final byte[] motd = new byte[Msg.Motd.MAX_SIZE];
+    private int motdGot;
+    private boolean motdReady;
+
+    private void motdPiece(ByteBuffer p) {
+        int len = p.remaining() - 8;
+        int total = Msg.Motd.read(p, motd);
+        if (total < 0) {
+            return;
+        }
+        motdGot += len;
+        if (motdGot >= total) {
+            motdReady = true;
+            motdGot = total;
+        }
+    }
+
+    /**
+     * The server's MOTD once all of it has arrived, then null again (C pops its MOTD viewer up once).
+     * <p>
+     * BEHAVIOR: null until every MOTD piece is in; then the Latin-1 text once.
+     */
+    public String takeMotd() {
+        if (!motdReady) {
+            return null;
+        }
+        motdReady = false;
+        return new String(motd, 0, motdGot, java.nio.charset.StandardCharsets.ISO_8859_1);
+    }
 
     public int playerId() { return playerId; }
 

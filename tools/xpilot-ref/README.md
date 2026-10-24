@@ -40,6 +40,7 @@ untested.
 | `patches/0005-server-mode-trace.patch` | Opt-in trace of balls, asteroids, wreckage, race progress, treasures and targets. Inert unless `XPILOT_TRACE_MODES` is set. |
 | `patches/0006-server-random-trace.patch` | Opt-in trace of every server random draw, `Make_debris` call, explosion particle, keyboard update and busy cannon (for exact replays). Inert unless `XPILOT_TRACE_RAND` is set. |
 | `compact-rand.sh` | Shrinks a `--rand` trace for committing (drops the frame code's and the thrust exhaust's draws, merges draw runs, keeps explosion particles only around explosions, optionally ends it at a frame). |
+| `patches/0007-server-robot-trace.patch` | Opt-in default-robot decision trace (`XPILOT_TRACE_ROBOT`): mode, long-term mode, war lock, whether the play returned through the evade check. Inert unless set. |
 | `build.sh` | Builds image `xpilot-ref:4.5.5`. |
 | `server.sh` | Runs a headless server and prints its log. |
 | `screenshot.sh` | Runs server and client on Xvfb and saves one PNG. |
@@ -323,11 +324,10 @@ GPL-2.0-or-later, and why.
    `server/src/test/resources/ctrace/wreckage-default.txt`:
 
    ```sh
-   CDPATH= XPREF_IMAGE=xpilot-ref:4.5.5-sb2 tools/xpilot-ref/build.sh   # or rebuild the default tag
-   docker run --rm --network none -e XPILOT_TRACE_WRECK=1 -e XPILOT_SEED=1 xpilot-ref:4.5.5-sb2 \
+   docker run --rm --network none -e XPILOT_TRACE=1 -e XPILOT_TRACE_WRECK=1 -e XPILOT_SEED=1 xpilot-ref:4.5.5 \
        timeout -s INT -k 5 180 xpilots -map default -robots 4 -minRobots 4 -noQuit +reportToMetaServer \
        -rawMode 2> wreck.trace
-   grep -E '^XPW(MAKE|RAND|RECK) ' wreck.trace > wreckage-default.txt
+   # keep the XPW* lines and the XPTRACE lines of frames with wreckage (and the frame before)
    ```
 
    Images built before this patch lack it; rebuild with `build.sh`.
@@ -349,6 +349,27 @@ GPL-2.0-or-later, and why.
    and `Trace_cannons()` (after `Trace_modes()`) prints explosion particles
    and busy cannons. Everything is inert unless `XPILOT_TRACE_RAND` is set;
    the random sequence and the game are unchanged.
+7. `0007-server-robot-trace.patch`, on top of 0006, in `src/server/robotdef.c` only: the default
+   robot's `play` hook becomes `Robot_default_play_trace()`, which calls
+   `Robot_default_play()` and then, when `XPILOT_TRACE_ROBOT` is set, prints one
+   line per robot per play:
+
+   ```
+   XPROBOT loop frame id mode longterm lock evaded turnacc power thrusting x y name
+   ```
+
+   `mode` is `robot_mode` (RM_* bits: 4 idle, 8/16 evade left/right, 32 climb,
+   64 harvest, 128 attack, 256 take-off, 512 cannon kill, 1024 refuel, 2048
+   navigate), `longterm` is `longterm_mode`, `lock` is `robot_lock` (bit 0 = war),
+   and `evaded` is 1 when the play returned through `Check_robot_evade()`. It draws
+   no random numbers, so the XPTRACE lines are unchanged. Used for the stuck-robot
+   comparison in `server/src/test/resources/robots/README.md`:
+
+   ```sh
+   docker run --rm --network none -e XPILOT_TRACE=1 -e XPILOT_TRACE_ROBOT=1 -e XPILOT_SEED=2 \
+       xpilot-ref:4.5.5 timeout -s INT -k 5 600 xpilots -map default -robots 4 -minRobots 4 \
+       -noQuit +reportToMetaServer -rawMode -defaults /usr/local/lib/xpilot/defaults 2> c4s2.trace
+   ```
 
 ## Known quirks
 

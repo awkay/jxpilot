@@ -163,6 +163,15 @@ public interface GameHost {
     boolean fillSnapshot(int viewerId, int part, boolean radar, SnapshotWriter w);
 
     /**
+     * Whether a human player has been in the game since the server started (C {@code NoPlayersEnteredYet}
+     * cleared). The server quits without -noQuit once such a game has no human left. Hosts that never report
+     * it (test stubs) keep the server running until the no-show timeout.
+     */
+    default boolean humanEntered() {
+        return false;
+    }
+
+    /**
      * Whether this tick's snapshot goes to this viewer at all (C {@code Frame_update} skips some frames for
      * paused and dead players). The network layer asks once per due snapshot, before {@link #fillSnapshot}.
      * <p>

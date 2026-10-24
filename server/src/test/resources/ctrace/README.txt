@@ -19,14 +19,31 @@ wall blocks, turn velocity decay.
 wreckage-default.txt: every Make_wreckage of a 180 s game on default.xp (4 robots, seed 1,
 lib/defaults; 7 cannon and 4 ship explosions, 30 pieces, 659 piece-frames) with the rfrac()
 values each call drew, and every wreckage object after every frame (patch 0003, see
-tools/xpilot-ref/README.md). WreckageGoldenTest replays each call with those draws and compares
-every frame bit for bit.
+tools/xpilot-ref/README.md), plus the player lines (patch 0002, XPILOT_TRACE=1, same run) of every
+frame with wreckage and the frame before. WreckageGoldenTest replays each call with those draws and
+compares every frame bit for bit, checks that the 2 pieces C removes early were within a ship's reach,
+and checks Wreckage.ship's arguments (whole-pixel position cx >> 6) for the 4 ship explosions.
 
 thrust-turn-impact.txt (139 frames): thrust, turn while thrusting, coast through the
 gravity field, a 25 px/frame wall bounce, coast.
   tools/xpilot-ref/trace.sh --map default --seed 42 --after 1
     --server-opt -gravity --server-opt -0.14 --server-opt +sparksWallBounce
     --keys "down:Shift_L sleep:0.5 down:a sleep:0.3 up:a sleep:0.4 up:Shift_L sleep:9"
+
+wall-thrust.txt (111 frames): hop off the hanging base, turn upward, fall back against the ceiling and
+thrust into it for 4 s (dir 17: the ship slides along it), then an impact and coast. Recorded with patch
+0006's image (xpilot-ref:4.5.5-sb2b; patches 0003-0006 do not change the physics trace).
+  tools/xpilot-ref/trace.sh --map default --seed 42 --after 1
+    --server-opt -gravity --server-opt -0.14 --server-opt +sparksWallBounce
+    --keys "down:Shift_L sleep:0.15 up:Shift_L down:a sleep:1.2 up:a sleep:1.5 down:Shift_L sleep:4 up:Shift_L sleep:1"
+
+slope-impact.txt (89 frames): hop off the base, turn east, thrust along the ceiling into the 45-degree
+slope at block 125,41 (a 16 px/frame slope bounce) and on until the ship dies. A C cannon shot hits the
+ship in frame 24, and the Java replay has no cannons, so CTraceTest forces the ship to C's state up to
+frame 26 and compares frames 27-89. The trace stops before the death: the respawn fuel draws rfrac().
+  tools/xpilot-ref/trace.sh --map default --seed 42 --after 1
+    --server-opt -gravity --server-opt -0.14 --server-opt +sparksWallBounce
+    --keys "down:Shift_L sleep:0.15 up:Shift_L down:a sleep:0.55 up:a sleep:0.3 down:Shift_L sleep:5 up:Shift_L sleep:1"
 
 Game-mode traces (ModeTraceTest) use xpilot-ref patch 0005 (trace.sh --modes) and a map from this
 directory (--map-file); the image is built with that patch (XPREF_IMAGE=xpilot-ref:server-modes build.sh).

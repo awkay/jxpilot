@@ -67,6 +67,8 @@ public final class ClientFrame {
     private final HudFrame panelHud = new HudFrame();
     private final HudFrame helpHud = new HudFrame(4, 4, 320, 160);
     private final KeyHelp help;
+    /** The server's MOTD panel once it arrived (C's MOTD viewer), else null. */
+    private KeyHelp motd;
     private final String helpHint;
     private final ControlSettings settings;
     private final Msg.Settings settingsMsg = new Msg.Settings();
@@ -131,7 +133,8 @@ public final class ClientFrame {
      * (the map centre without bases); afterwards the own ship, whenever it exists, is the centre.
      * BEHAVIOR: while not playing the HUD's status line shows the connection's current status; on the first
      * PLAYING frame a message names the key help key ("F1: keys"), unless keyHelp is unbound.
-     * BEHAVIOR: lays out the key help overlay ({@link #helpHud()}).
+     * BEHAVIOR: lays out the key help overlay ({@link #helpHud()}), or the server MOTD panel while it is open (it opens
+     * once, when the whole MOTD has arrived).
      * BEHAVIOR: fills the scene, radar, view HUD, HUD extras (with the lose-item outline of the
      * {@link KeyRouter#loseSelection}, aged by dt) and the score list panel (at
      * {@code (0, scoreTop)}, {@code panelW} wide).
@@ -180,7 +183,27 @@ public final class ClientFrame {
         extras.loseItem(router.loseSelection(), dt);
         panelHud.clear();
         hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, m);
-        help.layout(helpHud, viewW, viewH, m);
+        String motdText = game.takeMotd();
+        if (motdText != null) {
+            motd = motdPanel(motdText);
+        }
+        if (motd != null && motd.visible()) {
+            motd.layout(helpHud, viewW, viewH, m);
+        } else {
+            help.layout(helpHud, viewW, viewH, m);
+        }
+    }
+
+    /** C's MOTD viewer ("XPilot motd from SERVER"), open until the help key closes it. */
+    private KeyHelp motdPanel(String text) {
+        java.util.List<String[]> lines = new java.util.ArrayList<>();
+        for (String line : text.replace("\t", "        ").split("\r?\n", -1)) {
+            lines.add(new String[] {"", line});
+        }
+        KeyHelp k = new KeyHelp("XPilot motd from " + game.serverName() + (helpHint != null
+            ? " - " + helpHint.substring(0, helpHint.indexOf(':')) + " closes" : ""), lines);
+        k.toggle();
+        return k;
     }
 
     /**
@@ -215,7 +238,7 @@ public final class ClientFrame {
      * BEHAVIOR: a finished chat line is sent with {@link GameConnection#sendChat}; QUIT sets
      * {@link #quitRequested()}; SWAP_SCALE sets {@link #takeSwapScale()}; TOGGLE_SOUND sets
      * {@link #takeToggleSound()}; SETTINGS sends the control settings ({@link GameConnection#sendSettings});
-     * SHOW_CONTROLS shows the power and turn speed meters; HELP toggles the key help.
+     * SHOW_CONTROLS shows the power and turn speed meters; HELP closes an open MOTD panel, else toggles the key help.
      */
     public void key(int key, int action, int mods, long nowNanos) {
         int ev = router.key(key, action, mods);
@@ -226,7 +249,11 @@ public final class ClientFrame {
             hud.showControls();
         }
         if ((ev & KeyRouter.HELP) != 0) {
-            help.toggle();
+            if (motd != null && motd.visible()) {
+                motd.toggle();
+            } else {
+                help.toggle();
+            }
         }
         if ((ev & KeyRouter.CHAT) != 0) {
             conn.sendChat(router.chat(), nowNanos);

@@ -89,6 +89,12 @@ public final class SimGameHost implements GameHost {
     private int lastQueuePosition;
     /** C {@code RawMode} (idleRun; an operator may change it). */
     private boolean rawMode;
+    /** C motdFileName. */
+    private final MotdFile motd;
+    /** Viewers whose MOTD goes out with their next event drain (after the initial state). */
+    private final boolean[] motdPending = new boolean[IDS];
+    /** C {@code !NoPlayersEnteredYet}: a human has been in the game. */
+    private boolean humanEntered;
     private boolean shutdown;
     private final String mapName;
     private final String mapAuthor;
@@ -157,6 +163,8 @@ public final class SimGameHost implements GameHost {
         this.sim = sim;
         this.w = sim.world;
         this.builder = new SnapshotBuilder(w);
+        String motdFile = w.options.getString(Opt.MOTD_FILE_NAME);
+        this.motd = new MotdFile(motdFile == null || motdFile.isEmpty() ? null : java.nio.file.Path.of(motdFile));
         String adminFile = w.options.getString(Opt.ADMIN_MESSAGE_FILE_NAME);
         this.talk = new Talk(w, new AdminLog(adminFile == null || adminFile.isEmpty() ? null : java.nio.file.Path.of(adminFile),
             w.options.getInt(Opt.ADMIN_MESSAGE_FILE_SIZE_LIMIT), java.time.ZonedDateTime::now));
@@ -189,6 +197,11 @@ public final class SimGameHost implements GameHost {
     @Override
     public void attach(Sessions s) {
         this.sessions = s;
+    }
+
+    @Override
+    public boolean humanEntered() {
+        return humanEntered;
     }
 
     /** The hosted simulation. */
@@ -419,6 +432,7 @@ public final class SimGameHost implements GameHost {
 
     /** The welcome message of C {@code Handle_login}, set when a human has entered (before the round part). */
     private void entered(Player pl) {
+        humanEntered = true;
         StringBuilder msg = w.events.message(Msg.Text.KIND_SERVER, Obj.NO_ID);
         if (w.numPlayers == 1) {
             msg.append("Welcome to \"").append(mapName).append("\", made by ").append(mapAuthor).append('.');
@@ -922,6 +936,7 @@ public final class SimGameHost implements GameHost {
      */
     @Override
     public void initialState(int viewerId, ReliableChannel out) {
+        motdPending[viewerId] = true;
         fullState(viewerId, out, false);
         cursor[viewerId] = w.events.seq();
         burstCursor[viewerId] = w.events.burstSeq();
@@ -994,9 +1009,15 @@ public final class SimGameHost implements GameHost {
      * TEAM: PLAYER_TEAM; SCORE / TEAM_SCORE; MESSAGE for everyone or this viewer (from mapped); BASE_OWNER
      * (NO_ID = released); GAME_EVENT (ids mapped, value kept); THRUST: PLAYER_THRUST; TIMING (race progress);
      * SCORE_OBJECT only to its player; ALLIANCE: PLAYER_ALLIANCE with the viewer's mark ({@link #allianceMark}).
+     * BEHAVIOR: the first drain after {@link #initialState} first queues the MOTD (motdFileName, {@link MotdFile})
+     * when the server has one; after the initial state so it does not hold back the first snapshots.
      */
     @Override
     public void drainEvents(int viewerId, ReliableChannel out) {
+        if (motdPending[viewerId]) {
+            motdPending[viewerId] = false;
+            Msg.Motd.sendAll(out, motd.text()); // C sends it when the client asks, right after login
+        }
         Events e = w.events;
         long from = cursor[viewerId];
         if (from < e.oldestSeq()) {

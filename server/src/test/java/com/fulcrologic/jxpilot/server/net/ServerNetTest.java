@@ -523,7 +523,9 @@ class ServerNetTest {
         @Test
         @DisplayName("a peer is (channel, address); replies use the channel it arrived on")
         void pinned() {
-            Harness h = new Harness();
+            ServerNetConfig cfg = new ServerNetConfig();
+            cfg.maxPerIp = 0; // three peers from one address (default 2)
+            Harness h = new Harness(cfg, "mapName: test\n");
             TestClient on0 = new TestClient(1);
             TestClient on4 = new TestClient(2);
             TestClient on20 = new TestClient(3);
@@ -665,6 +667,7 @@ class ServerNetTest {
             cfg.connectCost = 1;
             cfg.sessionRatePerSecond = 10;
             cfg.sessionRateBurst = 20;
+            cfg.maxPerIp = 0; // many players behind one NAT
             Harness h = new Harness(cfg, "x: 1\n");
             List<TestClient> nat = new ArrayList<>();
             for (int i = 0; i < 4; i++) {

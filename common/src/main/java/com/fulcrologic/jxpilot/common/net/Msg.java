@@ -268,6 +268,50 @@ public final class Msg {
     }
 
     /** {@link ReliableType#DATA_CHUNK}: {@code u32 offset} then raw bytes to the end of the message. */
+    /**
+     * The message of the day, in pieces: {@code u32 offset, u32 total size, bytes} (Latin-1 text, C's MOTD file,
+     * at most {@link #MAX_SIZE} bytes in all).
+     */
+    public static final class Motd {
+        /** C {@code MAX_MOTD_SIZE}. */
+        public static final int MAX_SIZE = 30 * 1024;
+
+        private Motd() {}
+
+        /**
+         * Queue the whole text as MOTD messages, each as large as a reliable slot allows.
+         * <p>
+         * BEHAVIOR: nothing for an empty text; texts over {@link #MAX_SIZE} are cut to it.
+         */
+        public static void sendAll(ReliableChannel ch, byte[] text) {
+            int total = Math.min(text.length, MAX_SIZE);
+            int off = 0;
+            while (off < total) {
+                ByteBuffer b = ch.begin(ReliableType.MOTD);
+                int len = Math.min(total - off, b.remaining() - 8);
+                b.putInt(off).putInt(total).put(text, off, len);
+                ch.end();
+                off += len;
+            }
+        }
+
+        /**
+         * Copy a received piece into {@code dest} (at least {@link #MAX_SIZE} bytes).
+         * <p>
+         * BEHAVIOR: returns the total size, or -1 for a piece that does not fit (then nothing is copied).
+         */
+        public static int read(ByteBuffer b, byte[] dest) {
+            int off = b.getInt();
+            int total = b.getInt();
+            int len = b.remaining();
+            if (off < 0 || total < 0 || total > dest.length || len > total - off || off > total) {
+                return -1;
+            }
+            b.get(dest, off, len);
+            return total;
+        }
+    }
+
     public static final class DataChunk {
         private DataChunk() {}
 

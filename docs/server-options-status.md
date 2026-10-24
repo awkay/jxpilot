@@ -27,9 +27,10 @@ Precedence is C's `Option_change_node` (option.c:340-460, `Options.allowChange`)
 
 What lib/defaults changes compared to the cmdline.c defaults:
 
-- `gravity -0.25`, `framesPerSecond 14`, `movingItemProb 0.3`, `maxItemDensity` and the small
-  `item*Prob` values;
-- `allowNukes no`, `allowClusters no`, `allowModifiers yes`;
+- `gravity -0.25`, `movingItemProb 0.3`, `maxItemDensity` and the small `item*Prob` values of 15 items
+  (not armor, mirror, deflector, hyperjump or phasing);
+- `allowModifiers yes`. It also sets `allowNukes no`, `allowClusters no` and `framesPerSecond 14`, which
+  equal the cmdline.c defaults;
 - through `expand: SoftWalls`, wall bounce speeds and angles of 180.
 
 Maps that set any of these keep their own value. `default.xp`, for instance, keeps its 60 bounce speeds
@@ -116,11 +117,11 @@ follow C; the alias is the C command-line name.
 | `maxPlayerShots` | shots | int | `256` | ANY+VIS | implemented (Params) |
 | `shotsGravity` |  | bool | `true` | ANY+VIS | implemented (Params) |
 | `idleRun` | rawMode | bool | `false` | CMD+DEF+VIS | implemented (rawMode) |
-| `noQuit` |  | bool | `false` | CMD+DEF+VIS | deliberately unsupported: the server never quits when the last human leaves (C quits unless -noQuit). Lead decision wanted; see report |
+| `noQuit` |  | bool | `false` | CMD+DEF+VIS | implemented (server-batch2): without it the server quits when the last human has left, or after 5 minutes without any (server.c:278-291) |
 | `logRobots` |  | bool | `true` | CMD+DEF+VIS | implemented (server-batch2): "NAME (n, robotRealName) starts at startpos B." on the server log |
 | `mapWidth` |  | int | `100` | ANY+VIS | implemented (MapLoader) |
 | `mapHeight` |  | int | `100` | ANY+VIS | implemented (MapLoader) |
-| `mapFileName` | map | string | `(none)` | CMD+DEF | implemented (Server) |
+| `mapFileName` | map | string | `(none)` | CMD+DEF | implemented (Server.readOptions, MapLocator): --map NAME or FILE, a built-in map by name (`--list-maps`) or a path; without it the built-in `default`, like C's default map |
 | `mapName` |  | string | `unknown` | ANY+VIS | implemented (SimGameHost, MapLoader) |
 | `mapAuthor` |  | string | `anonymous` | ANY+VIS | implemented (SimGameHost, MapLoader) |
 | `contactPort` | port | int | `15345` | CMD+DEF+VIS | implemented (Server) |
@@ -164,7 +165,7 @@ follow C; the alias is the C command-line name.
 | `reportToMetaServer` | reportMeta | bool | `yes` | CMD+DEF+VIS | unsupported: no meta server speaks the JXPilot protocol |
 | `searchDomainForXPilot` |  | bool | `no` | CMD+DEF+VIS | unsupported: no meta server speaks the JXPilot protocol |
 | `denyHosts` |  | string | `` | CMD+DEF+VIS | implemented (server-batch2): CONNECTs from those addresses/networks are ignored (contact.c) |
-| `maxClientsPerIP` | maxPerIP | int | `4` | CMD+DEF+VIS | implemented (ServerNetConfig) |
+| `maxClientsPerIP` | maxPerIP | int | `2` | CMD+DEF+VIS | implemented (ServerNetConfig) |
 | `limitedVisibility` |  | bool | `no` | ANY+VIS | implemented (server-items) |
 | `minVisibilityDistance` | minVisibility | real | `0.0` | ANY+VIS | implemented (server-items) |
 | `maxVisibilityDistance` | maxVisibility | real | `0.0` | ANY+VIS | implemented (server-items) |
@@ -222,7 +223,7 @@ follow C; the alias is the C command-line name.
 | `wormTime` |  | sec | `0` | ANY+VIS | implemented (Params) |
 | `defaultsFileName` | defaults | string | `(none)` | CMD | implemented (server-batch2): --defaults FILE|none; default is the bundled lib/defaults |
 | `passwordFileName` |  | string | `(none)` | CMD+DEF | implemented (server-commands): read after the defaults and config files, origin PASSWORD (only `password` is taken); none is read without the option; a named file that cannot be read is an error |
-| `motdFileName` | motd | string | `(none)` | CMD+DEF | not implemented: the native protocol has no MOTD request; needs a protocol and client change |
+| `motdFileName` | motd | string | `(none)` | CMD+DEF | implemented (server-batch2): sent to each client after login (reliable MOTD message) and shown like C's MOTD viewer; re-read when the file changes, at most 30 KB |
 | `scoreTableFileName` | scoretable | string | `(none)` | CMD+DEF | accepted, no effect: C 4.5.5 declares it but never reads it |
 | `adminMessageFileName` | adminMessage | string | `(none)` | CMD+DEF | implemented (server-batch2): "god:" chat appended to the file (no default file: C uses LIBDIR/log) |
 | `adminMessageFileSizeLimit` | adminMessageLimit | int | `20202` | CMD+DEF | implemented (server-batch2) |
