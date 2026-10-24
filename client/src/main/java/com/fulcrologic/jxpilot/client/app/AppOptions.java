@@ -64,6 +64,7 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  *   --keys FILE                key bindings and control settings in ~/.xpilotrc format (default: ~/.xpilotrc)
  *   --list-keys                print the effective key bindings and exit
  *   --list-maps                print the bundled maps and exit
+ *   --version                  print the client's version and exit (C -version)
  *   --RESOURCE VALUE           any C client resource (also -RESOURCE, C's form): the same as a line
  *                              "RESOURCE: VALUE" in ~/.xpilotrc, and winning over it (join, noLocalMotd, text, list,
  *                              mono and erase take no value, as in C)
@@ -84,6 +85,7 @@ import com.fulcrologic.jxpilot.common.net.Protocol;
  * @param maxVolume  {@code --volume} (C {@code maxVolume}), 0..{@value SoundPlayer#MAX_MAX_VOLUME}, or {@link #VOLUME_UNSET}
  * @param keysFile   key file given with {@code --keys}, or null for {@code ~/.xpilotrc}
  * @param shipShapeFile shape file given with {@code --shipShapeFile}, or null when not given
+ * @param connectText the {@code --connect} argument as given (the port resource fills in a missing port), or null
  * @param resources  command-line resources in order, applied after the resource file: every
  *                   {@code --RESOURCE VALUE}, plus name, team, geometry (from {@code --size}), scaleFactor and
  *                   altScaleFactor for their JXPilot flags
@@ -92,7 +94,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                          String shape, String localMap, String screenshot, int frames, int width, int height,
                          boolean vsync, double scaleFactor, double altScaleFactor, String swapScaleKey,
                          String fontFile, double fontSize, boolean sound, int maxVolume, String keysFile,
-                         String shipShapeFile, java.util.List<XpilotRc.Entry> resources) {
+                         String shipShapeFile, java.util.List<XpilotRc.Entry> resources, String connectText) {
     /** Launch modes. */
     public enum Mode {
         /** No mode chosen: print usage. */
@@ -106,7 +108,9 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         /** Print the effective key bindings ({@code --list-keys}). */
         LIST_KEYS,
         /** Print the bundled maps ({@code --list-maps}). */
-        LIST_MAPS
+        LIST_MAPS,
+        /** Print the version ({@code --version}, C {@code -version}). */
+        VERSION
     }
 
     /** Longest player name accepted (the client keeps {@link Players#MAX_NAME} characters). */
@@ -135,6 +139,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                ClientMain --local --map MAP [same options as --connect, except --protocol and --bind]
                ClientMain --list-keys [--keys FILE] [--swap-scale-key KEYSYM]
                ClientMain --list-maps
+               ClientMain --version
                ClientMain --view-map MAP [--demo] [viewer options: --screenshot --frames --size --zoom ...]
         MAP is a bundled map name (see --list-maps), or a map file when it contains a path (maps/my.xp, ./my.xp).""";
 
@@ -156,7 +161,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
      * BEHAVIOR: {@code --keys FILE} names the key file; {@code --list-keys} selects {@link Mode#LIST_KEYS}
      * (keeping {@code --keys} and {@code --swap-scale-key}, ignoring the launch mode).
      * BEHAVIOR: {@code --list-maps} selects {@link Mode#LIST_MAPS}, ignoring the launch mode ({@code --list-keys}
-     * wins when both are given).
+     * wins when both are given); {@code --version} / {@code -version} selects {@link Mode#VERSION} before both.
      * BEHAVIOR: sound is on unless {@code --no-sound} (the last of --sound/--no-sound wins); {@code --volume}
      * is an integer 0..{@value SoundPlayer#MAX_MAX_VOLUME}, {@link #VOLUME_UNSET} when not given.
      * BEHAVIOR: {@code --RESOURCE VALUE} / {@code -RESOURCE VALUE} for a resource {@link KeyConfig#knownResource}
@@ -170,13 +175,13 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
             if (a.equals("--view-map")) {
                 return new AppOptions(Mode.VIEW_MAP, LaunchOptions.parse(args), null, null, null, Protocol.NO_TEAM,
                     "", null, null, DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, FONT_SIZE_UNSET, true,
-                    VOLUME_UNSET, null, null, java.util.List.of());
+                    VOLUME_UNSET, null, null, java.util.List.of(), null);
             }
         }
         if (args.length == 0) {
             return new AppOptions(Mode.HELP, null, null, null, null, Protocol.NO_TEAM, "", null, null,
                 DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, FONT_SIZE_UNSET, true, VOLUME_UNSET,
-                null, null, java.util.List.of());
+                null, null, java.util.List.of(), null);
         }
         String connect = null;
         String protocol = null;
@@ -202,6 +207,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         String keys = null;
         boolean listKeys = false;
         boolean listMaps = false;
+        boolean version = false;
         java.util.List<XpilotRc.Entry> resources = new java.util.ArrayList<>();
         for (int i = 0; i < args.length; i++) {
             String a = args[i];
@@ -272,6 +278,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
                 case "--keys" -> keys = value(args, ++i, a);
                 case "--list-keys" -> listKeys = true;
                 case "--list-maps" -> listMaps = true;
+                case "--version", "-version" -> version = true;
                 default -> {
                     String res = resourceName(a);
                     if (res == null) {
@@ -284,15 +291,20 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         }
         Mode mode;
         ConnectTarget target = null;
+        if (version) {
+            return new AppOptions(Mode.VERSION, null, null, null, null, Protocol.NO_TEAM, "", null, null,
+                DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, DEFAULT_FONT_SIZE, true, VOLUME_UNSET, null, null,
+                java.util.List.of(), null);
+        }
         if (listKeys) {
             return new AppOptions(Mode.LIST_KEYS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
                 DEFAULT_FRAMES, 1280, 800, true, 1, 2, swapKey, null, FONT_SIZE_UNSET, sound, maxVolume, keys, null,
-                java.util.List.copyOf(resources));
+                java.util.List.copyOf(resources), null);
         }
         if (listMaps) {
             return new AppOptions(Mode.LIST_MAPS, null, null, null, null, Protocol.NO_TEAM, "", null, null,
                 DEFAULT_FRAMES, 1280, 800, true, 1, 2, null, null, FONT_SIZE_UNSET, true, SoundPlayer.DEFAULT_MAX_VOLUME,
-                null, null, java.util.List.of());
+                null, null, java.util.List.of(), null);
         }
         if (connect != null && local) {
             throw new IllegalArgumentException("--connect and --local exclude each other");
@@ -316,7 +328,7 @@ public record AppOptions(Mode mode, LaunchOptions viewer, ConnectTarget target, 
         }
         return new AppOptions(mode, null, target, bind, name != null ? name : defaultName(userName), team, shape,
             map, screenshot, frames, width, height, vsync, scale, alt, swapKey, font, fontSize, sound, maxVolume, keys,
-            shipShapeFile, java.util.List.copyOf(resources));
+            shipShapeFile, java.util.List.copyOf(resources), connect);
     }
 
     /** C's options that take no argument on the command line (default.c {@code "Yes"} noArg value). */

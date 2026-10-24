@@ -49,6 +49,11 @@ public record ConnectTarget(Protocol protocol, Endpoint endpoint) {
      * BEHAVIOR: throws IllegalArgumentException for an unknown flag value or an unparsable endpoint.
      */
     public static ConnectTarget parse(String target, String protocolFlag) {
+        return parse(target, protocolFlag, XpProto.SERVER_PORT);
+    }
+
+    /** BEHAVIOR: as {@link #parse(String, String)}, with {@code defaultPort} for a target without a port. */
+    public static ConnectTarget parse(String target, String protocolFlag, int defaultPort) {
         String t = target.trim();
         String lower = t.toLowerCase(java.util.Locale.ROOT);
         Protocol p;
@@ -64,7 +69,7 @@ public record ConnectTarget(Protocol protocol, Endpoint endpoint) {
         if (t.endsWith("/")) {
             t = t.substring(0, t.length() - 1);
         }
-        return new ConnectTarget(p, Endpoint.parse(t, XpProto.SERVER_PORT));
+        return new ConnectTarget(p, Endpoint.parse(t, defaultPort));
     }
 
     /** BEHAVIOR: "xpilot"/"xp" or "jxpilot"/"jx"/"native" (any case); anything else throws. */

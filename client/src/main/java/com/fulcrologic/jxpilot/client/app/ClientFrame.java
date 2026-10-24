@@ -89,6 +89,8 @@ public final class ClientFrame {
     /** C {@code showRealName} (MENU / SCORE and PLAYER; keyIdMode toggles it too). */
     private boolean showRealName;
     private String[] modifierBanks;
+    /** The MOTD was asked for from the menu: show it when it arrives even without autoServerMotdPopup. */
+    private boolean motdAsked;
     /** The resource file "Save Configuration" writes (C {@code Get_xpilotrc_file}). */
     private java.nio.file.Path rcFile = java.nio.file.Path.of(System.getProperty("user.home", "."), ".xpilotrc");
 
@@ -107,7 +109,6 @@ public final class ClientFrame {
     private FontRole.Metrics single;
     /** World view size last given to {@link GameConnection#sendDisplay} (-1: never). */
     private int displayW = -1;
-    private double sentSparkProb = Double.NaN;
     /** When the server ended the session (refusal, quit packet, timeout), or -1. */
     private long closedAt = -1;
     /** Where C's error texts go (C {@code error()} prints to stderr). */
@@ -256,7 +257,11 @@ public final class ClientFrame {
         step(nowNanos, viewW, viewH, zoom, single, panelW, radarHeight);
     }
 
-    /** C's MOTD viewer ("XPilot motd from SERVER"), open until the help key closes it. */
+    /**
+     * C's MOTD viewer ("XPilot motd from SERVER"), open until the help key closes it.
+     * <p>
+     * BEHAVIOR: it opens by itself iff autoServerMotdPopup is on (C default) or the MOTD menu entry asked for it.
+     */
     private KeyHelp motdPanel(String text) {
         java.util.List<String[]> lines = new java.util.ArrayList<>();
         for (String line : text.replace("\t", "        ").split("\r?\n", -1)) {
@@ -264,15 +269,13 @@ public final class ClientFrame {
         }
         KeyHelp k = new KeyHelp("XPilot motd from " + game.serverName() + (helpHint != null
             ? " - " + helpHint.substring(0, helpHint.indexOf(':')) + " closes" : ""), lines, FontRole.MOTD);
-        k.toggle();
+        if (motdAsked || liveOptions.options().flag(ClientOption.AUTO_SERVER_MOTD_POPUP)) {
+            k.toggle();
+        }
+        motdAsked = false;
         return k;
     }
 
-    /**
-     * C {@code Send_display}: the world area of the view, {@code (int) (size / zoom + 0.5)} per axis (C: draw size
-     * times scaleFactor, rounded), goes to {@link GameConnection#sendDisplay} on the first step and whenever it
-     * changes (window resize, scale swap); never again for an unchanged size.
-     */
     /**
      * M10, C's error presentation: when the connection closes on the server's side (a refusal, a quit packet, a
      * timeout) its status (C's text) is printed to stderr once, as C's {@code error()}; the window keeps showing it
@@ -295,18 +298,12 @@ public final class ClientFrame {
     public void setErrorStream(java.io.PrintStream err) { errors = err; }
 
     /**
-     * The options the server hears about: a sparkProb change goes to the connection and resends the display (C
-     * {@code Config_update_sparkProb}); a maxFPS change is a frame-rate request (C {@code Config_update_maxFPS}).
-     * Both are passed on the first step too.
+     * The options the server hears about: a maxFPS change is a frame-rate request (C {@code Config_update_maxFPS}),
+     * also passed on the first step. (sparkProb is not sent: JXPilot asks the server for every spark and does C's
+     * sparkle itself, so C's {@code Config_update_sparkProb} display resend has nothing to change.)
      */
     private void connectionOptions(long nowNanos) {
         com.fulcrologic.jxpilot.client.game.options.ClientOptions o = liveOptions.options();
-        double spark = o.real(ClientOption.SPARK_PROB);
-        if (spark != sentSparkProb) {
-            sentSparkProb = spark;
-            conn.setSparkProb(spark);
-            displayW = -1;
-        }
         int fps = o.integer(ClientOption.MAX_FPS);
         if (fps != sentMaxFps) {
             sentMaxFps = fps;
@@ -314,6 +311,11 @@ public final class ClientFrame {
         }
     }
 
+    /**
+     * C {@code Send_display}: the world area of the view, {@code (int) (size / zoom + 0.5)} per axis (C: draw size
+     * times scaleFactor, rounded), goes to {@link GameConnection#sendDisplay} on the first step and whenever it
+     * changes (window resize, scale swap); never again for an unchanged size.
+     */
     private void sendDisplayIfChanged(int viewW, int viewH, double zoom, long nowNanos) {
         int w = (int) (viewW / zoom + 0.5);
         int h = (int) (viewH / zoom + 0.5);
@@ -523,7 +525,7 @@ public final class ClientFrame {
         @Override
         public void showMotd(boolean refresh) {
             if (refresh || motd == null) {
-                conn.requestMotd(lastNow);
+                motdAsked = conn.requestMotd(lastNow) || motd == null;
             }
             if (motd != null && !motd.visible()) {
                 motd.toggle();

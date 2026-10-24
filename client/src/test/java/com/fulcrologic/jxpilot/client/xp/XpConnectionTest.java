@@ -476,7 +476,7 @@ class XpConnectionTest {
         @DisplayName("PKT_DISPLAY on a resize while playing (M11, C Resize); before playing it goes with the join")
         void displayResent() {
             boolean early = conn.sendDisplay(800, 600, now);
-            conn.setSparkProb(0.25);
+            login.sparkProb = 0.25;
             play();
             List<String> join = server.loginPackets.stream().filter(x -> x.startsWith("display")).toList();
             int before = server.loginPackets.size();

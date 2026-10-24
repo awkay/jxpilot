@@ -196,7 +196,7 @@ class ClientFrameTest {
         }
 
         @Test
-        @DisplayName("sparkProb and maxFPS reach the server on the first step and on each change; sparkProb resends the display")
+        @DisplayName("maxFPS reaches the server on the first step and on each change; sparkProb stays client-side")
         void connectionOptions() {
             AppFixture f = new AppFixture(true).players();
             ClientFrame cf = frame(f);
@@ -208,9 +208,10 @@ class ClientFrameTest {
             cf.options().setInteger(com.fulcrologic.jxpilot.client.game.options.ClientOption.MAX_FPS, 30);
             cf.step(T0 + 2000, 800, 600, 1, M, 256, 100);
             assertAll(
-                () -> assertEquals(List.of("spark 0.5", "fps 0"), first, "the defaults once"),
-                () -> assertEquals(List.of("spark 0.5", "fps 0", "spark 0.25", "fps 30"), conn.requests, "then the changes"),
-                () -> assertEquals(displays + 1, conn.displays.size(), "a sparkProb change resends the display"));
+                () -> assertEquals(List.of("fps 0"), first, "the default once"),
+                () -> assertEquals(List.of("fps 0", "fps 30"), conn.requests, "then the change"),
+                () -> assertEquals(displays, conn.displays.size(),
+                    "a sparkProb change sends nothing (the server sends every spark; the client thins them)"));
         }
 
         @Test

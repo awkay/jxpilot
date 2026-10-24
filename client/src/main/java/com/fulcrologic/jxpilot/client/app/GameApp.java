@@ -193,7 +193,16 @@ public final class GameApp {
      * @return the exit status: 1 when the server ended the session (C exits with an error then), else 0
      */
     public int run() throws IOException {
-        window = new Window("JXPilot - " + label, opts.width(), opts.height(), true, opts.vsync());
+        Geometry g = geometry();
+        int width = g != null && g.width() > 0 ? g.width() : opts.width();
+        int height = g != null && g.height() > 0 ? g.height() : opts.height();
+        window = new Window("JXPilot - " + label, width, height, true, opts.vsync());
+        if (g != null && g.hasPosition()) {
+            org.lwjgl.glfw.GLFWVidMode mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
+            if (mode != null) {
+                glfwSetWindowPos(window.handle(), g.left(mode.width(), width), g.top(mode.height(), height));
+            }
+        }
         try {
             atlas = new UiAtlas();
             gl = new GlRenderer(atlas.texture());
@@ -212,6 +221,20 @@ public final class GameApp {
             conn.close();
             dispose();
         }
+    }
+
+    /** The geometry resource (C {@code -geometry}; {@code --size} sets it too), or null; a bad one is reported. */
+    private Geometry geometry() {
+        com.fulcrologic.jxpilot.client.game.options.ClientOptions o = frame.options();
+        if (!o.given(com.fulcrologic.jxpilot.client.game.options.ClientOption.GEOMETRY)) {
+            return null;
+        }
+        String text = o.text(com.fulcrologic.jxpilot.client.game.options.ClientOption.GEOMETRY);
+        Geometry g = Geometry.parse(text);
+        if (g == null) {
+            System.err.println("jxpilot: bad geometry '" + text + "' (WxH+X+Y), ignored");
+        }
+        return g;
     }
 
     private void makeText() {

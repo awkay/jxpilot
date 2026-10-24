@@ -53,14 +53,59 @@ public final class GameConnector {
      */
     public static GameConnection open(ConnectTarget target, Endpoint bind, ConnectionListener listener, String name,
                                       int team, String shape, boolean audio, int seed) throws IOException {
+        return open(target, bind, listener, name, team, shape, audio, seed, 0, 0);
+    }
+
+    /**
+     * {@link #open(ConnectTarget, Endpoint, ConnectionListener, String, int, String, boolean, int)} with C's
+     * {@code clientPortStart}/{@code clientPortEnd}: without {@code bind}, each socket takes the first free local
+     * UDP port of that range (C {@code CreateDgramSocket} over the range, for firewalls); a range starting at 0 means
+     * any port.
+     */
+    public static GameConnection open(ConnectTarget target, Endpoint bind, ConnectionListener listener, String name,
+                                      int team, String shape, boolean audio, int seed, int portStart, int portEnd)
+        throws IOException {
         Endpoint ep = target.endpoint();
         String label = ep.toString();
         if (target.protocol() == ConnectTarget.Protocol.XPILOT) {
-            return new XpConnection(port -> UdpTransport.open(new Endpoint(ep.host(), port), bind), listener, label,
-                xpLogin(name, team, shape, audio, System.getProperty("user.name", "")));
+            return new XpConnection(port -> openUdp(new Endpoint(ep.host(), port), bind, portStart, portEnd), listener,
+                label, xpLogin(name, team, shape, audio, System.getProperty("user.name", "")));
         }
-        UdpTransport t = UdpTransport.open(ep, bind);
+        UdpTransport t = openUdp(ep, bind, portStart, portEnd);
         return new NativeGameConnection(nativeConnection(t, label, listener, name, team, shape), t);
+    }
+
+    /** A UDP socket to {@code to}: from {@code bind}, else from the first free port of the range, else any port. */
+    static UdpTransport openUdp(Endpoint to, Endpoint bind, int portStart, int portEnd) throws IOException {
+        if (bind != null || portStart <= 0) {
+            return UdpTransport.open(to, bind);
+        }
+        IOException last = null;
+        for (int p : portRange(portStart, portEnd)) {
+            try {
+                return UdpTransport.open(to, new Endpoint("0.0.0.0", p));
+            } catch (IOException e) {
+                last = e;
+            }
+        }
+        throw new IOException("no free UDP port in clientPortStart..clientPortEnd " + portStart + ".." + portEnd
+            + (last != null ? ": " + last.getMessage() : ""));
+    }
+
+    /**
+     * C's client port range.
+     * <p>
+     * BEHAVIOR: start..end inclusive; an end below the start (C's default 0) means the start only; ports are
+     * limited to 1..65535.
+     */
+    static int[] portRange(int start, int end) {
+        int a = Math.max(1, Math.min(65535, start));
+        int b = Math.max(a, Math.min(65535, end));
+        int[] r = new int[b - a + 1];
+        for (int i = 0; i < r.length; i++) {
+            r[i] = a + i;
+        }
+        return r;
     }
 
     /**

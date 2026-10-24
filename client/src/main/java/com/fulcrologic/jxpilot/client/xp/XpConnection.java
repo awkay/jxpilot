@@ -680,7 +680,7 @@ public final class XpConnection implements GameConnection {
     }
 
     /**
-     * C {@code Send_display} after a resize or a scale or sparkProb change ({@code xinit.c} {@code Resize},
+     * C {@code Send_display} after a resize or a scale change ({@code xinit.c} {@code Resize},
      * {@code configure.c}): PKT_DISPLAY with the view size (limited to C's 384..1024), the debris colours and the
      * spark chance.
      * <p>
@@ -703,12 +703,6 @@ public final class XpConnection implements GameConnection {
         XpWriter.u8(tx, (int) Math.round(Math.max(0, Math.min(1, login.sparkProb)) * XpProto.MAX_SPARK_RAND));
         flushPending();
         return true;
-    }
-
-    /** BEHAVIOR: the spark chance the next PKT_DISPLAY carries (C {@code spark_rand}). */
-    @Override
-    public void setSparkProb(double sparkProb) {
-        login.sparkProb = sparkProb;
     }
 
     /**
