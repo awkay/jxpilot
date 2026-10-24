@@ -213,6 +213,29 @@ class CollisionsTest {
         }
 
         @Test
+        @DisplayName("equals the literal C port on the seam and half-world boundaries (moves of exactly half the world, ends at 350)")
+        void matchesCAtBoundaries() {
+            int[] v = {0, 1, 9, 10, 339, 340, 349, 350, 351, 360, 361, 689, 690, 699};
+            int[] radii = {1, 10, 11, 20, 350};
+            Rng r = new Rng(9);
+            int hits = 0;
+            for (int i = 0; i < 200_000; i++) {
+                int[] a = new int[8];
+                for (int k = 0; k < 8; k++) {
+                    a[k] = v[Integer.remainderUnsigned(r.nextInt(), v.length)];
+                }
+                int rad = radii[Integer.remainderUnsigned(r.nextInt(), radii.length)];
+                boolean c = cInRange(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], rad, 700, 700);
+                if (c) {
+                    hits++;
+                }
+                assertEquals(c, wrap.inRange(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], rad),
+                    "equals C for boundary case " + i + " " + java.util.Arrays.toString(a) + " r " + rad);
+            }
+            assertTrue(hits > 10_000 && hits < 190_000, "both outcomes occur (" + hits + " in range)");
+        }
+
+        @Test
         @DisplayName("farApart (perf F4) never rejects a pair inRange accepts, and rejects distant pairs")
         void farApartIsConservative() {
             Rng r = new Rng(7);
