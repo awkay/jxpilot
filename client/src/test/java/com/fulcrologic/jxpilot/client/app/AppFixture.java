@@ -122,6 +122,19 @@ final class AppFixture {
         return this;
     }
 
+    AppFixture scoreObject(float points, int bx, int by, String label) {
+        Msg.ScoreObject o = new Msg.ScoreObject();
+        o.score = points;
+        o.bx = bx;
+        o.by = by;
+        o.text.append(label);
+        rel.clear();
+        o.write(rel);
+        rel.flip();
+        game.onReliable(ReliableType.SCORE_OBJECT, rel);
+        return this;
+    }
+
     AppFixture event(int kind, int a, int b) {
         Msg.GameEvent e = new Msg.GameEvent();
         e.kind = kind;
@@ -151,6 +164,32 @@ final class AppFixture {
         return this;
     }
 
+    /** A SELF at (350, 175) with the appended fields: power, turn speed, lock distance/direction and modifiers. */
+    AppFixture selfControls(int power, int turnSpeed, int lockId, int lockDist, int lockDir, int mods) {
+        w.beginSection(Section.SELF);
+        Records.Self.put(w, SELF, 0, 350, 175, 0, 0, 0, 700, 1000, lockId, 0, 0, 0, power, turnSpeed, 0.12,
+            lockDist, lockDir, 0, mods);
+        w.endSection();
+        return this;
+    }
+
+    /** A TIMERS record with every meter. */
+    AppFixture timers(int destruct, int thrustLeft, int thrustMax, int shieldLeft, int shieldMax, int phasingLeft,
+                      int phasingMax, int shutdownCount, int shutdownDelay) {
+        w.beginSection(Section.TIMERS);
+        Records.Timers.put(w, 0, 0, -1, destruct, thrustLeft, thrustMax, shieldLeft, shieldMax, phasingLeft, phasingMax,
+            shutdownCount, shutdownDelay);
+        w.endSection();
+        return this;
+    }
+
+    AppFixture connector(double x0, double y0, double x1, double y1, int kind) {
+        w.beginSection(Section.CONNECTOR);
+        Records.Connector.put(w, x0, y0, x1, y1, kind);
+        w.endSection();
+        return this;
+    }
+
     AppFixture ship(int id, int flags, double x, double y, double heading) {
         w.beginSection(Section.SHIP);
         Records.Ship.put(w, id, flags, x, y, heading, 0, 0);
@@ -159,7 +198,11 @@ final class AppFixture {
     }
 
     AppFixture shot(int kind, int color, double x, double y) {
-        w.beginSection(Section.SHOT, Records.ShotKind.variant(kind, color));
+        return shot(kind, color, false, x, y);
+    }
+
+    AppFixture shot(int kind, int color, boolean harmless, double x, double y) {
+        w.beginSection(Section.SHOT, Records.ShotKind.variant(kind, color, harmless));
         Records.Shot.put(w, x, y, 0, 0);
         w.endSection();
         return this;

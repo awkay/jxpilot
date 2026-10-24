@@ -93,6 +93,8 @@ follow C; the alias is the C command-line name.
 | `tankScoreDecrement` | tankDecrement | int | `500` | ANY+VIS | server-items (fuel tanks detached as pseudo-players); the real/host name part is unsupported like robotRealName/robotHostName |
 | `turnThrust` | turnFuel | bool | `false` | ANY+VIS | implemented (Params) |
 | `selfImmunity` |  | bool | `false` | ANY+VIS | implemented (Params) |
+| `defaultShipShape` |  | string | `(NM:Default)...` | ANY+VIS | not implemented: a player or robot without a valid shape gets the built-in standard ship, which is also this option's default |
+| `tankShipShape` |  | string | `(NM:fueltank)...` | ANY+VIS | server-items (fuel tanks detached as pseudo-players) |
 | `maxPlayerShots` | shots | int | `256` | ANY+VIS | implemented (Params) |
 | `shotsGravity` |  | bool | `true` | ANY+VIS | implemented (Params) |
 | `idleRun` | rawMode | bool | `false` | CMD+DEF+VIS | implemented (rawMode) |
@@ -190,6 +192,7 @@ follow C; the alias is the C command-line name.
 | `edgeWrap` |  | bool | `no` | ANY+VIS | implemented (MapLoader) |
 | `edgeBounce` |  | bool | `yes` | ANY+VIS | implemented (Params) |
 | `extraBorder` |  | bool | `no` | ANY+VIS | implemented (MapLoader) |
+| `gravityPoint` |  | position | `0,0` | ANY+VIS | implemented (MapLoader) |
 | `gravityAngle` |  | real | `90` | ANY+VIS | implemented (MapLoader) |
 | `gravityPointSource` |  | bool | `false` | ANY+VIS | implemented (MapLoader) |
 | `gravityClockwise` |  | bool | `false` | ANY+VIS | implemented (MapLoader) |

@@ -48,6 +48,8 @@ public final class Records {
     abstract static class Fly {
         ByteBuffer b;
         int o;
+        /** Record size of the bound section (fields appended later read as 0 from shorter records). */
+        int sz;
         float ox;
         float oy;
         double ww;
@@ -57,6 +59,7 @@ public final class Records {
         final void bind(SnapshotReader r, int i) {
             b = r.buffer();
             o = r.recordOffset(i);
+            sz = r.recordSize();
             ox = r.viewX();
             oy = r.viewY();
             ww = r.worldWidth();
@@ -195,16 +198,55 @@ public final class Records {
      * 12 f32 vx       16 f32 vy        20 f32 heading 24 f32 fuel
      * 28 f32 fuelMax  32 u16 lockId    34 u8 numTanks 35 u8 currentTank
      * 36 u16 respawnFrames (original frames until respawn while dead, else 0)
+     * 38 u8 power      39 u8 turnSpeed      40 u8 turnResistance * 255 (C PKT_SELF rounding)
+     * 41 u16 lockDist (px; 0 = lock not visible: C frame.c Frame_status)    43 u8 lockDir (RES units)
+     * 44 u8 check (next race checkpoint, C pl-&gt;check)   45 u16 mods (weapon modifiers, MOD_* bits)
      * </pre>
+     * Readers of a shorter (older) record get 0 for the appended fields.
      */
     public static final class Self extends Fly {
-        public static final int SIZE = 38;
+        public static final int SIZE = 47;
 
-        /** BEHAVIOR: respawnFrames is clamped to 0..65535. */
+        /** {@link #mods()}: nuclear (C NUCLEAR). */
+        public static final int MOD_NUCLEAR = 1;
+        /** Full nuclear (C FULLNUCLEAR). */
+        public static final int MOD_FULL_NUCLEAR = 1 << 1;
+        /** Cluster warhead. */
+        public static final int MOD_CLUSTER = 1 << 2;
+        /** Implosion warhead. */
+        public static final int MOD_IMPLOSION = 1 << 3;
+        /** Shift of the 2-bit explosion velocity 0..3. */
+        public static final int MOD_VELOCITY_SHIFT = 4;
+        /** Shift of the 2-bit mini count 0..3 (shown as X2..X4). */
+        public static final int MOD_MINI_SHIFT = 6;
+        /** Shift of the 2-bit spread 0..3. */
+        public static final int MOD_SPREAD_SHIFT = 8;
+        /** Shift of the 2-bit power 0..3. */
+        public static final int MOD_POWER_SHIFT = 10;
+        /** Laser stun (C STUN). */
+        public static final int MOD_LASER_STUN = 1 << 12;
+        /** Laser blind (C BLIND). */
+        public static final int MOD_LASER_BLIND = 1 << 13;
+
+        /** BEHAVIOR: as the full put with no power/turn settings, lock distance, checkpoint or modifiers (all 0). */
         @SuppressWarnings("checkstyle:ParameterNumber")
         public static void put(SnapshotWriter w, int id, int flags, float x, float y, float vx, float vy,
                                float heading, float fuel, float fuelMax, int lockId, int numTanks,
                                int currentTank, int respawnFrames) {
+            put(w, id, flags, x, y, vx, vy, heading, fuel, fuelMax, lockId, numTanks, currentTank, respawnFrames,
+                0, 0, 0, 0, 0, 0, 0);
+        }
+
+        /**
+         * BEHAVIOR: respawnFrames and lockDist are clamped to 0..65535; power and turnSpeed are rounded and
+         * clamped to 0..255; turnResistance is sent as round(r * 255) clamped to 0..255; lockDir is taken
+         * mod 128 (RES); check is clamped to 0..255.
+         */
+        @SuppressWarnings("checkstyle:ParameterNumber")
+        public static void put(SnapshotWriter w, int id, int flags, float x, float y, float vx, float vy,
+                               float heading, float fuel, float fuelMax, int lockId, int numTanks,
+                               int currentTank, int respawnFrames, double power, double turnSpeed,
+                               double turnResistance, int lockDist, int lockDir, int check, int mods) {
             ByteBuffer out = w.buffer();
             out.putShort((short) id);
             out.putShort((short) flags);
@@ -219,6 +261,17 @@ public final class Records {
             out.put((byte) numTanks);
             out.put((byte) currentTank);
             out.putShort((short) Math.min(0xFFFF, Math.max(0, respawnFrames)));
+            out.put((byte) u8Of(power));
+            out.put((byte) u8Of(turnSpeed));
+            out.put((byte) u8Of(turnResistance * 255.0));
+            out.putShort((short) Math.min(0xFFFF, Math.max(0, lockDist)));
+            out.put((byte) (lockDir & 0x7F));
+            out.put((byte) Math.min(255, Math.max(0, check)));
+            out.putShort((short) mods);
+        }
+
+        private static int u8Of(double v) {
+            return (int) Math.min(255, Math.max(0, Math.round(v)));
         }
 
         public Self wrap(SnapshotReader r, int i) {
@@ -252,6 +305,27 @@ public final class Records {
         public int currentTank() { return u8(35); }
 
         public int respawnFrames() { return u16(36); }
+
+        /** Engine power (C PKT_SELF power), 0 from an older record. */
+        public int power() { return sz > 38 ? u8(38) : 0; }
+
+        /** Turn speed (C PKT_SELF turnspeed). */
+        public int turnSpeed() { return sz > 39 ? u8(39) : 0; }
+
+        /** Turn resistance * 255. */
+        public int turnResistance255() { return sz > 40 ? u8(40) : 0; }
+
+        /** Distance to the locked player in px, 0 when the lock is not visible. */
+        public int lockDist() { return sz > 42 ? u16(41) : 0; }
+
+        /** Direction to the locked player, RES units 0..127. */
+        public int lockDir() { return sz > 43 ? u8(43) : 0; }
+
+        /** Next race checkpoint index. */
+        public int check() { return sz > 44 ? u8(44) : 0; }
+
+        /** Weapon modifiers, MOD_* bits. */
+        public int mods() { return sz > 46 ? u16(45) : 0; }
     }
 
     /**
@@ -709,12 +783,16 @@ public final class Records {
         public int radius() { return u16(4); }
     }
 
-    /** Line between two points. {@code 0 rel x0, 2 rel y0, 4 rel x1, 6 rel y1, 8 u8 kind}. */
+    /** Line between two points. {@code 0 rel x0, 2 rel y0, 4 rel x1, 6 rel y1, 8 u8 kind (KIND_*)}. */
     public static final class Connector extends Fly {
         public static final int SIZE = 9;
         public static final int KIND_BALL = 0;
         public static final int KIND_TRACTOR = 1;
         public static final int KIND_PRESSOR = 2;
+        /** Refuel beam: x0,y0 the fuel station, x1,y1 the ship (C PKT_REFUEL, Paint_refuel). */
+        public static final int KIND_REFUEL = 3;
+        /** Repair beam: x0,y0 the ship, x1,y1 the target being repaired. */
+        public static final int KIND_REPAIR = 4;
 
         public static void put(SnapshotWriter w, double x0, double y0, double x1, double y1, int kind) {
             w.buffer().putShort((short) w.relX(x0)).putShort((short) w.relY(y0))
@@ -821,15 +899,42 @@ public final class Records {
     }
 
     /**
-     * HUD timers of the receiving player. {@code 0 u16 damaged (frames of ECM damage left, C damaged),
-     * 2 u16 roundDelay (frames until the round starts, 0 none), 4 i32 timeLeft (seconds of game time left,
-     * -1 none)}.
+     * HUD timers of the receiving player.
+     * <pre>
+     *  0 u16 damaged (frames of ECM damage left, C damaged)   2 u16 roundDelay (frames until the round starts, 0 none)
+     *  4 i32 timeLeft (seconds of game time left, -1 none)    8 u16 destruct (self-destruct frames left, 0 none)
+     * 10 u16 thrustLeft  12 u16 thrustMax (emergency thrust, max 0 = none)
+     * 14 u16 shieldLeft  16 u16 shieldMax (emergency shield, max 0 = none)
+     * 18 u16 phasingLeft 20 u16 phasingMax (phasing device, max 0 = none)
+     * 22 i16 shutdownCount (seconds until server shutdown, -1 none)  24 u16 shutdownDelay
+     * </pre>
+     * Readers of a shorter (older) record get 0 for the appended fields (-1 for shutdownCount).
      */
     public static final class Timers extends Fly {
-        public static final int SIZE = 8;
+        public static final int SIZE = 26;
 
+        /** BEHAVIOR: as the full put with no destruct, meters or shutdown. */
         public static void put(SnapshotWriter w, int damaged, int roundDelay, int timeLeft) {
-            w.buffer().putShort((short) damaged).putShort((short) roundDelay).putInt(timeLeft);
+            put(w, damaged, roundDelay, timeLeft, 0, 0, 0, 0, 0, 0, 0, -1, 0);
+        }
+
+        /** BEHAVIOR: u16 fields are clamped to 0..65535, shutdownCount to -1..32767. */
+        @SuppressWarnings("checkstyle:ParameterNumber")
+        public static void put(SnapshotWriter w, int damaged, int roundDelay, int timeLeft, int destruct,
+                               int thrustLeft, int thrustMax, int shieldLeft, int shieldMax, int phasingLeft,
+                               int phasingMax, int shutdownCount, int shutdownDelay) {
+            ByteBuffer out = w.buffer();
+            out.putShort((short) damaged).putShort((short) roundDelay).putInt(timeLeft);
+            out.putShort(u16Of(destruct));
+            out.putShort(u16Of(thrustLeft)).putShort(u16Of(thrustMax));
+            out.putShort(u16Of(shieldLeft)).putShort(u16Of(shieldMax));
+            out.putShort(u16Of(phasingLeft)).putShort(u16Of(phasingMax));
+            out.putShort((short) Math.min(32767, Math.max(-1, shutdownCount)));
+            out.putShort(u16Of(shutdownDelay));
+        }
+
+        private static short u16Of(int v) {
+            return (short) Math.min(0xFFFF, Math.max(0, v));
         }
 
         public Timers wrap(SnapshotReader r, int i) {
@@ -842,5 +947,44 @@ public final class Records {
         public int roundDelay() { return u16(2); }
 
         public int timeLeft() { return b.getInt(o + 4); }
+
+        public int destruct() { return sz > 9 ? u16(8) : 0; }
+
+        public int thrustLeft() { return sz > 11 ? u16(10) : 0; }
+
+        public int thrustMax() { return sz > 13 ? u16(12) : 0; }
+
+        public int shieldLeft() { return sz > 15 ? u16(14) : 0; }
+
+        public int shieldMax() { return sz > 17 ? u16(16) : 0; }
+
+        public int phasingLeft() { return sz > 19 ? u16(18) : 0; }
+
+        public int phasingMax() { return sz > 21 ? u16(20) : 0; }
+
+        public int shutdownCount() { return sz > 23 ? b.getShort(o + 22) : -1; }
+
+        public int shutdownDelay() { return sz > 25 ? u16(24) : 0; }
+    }
+
+    /**
+     * A sound event for the receiver (C {@code Send_audio}).
+     * {@code 0 u8 event (SoundEvent ordinal), 1 u8 volume (SoundEvent.MIN_VOLUME..MAX_VOLUME)}.
+     */
+    public static final class Sound extends Fly {
+        public static final int SIZE = 2;
+
+        public static void put(SnapshotWriter w, int event, int volume) {
+            w.buffer().put((byte) event).put((byte) volume);
+        }
+
+        public Sound wrap(SnapshotReader r, int i) {
+            bind(r, i);
+            return this;
+        }
+
+        public int event() { return u8(0); }
+
+        public int volume() { return u8(1); }
     }
 }

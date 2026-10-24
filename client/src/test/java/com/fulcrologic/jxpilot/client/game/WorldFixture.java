@@ -127,6 +127,13 @@ final class WorldFixture {
         return this;
     }
 
+    WorldFixture shot(int variant, double x, double y) {
+        w.beginSection(Section.SHOT, variant);
+        Records.Shot.put(w, x, y, 0, 0);
+        w.endSection();
+        return this;
+    }
+
     WorldFixture cannon(int index, int flags) {
         w.beginSection(Section.CANNON);
         Records.CannonState.put(w, index, flags);
@@ -158,6 +165,13 @@ final class WorldFixture {
     WorldFixture items(int... counts) {
         w.beginSection(Section.SELF_ITEMS);
         Records.SelfItems.put(w, counts);
+        w.endSection();
+        return this;
+    }
+
+    WorldFixture sound(int event, int volume) {
+        w.beginSection(Section.SOUND);
+        Records.Sound.put(w, event, volume);
         w.endSection();
         return this;
     }

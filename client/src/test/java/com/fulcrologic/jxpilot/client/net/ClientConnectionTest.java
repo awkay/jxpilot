@@ -338,16 +338,24 @@ class ClientConnectionTest {
         }
 
         @Test
-        @DisplayName("WELCOME and the config build the map, then READY is sent and the state is PLAYING")
+        @DisplayName("WELCOME and the config build the map, then SETTINGS and READY are sent and the state is PLAYING")
         void config() {
+            c.settings.turnSpeed = 40f;
+            c.settings.power = 50f;
             playing(0);
             c.flush(MS);
             ByteBuffer p = t.last();
             PacketHeader h = new PacketHeader();
             h.read(p);
             List<Integer> types = new ArrayList<>();
+            Msg.Settings sent = new Msg.Settings();
             ReliableChannel rx = new ReliableChannel();
-            rx.read(p, (type, b) -> types.add(type));
+            rx.read(p, (type, b) -> {
+                types.add(type);
+                if (type == ReliableType.SETTINGS) {
+                    sent.read(b);
+                }
+            });
             assertAll(
                 () -> assertEquals(ConnectionState.PLAYING, c.state(), "playing"),
                 () -> assertEquals("Fake Arena", rec.map.name(), "map parsed from the config"),
@@ -356,7 +364,10 @@ class ClientConnectionTest {
                     "welcome before config"),
                 () -> assertEquals(PacketType.RELIABLE, h.type(), "a RELIABLE datagram"),
                 () -> assertEquals(SESSION, h.session(), "with the session"),
-                () -> assertEquals(List.of(ReliableType.READY), types, "carrying READY"),
+                () -> assertEquals(List.of(ReliableType.SETTINGS, ReliableType.READY), types,
+                    "carrying the control settings, then READY (C sends them with PKT_PLAY)"),
+                () -> assertEquals(40f, sent.turnSpeed, "the connection's turn speed"),
+                () -> assertEquals(50f, sent.power, "and power"),
                 () -> assertEquals("Playing on srv:1", c.status().toString(), "status"));
         }
 
@@ -616,12 +627,12 @@ class ClientConnectionTest {
             int s2 = c.sendInput(1, 0, MS + FRAME);
             c.flush(MS);
             int unackedBefore = c.channel().unacked();
-            t.in.add(pkt(PacketType.ACK, SESSION, 1, b -> { }));
+            t.in.add(pkt(PacketType.ACK, SESSION, 2, b -> { }));
             c.update(200 * MS);
             assertAll(
                 () -> assertEquals(1, s1, "first sequence"),
                 () -> assertEquals(2, s2, "second"),
-                () -> assertEquals(1, unackedBefore, "READY in flight"),
+                () -> assertEquals(2, unackedBefore, "SETTINGS and READY in flight"),
                 () -> assertEquals(0, c.channel().unacked(), "acked by the header"));
         }
 

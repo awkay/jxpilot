@@ -9,10 +9,10 @@ works today.
 
 | File | What it is |
 |---|---|
-| `jxpilot-client-@VERSION@.jar` | Client for Windows, macOS and Linux (x64 and arm64). Needs Java 25: `java -jar jxpilot-client-@VERSION@.jar --view-map maps/default.xp` |
+| `jxpilot-client-@VERSION@.jar` | Client for Windows, macOS and Linux (x64 and arm64). Needs Java 25. Play against robots: `java -jar jxpilot-client-@VERSION@.jar --local --map maps/default.xp`; join a server: `--connect HOST` (or `xp://HOST` for an original XPilot server) |
 | `jxpilot-server-@VERSION@.jar` | Headless server, any OS with Java 25: `java -jar jxpilot-server-@VERSION@.jar --map maps/default.xp` |
 | `jxpilot-maps-@VERSION@.zip` | The 19 original XPilot maps (unmodified, GPL) |
-| `JXPilot-@VERSION@-<platform>.zip` / `.tar.gz` | Client app with its own Java runtime and the maps: no Java install needed |
+| `JXPilot-@VERSION@-<platform>.zip` / `.tar.gz` | Client app with its own Java runtime and the maps: no Java install needed. Opened without arguments it starts a game against robots |
 | `jxpilot-guide-@VERSION@.zip` | The user guide as HTML |
 | `SHA256SUMS.txt` | Checksums: `sha256sum -c SHA256SUMS.txt --ignore-missing` |
 

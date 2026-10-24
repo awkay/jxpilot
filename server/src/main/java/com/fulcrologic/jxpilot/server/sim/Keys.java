@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.Base;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.net.ControlKey;
@@ -319,6 +320,7 @@ public final class Keys {
                 }
             }
         }
+        Sounds.playAll(w, SoundEvent.CHANGE_HOME);
         StringBuilder m = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name);
         if (displaced == null) {
             m.append(" has changed home base.");

@@ -9,8 +9,8 @@ endif::[]
 
 A Java (25) + LWJGL/OpenGL reimplementation of https://www.xpilot.org/[XPilot] 4.5.5,
 the classic multiplayer gravity war game. It plays from the original block-based `.xp`
-map files without changes. It is *not* network-compatible with the C XPilot client or
-server; it uses its own UDP protocol (`docs/PROTOCOL.md`).
+map files without changes. It has its own server and UDP protocol (`docs/PROTOCOL.md`); the
+JXPilot client can also play on original XPilot 4.5.5 servers (`docs/XPILOT-PROTOCOL.md`).
 
 [IMPORTANT]
 ====
@@ -21,9 +21,9 @@ and do not endorse it. Please don't send them bug reports about JXPilot; open an
 here instead.
 ====
 
-Status: work in progress. The map/config parser, protocol, and map renderer/viewer are
-done. The server simulation and networked gameplay are being built. See `docs/SPEC.md`
-for the plan and milestones, and the user guide's
+Status: work in progress, but playable: the Java server runs the XPilot game with robots, and the
+client plays on it or on original XPilot servers. Items, balls, targets and races (milestone M2)
+are being added. See `docs/SPEC.md` for the plan and milestones, and the user guide's
 link:docs/guide/01-introduction.adoc#status[status table].
 
 == Documentation
@@ -41,7 +41,9 @@ link:docs/guide/02-quick-start.adoc[Quick start].
 
 [source,bash]
 ----
-java -jar jxpilot-client-VERSION.jar --view-map maps/default.xp
+java -jar jxpilot-client-VERSION.jar --local --map maps/default.xp    # a game against robots
+java -jar jxpilot-server-VERSION.jar --map maps/default.xp            # a server for others
+java -jar jxpilot-client-VERSION.jar --connect HOST                   # join it
 ----
 
 == Building and running
@@ -52,7 +54,7 @@ Requires JDK 25 and Maven.
 ----
 mvn install                                   # build + test all modules
 mvn -pl client exec:exec                      # map viewer (default.xp)
-mvn -pl client exec:exec -Dclient.args="--view-map ../maps/planetx.xp"
+mvn -pl client exec:exec -Dclient.args="--local --map ../maps/planetx.xp"
 mvn -Prelease verify                          # also build the release jars into dist/target/release/
 ----
 
@@ -102,9 +104,14 @@ changes.
 |XPilot 4.5.5 server defaults file (`lib/defaults`) |`server/src/main/resources/xpilot/defaults`; inside the
 server and client jars |GPL v2 or later (part of the XPilot distribution); see `server/src/main/resources/xpilot/README.md`
 |Fira Code font |`client/src/main/resources/fonts/` |SIL Open Font License 1.1 (`FiraCode-LICENSE.txt`)
-|LWJGL 3 and its natives (GLFW, stb, libffi, liburing; Khronos headers) |Maven dependency; bundled
-only in the release client jar (texts in `dist/src/main/resources/META-INF/licenses/lwjgl/`) |BSD
-3-Clause; zlib, MIT or public domain, MIT, MIT, Khronos (MIT-style)
+|Sound effects: Juhani Junkala, "The Essential Retro Video Game Sound Effects Collection [512 sounds]"
+(opengameart.org) |`client/src/main/resources/sounds/` (21 clips) |CC0 1.0 (`LICENSE-sounds.txt`: source,
+sha256, per-clip origin and modifications)
+|Sound effect: Kenney, "Sci-Fi Sounds" `thrusterFire_004` (kenney.nl), cut into a loop
+|`client/src/main/resources/sounds/thrust_loop.wav` |CC0 1.0 (`LICENSE-sounds.txt`)
+|LWJGL 3 and its natives (GLFW, stb, OpenAL Soft, libffi, liburing; Khronos headers) |Maven dependency;
+bundled only in the release client jar (texts in `dist/src/main/resources/META-INF/licenses/lwjgl/`) |BSD
+3-Clause; zlib, MIT or public domain, GNU LGPL 2 or later, MIT, MIT, Khronos (MIT-style)
 |OpenJDK runtime (Eclipse Temurin) |Bundled only in the release client applications |GPL v2 with the
 Classpath Exception (texts in the runtime's `legal/` directory)
 |JUnit 5, PIT (test-time only) |- |EPL 2.0 / Apache 2.0

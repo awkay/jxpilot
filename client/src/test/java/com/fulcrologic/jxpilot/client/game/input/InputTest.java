@@ -58,11 +58,18 @@ class InputTest {
                 () -> assertEquals(GLFW_KEY_GRAVE_ACCENT, KeySyms.glfwKey("quoteleft"), "quoteleft"),
                 () -> assertEquals(GLFW_KEY_PAGE_DOWN, KeySyms.glfwKey("Next"), "Next"),
                 () -> assertEquals(KeySyms.NONE, KeySyms.glfwKey("Linefeed"), "no GLFW Linefeed"),
-                () -> assertEquals(KeySyms.NONE, KeySyms.glfwKey("KP_Insert"), "no GLFW KP_Insert"));
+                () -> assertEquals(GLFW_KEY_KP_0, KeySyms.glfwKey("KP_Insert"), "KP_Insert is keypad 0 (Num Lock off)"),
+                () -> assertEquals(GLFW_KEY_KP_DECIMAL, KeySyms.glfwKey("KP_Delete"), "KP_Delete is keypad ."),
+                () -> assertEquals(GLFW_KEY_KP_7, KeySyms.glfwKey("KP_Home"), "KP_Home is keypad 7"),
+                () -> assertEquals(GLFW_KEY_LEFT_ALT, KeySyms.glfwKey("Alt_L"), "Alt_L is left Option on a Mac"),
+                () -> assertEquals(GLFW_KEY_RIGHT_ALT, KeySyms.glfwKey("Alt_R"), "Alt_R is right Option"),
+                () -> assertEquals(GLFW_KEY_LEFT_CONTROL, KeySyms.glfwKey("Control_L"), "a Mac's one Control key"),
+                () -> assertEquals(KeySyms.NONE, KeySyms.glfwKey("Super_L"), "Command is never a key"),
+                () -> assertEquals(KeySyms.NONE, KeySyms.glfwKey("end"), "keysyms are case-sensitive"));
         }
 
         @Test
-        @DisplayName("every default keysym of default.c maps, except the four without a GLFW key")
+        @DisplayName("every default keysym of default.c maps, except the two without a GLFW key")
         void defaults() {
             List<String> unmapped = new ArrayList<>();
             for (ControlKey k : ControlKey.values()) {
@@ -79,7 +86,7 @@ class InputTest {
                     }
                 }
             }
-            assertEquals(List.of("Select", "Linefeed", "KP_Delete", "KP_Insert"), unmapped,
+            assertEquals(List.of("Select", "Linefeed"), unmapped,
                 "only keysyms GLFW lacks are skipped");
         }
     }
@@ -107,7 +114,9 @@ class InputTest {
                 () -> assertEquals(ControlKey.SWAP_SETTINGS.mask(), b.gameMask(GLFW_KEY_ESCAPE), "Escape swaps settings"),
                 () -> assertEquals(0L, b.gameMask(GLFW_KEY_M), "m is not sent: it opens the talk line"),
                 () -> assertTrue(KeyBindings.has(b.actionMask(GLFW_KEY_M), ClientAction.TALK), "m talks"),
-                () -> assertTrue(KeyBindings.has(b.actionMask(GLFW_KEY_F1), ClientAction.MSG_1), "F1 talk macro 1"),
+                () -> assertEquals(1L << ClientAction.HELP.ordinal(), b.actionMask(GLFW_KEY_F1),
+                    "F1 is only the key help (JXPilot; C: talk macro 1)"),
+                () -> assertTrue(KeyBindings.has(b.actionMask(GLFW_KEY_F2), ClientAction.MSG_2), "F2 talk macro 2"),
                 () -> assertTrue(KeyBindings.has(b.actionMask(GLFW_KEY_U), ClientAction.ID_MODE), "u id mode"),
                 () -> assertEquals(ControlKey.LOCK_NEXT_CLOSE.mask(), b.gameMask(GLFW_KEY_DOWN), "Down locks next close"),
                 () -> assertTrue(KeyBindings.has(b.actionMask(GLFW_KEY_DOWN), ClientAction.TALK_CURSOR_DOWN),

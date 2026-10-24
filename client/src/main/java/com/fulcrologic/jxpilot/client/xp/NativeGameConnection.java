@@ -78,6 +78,31 @@ public final class NativeGameConnection implements GameConnection {
         return true;
     }
 
+    /**
+     * BEHAVIOR: copies the settings into the connection's SETTINGS (sent before READY on every join); while
+     * JOINING or PLAYING also queues them as a reliable SETTINGS now (true).
+     */
+    @Override
+    public boolean sendSettings(Msg.Settings settings, long nowNanos) {
+        copy(settings, conn.settings);
+        ConnectionState s = conn.state();
+        if (s != ConnectionState.JOINING && s != ConnectionState.PLAYING) {
+            return false;
+        }
+        conn.settings.send(conn.channel());
+        return true;
+    }
+
+    static void copy(Msg.Settings from, Msg.Settings to) {
+        to.power = from.power;
+        to.turnSpeed = from.turnSpeed;
+        to.turnResistance = from.turnResistance;
+        to.altPower = from.altPower;
+        to.altTurnSpeed = from.altTurnSpeed;
+        to.altTurnResistance = from.altTurnResistance;
+        to.flags = from.flags;
+    }
+
     @Override
     public void disconnect(long nowNanos) { conn.disconnect(nowNanos); }
 

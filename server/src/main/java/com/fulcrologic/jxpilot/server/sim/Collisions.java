@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.math.XMath;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.world.Events;
@@ -175,6 +176,7 @@ public final class Collisions {
             }
             if (pl.px < 0 || pl.py < 0 || pl.px >= w.pixelWidth || pl.py >= w.pixelHeight) {
                 pl.status |= Obj.KILLED;
+                Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_WALL);
                 w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" left the known universe.");
                 w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, pl.id, Obj.NO_ID, Msg.GameEvent.CRASH_UNIVERSE);
                 sim.scoring.score(pl, -Scoring.rate(Scoring.WALL_SCORE, pl.score), pl.bx, pl.by, pl.name);
@@ -196,6 +198,7 @@ public final class Collisions {
                     if (w.teamImmune(pl.id, o.id) || pl.pseudoTeam == o.pseudoTeam) {
                         continue;
                     }
+                    Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_PLAYER);
                     shipsCollide(pl, o, p);
                 }
             }
@@ -248,6 +251,7 @@ public final class Collisions {
     private void ranOver(Player winner, Player victim, Params p) {
         w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(winner.name).append(" ran over ")
             .append(victim.name).append('.');
+        Sounds.play(w, victim.px, victim.py, SoundEvent.PLAYER_RAN_OVER_PLAYER);
         winner.kills++;
         double sc = Scoring.rate(winner.score, victim.score) * p.runoverKillScoreMult;
         w.events.kill(winner.id, victim.id, 0f, Events.KILL_RUNOVER);
@@ -444,6 +448,9 @@ public final class Collisions {
         Params p = w.params;
         int type = o.type[h];
         if ((pl.used & Has.SHIELD) != 0 || (pl.have & Has.ARMOR) != 0) {
+            if (type == Obj.SHOT || type == Obj.CANNON_SHOT) {
+                Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_EAT_SHOT);
+            }
             if (!pl.fullyShielded()) {
                 float drainFactor = 1.0f;
                 if (p.shotHitFuelDrainUsesKineticEnergy) {
@@ -465,6 +472,7 @@ public final class Collisions {
         StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name);
         boolean fromCannon = (o.status[h] & Obj.FROMCANNON) != 0;
         if (fromCannon) {
+            Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_CANNONFIRE);
             msg.append(" was hit by cannonfire.");
             sc = Scoring.rate(Scoring.CANNON_SCORE, pl.score) / 4;
         } else if (o.owner[h] == Obj.NO_ID || w.byId(o.owner[h]) == null) {
@@ -475,6 +483,7 @@ public final class Collisions {
             msg.append(" was killed by ").append(describe(type, o.mods[h])).append(" from ").append(killer.name)
                 .append('.');
             if (killer == pl) {
+                Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_SHOT_THEMSELF);
                 msg.append("  How strange!");
                 sc = Scoring.rate(0, pl.score) * p.selfKillScoreMult;
             } else {

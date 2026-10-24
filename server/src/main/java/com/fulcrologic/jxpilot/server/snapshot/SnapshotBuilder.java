@@ -45,7 +45,7 @@ import java.nio.ByteBuffer;
  * Fills SNAPSHOT bodies for one viewer from the {@link World} with common's {@link SnapshotWriter}.
  * Allocation free; one instance per server thread.
  * <p>
- * Sections in order: SELF, SHIP (other ships in view), CANNON, FUEL, RADAR (whole world, when requested),
+ * Sections in order: SELF, SOUND (the viewer's queued sounds; the caller clears the queue once sent), SHIP (other ships in view), CANNON, FUEL, RADAR (whole world, when requested),
  * BURST (bursts made since the viewer's cursor, in view), WRECKAGE (in view) and last SHOT, which fills the remaining room
  * nearest first ({@link ShotHash}, grouped by kind/colour relative to the viewer). Objects farther than the
  * view half-size from the viewer (or not encodable, {@link SnapshotWriter#inView}) are culled. When a
@@ -151,6 +151,8 @@ public final class SnapshotBuilder {
      * of parts written (at least 1). Every part has the same tick and the final part count.
      * BEHAVIOR: bursts with sequence numbers in {@code [burstFrom, events.burstSeq())} that are still in the
      * ring are included.
+     * BEHAVIOR: the viewer's {@link Player#audio} queue is written as the SOUND section, in queue order; the
+     * queue is left as it is (the network layer clears it after sending, C {@code sound_play_queued}).
      *
      * @param viewer   the receiving player (view centre = its position)
      * @param parts    preallocated datagram buffers (at least one)
@@ -172,7 +174,9 @@ public final class SnapshotBuilder {
         curType = -1;
         startPart();
         writeSelf(viewer);
+        writeSounds(viewer);
         writeShips(viewer);
+        writeRefuel();
         writeCannons();
         writeFuel();
         if (radar) {
@@ -280,7 +284,16 @@ public final class SnapshotBuilder {
         }
         Records.Self.put(wr, v.id, shipFlags(v, v), (float) cx, (float) cy, (float) v.vx, (float) v.vy,
             (float) heading(v), (float) (v.fuel / 256), (float) (v.fuelMax / 256), Protocol.NO_ID, 0, 0,
-            (v.status & Obj.PLAYING) == 0 && v.count > 0 ? v.count : 0);
+            (v.status & Obj.PLAYING) == 0 && v.count > 0 ? v.count : 0, v.power, v.turnSpeed, v.turnResistance,
+            0, 0, 0, 0);
+    }
+
+    private void writeSounds(Player v) {
+        for (int i = 0; i < v.audio.count(); i++) {
+            if (need(Section.SOUND, 0)) {
+                Records.Sound.put(wr, v.audio.event(i), v.audio.volume(i));
+            }
+        }
     }
 
     /**
@@ -435,6 +448,31 @@ public final class SnapshotBuilder {
                 continue;
             }
             Records.Burst.put(wr, d, e.burstKind[i], e.burstColor[i], tick - e.burstTick[i]);
+        }
+    }
+
+    /**
+     * C {@code Frame_ships} Send_refuel: a refuel beam (CONNECTOR, KIND_REFUEL) from the fuel station to every
+     * refuelling ship.
+     * <p>
+     * BEHAVIOR: for every shown, unpaused ship in view whose used has REFUEL and whose station is in view
+     * (C inview of both); stations are drawn from their pixel centre.
+     */
+    private void writeRefuel() {
+        java.util.List<FuelStation> fuels = w.map.fuels();
+        for (int k = 0; k < w.numPlayers; k++) {
+            Player pl = w.playerAt(k);
+            if (!shown(pl) || (pl.status & Obj.PAUSE) != 0 || (pl.used & Has.REFUEL) == 0 || pl.fs < 0
+                || pl.fs >= fuels.size()) {
+                continue;
+            }
+            double x = pl.cx / (double) Click.CLICK;
+            double y = pl.cy / (double) Click.CLICK;
+            FuelStation f = fuels.get(pl.fs);
+            if (!visible(x, y, 0) || !visible(f.x(), f.y(), 0) || !need(Section.CONNECTOR, 0)) {
+                continue;
+            }
+            Records.Connector.put(wr, f.x(), f.y(), x, y, Records.Connector.KIND_REFUEL);
         }
     }
 

@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.Base;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.FuelStation;
@@ -187,6 +188,10 @@ public final class Ships {
             if (enterListener != null) {
                 enterListener.entered(pl);
             }
+            // C Handle_login: sound_play_all(START_SOUND) before the newcomer's PKT_REQUEST_AUDIO sets its
+            // WANT_AUDIO, so everyone but the newcomer hears it
+            Sounds.playAll(w, SoundEvent.START);
+            pl.audio.clear();
             sim.rounds.playerEntered(pl);
         }
         return true;
@@ -960,6 +965,7 @@ public final class Ships {
         } else {
             j = nearestAhead(pl, hit, n);
         }
+        Sounds.play(w, pl.px, pl.py, SoundEvent.WORM_HOLE);
         Wormhole dest = w.map.wormholes().get(j);
         pl.wormHoleDest = j;
         pl.initPixels((dest.bx() + 0.5) * Const.BLOCK_SZ, (dest.by() + 0.5) * Const.BLOCK_SZ);
@@ -969,6 +975,7 @@ public final class Ships {
         }
         pl.status &= ~Obj.WARPING;
         pl.status |= Obj.WARPED;
+        Sounds.play(w, pl.px, pl.py, SoundEvent.WORM_HOLE);
     }
 
     /** The RANDOM_REAR_WORM choice of update.c:1065-1110 (note: C wraps the y offset with WRAP_DX). */
