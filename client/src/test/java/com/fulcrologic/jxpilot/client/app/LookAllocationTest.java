@@ -45,7 +45,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * client-ui-look's per-frame paths outside {@link ClientFrame#step} (which {@link AppAllocationTest} covers with
  * the look options on): the scene with nasty shots, textured balls and changing sizes, the sliding radar picture and
- * blips, the visible-area border, the HUD radar's blip conversion and the packet measurements. Zero steady-state
+ * blips, the block bitmaps (texturedObjects), the visible-area border, the HUD radar's blip conversion and the packet measurements. Zero steady-state
  * allocation.
  */
 class LookAllocationTest {
@@ -83,6 +83,7 @@ class LookAllocationTest {
                 st.shotSize = 1 + k % 8;
                 st.sparkSize = 1 + k % 8;
                 st.maxColors = (k & 16) != 0 ? 4 : 8;
+                st.texturedObjects = (k & 32) != 0;
                 s.clear();
                 s.loops = k;
                 s.fps = 14;

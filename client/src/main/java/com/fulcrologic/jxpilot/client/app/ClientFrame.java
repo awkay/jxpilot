@@ -180,6 +180,7 @@ public final class ClientFrame {
         started = true;
         liveOptions.apply(hud, game, extras, talk, input);
         lookOptions.apply(palette, style);
+        hud.bitmapMeters = style.texturedObjects;
         lastNow = nowNanos;
         conn.update(nowNanos);
         game.frame(nowNanos, dt);
@@ -226,7 +227,8 @@ public final class ClientFrame {
         ui.layout(radarHeight, viewH, viewW, viewH, map != null && map.edgeWrap(), textFont, buttonFont);
         int scoreTop = ui.scoreTop();
         if (!ui.coversScores()) {
-            hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, Math.max(0, viewH - scoreTop),
+            hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW,
+                style.texturedObjects ? 0 : Math.max(0, viewH - scoreTop), // texturedObjects: bitmaps (GameApp)
                 fonts.of(FontRole.SCORE_LIST));
         }
         lookExtras(viewW, fonts.of(FontRole.GAME), fonts.of(FontRole.SCORE_LIST), scoreTop, panelW);

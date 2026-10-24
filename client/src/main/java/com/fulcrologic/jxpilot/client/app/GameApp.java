@@ -419,6 +419,7 @@ public final class GameApp {
         xf[3] = -1;
         gl.setTransform(xf);
         panelScreen.set(fbH, ratio);
+        scoreBackground(fbH, ratio);
         if (map != null) {
             radar(ratio, fbH, scene.loops);
         }
@@ -576,6 +577,12 @@ public final class GameApp {
      * score rows grey with {@code texturedObjects}), the bell ({@link ClientFrame#bell}) and the title flip.
      */
     private void lookFrame(long now) {
+        if (style.texturedObjects && scoreBgTexture == 0) {
+            loadBlockBitmaps();
+        }
+        hudPainter.setBitmapItems(style.texturedObjects);
+        hudList.setPaletteIndex(com.fulcrologic.jxpilot.client.game.hud.HudColor.SCORE_DIM,
+            style.texturedObjects ? 12 : Palette.BLACK);
         hudList.setPaletteIndex(com.fulcrologic.jxpilot.client.game.hud.HudColor.HUD, style.hudColor);
         hudList.setPaletteIndex(com.fulcrologic.jxpilot.client.game.hud.HudColor.OLD_MESSAGE, style.oldMessagesColor);
         if (frame.bell()) {
@@ -586,6 +593,39 @@ public final class GameApp {
             case LookFrame.TITLE_COPYRIGHT -> window.setTitle(COPYRIGHT_TITLE);
             default -> { }
         }
+    }
+
+    /** The score window background texture ({@code texturedObjects}), 0 until the block bitmaps are loaded. */
+    private int scoreBgTexture;
+
+    /** Load the block bitmaps into the atlas and the score window pictures into their texture (once). */
+    private void loadBlockBitmaps() {
+        try {
+            com.fulcrologic.jxpilot.client.paint.BlockBitmaps.Source src =
+                com.fulcrologic.jxpilot.client.paint.BlockBitmaps.CLASSPATH;
+            atlas.setBlockBitmaps(com.fulcrologic.jxpilot.client.paint.BlockBitmaps.bake(src));
+            int[] bg = com.fulcrologic.jxpilot.client.paint.ScoreBackground.texture(
+                com.fulcrologic.jxpilot.client.paint.BlockBitmaps.loadSeparate(
+                    com.fulcrologic.jxpilot.client.paint.BlockBitmap.SCORE_BG, src),
+                com.fulcrologic.jxpilot.client.paint.BlockBitmaps.loadSeparate(
+                    com.fulcrologic.jxpilot.client.paint.BlockBitmap.LOGO, src));
+            scoreBgTexture = GlRenderer.tileTexture(com.fulcrologic.jxpilot.client.paint.ScoreBackground.TEXTURE_WIDTH,
+                com.fulcrologic.jxpilot.client.paint.ScoreBackground.TEXTURE_HEIGHT, bg);
+        } catch (IOException | RuntimeException e) {
+            throw new IllegalStateException("cannot load the block bitmaps: " + e.getMessage(), e);
+        }
+    }
+
+    /** C {@code Paint_score_background} with {@code texturedObjects}: clouds and logo under the score list. */
+    private void scoreBackground(int fbH, double ratio) {
+        if (!style.texturedObjects || scoreBgTexture == 0 || frame.ui().coversScores()) {
+            return;
+        }
+        int top = frame.ui().scoreTop();
+        com.fulcrologic.jxpilot.client.paint.ScoreBackground.draw(dyn, panelScreen, top, PANEL_W,
+            (int) (fbH / ratio) - top);
+        gl.flushWithTexture(dyn, scoreBgTexture);
+        dyn.clear();
     }
 
     /** C {@code COPYRIGHT}, the title {@code titleFlip} alternates with the normal one. */
@@ -612,6 +652,7 @@ public final class GameApp {
         }
         if (gl != null) {
             mapLook.dispose();
+            GlRenderer.deleteTexture(scoreBgTexture);
             gl.dispose();
         }
         if (atlas != null) {

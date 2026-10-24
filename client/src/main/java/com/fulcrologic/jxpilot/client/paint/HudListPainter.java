@@ -121,6 +121,33 @@ public final class HudListPainter {
         paletteOf[listColor] = paletteIndex;
     }
 
+    /** client-ui-look: {@code HudColor.METER_FULL} and {@code METER_EMPTY} (meter bitmaps, {@code texturedObjects}). */
+    static final int METER_FULL = 9;
+    static final int METER_EMPTY = 10;
+
+    /**
+     * C {@code Block_bitmap_paint_meter}: part of the meter bitmap over the rect; the full picture from its left end,
+     * or the empty picture up to its right end, as wide as the rect is of the whole meter ({@code WINSCALE(200)}).
+     * <p>
+     * BEHAVIOR: nothing for an empty rect; otherwise one textured quad over the rect's pixels.
+     */
+    void meterPart(VertexBatch b, ScreenSpace ss, float x, float y, float w, float h, boolean full) {
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        BlockBitmap m = BlockBitmap.METER;
+        float meter = WinScale.of(m.width, scale);
+        float frac = Math.min(1, w / meter);
+        float atlas = ObjectPainter.ATLAS_SIZE;
+        int pic = full ? 1 : 0;
+        float ax = BlockBitmaps.atlasX(m, pic);
+        float u0 = (full ? ax : ax + m.width * (1 - frac)) / atlas;
+        float u1 = (full ? ax + m.width * frac : ax + m.width) / atlas;
+        float v0 = BlockBitmaps.atlasY(m, pic) / atlas;
+        float v1 = (BlockBitmaps.atlasY(m, pic) + m.height) / atlas;
+        b.texRect(ss.edgeX(x), ss.edgeY(y + h), ss.edgeX(x + w), ss.edgeY(y), u0, v1, u1, v0, -1);
+    }
+
     /** Packed colour of list colour {@code c}. */
     int rgba(int c) {
         return palette.color(paletteOf[c]);
@@ -141,7 +168,12 @@ public final class HudListPainter {
     public void paint(VertexBatch b, ScreenSpace ss, HudDrawList list) {
         b.setLineWidth(VertexBatch.DEFAULT_LINE_WIDTH);
         for (int i = 0; i < list.rectCount(); i++) {
-            int c = rgba(list.rectColor(i));
+            int color = list.rectColor(i);
+            if (color >= METER_FULL) {
+                meterPart(b, ss, list.rectX(i), list.rectY(i), list.rectW(i), list.rectH(i), color == METER_FULL);
+                continue;
+            }
+            int c = rgba(color);
             if (list.rectFilled(i)) {
                 HudPainter.fill(b, ss, list.rectX(i), list.rectY(i), list.rectW(i), list.rectH(i), c);
             } else {

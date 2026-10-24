@@ -47,7 +47,8 @@ import com.fulcrologic.jxpilot.common.Const;
  *   <li>{@link #drawArcs}: the arc queue ({@code Arc_end}), balls and ECM bursts.</li>
  * </ol>
  * With {@code texturedBalls} C fills each ball with its texture at once instead of queueing its arc, so textured
- * balls come with the step 1 fills.
+ * balls come with the step 1 fills. With {@code texturedObjects} (C {@code blockBitmaps}) mines, item symbols, balls,
+ * shots, paused markers, ships (uncloaked) and refuel beams are C's block bitmaps, drawn where C draws them.
  * {@link #draw} is steps 1-5. A caller interleaving the map's and the HUD's parts in full C order
  * calls {@link #drawBody} (steps 1-4), its own non-arc HUD, then the map's arcs, {@link #drawArcs}
  * and the HUD's arcs. Each step loops over all copies, so the scene costs at most 8 draw commands
@@ -150,7 +151,7 @@ public final class ScenePainter {
     public void drawArcs(VertexBatch b, Camera cam, SceneData s) {
         for (int k = 0; k < cam.offsetCount(); k++) {
             cam.applyTo(b, k);
-            for (int i = 0; i < s.ballCount && !style.texturedBalls; i++) {
+            for (int i = 0; i < s.ballCount && !style.texturedBalls && !style.texturedObjects; i++) {
                 if (visible(cam, s.ballX[i], s.ballY[i], Const.BALL_RADIUS, k, 0)) {
                     objects.ball(b, s.ballX[i], s.ballY[i]);
                 }
@@ -208,19 +209,32 @@ public final class ScenePainter {
     // ------------------------------------------------------------------ step 1: Paint_shots, direct
 
     private void objectFills(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
+        boolean bm = style.texturedObjects;
         for (int i = 0; i < s.mineCount; i++) {
-            if (!s.mineTeam[i] && visible(cam, s.mineX[i], s.mineY[i], MINE_RADIUS, k, 2)) {
-                objects.mineFill(b, s.mineX[i], s.mineY[i], zoom);
+            if ((bm || !s.mineTeam[i]) && visible(cam, s.mineX[i], s.mineY[i], MINE_RADIUS, k, 2)) {
+                if (bm) {
+                    objects.bitmapMine(b, s.mineX[i], s.mineY[i], s.mineTeam[i]);
+                } else {
+                    objects.mineFill(b, s.mineX[i], s.mineY[i], zoom);
+                }
             }
         }
         for (int i = 0; i < s.itemCount; i++) {
             if (visible(cam, s.itemX[i], s.itemY[i], 0, k, PIXEL_MARGIN)) {
-                objects.itemSymbol(b, s.itemType[i], s.itemX[i], s.itemY[i], zoom);
+                if (bm) {
+                    objects.bitmapItemSymbol(b, s.itemType[i], s.itemX[i], s.itemY[i], zoom);
+                } else {
+                    objects.itemSymbol(b, s.itemType[i], s.itemX[i], s.itemY[i], zoom);
+                }
             }
         }
-        for (int i = 0; i < s.ballCount && style.texturedBalls; i++) {
+        for (int i = 0; i < s.ballCount && (style.texturedBalls || bm); i++) {
             if (visible(cam, s.ballX[i], s.ballY[i], Const.BALL_RADIUS, k, 0)) {
-                objects.texturedBall(b, s.ballX[i], s.ballY[i], zoom);
+                if (bm) {
+                    objects.bitmapBall(b, s.ballX[i], s.ballY[i]);
+                } else {
+                    objects.texturedBall(b, s.ballX[i], s.ballY[i], zoom);
+                }
             }
         }
     }
@@ -231,7 +245,7 @@ public final class ScenePainter {
                 objects.itemTriangle(b, s.itemX[i], s.itemY[i], zoom);
             }
         }
-        for (int i = 0; i < s.mineCount; i++) {
+        for (int i = 0; i < s.mineCount && !style.texturedObjects; i++) {
             if (visible(cam, s.mineX[i], s.mineY[i], MINE_RADIUS, k, 2)) {
                 objects.mineOutline(b, s.mineX[i], s.mineY[i], zoom);
             }
@@ -271,12 +285,16 @@ public final class ScenePainter {
                 Particles.spark(b, palette, s.particleX[i], s.particleY[i], s.particleColor[i], sparkSize, zoom);
             }
         }
-        if (style.nastyShots) {
+        if (style.nastyShots && !style.texturedObjects) {
             return;
         }
         for (int i = 0; i < s.shotCount; i++) {
             if (!s.shotTeam[i] && visible(cam, s.shotX[i], s.shotY[i], SHOT_RADIUS, k, 2)) {
-                objects.shot(b, s.shotX[i], s.shotY[i], s.shotColor[i], zoom);
+                if (style.texturedObjects) {
+                    objects.bullet(b, s.shotX[i], s.shotY[i], false, zoom);
+                } else {
+                    objects.shot(b, s.shotX[i], s.shotY[i], s.shotColor[i], zoom);
+                }
             }
         }
     }
@@ -286,10 +304,13 @@ public final class ScenePainter {
      * {@code Gui_paint_fastshot}: an X or + in the fast shot's colour, white or blue, instead of the square).
      */
     private void teamShots(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
-        boolean nasty = style.nastyShots;
+        boolean bm = style.texturedObjects;
+        boolean nasty = style.nastyShots && !bm;
         for (int i = 0; i < s.shotCount; i++) {
             boolean team = s.shotTeam[i];
-            if ((team || nasty) && visible(cam, s.shotX[i], s.shotY[i], SHOT_RADIUS, k, 2)) {
+            if (bm && team && visible(cam, s.shotX[i], s.shotY[i], SHOT_RADIUS, k, 2)) {
+                objects.bullet(b, s.shotX[i], s.shotY[i], true, zoom);
+            } else if (!bm && (team || nasty) && visible(cam, s.shotX[i], s.shotY[i], SHOT_RADIUS, k, 2)) {
                 int c = team ? s.shotColor[i] : ObjectPainter.fastShotColor(s.shotColor[i]);
                 objects.teamShot(b, s.shotX[i], s.shotY[i], c, diagonal(i, s.loops), zoom);
             }
@@ -299,12 +320,26 @@ public final class ScenePainter {
     // ------------------------------------------------------------------ step 3: Paint_ships, direct
 
     private void shipFills(VertexBatch b, Camera cam, int k, SceneData s) {
+        boolean bm = style.texturedObjects;
         for (int i = 0; i < s.pausedCount; i++) {
             if (visible(cam, s.pausedX[i], s.pausedY[i], ObjectPainter.HALF_PAUSE + 1, k, 0)) {
-                objects.pausedFill(b, s.pausedX[i], s.pausedY[i]);
+                if (bm) {
+                    objects.bitmapPaused(b, s.pausedX[i], s.pausedY[i], s.pausedCountdown[i], s.loops);
+                } else {
+                    objects.pausedFill(b, s.pausedX[i], s.pausedY[i]);
+                }
             }
         }
         if (delayed(s)) {
+            return;
+        }
+        if (bm) {
+            for (int i = 0; i < s.shipCount; i++) {
+                if (ShipPainter.bitmapShown(s.shipFlags[i]) && visible(cam, s.shipX[i], s.shipY[i], SHIP_RADIUS, k, 0)) {
+                    ships.bitmapShip(b, s.shipX[i], s.shipY[i], s.shipHeading[i], s.shipColor[i],
+                        s.shipId[i] == s.selfId, cam.zoom());
+                }
+            }
             return;
         }
         for (int i = 0; i < s.shipCount; i++) {
@@ -317,7 +352,7 @@ public final class ScenePainter {
 
     private void texts(VertexBatch b, TextWriter text, Camera cam, int k, SceneData s, double zoom) {
         double ratio = cam.pixelRatio();
-        for (int i = 0; i < s.pausedCount; i++) {
+        for (int i = 0; i < s.pausedCount && !style.texturedObjects; i++) {
             if (ObjectPainter.pausedBlinkOn(s.pausedCountdown[i], s.loops)
                 && visible(cam, s.pausedX[i], s.pausedY[i], 0, k, PIXEL_MARGIN)) {
                 objects.pausedLetter(b, text, cam.screenX(s.pausedX[i], k), cam.screenY(s.pausedY[i] - 1, k));
@@ -342,7 +377,7 @@ public final class ScenePainter {
     }
 
     private void shipLines(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
-        for (int i = 0; i < s.pausedCount; i++) {
+        for (int i = 0; i < s.pausedCount && !style.texturedObjects; i++) {
             if (ObjectPainter.pausedBlinkOn(s.pausedCountdown[i], s.loops)
                 && visible(cam, s.pausedX[i], s.pausedY[i], ObjectPainter.HALF_PAUSE + 1, k, 0)) {
                 objects.pausedOutline(b, s.pausedX[i], s.pausedY[i]);
@@ -351,8 +386,13 @@ public final class ScenePainter {
         if (!delayed(s)) {
             for (int i = 0; i < s.shipCount; i++) {
                 if (visible(cam, s.shipX[i], s.shipY[i], SHIP_RADIUS, k, 0)) {
-                    ships.ship(b, s.shipShape[i], s.shipX[i], s.shipY[i], s.shipHeading[i], s.shipColor[i],
-                        s.shipFlags[i], s.loops, zoom);
+                    if (style.texturedObjects) {
+                        ships.shipWithoutHull(b, s.shipShape[i], s.shipX[i], s.shipY[i], s.shipHeading[i],
+                            s.shipColor[i], s.shipFlags[i], s.loops, zoom);
+                    } else {
+                        ships.ship(b, s.shipShape[i], s.shipX[i], s.shipY[i], s.shipHeading[i], s.shipColor[i],
+                            s.shipFlags[i], s.loops, zoom);
+                    }
                 }
             }
         }
@@ -404,6 +444,13 @@ public final class ScenePainter {
                 zoom);
             case SceneData.LINK_TRACTOR -> objects.tractorBeam(b, s.linkX1[i], s.linkY1[i], s.linkX2[i], s.linkY2[i],
                 zoom);
+            case SceneData.LINK_REFUEL -> {
+                if (style.texturedObjects) {
+                    objects.bitmapRefuel(b, s.linkX1[i], s.linkY1[i], s.linkX2[i], s.linkY2[i], s.loops, zoom);
+                } else {
+                    objects.dashedLink(b, s.linkX1[i], s.linkY1[i], s.linkX2[i], s.linkY2[i], s.loops, zoom);
+                }
+            }
             default -> objects.dashedLink(b, s.linkX1[i], s.linkY1[i], s.linkX2[i], s.linkY2[i], s.loops, zoom);
         }
     }

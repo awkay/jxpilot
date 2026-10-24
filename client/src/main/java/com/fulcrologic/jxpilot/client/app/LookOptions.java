@@ -95,6 +95,7 @@ public final class LookOptions {
         style.markingLights = options.flag(MARKING_LIGHTS);
         style.showShipName = options.flag(SHOW_SHIP_NAME);
         style.texturedBalls = options.flag(TEXTURED_BALLS);
+        style.texturedObjects = options.flag(TEXTURED_OBJECTS);
         style.outlineWorld = options.flag(OUTLINE_WORLD);
         style.filledWorld = options.flag(FILLED_WORLD);
         style.texturedWalls = options.flag(TEXTURED_WALLS);
@@ -113,7 +114,7 @@ public final class LookOptions {
             | bits(s.outlineDecor, 4) | bits(s.filledDecor, 5) | bits(s.texturedDecor, 6)
             | (long) s.pointDist << 8 | (long) s.pointSize << 16 | (long) s.wallColor << 24
             | (long) s.decorColor << 28 | (long) s.wallRadarColor << 32 | (long) s.decorRadarColor << 36
-            | (long) s.targetRadarColor << 40;
+            | (long) s.targetRadarColor << 40 | bits(s.texturedObjects, 44);
         boolean colors = false;
         for (int i = 0; i < lookColors.length; i++) {
             if (lookColors[i] != palette.color(i)) {

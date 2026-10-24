@@ -251,6 +251,8 @@ public final class GlRenderer implements VertexBatch.Sink {
     private final int emptyVao;
     private final int maxTexels;
     private final Streams dyn = new Streams();
+    /** The UI atlas, bound on unit 0 for every triangle draw except {@link #flushWithTexture}. */
+    private final int atlasTexture;
     private final float[] xf = {1, 1, 0, 0};
     private float viewW = 1;
     private float viewH = 1;
@@ -263,6 +265,7 @@ public final class GlRenderer implements VertexBatch.Sink {
     private int drawCalls;
 
     public GlRenderer(int texture) {
+        atlasTexture = texture;
         tri = new Program(link(compile(GL_VERTEX_SHADER, TRI_VS), compile(GL_FRAGMENT_SHADER, TRI_FS)));
         seg = new Program(link(compile(GL_VERTEX_SHADER, SEG_VS), compile(GL_FRAGMENT_SHADER, SOLID_FS)));
         pt = new Program(link(compile(GL_VERTEX_SHADER, PT_VS), compile(GL_FRAGMENT_SHADER, SOLID_FS)));
@@ -399,6 +402,17 @@ public final class GlRenderer implements VertexBatch.Sink {
         for (int i = 0; i < b.commandCount(); i++) {
             drawCommand(dyn, b.commandMode(i), b.commandFirst(i), b.commandLength(i));
         }
+    }
+
+    /**
+     * {@link #flush} with {@code texture} in place of the UI atlas for the batch's triangles (the score window's
+     * background pictures, {@code texturedObjects}); the atlas is bound again afterwards.
+     */
+    public void flushWithTexture(VertexBatch b, int texture) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        flush(b);
+        glBindTexture(GL_TEXTURE_2D, atlasTexture);
     }
 
     /** One {@code glBufferData} per non-empty stream (orphans the old storage). */

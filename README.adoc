@@ -109,7 +109,7 @@ changes.
 XPilot distribution); see `maps/README.md` (also in the jars)
 |XPilot 4.5.5 server defaults file (`lib/defaults`) |`server/src/main/resources/xpilot/defaults`; inside the
 server and client jars |GPL v2 or later (part of the XPilot distribution); see `server/src/main/resources/xpilot/README.md`
-|XPilot 4.5.5 client textures (`lib/textures/rock4.xpm`, `ball.xpm`) |`client/src/main/resources/textures/`
+|XPilot 4.5.5 client textures and block bitmaps (`lib/textures/*.xpm`, `*.ppm`, 46 files) |`client/src/main/resources/textures/`
 |GPL v2 or later (part of the XPilot distribution); see `textures/README.md`
 |X.Org colour name database (`rgb.txt`, X.Org rgb package) |`client/src/main/resources/colors/rgb.txt` |MIT/X11
 (`LICENSE-rgb.txt`: source, sha256 and the package's COPYING)

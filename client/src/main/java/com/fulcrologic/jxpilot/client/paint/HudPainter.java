@@ -255,7 +255,7 @@ public final class HudPainter {
             if (i == Item.FUEL.ordinal() || num < 0) {
                 continue;
             }
-            itemSymbol(b, ss, i, horiz - size, vert, rgba);
+            symbol(b, ss, i, horiz - size, vert, rgba);
             if (i == loseItem && loseActive) {
                 rect(b, ss, horiz - size - 2, vert - 2, size + 2, size + 2, rgba);
             }
@@ -286,7 +286,7 @@ public final class HudPainter {
         seg(b, ss, x - s, y - s, x, y + s, blue);
         seg(b, ss, x, y + s, x + s, y - s, blue);
         seg(b, ss, x + s, y - s, x - s, y - s, blue);
-        itemSymbol(b, ss, item, x - PaintConfig.ITEM_SIZE / 2, y - s + 2, palette.color(Palette.RED));
+        symbol(b, ss, item, x - PaintConfig.ITEM_SIZE / 2, y - s + 2, palette.color(Palette.RED));
     }
 
     /**
@@ -470,6 +470,27 @@ public final class HudPainter {
             px = qx;
             py = qy;
         }
+    }
+
+    /** {@code texturedObjects} (C {@code blockBitmaps}): item symbols are the {@code ALL_ITEMS} pictures. */
+    private boolean bitmapItems;
+
+    /** C {@code blockBitmaps} for the item symbols ({@link #symbol}). */
+    public void setBitmapItems(boolean on) {
+        bitmapItems = on;
+    }
+
+    /**
+     * {@code Paint_item_symbol}: with {@code texturedObjects} the item's {@code ALL_ITEMS} picture (untinted), else
+     * {@link #itemSymbol}.
+     */
+    void symbol(VertexBatch b, ScreenSpace ss, int item, double x, double y, int rgba) {
+        if (!bitmapItems) {
+            itemSymbol(b, ss, item, x, y, rgba);
+            return;
+        }
+        int size = ItemBitmaps.SIZE;
+        BlockBitmaps.draw(b, BlockBitmap.ALL_ITEMS, item, ss.edgeX(x), ss.edgeY(y), ss.len(size), ss.len(size));
     }
 
     /** {@code Paint_item_symbol(..., ITEM_HUD)}: the 16x16 symbol with its top-left at (x, y), tinted. */

@@ -43,7 +43,8 @@ import static org.lwjgl.opengl.GL33C.*;
  *   <li>a 4x4 white block at the origin (solid shapes use UV (0,0), which with clamping samples only it);</li>
  *   <li>the radar picture at x {@link #RADAR_X}..767, up to {@link #RADAR_MAX_HEIGHT} rows;</li>
  *   <li>the item symbols at {@link ItemBitmaps#ATLAS_X}..1023, two rows of 16;</li>
- *   <li>the ball texture ({@code texturedBalls}) in the 64 x 64 cell under them ({@link #setBall});</li>
+ *   <li>the ball texture ({@code texturedBalls}) in the 64 x 64 cell under them ({@link #setBall}), and under that
+ *   the block bitmaps ({@code texturedObjects}, {@link #setBlockBitmaps});</li>
  *   <li>the baked fonts, one strip each ({@link FontStrips}), in x 1024..2047 (all rows), then x 0..1023 below
  *       row 1024, then x 0..511 under the white block.</li>
  * </ul>
@@ -224,6 +225,24 @@ public final class UiAtlas {
     }
 
     public int radarHeight() { return radarHeight; }
+
+    /**
+     * The block bitmaps ({@code texturedObjects}): the packed block's pixels ({@code BlockBitmaps.bake}) into its place.
+     */
+    public void setBlockBitmaps(int[] region) {
+        int w = com.fulcrologic.jxpilot.client.paint.BlockBitmaps.W;
+        int h = com.fulcrologic.jxpilot.client.paint.BlockBitmaps.H;
+        IntBuffer b = MemoryUtil.memAllocInt(w * h);
+        try {
+            b.put(region, 0, w * h).flip();
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, com.fulcrologic.jxpilot.client.paint.BlockBitmaps.X0,
+                com.fulcrologic.jxpilot.client.paint.BlockBitmaps.Y0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, b);
+        } finally {
+            MemoryUtil.memFree(b);
+        }
+    }
 
     /**
      * Put the ball texture ({@code texturedBalls}) into its cell ({@code ObjectPainter.BALL_TEXTURE_X}, 64 x 64

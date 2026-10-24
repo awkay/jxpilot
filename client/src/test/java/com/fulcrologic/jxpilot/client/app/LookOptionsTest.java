@@ -81,6 +81,7 @@ class LookOptionsTest {
             o.apply(MARKING_LIGHTS, "no");
             o.apply(SHOW_SHIP_NAME, "no");
             o.apply(TEXTURED_BALLS, "yes");
+            o.apply(TEXTURED_OBJECTS, "yes");
             o.apply(SPARK_COLORS, "1 2");
             o.apply(BACKGROUND_POINT_DIST, "3");
             o.apply(BACKGROUND_POINT_SIZE, "5");
@@ -93,6 +94,7 @@ class LookOptionsTest {
                 () -> assertFalse(s.markingLights, "markingLights"),
                 () -> assertFalse(s.showShipName, "showShipName"),
                 () -> assertTrue(s.texturedBalls, "texturedBalls"),
+                () -> assertTrue(s.texturedObjects, "texturedObjects"),
                 () -> assertEquals(2, s.sparkCount(), "sparkColors count"),
                 () -> assertEquals(2, s.sparkColor(1), "sparkColors values"),
                 () -> assertEquals(3, s.pointDist, "backgroundPointDist"),
@@ -104,7 +106,7 @@ class LookOptionsTest {
         void mapLookInputs() {
             look.apply(p, s);
             ClientOption[] flags = {OUTLINE_WORLD, FILLED_WORLD, TEXTURED_WALLS, OUTLINE_DECOR, FILLED_DECOR,
-                TEXTURED_DECOR};
+                TEXTURED_DECOR, TEXTURED_OBJECTS};
             for (ClientOption f : flags) {
                 int before = s.mapLook;
                 o.setFlag(f, true);

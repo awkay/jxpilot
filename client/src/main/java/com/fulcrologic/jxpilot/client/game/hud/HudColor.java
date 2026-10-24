@@ -45,4 +45,11 @@ public final class HudColor {
     public static final int WINDOW = 7;
     /** C {@code buttonColor} (RED): button faces. */
     public static final int BUTTON = 8;
+    /**
+     * client-ui-look, {@code texturedObjects}: a filled rect of the meter bitmap's full picture, cropped from its left
+     * end (C {@code PaintMeter}: the filled part of a meter).
+     */
+    public static final int METER_FULL = 9;
+    /** The meter bitmap's empty picture, cropped to the rect's width from its right end (the meter's empty part). */
+    public static final int METER_EMPTY = 10;
 }

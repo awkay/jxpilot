@@ -84,4 +84,30 @@ class ClientFrameLookTest {
             () -> assertEquals(LookFrame.TITLE_KEEP, cf.titleChange(), "no title change at frame 0"),
             () -> assertNotNull(cf.look(), "the look extras"));
     }
+
+    @Test
+    @DisplayName("texturedObjects: bitmap meters, and no window colour under the score list (the bitmaps show)")
+    void texturedObjects() {
+        AppFixture f = new AppFixture(true).players();
+        ClientFrame cf = frame(f);
+        f.game.onStateChange(ConnectionState.PLAYING, "Playing");
+        cf.step(T0, 800, 600, 1, ClientFrameTest.M, 256, 100);
+        boolean windowBefore = hasWindow(cf.panelHud());
+        cf.options().setFlag(ClientOption.TEXTURED_OBJECTS, true);
+        cf.step(T0 + 1_000_000, 800, 600, 1, ClientFrameTest.M, 256, 100);
+        assertAll(
+            () -> assertTrue(windowBefore, "plain: the score list's window colour"),
+            () -> assertFalse(hasWindow(cf.panelHud()), "textured: none"),
+            () -> assertTrue(cf.hud().bitmapMeters, "meters as bitmaps"));
+    }
+
+    static boolean hasWindow(com.fulcrologic.jxpilot.client.game.hud.HudFrame h) {
+        for (int i = 0; i < h.rectCount(); i++) {
+            if (h.rectColor(i) == com.fulcrologic.jxpilot.client.game.hud.HudColor.WINDOW && h.rectW(i) == 256
+                && h.rectH(i) > 300) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

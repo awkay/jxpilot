@@ -50,6 +50,8 @@ public final class PaintStyle {
     public boolean markingLights = true;
     /** {@code showShipName}. */
     public boolean showShipName = true;
+    /** {@code texturedObjects} (C {@code blockBitmaps}): map symbols, shots, ships and more as bitmaps. */
+    public boolean texturedObjects;
     /** {@code texturedBalls}, and a ball texture was loaded. */
     public boolean texturedBalls;
     /** C {@code maxColors} after {@code Colors_init}: 4, 8 or 16. */

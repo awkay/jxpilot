@@ -222,4 +222,126 @@ class MapLookTest {
                     "the target colour"));
         }
     }
+
+    @Nested
+    class Bitmaps {
+        static final float A = com.fulcrologic.jxpilot.client.paint.ObjectPainter.ATLAS_SIZE;
+
+        boolean samples(VertexBatch v, int i, com.fulcrologic.jxpilot.client.paint.BlockBitmap b, int p) {
+            float u = v.u(i) * A;
+            int x = com.fulcrologic.jxpilot.client.paint.BlockBitmaps.atlasX(b, p);
+            float t = v.v(i) * A;
+            int y = com.fulcrologic.jxpilot.client.paint.BlockBitmaps.atlasY(b, p);
+            return u >= x - 0.01f && u <= x + b.width + 0.01f && t >= y - 0.01f && t <= y + b.height + 0.01f;
+        }
+
+        boolean any(VertexBatch v, com.fulcrologic.jxpilot.client.paint.BlockBitmap b) {
+            for (int i = 0; i < v.vertexCount(); i += 6) {
+                if (samples(v, i, b, 0)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Test
+        void wallsAreSideBitmapsPlacedAsC() {
+            WorldMap m = map(false, "x");
+            PaintStyle st = new PaintStyle();
+            st.texturedObjects = true;
+            VertexBatch b = build(m, st, false, false);
+            st.filledWorld = true;
+            VertexBatch filled = build(m, st, false, false);
+            WorldMap diag = map(false, "as");
+            VertexBatch d = Segs.batch();
+            StaticMap.wallBitmaps(diag, false, d);
+            List<String> t = Segs.triangles(b);
+            assertAll(
+                () -> assertEquals(List.of("-1,0 34,0 34,35", "-1,0 34,35 -1,35", "0,-1 35,-1 35,34", "0,-1 35,34 0,34",
+                    "1,0 36,0 36,35", "1,0 36,35 1,35", "0,1 35,1 35,36", "0,1 35,36 0,36"), t,
+                    "left a pixel left, bottom a pixel lower, right a pixel right, top a pixel higher"),
+                () -> assertEquals(4, b.segmentCount(), "only the border lines remain"),
+                () -> assertTrue(samples(b, 0, com.fulcrologic.jxpilot.client.paint.BlockBitmap.WALL_LEFT, 0), "left picture"),
+                () -> assertTrue(samples(b, 18, com.fulcrologic.jxpilot.client.paint.BlockBitmap.WALL_TOP, 0), "top picture"),
+                () -> assertEquals(6, filled.vertexCount(), "filled walls are fills, not bitmaps"),
+                () -> assertTrue(any(d, com.fulcrologic.jxpilot.client.paint.BlockBitmap.WALL_UL),
+                    "a closed diagonal (a = REC_RU) is WALL_UL"),
+                () -> assertTrue(any(d, com.fulcrologic.jxpilot.client.paint.BlockBitmap.WALL_UR),
+                    "an open diagonal (s = REC_LU) is WALL_UR"),
+                () -> assertTrue(samples(d, d.vertexCount() - 6, com.fulcrologic.jxpilot.client.paint.BlockBitmap.WALL_UR, 0),
+                    "each block's diagonal comes after its sides"));
+        }
+
+        @Test
+        void baseLinesAndPlusMinusGravityLinesAreLeftToTheBitmaps() {
+            WorldMap m = map(false, "_+i");
+            PaintStyle st = new PaintStyle();
+            int plain = build(m, st, false, false).segmentCount();
+            st.texturedObjects = true;
+            int bm = build(m, st, false, false).segmentCount();
+            assertAll(
+                () -> assertEquals(plain - 1 - 2, bm, "no base line and no + cross; the up-gravity arrow stays"),
+                () -> assertTrue(StaticMap.bitmapGravity(com.fulcrologic.jxpilot.common.map.BlockType.NEG_GRAV), "-"),
+                () -> assertFalse(StaticMap.bitmapGravity(com.fulcrologic.jxpilot.common.map.BlockType.UP_GRAV), "arrows"));
+        }
+
+        @Test
+        void mapSymbolsAreBitmaps() {
+            WorldMap m = mapWith(false, "", "#r*+%&()", "_.......");
+            PaintStyle st = new PaintStyle();
+            st.texturedObjects = true;
+            MapSymbolsTest.State state = new MapSymbolsTest.State();
+            Camera c = new Camera();
+            c.setWorld(m.pixelWidth(), m.pixelHeight(), m.edgeWrap());
+            c.setViewport(400, 200, 1);
+            c.setZoom(1);
+            c.setCentre(122, 35);
+            c.update();
+            VertexBatch b = Segs.batch();
+            new MapSymbols(m, P, st).draw(b, new TextWriter(Fixtures.font()), c, state);
+            VertexBatch arcs = Segs.batch();
+            new MapSymbols(m, P, st).drawArcs(arcs, c, state);
+            assertAll(
+                () -> assertEquals(VertexBatch.TRIANGLES, b.commandMode(0), "pictures first"),
+                () -> assertEquals(6 * 9, b.commandLength(0),
+                    "fuel cell + level, cannon, base, treasure, +, two concentrators, the in-wormhole (not the out one)"),
+                () -> assertEquals(0, b.segmentCount(), "no symbol lines (no target here)"),
+                () -> assertEquals(0, arcs.segmentCount(), "no + circle, wormhole or treasure arcs"));
+        }
+
+        @Test
+        void framesAndPlacesFollowC() {
+            VertexBatch d = Segs.batch();
+            MapSymbols.directed(d, com.fulcrologic.jxpilot.common.map.Dir.DOWN, 0, 0,
+                com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_DOWN, com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_UP,
+                com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_RIGHT, com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_LEFT);
+            MapSymbols.directed(d, com.fulcrologic.jxpilot.common.map.Dir.RIGHT, 0, 0,
+                com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_DOWN, com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_UP,
+                com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_RIGHT, com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_LEFT);
+            MapSymbols.directed(d, com.fulcrologic.jxpilot.common.map.Dir.UP, 0, 0,
+                com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_DOWN, com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_UP,
+                com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_RIGHT, com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_LEFT);
+            MapSymbols.directed(d, com.fulcrologic.jxpilot.common.map.Dir.LEFT, 0, 0,
+                com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_DOWN, com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_UP,
+                com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_RIGHT, com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_LEFT);
+            VertexBatch f = Segs.batch();
+            MapSymbols.fuelBitmap(f, 0, 0, com.fulcrologic.jxpilot.common.Const.MAX_STATION_FUEL / 2, 0);
+            List<String> t = Segs.triangles(d);
+            assertAll(
+                () -> assertEquals("0,-1 35,-1 35,34", t.get(0), "facing down: a pixel lower"),
+                () -> assertTrue(samples(d, 0, com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_UP, 0), "the up picture"),
+                () -> assertEquals("-1,0 34,0 34,35", t.get(2), "facing right: a pixel left"),
+                () -> assertTrue(samples(d, 6, com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_LEFT, 0), "the left picture"),
+                () -> assertEquals("0,0 35,0 35,35", t.get(4), "facing up: on the block"),
+                () -> assertTrue(samples(d, 12, com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_DOWN, 0), "the down picture"),
+                () -> assertTrue(samples(d, 18, com.fulcrologic.jxpilot.client.paint.BlockBitmap.BASE_RIGHT, 0), "left: right"),
+                () -> assertEquals(List.of("0,0 35,0 35,35", "0,0 35,35 0,35", "3,3 32,3 32,17", "3,3 32,17 3,17"),
+                    Segs.triangles(f), "the cell, then 14 rows of level ((35 - 6) * 0.5) from 3 inside the bottom"),
+                () -> assertEquals(5, MapSymbols.fuelFrame(0, 0, 5), "frames run up"),
+                () -> assertEquals(15, MapSymbols.fuelFrame(0, 0, 16), "and back: 16 is 15"),
+                () -> assertEquals(0, MapSymbols.fuelFrame(0, 0, 31), "31 is 0"),
+                () -> assertEquals((int) ((3 + 35 + 35 * 70) % 32), MapSymbols.concentratorFrame(1, 2, 3),
+                    "(loops + x + x * y) % 32 for block (1, 2)"));
+        }
+    }
 }

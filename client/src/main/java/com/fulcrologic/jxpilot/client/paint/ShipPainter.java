@@ -192,6 +192,38 @@ public final class ShipPainter {
     }
 
     /**
+     * C {@code Gui_paint_ship} with {@code blockBitmaps} (uncloaked, not phasing): the friend picture for a blue ship,
+     * the own picture for the viewer's ship, the enemy picture otherwise, {@code WINSCALE(32)} pixels square centred
+     * on the ship and turned by its heading.
+     */
+    public void bitmapShip(VertexBatch b, float x, float y, double heading, int colorIndex, boolean self, double zoom) {
+        BlockBitmap bm = colorIndex == Palette.BLUE ? BlockBitmap.SHIP_FRIEND
+            : self ? BlockBitmap.SHIP_SELF : BlockBitmap.SHIP_ENEMY;
+        int dir = (int) Math.round(heading * 128 / (2 * Math.PI)) & 127;
+        BlockBitmaps.drawTurned(b, bm, x, y, (float) (WinScale.of(32, zoom) / zoom), dir);
+    }
+
+    /** BEHAVIOR: C draws the ship picture iff neither cloaked nor phasing. */
+    public static boolean bitmapShown(int flags) {
+        return (flags & (CLOAKED | PHASING)) == 0;
+    }
+
+    /**
+     * The ship's lines with {@code blockBitmaps}: the dashed hull only when cloaked or phasing (the picture replaces the
+     * solid hull, {@link #bitmapShip}), then shields and deflector as {@link #ship}.
+     */
+    public void shipWithoutHull(VertexBatch b, ShipShape s, float x, float y, double heading, int colorIndex, int flags,
+                                long loops, double zoom) {
+        if (!bitmapShown(flags)) {
+            int n = outline(s, x, y, heading);
+            Dashes.polyline(b, xs, ys, n, true, WinScale.of(PaintConfig.DASH_ON, zoom),
+                WinScale.of(PaintConfig.DASH_OFF, zoom), dashOffset(loops, zoom), (float) (1 / zoom),
+                palette.color(colorIndex));
+        }
+        shields(b, s, x, y, colorIndex, flags, loops, zoom);
+    }
+
+    /**
      * The filled hull C draws over a locked ship (non-useErase {@code fillPolygon}), as a triangle fan
      * from the ship's position (ship outlines are star-shaped about it). C fills only the solid hull
      * ({@code Gui_paint_ship_uncloaked}), so callers skip cloaked or phasing ships ({@link #lockedFillShown}).

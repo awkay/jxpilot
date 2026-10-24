@@ -112,4 +112,23 @@ class XpmImageTest {
                 "comment skipped, unterminated tail dropped");
         }
     }
+
+    @Test
+    void edgesOfTheFormat() {
+        IllegalArgumentException noColour = assertThrows(IllegalArgumentException.class,
+            () -> XpmImage.parse(xpm("1 1 1 1", "x", "x")));
+        IllegalArgumentException shortRow = assertThrows(IllegalArgumentException.class,
+            () -> XpmImage.parse(xpm("2 1 1 2", "aa c red", "aa")));
+        assertAll(
+            () -> assertThrows(IllegalArgumentException.class, () -> XpmImage.parse(xpm("1 0 1 1", "x c red")), "zero height"),
+            () -> assertThrows(IllegalArgumentException.class, () -> XpmImage.parse(xpm("1 1 0 1", "x")), "no colours"),
+            () -> assertThrows(IllegalArgumentException.class, () -> XpmImage.parse(xpm("1 1 1 0", "x c red", "x")),
+                "zero characters per pixel"),
+            () -> assertTrue(noColour.getMessage().contains("without a colour"),
+                "a colour line exactly cpp long has no colour (not a short line)"),
+            () -> assertTrue(shortRow.getMessage().contains("short XPM row 0"), "a row shorter than width * cpp"),
+            () -> assertEquals(List.of(), XpmImage.strings("x/"), "a lone slash at the end"),
+            () -> assertEquals(List.of("a"), XpmImage.strings("/x\"a\""), "a slash that opens no comment"),
+            () -> assertEquals(List.of(), XpmImage.strings("/*/ \"a\""), "'/*/' does not close the comment it opens"));
+    }
 }

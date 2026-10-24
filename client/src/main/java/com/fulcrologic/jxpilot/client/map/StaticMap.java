@@ -23,6 +23,8 @@
  */
 package com.fulcrologic.jxpilot.client.map;
 
+import com.fulcrologic.jxpilot.client.paint.BlockBitmap;
+import com.fulcrologic.jxpilot.client.paint.BlockBitmaps;
 import com.fulcrologic.jxpilot.client.paint.PaintStyle;
 import com.fulcrologic.jxpilot.client.render.WinScale;
 import com.fulcrologic.jxpilot.client.render.Palette;
@@ -86,6 +88,7 @@ public final class StaticMap {
      * BEHAVIOR: decorations (only with {@code showDecor}): with {@code filledDecor} or {@code texturedDecor}
      * solid {@code decorColor} block shapes ({@link #decorFill}) unless {@code tiledDecor}; otherwise outlines,
      * in outline mode iff {@code outlineDecor}.
+     * BEHAVIOR: with {@code texturedObjects} the drawn wall sides are C's wall bitmaps ({@link #wallBitmaps}).
      * BEHAVIOR: background dots ({@link #features}) and, on a hard-edged world, the border in the wall colour.
      */
     public static VertexBatch build(WorldMap m, Palette p, PaintStyle st, boolean tiledWalls, boolean tiledDecor) {
@@ -100,10 +103,51 @@ public final class StaticMap {
         }
         features(m, p, st, b);
         if (!st.wallsFilled()) {
-            MapEdges.walls(m, st.outlineWorld, b, wall);
+            if (st.texturedObjects) {
+                wallBitmaps(m, st.outlineWorld, b);
+            } else {
+                MapEdges.walls(m, st.outlineWorld, b, wall);
+            }
         }
         MapEdges.border(m, b, wall);
         return b;
+    }
+
+    /**
+     * C {@code Gui_paint_walls} with {@code blockBitmaps}: a block-sized bitmap per drawn side ({@link MapEdges#drawn}),
+     * placed as C places it: the left one a pixel left of the block, the bottom one a pixel lower, the right one a
+     * pixel right, the top one a pixel higher; the open diagonal (/) {@code WALL_UR}, the closed one {@code WALL_UL}.
+     * <p>
+     * BEHAVIOR: per block, rows bottom-up, in C's order: left, bottom, right, top, diagonal; textured quads.
+     */
+    static void wallBitmaps(WorldMap m, boolean outline, VertexBatch b) {
+        for (int by = 0; by < m.height(); by++) {
+            for (int bx = 0; bx < m.width(); bx++) {
+                int d = MapEdges.drawn(m, outline, false, bx, by);
+                if (d == 0) {
+                    continue;
+                }
+                float x = bx * S;
+                float top = by * S + S;
+                if ((d & MapEdges.LEFT) != 0) {
+                    BlockBitmaps.draw(b, BlockBitmap.WALL_LEFT, 0, x - 1, top, S, S);
+                }
+                if ((d & MapEdges.DOWN) != 0) {
+                    BlockBitmaps.draw(b, BlockBitmap.WALL_BOTTOM, 0, x, top - 1, S, S);
+                }
+                if ((d & MapEdges.RIGHT) != 0) {
+                    BlockBitmaps.draw(b, BlockBitmap.WALL_RIGHT, 0, x + 1, top, S, S);
+                }
+                if ((d & MapEdges.UP) != 0) {
+                    BlockBitmaps.draw(b, BlockBitmap.WALL_TOP, 0, x, top + 1, S, S);
+                }
+                if ((d & MapEdges.OPEN) != 0) {
+                    BlockBitmaps.draw(b, BlockBitmap.WALL_UR, 0, x, top, S, S);
+                } else if ((d & MapEdges.CLOSED) != 0) {
+                    BlockBitmaps.draw(b, BlockBitmap.WALL_UL, 0, x, top, S, S);
+                }
+            }
+        }
     }
 
     /** The wall fill triangles in white, for drawing with the wall texture ({@code texturedWalls}). */
@@ -180,7 +224,8 @@ public final class StaticMap {
      * {@link #features(WorldMap, Palette, boolean, VertexBatch)} for the live look options: dots every
      * {@code backgroundPointDist} blocks of {@code backgroundPointSize} pixels; decoration outlines only with
      * {@code showDecor} and without {@code filledDecor}/{@code texturedDecor}, in outline mode iff
-     * {@code outlineDecor}, in {@code decorColor}.
+     * {@code outlineDecor}, in {@code decorColor}; with {@code texturedObjects} the + and - gravity markers and the
+     * base lines are left to the bitmaps ({@link MapSymbols}).
      */
     public static void features(WorldMap m, Palette p, PaintStyle st, VertexBatch b) {
         backgroundDots(m, st.showDecor, st.pointDist, st.pointSize, b, p.color(Palette.BLUE));
@@ -189,12 +234,22 @@ public final class StaticMap {
         }
         int red = p.color(Palette.RED);
         for (GravitySource g : m.gravitySources()) {
-            gravityLines(b, g.type(), g.bx() * S, g.by() * S, red);
+            if (!st.texturedObjects || !bitmapGravity(g.type())) {
+                gravityLines(b, g.type(), g.bx() * S, g.by() * S, red);
+            }
+        }
+        if (st.texturedObjects) {
+            return; // C draws the base bitmaps instead of the base lines (MapSymbols)
         }
         int white = p.color(Palette.WHITE);
         for (Base base : m.bases()) {
             baseLine(b, base.dir(), base.bx() * S, base.by() * S, white);
         }
+    }
+
+    /** BEHAVIOR: C draws only the + and - gravity markers as bitmaps with {@code blockBitmaps}. */
+    public static boolean bitmapGravity(int type) {
+        return type == BlockType.POS_GRAV || type == BlockType.NEG_GRAV;
     }
 
     /** {@link #dotPosition(int, int, boolean, int)} at the default distance {@link #POINT_DIST}. */

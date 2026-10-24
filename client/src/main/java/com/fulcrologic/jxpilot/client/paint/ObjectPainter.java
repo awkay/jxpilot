@@ -431,6 +431,77 @@ public final class ObjectPainter {
         b.texRect(left, top - side, left + side, top, u0, vBottom, u1, vTop, rgba);
     }
 
+    // ------------------------------------------------------------------ block bitmaps (texturedObjects)
+
+    /**
+     * C {@code Gui_paint_ball} with {@code blockBitmaps}: the ball picture, {@code 2 * BALL_RADIUS + 1} world pixels
+     * square, its top-left corner at {@code (x - BALL_RADIUS, y + BALL_RADIUS)}.
+     */
+    public void bitmapBall(VertexBatch b, float x, float y) {
+        int r = Const.BALL_RADIUS;
+        BlockBitmaps.draw(b, BlockBitmap.BALL, 0, x - r, y + r, 2 * r + 1, 2 * r + 1);
+    }
+
+    /**
+     * C {@code Gui_paint_mine} with {@code blockBitmaps}: the team or enemy mine picture, 21 x 15 world pixels, its
+     * top-left corner at {@code (x - 10, y + 7)}.
+     */
+    public void bitmapMine(VertexBatch b, float x, float y, boolean teamMine) {
+        BlockBitmaps.draw(b, teamMine ? BlockBitmap.MINE_TEAM : BlockBitmap.MINE_OTHER, 0, x - 10, y + 7, 21, 15);
+    }
+
+    /**
+     * C {@code Gui_paint_fastshot} / {@code Gui_paint_teamshot} with {@code blockBitmaps}: picture
+     * {@code s - 1} (a dot of that size) of the bullet bitmap ({@code BULLET_OWN} for team shots), 8 x 8 window pixels
+     * unscaled, from {@code s / 2} pixels left of and above the shot, with {@code s = min(shotSize, 8)} (C uses
+     * {@code shotSize} for team shots too).
+     */
+    public void bullet(VertexBatch b, float x, float y, boolean team, double zoom) {
+        int size = Math.min(style.shotSize, 8);
+        float px = (float) (1 / zoom);
+        float z = size / 2 * px;
+        BlockBitmaps.draw(b, team ? BlockBitmap.BULLET_OWN : BlockBitmap.BULLET, size - 1, x - z, y + z, 8 * px, 8 * px);
+    }
+
+    /**
+     * C {@code Gui_paint_paused} with {@code blockBitmaps}: the paused picture, 35 world pixels square from
+     * {@code (x - 17, y + 17)}; picture 1 while the marker shows ({@link #pausedBlinkOn}), else 0.
+     */
+    public void bitmapPaused(VertexBatch b, float x, float y, int count, long loops) {
+        int h = Const.BLOCK_SZ / 2;
+        BlockBitmaps.draw(b, BlockBitmap.PAUSED, pausedBlinkOn(count, loops) ? 1 : 0, x - h, y + h, 35, 35);
+    }
+
+    /** C {@code Gui_paint_refuel}'s fuel pictures along the beam, by position and frame. */
+    static final int[] REFUEL_FRAMES = {1, 2, 3, 3, 2, 1, 0, 1, 2, 3, 2, 1, 2, 3, 3, 2};
+
+    /**
+     * C {@code Gui_paint_refuel} with {@code blockBitmaps}: 16 refuel pictures, {@code WINSCALE(8)} pixels square,
+     * centred on the points {@code i/16} of the way from the ship to the station, picture
+     * {@code REFUEL_FRAMES[(loops + 16 - i) % 16]}.
+     */
+    public void bitmapRefuel(VertexBatch b, float x0, float y0, float x1, float y1, long loops, double zoom) {
+        float side = (float) (WinScale.of(8, zoom) / zoom);
+        float dx = (x1 - x0) / 16;
+        float dy = (y1 - y0) / 16;
+        for (int i = 0; i < 16; i++) {
+            float cx = x0 + dx * i;
+            float cy = y0 + dy * i;
+            BlockBitmaps.draw(b, BlockBitmap.REFUEL, REFUEL_FRAMES[(int) Math.floorMod(loops + 16 - i, 16L)],
+                cx - side / 2, cy + side / 2, side, side);
+        }
+    }
+
+    /**
+     * C {@code Paint_item_symbol} with {@code blockBitmaps}: picture {@code item} of {@code ALL_ITEMS}, 16 x 16 window
+     * pixels, top-left at screen (x - 8, y - S + 2) as {@link #itemSymbol} (untinted).
+     */
+    public void bitmapItemSymbol(VertexBatch b, int item, float x, float y, double zoom) {
+        float px = (float) (1 / zoom);
+        BlockBitmaps.draw(b, BlockBitmap.ALL_ITEMS, item, x - 8 * px, y + (PaintConfig.ITEM_TRIANGLE_SIZE - 2) * px,
+            ItemBitmaps.SIZE * px, ItemBitmaps.SIZE * px);
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private void closed(VertexBatch b, int n, int rgba) {
