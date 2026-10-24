@@ -621,9 +621,9 @@ public final class SnapshotBuilder {
     /**
      * Balls, connectors and asteroids in view (C {@code Frame_shots}, {@code Frame_ships}).
      * <p>
-     * BEHAVIOR: a ball: its handle, team (its treasure's), and the ship it is connected to (or NO_ID); a ship
-     * reaching for a ball (C {@code pl->ball}) shows a connector from the ball to the ship; asteroids with size
-     * and rotation.
+     * BEHAVIOR: a ball: its handle, team (its treasure's), and the ship it is connected to (or NO_ID); a playing
+     * ship (not paused, not game over) reaching for a ball (C {@code pl->ball}) shows a connector from the ball
+     * to the ship when both are in view; asteroids with size and rotation.
      */
     private void writeModeObjects() {
         Objects o = w.objects;
@@ -652,17 +652,19 @@ public final class SnapshotBuilder {
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
             int h = pl.ball;
-            if (h < 0 || !o.isLive(h) || o.type[h] != Obj.BALL || (pl.status & (Obj.PLAYING | Obj.PAUSE)) == 0) {
+            // C Frame_ships (frame.c:1009-1024, 1078-1085): playing ships in view, not paused, not game over
+            if (h < 0 || !o.isLive(h) || o.type[h] != Obj.BALL || (pl.status & Obj.PLAYING) == 0
+                || (pl.status & (Obj.PAUSE | Obj.GAME_OVER)) != 0) {
                 continue;
             }
             double bx = o.cx[h] / (double) Click.CLICK;
             double by = o.cy[h] / (double) Click.CLICK;
-            if (!visible(bx, by, 0) || !wr.inView(pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK)
-                || !need(Section.CONNECTOR, 0)) {
+            double sx = pl.cx / (double) Click.CLICK;
+            double sy = pl.cy / (double) Click.CLICK;
+            if (!visible(bx, by, 0) || !visible(sx, sy, 0) || !need(Section.CONNECTOR, 0)) {
                 continue;
             }
-            Records.Connector.put(wr, bx, by, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK,
-                Records.Connector.KIND_BALL);
+            Records.Connector.put(wr, bx, by, sx, sy, Records.Connector.KIND_BALL);
         }
     }
 

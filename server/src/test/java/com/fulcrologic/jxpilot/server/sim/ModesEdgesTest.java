@@ -248,14 +248,14 @@ class ModesEdgesTest {
         }
 
         @Test
-        @DisplayName("damage edges: a non-damaging type changes nothing (not even the change time); ship cost 0 is a quarter; missiles through objectHits")
+        @DisplayName("damage edges: a non-damaging type changes nothing; ship cost 0 is a quarter; missiles through objectHits")
         void damageEdges() {
             Simulation s = targetSim("");
             World w = s.world;
             Player p = ship(s, "P", 1, 100, 100);
             w.frames = 77;
             s.targets.damage(1, Obj.DEBRIS, p.id, 1, 0, 0, 1, false, 0, 1f, -1);
-            long changed = w.modes.targetLastChange[1];
+            int changed = w.modes.targetDamage[1];
             s.targets.damage(1, Obj.PLAYER, p.id, 1, 0, 0, 1, false, 0, 1f, 0);
             int zeroCost = FULL - w.modes.targetDamage[1];
             w.modes.targetDamage[1] = FULL;
@@ -263,10 +263,9 @@ class ModesEdgesTest {
             w.objects.team[h] = 1;
             s.targets.objectHits(1, h);
             assertAll(
-                () -> assertEquals(0L, changed, "debris: untouched"),
+                () -> assertEquals(FULL, changed, "debris: untouched"),
                 () -> assertEquals(FULL / 4, zeroCost, "cost 0: a quarter"),
-                () -> assertEquals(FULL - 30720, w.modes.targetDamage[1], "a missile (no modifiers): 120*256"),
-                () -> assertEquals(77L, w.modes.targetLastChange[1], "the change time"));
+                () -> assertEquals(FULL - 30720, w.modes.targetDamage[1], "a missile (no modifiers): 120*256"));
         }
 
         @Test

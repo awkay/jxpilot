@@ -194,6 +194,34 @@ class SnapshotModesTest {
     }
 
     @Test
+    @DisplayName("reaching connectors only for playing ships in view: not paused, not game over (frame.c:1009-1024, 1078-1085)")
+    void reachingConnectorRules() {
+        Simulation s = TestWorlds.sim("teamPlay: yes\ngravity: 0\n", ROWS);
+        World w = s.world;
+        Player v = TestWorlds.join(s, "V", 1);
+        v.initPixels(10 * 35, 3 * 35);
+        int ball = 0;
+        v.ball = ball;
+        int playing = build(s, v, false).connectors().size();
+        v.status |= Obj.PAUSE;
+        int paused = build(s, v, false).connectors().size();
+        v.status &= ~Obj.PAUSE;
+        v.status |= Obj.GAME_OVER;
+        int over = build(s, v, false).connectors().size();
+        v.status &= ~Obj.GAME_OVER;
+        Player far = TestWorlds.join(s, "F", 2);
+        far.initPixels(55 * 35, 3 * 35);
+        far.ball = ball;
+        v.ball = -1;
+        int farAway = build(s, v, false).connectors().size();
+        assertAll(
+            () -> assertEquals(1, playing, "a playing ship reaching: one connector"),
+            () -> assertEquals(0, paused, "paused: none"),
+            () -> assertEquals(0, over, "game over: none"),
+            () -> assertEquals(0, farAway, "a ship out of view: none, though the ball is in view"));
+    }
+
+    @Test
     @DisplayName("gameDuration: the wall-clock seconds left while it runs, then the shutdown countdown (C Send_shutdown)")
     void gameDurationTimers() {
         Simulation s = TestWorlds.sim("teamPlay: yes\ngravity: 0\ngameDuration: 1\nmaxRoundTime: 60\n", ROWS);

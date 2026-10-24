@@ -204,7 +204,7 @@ public final class Asteroids {
      * asteroid appears within asteroidConcentratorRadius blocks of it (positions off a non-wrapping world are
      * retried); otherwise anywhere.
      * BEHAVIOR: up to 10 tries for a space-like block (not a base or wormhole) at least 5 blocks from every
-     * human ship; then a size 1-4 asteroid in a random direction at speed 8-18.
+     * human ship (robots and tanks do not count); then a size 1-4 asteroid in a random direction at speed 8-18.
      */
     void place() {
         ModeParams mp = w.modeParams;
@@ -252,8 +252,8 @@ public final class Asteroids {
                 okay = true;
                 for (int k = 0; k < w.numPlayers; k++) {
                     Player pl = w.playerAt(k);
-                    if (pl.robot) {
-                        continue;
+                    if (pl.robot || pl.tank) {
+                        continue; // C IS_HUMAN_IND (asteroid.c:412)
                     }
                     int dpx = (int) w.wrapDx(px - pl.px);
                     int dpy = (int) w.wrapDy(py - pl.py);
@@ -409,7 +409,8 @@ public final class Asteroids {
      * BEHAVIOR: unless fully shielded the ship loses |(long)(2 * asteroid mass * |asteroid v|)| fuel.
      * BEHAVIOR: with asteroidCollisionMayKill a ship out of fuel or unshielded without armor dies ("NAME
      * smashed into an asteroid." when faster than it, else "NAME was hit by an asteroid.", Rate(0, score) *
-     * unownedKillScoreMult, "[Asteroid]"); an unshielded armored ship uses armor.
+     * unownedKillScoreMult, "[Asteroid]"); a tank killed so gives its owner asteroidPoints (owner's score at
+     * most asteroidMaxScore); an unshielded armored ship uses armor.
      */
     public void playerHit(Player pl, int h) {
         Objects o = w.objects;
@@ -435,6 +436,14 @@ public final class Asteroids {
             w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, Obj.NO_ID, pl.id, 0f);
             sim.scoring.score(pl, -(Scoring.rate(0, pl.score) * w.params.unownedKillScoreMult), pl.bx, pl.by,
                 "[Asteroid]");
+            if (pl.tank && mp.asteroidPoints > 0) {
+                // the tank's owner gets the asteroid points (collision.c:1182-1188)
+                Player owner = w.byId(pl.lockPlId);
+                if (owner != null && owner.score <= mp.asteroidMaxScore) {
+                    sim.scoring.score(owner, mp.asteroidPoints, o.px[h] / Const.BLOCK_SZ, o.py[h] / Const.BLOCK_SZ,
+                        "");
+                }
+            }
             return;
         }
         if (mp.asteroidCollisionMayKill && (pl.used & Has.SHIELD) == 0 && (pl.have & Has.ARMOR) != 0) {
