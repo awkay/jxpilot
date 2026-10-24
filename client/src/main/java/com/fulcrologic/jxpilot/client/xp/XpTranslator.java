@@ -878,6 +878,36 @@ public final class XpTranslator {
         deliver(teamScore, ReliableType.TEAM_SCORE);
     }
 
+    /** MOTD lines shown as server messages (C pops the MOTD up in a window instead). */
+    public static final int MOTD_LINES = 6;
+
+    /**
+     * The server's message of the day (C {@code Handle_motd}, shown in a popup by C's autoServerMotdPopup).
+     * <p>
+     * BEHAVIOR: its first {@link #MOTD_LINES} non-blank lines (trailing blanks cut) become server MESSAGEs
+     * (a documented deviation: no popup window).
+     */
+    public void motd(CharSequence motdText) {
+        int shown = 0;
+        int start = 0;
+        int n = motdText.length();
+        for (int i = 0; i <= n && shown < MOTD_LINES; i++) {
+            if (i == n || motdText.charAt(i) == '\n') {
+                int end = i;
+                while (end > start && Character.isWhitespace(motdText.charAt(end - 1))) {
+                    end--;
+                }
+                if (end > start) {
+                    shown++;
+                    clientMessage().append(motdText, start, end);
+                    text.kind = Msg.Text.KIND_SERVER;
+                    deliver(text, ReliableType.MESSAGE);
+                }
+                start = i + 1;
+            }
+        }
+    }
+
     /** C {@code Handle_message}: BEHAVIOR: a server MESSAGE; talk vs game is decided by the text (MessageLog). */
     public void message(CharSequence msg) {
         text.kind = Msg.Text.KIND_GAME;

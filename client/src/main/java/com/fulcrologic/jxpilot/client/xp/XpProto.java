@@ -208,6 +208,10 @@ public final class XpProto {
     public static final int TARGET_DAMAGE = 250 << FUEL_SCALE_BITS;
     /** C {@code MAX_CHECKS}. */
     public static final int MAX_CHECKS = 26;
+    /** C {@code MAX_MOTD_SIZE} (about.c): the MOTD bytes asked for. */
+    public static final int MAX_MOTD_SIZE = 30 * 1024;
+    /** C {@code NUM_MODBANKS}. */
+    public static final int NUM_MODBANKS = 4;
     /** C {@code NUM_ITEMS}. */
     public static final int NUM_ITEMS = 21;
     /** C {@code ITEM_TANK}. */

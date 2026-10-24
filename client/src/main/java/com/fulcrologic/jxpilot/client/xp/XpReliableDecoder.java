@@ -353,22 +353,41 @@ public final class XpReliableDecoder {
         return OK;
     }
 
-    /** C {@code Receive_motd}: {@code %c%ld%hd%ld} offset, length, size, then length bytes (skipped). */
+    /**
+     * C {@code Receive_motd}: {@code %c%ld%hd%ld} offset, length, size, then length bytes.
+     * <p>
+     * BEHAVIOR: chunks in order are collected (Latin-1, up to {@link XpProto#MAX_MOTD_SIZE}); a chunk at
+     * another offset is skipped; when the collected text reaches the size (or an empty chunk ends it) it goes
+     * to {@link XpTranslator#motd} once.
+     */
     private int motd(XpReader r) {
         if (!r.has(11)) {
             return INCOMPLETE;
         }
-        r.skip(5);
+        r.skip(1);
+        int off = r.s32();
         int len = r.s16();
-        r.skip(4);
+        int size = r.s32();
         if (len < 0) {
             return BAD;
         }
         if (!r.has(len)) {
             return INCOMPLETE;
         }
-        r.skip(len);
-        ignored++;
+        boolean inOrder = off == motd.length() && !motdDone;
+        for (int i = 0; i < len; i++) {
+            int c = r.u8();
+            if (inOrder && motd.length() < XpProto.MAX_MOTD_SIZE) {
+                motd.append((char) c);
+            }
+        }
+        if (inOrder && (len == 0 || motd.length() >= Math.min(size, XpProto.MAX_MOTD_SIZE))) {
+            motdDone = true;
+            events.motd(motd);
+        }
         return OK;
     }
+
+    private final StringBuilder motd = new StringBuilder(1024);
+    private boolean motdDone;
 }

@@ -166,6 +166,21 @@ class KeyConfigTest {
         }
 
         @Test
+        @DisplayName("modifierBank1..4 set the weapon modifier banks (C resources)")
+        void modifierBanks() {
+            KeyConfig c = KeyConfig.load("xpilot.modifierBank1: N C\nmodifierbank4:  X3 \nmodifierBank5: Z\n", "rc",
+                null);
+            assertAll(
+                () -> assertEquals("N C", c.settings().modifierBanks[0], "bank 1"),
+                () -> assertEquals("", c.settings().modifierBanks[1], "bank 2 empty (C default)"),
+                () -> assertEquals("X3", c.settings().modifierBanks[3], "bank 4, trimmed, any case"),
+                () -> assertEquals(List.of("rc:3: resource 'modifierBank5' is not used by JXPilot (ignored)"),
+                    c.problems(), "there is no bank 5"),
+                () -> assertEquals(-1, KeyConfig.modifierBank("modifierBank0"), "no bank 0"),
+                () -> assertEquals(-1, KeyConfig.modifierBank("modifierBank12"), "no bank 12"));
+        }
+
+        @Test
         @DisplayName("control settings resources set the settings, with or without the prefix and in any case")
         void settings() {
             KeyConfig c = KeyConfig.load("xpilot.power: 50\nturnSpeed: 30.5\nturnresistance: 0.2\naltPower: 20\n"

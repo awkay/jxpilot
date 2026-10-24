@@ -79,6 +79,8 @@ public final class XpConnection implements GameConnection {
         /** Ship shape string, empty for the default ship. */
         public String shape = "";
         public final Msg.Settings settings = new Msg.Settings();
+        /** C {@code modifierBank1..4} resources, sent with the first PKT_PLAY ({@code Send_modifier_bank}). */
+        public final String[] modifierBanks = {"", "", "", ""};
         /** View size requested with PKT_DISPLAY (C limits it to 384..1024). */
         public int viewWidth = XpProto.MAX_VIEW_SIZE;
         public int viewHeight = XpProto.MAX_VIEW_SIZE;
@@ -441,6 +443,14 @@ public final class XpConnection implements GameConnection {
      * that differ from what the server was last sent go out at once, one packet each (value * 256): a power or
      * turn-speed key sends exactly the one packet C's key handler sends; true iff something was sent.
      */
+    /** BEHAVIOR: remembered for the next PKT_PLAY (C sends the banks once, at the start). */
+    @Override
+    public void setModifierBanks(String[] banks) {
+        for (int i = 0; i < login.modifierBanks.length && i < banks.length; i++) {
+            login.modifierBanks[i] = banks[i] == null ? "" : banks[i];
+        }
+    }
+
     @Override
     public boolean sendSettings(Msg.Settings settings, long nowNanos) {
         now = nowNanos;
@@ -639,6 +649,17 @@ public final class XpConnection implements GameConnection {
         XpWriter.s16(tx, clampView(login.viewHeight));
         XpWriter.u8(tx, login.debrisColors);
         XpWriter.u8(tx, (int) Math.round(Math.max(0, Math.min(1, login.sparkProb)) * XpProto.MAX_SPARK_RAND));
+        if (tries == 1) {
+            // C Client_power: Startup_server_motd (autoServerMotdPopup) and the four modifier banks
+            XpWriter.u8(tx, XpProto.PKT_MOTD);
+            XpWriter.s32(tx, 0);
+            XpWriter.s32(tx, XpProto.MAX_MOTD_SIZE);
+            for (int b = 0; b < XpProto.NUM_MODBANKS; b++) {
+                XpWriter.u8(tx, XpProto.PKT_MODIFIERBANK);
+                XpWriter.u8(tx, b);
+                XpWriter.string(tx, login.modifierBanks[b], XpProto.MAX_CHARS);
+            }
+        }
         XpWriter.u8(tx, XpProto.PKT_REQUEST_AUDIO);
         XpWriter.u8(tx, login.audio ? 1 : 0);
         XpWriter.u8(tx, XpProto.PKT_ASYNC_FPS);

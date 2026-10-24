@@ -73,6 +73,12 @@ public interface GameConnection extends AutoCloseable {
      */
     boolean sendSettings(com.fulcrologic.jxpilot.common.net.Msg.Settings settings, long nowNanos);
 
+    /**
+     * C {@code modifierBank1..4}: the player's weapon modifier banks (keyLoadModifiers1..4 load them), sent
+     * once at the start where the protocol has them. Default: not supported (nothing happens).
+     */
+    default void setModifierBanks(String[] banks) { }
+
     /** Leave the game; the state becomes CLOSED. */
     void disconnect(long nowNanos);
 

@@ -180,8 +180,10 @@ class XpConnectionTest {
                 () -> assertTrue(server.contact.closed, "contact socket closed after the verify"),
                 () -> assertEquals(0x1234ABCD, conn.magic(), "connection magic"),
                 () -> assertEquals(List.of("shape", "play", "power34=11520", "power35=8960", "power36=8960",
-                    "power37=6400", "power38=30", "power39=30", "display 1024x1024 colors=0 spark=64", "audio 0",
-                    "fps 12"), server.loginPackets, "C Net_start bundle: values * 256, display, audio off, fps"),
+                    "power37=6400", "power38=30", "power39=30", "display 1024x1024 colors=0 spark=64", "motd 0 30720",
+                    "modbank0=", "modbank1=", "modbank2=", "modbank3=", "audio 0", "fps 12"), server.loginPackets,
+                    "C Net_start bundle: values * 256, display, MOTD request and modifier banks (C Client_power),"
+                    + " audio off, fps"),
                 () -> assertEquals(1, server.plays, "one play request"),
                 () -> assertEquals(List.of(1), server.keyboardChanges, "keyboard announced once (Net_key_change)"),
                 () -> assertEquals(List.of(), server.violations, "nothing the C server would reject"),
@@ -418,6 +420,18 @@ class XpConnectionTest {
                 () -> assertEquals(before + 2, afterAgain, "no duplicate packets"),
                 () -> assertEquals(42f, login.settings.turnSpeed, "and remembered for the next join"),
                 () -> assertEquals(List.of(), server.violations, "nothing the C server would reject"));
+        }
+
+        @Test
+        void modifierBanksGoWithTheFirstPlay() {
+            conn.setModifierBanks(new String[] {"N", null, "C V2"});
+            play();
+            assertAll(
+                () -> assertTrue(server.loginPackets.contains("modbank0=N"), "bank 1"),
+                () -> assertTrue(server.loginPackets.contains("modbank1="), "a missing bank is empty"),
+                () -> assertTrue(server.loginPackets.contains("modbank2=C V2"), "bank 3"),
+                () -> assertEquals(1, server.loginPackets.stream().filter(x -> x.startsWith("motd")).count(),
+                    "one MOTD request"));
         }
 
         @Test

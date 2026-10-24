@@ -80,7 +80,8 @@ public final class KeyConfig {
      * bound; a keysym JXPilot cannot see (no GLFW key) is reported.
      * BEHAVIOR: power, turnSpeed, turnResistance, altPower, altTurnSpeed and altTurnResistance set the
      * control settings; a value that is not a number is reported; one outside C's range (5-55, 4-64, 0-1)
-     * is clamped and reported.
+     * is clamped and reported. modifierBank1..4 set the weapon modifier banks (C resources, sent to the
+     * server at the start).
      * BEHAVIOR: an unknown {@code key...} resource is reported; other resources are reported as ignored.
      * BEHAVIOR: binding Escape is reported (it always quits); parse problems of the file are reported.
      *
@@ -106,6 +107,11 @@ public final class KeyConfig {
             return;
         }
         if (setting(src, e)) {
+            return;
+        }
+        int bank = modifierBank(e.name());
+        if (bank >= 0) {
+            settings.modifierBanks[bank] = e.value().trim();
             return;
         }
         if (e.name().startsWith("key")) {
@@ -140,6 +146,16 @@ public final class KeyConfig {
             ok.append(ok.isEmpty() ? "" : " ").append(s);
         }
         return ok.toString();
+    }
+
+    /** BEHAVIOR: 0..3 for modifierBank1..4 (any case), else -1. */
+    static int modifierBank(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        if (n.length() == 13 && n.startsWith("modifierbank")) {
+            int b = n.charAt(12) - '1';
+            return b >= 0 && b < 4 ? b : -1;
+        }
+        return -1;
     }
 
     private boolean setting(String src, XpilotRc.Entry e) {

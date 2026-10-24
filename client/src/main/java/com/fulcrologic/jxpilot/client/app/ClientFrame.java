@@ -113,6 +113,7 @@ public final class ClientFrame {
         this.help = new KeyHelp("Keys (" + keys.source() + ")" + (helpHint != null ? " - " + helpKeys.get(0)
             + " closes" : ""), keys.helpLines());
         conn.sendSettings(settings.copyTo(settingsMsg), 0);
+        conn.setModifierBanks(settings.modifierBanks);
     }
 
     /**
