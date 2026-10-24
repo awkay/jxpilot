@@ -773,8 +773,8 @@ class MessagesTest {
             assertAll(
                 () -> assertTrue(ok, "accepts a well formed body"),
                 () -> assertEquals(3, n, "ticks 107..109 are newer than the acked 106"),
-                () -> assertEquals(InputHistory.HEADER_SIZE + 3 * InputHistory.ENTRY_SIZE, written,
-                    "header + 3 entries of 18 bytes"),
+                () -> assertEquals(7 + 19 + 11 + 19, written,
+                    "header 7, then each entry's flags and the fields that differ: 109 and 107 with taps, 108 without"),
                 () -> assertEquals(109, r.newestTick(), "carries the newest tick"),
                 () -> assertEquals(109, h.newestTick(), "the history reports the newest tick"),
                 () -> assertEquals(3, r.count(), "count"),
@@ -874,26 +874,82 @@ class MessagesTest {
         }
 
         @Test
-        @DisplayName("the reader rejects short, empty, overlong and lying bodies")
+        @DisplayName("compact entries: steady keys cost one byte per older entry; the send sequence counts and wraps")
+        void compact() {
+            InputHistory steady = new InputHistory();
+            InputHistory changing = new InputHistory();
+            for (int t = 1; t <= 8; t++) {
+                steady.set(t, T, 0, 0);
+                changing.set(t, t, 0, 0);
+            }
+            ByteBuffer a = buf();
+            steady.write(a, 0);
+            int steadySize = a.position();
+            ByteBuffer b = buf();
+            changing.write(b, 0);
+            int changingSize = b.position();
+            a.flip();
+            InputReader r = new InputReader();
+            r.wrap(a);
+            int firstSeq = r.seq();
+            ByteBuffer c = buf();
+            steady.write(c, 0);
+            c.flip();
+            InputReader r2 = new InputReader();
+            r2.wrap(c);
+            InputHistory w = new InputHistory();
+            w.set(1, 0, 0, 0);
+            for (int i = 0; i < 65_536; i++) {
+                w.write(buf(), 0);
+            }
+            int wrapped = w.nextSeq();
+            assertAll(
+                () -> assertEquals(7 + 9 + 7, steadySize, "8 entries of one held mask: 23 bytes"),
+                () -> assertEquals(7 + 8 * 9, changingSize, "keys changing every tick: 79 bytes"),
+                () -> assertEquals(T, r.keys(7), "the oldest entry's keys are the next-newer's"),
+                () -> assertEquals(0L, r.taps(7), "no taps"),
+                () -> assertEquals(0, r.aimTurn(7), "no aim"),
+                () -> assertEquals(0, firstSeq, "the first datagram has sequence 0"),
+                () -> assertEquals(1, r2.seq(), "the next one 1"),
+                () -> assertEquals(0, wrapped, "the u16 sequence wraps"));
+        }
+
+        @Test
+        @DisplayName("the reader rejects short, empty, overlong, unknown-flag and truncated bodies")
         void malformed() {
-            ByteBuffer shortB = ByteBuffer.allocate(4);
-            ByteBuffer zero = ByteBuffer.allocate(5);
-            zero.putInt(1).put((byte) 0).flip();
-            ByteBuffer lying = ByteBuffer.allocate(5 + 2 * 18 - 1);
-            lying.putInt(1).put((byte) 2).position(lying.capacity()).flip();
-            ByteBuffer exact = ByteBuffer.allocate(5 + 2 * 18);
-            exact.putInt(1).put((byte) 2).position(exact.capacity()).flip();
-            ByteBuffer nine = ByteBuffer.allocate(5 + 9 * 18);
-            nine.putInt(1).put((byte) 9).position(nine.capacity()).flip();
-            ByteBuffer eight = ByteBuffer.allocate(5 + 8 * 18);
-            eight.putInt(1).put((byte) 8).position(eight.capacity()).flip();
+            ByteBuffer shortB = ByteBuffer.allocate(6);
+            ByteBuffer zero = ByteBuffer.allocate(7);
+            zero.putShort((short) 0).putInt(1).put((byte) 0).flip();
+            ByteBuffer nine = ByteBuffer.allocate(7 + 9);
+            nine.putShort((short) 0).putInt(1).put((byte) 9).position(nine.capacity()).flip();
+            ByteBuffer eight = ByteBuffer.allocate(7 + 8);
+            eight.putShort((short) 0).putInt(1).put((byte) 8).position(eight.capacity()).flip();
+            ByteBuffer unknown = ByteBuffer.allocate(8);
+            unknown.putShort((short) 0).putInt(1).put((byte) 1).put((byte) 8).flip();
+            ByteBuffer truncated = ByteBuffer.allocate(7 + 1 + 7);
+            truncated.putShort((short) 0).putInt(1).put((byte) 1).put((byte) InputHistory.F_KEYS)
+                .position(truncated.capacity()).flip();
+            ByteBuffer exact = ByteBuffer.allocate(7 + 1 + 8 + 8 + 2);
+            exact.putShort((short) 5).putInt(1).put((byte) 1)
+                .put((byte) (InputHistory.F_KEYS | InputHistory.F_TAPS | InputHistory.F_AIM))
+                .putLong(3).putLong(4).putShort((short) -5).flip();
+            InputReader ex = new InputReader();
+            boolean exactOk = ex.wrap(exact);
+            ByteBuffer missingEntry = ByteBuffer.allocate(7 + 1);
+            missingEntry.putShort((short) 0).putInt(1).put((byte) 2).put((byte) 0).flip();
             assertAll(
                 () -> assertFalse(new InputReader().wrap(shortB), "shorter than the header"),
                 () -> assertFalse(new InputReader().wrap(zero), "no entry"),
-                () -> assertFalse(new InputReader().wrap(lying), "a count larger than the body"),
-                () -> assertTrue(new InputReader().wrap(exact), "a body exactly holding its entries"),
                 () -> assertFalse(new InputReader().wrap(nine), "more than MAX_REDUNDANCY entries"),
-                () -> assertTrue(new InputReader().wrap(eight), "exactly MAX_REDUNDANCY entries"));
+                () -> assertTrue(new InputReader().wrap(eight), "exactly MAX_REDUNDANCY flag-only entries"),
+                () -> assertFalse(new InputReader().wrap(unknown), "an unknown flag bit"),
+                () -> assertFalse(new InputReader().wrap(truncated), "keys flagged but cut short"),
+                () -> assertFalse(new InputReader().wrap(missingEntry), "fewer entries than the count"),
+                () -> assertTrue(exactOk, "a body exactly holding its fields"),
+                () -> assertEquals(5, ex.seq(), "its sequence"),
+                () -> assertEquals(3L, ex.keys(0), "keys"),
+                () -> assertEquals(4L, ex.taps(0), "taps"),
+                () -> assertEquals(-5, ex.aimTurn(0), "aim"));
         }
     }
 

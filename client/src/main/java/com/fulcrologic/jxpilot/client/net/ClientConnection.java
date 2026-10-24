@@ -79,6 +79,8 @@ public final class ClientConnection {
     public static final int MAX_RELIABLE_PER_FLUSH = 8;
     /** Number of DISCONNECT copies sent on quit (PROTOCOL.md). */
     public static final int DISCONNECT_COPIES = 3;
+    /** Slack (ticks) from which the repeat is skipped: the next final send is the second copy (a quarter to spare). */
+    public static final double REPEAT_SKIP_SLACK = 1.25;
     /** A PING for the round trip time goes out this often while PLAYING ({@link #netDiagnostics()}). */
     public static final long PING_INTERVAL_NANOS = 1_000_000_000L;
 
@@ -153,8 +155,14 @@ public final class ClientConnection {
     private boolean inputSent;
     private long lastInputSend;
     private long lastSentKeys;
-    /** The newest tick whose entry is final (sent at its boundary). */
+    /**
+     * The newest tick whose entry is final (sent at its boundary) and when it went; the final ticks after which the
+     * early copy and the repeat went out.
+     */
     private int finalTick;
+    private long finalSentAt;
+    private int earlyFor = Integer.MIN_VALUE;
+    private int repeatFor = Integer.MIN_VALUE;
     /** Keys of the previous frame, and keys that went down during the tick being collected (for taps). */
     private long frameKeys;
     private long pressedKeys;
@@ -286,6 +294,8 @@ public final class ClientConnection {
         pendingAim = 0;
         pressedKeys = 0;
         frameKeys = 0;
+        earlyFor = Integer.MIN_VALUE;
+        repeatFor = Integer.MIN_VALUE;
         input.reset();
         haveInputAck = false;
         ackedInputTick = 0;
@@ -434,8 +444,12 @@ public final class ClientConnection {
      * BEHAVIOR: when the predicted tick N passes the last final one, entry N is set (keys held now, taps = keys that
      * went down during its tick and are up now, the aim summed over its tick) and sent at once; that starts the
      * next tick's collection. Ticks the clock skipped hold the previous keys ({@link InputHistory#set}).
-     * BEHAVIOR: within a tick, a key change sends an early copy of the next entry (N+1, as collected so far),
-     * at most once per {@link #MIN_INPUT_GAP_NANOS}; a change inside that gap goes out with the next send.
+     * BEHAVIOR: within a tick, a key change sends an early copy of the next entry (N+1, as collected so far), once
+     * per tick and not within {@link #MIN_INPUT_GAP_NANOS} of the previous send; later changes go out with the
+     * next send.
+     * BEHAVIOR: a quarter tick after the final send the INPUT is repeated once (a second copy before the deadline),
+     * unless the slack estimate is at least {@link #REPEAT_SKIP_SLACK} ticks: the next final send then arrives in
+     * time as that second copy.
      * BEHAVIOR: every INPUT carries the entries newer than the inputTick of the newest snapshot, at least 1 and
      * at most {@link #MAX_INPUT_REDUNDANCY}.
      * BEHAVIOR: aimTurn is clamped to i16 per entry; nothing is sent during the transport-error pause
@@ -471,17 +485,21 @@ public final class ClientConnection {
             pendingAim = 0;
             stats.keyboardSent(n, latestTick / slotTicks);
             transmitInput(keys, nowNanos);
+            finalSentAt = nowNanos;
             clock.sent(n, nowNanos);
             return n;
         }
-        if (keys != lastSentKeys && nowNanos - lastInputSend >= MIN_INPUT_GAP_NANOS) {
+        if (keys != lastSentKeys && earlyFor != n && nowNanos - lastInputSend >= MIN_INPUT_GAP_NANOS) {
             int next = n + 1;
+            earlyFor = n;
             input.set(next, keys, pressedKeys & ~keys, pendingAim);
             transmitInput(keys, nowNanos);
             return next;
         }
-        if (nowNanos - lastInputSend >= inputIntervalNanos / 2) {
-            transmitInput(lastSentKeys, nowNanos);   // a mid-tick repeat: a second copy before the deadline
+        if (repeatFor != n && nowNanos - finalSentAt >= inputIntervalNanos / 4
+            && !(clock.slackEstimate() >= REPEAT_SKIP_SLACK)) {
+            repeatFor = n;
+            transmitInput(lastSentKeys, nowNanos);   // the repeat: a second copy before the deadline
             return input.newestTick();
         }
         return 0;

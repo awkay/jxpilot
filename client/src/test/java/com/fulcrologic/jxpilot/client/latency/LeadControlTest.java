@@ -56,6 +56,11 @@ class LeadControlTest {
         final List<double[]> lead = new ArrayList<>();
         long spawn;
 
+        /** Ticks where the server applied other keys than the client's final entry (starved ticks aside). */
+        int misapplied;
+        int checked;
+        private long starvedBefore;
+
         Run(Scenario s, long seed) {
             rig = new LatencyRig(Course.FREE_FLIGHT.serverArgs(0), s.direction(), s.direction(), seed,
                 InputToPhoton.tickPhase(seed));
@@ -70,6 +75,17 @@ class LeadControlTest {
                 times.add(new long[] {t, r.server.net.inputStarvations(playerId), r.server.net.inputLate(playerId),
                     k.jumps()});
                 lead.add(new double[] {k.leadTicks(t), k.lastSlack(), k.targetSlack(c.netDiagnostics().jitterMs() * 1e6), k.slackEstimate()});
+                int tick = r.server.net.currentTick();
+                long starved = r.server.net.inputStarvations(playerId);
+                com.fulcrologic.jxpilot.server.world.Player p = r.server.world().byId(playerId);
+                com.fulcrologic.jxpilot.common.net.InputHistory h = c.input();
+                if (p != null && starved == starvedBefore && h.has(tick)) {
+                    checked++;
+                    if (p.lastReceivedKeys != h.keys(tick)) {
+                        misapplied++;
+                    }
+                }
+                starvedBefore = starved;
             };
         }
 
@@ -211,6 +227,37 @@ class LeadControlTest {
             () -> assertEquals(0, starvedAfterDown, "the step down never starves (the lead only drifts down)"),
             () -> assertTrue(downSettled > 0 && downSettled - down < 8 * SEC,
                 "the step down drains 1.4 ticks of slack at 3%, in the band within 8 s: " + (downSettled - down) / 1e6));
+    }
+
+    @Test
+    @Timeout(value = 3, unit = TimeUnit.MINUTES)
+    @DisplayName("reordered datagrams: taps within ticks (early copies that differ from the final), every tick applies"
+        + " the client's final entry without loss (reported with 1% loss)")
+    void reorderedInputs() {
+        StringBuilder out = new StringBuilder("[lead reorder] cell: misapplied/checked ticks, starved\n");
+        List<String> bad = new ArrayList<>();
+        for (int rtt : new int[] {100, 300}) {
+            for (Scenario.Loss l : new Scenario.Loss[] {Scenario.Loss.NONE, Scenario.Loss.UNIFORM_1}) {
+                Scenario s = new Scenario(rtt, Scenario.Jitter.REORDER, l);
+                Run r = new Run(s, 41 + rtt);
+                long spawn = r.spawn;
+                // a 12 ms tap every 97 ms drifts through the tick: some land at its end, where the early copy (key
+                // down) and the final send (key up, the tap) differ and a held-back early copy arrives last
+                long tap = com.fulcrologic.jxpilot.common.net.ControlKey.TURN_LEFT.mask();
+                r.rig.setKeys(t -> (t - spawn) % (97 * MS) < 12 * MS ? tap : 0L);
+                r.until(spawn + 20 * SEC);
+                long starved = r.starvations(spawn + 6 * SEC, spawn + 20 * SEC);
+                out.append(String.format(Locale.ROOT, "  %-12s %d/%d, %d (reordered %d, sent %d)%n", s.label(), r.misapplied,
+                    r.checked, starved, r.rig.link.up().reordered(), r.rig.client.connection().packetsSent()));
+                // with loss a final send can be lost while its early copy got through: the server then applies the
+                // early copy, legitimately (the client learns it from PREDICT's applied-input check)
+                if ((l == Scenario.Loss.NONE && r.misapplied != 0) || r.checked < 200) {
+                    bad.add(s.label() + " misapplied " + r.misapplied + " of " + r.checked);
+                }
+            }
+        }
+        System.out.print(out);
+        assertEquals(List.of(), bad, "with reordering and no loss every applied entry is the client's final one");
     }
 
     @Test

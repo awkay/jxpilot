@@ -227,8 +227,11 @@ DISPLAY and MODIFIER_BANK are client → server messages although their ids are 
 
 ## INPUT — `InputHistory` (client) / `InputReader` (server)
 
-`u32 newestTick, u8 count (1..8)`, then `count ×` (`u64 keys, u64 taps, i16 aimTurn`) newest first: entry i
-is for tick `newestTick - i`.
+`u16 seq, u32 newestTick, u8 count (1..8)`, then `count` entries newest first (entry i is for tick
+`newestTick - i`), each `u8 flags` (1 keys follow, 2 taps follow, 4 aimTurn follows; other bits are malformed)
+and only those fields: `u64 keys` (absent: the next-newer entry's keys, 0 for the newest), `u64 taps` (absent: 0),
+`i16 aimTurn` (absent: 0). `seq` counts the client's INPUT datagrams (u16, wrapping). Eight entries of one held
+mask are 23 bytes; keys changing every tick, 79.
 
 - `keys` is a `ControlKey` mask: bit = `keys_t` value − 1 (KEY_LOCK_NEXT … KEY_DEFLECTOR = 64 keys).
 - `taps` are keys that went down and came up again within the tick, so a quick tap is not lost. The server
@@ -245,11 +248,11 @@ The input collected while the predicted clock runs from N-1 to N is entry N, fin
 started the clock):
 
 - when the predicted tick passes the last final one, the entry is set and sent at once (never held back);
-- a key change within the tick sends an early copy of the next entry, as collected so far, at most every
-  1/120 s after the previous send (a change inside that gap goes with the next send);
-- half a tick after the last send, the INPUT is repeated unchanged (a second copy before the deadline:
-  redundancy only helps while the tick is still ahead, so this halves the loss of a tick's entry to a lone
-  lost datagram);
+- a key change within the tick sends an early copy of the next entry, as collected so far, once per tick and
+  not within 1/120 s of the previous send (later changes go with the next send);
+- a quarter tick after the final send the INPUT is repeated once (a second copy before the deadline:
+  redundancy only helps while the tick is still ahead), unless the slack estimate is at least 1.25 ticks, when
+  the next final send is that second copy;
 - every INPUT carries every entry newer than the newest snapshot's `inputTick`, at least 1 and at most 8;
   ticks the clock skipped hold the previous keys;
 - after a transport error (VPN drop, ICMP port unreachable) INPUT, reliable data and ACKs pause for 250 ms.
@@ -258,8 +261,11 @@ started the clock):
 the host gets entry T (`GameHost.input(id, T, keys, taps, aim)`). A missing entry repeats the last applied
 keys without taps or aim and counts a *starvation* (not before the first entry is applied). An entry for a
 tick already run is dropped (counted *late* when that tick starved); one more than simHz ticks ahead is
-dropped. A copy of an entry from an older datagram than the one that wrote it is ignored (reordering); a
-copy from the same or a newer one replaces it (an early copy revised by the final send).
+dropped. A copy of an entry from a datagram sent before the one that wrote it (`seq`, compared modulo 2^16)
+is ignored: reordering, typically an early copy arriving after the final send of the same tick, which carries
+the same newest tick. A copy from the same or a later datagram replaces it (an early copy revised by the final
+send). A copy arriving after its tick ran is counted late, once, when the tick starved or applied a different
+copy (a final send that lost to its early copy).
 
 The **input slack** is the smallest margin, in 1/16 tick, by which entries arrived before their tick over the
 last second: the margin of the copies that delivered what the server applies (an entry's first copy, a later

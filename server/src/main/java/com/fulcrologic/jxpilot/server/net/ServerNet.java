@@ -502,12 +502,12 @@ public final class ServerNet {
         }
         int next = tick + 1;
         double toGo = haveTickTime ? 1 - Math.clamp((now - lastTickAt) / tickNanos, 0, 1) : 1;
-        int packetTick = input.newestTick();
+        int packetSeq = input.seq();
         for (int i = input.count() - 1; i >= 0; i--) {
             int t = input.tick(i);
             double margin = (double) (t - next) + toGo;
             int m16 = (int) Math.floor(Math.clamp(margin * 16, -1e6, 1e6));
-            c.inputs.offer(t, input.keys(i), input.taps(i), input.aimTurn(i), packetTick, next, m16);
+            c.inputs.offer(t, input.keys(i), input.taps(i), input.aimTurn(i), packetSeq, next, m16);
         }
     }
 

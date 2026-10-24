@@ -100,24 +100,68 @@ class InputBufferTest {
     }
 
     @Test
-    @DisplayName("duplicated: a copy changes nothing; a copy with other data revises the entry; only changes count for the slack")
+    @DisplayName("duplicated: a copy changes nothing; a later datagram's copy revises the entry; only changes count"
+        + " for the slack")
     void duplicated() {
         InputBuffer b = buf();
-        b.offer(10, A, 0, 0, 10, 10, 16);
-        int dup = b.offer(10, A, 0, 0, 10, 10, 2);
-        int rev = b.offer(10, B, C, 5, 10, 10, 6);
-        int redundant = b.offer(10, B, C, 5, 11, 10, 1);
+        b.offer(10, A, 0, 0, 1, 10, 16);
+        int dup = b.offer(10, A, 0, 0, 1, 10, 2);
+        int rev = b.offer(10, B, C, 5, 2, 10, 6);
+        int redundant = b.offer(10, B, C, 5, 3, 10, 1);
         int slack = b.slack16();
         b.take(10);
         assertAll(
-            () -> assertEquals(InputBuffer.REVISED, dup, "the same packet again rewrites the same data"),
-            () -> assertEquals(InputBuffer.REVISED, rev, "a copy with other data revises the entry"),
-            () -> assertEquals(InputBuffer.REVISED, redundant, "a newer packet's copy rewrites it"),
+            () -> assertEquals(InputBuffer.REVISED, dup, "the same datagram again rewrites the same data"),
+            () -> assertEquals(InputBuffer.REVISED, rev, "a later datagram with other data revises the entry"),
+            () -> assertEquals(InputBuffer.REVISED, redundant, "a later datagram's copy rewrites it"),
             () -> assertEquals(B, b.keys(), "the revised keys are applied"),
             () -> assertEquals(C, b.taps(), "and taps"),
             () -> assertEquals(5, b.aimTurn(), "and aim"),
             () -> assertEquals(6, slack,
                 "the copy that changed the entry counts (6); repeats of what is stored (2, 1) do not"));
+    }
+
+    @Test
+    @DisplayName("an early copy arriving after the final send of the same tick is stale (the send sequence orders"
+        + " them; both carry the same newest tick)")
+    void earlyCopyAfterFinal() {
+        InputBuffer b = buf();
+        int fin = b.offer(11, 0, A, 0, 7, 11, 8);
+        int early = b.offer(11, A, 0, 0, 6, 11, 12);
+        b.take(11);
+        InputBuffer w = buf();
+        w.offer(11, A, 0, 0, 65_535, 11, 8);
+        int wrappedNewer = w.offer(11, B, 0, 0, 0, 11, 8);
+        int wrappedOlder = w.offer(11, C, 0, 0, 65_534, 11, 8);
+        w.take(11);
+        assertAll(
+            () -> assertEquals(InputBuffer.STORED, fin, "the final (sequence 7) first"),
+            () -> assertEquals(InputBuffer.STALE, early, "the reordered early copy (sequence 6) is stale"),
+            () -> assertEquals(0L, b.keys(), "the final's keys are applied, not the early copy's"),
+            () -> assertEquals(A, b.taps(), "with its tap"),
+            () -> assertEquals(InputBuffer.REVISED, wrappedNewer, "sequence 0 follows 65535"),
+            () -> assertEquals(InputBuffer.STALE, wrappedOlder, "65534 is before it"),
+            () -> assertEquals(B, w.keys(), "across the wrap the newer datagram's copy is applied"));
+    }
+
+    @Test
+    @DisplayName("a final arriving after its tick applied an early copy is counted late when it differs, and its"
+        + " margin enters the slack; a copy of what was applied is not")
+    void lateRevision() {
+        InputBuffer b = buf();
+        b.offer(10, A, 0, 0, 1, 10, 8);
+        b.take(10);
+        int same = b.offer(10, A, 0, 0, 2, 11, -3);
+        long afterSame = b.late();
+        int differs = b.offer(10, B, 0, 0, 3, 11, -5);
+        int again = b.offer(10, C, 0, 0, 4, 11, -9);
+        assertAll(
+            () -> assertEquals(InputBuffer.PAST, same, "past"),
+            () -> assertEquals(0L, afterSame, "a copy of the applied entry is no late arrival"),
+            () -> assertEquals(InputBuffer.PAST, differs, "past"),
+            () -> assertEquals(1L, b.late(), "a differing copy is counted once"),
+            () -> assertEquals(InputBuffer.PAST, again, "past"),
+            () -> assertEquals(-5, b.slack16(), "its margin is the slack; the later ones do not count"));
     }
 
     @Test
@@ -129,13 +173,13 @@ class InputBufferTest {
         b.take(11);
         int lateStarved = b.offer(11, B, 0, 0, 11, 12, -4);
         int again = b.offer(11, B, 0, 0, 12, 12, -20);
-        int lateTaken = b.offer(10, C, 0, 0, 12, 12, -30);
+        int lateTaken = b.offer(10, A, 0, 0, 12, 12, -30);
         int lateSlack = b.slack16();
         b.take(12);
         assertAll(
             () -> assertEquals(InputBuffer.PAST, lateStarved, "11 was taken: PAST"),
             () -> assertEquals(InputBuffer.PAST, again, "and again"),
-            () -> assertEquals(InputBuffer.PAST, lateTaken, "10 was taken with its entry: PAST"),
+            () -> assertEquals(InputBuffer.PAST, lateTaken, "10 was taken with its entry: PAST (a copy of it: not late)"),
             () -> assertEquals(1L, b.late(), "counted once, for the starved 11 only"),
             () -> assertEquals(A, b.keys(), "the held keys are still 10's"),
             () -> assertEquals(2L, b.starvations(), "11 and 12 starved"),

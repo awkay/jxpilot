@@ -29,8 +29,11 @@ import java.nio.ByteBuffer;
  * Client side of the INPUT packet (protocol v2, docs/latency-fixes.md §4.3): one entry per local tick, keyed by the
  * tick it is for, written redundantly so a lost datagram does not lose key edges. Allocation free.
  * <p>
- * INPUT body: {@code u32 newestTick, u8 count}, then {@code count *} ({@code u64 keys, u64 taps, i16 aimTurn}),
- * entries newest first (entry i is for tick {@code newestTick - i}).
+ * INPUT body: {@code u16 seq, u32 newestTick, u8 count}, then {@code count} entries newest first (entry i is for
+ * tick {@code newestTick - i}), each {@code u8 flags} and the fields its flags name: {@link #F_KEYS} {@code u64
+ * keys} (absent: the next-newer entry's keys, 0 for the newest), {@link #F_TAPS} {@code u64 taps} (absent: 0),
+ * {@link #F_AIM} {@code i16 aimTurn} (absent: 0). {@code seq} counts the datagrams written (u16, wrapping), so the
+ * server can order two copies of the same tick's entry that came in reordered datagrams.
  * <ul>
  *   <li>{@code keys}: the {@link ControlKey} mask held at the end of the tick (or when last sent);</li>
  *   <li>{@code taps}: keys that went down and came up again within the tick, so a quick tap is not lost; the server
@@ -46,10 +49,16 @@ public final class InputHistory {
     public static final int MAX_REDUNDANCY = 8;
     /** Ticks remembered (a power of two). */
     public static final int RING = 32;
-    /** Bytes per entry. */
-    public static final int ENTRY_SIZE = 18;
+    /** Bytes of the largest entry (flags, keys, taps, aim). */
+    public static final int ENTRY_SIZE = 19;
     /** Bytes before the entries. */
-    public static final int HEADER_SIZE = 5;
+    public static final int HEADER_SIZE = 7;
+    /** Entry flag: the keys follow (else the next-newer entry's). */
+    public static final int F_KEYS = 1;
+    /** Entry flag: the taps follow (else none). */
+    public static final int F_TAPS = 2;
+    /** Entry flag: the aim turn follows (else 0). */
+    public static final int F_AIM = 4;
 
     private final long[] keys = new long[RING];
     private final long[] taps = new long[RING];
@@ -57,6 +66,7 @@ public final class InputHistory {
     private final int[] tickOf = new int[RING];
     private boolean any;
     private int newest;
+    private int seq;
     /** The first tick set since the reset: nothing older is ever sent. */
     private int first;
 
@@ -64,6 +74,12 @@ public final class InputHistory {
     public void reset() {
         any = false;
         newest = 0;
+        seq = 0;
+    }
+
+    /** The send sequence of the next {@link #write} (u16). */
+    public int nextSeq() {
+        return seq;
     }
 
     /** Whether any entry has been set since the last {@link #reset}. */
@@ -149,23 +165,37 @@ public final class InputHistory {
 
     /**
      * Write an INPUT body: the newest entry and every older one newer than {@code ackedTick} (the snapshot header's
-     * inputTick), newest first, at least 1 and at most {@link #MAX_REDUNDANCY}.
+     * inputTick), newest first, at least 1 and at most {@link #MAX_REDUNDANCY}, each with only the fields that differ
+     * from their default (keys: the next-newer entry's; taps and aim: 0).
      * <p>
-     * BEHAVIOR: writes {@link #pending(int)} entries; returns that count (0 and nothing written before the first
-     * entry).
+     * BEHAVIOR: writes {@link #pending(int)} entries under the next send sequence, which then advances (u16);
+     * returns the entry count (0, nothing written and no sequence used before the first entry).
      */
     public int write(ByteBuffer out, int ackedTick) {
         int n = pending(ackedTick);
         if (n == 0) {
             return 0;
         }
+        out.putShort((short) seq);
+        seq = (seq + 1) & 0xFFFF;
         out.putInt(newest);
         out.put((byte) n);
+        long ref = 0;
         for (int i = 0; i < n; i++) {
             int s = (newest - i) & (RING - 1);
-            out.putLong(keys[s]);
-            out.putLong(taps[s]);
-            out.putShort(aim[s]);
+            long k = keys[s];
+            int flags = (k != ref ? F_KEYS : 0) | (taps[s] != 0 ? F_TAPS : 0) | (aim[s] != 0 ? F_AIM : 0);
+            out.put((byte) flags);
+            if ((flags & F_KEYS) != 0) {
+                out.putLong(k);
+            }
+            if ((flags & F_TAPS) != 0) {
+                out.putLong(taps[s]);
+            }
+            if ((flags & F_AIM) != 0) {
+                out.putShort(aim[s]);
+            }
+            ref = k;
         }
         return n;
     }

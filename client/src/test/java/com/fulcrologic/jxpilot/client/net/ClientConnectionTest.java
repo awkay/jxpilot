@@ -59,17 +59,19 @@ class ClientConnectionTest {
         static Input of(ByteBuffer p) {
             PacketHeader h = new PacketHeader();
             h.read(p);
-            int newest = p.getInt();
-            int n = p.get();
+            com.fulcrologic.jxpilot.common.net.InputReader r = new com.fulcrologic.jxpilot.common.net.InputReader();
+            if (!r.wrap(p)) {
+                throw new AssertionError("malformed INPUT");
+            }
             List<Long> keys = new ArrayList<>();
             List<Long> taps = new ArrayList<>();
             List<Integer> aims = new ArrayList<>();
-            for (int i = 0; i < n; i++) {
-                keys.add(p.getLong());
-                taps.add(p.getLong());
-                aims.add((int) p.getShort());
+            for (int i = 0; i < r.count(); i++) {
+                keys.add(r.keys(i));
+                taps.add(r.taps(i));
+                aims.add(r.aimTurn(i));
             }
-            return new Input(h.type(), newest, keys, taps, aims);
+            return new Input(h.type(), r.newestTick(), keys, taps, aims);
         }
     }
 
@@ -1025,7 +1027,8 @@ class ClientConnectionTest {
                 () -> assertEquals(E0 + 1, early, "then it sends the next entry early"),
                 () -> assertEquals(4L, (long) earlyIn.keys.get(0), "with the key held so far"),
                 () -> assertEquals(E0 + 1, earlyIn.newest, "as entry E0+1"),
-                () -> assertEquals(0, releasedInGap, "the release 2 ms later waits"),
+                () -> assertEquals(E0 + 1, releasedInGap,
+                    "the release 2 ms later is no second early copy (one per tick); the repeat goes out instead"),
                 () -> assertEquals(E0 + 1, fin1, "the final E0+1 at its tick"),
                 () -> assertEquals(0L, (long) fin1In.keys.get(0), "keys up"),
                 () -> assertEquals(4L, (long) fin1In.taps.get(0), "the press and release within the tick are a tap"),
@@ -1038,8 +1041,8 @@ class ClientConnectionTest {
         }
 
         @Test
-        @DisplayName("steady keys send two INPUTs per tick at any frame rate (the final and a mid-tick repeat);"
-            + " toggling keys at most 3 per tick")
+        @DisplayName("steady keys send two INPUTs per tick at any frame rate (the final and the repeat); toggling keys"
+            + " at most 3 per tick")
         void rate() {
             ticking();
             int steady = 0;
@@ -1058,15 +1061,15 @@ class ClientConnectionTest {
             int fToggling = toggling;
             assertAll(
                 () -> assertEquals(120, fSteady, 1, "steady keys at 1000 fps: the final and a repeat per tick (60 Hz)"),
-                () -> assertTrue(fToggling <= 180, "toggling: the final per tick plus early copies 1/120 s apart ("
+                () -> assertTrue(fToggling <= 182, "toggling: at most the final, one early copy and the repeat per tick ("
                     + fToggling + ")"),
-                () -> assertTrue(fToggling >= 120, "early copies do go out (" + fToggling + ")"),
+                () -> assertTrue(fToggling >= 150, "early copies do go out (" + fToggling + ")"),
                 () -> assertEquals(fSteady + fToggling, inputs().size(), "one INPUT datagram per send"));
         }
 
         @Test
-        @DisplayName("taps: a press and release on consecutive frames; early copies carry the taps so far; the gap and"
-            + " repeat edges are inclusive")
+        @DisplayName("taps: a press and release on consecutive frames; early copies carry the taps so far; one early"
+            + " copy per tick, 1/120 s after any send; the repeat a quarter tick after the final; edges inclusive")
         void tapsAndEdges() {
             ticking();
             c.sendInput(0, 0, at(0));
@@ -1075,18 +1078,23 @@ class ClientConnectionTest {
             int fin = c.sendInput(0, 0, at(1));
             Input tapped = Input.of(t.last());
             c.sendInput(2, 0, at(1) + 3 * MS);
-            c.sendInput(0, 0, at(1) + 5 * MS);
-            int early = c.sendInput(8, 0, at(1) + ClientConnection.MIN_INPUT_GAP_NANOS);
+            int repeated = c.sendInput(0, 0, at(1) + 5 * MS);
+            int tooSoon = c.sendInput(8, 0, at(1) + 5 * MS + ClientConnection.MIN_INPUT_GAP_NANOS - 1);
+            int early = c.sendInput(8, 0, at(1) + 5 * MS + ClientConnection.MIN_INPUT_GAP_NANOS);
             Input earlyIn = Input.of(t.last());
             c.sendInput(8, 0, at(2));
-            int repeat = c.sendInput(8, 0, at(2) + INTERVAL / 2);
+            int notYet = c.sendInput(8, 0, at(2) + INTERVAL / 4 - 1);
+            int repeat = c.sendInput(8, 0, at(2) + INTERVAL / 4);
             assertAll(
                 () -> assertEquals(E0 + 1, fin, "the final entry"),
                 () -> assertEquals(4L, (long) tapped.taps.get(0), "a key down one frame and up the next is a tap"),
-                () -> assertEquals(E0 + 2, early, "an early copy exactly 1/120 s after the final send"),
+                () -> assertEquals(E0 + 1, repeated, "the repeat a quarter tick after the final send"),
+                () -> assertEquals(0, tooSoon, "an early copy waits 1/120 s after any send"),
+                () -> assertEquals(E0 + 2, early, "and goes out exactly then"),
+                () -> assertEquals(0, notYet, "no repeat before a quarter tick"),
                 () -> assertEquals(2L, (long) earlyIn.taps.get(0), "it carries the tap of 2 so far"),
                 () -> assertEquals(8L, (long) earlyIn.keys.get(0), "and the held 8"),
-                () -> assertEquals(E0 + 2, repeat, "a repeat exactly half a tick after the last send"));
+                () -> assertEquals(E0 + 2, repeat, "a repeat exactly a quarter tick after the final send"));
         }
 
         @Test
@@ -1114,20 +1122,20 @@ class ClientConnectionTest {
         }
 
         @Test
-        @DisplayName("half a tick after the last send, unchanged keys repeat the INPUT (a second copy before the deadline)")
+        @DisplayName("a quarter tick after the final send the INPUT is repeated once (a second copy before the deadline)")
         void repeat() {
             ticking();
             c.sendInput(3, 0, at(0));
-            int early = c.sendInput(3, 0, at(0) + 7 * MS);
-            int half = c.sendInput(3, 0, at(0) + 9 * MS);
+            int early = c.sendInput(3, 0, at(0) + 3 * MS);
+            int half = c.sendInput(3, 0, at(0) + 5 * MS);
             Input in = Input.of(t.last());
             int again = c.sendInput(3, 0, at(0) + 15 * MS);
             assertAll(
-                () -> assertEquals(0, early, "nothing before half a tick (8.3 ms)"),
+                () -> assertEquals(0, early, "nothing before a quarter tick (4.2 ms)"),
                 () -> assertEquals(E0, half, "the repeat carries the newest entry"),
                 () -> assertEquals(E0, in.newest, "for E0"),
                 () -> assertEquals(3L, (long) in.keys.get(0), "unchanged"),
-                () -> assertEquals(0, again, "not again within the half tick"),
+                () -> assertEquals(0, again, "once per tick"),
                 () -> assertEquals(2, inputs().size(), "two datagrams"));
         }
 
