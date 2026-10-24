@@ -711,7 +711,7 @@ somebody starts it, and its human count follows the players.
 
 The shortcuts follow the rows as they are listed, so they change when the order does; look at the bracket before
 pressing a key. After a choice the status line says `Starting NAME...` while the lobby loads a map that was not
-running (a second or two for the biggest maps), then the game begins as on any server. If the map stops
+running (well under a second: the biggest bundled map, planetx at 310x267, loads in about 0.15 s), then the game begins as on any server. If the map stops
 before you join (its last player just left), you land back on the list.
 
 To skip the list in a script, pass `--lobby-map NAME` to the client (<<07-client-reference.adoc#game-flags,client flags>>).
