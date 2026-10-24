@@ -110,8 +110,15 @@ public final class AppLauncher {
         ClientGame game = new ClientGame();
         String shape = ShipShapeResource.resolve(o.shape(), o.shipShapeFile(), keys.shipShape(), keys.shipShapeFile(),
             ShipShapeResource::readLatin1, System.err);
-        GameConnection conn = GameConnector.open(target, o.bind(), game, o.name(), o.team(), shape,
-            o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime());
+        GameConnection conn;
+        try {
+            conn = GameConnector.open(target, o.bind(), game, o.name(), o.team(), shape,
+                o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime());
+        } catch (IOException e) {
+            // C xpilot.c: an unknown host or a socket that cannot open is an error message and exit 1
+            System.err.println("Cannot connect to " + target + ": " + e.getMessage());
+            return 1;
+        }
         new GameApp(o, game, conn, target.toString(), null, keys).run();
         return 0;
     }
