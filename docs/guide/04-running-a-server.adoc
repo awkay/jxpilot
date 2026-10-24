@@ -20,13 +20,14 @@ Items, balls, targets and races are not on it yet (<<01-introduction.adoc#status
 
 [source,shell]
 ----
-java [JVM options] -jar jxpilot-server-VERSION.jar --map MAP [--port N] [--bind SELECTOR ...] [--bindWait]
+java [JVM options] -jar jxpilot-server-VERSION.jar [--map MAP] [--port N] [--bind SELECTOR ...] [--bindWait]
      [-OPTION VALUE ...] [CONFIGFILE]
 java -jar jxpilot-server-VERSION.jar --list-maps
 ----
 
-`--map MAP`:: The map to serve (required, here or in the config file): the name of a map built into
-the jar, such as `default` or `tourmination`, or the path of an XPilot `.xp` file. See <<map-selection>>.
+`--map MAP`:: The map to serve (here or as `mapFileName` in the config file): the name of a map built
+into the jar, such as `default` or `tourmination`, or the path of an XPilot `.xp` file. Without it the
+server plays the built-in `default`, as the C server plays its `default.xp`. See <<map-selection>>.
 `--list-maps`:: Print the maps built into the jar, with their size, title and author, and exit.
 `--port N`:: The UDP port to listen on, default 15345 (option `contactPort`).
 `--bind SELECTOR`:: Which local addresses to listen on, default `all`. Repeat it or give a comma list:
@@ -93,7 +94,8 @@ found by the interface rescan as `listening on ...`, `unbound ...` or `interface
 [[map-selection]]
 == Choosing the map
 
-The map comes from `--map` (or `mapFileName: MAP` in the config file). A map file holds the map
+The map comes from `--map` (or `mapFileName: MAP` in the config file); with neither, it is the built-in
+`default` ("The Newbie Globe"). A map file holds the map
 itself (`mapData`) and usually options for it, such as `gravity` or `teamPlay`
 (<<06-config-and-maps.adoc#config-and-maps,Config and map files>>). The 19 maps that come with
 JXPilot are built into the jar and listed in <<06-config-and-maps.adoc#shipped-maps,Shipped maps>>

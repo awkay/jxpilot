@@ -117,20 +117,21 @@ class ServerOptionsTest {
     }
 
     @Test
-    @DisplayName("a config file's mapFileName is resolved the same way; an unknown map lists the bundled ones")
+    @DisplayName("a config file's mapFileName is resolved the same way; an unknown map lists the bundled ones; no map"
+        + " at all is the bundled default, as C's MAPDIR/default.xp")
     void configFileMapName() throws IOException {
         Path cfg = file("server.cfg", "mapFileName: doggy\n");
         Options o = Server.readOptions(new String[] {cfg.toString()});
         String msg = assertThrows(java.io.FileNotFoundException.class,
             () -> Server.readOptions(new String[] {"--map", "no-such-map"}), "an unknown map is an error").getMessage();
-        String none = assertThrows(IllegalArgumentException.class, () -> Server.readOptions(new String[0]),
-            "no map at all").getMessage();
+        Options none = Server.readOptions(new String[0]);
+        Options defaultFile = Server.readOptions(new String[] {"--map", DEFAULT_MAP});
         assertAll(
             () -> assertEquals("DoggyStyle", o.getString(Opt.MAP_NAME), "the bundled doggy"),
             () -> assertTrue(msg.startsWith("map 'no-such-map' not found: it is not a bundled map"), "says why: " + msg),
             () -> assertTrue(msg.contains("Bundled maps: blood-music2, CAMD, cloudscape, default,"), "lists them: " + msg),
-            () -> assertEquals("--map NAME|FILE is required (--list-maps shows the bundled maps)", none,
-                "no map names the option and --list-maps"));
+            () -> assertEquals(defaultFile.toConfigText(), none.toConfigText(), "no map plays maps/default.xp"),
+            () -> assertEquals(OptionOrigin.MAP, none.originOf(Opt.MAP_NAME), "read as the map"));
     }
 
     @Test

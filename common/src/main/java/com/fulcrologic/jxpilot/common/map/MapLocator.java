@@ -43,6 +43,9 @@ import java.util.List;
  * here the bundled maps come first (see DEVIATIONS-server.md).
  */
 public final class MapLocator {
+    /** The map a server plays when none is given: the bundled {@code default.xp}, as C uses {@code MAPDIR/default.xp}. */
+    public static final String DEFAULT_MAP = "default";
+
     private MapLocator() {}
 
     /** {@link #resolve(String, BundledMaps, Path)} with the bundled maps and the current directory. */

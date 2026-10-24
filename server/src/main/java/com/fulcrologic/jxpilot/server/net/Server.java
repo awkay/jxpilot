@@ -81,7 +81,7 @@ public final class Server implements AutoCloseable {
     }
 
     /**
-     * Parse {@code --map NAME|FILE [--port N] [--bind sel ...] [--bindWait] [config file]} (plus any
+     * Parse {@code [--map NAME|FILE] [--port N] [--bind sel ...] [--bindWait] [config file]} (plus any
      * XPilot option), load the map, bind, and start the loop.
      * Sources are read in C {@code Parser}'s order: command line, the defaults file ({@link DefaultsFile}:
      * XPilot's lib/defaults unless {@code --defaults FILE|none}), the optional positional config file (also
@@ -150,9 +150,10 @@ public final class Server implements AutoCloseable {
      * file (origin DEFAULTS), then the map (origin MAP), then the {@code expand} list; precedence per
      * {@link Options#setValue}.
      * BEHAVIOR: the map is {@code mapFileName} (from {@code --map} or the config file) as {@link MapLocator} resolves
-     * it: a bundled map by name, else a file.
+     * it: a bundled map by name, else a file. Without one it is {@link MapLocator#DEFAULT_MAP} (C's default map,
+     * cmdline.c {@code Conf_default_map()}).
      *
-     * @throws IllegalArgumentException for an unknown option, two config files or no {@code --map}
+     * @throws IllegalArgumentException for an unknown option or two config files
      * @throws java.io.FileNotFoundException when the map is neither bundled nor a file (the message lists the
      *                                       bundled maps)
      */
@@ -165,10 +166,7 @@ public final class Server implements AutoCloseable {
             ConfigParser.parseFile(config, OptionOrigin.DEFAULTS, opts);
         }
         String mapFile = opts.getString(Opt.MAP_FILE_NAME);
-        if (mapFile == null) {
-            throw new IllegalArgumentException("--map NAME|FILE is required (--list-maps shows the bundled maps)");
-        }
-        MapLocator.resolve(mapFile).parseInto(opts);
+        MapLocator.resolve(mapFile == null ? MapLocator.DEFAULT_MAP : mapFile).parseInto(opts);
         opts.finishParsing();
         return opts;
     }
