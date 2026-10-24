@@ -38,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 
 @DisplayName("Math utilities")
 class MathTest {
@@ -147,6 +148,24 @@ class MathTest {
                 () -> assertTrue(again < 1024, "a cached shape allocates nothing worth mentioning (" + again + " B)"),
                 () -> assertTrue(first < 30_000, "a first parse stays small (" + first + " B)"),
                 () -> assertEquals(a.numPoints(), evicted.numPoints(), "after eviction it parses again, equal"));
+        }
+
+        @Test
+        @DisplayName("the cache keeps exactly the CACHE_SIZE most recently used shapes")
+        void lru() {
+            String shape = "(SH: 15,0 -9,8 -9,-8)(GU: 15,0)(EN: -7,0)";
+            ShipShape a = ShipShape.parseOrDefault(shape);
+            for (int i = 0; i < ShipShape.CACHE_SIZE - 1; i++) {
+                ShipShape.parseOrDefault("(SH: 15,0 -9,8 -9,-8)(GU: 15," + (200 + i) + ")");
+            }
+            ShipShape kept = ShipShape.parseOrDefault(shape);
+            for (int i = 0; i < ShipShape.CACHE_SIZE; i++) {
+                ShipShape.parseOrDefault("(SH: 15,0 -9,8 -9,-8)(GU: 15," + (300 + i) + ")");
+            }
+            ShipShape dropped = ShipShape.parseOrDefault(shape);
+            assertAll(
+                () -> assertSame(a, kept, "with CACHE_SIZE - 1 newer shapes it is still cached"),
+                () -> assertNotSame(kept, dropped, "after CACHE_SIZE newer shapes it was evicted"));
         }
     }
 

@@ -253,6 +253,50 @@ class ClientWorldTest {
         }
 
         @Test
+        @DisplayName("records arriving out of order: the newest two by tick give the acceleration, in x and y")
+        void selfPredictedOutOfOrder() {
+            WorldFixture f = new WorldFixture(true);
+            f.begin(104).self(7, 0, 104, 58, 6, 7, 0).ingestAtTick(104);
+            f.begin(100).self(7, 0, 100, 50, 4, 8, 0).ingestAtTick(100);
+            f.begin(102).self(7, 0, 102, 54, 4, 8, 0).ingestAtTick(102);
+            ClientWorld w = f.world;
+            w.update(at(105.2));
+            // from 102 to 104 (0.5 frames): a = (2 / 0.5, -1 / 0.5) = (4, -2); 1.2 ticks = 0.3 frames past 104
+            assertAll(
+                () -> assertEquals(104, w.newestSelfTick(), "newest by tick, not by arrival"),
+                () -> assertEquals(104 + 6 * 0.3 + 0.5 * 4 * 0.09, w.selfX(), CLOCK_EPS, "x"),
+                () -> assertEquals(58 + 7 * 0.3 - 0.5 * 2 * 0.09, w.selfY(), CLOCK_EPS, "y decelerates"),
+                () -> assertEquals(7 - 2 * 0.3, w.selfVy(), 1e-5, "vy + ay t"));
+        }
+
+        @Test
+        @DisplayName("blending keeps the old accelerating trajectory in x and y; a jump beyond TELEPORT_PX over "
+            + "both axes snaps")
+        void selfBlended2d() {
+            WorldFixture f = new WorldFixture(true);
+            f.begin(100).self(7, 0, 100, 50, 4, 4, 0).ingestAtTick(100);
+            f.begin(102).self(7, 0, 101, 51, 5, 5, 0).ingestAtTick(102);
+            ClientWorld w = f.world;
+            w.update(at(103.0));
+            f.begin(104).self(7, 0, 120, 60, 5, 5, 0).ingestAtTick(104);
+            w.update(at(103.2));
+            float bx = w.selfX();
+            float by = w.selfY();
+            WorldFixture g = new WorldFixture(false);
+            g.begin(100).self(7, 0, 10, 20, 0, 0, 0).ingestAtTick(100);
+            g.world.update(at(101.0));
+            g.begin(102).self(7, 0, 310, 220, 0, 0, 0).ingestAtTick(102);
+            g.world.update(at(101.2));
+            // old trajectory from 102 (a = (1 / 0.5) = 2 in both axes) at 103.2: 0.3 frames
+            assertAll(
+                () -> assertEquals(101 + 5 * 0.3 + 0.5 * 2 * 0.09, bx, CLOCK_EPS, "x: no jump at the new SELF"),
+                () -> assertEquals(51 + 5 * 0.3 + 0.5 * 2 * 0.09, by, CLOCK_EPS, "y: no jump at the new SELF"),
+                () -> assertEquals(310.0, g.world.selfX(), CLOCK_EPS,
+                    "300 px in x and 200 in y: 361 px, beyond TELEPORT_PX (350): snapped"),
+                () -> assertEquals(220.0, g.world.selfY(), CLOCK_EPS, "y snapped too"));
+        }
+
+        @Test
         @DisplayName("a new SELF that differs from the prediction is blended in: no jump, the error decays")
         void selfBlended() {
             WorldFixture f = new WorldFixture(true);

@@ -407,12 +407,14 @@ class SnapshotBuilderTest {
             Decoded d = decode(n);
             b.status &= ~Obj.PAUSE;
             b.used &= ~Has.REFUEL;
-            a.used &= ~Has.REFUEL;
+            a.fs = w.map.fuels().size();
             c.used &= ~Has.REFUEL;
             for (ByteBuffer p : parts) {
                 p.clear();
             }
             Decoded none = decode(new SnapshotBuilder(w).build(a, 1, w.events.burstSeq(), false, parts));
+            a.used &= ~Has.REFUEL;
+            a.fs = -1;
             float[] k = d.connectors.isEmpty() ? new float[5] : d.connectors.get(0);
             assertAll(
                 () -> assertEquals(1, d.connectors.size(), "only A's beam (B is paused, C out of view)"),
@@ -421,7 +423,8 @@ class SnapshotBuilderTest {
                 () -> assertEquals(f.y(), k[1], 0.25, "from the station y"),
                 () -> assertEquals(200.5, k[2], 0.25, "to the ship x"),
                 () -> assertEquals(120.25, k[3], 0.25, "to the ship y"),
-                () -> assertEquals(0, none.connectors.size(), "no refuelling: no beams"));
+                () -> assertEquals(0, none.connectors.size(),
+                    "no refuelling, or a station index past the map's stations: no beams"));
         }
     }
 

@@ -61,22 +61,30 @@ public final class Tracker {
      */
     static final double CELL_PX = 16;
 
-    /** A uniform grid hash over the later objects. */
+    /**
+     * A uniform grid hash over the later objects. The world is a whole number of cells (each at least the
+     * requested size), so neighbouring cells across the wrap seam are as wide as any others; without wrap,
+     * positions outside the world fall in the edge cells.
+     */
     private static final class Grid {
         final int[] head = new int[BUCKETS];
         final int[] chain;
-        double cell;
+        double cellW;
+        double cellH;
         int cellsX;
         int cellsY;
+        boolean wrap;
 
         Grid(int cap) {
             chain = new int[cap];
         }
 
-        void build(int m, float[] bx, float[] by, double size, double worldW, double worldH) {
-            cell = size;
-            cellsX = Math.max(1, (int) Math.ceil(worldW / cell));
-            cellsY = Math.max(1, (int) Math.ceil(worldH / cell));
+        void build(int m, float[] bx, float[] by, double size, double worldW, double worldH, boolean wrapping) {
+            cellsX = Math.max(1, (int) (worldW / size));
+            cellsY = Math.max(1, (int) (worldH / size));
+            cellW = worldW / cellsX;
+            cellH = worldH / cellsY;
+            wrap = wrapping;
             java.util.Arrays.fill(head, -1);
             for (int j = 0; j < m; j++) {
                 int h = bucket(cellX(bx[j]), cellY(by[j]));
@@ -86,11 +94,16 @@ public final class Tracker {
         }
 
         int cellX(double x) {
-            return Math.floorMod((int) Math.floor(x / cell), cellsX);
+            return cell(x / cellW, cellsX);
         }
 
         int cellY(double y) {
-            return Math.floorMod((int) Math.floor(y / cell), cellsY);
+            return cell(y / cellH, cellsY);
+        }
+
+        private int cell(double c, int cells) {
+            int i = (int) Math.floor(c);
+            return wrap ? Math.floorMod(i, cells) : Math.max(0, Math.min(cells - 1, i));
         }
 
         static int bucket(int cx, int cy) {
@@ -159,13 +172,13 @@ public final class Tracker {
         worldW = worldWidth;
         worldH = worldHeight;
         wrap = wrapping;
-        fine.build(m, bx, by, CELL_PX, worldW, worldH);
+        fine.build(m, bx, by, CELL_PX, worldW, worldH, wrap);
         boolean anyUnknown = false;
         for (int i = 0; i < n && !anyUnknown; i++) {
             anyUnknown = aState[i] == UNKNOWN;
         }
         if (anyUnknown) {
-            coarse.build(m, bx, by, Math.max(CELL_PX, maxSpeed * frames + KNOWN_SLACK_PX), worldW, worldH);
+            coarse.build(m, bx, by, Math.max(CELL_PX, maxSpeed * frames + KNOWN_SLACK_PX), worldW, worldH, wrap);
         }
         minUnknown2 = minSpeed * frames * minSpeed * frames;
         for (int i = 0; i < n; i++) {
@@ -219,16 +232,17 @@ public final class Tracker {
         secondD = Double.MAX_VALUE;
         query++;
         Grid g = state == UNKNOWN ? coarse : fine;
-        int k = (int) Math.ceil(r / g.cell);
+        int kx = (int) Math.ceil(r / g.cellW);
+        int ky = (int) Math.ceil(r / g.cellH);
         int cx = g.cellX(px);
         int cy = g.cellY(py);
         // with wrap, a span covering the whole world visits each column/row once
-        boolean allX = wrap && 2 * k + 1 >= g.cellsX;
-        boolean allY = wrap && 2 * k + 1 >= g.cellsY;
-        int x0 = allX ? 0 : cx - k;
-        int nx = allX ? g.cellsX : 2 * k + 1;
-        int y0 = allY ? 0 : cy - k;
-        int ny = allY ? g.cellsY : 2 * k + 1;
+        boolean allX = wrap && 2 * kx + 1 >= g.cellsX;
+        boolean allY = wrap && 2 * ky + 1 >= g.cellsY;
+        int x0 = allX ? 0 : cx - kx;
+        int nx = allX ? g.cellsX : 2 * kx + 1;
+        int y0 = allY ? 0 : cy - ky;
+        int ny = allY ? g.cellsY : 2 * ky + 1;
         int key = aKey[i];
         for (int ty = 0; ty < ny; ty++) {
             int gy = y0 + ty;
