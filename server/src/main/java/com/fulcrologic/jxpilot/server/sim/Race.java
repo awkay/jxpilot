@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.Checkpoint;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.world.Events;
@@ -247,6 +248,10 @@ public final class Race {
                 totalPts += (10 + 2 * active) >> (position - 1 + i);
             }
             float pts = totalPts / finished;
+            // only the first ship over the line gets the fanfare
+            if (position == 1) {
+                Sounds.playAll(w, SoundEvent.PLAYER_WIN);
+            }
             for (int k = 0; k < w.numPlayers; k++) {
                 Player pl = w.playerAt(k);
                 if ((pl.status & Obj.PAUSE) != 0 || waiting(pl) || (pl.status & Obj.FINISH) == 0) {

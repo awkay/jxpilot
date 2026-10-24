@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.Treasure;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.net.Records;
@@ -147,6 +148,7 @@ public final class Balls implements Segment.TreasureHook {
                 m.treasureHave[m.ballTreasure[h]] = false;
                 pl.have |= Has.BALL;
                 pl.ball = -1;
+                Sounds.play(w, pl.px, pl.py, SoundEvent.CONNECT_BALL);
             }
         } else {
             int mindist = (int) mp.ballConnectorLength;
@@ -198,6 +200,8 @@ public final class Balls implements Segment.TreasureHook {
             }
             if (cnt == 0) {
                 pl.have &= ~Has.BALL;
+            } else {
+                Sounds.play(w, pl.px, pl.py, SoundEvent.DROP_BALL);
             }
         }
     }
@@ -285,6 +289,7 @@ public final class Balls implements Segment.TreasureHook {
             return -1;
         }
         if ((o.status[h] & Obj.NOEXPLOSION) == 0) {
+            Sounds.play(w, o.px[h], o.py[h], SoundEvent.EXPLODE_BALL);
             sim.debris.make(o.prevX[h], o.prevY[h], o.vx[h], o.vy[h], o.owner[h], o.team[h], Obj.DEBRIS,
                 Shots.DEBRIS_MASS, Obj.GRAVITY, Records.ObjColor.RED, Records.BurstKind.DEBRIS, 8, 10, 20, 0,
                 Const.RES - 1, 10, 50, 10, 2 * (w.params.fps + 15));
@@ -403,6 +408,7 @@ public final class Balls implements Segment.TreasureHook {
                 }
             }
         }
+        Sounds.playAll(w, SoundEvent.DESTROY_BALL);
         w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(" < ").append(pl.name).append("'s (")
             .append(pl.team).append(") team has destroyed team ").append(tdTeam).append(" treasure >");
         if (!somebody) {

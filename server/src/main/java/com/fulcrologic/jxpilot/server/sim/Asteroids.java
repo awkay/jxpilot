@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Concentrator;
 import com.fulcrologic.jxpilot.common.math.XMath;
@@ -94,6 +95,8 @@ public final class Asteroids {
      * mine leaves the previous value), so it is kept across the loop as in C.
      */
     private float damage;
+    /** C {@code AsteroidCollision}'s {@code sound}: like {@link #damage}, once set it stays set for the call. */
+    private boolean sound;
 
     /** {@link #mass} by size 1..{@link #MAX_SIZE}. */
     private final float[] masses = new float[MAX_SIZE + 1];
@@ -386,6 +389,7 @@ public final class Asteroids {
                 itemDrop.drop((int) x, (int) y, vx, vy);
             }
         }
+        Sounds.play(w, x, y, SoundEvent.ASTEROID_BREAK);
         m.asteroidNum -= 1 << (size - 1);
         m.removeAsteroid(h);
     }
@@ -453,6 +457,7 @@ public final class Asteroids {
         ModeState m = w.modes;
         ModeParams mp = w.modeParams;
         damage = 0;
+        sound = false;
         for (int i = 0; i < m.asteroidCount; i++) {
             int ast = m.asteroidList[i];
             if (o.life[ast] <= 0) {
@@ -492,6 +497,7 @@ public final class Asteroids {
                             o.life[h] = 0;
                         }
                         damage = (float) Balls.ED_BALL_HIT;
+                        sound = true;
                     }
                     case Obj.ASTEROID -> {
                         double hit = Math.abs(2 * o.mass[ast] * StrictMath.hypot(o.vx[ast], o.vy[ast]));
@@ -499,6 +505,7 @@ public final class Asteroids {
                         damage = (float) -Math.abs(2 * o.mass[h] * StrictMath.hypot(o.vx[h], o.vy[h]));
                         sim.objPhysics.deltaMvElastic(ast, h);
                         o.fuseLife[h] = o.life[h] - 1;
+                        sound = true;
                     }
                     case Obj.SPARK -> {
                         o.life[h] = 0;
@@ -519,12 +526,14 @@ public final class Asteroids {
                         o.life[h] = 0;
                         sim.objPhysics.deltaMv(ast, h);
                         damage = (float) Targets.ED_SHOT_HIT;
+                        sound = true;
                     }
                     case Obj.SMART_SHOT, Obj.TORPEDO, Obj.HEAT_SHOT -> {
                         o.life[h] = 0;
                         sim.objPhysics.deltaMv(ast, h);
                         damage = (float) (Targets.ED_SMART_SHOT_HIT
                             / ((sim.targets.mini(h) + 1) * (sim.targets.power(h) + 1)));
+                        sound = true;
                     }
                     default -> {
                         sim.objPhysics.deltaMv(ast, h);
@@ -535,6 +544,9 @@ public final class Asteroids {
                     if (o.life[ast] <= o.fuseLife[ast]) {
                         // C: long += float (DFLOAT damage), so the sum is a float
                         o.life[ast] = (long) ((float) o.life[ast] + (damage * LIFE) / (256 * 25 * hits(o.size[ast])));
+                    }
+                    if (sound) {
+                        Sounds.play(w, o.px[ast], o.py[ast], SoundEvent.ASTEROID_HIT);
                     }
                     if (o.life[ast] < 0) {
                         o.life[ast] = 0;

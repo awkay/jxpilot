@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Target;
 import com.fulcrologic.jxpilot.common.net.Msg;
@@ -338,6 +339,9 @@ public final class Targets {
         if (!somebody) {
             return;
         }
+        // C passes the target's block coordinates as the sound position (walls.c:1714, 1771), so only ships
+        // near the map origin hear it; kept for parity
+        Sounds.play(w, targ.bx(), targ.by(), SoundEvent.DESTROY_TARGET);
         int total = 0;
         int remaining = 0;
         for (int j = 0; j < w.targetDeadTime.length; j++) {
