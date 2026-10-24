@@ -98,6 +98,11 @@ public final class ClientConnection {
     private final Msg.Ping ping = new Msg.Ping();
     /** Our own RTT probe, and the PONG that echoes it. */
     private final Msg.Ping probe = new Msg.Ping();
+    /** PINGs still waiting for their PONG: id and send time per slot (a PONG may come back after several seconds). */
+    public static final int PROBES = 16;
+    private final int[] probeIds = new int[PROBES];
+    private final long[] probeTimes = new long[PROBES];
+    private final boolean[] probeOpen = new boolean[PROBES];
     private final NetDiagnostics diagnostics = new NetDiagnostics();
     private boolean pingArmed;
     private long nextPingAt;
@@ -265,7 +270,7 @@ public final class ClientConnection {
         pendingAim = 0;
         ackedInputSeq = input.latestSeq();
         ioBackoff = false;
-        pingArmed = false;
+        pingArmed = false; // open probes of the old session cannot match: its PONGs carry the old session id
     }
 
     /**
@@ -488,6 +493,10 @@ public final class ClientConnection {
                 }
                 probe.id++;
                 probe.timeNanos = nowNanos;
+                int slot = probe.id & (PROBES - 1);
+                probeIds[slot] = probe.id;
+                probeTimes[slot] = nowNanos;
+                probeOpen[slot] = true;
                 begin(PacketType.PING);
                 probe.write(tx);
                 transmit();
@@ -669,8 +678,9 @@ public final class ClientConnection {
     }
 
     /**
-     * BEHAVIOR: a PONG echoing our newest PING (its id) is an RTT sample of now minus its send time; a PONG of an
-     * older or unknown PING is ignored; a body shorter than {@link #PING_SIZE} counts as malformed.
+     * BEHAVIOR: a PONG echoing one of our last {@link #PROBES} PINGs (id and send time), not answered before, is an
+     * RTT sample of now minus its send time (so RTTs of several seconds are still measured); a duplicate, forged or
+     * too old PONG is ignored; a body shorter than {@link #PING_SIZE} counts as malformed.
      */
     private void onPong(ByteBuffer in) {
         if (in.remaining() < PING_SIZE) {
@@ -679,7 +689,9 @@ public final class ClientConnection {
         }
         int id = in.getInt(in.position());
         long sent = in.getLong(in.position() + 4);
-        if (id == probe.id && sent == probe.timeNanos) {
+        int slot = id & (PROBES - 1);
+        if (probeOpen[slot] && probeIds[slot] == id && probeTimes[slot] == sent) {
+            probeOpen[slot] = false;
             diagnostics.rttSample(now - sent);
         }
     }
@@ -709,6 +721,9 @@ public final class ClientConnection {
             }
         } else {
             stats.measure(tick / slotTicks, PacketStats.DROP);
+            if (tick - latestTick < 0) {
+                diagnostics.lateSnapshot(tick); // an older tick; the same tick again is just another part
+            }
         }
         snapshots++;
         listener.onSnapshot(in, now);

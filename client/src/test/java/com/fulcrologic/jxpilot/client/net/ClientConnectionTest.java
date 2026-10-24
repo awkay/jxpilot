@@ -595,6 +595,47 @@ class ClientConnectionTest {
         }
 
         @Test
+        @DisplayName("a PONG that returns after newer PINGs went out still counts (RTT over 1 s); a duplicate does not")
+        void slowPong() {
+            playing(0);
+            c.flush(0);
+            c.flush(1000 * MS);
+            ByteBuffer p = lastPing();
+            int id = p.getInt();
+            long sentAt = p.getLong();
+            c.flush(2000 * MS);
+            c.flush(3000 * MS); // two newer PINGs out
+            t.in.add(pkt(PacketType.PONG, SESSION, 0, b -> b.putInt(id).putLong(sentAt)));
+            c.update(3500 * MS);
+            double rtt = c.netDiagnostics().rttMs();
+            t.in.add(pkt(PacketType.PONG, SESSION, 0, b -> b.putInt(id).putLong(sentAt)));
+            c.update(3600 * MS);
+            assertAll(
+                () -> assertEquals(2500, rtt, 1e-9, "the first PING's PONG after 2.5 s"),
+                () -> assertEquals(2500, c.netDiagnostics().lastRttMs(), 1e-9, "the duplicate is no second sample"));
+        }
+
+        @Test
+        @DisplayName("an older snapshot tick is late, not lost; another part of the newest tick is neither")
+        void lateSnapshots() {
+            playing(0);
+            // WELCOME: 60 Hz, 30 snapshots/s: a snapshot every 2 ticks, the loss window 28 snapshots = 56 ticks
+            for (int k = 2; k <= 56; k += 2) {
+                if (k != 20) {
+                    int tk = k;
+                    t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(tk)));
+                }
+            }
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(56))); // another part of 56
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(20))); // late
+            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(58))); // closes the window
+            c.update(MS);
+            assertAll(
+                () -> assertEquals(100 / 28.0, c.netDiagnostics().latePercent(), 1e-9, "tick 20 was late"),
+                () -> assertEquals(0, c.netDiagnostics().lossPercent(), 1e-9, "every snapshot arrived; the extra part counts for nothing"));
+        }
+
+        @Test
         @DisplayName("late frames keep the PING schedule's phase; after a stall the schedule restarts without a burst")
         void probeSchedule() {
             playing(0);
@@ -634,6 +675,18 @@ class ClientConnectionTest {
                 () -> assertEquals(1, one, "one PING"),
                 () -> assertEquals(1, stillOne, "not again on the next frame"),
                 () -> assertEquals(2, pings(), "the next at 3000 ms"));
+        }
+
+        /** The newest PING sent, positioned after its header. */
+        ByteBuffer lastPing() {
+            for (int i = t.out.size() - 1; i >= 0; i--) {
+                ByteBuffer b = t.out.get(i).duplicate();
+                PacketHeader h = new PacketHeader();
+                if (h.read(b) && h.type() == PacketType.PING) {
+                    return b;
+                }
+            }
+            throw new AssertionError("no PING sent");
         }
 
         long pings() {

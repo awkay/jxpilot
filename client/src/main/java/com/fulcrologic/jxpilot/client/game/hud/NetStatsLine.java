@@ -53,8 +53,8 @@ public final class NetStatsLine {
     }
 
     /**
-     * BEHAVIOR: {@code rtt R ms  interp I ms  jitter J ms  loss L%  lead D  slack S  corr C/s P px}: R and I whole
-     * milliseconds, J and L one decimal, D one decimal tick, S two decimal ticks, C one decimal, P whole pixels. Any
+     * BEHAVIOR: {@code rtt R ms  interp I ms  jitter J ms  loss L% late K%  lead D  slack S  corr C/s P px}: R and I
+     * whole milliseconds, J, L and K (late, reordered snapshots, not counted as lost) one decimal, D one decimal tick, S two decimal ticks, C one decimal, P whole pixels. Any
      * value that is NaN (or all of them when {@code d} is null) prints "-" without its unit.
      */
     public CharBuf format(NetDiagnostics d, double interpMs) {
@@ -63,6 +63,7 @@ public final class NetStatsLine {
         field("  interp ", interpMs, 0, " ms");
         field("  jitter ", d == null ? Double.NaN : d.jitterMs(), 1, " ms");
         field("  loss ", d == null ? Double.NaN : d.lossPercent(), 1, "%");
+        field(" late ", d == null ? Double.NaN : d.latePercent(), 1, "%");
         field("  lead ", d == null ? Double.NaN : d.leadTicks, 1, "");
         field("  slack ", d == null ? Double.NaN : d.inputSlackTicks, 2, "");
         field("  corr ", d == null ? Double.NaN : d.correctionsPerSecond, 1, "/s");

@@ -158,6 +158,45 @@ class EmulatedTransportTest {
     }
 
     @Test
+    @DisplayName("a forwarded packet the inner transport refuses is lost and counted; later sends are unaffected")
+    void innerFailure() throws Exception {
+        VirtualClock clock = new VirtualClock(0);
+        Inner inner = new Inner(clock);
+        Transport failing = new Transport() {
+            int calls;
+
+            @Override
+            public boolean send(ByteBuffer p) throws java.io.IOException {
+                calls++;
+                if (calls == 1) {
+                    throw new java.io.IOException("no route");
+                }
+                if (calls == 2) {
+                    return false;
+                }
+                return inner.send(p);
+            }
+
+            @Override
+            public int receive(ByteBuffer b) {
+                return inner.receive(b);
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        EmulatedTransport t = new EmulatedTransport(failing, new LinkEmulator(clock, new LinkProfile(), new LinkProfile(), 1));
+        boolean a = t.send(ByteBuffer.wrap("a".getBytes()));
+        boolean b = t.send(ByteBuffer.wrap("b".getBytes()));
+        boolean c = t.send(ByteBuffer.wrap("c".getBytes()));
+        assertAll(
+            () -> assertTrue(a && b && c, "every send is accepted by the link, whatever happens downstream"),
+            () -> assertEquals(2, t.forwardErrors(), "the IOException and the refusal each lost one packet"),
+            () -> assertEquals(List.of("c"), inner.sent, "the third arrives"));
+    }
+
+    @Test
     @DisplayName("loss on the link drops datagrams silently; close closes the inner transport")
     void lossAndClose() throws Exception {
         VirtualClock clock = new VirtualClock(0);

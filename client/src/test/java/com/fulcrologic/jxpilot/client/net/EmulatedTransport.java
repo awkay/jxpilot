@@ -43,6 +43,7 @@ public final class EmulatedTransport implements Transport {
     private final Transport inner;
     private final LinkEmulator link;
     private final ByteBuffer scratch;
+    private long forwardErrors;
 
     public EmulatedTransport(Transport inner, LinkEmulator link) {
         this.inner = inner;
@@ -55,13 +56,15 @@ public final class EmulatedTransport implements Transport {
     }
 
     /**
-     * BEHAVIOR: the datagram enters the uplink at the clock's time (consumed, as a channel send); due uplink
-     * packets are forwarded at once ({@link #pump()}). Always true: like UDP, a loss is silent.
+     * BEHAVIOR: the datagram enters the uplink at the clock's time (consumed, as a channel send) and true is returned:
+     * the emulated link accepted it; whether it arrives is the link's business, silently, as with UDP. Due uplink
+     * packets are then forwarded ({@link #forward()}); a failure forwarding one of them is that packet's loss
+     * ({@link #forwardErrors()}), never this call's exception.
      */
     @Override
-    public boolean send(ByteBuffer packet) throws IOException {
+    public boolean send(ByteBuffer packet) {
         link.up().send(packet, link.now(), 0, null);
-        pump();
+        forward();
         return true;
     }
 
@@ -76,23 +79,43 @@ public final class EmulatedTransport implements Transport {
         return Math.max(0, n);
     }
 
+    /** Uplink packets the inner transport refused (false or IOException): lost on the way. */
+    public long forwardErrors() {
+        return forwardErrors;
+    }
+
     /**
-     * Move what is due.
-     * <p>
-     * BEHAVIOR: first every uplink packet due at the clock's time goes to the inner transport's send, in delivery
-     * order; then everything the inner transport has received enters the downlink, stamped now (replies that the
-     * forwarded packets caused included).
+     * BEHAVIOR: every uplink packet due at the clock's time goes to the inner transport's send, in delivery order; one
+     * the inner send refuses (false or IOException) is lost and counted in {@link #forwardErrors()}.
      */
-    public void pump() throws IOException {
+    void forward() {
         long now = link.now();
         while (true) {
             scratch.clear();
             if (link.up().receive(scratch, now) < 0) {
-                break;
+                return;
             }
             scratch.flip();
-            inner.send(scratch);
+            try {
+                if (!inner.send(scratch)) {
+                    forwardErrors++;
+                }
+            } catch (IOException e) {
+                forwardErrors++;
+            }
         }
+    }
+
+    /**
+     * Move what is due.
+     * <p>
+     * BEHAVIOR: first the due uplink is forwarded ({@link #forward()}); then everything the inner transport has
+     * received enters the downlink, stamped now (replies that the forwarded packets caused included). An IOException
+     * from the inner receive propagates (the caller's receive failed).
+     */
+    public void pump() throws IOException {
+        long now = link.now();
+        forward();
         while (true) {
             scratch.clear();
             if (inner.receive(scratch) <= 0) {

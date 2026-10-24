@@ -352,6 +352,30 @@ class LinkDirectionTest {
         }
 
         @Test
+        @DisplayName("an uncapped spike with a very heavy tail is clamped at 60 s, never overflowing")
+        void hugeSpike() {
+            LinkDirection d = new LinkDirection(new LinkProfile().paretoSpikes(1, 20, 0.05, 0).fifo(false), 3, 2048, 8);
+            long send = 1_000 * MS;
+            long max = 0;
+            long min = Long.MAX_VALUE;
+            for (int i = 0; i < 1000; i++) {
+                d.send(packet(1), send, 0, null);
+                ByteBuffer dst = ByteBuffer.allocate(8);
+                while (d.inFlight() > 0) {
+                    long t = d.nextDue();
+                    max = Math.max(max, t - send);
+                    min = Math.min(min, t - send);
+                    d.receive(dst.clear(), t);
+                }
+            }
+            long mx = max;
+            long mn = min;
+            assertAll(
+                () -> assertTrue(mn >= 20 * MS, "every packet still gets at least the scale"),
+                () -> assertEquals(LinkDirection.MAX_DELAY_NANOS, mx, "the tail is clamped at 60 s (shape 0.05 reaches it)"));
+        }
+
+        @Test
         @DisplayName("spike probability 0: no spike even though the Pareto value is drawn")
         void noSpikes() {
             LinkDirection d = new LinkDirection(new LinkProfile().delayMs(10).paretoSpikes(0, 20, 1.5, 0), 1, 8, 64);

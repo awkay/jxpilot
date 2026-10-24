@@ -25,7 +25,7 @@ package com.fulcrologic.jxpilot.client.net;
 
 /**
  * Live network measurements for the HUD's net diagnostics line (docs/latency-fixes.md §7.6): round trip time
- * from PING/PONG, snapshot inter-arrival jitter and snapshot loss, plus the fields the phase 1 predictor will fill
+ * from PING/PONG, snapshot inter-arrival jitter, snapshot loss and late (reordered) snapshots, plus the fields the phase 1 predictor will fill
  * (input lead, input slack, corrections), NaN until then. Fed by {@link ClientConnection}; pure and allocation
  * free (time is a parameter).
  */
@@ -52,7 +52,9 @@ public final class NetDiagnostics {
     private double jitterNanos = Double.NaN;
     private int windowStart;
     private int windowReceived;
+    private int windowLate;
     private double lossPercent = Double.NaN;
+    private double latePercent = Double.NaN;
 
     /** Input lead of the predicted clock in ticks (phase 1b/1c); NaN until something measures it. */
     public double leadTicks = Double.NaN;
@@ -75,6 +77,7 @@ public final class NetDiagnostics {
         haveSnapshot = false;
         jitterNanos = Double.NaN;
         lossPercent = Double.NaN;
+        latePercent = Double.NaN;
     }
 
     /**
@@ -110,6 +113,7 @@ public final class NetDiagnostics {
             lastArrival = nowNanos;
             windowStart = tick;
             windowReceived = 0;
+            windowLate = 0;
             return;
         }
         int ticks = tick - lastTick;
@@ -125,14 +129,30 @@ public final class NetDiagnostics {
         if (span > LOSS_RESTART_WINDOWS * window) {
             windowStart = tick;
             windowReceived = 0;
+            windowLate = 0;
             return;
         }
         windowReceived++;
         if (span >= window) {
             double expected = span / (double) divisor;
             lossPercent = 100 * (1 - windowReceived / expected);
+            latePercent = 100 * windowLate / expected;
             windowStart = tick;
             windowReceived = 0;
+            windowLate = 0;
+        }
+    }
+
+    /**
+     * A snapshot for {@code tick}, older than the newest one, arrived (reordered or delayed behind a newer one).
+     * <p>
+     * BEHAVIOR: one inside the current loss window counts as received (so not as lost) and as late; an older one
+     * (from a window already read) changes nothing. Jitter is not affected.
+     */
+    public void lateSnapshot(int tick) {
+        if (haveSnapshot && tick - windowStart > 0 && tick - lastTick < 0) {
+            windowReceived++;
+            windowLate++;
         }
     }
 
@@ -151,8 +171,13 @@ public final class NetDiagnostics {
         return jitterNanos / 1e6;
     }
 
-    /** Snapshot loss of the last full window in percent, NaN before one. */
+    /** Snapshots of the last full window that never arrived, in percent; NaN before one. Late ones are not lost. */
     public double lossPercent() {
         return lossPercent;
+    }
+
+    /** Snapshots of the last full window that arrived late (after a newer one), in percent; NaN before one. */
+    public double latePercent() {
+        return latePercent;
     }
 }

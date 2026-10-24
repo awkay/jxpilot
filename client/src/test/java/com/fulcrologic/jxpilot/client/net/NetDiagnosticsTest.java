@@ -195,6 +195,46 @@ class NetDiagnosticsTest {
         }
     }
 
+    @Nested
+    @DisplayName("late snapshots")
+    class Late {
+        @Test
+        @DisplayName("an older tick inside the window counts as received and late, not lost; outside it, nothing")
+        void reordered() {
+            NetDiagnostics d = tenHz(1);
+            d.snapshot(100, 0);
+            for (int k = 101; k <= 127; k++) {
+                if (k != 110 && k != 111) {
+                    d.snapshot(k, 0);
+                }
+            }
+            d.lateSnapshot(110); // 110 arrives after 112..127
+            d.lateSnapshot(99); // before the window: ignored
+            d.lateSnapshot(100); // the window's first tick belongs to the window before: ignored
+            d.lateSnapshot(127); // not older than the newest: ignored
+            d.snapshot(128, 0);
+            assertAll(
+                () -> assertEquals(100 / 28.0, d.lossPercent(), 1e-9, "only 111 is lost"),
+                () -> assertEquals(100 / 28.0, d.latePercent(), 1e-9, "110 was late"));
+        }
+
+        @Test
+        @DisplayName("late before the first snapshot changes nothing; reset forgets the late reading")
+        void edges() {
+            NetDiagnostics d = tenHz(1);
+            d.lateSnapshot(5);
+            d.snapshot(0, 0);
+            for (int k = 1; k <= 28; k++) {
+                d.snapshot(k, 0);
+            }
+            double clean = d.latePercent();
+            d.reset(10, 1);
+            assertAll(
+                () -> assertEquals(0, clean, 1e-9, "no late snapshot in the window"),
+                () -> assertTrue(Double.isNaN(d.latePercent()), "reset forgets it"));
+        }
+    }
+
     @Test
     @DisplayName("before any reset a tick is 1/14 s (XPilot's default frame rate)")
     void defaultRate() {

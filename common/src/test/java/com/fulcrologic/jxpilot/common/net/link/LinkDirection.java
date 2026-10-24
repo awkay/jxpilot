@@ -39,6 +39,11 @@ import java.nio.ByteBuffer;
 public final class LinkDirection {
     /** Random draws per {@link #send}. */
     public static final int DRAWS_PER_PACKET = 7;
+    /**
+     * No packet is delayed longer than this (60 s): an uncapped heavy-tailed spike (shape well below 1) can draw
+     * values beyond what a long holds.
+     */
+    public static final long MAX_DELAY_NANOS = 60_000_000_000L;
 
     private final LinkProfile profile;
     private final LinkRandom rnd;
@@ -107,8 +112,8 @@ public final class LinkDirection {
      * leaves the bottleneck at max(now, end of the previous) + bytes / rate; a packet that would wait more than
      * queueLimit (when set) is dropped, counting {@link #queueDrops()}, and takes no link time. Without a cap it
      * leaves at once.
-     * BEHAVIOR: delivery = leave time + max(0, delay + sigma * N(0,1) + spike), the spike min(cap, Pareto(scale,
-     * shape)) with spikeProbability (cap 0 = uncapped), counting {@link #spikes()}.
+     * BEHAVIOR: delivery = leave time + clamp(delay + sigma * N(0,1) + spike, 0, {@link #MAX_DELAY_NANOS}), the
+     * spike min(cap, Pareto(scale, shape)) with spikeProbability (cap 0 = uncapped), counting {@link #spikes()}.
      * BEHAVIOR: a reordered packet (reorderProbability) gets reorderDelay more and is exempt from FIFO, counting
      * {@link #reordered()}; otherwise with fifo the delivery is no earlier than the previous FIFO packet's.
      * BEHAVIOR: a duplicated packet (duplicateProbability) is delivered twice at the same time, counting
@@ -155,7 +160,7 @@ public final class LinkDirection {
             spikes++;
             delay += p.spikeCapNanos > 0 ? Math.min(p.spikeCapNanos, spikeSize) : spikeSize;
         }
-        long at = leave + Math.max(0, Math.round(delay));
+        long at = leave + Math.round(Math.min(MAX_DELAY_NANOS, Math.max(0, delay)));
         if (reorder) {
             reordered++;
             at += p.reorderDelayNanos;
