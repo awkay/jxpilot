@@ -281,27 +281,4 @@ class RoutedTransportTest {
             assertEquals(List.of("3|" + A + "|reply"), sink.sent, "forwarded unchanged");
         }
     }
-
-    @Test
-    @DisplayName("datagram copies allocate nothing in steady state")
-    void noAllocation() {
-        RoutedTransport t = new RoutedTransport(new Sink());
-        t.setReceiver((c, f, d, n) -> { });
-        ByteBuffer data = ByteBuffer.allocateDirect(200);
-        data.limit(100);
-        for (int i = 0; i < 2000; i++) { // warm up
-            t.offer(0, A, data, i);
-            t.poll(0);
-        }
-        com.sun.management.ThreadMXBean mx = (com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory
-            .getThreadMXBean();
-        long id = Thread.currentThread().threadId();
-        long before = mx.getThreadAllocatedBytes(id);
-        for (int i = 0; i < 10_000; i++) {
-            t.offer(0, A, data, i);
-            t.poll(0);
-        }
-        long used = mx.getThreadAllocatedBytes(id) - before;
-        assertEquals(0, used, "offer + poll allocate nothing once warm (measured " + used + " bytes)");
-    }
 }

@@ -265,6 +265,101 @@ class LobbyPanelTest {
         }
 
         @Test
+        @DisplayName("exact geometry for two maps in a 1000 x 600 view (7 px per char, 15 px lines)")
+        void exactGeometry() {
+            LobbyPanel p = new LobbyPanel();
+            p.update("friends", List.of(e(0, "alpha", true, 3), e(1, "beta", false, 0)), "");
+            HudFrame out = new HudFrame(4, 4, 320, 160);
+            p.layout(out, 1000, 600, M);
+            // head = 10 + 10 + 3 * 15 = 65; keyW 21, starW 7, nameW 35 (alpha), humansW 42 ("Humans"), titleW 77
+            // x0 = 20; starX = 20 + 21 + 6 = 47; nameX = 47 + 7 + 6 = 60; humansX = 60 + 35 + 12 = 107;
+            // titleX = 107 + 42 + 12 = 161; the instructions (61 chars = 427 px) make the panel 427 wide
+            String[] text = {"friends: choose a map", "Up/Down and Enter choose, or press the key in [ ]. Esc quits.", "Name", "Humans", "Map",
+                "[0]", "*", "alpha", "3", "Title alpha", "[1]", "beta", "Title beta"};
+            float[] x = {20, 20, 60, 107, 161, 20, 47, 60, 142, 161, 20, 60, 161};
+            float[] y = {25, 40, 55, 55, 55, 75, 75, 75, 75, 75, 90, 90, 90};
+            int[] color = {HudColor.WHITE, HudColor.HUD, HudColor.HUD, HudColor.HUD, HudColor.HUD, HudColor.WHITE,
+                HudColor.WHITE, HudColor.WHITE, HudColor.WHITE, HudColor.WHITE, HudColor.HUD, HudColor.OLD_MESSAGE,
+                HudColor.OLD_MESSAGE};
+            assertAll(
+                () -> assertEquals(text.length, out.textCount(), "number of text runs"),
+                () -> assertEquals(3, out.rectCount(), "rects"),
+                () -> assertEquals(447f, out.rectW(0), "panel width: 427 + 2 margins"),
+                () -> assertEquals(120f, out.rectH(0), "panel height: 65 head + 2 rows + 25 foot"),
+                () -> assertEquals(441f, out.rectW(2), "cursor bar width"),
+                () -> assertEquals(13f, out.rectX(2), "cursor bar x"),
+                () -> assertEquals(15f, out.rectH(2), "cursor bar height"));
+            for (int i = 0; i < text.length; i++) {
+                int k = i;
+                assertAll(
+                    () -> assertEquals(text[k], out.text(k).toString(), "run " + k + " text"),
+                    () -> assertEquals(x[k], out.textX(k), "run " + k + " (" + text[k] + ") x"),
+                    () -> assertEquals(y[k], out.textY(k), "run " + k + " (" + text[k] + ") y"),
+                    () -> assertEquals(color[k], out.textColor(k), "run " + k + " (" + text[k] + ") colour"));
+            }
+        }
+
+        @Test
+        @DisplayName("the bottom line sits under the last row: baseline = head 65 + rows * 15 + 5 + 10")
+        void footerPosition() {
+            LobbyPanel p = new LobbyPanel();
+            p.update("friends", List.of(e(0, "alpha", true, 3), e(1, "beta", false, 0)), "Starting alpha...");
+            HudFrame out = new HudFrame(4, 4, 320, 160);
+            p.layout(out, 1000, 600, M);
+            int m = find(out, "Starting alpha...");
+            assertAll(
+                () -> assertTrue(m >= 0, "message drawn"),
+                () -> assertEquals(110f, out.textY(m), "baseline"),
+                () -> assertEquals(20f, out.textX(m), "x"),
+                () -> assertEquals(HudColor.WHITE, out.textColor(m), "white"));
+        }
+
+        @Test
+        @DisplayName("scrolling: the cursor stays on screen when it moves a page, jumps by shortcut, and when the list shrinks")
+        void scrollKeepsCursorVisible() {
+            LobbyPanel p = panel(maps(100));
+            HudFrame out = new HudFrame(4, 4, 320, 160);
+            p.layout(out, 800, 400, M); // 19 rows
+            p.move(18);
+            int topAt18 = p.top();
+            p.move(1);
+            int topAt19 = p.top();
+            p.choose('Z');
+            int topAtZ = p.top();
+            p.layout(out, 800, 400, M);
+            boolean zShown = find(out, "m061") >= 0;
+            p.end();
+            p.update("friends", maps(5), "");
+            int topAfterShrink = p.top();
+            p.update("friends", maps(30), "");
+            p.end();
+            p.layout(out, 800, 400, M);
+            int topEnd30 = p.top();
+            assertAll(
+                () -> assertEquals(0, topAt18, "row 18 is the last visible row of the first page"),
+                () -> assertEquals(1, topAt19, "row 19 scrolls by one"),
+                () -> assertEquals(43, topAtZ, "a shortcut to row 61 scrolls it to the bottom of the page"),
+                () -> assertTrue(zShown, "and it is drawn"),
+                () -> assertEquals(4, topAfterShrink, "a shorter list pulls the top row in"),
+                () -> assertEquals(11, topEnd30, "30 rows, 19 fit: End shows rows 11..29"));
+        }
+
+        @Test
+        @DisplayName("the heading is the bare name while the list is empty and gains the call to choose once maps arrive")
+        void headingFollowsList() {
+            LobbyPanel p = new LobbyPanel();
+            p.update("l", List.of(), "");
+            HudFrame out = new HudFrame(4, 4, 320, 160);
+            p.layout(out, 800, 400, M);
+            boolean bare = find(out, "l") >= 0 && find(out, "l: choose a map") < 0;
+            p.update("l", maps(2), "");
+            p.layout(out, 800, 400, M);
+            assertAll(
+                () -> assertTrue(bare, "empty list: just the name"),
+                () -> assertTrue(find(out, "l: choose a map") >= 0, "with maps: and the call to choose"));
+        }
+
+        @Test
         @DisplayName("rows: key in the HUD colour, '*' only for active maps, humans only for active maps, idle rows dim")
         void rows() {
             LobbyPanel p = new LobbyPanel();

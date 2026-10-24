@@ -116,9 +116,12 @@ class LobbyCatalogTest {
             copyBundled("doggy.xp", dir.resolve("three.XP"));
             copyBundled("doggy.xp", dir.resolve("notamap.txt"));
             Files.createDirectory(dir.resolve("sub.xp"));
-            LobbyCatalog c = LobbyCatalog.build(null, List.of(dir), Set.of(), w -> { });
-            assertEquals(List.of("one", "three", "two"), names(c),
-                "one.xp, two.map and three.XP; the .txt file and the directory named sub.xp are not maps");
+            List<String> warnings = new ArrayList<>();
+            LobbyCatalog c = LobbyCatalog.build(null, List.of(dir), Set.of(), warnings::add);
+            assertAll(
+                () -> assertEquals(List.of("one", "three", "two"), names(c),
+                    "one.xp, two.map and three.XP; the .txt file and the directory named sub.xp are not maps"),
+                () -> assertTrue(warnings.isEmpty(), "and they are not even tried: " + warnings));
         }
 
         @Test
@@ -212,7 +215,11 @@ class LobbyCatalogTest {
                 + "\nmapAuthor: \\override: " + "A".repeat(100) + "\n");
             LobbyCatalog c = LobbyCatalog.build(null, List.of(dir), Set.of(), w -> { });
             LobbyCatalog.Offer o = c.offers().get(0);
+            Files.writeString(dir.resolve("exact.xp"), new String(BundledMaps.bytes("doggy.xp"),
+                java.nio.charset.StandardCharsets.ISO_8859_1) + "\nmapName: \\override: " + "E".repeat(LobbyCatalog.MAX_TEXT) + "\n");
+            LobbyEntry exact = LobbyCatalog.build(null, List.of(dir), Set.of(longName), w -> { }).offers().get(0).info();
             assertAll(
+                () -> assertEquals(LobbyCatalog.MAX_TEXT, exact.title().length(), "a title of exactly the limit is kept whole"),
                 () -> assertEquals(100, o.name().length(), "the offer's name is whole"),
                 () -> assertEquals(LobbyCatalog.MAX_TEXT, o.info().name().length(), "entry name cut"),
                 () -> assertEquals(LobbyCatalog.MAX_TEXT, o.info().title().length(), "entry title cut"),

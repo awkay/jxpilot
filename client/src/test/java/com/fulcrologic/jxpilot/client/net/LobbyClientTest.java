@@ -364,6 +364,52 @@ class LobbyClientTest {
         }
 
         @Test
+        @DisplayName("map id 0 is a real map: a pending select of it blocks other choices and is resent")
+        void mapZero() {
+            greet();
+            lobby.select(0, "first", now);
+            boolean second = lobby.select(1, "other", now);
+            wire.sent.clear();
+            now += 500 * MS;
+            lobby.tick(now);
+            assertAll(
+                () -> assertFalse(second, "refused while map 0 is pending"),
+                () -> assertEquals(0, lobby.selecting(), "map 0 pending"),
+                () -> assertEquals(1, wire.sent.size(), "SELECT resent"),
+                () -> assertEquals(0, LobbyWire.select(wire.sent.get(0)).mapId, "for map 0"));
+        }
+
+        @Test
+        @DisplayName("texts of exactly 80 characters are kept whole")
+        void exactTextLimit() {
+            greet();
+            lobby.notice("n".repeat(80));
+            String notice = lobby.message();
+            lobby.select(2, "d", now);
+            deliver(LobbyWire.join(2, LobbyMsg.JOIN_FAILED, "r".repeat(80)));
+            assertAll(
+                () -> assertEquals(80, notice.length(), "notice whole"),
+                () -> assertEquals("Cannot start d: ".length() + 80, lobby.message().length(), "reason whole"));
+        }
+
+        @Test
+        @DisplayName("list pages, completed lists and JOINs of this dialogue are reported as valid datagrams")
+        void validDatagramsReported() {
+            greet();
+            LobbyEntry[] one = {entry(0, "a", false, 0)};
+            boolean listOk = deliver(LobbyWire.list(1, List.of(one), 1000).get(0));
+            boolean keepAlive = deliver(LobbyWire.list(1, List.of(), 1000).get(0));
+            boolean strayJoin = deliver(LobbyWire.join(9, LobbyMsg.JOIN_OK, ""));
+            lobby.select(0, "a", now);
+            boolean join = deliver(LobbyWire.join(0, LobbyMsg.JOIN_STARTING, ""));
+            assertAll(
+                () -> assertTrue(listOk, "a page that completes the list"),
+                () -> assertTrue(keepAlive, "a keep-alive page"),
+                () -> assertTrue(strayJoin, "a JOIN with nothing pending still proves the server is there"),
+                () -> assertTrue(join, "the answer to our select"));
+        }
+
+        @Test
         @DisplayName("a JOIN for a map not asked for, or with nothing pending, changes nothing")
         void strayJoin() {
             greet();

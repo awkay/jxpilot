@@ -60,9 +60,12 @@ class LobbyServerTest {
     /** Records the lobby's replies. */
     static final class Wire implements NetTransport {
         final List<Sent> sent = new ArrayList<>();
+        UdpTransport.Receiver receiver;
 
         @Override
-        public void setReceiver(UdpTransport.Receiver r) { }
+        public void setReceiver(UdpTransport.Receiver r) {
+            receiver = r;
+        }
 
         @Override
         public void poll(long timeoutNanos) { }
@@ -97,6 +100,7 @@ class LobbyServerTest {
     LobbyCatalog catalog;
     final List<LobbyRegistryTest.FakeGame> games = new ArrayList<>();
     long now = 1000 * SEC;
+    final List<String> logLines = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -108,7 +112,7 @@ class LobbyServerTest {
             return g;
         }, wire, Runnable::run, l -> { });
         Server.Settings s = new Server.Settings();
-        s.log = l -> { };
+        s.log = logLines::add;
         lobby = LobbyServer.over(wire, registry, "friends lobby", s, 0x5EC12E7L);
     }
 
@@ -682,6 +686,251 @@ class LobbyServerTest {
                 () -> assertEquals(0, lobby.rateLimited(), "nothing limited"),
                 () -> assertEquals(RoutedTransport.MAX_DRAIN, probe.delivered.size(),
                     "one poll delivers up to its drain limit; the pool holds the rest for the next"));
+        }
+    }
+
+    // ------------------------------------------------------------------ details and boundaries
+
+    @Nested
+    @DisplayName("details")
+    class Details {
+        @Test
+        @DisplayName("the lobby registers itself as the transport's receiver, so datagrams reach it")
+        void receiverRegistered() {
+            ByteBuffer h = hello(9);
+            wire.receiver.onDatagram(0, ALICE, h, now);
+            assertEquals(1, wire.of(PacketType.LOBBY_INFO).size(), "a datagram given to the transport's receiver is handled");
+        }
+
+        @Test
+        @DisplayName("channels beyond the first few work: routes and peers grow with the channel number")
+        void manyChannels() {
+            for (int channel : new int[] {9, 40}) {
+                lobby.onDatagram(channel, ALICE, hello(1), now);
+                ByteBuffer b = wire.of(PacketType.LOBBY_INFO).get(wire.of(PacketType.LOBBY_INFO).size() - 1).data().duplicate();
+                b.position(PacketHeader.SIZE);
+                LobbyMsg.Info i = new LobbyMsg.Info();
+                i.read(b);
+                lobby.onDatagram(channel, ALICE, listRequest(i.cookie, 0), now);
+                lobby.onDatagram(channel, ALICE, select(i.cookie, id("doggy")), now);
+                lobby.onDatagram(channel, ALICE, select(i.cookie, id("doggy")), now);
+                RoutedTransportProbe probe = new RoutedTransportProbe(games.get(0).transport);
+                lobby.onDatagram(channel, ALICE, dg(PacketType.ACK, x -> { }), now);
+                probe.drain();
+                assertAll(
+                    () -> assertEquals(channel, wire.sent.get(wire.sent.size() - 1).channel(), "the JOIN answer left on the arrival channel"),
+                    () -> assertEquals(1, probe.delivered.size(), "channel " + channel + ": routed to the game"));
+            }
+        }
+
+        @Test
+        @DisplayName("the HELLO answer's name is the lobby's name each time, not appended")
+        void infoNameNotAccumulated() {
+            send(ALICE, hello(1));
+            send(BOB, hello(2));
+            ByteBuffer b = wire.of(PacketType.LOBBY_INFO).get(1).data().duplicate();
+            b.position(PacketHeader.SIZE);
+            LobbyMsg.Info i = new LobbyMsg.Info();
+            i.read(b);
+            assertEquals("friends lobby", i.name.toString(), "name of the second answer");
+        }
+
+        @Test
+        @DisplayName("JOIN texts do not accumulate: a failure's reason is not repeated in the next answer")
+        void joinTextReset() {
+            long c = cookieOf(ALICE);
+            lobby = LobbyServer.over(wire, new LobbyRegistry(catalog, (offer, t) -> {
+                throw new IllegalStateException("no memory");
+            }, wire, Runnable::run, l -> { }), "x", new Server.Settings(), 1L);
+            long cookie = cookieOf(ALICE);
+            send(ALICE, select(cookie, id("doggy")));
+            send(ALICE, select(cookie, id("doggy")));
+            String failed = lastJoin().text.toString();
+            send(ALICE, select(cookie, id("doggy")));
+            String starting = lastJoin().text.toString();
+            assertAll(
+                () -> assertEquals("no memory", failed, "the failure's reason"),
+                () -> assertEquals("", starting, "the next answer has no text"),
+                () -> assertTrue(c != 0 || true, "(cookie of the first lobby unused)"));
+        }
+
+        @Test
+        @DisplayName("joining logs the address and the map")
+        void joinLogged() {
+            long c = cookieOf(ALICE);
+            send(ALICE, select(c, id("doggy")));
+            send(ALICE, select(c, id("doggy")));
+            assertTrue(logLines.stream().anyMatch(l -> l.contains("doggy") && l.contains("joins") && l.contains("10.0.0.1")),
+                "log: " + logLines);
+        }
+
+        @Test
+        @DisplayName("a select without a list request leaves the peer count alone: the 1025th subscriber is still refused")
+        void joinWithoutPeerDoesNotSkewCount() {
+            long c = cookieOf(BOB);
+            send(BOB, select(c, id("doggy")));
+            send(BOB, select(c, id("doggy"))); // joined, was never a peer
+            for (int i = 0; i < LobbyServer.MAX_PEERS; i++) {
+                SocketAddress who = new InetSocketAddress("10.1." + (i / 250) + "." + (i % 250 + 1), 7000);
+                send(who, listRequest(cookieOf(who), registry.version()));
+            }
+            SocketAddress extra = new InetSocketAddress("10.9.9.9", 7000);
+            long ec = cookieOf(extra);
+            wire.sent.clear();
+            send(extra, listRequest(ec, 0));
+            assertTrue(wire.of(PacketType.LOBBY_LIST).isEmpty(), "still refused at exactly MAX_PEERS");
+        }
+
+        @Test
+        @DisplayName("a peer that left (expired) frees its place")
+        void expiredPeersFreePlaces() {
+            for (int i = 0; i < LobbyServer.MAX_PEERS; i++) {
+                SocketAddress who = new InetSocketAddress("10.1." + (i / 250) + "." + (i % 250 + 1), 7000);
+                send(who, listRequest(cookieOf(who), registry.version()));
+            }
+            now += LobbyServer.PEER_IDLE_NANOS + 1;
+            lobby.tick(now);
+            SocketAddress fresh = new InetSocketAddress("10.9.9.9", 7000);
+            long c = cookieOf(fresh);
+            wire.sent.clear();
+            send(fresh, listRequest(c, 0));
+            assertFalse(wire.of(PacketType.LOBBY_LIST).isEmpty(), "a new peer is accepted once the old ones expired");
+        }
+
+        @Test
+        @DisplayName("a peer idle for exactly the limit is kept; one nanosecond more drops it")
+        void peerIdleBoundary() {
+            long c = cookieOf(ALICE);
+            send(ALICE, listRequest(c, 0));
+            registry.select(id("doggy"));
+            wire.sent.clear();
+            now += LobbyServer.PEER_IDLE_NANOS;
+            lobby.tick(now);
+            int atLimit = wire.of(PacketType.LOBBY_LIST).size();
+            registry.select(id("tourmination"));
+            wire.sent.clear();
+            now += 1;
+            lobby.tick(now);
+            assertAll(
+                () -> assertTrue(atLimit > 0, "at the limit the peer still gets pushes"),
+                () -> assertTrue(wire.of(PacketType.LOBBY_LIST).isEmpty(), "1 ns later it is gone"));
+        }
+
+        @Test
+        @DisplayName("a route idle for exactly the limit still works; 1 ns more drops it")
+        void routeIdleBoundary() {
+            long c = cookieOf(ALICE);
+            send(ALICE, select(c, id("doggy")));
+            send(ALICE, select(c, id("doggy")));
+            RoutedTransportProbe probe = new RoutedTransportProbe(games.get(0).transport);
+            now += LobbyServer.ROUTE_IDLE_NANOS;
+            lobby.tick(now);
+            send(ALICE, dg(PacketType.ACK, x -> { }));
+            probe.drain();
+            int atLimit = probe.delivered.size();
+            now += LobbyServer.ROUTE_IDLE_NANOS + 1; // idle for limit + 1 since the datagram above
+            lobby.tick(now);
+            wire.sent.clear();
+            send(ALICE, connect(1, "alice", ""));
+            assertAll(
+                () -> assertEquals(1, atLimit, "kept at the limit"),
+                () -> assertEquals(1, wire.of(PacketType.REJECT).size(), "dropped one ns past it"));
+        }
+
+        @Test
+        @DisplayName("a game ending drops only the routes of its own map")
+        void endedGameKeepsOtherRoutes() {
+            long a = cookieOf(ALICE);
+            long b = cookieOf(BOB);
+            send(ALICE, select(a, id("doggy")));
+            send(ALICE, select(a, id("doggy")));
+            send(BOB, select(b, id("tourmination")));
+            send(BOB, select(b, id("tourmination")));
+            games.get(0).running = false;
+            now += LobbyServer.TICK_NANOS;
+            lobby.tick(now);
+            RoutedTransportProbe pb = new RoutedTransportProbe(games.get(1).transport);
+            send(BOB, dg(PacketType.ACK, x -> { }));
+            pb.drain();
+            assertEquals(1, pb.delivered.size(), "Bob, on the other map, is still routed");
+        }
+
+        @Test
+        @DisplayName("CONNECT of exactly the smallest size that holds a REJECT is answered; one byte less is malformed")
+        void connectSizeBoundary() {
+            ByteBuffer ok = dg(PacketType.CONNECT, b -> b.putInt(1).put((byte) 0).put((byte) 0)); // 8 + 6 = 14
+            ByteBuffer small = dg(PacketType.CONNECT, b -> b.putInt(1).put((byte) 0)); // 13
+            send(ALICE, small);
+            long malformedBefore = lobby.malformed();
+            int repliesSmall = wire.of(PacketType.REJECT).size();
+            send(ALICE, ok);
+            assertAll(
+                () -> assertEquals(1, malformedBefore, "13 bytes: malformed"),
+                () -> assertEquals(0, repliesSmall, "no reply to it"),
+                () -> assertEquals(1, wire.of(PacketType.REJECT).size(), "14 bytes: answered"),
+                () -> assertEquals(14, wire.of(PacketType.REJECT).get(0).data().remaining(), "with a REJECT of the same size"));
+        }
+
+        @Test
+        @DisplayName("a REJECT's text is cut to the request's size, and the next reject starts clean")
+        void rejectTextCut() {
+            ByteBuffer c = connect(0x1111, "a", "");
+            send(ALICE, c);
+            ByteBuffer b = wire.of(PacketType.REJECT).get(0).data().duplicate();
+            b.position(PacketHeader.SIZE);
+            Msg.Reject r = new Msg.Reject();
+            r.read(b);
+            ByteBuffer v = connect(0x2222, "alice", "(shape)");
+            v.put(2, (byte) (Protocol.VERSION + 1));
+            int vSize = v.limit();
+            send(BOB, v);
+            ByteBuffer b2 = wire.of(PacketType.REJECT).get(1).data().duplicate();
+            b2.position(PacketHeader.SIZE);
+            Msg.Reject r2 = new Msg.Reject();
+            r2.read(b2);
+            assertAll(
+                () -> assertEquals(c.limit(), wire.of(PacketType.REJECT).get(0).data().remaining(), "same size as the CONNECT"),
+                () -> assertEquals("lobby: choose a map (this server needs a lobby-aware client)".substring(0, c.limit() - 14),
+                    r.text.toString(), "text cut to exactly what fits"),
+                () -> assertEquals("incompatible version".substring(0, vSize - 14), r2.text.toString(),
+                    "the next reject's text is its own, cut to its request"));
+        }
+
+        @Test
+        @DisplayName("a CONNECT of another version works at any buffer position and at exactly REJECT size")
+        void otherVersionBoundaries() {
+            ByteBuffer v = connect(0x3333, "alice", "");
+            v.put(2, (byte) (Protocol.VERSION + 1));
+            ByteBuffer shifted = ByteBuffer.allocate(v.remaining() + 3);
+            shifted.position(3);
+            shifted.put(v).flip().position(3);
+            send(ALICE, shifted);
+            ByteBuffer b = wire.of(PacketType.REJECT).get(0).data().duplicate();
+            b.position(PacketHeader.SIZE);
+            Msg.Reject r = new Msg.Reject();
+            r.read(b);
+            ByteBuffer exact = dg(PacketType.CONNECT, x -> x.putInt(0x4444).put((byte) 0).put((byte) 0));
+            exact.put(2, (byte) 99);
+            ByteBuffer shortOne = dg(PacketType.CONNECT, x -> x.putInt(0x5555).put((byte) 0));
+            shortOne.put(2, (byte) 99);
+            send(BOB, exact);
+            int answeredExact = wire.of(PacketType.REJECT).size();
+            send(BOB, shortOne);
+            assertAll(
+                () -> assertEquals(0x3333, r.nonce, "nonce read from after the header, whatever the position"),
+                () -> assertEquals(2, answeredExact, "14 bytes: answered"),
+                () -> assertEquals(2, wire.of(PacketType.REJECT).size(), "13 bytes: not"));
+        }
+
+        @Test
+        @DisplayName("a repeated list request after exactly 200 ms is answered")
+        void resendGapBoundary() {
+            long c = cookieOf(ALICE);
+            send(ALICE, listRequest(c, 0));
+            int first = wire.of(PacketType.LOBBY_LIST).size();
+            now += LobbyServer.RESEND_GAP_NANOS;
+            send(ALICE, listRequest(c, 0));
+            assertEquals(2 * first, wire.of(PacketType.LOBBY_LIST).size(), "answered at exactly the gap");
         }
     }
 

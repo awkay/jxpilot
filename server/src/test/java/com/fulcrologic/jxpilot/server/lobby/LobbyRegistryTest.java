@@ -293,6 +293,7 @@ class LobbyRegistryTest {
             assertAll(
                 () -> assertEquals(List.of(id("doggy")), ended, "the ended map is reported"),
                 () -> assertEquals(1, first.closes, "the game was closed"),
+                () -> assertFalse(first.transport.offer(0, null, ByteBuffer.allocate(1), 0), "and its transport refuses datagrams"),
                 () -> assertEquals(1, registry.runningCount(), "only the new game runs"),
                 () -> assertEquals(2, started.size(), "a new game was started"),
                 () -> assertTrue(started.get(1) != first, "a different instance"),
@@ -315,7 +316,10 @@ class LobbyRegistryTest {
                 () -> assertEquals(2, started.size(), "a second game was started"),
                 () -> assertSame(started.get(1).transport, joined.target(), "and that is the one joined"),
                 () -> assertTrue(joined.target() != dead.transport, "not the dead game's"),
-                () -> assertTrue(registry.reap().isEmpty(), "nothing left for reap to remove"));
+                () -> assertTrue(registry.reap().isEmpty(), "nothing left for reap to remove"),
+                () -> assertFalse(dead.transport.offer(0, null, ByteBuffer.allocate(1), 0), "the dead game's transport is closed"),
+                () -> assertTrue(log.stream().anyMatch(l -> l.contains("doggy ended")), "its end was logged"),
+                () -> assertTrue(log.stream().filter(l -> l.contains("starting doggy")).count() == 2, "and the restart"));
         }
 
         @Test
@@ -349,6 +353,7 @@ class LobbyRegistryTest {
             LobbyRegistry.Selection after = registry.select(id("default"));
             assertAll(
                 () -> assertEquals(1, started.get(0).closes, "the running game was closed"),
+                () -> assertFalse(started.get(0).transport.offer(0, null, ByteBuffer.allocate(1), 0), "its transport is closed"),
                 () -> assertEquals(2, started.size(), "the second start did run"),
                 () -> assertEquals(1, started.get(1).closes, "and its game was closed as soon as it was up"),
                 () -> assertEquals(0, registry.runningCount(), "nothing runs"),

@@ -193,6 +193,18 @@ class LobbyMsgTest {
         }
 
         @Test
+        @DisplayName("a page is filled to exactly the body limit: one byte less room starts a second page")
+        void exactFit() {
+            List<LobbyEntry> in = List.of(entry(1, "a", false, 0), entry(2, "b", false, 0));
+            int one = LobbyMsg.ListPage.encode(1, List.of(in.get(0)), 1000).get(0).remaining();
+            int two = LobbyMsg.ListPage.encode(1, in, 1000).get(0).remaining();
+            assertAll(
+                () -> assertEquals(1, LobbyMsg.ListPage.encode(1, in, two).size(), "both entries fit exactly in " + two),
+                () -> assertEquals(2, LobbyMsg.ListPage.encode(1, in, two - 1).size(), "one byte less: two pages"),
+                () -> assertTrue(one < two, "sanity: an entry has size"));
+        }
+
+        @Test
         @DisplayName("an empty list is one empty page, so a client can tell it from no answer")
         void emptyList() {
             List<ByteBuffer> pages = LobbyMsg.ListPage.encode(5, List.of(), LobbyMsg.MAX_PAGE_BODY);
@@ -258,6 +270,32 @@ class LobbyMsgTest {
                 () -> assertFalse(late, "a page of the completed version is not completing it again"),
                 () -> assertEquals(3, a.version(), "version"),
                 () -> assertEquals(List.of(one.get(0), two.get(0)), a.entries(), "entries in page order"));
+        }
+
+        @Test
+        @DisplayName("a complete list of an older version does not replace a newer complete list")
+        void olderCompleteList() {
+            LobbyListAssembler a = new LobbyListAssembler();
+            a.accept(5, 0, 1, List.of(entry(1, "five", false, 0)));
+            boolean old = a.accept(4, 0, 1, List.of(entry(2, "four", false, 0)));
+            assertAll(
+                () -> assertFalse(old, "version 4 after 5 completes nothing"),
+                () -> assertEquals(5, a.version(), "still 5"),
+                () -> assertEquals("five", a.entries().get(0).name(), "and its entries"));
+        }
+
+        @Test
+        @DisplayName("every page of an already complete version, resent, is ignored")
+        void resentPagesOfCompleteVersion() {
+            LobbyListAssembler a = new LobbyListAssembler();
+            a.accept(5, 0, 2, List.of(entry(1, "a", false, 0)));
+            a.accept(5, 1, 2, List.of(entry(2, "b", false, 0)));
+            boolean again0 = a.accept(5, 0, 2, List.of(entry(1, "a", false, 0)));
+            boolean again1 = a.accept(5, 1, 2, List.of(entry(2, "b", false, 0)));
+            assertAll(
+                () -> assertFalse(again0, "page 0 again"),
+                () -> assertFalse(again1, "page 1 again completes nothing new"),
+                () -> assertEquals(2, a.entries().size(), "list unchanged"));
         }
 
         @Test

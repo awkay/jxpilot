@@ -126,6 +126,12 @@ class LobbyConfigTest {
         }
 
         @Test
+        @DisplayName("a line that starts with the colon still gets \\override: (the parser reports the missing name)")
+        void colonFirst() {
+            assertEquals(": \\override: x\n\n", LobbyConfig.forceOverride(":x\n"), "rewritten");
+        }
+
+        @Test
         @DisplayName("a \\multiline: value keeps its body verbatim up to the delimiter, with \\override: before \\multiline:")
         void multiline() {
             String out = LobbyConfig.forceOverride("t: \\multiline: E\na: 1\n  b\nE\nz: 9\n");
