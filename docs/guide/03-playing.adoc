@@ -31,7 +31,9 @@ shield key, it works as hold-to-shield.
 [[controls]]
 == Controls
 
-JXPilot uses XPilot's default keys (from the C client's `default.c`). The most important ones:
+JXPilot uses XPilot's default keys (from the C client's `default.c`), with a few additions. Press
+kbd:[F1] in the game for a list of every key; the message `F1: keys` reminds you when you join. The most
+important keys:
 
 [cols="2,3",options="header"]
 |===
@@ -41,6 +43,7 @@ JXPilot uses XPilot's default keys (from the C client's `default.c`). The most i
 |kbd:[Enter] |Fire
 |kbd:[Space] |Shield
 |kbd:[F] or kbd:[Ctrl] |Refuel (at a fuel station); kbd:[F] also repairs (at a target)
+|kbd:[Ctrl] or kbd:[Alt]/kbd:[Option] |Connect to a ball
 |kbd:[Tab] |Drop a mine
 |kbd:[ \ ] |Fire a smart missile
 |kbd:[;] |Fire a heat seeker
@@ -49,36 +52,49 @@ JXPilot uses XPilot's default keys (from the C client's `default.c`). The most i
 |kbd:[Page Down] / kbd:[Page Up] / kbd:[Up] |Lock on the next / previous / closest player
 |kbd:[H] or kbd:[Home] |Change home base (and toggle the autopilot, kbd:[H])
 |kbd:[Pause] |Pause, only on your home base (<<pausing>>)
-|kbd:[End] |Self-destruct after a 150-frame countdown; press again to cancel
-|kbd:[M] |Talk (type a message, kbd:[Enter] sends it; <<talking>>)
-|kbd:[Esc] |Quit the game (in XPilot it swaps engine settings; <<engine-settings>>)
-|Keypad kbd:[*] / kbd:[/] |More / less engine power
+|kbd:[End] or kbd:[0] |Self-destruct after a 150-frame countdown; press again to cancel
+|Keypad kbd:[*] / kbd:[/] |More / less engine power (<<engine-settings>>)
 |Keypad kbd:[+] / kbd:[-] |Faster / slower turning
+|kbd:[M] |Talk (type a message, kbd:[Enter] sends it; <<talking>>)
+|kbd:[F1] |Show or hide the key help
+|kbd:[-] |Sound off and on (<<sound>>)
+|kbd:[Esc] |Quit the game (in XPilot it swaps engine settings)
 |===
+
+JXPilot's additions to XPilot's defaults: kbd:[Alt]/kbd:[Option] also connects to a ball, so a Mac
+laptop's single kbd:[Control] can stay refuel; kbd:[0] also self-destructs, since kbd:[End] needs kbd:[fn]
+on a Mac laptop; kbd:[F1] shows the key help (XPilot uses it for talk macro 1); kbd:[-] mutes; and
+kbd:[Esc] always quits. All of this can be changed (<<key-bindings>>).
 
 [[laptop-keys]]
 TIP: *Mac laptops and other compact keyboards* have no Page Up, Page Down, End or keypad keys of their
 own. On a Mac laptop, kbd:[fn+↑] and kbd:[fn+↓] are Page Up and Page Down (lock on the previous / next
-player), and kbd:[fn+→] is End (self-destruct). The single kbd:[Control] key works as the left Control
-key: refuel, and the ball connector.
+player), and kbd:[fn+→] is End. The power and turn speed keys are on the keypad; the
+<<mac-laptop-keymap,Mac laptop keymap>> example moves them to function keys.
 
 [[engine-settings]]
 === Engine settings
 
 Your ship's engine power, turn speed and turn resistance are settings you choose. JXPilot starts you
-with the XPilot client's defaults: power 45, turn speed 35 and turn resistance 0.12, and the
-alternative settings power 35, turn speed 25, turn resistance 0.12. The keypad keys above change the
-current settings. XPilot swaps to the alternative settings with kbd:[Esc]; in JXPilot kbd:[Esc] quits,
-so the swap has no key until key bindings can be changed.
+with power 45, turn speed 40 and turn resistance 0.12 (XPilot's client defaults, except turn speed,
+which is 35 in XPilot), and the alternative settings power 35, turn speed 25, turn resistance 0.12.
+
+The power and turn speed keys (keypad kbd:[*] kbd:[/] kbd:[+] kbd:[-]) change your settings in the client,
+by 10% and 5% per press, and send them to the server, as the XPilot client does. While you change them,
+power and turn speed meters show below the fuel gauge (top right) for 100 frames. XPilot swaps to the
+alternative settings with kbd:[Esc]; in JXPilot kbd:[Esc] quits, so bind `keySwapSettings` to another key
+if you want the swap. The six settings can be set in your keys file (<<key-bindings>>).
 
 [[all-keys]]
-=== All game keys
+=== All keys
 
-Every key the client sends to the server, with its XPilot key id and default keys. The names in
-monospace are X11 key names, as XPilot's `default.c` and `.xpilotrc` files use them. Several functions
-share a key, and some have more than one key, exactly as in XPilot.
+Every key function, under its XPilot resource name (the name to use in a keys file), with JXPilot's
+default keys. The names in monospace are X11 key names, as XPilot's `.xpilotrc` files use them. Several
+functions share a key, and some have more than one key, exactly as in XPilot. Where JXPilot's default
+differs from XPilot's, the table says so.
 
-This table is generated from the code (`ControlKey`), so it is always current.
+This table is generated from the code, so it is always current. `--list-keys` prints the same list for
+your own keys file (<<key-bindings>>).
 
 ifdef::env-github[]
 On GitHub, see link:generated/keys.adoc[generated/keys.adoc] for the table.
@@ -86,7 +102,58 @@ endif::[]
 
 include::generated/keys.adoc[]
 
-The table lists XPilot's defaults. In JXPilot kbd:[Esc] quits, so "Swap settings" has no key.
+XPilot's talk macros (`keySendMsg1` to `keySendMsg20`), ID mode, the message and item toggles, pointer
+control, recording and printing messages are not in JXPilot.
+
+[[key-bindings]]
+=== Changing the keys: `~/.xpilotrc`
+
+JXPilot reads key bindings and control settings from `~/.xpilotrc`, in the resource format of the
+XPilot client, so an existing XPilot file works. `--keys FILE` reads another file instead.
+
+[source,text]
+----
+! Comments start with '!'.
+xpilot.keyFireShot:       Return KP_Enter    ! the function's keys, separated by spaces
+xpilot.keyPointerControl:                    ! an empty value unbinds (frees KP_Enter)
+xpilot.keySwapSettings:   Insert             ! give the swap-settings function a key
+xpilot.turnSpeed:         35                 ! XPilot's turn speed
+----
+
+The rules:
+
+* One `resource: value` per line. The `xpilot.` prefix is optional (`xpilot*`, `XPilot.` and `*` work
+  too); resources of other programs are ignored. A line ending in `\` continues on the next line.
+* Each key function the file names *replaces* that function's default keys; functions the file does not
+  name keep their defaults. An empty value unbinds the function.
+* The resource names are those of the table above. Key names are X11 keysyms: letters, digits,
+  `Return`, `space`, `Shift_L`, `Control_R`, `Alt_L`, `KP_Add`, `F5`, `bracketleft` and so on.
+* The six control settings are `power` (5 to 55), `turnSpeed` (4 to 64), `turnResistance` (0 to 1),
+  `altPower`, `altTurnSpeed` and `altTurnResistance`. Values outside the range are clamped.
+* kbd:[Esc] always quits and cannot be bound; the Command (Super) keys are never bound.
+* Every problem (an unknown function or key name, a bad number, a key bound to more than one function)
+  is printed when the client starts, as `jxpilot keys: FILE:LINE: ...`, and the rest of the file still
+  applies.
+
+`java -jar jxpilot-client-VERSION.jar --list-keys` (with `--keys FILE` if you use one) prints the
+effective bindings, the control settings and any problems, and exits.
+
+[[mac-laptop-keymap]]
+==== Example: a Mac laptop keymap
+
+This file (`docs/examples/xpilotrc.mac-laptop` in the source) moves the keypad and other hard-to-reach
+functions to keys a Mac laptop has, and frees kbd:[F9] to kbd:[F12] from the talk macros. Copy it to
+`~/.xpilotrc` and adjust to taste.
+
+ifdef::env-github[]
+See link:../examples/xpilotrc.mac-laptop[docs/examples/xpilotrc.mac-laptop].
+endif::[]
+ifndef::env-github[]
+[source,text]
+----
+include::../examples/xpilotrc.mac-laptop[]
+----
+endif::[]
 
 [[client-keys]]
 === Client keys
@@ -96,16 +163,14 @@ These keys act in the client and are never sent to the server.
 [cols="2,3",options="header"]
 |===
 |Key |Function
+|kbd:[F1] |Show or hide the key help
 |kbd:[M] |Open the talk line
+|kbd:[-] |Sound off and on (<<sound>>)
 |kbd:[Esc] |Quit (or, in the talk line, cancel the message)
-|kbd:[0] |Sound off and on (<<sound>>). This default may change.
-|Any key you choose with `--swap-scale-key` |Swap between the normal and the alternative zoom
+|`keySwapScaleFactor`, or `--swap-scale-key KEY` |Swap between the normal and the alternative zoom
 (`--scale-factor`, `--alt-scale-factor`; <<07-client-reference.adoc#game-flags,Game flags>>). Unbound by
 default, as in XPilot.
 |===
-
-XPilot's talk macros (kbd:[F1] to kbd:[F12]), ID mode, message toggles and pointer control are not in
-JXPilot. Changing key bindings is planned.
 
 [[talking]]
 === Talking
@@ -123,6 +188,9 @@ server works the same way):
 |`hello all` |Everyone. Lines show as `hello all [YourName]`.
 |`2: regroup at base` |Everyone on team 2 (and you).
 |`ace: nice shot` |The player whose name is `ace`, or starts with `ace` if only one does (and you).
+|`god: the map is broken` |The server operator, through the server's admin message file (on a JXPilot
+server, only if the operator set one up; <<04-running-a-server.adoc#admin-messages,Messages to the
+operator>>). Nobody else sees it.
 |`see you :-)` |Everyone: a colon followed by a smiley character, or at the end of the line, is not
 an address.
 |===
@@ -161,7 +229,7 @@ JXPilot server and on an original XPilot server.
 |`--no-sound` (or `--sound`) |Turn sound off (on) for this run. XPilot's `sound` resource.
 |`--volume N` |XPilot's `maxVolume`: the loudest a sound may play, 0 to 255 (default 100). `0` means no
 sound; values above 100 play like 100.
-|kbd:[0] |Mute and unmute while playing; the message log shows `Sound off.` / `Sound on.`
+|kbd:[-] |Mute and unmute while playing (`keyToggleSound`); the message log shows `Sound off.` / `Sound on.`
 |===
 
 Details:
@@ -201,6 +269,8 @@ lost them, with a label such as the victim's name, `[Wall]`, `[Shove]` or `[Dead
 Shots:: Shots that cannot hurt you (your team mates' shots when team immunity is on, shots of a
 paused player, your own shots with `selfImmunity`) are drawn in a different colour.
 Talk line (middle):: Opens with kbd:[M] for typing a chat message.
+Key help:: kbd:[F1] shows every key binding over the game, and hides it again.
+Meters (top right):: The fuel gauge, and the power and turn speed meters while you change them.
 
 [[scoring]]
 == Scoring

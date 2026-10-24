@@ -122,8 +122,9 @@ you must reach is filled.
 
 |
 |`z`
-|*Friction block*: ships inside it feel `blockFriction`. XPilot shows it as decoration when the server
-sets `blockFrictionVisible`; the JXPilot client does not draw it yet.
+|*Friction block*: ships inside it feel `blockFriction`. In a game, both the JXPilot and the XPilot
+server show it as filled decoration (`b`) when `blockFrictionVisible` is on (the default), and not at all
+otherwise. The map viewer does not draw it.
 
 |
 |space, `.`
@@ -184,7 +185,8 @@ your own with `selfImmunity`) are blue crosses; nuclear shots blink red.
 |*Transporter beam*: crawling dashes while a player steals an item.
 
 |image:gallery/refuel-beam.gif[Refuel beam,width=100]
-|*Refuel beam*: crawling dashes from a refuelling ship to the fuel station.
+|*Refuel beam*: crawling dashes from a refuelling ship to the fuel station. A ship repairing a target
+draws the same beam to the target.
 
 |image:gallery/ball-tether.png[Ball on its tether,width=120]
 image:gallery/ball-connecting.png[Ball being picked up,width=120]
@@ -195,7 +197,9 @@ image:gallery/ball-connecting.png[Ball being picked up,width=120]
 (<<03-playing.adoc#pausing,Pausing>>).
 
 |image:gallery/wreckage.png[Wreckage,width=160]
-|*Wreckage* of a destroyed ship: white pieces are still deadly, red ones are not.
+|*Wreckage* of a destroyed ship. On an XPilot server, pieces that can still kill you are white and
+harmless ones red. The JXPilot server does not mark deadly pieces; whether wreckage can kill depends on
+its `wreckageCollisionMayKill` option.
 
 |image:gallery/asteroids.png[Asteroids,width=150]
 |*Asteroids* of three sizes.
