@@ -68,6 +68,19 @@ class NamesTest {
     }
 
     @Test
+    @DisplayName("host names: a first character must be an ASCII letter or digit (each range's ends and neighbours)")
+    void alphanumericBounds() {
+        String[] kept = {"0", "9", "A", "Z", "a", "z"};
+        String[] bad = {"/", ":", "@", "[", "`", "{"};
+        for (String k : kept) {
+            assertEquals(k + "b", host(k + "b"), "kept: " + k);
+        }
+        for (String x : bad) {
+            assertEquals("xxx.xxx", host(x + "b"), "rejected: " + x);
+        }
+    }
+
+    @Test
     @DisplayName("copy: at most MAX_CHARS - 1 characters, as C strlcpy(dst, src, MAX_CHARS)")
     void copy() {
         StringBuilder b = new StringBuilder("old");

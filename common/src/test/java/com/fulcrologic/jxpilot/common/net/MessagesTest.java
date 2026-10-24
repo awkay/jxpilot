@@ -46,6 +46,29 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("Protocol messages")
 class MessagesTest {
+    @Test
+    @DisplayName("names after a shape: a short buffer cuts the shape so both names fit; a name cut short reads as empty")
+    void namesFit() {
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(40);
+        Msg.putShapeAndNames(b, "s".repeat(100), "ann", "box");
+        b.flip();
+        StringBuilder shape = new StringBuilder();
+        StringBuilder real = new StringBuilder();
+        StringBuilder host = new StringBuilder();
+        Wire.getString16(b, shape);
+        Msg.readOptional8(b, real);
+        Msg.readOptional8(b, host);
+        java.nio.ByteBuffer cut = java.nio.ByteBuffer.wrap(new byte[] {5, 'a', 'b', 'c', 'd'});
+        StringBuilder partial = new StringBuilder("old");
+        Msg.readOptional8(cut, partial);
+        assertAll(
+            () -> assertEquals(40 - 2 - 8, shape.length(), "the shape takes what the names leave"),
+            () -> assertEquals("ann", real.toString(), "real name"),
+            () -> assertEquals("box", host.toString(), "host name"),
+            () -> assertEquals("", partial.toString(), "5 declared, 4 left: empty"),
+            () -> assertEquals(0, cut.remaining(), "and the rest is skipped"));
+    }
+
 
     static ByteBuffer buf() {
         return ByteBuffer.allocate(Protocol.MAX_PACKET);
