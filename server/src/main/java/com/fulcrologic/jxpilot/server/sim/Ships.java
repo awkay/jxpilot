@@ -1032,6 +1032,8 @@ public final class Ships {
      * one if none is ahead).
      * BEHAVIOR: the ship appears at the destination's centre, the source remembers the destination for
      * wormTime frames (WORMCOUNT without wormTime), and the ship is WARPED (not WARPING).
+     * BEHAVIOR: a hyperjump (no wormhole) plays HYPERJUMP where the ship was and WORM_HOLE where it lands; a
+     * wormhole trip plays WORM_HOLE before and after.
      */
     void warp(Player pl) {
         int hit = pl.wormHoleHit;
@@ -1042,11 +1044,13 @@ public final class Ships {
         }
         if (hit == -1) {
             sim.devices.hyperjumpDestination(pl);
+            Sounds.play(w, pl.px, pl.py, SoundEvent.HYPERJUMP);
             pl.wormHoleDest = -2;
             pl.initPixels(sim.devices.jumpX, sim.devices.jumpY);
             pl.forceVisible += 15;
             pl.status &= ~Obj.WARPING;
             pl.status |= Obj.WARPED;
+            Sounds.play(w, pl.px, pl.py, SoundEvent.WORM_HOLE);
             return;
         }
         int j;

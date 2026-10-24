@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.math.XMath;
 import com.fulcrologic.jxpilot.common.net.Msg;
@@ -147,8 +148,10 @@ public final class Missiles {
      * (torpedo) or MISSILE_RANGE; without enough missiles "You need at least N missiles to fire ...".
      * BEHAVIOR: drain = used * ED_SMART_SHOT plus the cluster drain for a player; a player without that fuel gets
      * "You need at least N fuel units to fire ..."; a killed player's missiles live (int)(rfrac*FPS), others
-     * missileLife or MISSILE_LIFETIME. A nuke launch is announced.
-     * BEHAVIOR: heat-seekers lock on nobody (-1) and fly 1.7 times faster; a player's smart missile needs a
+     * missileLife or MISSILE_LIFETIME. A nuke launch is announced to all with NUKE_LAUNCH; a player's single
+     * smart missile or torpedo plays FIRE_SMART_SHOT / FIRE_TORPEDO at it once paid for.
+     * BEHAVIOR: heat-seekers lock on nobody (-1) and fly 1.7 times faster (a player's plays FIRE_HEAT_SHOT, even
+     * when it then lacks fuel); a player's smart missile needs a
      * lock on a visible player in sensor range, else nothing (a cannon gives the target); torpedoes have no
      * lock and an extra fuse of 8.
      * BEHAVIOR: power raises speed, max speed and turn speed; fuse = 2*SHIP_SZ/speed + 1 (+8 torpedo).
@@ -239,6 +242,9 @@ public final class Missiles {
         switch (type) {
             case Obj.HEAT_SHOT -> {
                 lock = -1;
+                if (pl != null) {
+                    Sounds.play(w, pl.px, pl.py, SoundEvent.FIRE_HEAT_SHOT);
+                }
                 maxSpeed = (float) (SMART_SHOT_MAX_SPEED * HEAT_SPEED_FACT);
                 turnspeed = (float) (SMART_TURNSPEED * HEAT_SPEED_FACT);
                 speed *= HEAT_SPEED_FACT;
@@ -276,6 +282,11 @@ public final class Missiles {
                 StringBuilder m = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name)
                     .append(" has launched ");
                 ShotNames.append(m, type, status, mods, false).append('!');
+                Sounds.playAll(w, SoundEvent.NUKE_LAUNCH);
+            } else if (type == Obj.SMART_SHOT) {
+                Sounds.play(w, pl.px, pl.py, SoundEvent.FIRE_SMART_SHOT);
+            } else if (type == Obj.TORPEDO) {
+                Sounds.play(w, pl.px, pl.py, SoundEvent.FIRE_TORPEDO);
             }
         }
         int minis = Mods.mini(mods) + 1;

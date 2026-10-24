@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.Cannon;
 import com.fulcrologic.jxpilot.server.world.CannonItems;
 import com.fulcrologic.jxpilot.server.world.Ecms;
@@ -97,7 +98,7 @@ public final class Ecm {
      * C {@code Fire_general_ecm} by a player ({@code pl}) or a cannon ({@code pl == null}) at (x, y).
      * <p>
      * BEHAVIOR: nothing when MAX_TOTAL_ECMS blasts exist. A blast of radius ECM_DISTANCE starts; a player pays an
-     * ECM and its fuel and counts the blast.
+     * ECM and its fuel, counts the blast and plays ECM at (x, y) (a cannon's blast is silent).
      * BEHAVIOR: smart missiles and mines within ECM_DISTANCE are hit, except own owner-immune mines, own
      * missiles after somebody else, and team-immune or (team play) same-team objects of others. (C compares the
      * owner's player index where it means its id, for the missile target and the team-immunity test; kept.) A smart missile
@@ -126,6 +127,7 @@ public final class Ecm {
             pl.ecmCount++;
             pl.items[Item.ECM.ordinal()]--;
             pl.addFuel(ED_ECM);
+            Sounds.play(w, x, y, SoundEvent.ECM);
         }
         Objects o = w.objects;
         int closestMine = -1;

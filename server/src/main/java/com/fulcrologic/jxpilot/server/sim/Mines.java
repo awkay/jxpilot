@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.Base;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.net.Records;
@@ -124,7 +125,8 @@ public final class Mines {
      * player with fewer gets "You need at least N mines to drop/throw ...". A cannon mine weighs 0.6 of a mine.
      * BEHAVIOR: a player pays ED_MINE plus the cluster drain, or gets "You need at least N fuel units to ..."; with
      * baseMineRange, mining within that many blocks of another non-immune player's base is refused ("No base
-     * mining!"). A nuke launch is announced.
+     * mining!"). A nuke launch is announced to all with NUKE_LAUNCH; a single mine plays DROP_MINE (or
+     * DROP_MOVING_MINE when thrown) at the player.
      * BEHAVIOR: mini+1 OWNERIMMUNE blue mines share mass and life, fuse = mineFuseTime; minis spread out
      * (MINI_MINE_SPREAD_SPEED / (spread+1), slowing to zero over MINI_MINE_SPREAD_TIME) around the heading; all get
      * the thrown velocity * 1.3; pl_range = MINE_RANGE / minis, pl_radius = MINE_RADIUS.
@@ -209,6 +211,10 @@ public final class Mines {
                 StringBuilder m = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" has ")
                     .append((status & Obj.GRAVITY) != 0 ? "thrown" : "dropped").append(' ');
                 ShotNames.append(m, Obj.MINE, status, mods, false).append('!');
+                Sounds.playAll(w, SoundEvent.NUKE_LAUNCH);
+            } else {
+                Sounds.play(w, pl.px, pl.py, (status & Obj.GRAVITY) != 0 ? SoundEvent.DROP_MOVING_MINE
+                    : SoundEvent.DROP_MINE);
             }
         }
         int minis = Mods.mini(mods) + 1;
@@ -366,6 +372,7 @@ public final class Mines {
      * BEHAVIOR: an unowned, never-owned mine: "X hit a mine." without scoring; a mine controlled by its layer:
      * "X hit a mine dropped  by L." (C's format gives two spaces); a mine whose layer left: "X hit a mine
      * reprogrammed by R." (R "some jerk" when unowned); otherwise "... dropped  by L and reprogrammed by R.".
+     * BEHAVIOR: PLAYER_HIT_MINE plays at the victim first.
      * The controller (if any, even the victim) scores Rate(controller, victim) * mineScoreMult from the victim.
      */
     public void playerHit(Player pl, int h) {
@@ -373,6 +380,7 @@ public final class Mines {
         int id = o.owner[h];
         int layer = o.mineOwner[h];
         Player killer = null;
+        Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_MINE);
         StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(" hit ");
         ShotNames.append(msg, Obj.MINE, o.status[h], o.mods[h], true);
         String how = (o.status[h] & Obj.GRAVITY) != 0 ? "thrown " : "dropped ";

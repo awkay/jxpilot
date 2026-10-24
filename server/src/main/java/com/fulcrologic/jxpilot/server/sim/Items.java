@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Concentrator;
 import com.fulcrologic.jxpilot.common.net.Records;
@@ -578,6 +579,17 @@ public final class Items {
 
     // ================================================================ pickup
 
+    /** The C {@code *_PICKUP_SOUND} each item case of {@code Player_collides_with_item} plays, by item ordinal. */
+    private static final SoundEvent[] PICKUP_SOUND = {
+        SoundEvent.ENERGY_PACK_PICKUP, SoundEvent.WIDEANGLE_SHOT_PICKUP, SoundEvent.BACK_SHOT_PICKUP,
+        SoundEvent.AFTERBURNER_PICKUP, SoundEvent.CLOAKING_DEVICE_PICKUP, SoundEvent.SENSOR_PACK_PICKUP,
+        SoundEvent.TRANSPORTER_PICKUP, SoundEvent.TANK_PICKUP, SoundEvent.MINE_PACK_PICKUP,
+        SoundEvent.ROCKET_PACK_PICKUP, SoundEvent.ECM_PICKUP, SoundEvent.LASER_PICKUP,
+        SoundEvent.EMERGENCY_THRUST_PICKUP, SoundEvent.TRACTOR_BEAM_PICKUP, SoundEvent.AUTOPILOT_PICKUP,
+        SoundEvent.EMERGENCY_SHIELD_PICKUP, SoundEvent.DEFLECTOR_PICKUP, SoundEvent.HYPERJUMP_PICKUP,
+        SoundEvent.PHASING_DEVICE_PICKUP, SoundEvent.MIRROR_PICKUP, SoundEvent.ARMOR_PICKUP
+    };
+
     /** C {@code CountOffensiveItems}. */
     static int countOffensive(Player pl) {
         int[] it = pl.items;
@@ -612,6 +624,8 @@ public final class Items {
      * BEHAVIOR: an energy pack adds ENERGY_PACK_FUEL; a tank adds a tank with TANK_FUEL fuel, or that much
      * fuel when the tank limit is reached.
      * BEHAVIOR: the first emergency shield on a map without shields turns it on at once.
+     * BEHAVIOR: each pickup plays its item's pickup sound at the player (collision.c 872-1014), after the item
+     * is added (before an emergency shield is turned on).
      * BEHAVIOR: the item's life ends (it was picked up).
      */
     public void pickup(Player pl, int h) {
@@ -656,6 +670,7 @@ public final class Items {
                 pl.items[item] += o.counter[h];
                 limit(pl, item);
                 grantIfAny(pl, item, Has.EMERGENCY_SHIELD);
+                Sounds.play(w, pl.px, pl.py, SoundEvent.EMERGENCY_SHIELD_PICKUP);
                 if ((oldHave & (Has.SHIELD | Has.EMERGENCY_SHIELD)) == 0 && pl.items[item] == 1) {
                     sim.devices.emergencyShield(pl, true);
                 }
@@ -679,6 +694,9 @@ public final class Items {
                     default -> { }
                 }
             }
+        }
+        if (kind != Item.EMERGENCY_SHIELD) {
+            Sounds.play(w, pl.px, pl.py, PICKUP_SOUND[item]);
         }
         o.life[h] = 0;
     }

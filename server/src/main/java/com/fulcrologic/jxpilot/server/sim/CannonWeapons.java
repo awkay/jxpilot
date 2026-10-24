@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.Cannon;
 import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.server.world.CannonItems;
@@ -147,7 +148,8 @@ public final class CannonWeapons {
      * frames (one rfrac()) a cannon with a defense and a hazardous object close by uses it.
      * <p>
      * BEHAVIOR: defenses: an emergency shield or a phasing device (4*FPS more, one item), not with smartness 0
-     * or while one is already on. Danger: a killing object not from a cannon (and not of the cannon's team with
+     * or while one is already on; EMERGENCY_SHIELD_ON or PHASING_ON plays at the cannon (C Cannon_defend).
+     * Danger: a killing object not from a cannon (and not of the cannon's team with
      * team immunity) within (4.5 - smartness) blocks, looking ahead by its velocity (and acceleration).
      */
     public void defend(int c) {
@@ -157,16 +159,19 @@ public final class CannonWeapons {
         int defense = selectDefense(c);
         if (defense >= 0 && inDanger(c)) {
             CannonItems ci = w.cannonItems;
+            Cannon cn = w.map.cannons().get(c);
             int fps = w.params.fps;
             if (defense == CD_EM_SHIELD) {
                 ci.emergencyShieldLeft[c] += 4 * fps;
                 ci.used[c] |= Has.EMERGENCY_SHIELD;
                 ci.add(c, Item.EMERGENCY_SHIELD, -1);
+                Sounds.play(w, cn.x(), cn.y(), SoundEvent.EMERGENCY_SHIELD_ON);
             } else {
                 ci.phasingLeft[c] += 4 * fps;
                 ci.used[c] |= Has.PHASING_DEVICE;
                 ci.tractorCount[c] = 0;
                 ci.add(c, Item.PHASING, -1);
+                Sounds.play(w, cn.x(), cn.y(), SoundEvent.PHASING_ON);
             }
         }
     }
@@ -258,7 +263,8 @@ public final class CannonWeapons {
      * The cannon timers (update.c:654-685).
      * <p>
      * BEHAVIOR: damage counts down; a tractor beam pulls its target while it is playing and in range (one frame
-     * less each time) and stops otherwise; emergency shield and phasing time out.
+     * less each time) and stops otherwise; emergency shield and phasing time out (EMERGENCY_SHIELD_OFF /
+     * PHASING_OFF at the cannon).
      */
     public void tick(int c) {
         CannonItems ci = w.cannonItems;
@@ -279,9 +285,13 @@ public final class CannonWeapons {
         }
         if (ci.emergencyShieldLeft[c] > 0 && --ci.emergencyShieldLeft[c] <= 0) {
             ci.used[c] &= ~Has.EMERGENCY_SHIELD;
+            Cannon cn = w.map.cannons().get(c);
+            Sounds.play(w, cn.x(), cn.y(), SoundEvent.EMERGENCY_SHIELD_OFF);
         }
         if (ci.phasingLeft[c] > 0 && --ci.phasingLeft[c] <= 0) {
             ci.used[c] &= ~Has.PHASING_DEVICE;
+            Cannon cn = w.map.cannons().get(c);
+            Sounds.play(w, cn.x(), cn.y(), SoundEvent.PHASING_OFF);
         }
     }
 
@@ -402,6 +412,9 @@ public final class CannonWeapons {
      * (with an emergency thrust, one used) or 150-350 (one fuel pack used).
      * BEHAVIOR: shots: 1 + 2 * wideangles cannon shots fanned by (4 - smartness), flak with cannonFlak, plus
      * rear shots.
+     * BEHAVIOR: last, the weapon's sound plays at the cannon: DROP_MINE / DROP_MOVING_MINE, FIRE_SMART_SHOT /
+     * FIRE_HEAT_SHOT / FIRE_TORPEDO, FIRE_LASER, ECM, TRANSPORTER_FAIL (target too far), THRUST (gas jet),
+     * CANNON_FIRE (shots); none for a tractor beam or a transporter used.
      */
     public void fire(int c, int weapon, Player target, int dir) {
         CannonItems ci = w.cannonItems;
@@ -412,6 +425,7 @@ public final class CannonWeapons {
         int smart = w.params.cannonSmartness;
         int speed = (int) w.params.shotSpeed;
         int mods = 0;
+        SoundEvent sound = SoundEvent.CANNON_FIRE;
         switch (weapon) {
             case CW_MINE -> {
                 if (ip.allowClusters && w.rfrac() < 0.25f) {
@@ -426,6 +440,7 @@ public final class CannonWeapons {
                 }
                 if (w.rfrac() < 0.5f) {
                     sim.mines.placeGeneral(null, cn.team(), Obj.FROMCANNON, cpx, cpy, 0, 0, mods);
+                    sound = SoundEvent.DROP_MINE;
                 } else {
                     if (ip.allowModifiers) {
                         mods = Mods.withMini(mods, (int) (w.rfrac() * Mods.MINI_MAX) + 1);
@@ -434,6 +449,7 @@ public final class CannonWeapons {
                     speed = (int) (speed * 0.5 + 0.1 * smart);
                     sim.mines.placeGeneral(null, cn.team(), Obj.GRAVITY | Obj.FROMCANNON, cpx, cpy,
                         Trig.tcos(dir) * speed, Trig.tsin(dir) * speed, mods);
+                    sound = SoundEvent.DROP_MOVING_MINE;
                 }
                 ci.add(c, Item.MINE, -1);
             }
@@ -452,14 +468,17 @@ public final class CannonWeapons {
                 boolean fired = false;
                 if (pick >= 2 && ip.allowSmartMissiles) {
                     sim.missiles.fire(null, cn.team(), true, cpx, cpy, Obj.SMART_SHOT, dir, mods, target.id);
+                    sound = SoundEvent.FIRE_SMART_SHOT;
                     fired = true;
                 }
                 if (!fired && pick >= 1 && ip.allowHeatSeekers && (target.status & Obj.THRUSTING) != 0) {
                     sim.missiles.fire(null, cn.team(), true, cpx, cpy, Obj.HEAT_SHOT, dir, mods, target.id);
+                    sound = SoundEvent.FIRE_HEAT_SHOT;
                     fired = true;
                 }
                 if (!fired) {
                     sim.missiles.fire(null, cn.team(), true, cpx, cpy, Obj.TORPEDO, dir, mods, -1);
+                    sound = SoundEvent.FIRE_TORPEDO;
                 }
                 ci.add(c, Item.MISSILE, -1);
             }
@@ -468,15 +487,18 @@ public final class CannonWeapons {
                     mods = Mods.withLaser(mods, (int) (w.rfrac() * (Mods.LASER_MAX + 1)));
                 }
                 sim.lasers.fireGeneral(null, cn.team(), cpx, cpy, dir, mods);
+                sound = SoundEvent.FIRE_LASER;
             }
             case CW_ECM -> {
                 sim.ecm.fireGeneral(null, cn.team(), cpx, cpy);
                 ci.add(c, Item.ECM, -1);
+                sound = SoundEvent.ECM;
             }
             case CW_TRACTORBEAM -> {
                 ci.tractorIsPressor[c] = w.rfrac() * (smart + 1) >= 1;
                 ci.tractorTarget[c] = target.id;
                 ci.tractorCount[c] = 11 + (int) (w.rfrac() * ((3 * smart) + 1));
+                sound = null;
             }
             case CW_TRANSPORTER -> {
                 ci.add(c, Item.TRANSPORTER, -1);
@@ -488,6 +510,9 @@ public final class CannonWeapons {
                     if (d.stolenItem != -1) {
                         addItem(c, d.stolenItem, (int) d.stolenAmount);
                     }
+                    sound = null;
+                } else {
+                    sound = SoundEvent.TRANSPORTER_FAIL;
                 }
             }
             case CW_GASJET -> {
@@ -502,6 +527,7 @@ public final class CannonWeapons {
                         dir - 3 * (4 - smart), dir + 3 * (4 - smart), 0.1, speed * 2, 3, 20);
                 }
                 ci.add(c, Item.FUEL, -1);
+                sound = SoundEvent.THRUST;
             }
             default -> {
                 if (w.params.cannonFlak) {
@@ -518,6 +544,9 @@ public final class CannonWeapons {
                     sim.shots.fire(null, cn.team(), true, cpx, cpy, Obj.CANNON_SHOT, Trig.mod(aDir), mods);
                 }
             }
+        }
+        if (sound != null) {
+            Sounds.play(w, cpx, cpy, sound);
         }
     }
 }

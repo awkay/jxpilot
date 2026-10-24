@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Item;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
@@ -257,7 +258,8 @@ public final class Tanks {
      * "NAME's tank" ('T', the owner's team, home and pseudo team, score - tankScoreDecrement, no tanks of its own,
      * the tank ship with allowShipShapes) at the ship's position, velocity and heading, with the tank's fuel
      * (its capacity as maximum), mass shipMass + fuel and power * 0.7; it thrusts and is shielded (with
-     * shield time 30*FPS when shields are not allowed). Its owner is remembered in its lock id.
+     * shield time 30*FPS when shields are not allowed). Its owner is remembered in its lock id. TANK_DETACH
+     * plays at the ship.
      * BEHAVIOR: heat-seekers chasing the ship retarget to the tank's position in the player order (C uses the
      * index where it means an id; kept); the ship loses the tank (Player_remove_tank). JOIN and SCORE go out.
      */
@@ -321,6 +323,7 @@ public final class Tanks {
         w.enter(dummy);
         dummy.pseudoTeam = pl.pseudoTeam;
         sim.locks.resetVisibility(dummy);
+        Sounds.play(w, pl.px, pl.py, SoundEvent.TANK_DETACH);
         dummy.status = com.fulcrologic.jxpilot.server.world.Obj.PLAYING | com.fulcrologic.jxpilot.server.world.Obj.GRAVITY
             | com.fulcrologic.jxpilot.server.world.Obj.THRUSTING;
         dummy.have = w.params.defHave;

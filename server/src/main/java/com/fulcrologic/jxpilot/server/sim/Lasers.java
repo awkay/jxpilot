@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
@@ -104,7 +105,8 @@ public final class Lasers {
     /**
      * C {@code Fire_general_laser}.
      * <p>
-     * BEHAVIOR: a player pays ED_LASER (even when the pulse list is full) and its pulse lives
+     * BEHAVIOR: a player pays ED_LASER (even when the pulse list is full), FIRE_LASER plays at (x, y) and its
+     * pulse lives
      * (int)PULSE_LIFE(lasers); a cannon's lives (int)PULSE_LIFE(1). The pulse starts one PULSE_SPEED back (it moves
      * before it is checked), length PULSE_LENGTH, not reflected; the player's pulse count goes up.
      */
@@ -112,6 +114,7 @@ public final class Lasers {
         int life;
         if (pl != null) {
             pl.addFuel(ED_LASER);
+            Sounds.play(w, x, y, SoundEvent.FIRE_LASER);
             life = (int) pulseLife(pl.items[Item.LASER.ordinal()]);
         } else {
             life = (int) pulseLife(1);
@@ -382,11 +385,13 @@ public final class Lasers {
      * BEHAVIOR: the victim is seen (forceVisible+1). A mirror reflects the pulse with chance 1 - 1/(2*mirrors):
      * it restarts half a sample back, turns about the line to the victim, gains a frame per mirror, gets its full
      * length back and is marked reflected.
-     * BEHAVIOR: a fully shielded victim is unhurt; nothing happens unless pulses are killing shots.
+     * BEHAVIOR: an unreflected hit plays PLAYER_EAT_LASER at the victim. A fully shielded victim is unhurt;
+     * nothing happens unless pulses are killing shots.
      * BEHAVIOR: a stun pulse (or laserIsStunGun without laser modifiers) paralyses a shielded, lasering, shooting
      * or thrusting victim for 5 more frames ("X got paralysed by Y's stun laser."); a blinding pulse blinds for
      * FPS+6 frames (and makes it visible, the shooter recorded as a shover until then).
-     * BEHAVIOR: otherwise the hit costs ED_LASER_HIT fuel; an unshielded victim without armor is roasted: a
+     * BEHAVIOR: otherwise the hit costs ED_LASER_HIT fuel; an unshielded victim without armor is roasted
+     * (PLAYER_ROASTED plays at it): a
      * player's laser scores Rate(shooter, victim) * laserKillScoreMult (a kill), the own laser
      * -Rate(0)*laserKillScoreMult*selfKillScoreMult ("How strange!"), a cannon's -Rate(CANNON_SCORE)/4 for the
      * cannon's team; an unshielded victim with armor loses an armor.
@@ -406,6 +411,7 @@ public final class Lasers {
             refl = true;
             return;
         }
+        Sounds.play(w, v.px, v.py, SoundEvent.PLAYER_EAT_LASER);
         if (v.fullyShielded()) {
             return;
         }
@@ -461,6 +467,7 @@ public final class Lasers {
                     }
                     msg.append(" got roasted alive by cannonfire.");
                 }
+                Sounds.play(w, v.px, v.py, SoundEvent.PLAYER_ROASTED);
                 if (pl != null && pl.id != v.id) {
                     pl.kills++;
                 }

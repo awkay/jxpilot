@@ -25,6 +25,7 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.math.XMath;
 import com.fulcrologic.jxpilot.common.net.ControlKey;
 import com.fulcrologic.jxpilot.common.net.Msg;
@@ -71,7 +72,7 @@ public final class Devices {
      * <p>
      * BEHAVIOR: on: a new 4*FPS phase (one item used) when the last one ran out; phasing on, refuel, repair and
      * tractor beam off, and no gravity. Off: phasing off; the ability goes when the phase and the items are
-     * used up; gravity again.
+     * used up; gravity again. Either way PHASING_ON/OFF plays at the player.
      */
     public void phasing(Player pl, boolean on) {
         int time = 4 * w.params.fps;
@@ -84,12 +85,14 @@ public final class Devices {
             pl.used |= Has.PHASING_DEVICE;
             pl.used &= ~(Has.REFUEL | Has.REPAIR | Has.TRACTOR_BEAM);
             pl.status &= ~Obj.GRAVITY;
+            Sounds.play(w, pl.px, pl.py, SoundEvent.PHASING_ON);
         } else {
             pl.used &= ~Has.PHASING_DEVICE;
             if (pl.phasingLeft <= 0 && pl.items[Item.PHASING.ordinal()] <= 0) {
                 pl.have &= ~Has.PHASING_DEVICE;
             }
             pl.status |= Obj.GRAVITY;
+            Sounds.play(w, pl.px, pl.py, SoundEvent.PHASING_OFF);
         }
     }
 
@@ -97,8 +100,10 @@ public final class Devices {
      * C {@code Cloak}.
      * <p>
      * BEHAVIOR: on (when not cloaked and a cloak item is left): without cloakedShield emergency shield and
-     * deflector go off and shields are lost; visibility is updated and the cloak goes on.
-     * BEHAVIOR: off: the cloak goes off (visibility updated); without items the ability goes. Without
+     * deflector go off and shields are lost; the player hears CLOAK, visibility is updated and the cloak goes
+     * on.
+     * BEHAVIOR: off: a running cloak goes off (CLOAK to the player, visibility updated); without items the
+     * ability goes. Without
      * cloakedShield an emergency shield comes back on, default shields come back, and shields go up again if
      * the shield key is held.
      */
@@ -116,11 +121,13 @@ public final class Devices {
                     pl.used &= ~Has.SHIELD;
                     pl.have &= ~Has.SHIELD;
                 }
+                Sounds.playPlayer(pl, SoundEvent.CLOAK);
                 pl.updateVisibility = true;
                 pl.used |= Has.CLOAKING_DEVICE;
             }
         } else {
             if ((pl.used & Has.CLOAKING_DEVICE) != 0) {
+                Sounds.playPlayer(pl, SoundEvent.CLOAK);
                 pl.updateVisibility = true;
                 pl.used &= ~Has.CLOAKING_DEVICE;
             }
@@ -146,16 +153,20 @@ public final class Devices {
      * C {@code Deflector}.
      * <p>
      * BEHAVIOR: on (when off and a deflector item is left) only when cloakedShield or not cloaked. Off: it goes
-     * off; without items the ability goes.
+     * off; without items the ability goes. Turning it on or off plays DEFLECTOR to the player.
      */
     public void deflector(Player pl, boolean on) {
         if (on) {
             if ((pl.used & Has.DEFLECTOR) == 0 && pl.items[Item.DEFLECTOR.ordinal()] > 0
                 && (w.items.cloakedShield || (pl.used & Has.CLOAKING_DEVICE) == 0)) {
                 pl.used |= Has.DEFLECTOR;
+                Sounds.playPlayer(pl, SoundEvent.DEFLECTOR);
             }
         } else {
-            pl.used &= ~Has.DEFLECTOR;
+            if ((pl.used & Has.DEFLECTOR) != 0) {
+                pl.used &= ~Has.DEFLECTOR;
+                Sounds.playPlayer(pl, SoundEvent.DEFLECTOR);
+            }
             if (pl.items[Item.DEFLECTOR.ordinal()] == 0) {
                 pl.have &= ~Has.DEFLECTOR;
             }
@@ -167,7 +178,7 @@ public final class Devices {
      * <p>
      * BEHAVIOR: on: a new 4*FPS run (one item used) when the last ran out, and it goes on (a THRUST event,
      * since the effective afterburners change). Off: it goes off; the ability goes when run and items are used
-     * up.
+     * up. Switching it plays EMERGENCY_THRUST_ON/OFF at the player.
      */
     public void emergencyThrust(Player pl, boolean on) {
         int time = 4 * w.params.fps;
@@ -178,9 +189,15 @@ public final class Devices {
                 pl.emergencyThrustMax = time;
                 pl.items[Item.EMERGENCY_THRUST.ordinal()]--;
             }
-            pl.used |= Has.EMERGENCY_THRUST;
+            if ((pl.used & Has.EMERGENCY_THRUST) == 0) {
+                pl.used |= Has.EMERGENCY_THRUST;
+                Sounds.play(w, pl.px, pl.py, SoundEvent.EMERGENCY_THRUST_ON);
+            }
         } else {
-            pl.used &= ~Has.EMERGENCY_THRUST;
+            if ((pl.used & Has.EMERGENCY_THRUST) != 0) {
+                pl.used &= ~Has.EMERGENCY_THRUST;
+                Sounds.play(w, pl.px, pl.py, SoundEvent.EMERGENCY_THRUST_OFF);
+            }
             if (pl.emergencyThrustLeft <= 0 && pl.items[Item.EMERGENCY_THRUST.ordinal()] <= 0) {
                 pl.have &= ~Has.EMERGENCY_THRUST;
             }
@@ -196,7 +213,7 @@ public final class Devices {
      * BEHAVIOR: on (with the ability): a new 4*FPS run (one item used) when the last ran out; unless cloaked
      * without cloakedShield, shields become available and the emergency shield goes on.
      * BEHAVIOR: off: the ability goes when run and items are used up; without default shields shields are lost;
-     * the emergency shield goes off.
+     * the emergency shield goes off. Switching it plays EMERGENCY_SHIELD_ON/OFF at the player.
      */
     public void emergencyShield(Player pl, boolean on) {
         int time = 4 * w.params.fps;
@@ -209,7 +226,10 @@ public final class Devices {
                 }
                 if (w.items.cloakedShield || (pl.used & Has.CLOAKING_DEVICE) == 0) {
                     pl.have |= Has.SHIELD;
-                    pl.used |= Has.EMERGENCY_SHIELD;
+                    if ((pl.used & Has.EMERGENCY_SHIELD) == 0) {
+                        pl.used |= Has.EMERGENCY_SHIELD;
+                        Sounds.play(w, pl.px, pl.py, SoundEvent.EMERGENCY_SHIELD_ON);
+                    }
                 }
             }
         } else {
@@ -220,7 +240,10 @@ public final class Devices {
                 pl.have &= ~Has.SHIELD;
                 pl.used &= ~Has.SHIELD;
             }
-            pl.used &= ~Has.EMERGENCY_SHIELD;
+            if ((pl.used & Has.EMERGENCY_SHIELD) != 0) {
+                pl.used &= ~Has.EMERGENCY_SHIELD;
+                Sounds.play(w, pl.px, pl.py, SoundEvent.EMERGENCY_SHIELD_OFF);
+            }
         }
     }
 
@@ -228,7 +251,7 @@ public final class Devices {
      * C {@code Autopilot}: always stops thrusting.
      * <p>
      * BEHAVIOR: on: power, turnspeed and turnresistance are saved and set to the middle of their ranges and
-     * 0.2. Off: they are restored, turnacc becomes 0.
+     * 0.2. Off: they are restored, turnacc becomes 0. Either way AUTOPILOT_ON/OFF plays at the player.
      */
     public void autopilot(Player pl, boolean on) {
         pl.status &= ~Obj.THRUSTING;
@@ -241,12 +264,14 @@ public final class Devices {
             pl.power = (float) ((Const.MIN_PLAYER_POWER + Const.MAX_PLAYER_POWER) / 2.0);
             pl.turnSpeed = (float) ((Const.MIN_PLAYER_TURNSPEED + Const.MAX_PLAYER_TURNSPEED) / 2.0);
             pl.turnResistance = 0.2f;
+            Sounds.play(w, pl.px, pl.py, SoundEvent.AUTOPILOT_ON);
         } else {
             pl.power = pl.autoPowerS;
             pl.turnAcc = 0;
             pl.turnSpeed = pl.autoTurnSpeedS;
             pl.turnResistance = pl.autoTurnResistanceS;
             pl.used &= ~Has.AUTOPILOT;
+            Sounds.play(w, pl.px, pl.py, SoundEvent.AUTOPILOT_OFF);
         }
         if (pl.power != oldPower) {
             w.events.add(com.fulcrologic.jxpilot.server.world.Events.THRUST, pl.id, pl.afterburners(), 0, pl.power);
@@ -528,7 +553,8 @@ public final class Devices {
     /**
      * C {@code General_tractor_beam} from a player ({@code pl}) or a cannon ({@code pl == null}) at (x, y).
      * <p>
-     * BEHAVIOR: nothing beyond the range. The player pays the cost; force = percent * maxforce (negated for a
+     * BEHAVIOR: nothing beyond the range. PRESSOR_BEAM or TRACTOR_BEAM plays at (x, y); the player pays the
+     * cost; force = percent * maxforce (negated for a
      * pressor) along the direction from the victim to the beam source: the source is pushed by +force/mass, the
      * victim by -force/mass; both record the other as a shover.
      */
@@ -542,6 +568,7 @@ public final class Devices {
         float percent = tractorPercent(dist, maxdist);
         long cost = tractorCost(percent);
         float force = percent * maxforce * (pressor ? -1 : 1);
+        Sounds.play(w, x, y, pressor ? SoundEvent.PRESSOR_BEAM : SoundEvent.TRACTOR_BEAM);
         if (pl != null) {
             pl.addFuel(cost);
         }
@@ -591,8 +618,8 @@ public final class Devices {
      * <p>
      * BEHAVIOR: nothing without a transporter, with too little fuel or while phased.
      * BEHAVIOR: the closest playing, unphased, non-team-immune player that is not a tank within
-     * TRANSPORTER_DISTANCE is robbed ({@link #generalTransporter}); without one the item and its fuel are
-     * spent for nothing.
+     * TRANSPORTER_DISTANCE is robbed ({@link #generalTransporter}); without one TRANSPORTER_FAIL plays and the
+     * item and its fuel are spent for nothing.
      */
     public void transporter(Player pl) {
         if (pl.items[Item.TRANSPORTER.ordinal()] == 0 || pl.fuel < -ED_TRANSPORTER
@@ -614,6 +641,7 @@ public final class Devices {
             }
         }
         if (target == null) {
+            Sounds.play(w, pl.px, pl.py, SoundEvent.TRANSPORTER_FAIL);
             pl.addFuel(ED_TRANSPORTER);
             pl.items[Item.TRANSPORTER.ordinal()]--;
             return;
@@ -629,7 +657,8 @@ public final class Devices {
      * C {@code Do_general_transporter} by a player ({@code pl}) or a cannon ({@code pl == null}) at (x, y).
      * <p>
      * BEHAVIOR: up to 50 random draws pick an item kind the victim has (tanks count as the tank count, fuel
-     * as the fuel sum); after 50 misses nothing happens (a cannon gets item -1).
+     * as the fuel sum); after 50 misses only TRANSPORTER_FAIL plays at (x, y) (a cannon gets item -1),
+     * otherwise TRANSPORTER_SUCCESS does.
      * BEHAVIOR: a transporter beam is shown for 5 frames. The victim loses one of the item (missiles: up to
      * 3; a tank: a random extra tank with its fuel; fuel: 10-50% of its fuel) and the abilities that go with
      * it; the message says who stole what from whom.
@@ -647,12 +676,14 @@ public final class Devices {
             }
         }
         if (i == 50) {
+            Sounds.play(w, x, y, SoundEvent.TRANSPORTER_FAIL);
             if (pl == null) {
                 stolenAmount = 0;
                 stolenItem = -1;
             }
             return;
         }
+        Sounds.play(w, x, y, SoundEvent.TRANSPORTER_SUCCESS);
         Ecms e = w.ecms;
         int t = e.addTransporter();
         if (t >= 0) {
