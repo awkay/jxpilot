@@ -44,8 +44,11 @@ import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.client.render.TextWriter;
 import com.fulcrologic.jxpilot.client.render.VertexBatch;
 import com.fulcrologic.jxpilot.client.render.WinScale;
+import com.fulcrologic.jxpilot.client.sound.SoundPlayer;
+import com.fulcrologic.jxpilot.client.sound.SoundSystem;
 import com.fulcrologic.jxpilot.client.xp.GameConnection;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
+import com.fulcrologic.jxpilot.common.net.Msg;
 import org.lwjgl.system.MemoryUtil;
 
 import java.io.IOException;
@@ -61,7 +64,8 @@ import static org.lwjgl.opengl.GL33C.*;
  * C client's top-level window: a 256-pixel panel on the left (radar on top, score list below) and the
  * game view to its right. Per frame: poll events, {@link ClientFrame#step} (network, game, input, scene
  * and HUD), rebuild the map meshes and radar picture when the map changes, then draw the static map,
- * map symbols, scene, HUD, radar and score list. Thin GL glue; the logic it calls is tested.
+ * map symbols, scene, HUD, radar and score list, and play the frame's sounds ({@link SoundPlayer}). Thin GL
+ * glue; the logic it calls is tested.
  */
 public final class GameApp {
     /** Panel width: the radar's 256 pixels (C {@code draw} window starts at x = 258). */
@@ -116,6 +120,7 @@ public final class GameApp {
     private double altScaleFactor;
 
     private Window window;
+    private SoundPlayer sound;
     private GlRenderer gl;
     private UiAtlas atlas;
     private TextWriter text;
@@ -171,6 +176,7 @@ public final class GameApp {
             dynPt = MemoryUtil.memAlloc(Math.min(DYNAMIC_POINTS, gl.maxPoints()) * VertexBatch.POINT_STRIDE);
             dyn = VertexBatch.fixed(dynTri, dynSeg, dynPt, 256, gl);
             installInput();
+            sound = SoundSystem.open(opts.sound(), opts.maxVolume(), SoundSystem::openAl, System.out);
             conn.start(System.nanoTime());
             loop();
         } finally {
@@ -229,6 +235,7 @@ public final class GameApp {
             window.refreshSize();
             rebakeFontIfNeeded();
             renderFrame(now);
+            sound(now);
             if (script != null) {
                 script.afterFrame(n, frame, now);
                 int[] g = script.grabAfter(n, window.framebufferWidth(), window.framebufferHeight());
@@ -254,6 +261,14 @@ public final class GameApp {
                 break;
             }
         }
+    }
+
+    /** The frame's sounds, and the sound toggle key with a HUD message as feedback. */
+    private void sound(long now) {
+        if (frame.takeToggleSound()) {
+            frame.game().messages().add(Msg.Text.KIND_SERVER, sound.toggleMuted() ? "Sound off." : "Sound on.");
+        }
+        sound.frame(frame.game().world().sounds(), frame.game().gameFps(), now);
     }
 
     private void grab(int n, int[] r) {
@@ -454,6 +469,9 @@ public final class GameApp {
     }
 
     private void dispose() {
+        if (sound != null) {
+            sound.close();
+        }
         if (gl != null) {
             gl.delete(mesh);
             gl.dispose();

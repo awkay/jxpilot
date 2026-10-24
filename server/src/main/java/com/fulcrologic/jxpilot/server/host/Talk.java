@@ -41,7 +41,8 @@ import com.fulcrologic.jxpilot.server.world.World;
  * ({@code "text [sender]:[receiver]"} to both). C also matches the real name; JXPilot has none.
  */
 final class Talk {
-    /** C {@code strchr("-_~)(/\\}{[]", cp[1])}: smileys are smileys (the terminating NUL matches too). */
+    /** C {@code strchr("-_~)(/\\}{[]", cp[1])}: smileys are smileys; C also matches the
+     * terminating NUL, so a colon at the end is no address. */
     static final String SMILEY = "-_~)(/\\}{[]";
 
     private final World w;
@@ -64,7 +65,7 @@ final class Talk {
     void say(Player from, CharSequence line) {
         int len = line.length();
         int colon = indexOf(line, ':');
-        if (colon <= 0 || SMILEY.indexOf(colon + 1 < len ? line.charAt(colon + 1) : '\0') >= 0) {
+        if (colon <= 0 || colon + 1 == len || SMILEY.indexOf(line.charAt(colon + 1)) >= 0) {
             body(w.events.message(Msg.Text.KIND_CHAT, from.id), line, 0, len, from);
             return;
         }

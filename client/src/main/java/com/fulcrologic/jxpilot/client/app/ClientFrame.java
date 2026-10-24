@@ -85,6 +85,7 @@ public final class ClientFrame {
     private boolean started;
     private boolean quit;
     private boolean swapScale;
+    private boolean toggleSound;
     private int talkWidthFor = -1;
 
     /** With the default key configuration and the given input (tests). */
@@ -189,9 +190,9 @@ public final class ClientFrame {
      * A GLFW key event ({@link KeyRouter#key}).
      * <p>
      * BEHAVIOR: a finished chat line is sent with {@link GameConnection#sendChat}; QUIT sets
-     * {@link #quitRequested()}; SWAP_SCALE sets {@link #takeSwapScale()}; SETTINGS sends the control settings
-     * ({@link GameConnection#sendSettings}); SHOW_CONTROLS shows the power and turn speed meters; HELP
-     * toggles the key help.
+     * {@link #quitRequested()}; SWAP_SCALE sets {@link #takeSwapScale()}; TOGGLE_SOUND sets
+     * {@link #takeToggleSound()}; SETTINGS sends the control settings ({@link GameConnection#sendSettings});
+     * SHOW_CONTROLS shows the power and turn speed meters; HELP toggles the key help.
      */
     public void key(int key, int action, int mods, long nowNanos) {
         int ev = router.key(key, action, mods);
@@ -212,6 +213,9 @@ public final class ClientFrame {
         }
         if ((ev & KeyRouter.SWAP_SCALE) != 0) {
             swapScale = true;
+        }
+        if ((ev & KeyRouter.TOGGLE_SOUND) != 0) {
+            toggleSound = true;
         }
     }
 
@@ -240,6 +244,13 @@ public final class ClientFrame {
         boolean s = swapScale;
         swapScale = false;
         return s;
+    }
+
+    /** BEHAVIOR: true once per press of the sound toggle key. */
+    public boolean takeToggleSound() {
+        boolean t = toggleSound;
+        toggleSound = false;
+        return t;
     }
 
     /** Incremented whenever the game's map object changes (first map, reconnect, map change). */

@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.net.Records;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.Obj;
@@ -125,6 +126,9 @@ public final class Shots {
                 return -1;
             }
             pl.addFuel(ED_SHOT);
+            if (type == Obj.SHOT || type == Obj.CANNON_SHOT) {
+                Sounds.play(w, pl.px, pl.py, SoundEvent.FIRE_SHOT);
+            }
             pl.shots++;
         }
         if (!p.shotsGravity) {
@@ -196,6 +200,7 @@ public final class Shots {
         if (o.mass[h] == 0) {
             return;
         }
+        Sounds.play(w, o.px[h], o.py[h], SoundEvent.OBJECT_EXPLOSION);
         int status = Obj.GRAVITY;
         if ((o.status[h] & Obj.FROMCANNON) != 0) {
             status |= Obj.FROMCANNON;

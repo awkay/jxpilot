@@ -64,6 +64,11 @@ public enum ClientAction {
     MSG_18("keySendMsg18", "", "Sends the talkmessage stored in msg18."),
     MSG_19("keySendMsg19", "", "Sends the talkmessage stored in msg19."),
     MSG_20("keySendMsg20", "", "Sends the talkmessage stored in msg20."),
+    /**
+     * JXPilot only: sound on/off. C has no such key (its sound is the {@code sound} resource); the default is a
+     * key C leaves unbound.
+     */
+    TOGGLE_SOUND("keyToggleSound", "minus", "Toggle sound on/off (JXPilot)."),
     /** JXPilot: show or hide the key help overlay. */
     HELP("keyHelp", "F1", "Show or hide this key help (JXPilot).");
 
@@ -80,9 +85,9 @@ public enum ClientAction {
         this.help = help;
     }
 
-    /** BEHAVIOR: true for the actions JXPilot implements (talk, talk cursor, scale-factor swap, key help). */
+    /** BEHAVIOR: true for the actions JXPilot implements (talk, talk cursor, scale-factor swap, sound, key help). */
     public boolean implemented() {
-        return this == TALK || talkCursor() || this == SWAP_SCALEFACTOR || this == HELP;
+        return this == TALK || talkCursor() || this == SWAP_SCALEFACTOR || this == HELP || this == TOGGLE_SOUND;
     }
 
     /** BEHAVIOR: true for the four talk-line cursor keys (only active while talking, as in C). */

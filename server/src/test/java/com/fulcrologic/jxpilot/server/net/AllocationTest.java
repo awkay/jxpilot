@@ -186,16 +186,28 @@ class AllocationTest {
         for (int i = 0; i < 5; i++) {
             flood.run();
         }
+        // A late JIT install can allocate ~2 KB once on the measured thread (seen on CI). Measure several
+        // rounds: one allocation per packet would show as >= 30000 B in every round, so require a clean
+        // round and bound the worst one well below that.
         long malformedBefore = h.net.malformed();
-        long before = MX.getCurrentThreadAllocatedBytes();
-        flood.run();
-        long allocated = MX.getCurrentThreadAllocatedBytes() - before;
+        long cleanest = Long.MAX_VALUE;
+        long worst = 0;
+        for (int round = 0; round < 4; round++) {
+            long before = MX.getCurrentThreadAllocatedBytes();
+            flood.run();
+            long allocated = MX.getCurrentThreadAllocatedBytes() - before;
+            cleanest = Math.min(cleanest, allocated);
+            worst = Math.max(worst, allocated);
+        }
+        long clean = cleanest;
+        long worstRound = worst;
         long malformed = h.net.malformed() - malformedBefore;
         assertAll(
-            () -> assertEquals(0, allocated, "30000 malformed, other-version and stray packets allocate nothing"),
-            () -> assertEquals(10_000, malformed, "every bad CONNECT was parsed and refused"),
+            () -> assertEquals(0, clean, "a round of 30000 malformed, other-version and stray packets allocates nothing"),
+            () -> assertTrue(worstRound <= 4096, "no round allocates per packet (worst " + worstRound + " B)"),
+            () -> assertEquals(40_000, malformed, "every bad CONNECT was parsed and refused"),
             () -> assertEquals(0, h.net.rateLimited(), "nothing was rate limited (all were parsed)"),
-            () -> assertEquals(60_000, h.net.versionRejects(), "other-version CONNECTs were answered (all six rounds)"));
+            () -> assertEquals(90_000, h.net.versionRejects(), "other-version CONNECTs were answered (all nine rounds)"));
     }
 
     @Test
@@ -311,6 +323,12 @@ class AllocationTest {
         }
         com.fulcrologic.jxpilot.server.world.World w = hostRef.get().simulation().world;
         int robots = hostRef.get().simulation().robots.numRobots();
+        int robotJoins = 0;
+        com.fulcrologic.jxpilot.server.robot.RobotRoster roster = hostRef.get().simulation().robots.roster();
+        for (int i = 0; i < roster.size(); i++) {
+            robotJoins += roster.used(i);
+        }
+        int joins = robotJoins;
         long allocatedBytes = allocated;
         int snaps = snapshots;
         long ticks = measuredTicks;
@@ -320,7 +338,9 @@ class AllocationTest {
             () -> assertEquals(0, allocatedBytes, "8 s of the real game (1 peer, 8 robots) allocate nothing on the loop thread"),
             () -> assertTrue(ticks > 100, "the game ticked during the measurement (" + ticks + ")"),
             () -> assertTrue(snaps > 80, "snapshots flowed during the measurement (" + snaps + ")"),
-            () -> assertEquals(8, robots, "8 robots were playing"));
+            () -> assertTrue(joins >= 8, "8 robots joined (" + joins + " robot joins)"),
+            () -> assertTrue(robots >= 7, "and were playing at the end (" + robots + "; one may be between leaving and"
+                + " its replacement, 2*FPS frames later)"));
     }
 
     /**

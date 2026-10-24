@@ -259,10 +259,7 @@ class HudBuildTest {
             ByteBuffer sb = ByteBuffer.allocate(20);
             s.write(sb);
             g.onReliable(com.fulcrologic.jxpilot.common.net.ReliableType.SCORE, sb.flip());
-            s.score = 4;
-            sb.clear();
-            s.write(sb);
-            g.onReliable(com.fulcrologic.jxpilot.common.net.ReliableType.SCORE, sb.flip());
+            g.scoreObjects().add(3, null, false, 0, 0);
             Hud h = new Hud();
             h.ptrMoveFact = 2;
             h.fuelMeter = true;

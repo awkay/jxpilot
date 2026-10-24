@@ -11,25 +11,116 @@ ifdef::env-github[]
 :warning-caption: :warning:
 endif::[]
 
-This chapter lists every flag of the client. Each section says whether its flags are available now,
-on an unmerged development branch, or planned.
+This chapter lists every flag of the client: the game flags, the map viewer's flags, the Java options of
+the jar launcher, and how to play on original XPilot servers.
 
 [[client-synopsis]]
 == Starting the client
 
+The client has three modes:
+
 [source,shell]
 ----
-java -jar jxpilot-client-VERSION.jar --view-map MAPFILE [FLAGS]        # release jar
-JXPilot.app/Contents/MacOS/JXPilot --view-map MAPFILE [FLAGS]           # macOS application download
-mvn -pl client exec:exec -Dclient.args="--view-map ../maps/default.xp ..."  # from source
+java -jar jxpilot-client-VERSION.jar --connect HOST[:PORT] [GAME FLAGS]   # join a server
+java -jar jxpilot-client-VERSION.jar --local --map MAPFILE [GAME FLAGS]   # play on a server of your own
+java -jar jxpilot-client-VERSION.jar --view-map MAPFILE [VIEWER FLAGS]    # look at a map
 ----
 
-Without `--view-map` the client prints a usage line and exits with status 2, as it does for an
-unknown flag, a missing value or a malformed number (with a message naming the flag). The usage line
-lists only the most common flags; the table below has all of them.
+The application downloads take the same flags (`JXPilot.app/Contents/MacOS/JXPilot ...` on macOS);
+from source, `client/scripts/run-client.sh` (after a build) or
+`mvn -pl client exec:exec -Dclient.args="..."` run the same main class.
+
+Without arguments, the client prints its usage and exits with status 2, as it does for an unknown flag,
+a missing value or a malformed number (with a message naming the flag). It also exits with 2 when
+`--connect` and `--local` are both given, or `--map` without `--local`. A `--local` server that cannot
+start exits with status 3.
+
+[[game-flags]]
+== Game flags (`--connect` and `--local`)
+
+[cols="2,2,4",options="header"]
+|===
+|Flag |Default |Meaning
+
+|`--connect TARGET`
+|-
+|Join the server at `TARGET` (<<connect-targets>>).
+
+|`--local`
+|-
+|Start a JXPilot server inside the client and join it. It listens on the loopback address only, on a
+free port, with the server's defaults (robots included), and stops when you quit.
+
+|`--map FILE`
+|required with `--local`
+|The map for `--local`.
+
+|`--protocol xpilot\|jxpilot`
+|`jxpilot`
+|With `--connect`: the protocol for a target without `xp://` or `jx://`.
+
+|`--bind ADDR[:PORT]`
+|any
+|With `--connect`: the local address (and port) to send from, for example to make sure the game goes
+over a VPN.
+
+|`--name NAME`
+|your login name
+|Player name, 1 to 16 characters. The default keeps the letters, digits, `-`, `_` and `.` of your login
+name, with a capital first letter (`Pilot` if nothing is left).
+
+|`--team T`
+|none
+|Team 0 to 9 to join in team play. Without it the server picks one.
+
+|`--shape SHAPE`
+|the standard ship
+|Your ship shape, in XPilot's shape format (as in a robots file, <<04-running-a-server.adoc#robot-file,Robot
+personalities>>). The server uses it if it allows ship shapes.
+
+|`--size WxH`
+|`1280x800`
+|Window size in logical pixels.
+
+|`--scale-factor F`
+|`1.0`
+|XPilot's `scaleFactor`: the view is zoomed by 1/F (2 shows twice as much of the map).
+
+|`--alt-scale-factor F`
+|`2.0`
+|XPilot's `altScaleFactor`: the zoom the swap key switches to.
+
+|`--swap-scale-key KEYSYM`
+|unbound
+|Bind the zoom swap to an X11 key name such as `z` or `F5` (XPilot's `keySwapScaleFactor`).
+
+|`--font FILE`, `--font-size PX`
+|bundled Fira Code, 13
+|Font for all text, and its size in logical pixels.
+
+|`--screenshot FILE.png`, `--frames N`
+|-, 300
+|Save a PNG after N frames and exit (for tests and bug reports).
+
+|`--no-vsync`
+|vsync on
+|Render as fast as possible.
+|===
+
+[[connect-targets]]
+=== Connect targets
+
+[cols="2,4",options="header"]
+|===
+|Target |Meaning
+|`host`, `host:port` |A JXPilot server (port 15345 if none is given), unless `--protocol xpilot`.
+|`192.0.2.7:15345`, `[2001:db8::1]:15345` |IP addresses; IPv6 in brackets when a port follows.
+|`jx://host[:port]` |A JXPilot server, whatever `--protocol` says.
+|`xp://host[:port]` |An original XPilot 4.5.5 server (<<xpilot-protocol>>).
+|===
 
 [[viewer-flags]]
-== Viewer flags (available now)
+== Viewer flags (`--view-map`)
 
 [cols="2,1,4",options="header"]
 |===
@@ -152,65 +243,45 @@ On Windows and Linux you can add them yourself:
 `java -XX:+UseZGC --sun-misc-unsafe-memory-access=allow -jar jxpilot-client-VERSION.jar ...`.
 The application downloads already include them.
 
-[[network-flags]]
-== Network flags (unmerged and planned)
+[[test-clients]]
+== Headless test clients
 
-NOTE: *Unmerged branch* (`client-net`). The client's networking (connecting, receiving the map and
-snapshots, the HUD and key handling) is on the `client-net` branch, which has `--connect` and `--bind`
-only in its headless test client, `ClientSim`. The windowed client does not take these flags yet.
-
-The game client will take these flags (from the design in `docs/SPEC.md`):
-
-[cols="2,1,4",options="header"]
-|===
-|Flag |State |Meaning
-
-|`--connect HOST[:PORT]`
-|Planned for the game client; in `ClientSim` on `client-net`
-|The server to join. `HOST` is a name or address; the port defaults to 15345. Write IPv6 addresses in
-brackets with a port (`[2001:db8::1]:15345`); a bare IPv6 address without brackets is allowed when
-there is no port.
-
-|`--bind ADDR[:PORT]`
-|Planned for the game client; in `ClientSim` on `client-net`
-|The local address (and port; 0 or none means any) to send from. Useful on machines with several
-networks, for example to make sure the connection goes over a VPN.
-
-|`--local`
-|Planned
-|Start a server inside the client, listening on the loopback address only, and connect to it.
-|===
-
-[[clientsim]]
-=== The headless test client
-
-`ClientSim` connects to a server without a window, runs the client's per-frame work, and prints a
-summary. It is a testing tool. Once `client-net` is merged it is in the client jar:
+For testing servers without a window, the client jar contains two headless clients. They connect, run
+the client's per-frame work and print a summary:
 
 [source,shell]
 ----
-java -cp jxpilot-client-VERSION.jar com.fulcrologic.jxpilot.client.net.ClientSim --connect HOST[:PORT] [FLAGS]
+java -cp jxpilot-client-VERSION.jar com.fulcrologic.jxpilot.client.net.ClientSim --connect HOST[:PORT]
+java -cp jxpilot-client-VERSION.jar com.fulcrologic.jxpilot.client.xp.XpClientSim --connect xp://HOST --seconds 30
 ----
 
-[cols="2,1,4",options="header"]
-|===
-|Flag |Default |Meaning
-|`--connect HOST[:PORT]` |required |The server (format as above).
-|`--bind ADDR[:PORT]` |any |Local address to send from.
-|`--name NAME` |`jxsim` |Player name.
-|`--team N` |no team |Team number.
-|`--snapshots N` |`100` |Stop after this many snapshots.
-|`--seconds S` |`15` |Give up after this many seconds.
-|===
-
-It exits with status 0 when it received the snapshots, 1 when it gave up or was disconnected, and 2 for
-bad arguments.
+`ClientSim` (JXPilot servers) also takes `--bind ADDR[:PORT]`, `--name NAME` (default `jxsim`),
+`--team T`, `--snapshots N` (stop after N snapshots, default 100) and `--seconds S` (give up after S
+seconds, default 15). It exits with status 0 when it received the snapshots, 1 when it gave up or was
+disconnected, and 2 for bad arguments.
 
 [[xpilot-protocol]]
-== Playing on original XPilot servers (planned)
+== Playing on original XPilot servers
 
-NOTE: *Planned.* JXPilot speaks its own protocol, so it cannot join an original XPilot 4.5.5 server
-today. The `xp-compat` branch has the XPilot 4.5.5 client protocol (packet codecs, the reliable data
-stream, map setup, frame decoding and a translator into the client's model), but no way to choose it
-from the command line yet. The plan is a flag such as `--protocol xpilot`, or an `xp://HOST:PORT`
-server address; the final form is not decided.
+The client also speaks the protocol of the original XPilot 4.5.5 server (`xpilots`), so you can play
+on existing XPilot servers:
+
+[source,shell]
+----
+java -jar jxpilot-client-VERSION.jar --connect xp://HOST            # or: --connect HOST --protocol xpilot
+java -jar jxpilot-client-VERSION.jar --connect xp://HOST:15345 --name Ace --team 2
+----
+
+On an XPilot server everything works, items, balls and races included, because the C server runs the
+game; the JXPilot client draws it with the same painters, HUD and keys. Known differences:
+
+* XPilot sends only what is within 1024 x 1024 pixels of your ship.
+* Paused ships carry no name on the wire, so the client cannot show their names or shapes.
+* Bases on maps with a global gravity angle may be drawn facing the wrong way.
+* Mouse (pointer) steering is not supported.
+* XPilot server versions older than 4.5.5's protocol (0x4203 to 0x44ff) should work but were not
+  tested.
+
+The XPilot server needs its contact port (default 15345) and its player ports reachable. Developers can
+run one locally in Docker with `client/scripts/xp-c-server.sh`; the protocol notes are in
+`docs/XPILOT-PROTOCOL.md` in the source.

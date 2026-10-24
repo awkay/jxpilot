@@ -100,7 +100,7 @@ final class SnapDump {
                 Records.Shot s = new Records.Shot().wrap(r, i);
                 yield "SHOT kind=" + Records.ShotKind.kindOf(r.variant()) + " color="
                     + Records.ShotKind.colorOf(r.variant()) + " pos=" + f(s.x()) + "," + f(s.y()) + " vel=" + s.vx()
-                    + "," + s.vy();
+                    + "," + s.vy() + (Records.ShotKind.harmless(r.variant()) ? " harmless" : "");
             }
             case Section.BURST -> {
                 Records.Burst b = new Records.Burst().wrap(r, i);
@@ -186,6 +186,10 @@ final class SnapDump {
             case Section.TIMERS -> {
                 Records.Timers c = new Records.Timers().wrap(r, i);
                 yield "TIMERS damaged=" + c.damaged() + " roundDelay=" + c.roundDelay() + " timeLeft=" + c.timeLeft();
+            }
+            case Section.SOUND -> {
+                Records.Sound c = new Records.Sound().wrap(r, i);
+                yield "SOUND event=" + c.event() + " volume=" + c.volume();
             }
             default -> "UNKNOWN " + r.type();
         };

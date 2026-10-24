@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Cannon;
 import com.fulcrologic.jxpilot.common.math.XMath;
@@ -196,5 +197,6 @@ public final class Cannons {
         Cannon c = w.map.cannons().get(i);
         int mods = w.params.cannonFlak ? Obj.MOD_CLUSTER : 0;
         sim.shots.fire(null, c.team(), true, (int) c.x(), (int) c.y(), Obj.CANNON_SHOT, dir, mods);
+        Sounds.play(w, (int) c.x(), (int) c.y(), SoundEvent.CANNON_FIRE);
     }
 }

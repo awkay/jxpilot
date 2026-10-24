@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.common.net;
 
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -217,6 +218,10 @@ class SnapshotTest {
             w.endSection();
             w.beginSection(Section.TIMERS);
             Records.Timers.put(w, 70, 41, -1, 90, 70000, 400, 12, 300, 7, 50, 40000, -5);
+            w.endSection();
+            w.beginSection(Section.SOUND);
+            Records.Sound.put(w, SoundEvent.ASTEROID_BREAK.ordinal(), SoundEvent.MAX_VOLUME);
+            Records.Sound.put(w, SoundEvent.START.ordinal(), SoundEvent.MIN_VOLUME);
             w.endSection();
             SnapshotReader r = readerFor(b);
             r.setWorld(31500, 31500, false);
@@ -460,12 +465,24 @@ class SnapshotTest {
                             () -> assertEquals(32767, s.shutdownCount(), "clamps the shutdown count to i16"),
                             () -> assertEquals(0, s.shutdownDelay(), "clamps a negative shutdown delay to 0"));
                     }
+                    case Section.SOUND -> {
+                        Records.Sound s0 = new Records.Sound().wrap(r, 0);
+                        Records.Sound s1 = new Records.Sound().wrap(r, 1);
+                        assertAll("sound",
+                            () -> assertEquals(2, r.count(), "keeps both sound events"),
+                            () -> assertEquals(SoundEvent.ASTEROID_BREAK.ordinal(), s0.event(), "keeps the highest event id"),
+                            () -> assertEquals(SoundEvent.MAX_VOLUME, s0.volume(), "keeps the full volume"),
+                            () -> assertEquals(SoundEvent.START.ordinal(), s1.event(), "keeps event id 0"),
+                            () -> assertEquals(SoundEvent.MIN_VOLUME, s1.volume(), "keeps the minimum volume"));
+                    }
                     default -> throw new AssertionError("unexpected section " + r.type());
                 }
             }
             List<Integer> expected = new ArrayList<>();
             for (int t = 1; t <= Section.MAX_TYPE; t++) {
-                expected.add(t);
+                if (Section.recordSize(t) > 0) {
+                    expected.add(t);
+                }
             }
             assertAll(
                 () -> assertEquals(expected, types, "visits every written section once, in order"),
@@ -480,6 +497,7 @@ class SnapshotTest {
                 () -> assertEquals(27, Records.Burst.SIZE, "bursts are 27 bytes"),
                 () -> assertEquals(3, Records.Radar.SIZE, "radar blips are 3 bytes"),
                 () -> assertEquals(14, Records.Ship.SIZE, "ships are 14 bytes"),
+                () -> assertEquals(2, Records.Sound.SIZE, "sound events are 2 bytes"),
                 () -> assertEquals(5, Section.HEADER_SIZE, "section headers are 5 bytes"),
                 () -> assertEquals(15, SnapshotWriter.HEADER_SIZE, "snapshot headers are 15 bytes"),
                 () -> assertEquals(0, Section.recordSize(0), "type 0 is unassigned"),

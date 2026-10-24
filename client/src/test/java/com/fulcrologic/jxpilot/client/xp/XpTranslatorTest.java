@@ -177,6 +177,26 @@ class XpTranslatorTest {
     }
 
     @Nested
+    @DisplayName("sounds (PKT_AUDIO)")
+    class Sounds {
+        @Test
+        @DisplayName("each PKT_AUDIO becomes a SOUND record after SELF, with or without PKT_SELF; none, no section")
+        void audio() {
+            List<String> withSelf = frame(c(1).self(1000, 2000).audio(5, 40).audio(23, 100).end(1));
+            List<String> noSelf = frame(c(2).audio(82, 10).end(2));
+            List<String> quiet = frame(c(3).self(1000, 2000).end(3));
+            int self = withSelf.indexOf(SnapDump.only(withSelf, "SELF").get(0));
+            assertAll(
+                () -> assertEquals(List.of("SOUND event=5 volume=40", "SOUND event=23 volume=100"),
+                    SnapDump.only(withSelf, "SOUND"), "type and volume as sent, in order"),
+                () -> assertEquals("SOUND event=5 volume=40", withSelf.get(self + 2), "the SOUND section follows SELF (and its SELFCTL dump line)"),
+                () -> assertEquals(List.of("SOUND event=82 volume=10"), SnapDump.only(noSelf, "SOUND"),
+                    "a frame without PKT_SELF still carries its sounds"),
+                () -> assertEquals(List.of(), SnapDump.only(quiet, "SOUND"), "a frame without PKT_AUDIO has no SOUND"));
+        }
+    }
+
+    @Nested
     @DisplayName("ships")
     class Ships {
         @Test
@@ -270,12 +290,14 @@ class XpTranslatorTest {
                 .fastshot(type(XpProto.BLUE, 0, 0), 3, 3).end(1));
             assertEquals(List.of(
                 "SHOT kind=0 color=" + Records.ObjColor.RED + " pos=617.0,617.0 vel=0,0",
-                "SHOT kind=0 color=" + Records.ObjColor.BLUE + " pos=1383.0,1127.0 vel=0,0",
                 "SHOT kind=0 color=" + Records.ObjColor.BLUE + " pos=619.0,619.0 vel=0,0",
+                "SHOT kind=0 color=" + Records.ObjColor.BLUE + " pos=1383.0,1127.0 vel=0,0 harmless",
                 "SHOT kind=0 color=" + Records.ObjColor.WHITE + " pos=882.0,1148.0 vel=0,0",
                 "SHOT kind=0 color=" + Records.ObjColor.WHITE + " pos=616.0,616.0 vel=0,0"),
                 SnapDump.only(s, "SHOT"),
-                "red normal shots are white (C Paint_fastshots); team shots keep colour; origin + area * 256 + byte");
+                "red normal shots are white (C Paint_fastshots); team shots keep colour; a blue team shot is harmless "
+                    + "(C frame.c's teamshot), a red one (nuclear blink) is not; one section per colour and flag; "
+                    + "origin + area * 256 + byte");
         }
 
         @Test

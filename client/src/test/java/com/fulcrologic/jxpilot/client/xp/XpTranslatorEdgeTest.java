@@ -144,8 +144,8 @@ class XpTranslatorEdgeTest {
     void theFirstTeamShotTypeIsATeamShot() {
         // type DEBRIS_TYPES: team shot, colour 0 (black, drawn white), area 0
         List<String> s = frame(c(1).self(1000, 1000).fastshot(XpProto.DEBRIS_TYPES, 4, 5).end(1));
-        assertEquals(List.of("SHOT kind=0 color=" + Records.ObjColor.WHITE + " pos=620.0,621.0 vel=0,0"),
-            SnapDump.only(s, "SHOT"), "area 0 of the team range");
+        assertEquals(List.of("SHOT kind=0 color=" + Records.ObjColor.WHITE + " pos=620.0,621.0 vel=0,0 harmless"),
+            SnapDump.only(s, "SHOT"), "area 0 of the team range: a team shot, so harmless");
     }
 
     @Test

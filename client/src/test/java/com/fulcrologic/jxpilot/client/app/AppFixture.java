@@ -122,6 +122,19 @@ final class AppFixture {
         return this;
     }
 
+    AppFixture scoreObject(float points, int bx, int by, String label) {
+        Msg.ScoreObject o = new Msg.ScoreObject();
+        o.score = points;
+        o.bx = bx;
+        o.by = by;
+        o.text.append(label);
+        rel.clear();
+        o.write(rel);
+        rel.flip();
+        game.onReliable(ReliableType.SCORE_OBJECT, rel);
+        return this;
+    }
+
     AppFixture event(int kind, int a, int b) {
         Msg.GameEvent e = new Msg.GameEvent();
         e.kind = kind;
@@ -185,7 +198,11 @@ final class AppFixture {
     }
 
     AppFixture shot(int kind, int color, double x, double y) {
-        w.beginSection(Section.SHOT, Records.ShotKind.variant(kind, color));
+        return shot(kind, color, false, x, y);
+    }
+
+    AppFixture shot(int kind, int color, boolean harmless, double x, double y) {
+        w.beginSection(Section.SHOT, Records.ShotKind.variant(kind, color, harmless));
         Records.Shot.put(w, x, y, 0, 0);
         w.endSection();
         return this;

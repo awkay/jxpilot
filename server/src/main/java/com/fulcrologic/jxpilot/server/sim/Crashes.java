@@ -24,6 +24,7 @@
 package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
+import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.Cannon;
 import com.fulcrologic.jxpilot.common.net.Msg;
@@ -104,6 +105,9 @@ public final class Crashes {
             case CRASH_TREASURE -> how = " against a treasure";
             case CRASH_CANNON -> {
                 boolean shielded = pl.fullyShielded();
+                if (!shielded) {
+                    Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_CANNON);
+                }
                 cannonDies(ms.cannon, shielded ? pl.id : Obj.NO_ID);
                 if (shielded) {
                     return;
@@ -112,6 +116,9 @@ public final class Crashes {
             }
             case CRASH_UNIVERSE -> how = null;
             default -> how = " into a programming error";
+        }
+        if (ms.crash != CRASH_CANNON) {
+            Sounds.play(w, pl.px, pl.py, SoundEvent.PLAYER_HIT_WALL);
         }
         pl.status |= Obj.KILLED;
         StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID);
@@ -241,6 +248,7 @@ public final class Crashes {
         w.map.setBlock(c.bx(), c.by(), BlockType.SPACE);
         int x = (int) c.x();
         int y = (int) c.y();
+        Sounds.play(w, x, y, SoundEvent.CANNON_EXPLOSION);
         sim.debris.make(x, y, 0f, 0f, Obj.NO_ID, c.team(), Obj.DEBRIS, 4.5f, Obj.GRAVITY, Records.ObjColor.RED,
             Records.BurstKind.DEBRIS, 6, 20, 40, (int) (c.dir() - (Const.RES * 0.2)), (int) (c.dir() + (Const.RES * 0.2)),
             20, 50, 8, 68);

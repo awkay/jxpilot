@@ -216,12 +216,15 @@ public final class World {
      * Put a reserved player into the game: append it to {@link #order} (C {@code Players[NumPlayers++]}).
      * <p>
      * BEHAVIOR: the pseudo team is a fresh number (C pseudo_team_no++); entering twice is ignored.
+     * BEHAVIOR: the player's sound queue starts empty (C {@code sound_player_init}), forgetting a previous
+     * occupant's sounds.
      */
     public void enter(Player p) {
         if (!p.inUse || p.spawned) {
             return;
         }
         p.spawned = true;
+        p.audio.clear();
         p.pseudoTeam = pseudoTeamNext++;
         order[numPlayers++] = p.slot;
     }

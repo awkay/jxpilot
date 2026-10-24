@@ -60,7 +60,7 @@ with a status line and never throws.
 | SHIP | SHIP records; shield/cloak/emergency shield/phased/deflector; velocity derived from the previous frame |
 | PAUSED | SHIP with id NO_ID and PAUSED (C sends no id) |
 | REFUEL | REFUELING / REPAIRING flag on the ship at the beam end / start; the client draws the beam from the nearest station (target) within 90 px, as C |
-| FASTSHOT | SHOT sections per colour (C rule: non-team shots that are not blue are white), view-area decoding; the client links shots across frames (nearest neighbour per colour, velocity-predicted) and interpolates them |
+| FASTSHOT | SHOT sections per colour and harmless flag (C rule: non-team shots that are not blue are white; team shots, types DEBRIS_TYPES and up, keep their colour and, unless red (the nuclear blink), carry `ShotKind.FLAG_HARMLESS` like the native SHOT), view-area decoding; the client links shots across frames (nearest neighbour per colour, velocity-predicted) and interpolates them |
 | DEBRIS (128–255) | one point BURST (1 particle, no speed, no life) per C particle; the client tracks points across frames like shots. The client asks for 4 debris colours (temperature levels, sent as colour `ClientWorld.POINT_LEVEL_BASE + level`) and sparkProb 1 (every particle every frame; the painter does the sparkle) |
 | FASTRADAR / RADAR | RADAR records (friendly, ball, missile/mine, asteroid) plus own ship (C adds it too) |
 | FUEL / CANNON / TARGET | FUEL / CANNON / TARGET state (C number → WorldMap index), acked like C |
@@ -77,7 +77,8 @@ with a status line and never throws.
 | MESSAGE | MESSAGE (talk vs game decided by MessageLog from the text, as C) |
 | LEAVE, WAR, SEEK | PLAYER_LEAVE; C's client-side texts ("X left this world.", "declares war on", "has programmed") as messages |
 | BASE | BASE_OWNER; the player's previous base released (C `Handle_base`) |
-| TIMING, SCORE_OBJECT, STRING, MOTD | decoded and ignored (counted); ClientGame makes score objects from own score changes |
+| SCORE_OBJECT | delivered as the native SCORE_OBJECT (score / 100 since 0x4500, whole points before; block; label), so the HUD score popups match the C client |
+| TIMING, STRING, MOTD | decoded and ignored (counted) |
 
 ## Running the C server for the client
 
@@ -114,5 +115,5 @@ java -cp common/target/classes:server/target/classes:client/target/classes \
 - Paused ships have no id on the wire, so their shapes and names are unknown.
 - Base directions are recomputed from the map text. The setup's base orientation is not used, so
   maps with a global gravity angle may draw bases facing the wrong way.
-- Score object texts (`PKT_SCORE_OBJECT`) are ignored. Pointer (mouse) turning is not sent.
+- Pointer (mouse) turning is not sent.
 - Server versions 0x4203–0x44ff are supported in the decoders but were not tested live.

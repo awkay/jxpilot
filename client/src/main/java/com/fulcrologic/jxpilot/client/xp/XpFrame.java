@@ -23,6 +23,8 @@
  */
 package com.fulcrologic.jxpilot.client.xp;
 
+import com.fulcrologic.jxpilot.common.SoundEvent;
+
 /**
  * One decoded C frame update (everything between {@code PKT_START} and {@code PKT_END}), held in
  * preallocated arrays (struct of arrays). Values are as on the wire: world pixels, RES headings,
@@ -34,6 +36,8 @@ public final class XpFrame {
     public static final int OBJ_CAP = 512;
     public static final int PARTICLE_CAP = 8192;
     public static final int MAP_CAP = 512;
+    /** PKT_AUDIO entries kept per frame: a C server sends each sound at most once per frame. */
+    public static final int AUDIO_CAP = SoundEvent.COUNT;
 
     public int loops;
     public int keyAck;
@@ -83,7 +87,12 @@ public final class XpFrame {
     public int timeLeft;
     public int eyes;
     public int loseItem;
+    /** PKT_AUDIO packets in this frame (the first {@link #AUDIO_CAP} are kept). */
     public int audioCount;
+    /** C sound index ({@link SoundEvent} ordinal) of each kept PKT_AUDIO. */
+    public final int[] audioType = new int[AUDIO_CAP];
+    /** Its volume (C 10..100). */
+    public final int[] audioVolume = new int[AUDIO_CAP];
 
     // PKT_SHIP
     public int ships;

@@ -79,6 +79,21 @@ class XpFrameDecoderTest {
         }
     }
 
+    @Test
+    @DisplayName("PKT_AUDIO: each kept in order up to AUDIO_CAP, the rest only counted")
+    void audioList() {
+        for (int k = 0; k < XpFrame.AUDIO_CAP + 2; k++) {
+            one(new CPackets().audio(k % 256, 10 + k % 90));
+        }
+        assertAll(
+            () -> assertEquals(XpFrame.AUDIO_CAP + 2, f.audioCount, "all are counted"),
+            () -> assertEquals(0, f.audioType[0], "the first is kept first"),
+            () -> assertEquals(XpFrame.AUDIO_CAP - 1, f.audioType[XpFrame.AUDIO_CAP - 1], "the last kept is number AUDIO_CAP"),
+            () -> assertEquals(10 + (XpFrame.AUDIO_CAP - 1) % 90, f.audioVolume[XpFrame.AUDIO_CAP - 1], "with its volume"));
+        f.clear();
+        assertEquals(0, f.audioCount, "a new frame starts with no audio");
+    }
+
     @Nested
     @DisplayName("frame bracket")
     class Bracket {
@@ -246,6 +261,8 @@ class XpFrameDecoderTest {
                 () -> assertEquals(345, f.timeLeft, "time left"),
                 () -> assertEquals(4, f.eyes, "eyes"),
                 () -> assertEquals(1, f.audioCount, "audio counted"),
+                () -> assertEquals(1, f.audioType[0], "audio type kept"),
+                () -> assertEquals(2, f.audioVolume[0], "audio volume kept"),
                 () -> assertEquals(6, f.loseItem, "lose item"));
             truncatedIsIncomplete(new CPackets().damaged(5));
             truncatedIsIncomplete(new CPackets().destruct(5));

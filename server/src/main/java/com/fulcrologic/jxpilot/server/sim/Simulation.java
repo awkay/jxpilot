@@ -88,6 +88,7 @@ public final class Simulation {
         this.keys = new Keys(world, this);
         this.rounds = new Rounds(world, this);
         com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder.initRecordClasses();
+        Sounds.initClasses();
         this.robots = new RobotManager(world, this);
     }
 

@@ -966,4 +966,25 @@ public final class Records {
 
         public int shutdownDelay() { return sz > 25 ? u16(24) : 0; }
     }
+
+    /**
+     * A sound event for the receiver (C {@code Send_audio}).
+     * {@code 0 u8 event (SoundEvent ordinal), 1 u8 volume (SoundEvent.MIN_VOLUME..MAX_VOLUME)}.
+     */
+    public static final class Sound extends Fly {
+        public static final int SIZE = 2;
+
+        public static void put(SnapshotWriter w, int event, int volume) {
+            w.buffer().put((byte) event).put((byte) volume);
+        }
+
+        public Sound wrap(SnapshotReader r, int i) {
+            bind(r, i);
+            return this;
+        }
+
+        public int event() { return u8(0); }
+
+        public int volume() { return u8(1); }
+    }
 }

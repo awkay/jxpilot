@@ -1,0 +1,59 @@
+# JXPilot guide gallery fixture: one of each map feature, in 8x8-block cells.
+# Written for docs/guide/tools/capture-gallery.sh; not a playable map. GPL-2.0-or-later, as JXPilot.
+mapName:      Gallery fixture
+mapAuthor:    JXPilot contributors
+mapWidth:     64
+mapHeight:    48
+teamPlay:     yes
+edgeWrap:     no
+framesPerSecond: 14
+mapData: \multiline: EndOfMapdata
+
+
+
+   qxw                                             tby
+   xxx      x       s       a       w       q      bbb      b
+   axs                                             gbh
+
+
+
+
+
+                    2
+    #       1       $      3$      $4       _
+
+
+
+
+
+
+
+                                            !       *       ^
+
+                                x
+        r       dx     xf       c
+        x
+
+
+
+    +       -       >       <       i       m       j       k
+
+
+
+
+
+
+
+    @       (       )       %       &
+
+
+
+
+
+
+
+
+
+
+
+EndOfMapdata

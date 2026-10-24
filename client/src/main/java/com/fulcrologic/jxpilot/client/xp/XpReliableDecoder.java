@@ -70,7 +70,7 @@ public final class XpReliableDecoder {
         version = v;
     }
 
-    /** Packets decoded but not used by the client model (MOTD, timing, score objects, strings). */
+    /** Packets decoded but not used by the client model (MOTD, timing, strings). */
     public long ignored() { return ignored; }
 
     /** Type of the last BAD packet, -1 if none. */
@@ -308,18 +308,26 @@ public final class XpReliableDecoder {
         return OK;
     }
 
-    /** C {@code Receive_score_object}: since 0x4500 {@code %c%d%hu%hu%s}, before {@code %c%hd%hu%hu%s}. */
+    /**
+     * C {@code Receive_score_object}: since 0x4500 {@code %c%d%hu%hu%s} (score * 100), before
+     * {@code %c%hd%hu%hu%s} (whole points); block x, block y, label.
+     * <p>
+     * BEHAVIOR: hands score, block and label to {@link XpTranslator#scoreObject}.
+     */
     private int scoreObject(XpReader r) {
-        int head = version >= 0x4500 ? 9 : 7;
-        if (!r.has(head)) {
+        boolean newer = version >= 0x4500;
+        if (!r.has(newer ? 9 : 7)) {
             return INCOMPLETE;
         }
-        r.skip(head);
-        int n = r.skipString(XpProto.MAX_CHARS);
+        r.skip(1);
+        double sc = newer ? r.s32() / 100.0 : r.s16();
+        int x = r.u16();
+        int y = r.u16();
+        int n = r.string(s1, XpProto.MAX_CHARS);
         if (n <= 0) {
             return str(n);
         }
-        ignored++;
+        events.scoreObject(sc, x, y, s1);
         return OK;
     }
 

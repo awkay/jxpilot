@@ -48,7 +48,7 @@ import java.util.Arrays;
  * {@link SnapshotFrame}s (triple buffer: the two the renderer interpolates between plus the newest).
  * Bursts are expanded into the {@link ParticlePool}; thrust sparks are generated for every sim tick
  * of a thrusting ship ({@link ThrustSparkEmitter}); map object state (cannons, fuel, targets,
- * treasures), radar and own items are applied from the newest tick only.
+ * treasures), radar, own items and sounds ({@link #sounds()}) are applied from the newest tick only.
  * <p>
  * <b>Render</b> ({@link #update}): the tick clock takes one sample per receive batch (the newest tick
  * ingested since the last update). The render tick is the estimated server tick minus
@@ -127,6 +127,10 @@ public final class ClientWorld {
     private final Records.Transporter transRec = new Records.Transporter();
     private final ObjectLists outObjs = new ObjectLists(SnapshotFrame.OBJECT_CAP);
     private final Records.Timers timersRec = new Records.Timers();
+    private final Records.Sound soundRec = new Records.Sound();
+    /** Sounds kept for the player: several snapshots' worth (C sends at most one of each event per frame). */
+    public static final int SOUND_CAP = 256;
+    private final SoundQueue sounds = new SoundQueue(SOUND_CAP);
     private int damaged;
     private int roundDelay;
     private int destruct;
@@ -153,9 +157,10 @@ public final class ClientWorld {
     private double worldW = 65536;
     private double worldH = 65536;
     private boolean wrap;
-    private float frameFraction = 14f / 60f;
+    // until configure: one sim tick per C frame at the default framesPerSecond, snapshot divisor 1
+    private float frameFraction = 1f;
     private double snapshotInterval = Protocol.DEFAULT_SNAPSHOT_DIVISOR;
-    private double delayTicks = Protocol.DEFAULT_SNAPSHOT_DIVISOR + JITTER_MARGIN_SECONDS * 60;
+    private double delayTicks = Protocol.DEFAULT_SNAPSHOT_DIVISOR + JITTER_MARGIN_SECONDS * ClientGame.DEFAULT_FPS;
     private double maxExtrapolateTicks = 2.0 * Protocol.DEFAULT_SNAPSHOT_DIVISOR;
     private int defaultEngineX = ShipShape.defaultShip().engineX;
     private int defaultEngineY = ShipShape.defaultShip().engineY;
@@ -286,6 +291,9 @@ public final class ClientWorld {
      * BEHAVIOR: world size and wrap from the map; frameFraction = gameFps / simHz; snapshot interval =
      * simHz / snapshotHz ticks; delay = interval + {@link #JITTER_MARGIN_SECONDS} * simHz ticks;
      * extrapolation cap = 2 intervals; the clock runs at simHz.
+     * BEHAVIOR: a missing gameFps is the map's framesPerSecond; a missing simHz is the rounded gameFps (the
+     * server ticks once per C frame, so frameFraction is then 1); a missing snapshotHz is
+     * simHz / {@link Protocol#DEFAULT_SNAPSHOT_DIVISOR}.
      * BEHAVIOR: cannons alive, fuel stations full, targets intact, no base owners; clears all state.
      */
     public void configure(WorldMap map, Options opts, Msg.Welcome w) {
@@ -293,9 +301,9 @@ public final class ClientWorld {
         worldH = map.pixelHeight();
         wrap = map.edgeWrap();
         reader.setWorld(worldW, worldH, wrap);
-        int simHz = w.simHz > 0 ? w.simHz : 60;
-        int snapHz = w.snapshotHz > 0 ? w.snapshotHz : simHz / Protocol.DEFAULT_SNAPSHOT_DIVISOR;
         float gameFps = w.gameFps > 0 ? w.gameFps : opts.framesPerSecond();
+        int simHz = w.simHz > 0 ? w.simHz : Math.max(1, Math.round(gameFps));
+        int snapHz = w.snapshotHz > 0 ? w.snapshotHz : simHz / Protocol.DEFAULT_SNAPSHOT_DIVISOR;
         frameFraction = gameFps / simHz;
         snapshotInterval = (double) simHz / snapHz;
         delayTicks = snapshotInterval + JITTER_MARGIN_SECONDS * simHz;
@@ -372,6 +380,8 @@ public final class ClientWorld {
      * BEHAVIOR: the frame is associated ({@link #associate}) with the frames of the ticks just before and
      * after it when they are in the ring, so shot velocities carry from frame to frame even when the renderer
      * skips a pair.
+     * BEHAVIOR: SOUND records are appended to {@link #sounds()} only from the newest tick (a late or repeated
+     * part plays nothing).
      * BEHAVIOR: malformed data stops decoding at the error and returns {@link #MALFORMED}; so does a part
      * number of {@link #MAX_PARTS} or more (nothing is merged, so repeats cannot double a frame).
      */
@@ -669,6 +679,14 @@ public final class ClientWorld {
                         haveTimeLeft = true;
                         timeLeftValue = timersRec.timeLeft();
                         timeLeftTick = f.tick;
+                    }
+                }
+            }
+            case Section.SOUND -> {
+                if (newest) {
+                    for (int i = 0; i < n; i++) {
+                        soundRec.wrap(reader, i);
+                        sounds.add(soundRec.event(), soundRec.volume());
                     }
                 }
             }
@@ -1221,6 +1239,9 @@ public final class ClientWorld {
     /** Snapshot parts accepted so far. */
     public long ingested() { return ingested; }
 
+    /** Sounds received, in arrival order (see {@link SoundQueue}). */
+    public SoundQueue sounds() { return sounds; }
+
     public long malformedSnapshots() { return malformedCount; }
 
     /** Tick the last {@link #update} rendered (fractional). */
@@ -1307,11 +1328,17 @@ public final class ClientWorld {
 
     public float shotY(int i) { return outShotY[i]; }
 
-    /** {@link Records.ShotKind}. */
+    /** {@link Records.ShotKind} (the variant's 3 kind bits). */
     public int shotKind(int i) { return Records.ShotKind.kindOf(outShotVariant[i]); }
 
-    /** {@link Records.ObjColor}. */
+    /** {@link Records.ObjColor} (the variant's colour nibble). */
     public int shotColor(int i) { return Records.ShotKind.colorOf(outShotVariant[i]); }
+
+    /**
+     * True when the shot cannot hurt the own ship ({@link Records.ShotKind#FLAG_HARMLESS}; C frame.c's
+     * teamshot case, drawn as C {@code Gui_paint_teamshot}).
+     */
+    public boolean shotHarmless(int i) { return Records.ShotKind.harmless(outShotVariant[i]); }
 
     public ParticlePool particles() { return particles; }
 

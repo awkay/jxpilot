@@ -50,12 +50,14 @@ public final class KeyRouter {
     public static final int CHAT = 2;
     /** Swap scaleFactor and altScaleFactor (C {@code Key_press_swap_scalefactor}). */
     public static final int SWAP_SCALE = 4;
+    /** Mute or unmute sound ({@link ClientAction#TOGGLE_SOUND}). */
+    public static final int TOGGLE_SOUND = 8;
     /** The control settings changed by a power/turn-speed key: send them (C {@code Send_power} ...). */
-    public static final int SETTINGS = 8;
+    public static final int SETTINGS = 16;
     /** The control settings changed (sent or swapped): show the power and turn speed meters (C control_count). */
-    public static final int SHOW_CONTROLS = 16;
+    public static final int SHOW_CONTROLS = 32;
     /** Toggle the key help overlay (JXPilot keyHelp). */
-    public static final int HELP = 32;
+    public static final int HELP = 64;
 
     private final InputState input;
     private final TalkLine talk;
@@ -101,8 +103,8 @@ public final class KeyRouter {
      * <p>
      * BEHAVIOR (playing): Escape press is {@link #QUIT}; other presses go to {@link InputState#press};
      * a TALK action opens the talk line (game keys released, the key's character is not typed); a
-     * SWAP_SCALEFACTOR action is {@link #SWAP_SCALE}; a HELP action is {@link #HELP}; releases go to
-     * {@link InputState#release}; repeats are ignored.
+     * SWAP_SCALEFACTOR action is {@link #SWAP_SCALE}, a TOGGLE_SOUND action {@link #TOGGLE_SOUND}, a HELP action
+     * {@link #HELP}; releases go to {@link InputState#release}; repeats are ignored.
      * BEHAVIOR (playing): increase/decrease power and turn speed change the {@link ControlSettings} as C's
      * key handlers do and are {@link #SETTINGS} | {@link #SHOW_CONTROLS}; swap settings swaps them and is
      * {@link #SHOW_CONTROLS} only (the key goes to the server, which swaps its copy, as in C).
@@ -133,6 +135,9 @@ public final class KeyRouter {
         }
         if (KeyBindings.has(acts, ClientAction.SWAP_SCALEFACTOR)) {
             ev |= SWAP_SCALE;
+        }
+        if (KeyBindings.has(acts, ClientAction.TOGGLE_SOUND)) {
+            ev |= TOGGLE_SOUND;
         }
         if (KeyBindings.has(acts, ClientAction.HELP)) {
             ev |= HELP;

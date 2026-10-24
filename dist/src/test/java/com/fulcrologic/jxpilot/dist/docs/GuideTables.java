@@ -294,9 +294,9 @@ public final class GuideTables {
         Map.entry("Shift_R", "Right Shift"), Map.entry("Control_L", "Left Ctrl"), Map.entry("Control_R", "Right Ctrl"),
         Map.entry("Caps_Lock", "Caps Lock"), Map.entry("Escape", "Esc"), Map.entry("BackSpace", "Backspace"));
 
-    /** BEHAVIOR: "LOCK_NEXT_CLOSE" reads "Lock next close". */
+    /** BEHAVIOR: "LOCK_NEXT_CLOSE" reads "Lock next close"; ECM stays upper case. */
     static String functionName(ControlKey k) {
-        String s = k.name().toLowerCase(Locale.ROOT).replace('_', ' ');
+        String s = k.name().toLowerCase(Locale.ROOT).replace('_', ' ').replace("ecm", "ECM");
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 

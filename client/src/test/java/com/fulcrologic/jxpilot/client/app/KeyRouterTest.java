@@ -99,6 +99,7 @@ class KeyRouterTest {
             assertAll(
                 () -> assertEquals(KeyRouter.QUIT, press(GLFW_KEY_ESCAPE), "Escape: quit"),
                 () -> assertEquals(KeyRouter.SWAP_SCALE, press(GLFW_KEY_F12), "swap key: swap"),
+                () -> assertEquals(KeyRouter.TOGGLE_SOUND, press(GLFW_KEY_MINUS), "minus: sound toggle (ClientAction.TOGGLE_SOUND, a key C leaves unbound)"),
                 () -> {
                     type("x");
                     assertFalse(talk.isOpen(), "characters do not open talk");
