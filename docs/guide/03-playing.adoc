@@ -130,6 +130,8 @@ The rules:
   `Return`, `space`, `Shift_L`, `Control_R`, `Alt_L`, `KP_Add`, `F5`, `bracketleft` and so on.
 * The six control settings are `power` (5 to 55), `turnSpeed` (4 to 64), `turnResistance` (0 to 1),
   `altPower`, `altTurnSpeed` and `altTurnResistance`. Values outside the range are clamped.
+* `modifierBank1` to `modifierBank4` fill the weapon modifier banks (<<modifiers>>), and `shipShape`
+  and `shipShapeFile` choose your ship (<<ship-shapes>>).
 * `maxVolume` (0 to 255) sets the sound volume (<<sound>>). XPilot's other sound resources, `sounds`
   and `audioServer`, are not used: the sounds are built in.
 * kbd:[Esc] always quits and cannot be bound; the Command (Super) keys are never bound.
@@ -328,6 +330,56 @@ starts when the first human joins. The HUD shows the time left. When it runs out
 (`Game over...`), and 30 seconds later the server shuts down: a countdown shows on the HUD and every
 player is disconnected.
 
+[[commands]]
+== Commands: `/team`, `/ally` and more
+
+A chat line that starts with `/` is a command for the server, as in XPilot. Commands can be shortened
+to any start of their name (`/t 2` is `/team 2`); the first command in alphabetical order that matches
+wins, so `/l` (and even `/list`) is `/lock`. The reply comes back as a message marked
+`[*Server reply*]`.
+
+[cols="2,4",options="header"]
+|===
+|Command |What it does
+|`/help`, `/help CMD` |List the commands, or explain one.
+|`/team N` |Move to team N (team play only).
+|`/ally invite NAME`, `cancel`, `refuse [NAME]`, `accept [NAME]`, `leave`, `list` |Form and manage
+alliances (<<alliances>>).
+|`/get OPTION` |Show a server option's value, for example `/get gravity`.
+|`/version` |Show the server's version.
+|`/queue` |Show the players waiting to get in (<<04-running-a-server.adoc#joining,Joining>>).
+|`/lock` |Show whether the game is locked against newcomers.
+|`/password PW` |Become an operator (<<04-running-a-server.adoc#operators,Operator commands>>).
+|===
+
+[[alliances]]
+=== Alliances
+
+Outside team play (and if the server allows it, `allowAlliances`, on by default), players can form
+alliances: temporary teams. Allies cannot hurt each other with `teamImmunity`, share points with
+`teamShareScore`, lose points for killing each other, show as friends (blue) on the radar and HUD, are
+skipped by "lock on closest" and are spared by each other's ECM.
+
+* `/ally invite NAME` invites a player; `/ally accept NAME` (or just `/ally accept`) joins a player who
+  invited you, `/ally refuse` declines, `/ally cancel` withdraws your invitation.
+* `/ally leave` leaves your alliance; `/ally list` shows its members.
+* Robots decide on invitations themselves.
+* With `announceAlliances`, everyone is told about alliance changes and the score list shows each
+  player's alliance number; otherwise only those involved are told, and your allies show as `+` in
+  your score list.
+
+[[ship-shapes]]
+=== Ship shapes
+
+You can fly a ship of your own design, if the server allows it (`allowShipShapes`); otherwise, and for
+an invalid shape, you get the server's `defaultShipShape`. Give the shape with `--shape` (or
+`--shipShape`) in XPilot's shape format, for example
+`--shape "(NM:Arrow)(SH: 15,0 -8,8 -4,0 -8,-8)(MG: 15,0)(EN: -4,0)"`, or as a name: with a shape file
+(`--shipShapeFile FILE`, one shape per line, each with its `(NM:name)`), `--shape Arrow` picks the shape
+of that name. The same works from your keys file with `xpilot.shipShape:` and `xpilot.shipShapeFile:`,
+as with the XPilot client. XPilot's size rules apply: points within 15 of the centre, and a ship at
+least 8 pixels out in each direction. The shape is sent when you join; it cannot change during a game.
+
 [[ball-games]]
 == Ball games: treasures and balls
 
@@ -431,7 +483,7 @@ How often each item appears, how many you start with and how many you may carry 
 === Dropping items
 
 kbd:[Keypad 0] (or keypad kbd:[Insert]) selects, press by press, which item to drop; keypad
-kbd:[Delete] (or keypad kbd:[.]) drops it. Depending on the server (`loseItemDestroys`) the item is
+kbd:[Delete] (or keypad kbd:[.]) drops it. A box on the HUD marks the selected item. Depending on the server (`loseItemDestroys`) the item is
 destroyed or falls back into the map. Tanks cannot be dropped this way; they are detached
 (<<tanks>>). When you are killed you may drop some of your items (`dropItemOnKillProb`).
 
@@ -478,15 +530,16 @@ missiles, mines and lasers behave. The current modifiers show at the bottom left
 |kbd:[1]-kbd:[4] | |Load modifier bank 1 to 4
 |===
 
-To store your current modifiers in a bank, press the backtick key `+`+` (`keyReprogram`) and then the bank's key
-kbd:[1]-kbd:[4]. In JXPilot the banks start empty; the XPilot client loads them from its
-`modifierBank` resources.
+Fill the banks in your keys file, in the XPilot client's format (`xpilot.modifierBank1: FN C V2 X4`,
+up to `modifierBank4`); the client sends them to the server when you join. In the game, store your
+current modifiers in a bank by pressing the backtick key `+`+` (`keyReprogram`) and then the bank's key
+kbd:[1]-kbd:[4].
 
 [[locks]]
 === Locking on
 
 Smart missiles, tractor beams and the ECM's missile retargeting need a lock on a player. The locked
-player is drawn filled, and the HUD shows their name, distance and direction
+player is drawn filled and blinks on the radar, and the HUD shows their name, distance and direction
 (<<gallery.adoc#on-screen-hud,The HUD>>).
 
 [cols="2,4",options="header"]
@@ -535,7 +588,9 @@ and walls cannot kill you. The time is used only while the shield is up.
 (pressor beam). The force is mutual: a lighter ship moves more.
 |ECM |kbd:[[] |An electronic pulse: nearby smart missiles get confused and then go after the player you
 had locked; nearby mines explode, go blind for a while, or (the closest) are reprogrammed to spare you;
-nearby ships' sensors freeze, cloaked ships show, and their lasers may be destroyed.
+nearby ships' sensors freeze, cloaked ships show, and their lasers may be destroyed. A robot hit by
+your ECM goes after your locked player, and everyone is told: "NAME has programmed ROBOT to seek
+PLAYER.".
 |Mirror |- |Reflects laser beams.
 |Armor |- |Absorbs a hit when your shield is down.
 |===

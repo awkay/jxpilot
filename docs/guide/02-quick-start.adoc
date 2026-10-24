@@ -193,6 +193,7 @@ java -jar jxpilot-client-VERSION.jar --connect xp://HOST             # an origin
 ----
 
 `HOST` is a name or an IP address; write IPv6 addresses in brackets with a port (`[2001:db8::1]:15345`).
-If the server refuses you, the client shows why, for example `Rejected by HOST: name not accepted` when
+If the server is full you wait in its queue, and the client shows `Waiting in queue on HOST (position
+N)` until a place frees up. If the server refuses you, the client shows why, for example `Rejected by HOST: name not accepted` when
 your name is already taken (<<04-running-a-server.adoc#joining,Joining, leaving and full servers>>). All
 client flags are in <<07-client-reference.adoc#client-reference,Client reference>>.

@@ -91,10 +91,15 @@ C server (<<03-playing.adoc#items,Items and weapons>>).
 |Ball games and treasures (<<03-playing.adoc#ball-games,Ball games>>), targets, races, asteroids,
 temporary wormholes and `gameDuration`. Checked against 4 more recorded reference games of the C server.
 
-|Alliances, `/` commands, changing team or ship shape while playing
+|Java server: commands and alliances
+|Works
+|The `/` commands (`/team`, `/ally`, `/get`, ...), operator commands with a password (`/set` and more),
+alliances, custom ship shapes, the login queue and the message of the day
+(<<03-playing.adoc#commands,Commands>>, <<04-running-a-server.adoc#operators,Operator commands>>).
+
+|Race score column, temporary wormholes in the client
 |In progress
-|Not yet on the Java server; they work on original XPilot servers. The client does not yet show the race
-column of the score list or temporary (hyperjump) wormholes.
+|The client does not yet show the race column of the score list or temporary (hyperjump) wormholes.
 
 |Map viewer
 |Works
@@ -120,8 +125,8 @@ The development plan has three milestones:
 
 M1, playable core:: map rendering, ship movement, gravity and walls, shields, fuel, shots, cannons,
 wormholes, death and respawn, scores, chat, robots, radar, HUD, basic team play. Done.
-M2:: items, balls and treasures, targets, checkpoints and races, asteroids. Done; alliances and the
-`/` commands are in progress.
+M2:: items, balls and treasures, targets, checkpoints and races, asteroids, alliances and the `/`
+commands. Done.
 M3:: polish: a configurable keys file and sound. Done.
 
 Out of scope: the XPilot map editor, replay recording, the metaserver and server browser, and the

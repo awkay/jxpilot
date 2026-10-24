@@ -13,7 +13,7 @@ endif::[]
 
 The JXPilot server runs the game: the simulation ported from the XPilot server, robots, and the
 network layer that JXPilot clients connect to. It is headless and runs on any system with Java 25.
-Alliances and the `/` commands are not on it yet (<<01-introduction.adoc#status,Status>>).
+It has the whole XPilot game (<<01-introduction.adoc#status,Status>>).
 
 [[server-cli]]
 == Command line
@@ -82,13 +82,17 @@ config file.
 [[exit-status]]
 === Exit status and stopping
 
-The server runs until it is stopped with kbd:[Ctrl+C] or `SIGTERM`, also when every player has left,
-or, with `gameDuration`, until 30 seconds after the game is over: then it logs
-`game over: shutting down`, disconnects every player and exits with status 0.
-(XPilot's server exits when the last human leaves, unless started with `-noQuit`; matching that is
-being worked on.) It then tells connected players
-it is going away, closes its sockets and exits; as for any Java program, the exit status is then 130
-(after kbd:[Ctrl+C]) or 143 (after `SIGTERM`). It exits with status 1 for bad arguments, a missing or
+The server stops by itself, with exit status 0, in three cases, as the XPilot server does:
+
+* without `-noQuit`, when the last human player has left and nobody else is connected
+  (`No human players left; quitting (start the server with -noQuit to keep it running).`);
+* without `-noQuit`, when no human has joined within 5 minutes of the start
+  (`First player has yet to show his butt, I'm bored... Bye!`);
+* with `gameDuration`, 30 seconds after the game is over (`game over: shutting down`).
+
+Otherwise it runs until it is stopped with kbd:[Ctrl+C] or `SIGTERM`. In every case it tells connected
+players it is going away and closes its sockets; after kbd:[Ctrl+C] or `SIGTERM` the exit status is
+130 or 143, as for any Java program. It exits with status 1 for bad arguments, a missing or
 unreadable map, or a bind failure (with the reason and a usage line on standard error), and with
 status 2 if the server loop fails while running.
 
@@ -327,8 +331,13 @@ The Java server admits players as the XPilot server does:
 * *Slots.* A map has one player slot per home base, shared by humans and robots.
 * *Full game.* When a human joins a full game, a robot is removed to make room
   (`"NAME" upset the gods and was kicked out of the game.`). With no robots left, every paused human is
-  removed instead (`The paused "NAME" was kicked because the game is full.`). Otherwise the join is
-  refused.
+  removed instead (`The paused "NAME" was kicked because the game is full.`). Otherwise the newcomer
+  waits in the *login queue*.
+* *Login queue.* Up to 20 players (at most 2 from one address) wait in line; the client shows `Waiting
+  in queue on SERVER (position N)` and keeps asking, and the first in line gets in when a base frees up.
+  A place nobody asks for within 30 seconds is dropped. `/queue` shows the line; an operator can move a
+  player to the front with `/advance NAME`.
+* *Locked game.* An operator can lock the game (`/lock 1`): newcomers are then refused.
 * *Names.* A name must not be empty or already in use, compared without regard to case. Names are cut
   to 16 characters.
 * *Teams.* In team play a player asks for a team (the client's `--team`). With `teamAssign` (the
@@ -343,7 +352,9 @@ When the server refuses a player, the client shows `Rejected by SERVER:` and one
 [cols="2,4",options="header"]
 |===
 |Reason |Why
-|`server is full` |No slot, and no robot or paused player to remove; or the requested team is full.
+|`server is full` |No slot, no robot or paused player to remove, and the queue is full (or already
+holds two players from your address); or the requested team is full.
+|`game locked` |An operator locked the game against newcomers.
 |`too many players from your address` |More than `maxClientsPerIP` players from one address.
 |`name not accepted` |The name is empty or already in use.
 |`incompatible version` |The client speaks another JXPilot protocol version.
@@ -359,6 +370,7 @@ The server removes players with these reasons, shown to the player when they are
 |`no pause with full game`, `no pause with full team` |Paused while a newcomer needed the slot.
 |`no free base` |No base was free when the player was ready to enter.
 |(timeout) |Nothing received from the player for 10 seconds.
+|`kicked out` |An operator used `/kick` (everyone sees `OPERATOR kicked NAME out!`; <<operators>>).
 |===
 
 [[handshake]]
@@ -378,6 +390,50 @@ that:
 For operators this means: a client behind a firewall that blocks the replies cannot even start; and a
 burst of unanswered connection attempts in a log is harmless. CONNECTs also count against
 `ipPacketRate`.
+
+[[operators]]
+== Operator commands
+
+Players type commands in the talk line (<<03-playing.adoc#commands,Commands>>). An operator, who has
+given the server's password with `/password PW`, can also use these:
+
+[cols="2,4",options="header"]
+|===
+|Command |What it does
+|`/set OPTION VALUE` |Change a server option while the game runs, for example `/set gravity -0.1`;
+everyone is told.
+|`/kick NAME` or `/kick ID` |Remove a player from the game.
+|`/pause NAME` or `/pause ID` |Pause a player.
+|`/reset` |Restart the round. `/reset all` also sets every score to 0.
+|`/lock 1`, `/lock 0` |Lock the game against newcomers, or unlock it.
+|`/advance NAME` |Move a waiting player to the front of the login queue.
+|===
+
+*Setting the password.* The `password` option holds it; give it in one of these ways:
+
+* `-password PW` on the command line: simple, but other users of the machine can see it in the process
+  list;
+* `password: PW` in your config file (or a defaults file);
+* best, as with XPilot's `lib/password`: a password file named by `passwordFileName`, readable only by
+  the server's user (`chmod 600`), containing `password: \override: PW`.
+
+Without a password, nobody can become an operator.
+
+*`/set`.* 256 options can change while the server runs; the other 37 (the map, its size and data,
+`teamPlay`, `limitedLives`, `timing`, `edgeWrap`, `framesPerSecond`, file names, ports and the network
+options) answer "This option cannot be changed at runtime.". A change takes effect at once, with the
+same side effects as in XPilot: for example `maxRobots` removes surplus robots immediately, `gravity`
+recomputes the gravity field, `allowShields` raises or drops everyone's shields, `worldLives` with
+limited lives restarts the round, `teamCannons` reassigns the cannons' teams, and a `robotTeam` outside
+0-9 becomes 0. Clients that are already connected keep the configuration they received when they joined;
+the server's snapshots correct their view. The status column of the
+<<05-server-options.adoc#server-options,option reference>> says which options the server uses.
+
+[[motd]]
+=== Message of the day
+
+With `motdFileName` (short `motd`), each player who joins sees the file's text in a panel, "XPilot motd
+from SERVER", which kbd:[F1] closes.
 
 [[defaults-file]]
 == The defaults file: XPilot's `lib/defaults`
@@ -488,6 +544,10 @@ With limited lives, a robot that loses its last life leaves the game and is repl
 react to how they were killed as in XPilot: killed by a weapon or a shove, a robot declares war on its
 killer; when two ships destroy each other in a collision, robots at war with the other stop that war.
 
+Robots sometimes get stuck, resting on a floor or pushing against a wall. XPilot's robots do exactly the
+same, in the same two ways; the details are in `server/src/test/resources/robots/README.md` in the
+source.
+
 The full list, with every robot option, is in <<05-server-options.adoc#opts-robots,Robots>>.
 
 [[robot-file]]
@@ -534,6 +594,11 @@ A JXPilot server is small. Measured with six robots on `default.xp`, it uses abo
   https://github.com/awkay/jxpilot/blob/main/docs/latency-fixes.md[docs/latency-fixes.md].
 * *Run it as a service* so it survives logouts and reboots (<<service>>), and give friends the address
   from the `listening on` lines.
+
+IMPORTANT: Like the XPilot server, the JXPilot server quits when the last human player leaves, and when
+nobody joins within 5 minutes of the start. For a server that waits for friends, always pass `-noQuit`
+(or put `noQuit: yes` in the config file), as the examples here do. A systemd service with
+`Restart=on-failure` does not restart a server that quit this way, because it exits with status 0.
 
 A minimal setup on a fresh Linux VM:
 
