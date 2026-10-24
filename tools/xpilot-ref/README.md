@@ -202,7 +202,8 @@ Each tick then also prints
 
 ```
 XPMOBJ loop frame ptr type cx cy prevx prevy vx vy life id team status mass extra...
-XPPL2  loop frame id used have ball check round time best_lap last_lap last_lap_time mychar
+XPPL2  loop frame id used have ball check round time best_lap last_lap last_lap_time mychar score
+XPMSG  loop frame to text    (every game message, Set_message/Set_player_message; to: * or the player id)
 XPTRS  loop frame index have destroyed
 XPTGT  loop frame index damage dead_time
 XPTEAM loop frame team treasures_left treasures_destroyed score
@@ -319,7 +320,7 @@ GPL-2.0-or-later, and why.
    XPMOBJ/XPPL2/XPTRS/XPTGT/XPTEAM/XPMTN/XPMT lines when `XPILOT_TRACE_MODES` is set
    (`trace.sh --modes`), `Trace_modes_pre()` (XPMTP) before `Update_objects()`, and in
    `src/common/randommt.c` a `randomMT()` call counter with a state dump. Inert otherwise (the
-   counter only counts).
+   counter only counts), and in `src/server/frame.c` the XPMSG game message trace.
 
 ## Known quirks
 

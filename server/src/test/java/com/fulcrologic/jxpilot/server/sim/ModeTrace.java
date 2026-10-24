@@ -44,7 +44,7 @@ final class ModeTrace {
 
     /** One XPPL2 line. */
     record Pl2(int id, int used, int have, boolean reaching, int check, int round, int time, int bestLap,
-               int lastLap, int lastLapTime, char mychar) {}
+               int lastLap, int lastLapTime, char mychar, double score) {}
 
     /** Everything C printed after one frame. */
     static final class Frame {
@@ -60,6 +60,10 @@ final class ModeTrace {
         long drawsBefore = -1;
         /** The XPTRACE ship's status bits. */
         int shipStatus;
+        /** C's main loop of the XPTRACE line (the frame's update). */
+        long shipLoop = -1;
+        /** XPMSG lines as {@code [loop, text]}: game messages C sent during this frame. */
+        final List<String[]> messages = new ArrayList<>();
         long drawsAfter = -1;
 
         Frame(long frame) {
@@ -91,6 +95,7 @@ final class ModeTrace {
                     case "XPTRACE" -> {
                         f.ship = CTraceTest.Frame.parse(l);
                         f.shipStatus = Integer.decode(c[21]);
+                        f.shipLoop = Long.parseLong(c[1]);
                     }
                     case "XPMOBJ" -> f.objs.add(new Obj(c[3], Integer.parseInt(c[4]), Integer.parseInt(c[5]),
                         Integer.parseInt(c[6]), Integer.parseInt(c[7]), Integer.parseInt(c[8]),
@@ -101,7 +106,8 @@ final class ModeTrace {
                     case "XPPL2" -> f.players.add(new Pl2(Integer.parseInt(c[3]), Integer.decode(c[4]),
                         Integer.decode(c[5]), !"(nil)".equals(c[6]), Integer.parseInt(c[7]),
                         Integer.parseInt(c[8]), Integer.parseInt(c[9]), Integer.parseInt(c[10]),
-                        Integer.parseInt(c[11]), Integer.parseInt(c[12]), c[13].charAt(0)));
+                        Integer.parseInt(c[11]), Integer.parseInt(c[12]), c[13].charAt(0),
+                        c.length > 14 ? Double.parseDouble(c[14]) : Double.NaN));
                     case "XPTRS" -> f.treasures.add(new int[] {Integer.parseInt(c[3]), Integer.parseInt(c[4]),
                         Integer.parseInt(c[5])});
                     case "XPTGT" -> f.targets.add(new int[] {Integer.parseInt(c[3]), Integer.parseInt(c[4]),
@@ -111,6 +117,10 @@ final class ModeTrace {
                         f.teamScores.add(Double.parseDouble(c[6]));
                     }
                     case "XPMTP" -> f.drawsBefore = Long.parseLong(c[3]);
+                    case "XPMSG" -> {
+                        String[] m = l.split(" ", 5);
+                        f.messages.add(new String[] {m[1], m.length > 4 ? m[4] : ""});
+                    }
                     case "XPMTN" -> f.drawsAfter = Long.parseLong(c[3]);
                     case "XPMT" -> {
                         t.mtFrame = frame;

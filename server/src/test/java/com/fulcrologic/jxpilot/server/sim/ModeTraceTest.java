@@ -192,6 +192,7 @@ class ModeTraceTest {
             }
             wasDestructing = destructing;
             in[p.slot] = keys;
+            long msgFrom = w.events.seq();
             s.tick(in);
             if (bad.size() >= 6) {
                 continue;
@@ -222,6 +223,21 @@ class ModeTraceTest {
             java.util.Collections.sort(jobj);
             if (!cobj.equals(jobj)) {
                 bad.add("frame " + c.frame() + " objects\n  C    " + cobj + "\n  Java " + jobj);
+            }
+            // C keeps scores in DFLOAT (float), we in double (DEVIATIONS "Score"): equal to float precision
+            if (!Double.isNaN(pl2.score()) && Math.abs(pl2.score() - p.score) > 1e-5 * Math.max(1, Math.abs(p.score))
+                && bad.size() < 6) {
+                bad.add("frame " + c.frame() + " score\n  C    " + pl2.score() + "\n  Java " + p.score);
+            }
+            List<String> cmsg = new ArrayList<>();
+            for (String[] m : f.messages) {
+                if (Long.parseLong(m[0]) == f.shipLoop) {
+                    cmsg.add(m[1]);
+                }
+            }
+            List<String> jmsg = SimFixture.messages(w, msgFrom);
+            if (f.shipLoop >= 0 && !cmsg.equals(jmsg) && bad.size() < 6) {
+                bad.add("frame " + c.frame() + " messages\n  C    " + cmsg + "\n  Java " + jmsg);
             }
             for (int[] tr : f.treasures) {
                 String ct = "treasure " + tr[0] + " have " + tr[1] + " destroyed " + tr[2];
@@ -281,7 +297,7 @@ class ModeTraceTest {
         Result r = replay(s, t);
         ModeTrace.Pl2 last = t.frames.get(t.frames.size() - 1).players.get(0);
         assertAll(
-            () -> assertEquals(213, r.frames(), "213 C frames are compared"),
+            () -> assertEquals(211, r.frames(), "211 C frames are compared"),
             () -> assertEquals(2, last.round(), "(C completed lap 1)"),
             () -> assertEquals(171, last.bestLap(), "(in 171 frames)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
@@ -295,7 +311,7 @@ class ModeTraceTest {
         Result r = replay(s, t);
         long breaks = t.frames.stream().filter(f -> f.objs.stream().anyMatch(o -> o.type() == Obj.WRECKAGE)).count();
         assertAll(
-            () -> assertEquals(214, r.frames(), "214 C frames are compared"),
+            () -> assertEquals(213, r.frames(), "213 C frames are compared"),
             () -> assertTrue(breaks > 10, "(asteroids broke: " + breaks + " frames with wreckage)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }
@@ -350,7 +366,7 @@ class ModeTraceTest {
         Result r = replay(s, t);
         boolean reset = t.frames.stream().anyMatch(f -> f.frame > 200 && f.players.get(0).round() == 0);
         assertAll(
-            () -> assertEquals(404, r.frames(), "404 C frames are compared"),
+            () -> assertEquals(405, r.frames(), "405 C frames are compared"),
             () -> assertTrue(reset, "(C finished the race and reset it)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }
@@ -382,7 +398,7 @@ class ModeTraceTest {
         Simulation s = resourceMap("ball-tow.xp", 1);
         Result r = replay(s, t);
         assertAll(
-            () -> assertEquals(112, r.frames(), "112 C frames are compared"),
+            () -> assertEquals(107, r.frames(), "107 C frames are compared"),
             () -> assertTrue(t.frames.get(t.frames.size() - 1).objs.get(0).id() == -1, "(the ball was dropped)"),
             () -> assertEquals(List.of(), r.mismatches(), "no frame differs from C"));
     }
