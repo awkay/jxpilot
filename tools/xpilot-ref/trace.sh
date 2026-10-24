@@ -7,8 +7,8 @@
 # --server-opt to set physics options.
 #
 # usage: trace.sh --map NAME --out FILE.txt [--after S] [--keys "ACTIONS"]
-#                 [--robots N] [--all-players] [--objs] [--rand] [--name2 NAME]
-#                 [--png FILE.png] [...]
+#                 [--robots N] [--all-players] [--objs] [--modes] [--rand] [--name2 NAME]
+#                 [--map-file F] [--png FILE.png] [...]
 #
 #   --after S      seconds after the ship enters play before the keys start
 #   --keys ACTIONS as screenshot.sh; the trace covers the whole run
@@ -17,10 +17,12 @@
 #   --objs         also trace objects, pulses, ECMs and player items
 #                  (XPOBJ/XPPULSE/XPECM/XPITEMS lines; needs patch 0004,
 #                  i.e. an image built with it, e.g. XPREF_IMAGE=xpilot-ref:items)
+#   --modes        also trace the game modes (XPMOBJ/XPPL2/XPTRS/XPTGT/XPTEAM lines;
+#                  needs patch 0005): balls, asteroids, wreckage, race, treasures, targets
+#   --map-file F   use the map file F from the host instead of a shipped map
 #   --rand         also trace every server random draw, Make_debris call and
-#                  busy cannon (XPRAND/XPDEBRIS/XPCANNON lines; patch 0005)
-#   --map-file F   use the map file F (not one of the image's maps) instead
-#                  of --map
+#                  explosion debris, keyboard update and busy cannon
+#                  (XPRAND/XPDEBRIS/XPDEB/XPKEYS/XPCANNON lines; patch 0006)
 #   --name2 NAME   a second client joins once the first is in play; key
 #                  actions focus:2 / focus:1 send the following keys to it /
 #                  back to the first client

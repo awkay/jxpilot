@@ -25,11 +25,9 @@ package com.fulcrologic.jxpilot.server.sim;
 
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.SoundEvent;
-import com.fulcrologic.jxpilot.common.map.BlockType;
-import com.fulcrologic.jxpilot.common.map.Target;
-import com.fulcrologic.jxpilot.common.map.Treasure;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.server.world.ModeState;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
@@ -42,11 +40,58 @@ import com.fulcrologic.jxpilot.server.world.World;
  * {@code Give_individual_bonus}, {@code Count_rounds}, {@code Reset_all_players} ({@code src/server/player.c}),
  * {@code Game_Over} (server.c) and the round part of {@code Handle_login} (netserver.c).
  * <p>
- * Not ported: race mode (timing maps play without rounds) and treasure destruction (treasures are not
- * simulated in S1, so every team keeps its treasures: team rounds end when all but one team is out of
- * lives, or when maxRoundTime runs out).
+ * Race mode is judged by {@link Race}; balls, treasures and targets are reset by {@link Balls} and
+ * {@link Targets}.
  */
 public final class Rounds {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_AND = Texts.of(" and ");
+    private static final String T_AND_SCORING = Texts.of(", and scoring ");
+    private static final String T_ARE_THE_DEADLY_PLAYERS_WITH = Texts.of(" are the Deadly Players with kill ratios of ");
+    private static final String T_AS_EVERYONE_DIED = Texts.of(" as everyone died");
+    private static final String T_BEST_HUMAN_PLAYER = Texts.of("Best human player: ");
+    private static final String T_BEST_TEAM = Texts.of("Best team (");
+    private static final String T_BETWEEN_TEAMS = Texts.of(" between teams ");
+    private static final String T_BY_DESTROYING = Texts.of(" by destroying ");
+    private static final String T_BY_STAYING_ALIVE = Texts.of(" by staying alive");
+    private static final String T_BY_STAYING_IN_THE_GAME = Texts.of(" by staying in the game");
+    private static final String T_COMPLETED = Texts.of(" completed. >");
+    private static final String T_DEADLIEST = Texts.of("[Deadliest]");
+    private static final String T_DEADLY = Texts.of("[Deadly]");
+    private static final String T_DELAYING = Texts.of("Delaying ");
+    private static final String T_GAME_OVER = Texts.of("Game over...");
+    private static final String T_HAS_WON_THE_GAME = Texts.of(" has won the game! >");
+    private static final String T_HAS_WON_THE_GAME_2 = Texts.of(" has won the game");
+    private static final String T_IS_THE_DEADLIEST_PLAYER_WITH = Texts.of(" is the Deadliest Player with a kill ratio of ");
+    private static final String T_OUT_OF = Texts.of(" out of ");
+    private static final String T_PLAYER_ENTERED_DELAYING = Texts.of("Player entered. Delaying ");
+    private static final String T_POINTS = Texts.of(" points");
+    private static final String T_PTS_TEAM = Texts.of(" Pts): Team ");
+    private static final String T_PUNCT = Texts.of(", ");
+    private static final String T_PUNCT_2 = Texts.of(" < ");
+    private static final String T_PUNCT_3 = Texts.of("! >");
+    private static final String T_RACE = Texts.of("Race");
+    private static final String T_RACE_2 = Texts.of("race");
+    private static final String T_ROUND = Texts.of("Round");
+    private static final String T_ROUND_2 = Texts.of(" < Round ");
+    private static final String T_ROUND_3 = Texts.of("round");
+    private static final String T_SECONDS_UNTIL_NEXT = Texts.of(" seconds until next ");
+    private static final String T_SECONDS_UNTIL_START_OF_NEXT = Texts.of(" seconds until start of next ");
+    private static final String T_STARTS_NOW = Texts.of(" starts now.");
+    private static final String T_TEAM = Texts.of(" < Team ");
+    private static final String T_THERE_IS_NO_DEADLY_PLAYER = Texts.of("There is no Deadly Player");
+    private static final String T_THE_ROBOTS_HAVE_WON_THE = Texts.of(" < The robots have won the game! >");
+    private static final String T_TIMER_EXPIRED_ROUND_ENDS_NOW = Texts.of("Timer expired. Round ends now.");
+    private static final String T_TREASURES = Texts.of(" treasures");
+    private static final String T_TREASURES_AND_SUCCESSFULLY_DEFENDING = Texts.of(" treasures and successfully defending ");
+    private static final String T_TREASURES_SAVING = Texts.of(" treasures, saving ");
+    private static final String T_WE_HAVE_A_DRAW = Texts.of(" < We have a draw! >");
+    private static final String T_WE_HAVE_A_DRAW_2 = Texts.of(" < We have a draw");
+    private static final String T_WINNER = Texts.of("[Winner]");
+    private static final String T_WORST_HUMAN_PLAYER = Texts.of("Worst human player: ");
+    private static final String T_WORST_TEAM = Texts.of("Worst team (");
+
     /** C {@code MSG_LEN}: messages are split before they would reach it. */
     static final int MSG_LEN = 80;
 
@@ -57,7 +102,6 @@ public final class Rounds {
     private final int[] teamState = new int[Const.MAX_TEAMS];
     private final boolean[] teamWin = new boolean[Const.MAX_TEAMS];
     private final double[] teamScoreSum = new double[Const.MAX_TEAMS];
-    private final int[] treasuresLeft = new int[Const.MAX_TEAMS];
     private final int[] teamScoreInt = new int[Const.MAX_TEAMS];
     private final StringBuilder reason = new StringBuilder(Rounds.MSG_LEN);
     private final StringBuilder names = new StringBuilder(Rounds.MSG_LEN);
@@ -73,11 +117,6 @@ public final class Rounds {
         this.w = w;
         this.sim = sim;
         this.bestPlayers = new int[w.players.length];
-        for (Treasure t : w.map.treasures()) {
-            if (t.team() >= 0 && t.team() < Const.MAX_TEAMS && !t.empty()) {
-                treasuresLeft[t.team()]++;
-            }
-        }
     }
 
     /**
@@ -86,11 +125,14 @@ public final class Rounds {
      * <p>
      * BEHAVIOR: round_delay_send counts down; the round delay counts down and at 0 the round starts
      * ("Round starts now.", the round timer is set, every player counts as busy); the round timer counts down.
-     * BEHAVIOR: race mode is not ported (nothing else happens on timing maps).
+     * BEHAVIOR: ("Race starts now." on timing maps); race mode is judged by {@link Race#gameStatus}.
      * BEHAVIOR: team play: teams of non-paused players are alive if any member is not GAME_OVER, dead if all
-     * are; with two or more alive teams the round only ends when the timer expires ("Timer expired. Round
-     * ends now.", winner by saved treasures, then by summed score, else a draw); with dead teams and one
-     * alive team that team wins " by staying alive", with none it is a draw " as everyone died".
+     * are; with two or more alive teams the round goes on while more than one of them still has a treasure
+     * (or has only empty ones) or none destroyed any, unless the timer expired ("Timer expired. Round ends
+     * now."); then the winner is the team that destroyed most treasures, then saved most, then scored most,
+     * else a draw " between teams A, B"; with dead teams and one alive team that team wins " by staying
+     * alive", with none it is a draw " as everyone died"; with no dead team and at most one alive team the
+     * round ends " by staying in the game" once any treasure was destroyed.
      * BEHAVIOR: individual: among non-paused players, one alive of several wins; none alive is a draw; with
      * the timer expired it is a draw.
      */
@@ -101,7 +143,8 @@ public final class Rounds {
         }
         if (w.roundDelay > 0) {
             if (--w.roundDelay == 0) {
-                w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append("Round starts now.");
+                w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(w.modeParams.timing ? T_RACE : T_ROUND)
+                    .append(T_STARTS_NOW);
                 w.roundTime = p.maxRoundTime * p.fps;
                 for (int k = 0; k < w.numPlayers; k++) {
                     w.playerAt(k).frameLastBusy = w.frames;
@@ -111,10 +154,9 @@ public final class Rounds {
         if (w.roundTime > 0) {
             w.roundTime--;
         }
-        if (w.map.timing()) {
-            return;
-        }
-        if (p.teamPlay) {
+        if (w.modeParams.timing) {
+            sim.race.gameStatus();
+        } else if (p.teamPlay) {
             teamStatus();
         } else {
             individualStatus();
@@ -154,7 +196,7 @@ public final class Rounds {
         } else if (aliveRobots > 1 && alive == aliveRobots && activeHumans > 0) {
             individualGameOver(-2);
         } else if (timerExpired()) {
-            message().append("Timer expired. Round ends now.");
+            message().append(T_TIMER_EXPIRED_ROUND_ENDS_NOW);
             individualGameOver(-1);
         }
     }
@@ -185,38 +227,40 @@ public final class Rounds {
                 winning = pl.team;
             }
         }
+        ModeState m = w.modes;
         if (aliveTeams > 1) {
+            int teamsWithTreasure = 0;
+            int maxDestroyed = 0;
             int maxLeft = 0;
+            double maxScore = 0;
             for (int i = 0; i < Const.MAX_TEAMS; i++) {
-                teamWin[i] = teamState[i] == TEAM_ALIVE;
+                teamScoreSum[i] = 0;
+                if (teamState[i] != TEAM_ALIVE) {
+                    teamWin[i] = false;
+                    continue;
+                }
+                teamWin[i] = true;
+                if (m.teamTreasuresDestroyed[i] > maxDestroyed) {
+                    maxDestroyed = m.teamTreasuresDestroyed[i];
+                }
+                if (m.teamTreasuresLeft[i] > 0 || m.teamTreasures[i] == m.teamEmptyTreasures[i]) {
+                    teamsWithTreasure++;
+                }
             }
-            // No treasure is ever destroyed in S1 (max_destroyed = 0): the round only ends on the timer.
-            if (!timerExpired()) {
+            if ((teamsWithTreasure > 1 || maxDestroyed == 0) && !timerExpired()) {
                 return;
             }
-            message().append("Timer expired. Round ends now.");
-            // Every alive team destroyed 0 treasures (the most), so all of them are still candidates.
-            for (int i = 0; i < Const.MAX_TEAMS; i++) {
-                if (teamWin[i] && treasuresLeft[i] > maxLeft) {
-                    maxLeft = treasuresLeft[i];
-                }
-                teamScoreSum[i] = 0;
+            if (timerExpired()) {
+                message().append(T_TIMER_EXPIRED_ROUND_ENDS_NOW);
             }
-            for (int k = 0; k < w.numPlayers; k++) {
-                Player pl = w.playerAt(k);
-                if ((pl.status & Obj.PAUSE) == 0 && !pl.tank && pl.team >= 0 && pl.team < Const.MAX_TEAMS) {
-                    teamScoreSum[pl.team] += pl.score;
-                }
-            }
-            double maxScore = 0;
             int winners = 0;
             for (int i = 0; i < Const.MAX_TEAMS; i++) {
                 if (!teamWin[i]) {
                     continue;
                 }
-                if (treasuresLeft[i] == maxLeft) {
-                    if (teamScoreSum[i] > maxScore) {
-                        maxScore = teamScoreSum[i];
+                if (m.teamTreasuresDestroyed[i] == maxDestroyed) {
+                    if (m.teamTreasuresLeft[i] > maxLeft) {
+                        maxLeft = m.teamTreasuresLeft[i];
                     }
                     winning = i;
                     winners++;
@@ -227,7 +271,34 @@ public final class Rounds {
             StringBuilder r = reason;
             r.setLength(0);
             if (winners == 1) {
-                r.append(" by destroying 0 treasures and successfully defending ").append(maxLeft);
+                r.append(T_BY_DESTROYING).append(maxDestroyed).append(T_TREASURES);
+                teamGameOver(winning, r);
+                return;
+            }
+            for (int k = 0; k < w.numPlayers; k++) {
+                Player pl = w.playerAt(k);
+                if ((pl.status & Obj.PAUSE) == 0 && !pl.tank && pl.team >= 0 && pl.team < Const.MAX_TEAMS) {
+                    teamScoreSum[pl.team] += pl.score;
+                }
+            }
+            winners = 0;
+            for (int i = 0; i < Const.MAX_TEAMS; i++) {
+                if (!teamWin[i]) {
+                    continue;
+                }
+                if (m.teamTreasuresLeft[i] == maxLeft) {
+                    if (teamScoreSum[i] > maxScore) {
+                        maxScore = teamScoreSum[i];
+                    }
+                    winning = i;
+                    winners++;
+                } else {
+                    teamWin[i] = false;
+                }
+            }
+            if (winners == 1) {
+                r.append(T_BY_DESTROYING).append(maxDestroyed).append(T_TREASURES_AND_SUCCESSFULLY_DEFENDING)
+                    .append(maxLeft);
                 teamGameOver(winning, r);
                 return;
             }
@@ -244,25 +315,34 @@ public final class Rounds {
                 }
             }
             if (winners == 1) {
-                r.append(" by destroying 0 treasures, saving ").append(maxLeft).append(", and scoring ");
+                r.append(T_BY_DESTROYING).append(maxDestroyed).append(T_TREASURES_SAVING).append(maxLeft)
+                    .append(T_AND_SCORING);
                 appendFixed2(r, maxScore);
-                r.append(" points");
+                r.append(T_POINTS);
                 teamGameOver(winning, r);
                 return;
             }
-            r.append(" between teams ");
+            r.append(T_BETWEEN_TEAMS);
             for (int i = 0; i < Const.MAX_TEAMS; i++) {
                 if (teamWin[i]) {
-                    r.append((char) ('0' + i)).append(", ");
+                    r.append((char) ('0' + i)).append(T_PUNCT);
                 }
             }
             r.setLength(r.length() - 2);
             teamGameOver(-1, r);
         } else if (deadTeams > 0) {
             if (aliveTeams == 1) {
-                teamGameOver(winning, " by staying alive");
+                teamGameOver(winning, T_BY_STAYING_ALIVE);
             } else {
-                teamGameOver(-1, " as everyone died");
+                teamGameOver(-1, T_AS_EVERYONE_DIED);
+            }
+        } else {
+            int destroyed = 0;
+            for (int i = 0; i < Const.MAX_TEAMS; i++) {
+                destroyed += m.teamTreasures[i] - m.teamEmptyTreasures[i] - m.teamTreasuresLeft[i];
+            }
+            if (destroyed != 0) {
+                teamGameOver(winning, T_BY_STAYING_IN_THE_GAME);
             }
         }
     }
@@ -327,13 +407,13 @@ public final class Rounds {
             return;
         }
         if (bestRatio == 0) {
-            message().append("There is no Deadly Player");
+            message().append(T_THERE_IS_NO_DEADLY_PLAYER);
         } else if (numBest == 1) {
             Player bp = w.playerAt(bestPlayers[0]);
-            message().append(bp.name).append(" is the Deadliest Player with a kill ratio of ").append(bp.kills)
+            message().append(bp.name).append(T_IS_THE_DEADLIEST_PLAYER_WITH).append(bp.kills)
                 .append('/').append(bp.deaths).append('.');
             double points = bestRatio * Scoring.rate(bp.score, averageScore);
-            sim.scoring.score(bp, points, bp.bx, bp.by, "[Deadliest]");
+            sim.scoring.score(bp, points, bp.bx, bp.by, T_DEADLIEST);
         } else {
             StringBuilder msg = names;
             msg.setLength(0);
@@ -342,7 +422,7 @@ public final class Rounds {
                 float ratio = (float) Scoring.rate(bp.score, averageScore);
                 float score = (ratio + numBest) / numBest;
                 if (msg.length() > 0) {
-                    msg.append(i == numBest - 1 ? " and " : ", ");
+                    msg.append(i == numBest - 1 ? T_AND : T_PUNCT);
                 }
                 if (msg.length() + 8 + bp.name.length() >= MSG_LEN) {
                     message().append(msg);
@@ -350,14 +430,14 @@ public final class Rounds {
                 }
                 msg.append(bp.name);
                 double points = (int) (bestRatio * score);
-                sim.scoring.score(bp, points, bp.bx, bp.by, "[Deadly]");
+                sim.scoring.score(bp, points, bp.bx, bp.by, T_DEADLY);
             }
             if (msg.length() + 64 >= MSG_LEN) {
                 message().append(msg);
                 msg.setLength(0);
             }
             Player first = w.playerAt(bestPlayers[0]);
-            msg.append(" are the Deadly Players with kill ratios of ").append(first.kills).append('/')
+            msg.append(T_ARE_THE_DEADLY_PLAYERS_WITH).append(first.kills).append('/')
                 .append(first.deaths).append('.');
             message().append(msg);
         }
@@ -367,7 +447,7 @@ public final class Rounds {
     void individualBonus(Player pl) {
         float ratio = (float) pl.kills / (pl.deaths + 1);
         double points = ratio * Scoring.rate(pl.score, averageScore);
-        sim.scoring.score(pl, points, pl.bx, pl.by, "[Winner]");
+        sim.scoring.score(pl, points, pl.bx, pl.by, T_WINNER);
     }
 
     private boolean isBest(int k) {
@@ -389,13 +469,13 @@ public final class Rounds {
     void individualGameOver(int winner) {
         endOfRoundValues();
         if (winner == -1) {
-            message().append(" < We have a draw! >");
+            message().append(T_WE_HAVE_A_DRAW);
             Sounds.playAll(w, SoundEvent.PLAYER_DRAW);
         } else if (winner == -2) {
-            message().append(" < The robots have won the game! >");
+            message().append(T_THE_ROBOTS_HAVE_WON_THE);
             Sounds.playAll(w, SoundEvent.PLAYER_WIN);
         } else {
-            message().append(" < ").append(w.playerAt(winner).name).append(" has won the game! >");
+            message().append(T_PUNCT_2).append(w.playerAt(winner).name).append(T_HAS_WON_THE_GAME);
             Sounds.playAll(w, SoundEvent.PLAYER_WIN);
         }
         bestPlayerBonus();
@@ -423,11 +503,11 @@ public final class Rounds {
     void teamGameOver(int winningTeam, CharSequence reason) {
         endOfRoundValues();
         if (winningTeam != -1) {
-            message().append(" < Team ").append(winningTeam).append(" has won the game").append(reason)
-                .append("! >");
+            message().append(T_TEAM).append(winningTeam).append(T_HAS_WON_THE_GAME_2).append(reason)
+                .append(T_PUNCT_3);
             Sounds.playAll(w, SoundEvent.TEAM_WIN);
         } else {
-            message().append(" < We have a draw").append(reason).append("! >");
+            message().append(T_WE_HAVE_A_DRAW_2).append(reason).append(T_PUNCT_3);
             Sounds.playAll(w, SoundEvent.TEAM_DRAW);
         }
         bestPlayerBonus();
@@ -450,6 +530,61 @@ public final class Rounds {
         countRounds();
     }
 
+    /**
+     * The gameDuration start in C {@code Main_loop} (server.c:261-268), each frame the game runs, before the
+     * objects move.
+     * <p>
+     * BEHAVIOR: the first frame with a human in the game starts the timer once: with gameDuration &gt; 0 the
+     * game ends at wall-clock second (time_t)(gameDuration * 60) + now ({@link World#gameOverTime}).
+     */
+    public void startGameDuration(boolean humans) {
+        if (w.noPlayersEnteredYet && humans) {
+            w.noPlayersEnteredYet = false;
+            if (w.gameDuration > 0) {
+                w.gameOverTime = (long) (w.gameDuration * 60) + w.wallSeconds.getAsLong();
+            }
+        }
+    }
+
+    /**
+     * The gameDuration part of C {@code Frame_update} (frame.c:1256-1267, 1357), after each frame.
+     * <p>
+     * BEHAVIOR: while gameDuration &gt; 0 and the game was not ended by it, the seconds left are
+     * {@link World#gameOverTime} minus the wall clock; when they change from last frame and are &lt;= 0 the
+     * game is over ({@link #gameOver}) and the server shuts down in 30 * FPS frames
+     * ({@link World#shutdownServer}). Otherwise the seconds left count as 0. As in C, a server running only
+     * robots (rawMode) before any human came has no end time yet and ends the game at once.
+     */
+    public void checkGameDuration() {
+        long newTimeLeft = 0;
+        if (w.gameDuration > 0 && !w.gameOverCalled
+            && w.oldTimeLeft != (newTimeLeft = w.gameOverTime - w.wallSeconds.getAsLong())) {
+            if (newTimeLeft <= 0) {
+                gameOver();
+                w.shutdownServer = 30 * w.params.fps;
+                w.gameOverCalled = true;
+            }
+        }
+        w.oldTimeLeft = newTimeLeft;
+    }
+
+    /**
+     * The shutdown countdown at the top of C {@code Main_loop} (server.c:248-255), every tick whether or not
+     * the game runs.
+     * <p>
+     * BEHAVIOR: with {@link World#shutdownServer} at 0 the server is to stop now (C {@code End_game}: true);
+     * above 0 it counts down by one; at -1 nothing happens.
+     */
+    public boolean shutdownTick() {
+        if (w.shutdownServer >= 0) {
+            if (w.shutdownServer == 0) {
+                return true;
+            }
+            w.shutdownServer--;
+        }
+        return false;
+    }
+
     /** C {@code Count_rounds}: with roundsToPlay, announce the round and end the game after the last one. */
     void countRounds() {
         Params p = w.params;
@@ -457,8 +592,8 @@ public final class Rounds {
             return;
         }
         ++w.roundsPlayed;
-        message().append(" < Round ").append(w.roundsPlayed).append(" out of ").append(p.roundsToPlay)
-            .append(" completed. >");
+        message().append(T_ROUND_2).append(w.roundsPlayed).append(T_OUT_OF).append(p.roundsToPlay)
+            .append(T_COMPLETED);
         if (w.roundsPlayed >= p.roundsToPlay) {
             gameOver();
         }
@@ -469,7 +604,7 @@ public final class Rounds {
      * player; every player is GAME_OVER and rounds stop being judged (gameDuration = -1).
      */
     void gameOver() {
-        message().append("Game over...");
+        message().append(T_GAME_OVER);
         w.gameDuration = -1.0f;
         if (w.params.teamPlay) {
             final int unused = 1234567;
@@ -502,10 +637,10 @@ public final class Rounds {
                 }
             }
             if (win != -1) {
-                message().append("Best team (").append(maxsc).append(" Pts): Team ").append(win);
+                message().append(T_BEST_TEAM).append(maxsc).append(T_PTS_TEAM).append(win);
             }
             if (lose != -1 && lose != win) {
-                message().append("Worst team (").append(minsc).append(" Pts): Team ").append(lose);
+                message().append(T_WORST_TEAM).append(minsc).append(T_PTS_TEAM).append(lose);
             }
         }
         long maxsc = -32767;
@@ -528,10 +663,10 @@ public final class Rounds {
             }
         }
         if (win != null) {
-            message().append("Best human player: ").append(win.name);
+            message().append(T_BEST_HUMAN_PLAYER).append(win.name);
         }
         if (lose != null && lose != win) {
-            message().append("Worst human player: ").append(lose.name);
+            message().append(T_WORST_HUMAN_PLAYER).append(lose.name);
         }
     }
 
@@ -542,6 +677,8 @@ public final class Rounds {
      * robot that loses its last life this way may leave, and the loop goes on with the player moved into its place)
      * and every shot, mine, debris, spark, cannon shot, missile and item dies (explosives lose their mass, so
      * nothing explodes); targets are repaired in team play.
+     * BEHAVIOR: race progress starts over ({@link Race#resetPlayer}); in team play every ball is removed and
+     * each treasure gets a fresh one ({@link Balls#resetRound}).
      * BEHAVIOR: every player leaves GAME_OVER with kills and deaths 0; players that are not paused are busy
      * now, get full lives and mychar ' '.
      * BEHAVIOR: with roundDelay the next round waits roundDelay seconds ("Delaying N seconds until start of
@@ -571,18 +708,16 @@ public final class Rounds {
                 pl.frameLastBusy = w.frames;
                 pl.life = p.worldLives;
             }
+            sim.race.resetPlayer(pl);
             if (pl.tank) {
                 pl.mychar = 'T';
             }
             pl.scoreDirty = true;
         }
-        if (p.teamPlay && p.endOfRoundReset) {
-            for (int i = 0; i < w.targetDeadTime.length; i++) {
-                Target t = w.map.targets().get(i);
-                if (w.targetDeadTime[i] != 0) {
-                    w.map.setBlock(t.bx(), t.by(), BlockType.TARGET);
-                    w.targetDeadTime[i] = 0;
-                }
+        if (p.teamPlay) {
+            sim.balls.resetRound();
+            if (p.endOfRoundReset) {
+                sim.targets.resetRound();
             }
         }
         if (p.endOfRoundReset) {
@@ -606,7 +741,8 @@ public final class Rounds {
             w.roundDelay = p.roundDelaySeconds * p.fps;
             w.roundDelaySend = w.roundDelay + p.fps;
             w.roundTime = -1;
-            message().append("Delaying ").append(p.roundDelaySeconds).append(" seconds until start of next round.");
+            message().append(T_DELAYING).append(p.roundDelaySeconds).append(T_SECONDS_UNTIL_START_OF_NEXT)
+                .append(w.modeParams.timing ? T_RACE_2 : T_ROUND_3).append('.');
         } else {
             w.roundTime = p.maxRoundTime * p.fps;
         }
@@ -616,15 +752,18 @@ public final class Rounds {
      * The round part of C {@code Handle_login}, after the player entered the game.
      * <p>
      * BEHAVIOR: with resetOnHuman = N &gt; 0, while at most N humans are in the game and no round delay runs,
-     * the round ends (team play: a draw; limitedLives: an individual draw) so the newcomer plays at once.
+     * the round ends (race: the race is over; team play: a draw; limitedLives: an individual draw) so the
+     * newcomer plays at once.
      * BEHAVIOR: during a round delay, or for the first player, the delay (re)starts at roundDelay seconds
      * (and the round timer at maxRoundTime when there is no delay) with "Player entered. Delaying N seconds
      * until next round.".
      */
     public void playerEntered(Player pl) {
         Params p = w.params;
-        if (p.resetOnHuman > 0 && sim.humans() <= p.resetOnHuman && w.roundDelay == 0 && !w.map.timing()) {
-            if (p.teamPlay) {
+        if (p.resetOnHuman > 0 && sim.humans() <= p.resetOnHuman && w.roundDelay == 0) {
+            if (w.modeParams.timing) {
+                sim.race.gameOver();
+            } else if (p.teamPlay) {
                 teamGameOver(-1, "");
             } else if (p.limitedLives) {
                 individualGameOver(-1);
@@ -633,8 +772,8 @@ public final class Rounds {
         if (w.roundDelay > 0 || w.numPlayers == 1) {
             w.roundDelay = p.roundDelaySeconds * p.fps;
             w.roundTime = p.maxRoundTime > 0 && p.roundDelaySeconds == 0 ? p.maxRoundTime * p.fps : -1;
-            message().append("Player entered. Delaying ").append(p.roundDelaySeconds)
-                .append(" seconds until next round.");
+            message().append(T_PLAYER_ENTERED_DELAYING).append(p.roundDelaySeconds)
+                .append(T_SECONDS_UNTIL_NEXT).append(w.map.timing() ? T_RACE_2 : T_ROUND_3).append('.');
         }
     }
 
@@ -652,8 +791,8 @@ public final class Rounds {
             w.roundDelay = p.roundDelaySeconds * p.fps;
             w.roundDelaySend = w.roundDelay + p.fps;
             w.roundTime = p.maxRoundTime > 0 && p.roundDelaySeconds == 0 ? p.maxRoundTime * p.fps : -1;
-            message().append("Player entered. Delaying ").append(p.roundDelaySeconds)
-                .append(" seconds until next ").append(w.map.timing() ? "race" : "round").append('.');
+            message().append(T_PLAYER_ENTERED_DELAYING).append(p.roundDelaySeconds)
+                .append(T_SECONDS_UNTIL_NEXT).append(w.map.timing() ? T_RACE_2 : T_ROUND_3).append('.');
         }
     }
 }

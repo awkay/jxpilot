@@ -533,6 +533,33 @@ public final class Msg {
         }
     }
 
+    /**
+     * {@link ReliableType#TIMING}: race progress of a player (C {@code Send_timing}): u16 id, u8 check (the next
+     * checkpoint the player must pass, C {@code pl->check}), u16 round (laps started, C {@code pl->round}).
+     * The last checkpoint passed is check - 1 (wrapping), or none while round is 0.
+     */
+    public static final class Timing implements Payload {
+        public int id;
+        public int check;
+        public int round;
+
+        public void write(ByteBuffer b) {
+            b.putShort((short) id);
+            b.put((byte) check);
+            b.putShort((short) round);
+        }
+
+        public void read(ByteBuffer b) {
+            id = b.getShort() & 0xFFFF;
+            check = b.get() & 0xFF;
+            round = b.getShort() & 0xFFFF;
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.TIMING);
+        }
+    }
+
     /** {@link ReliableType#GAME_EVENT}: generic event with two ids and a value. */
     public static final class GameEvent implements Payload {
         /**
@@ -665,6 +692,34 @@ public final class Msg {
 
         private static int u16(int v) {
             return Math.max(0, Math.min(0xFFFF, v));
+        }
+    }
+
+    /**
+     * {@link ReliableType#MODIFIER_BANK}: u8 bank (0..3), str8 text (C {@code "%c%c%s"}, PKT_MODIFIERBANK, bank,
+     * {@code modBankStr[bank]}). The text is C's modifier string ("FN C V2 X4 LS"); the server parses it.
+     */
+    public static final class ModifierBank implements Payload {
+        /** C {@code NUM_MODBANKS}. */
+        public static final int BANKS = 4;
+
+        public int bank;
+        public final StringBuilder text = new StringBuilder(com.fulcrologic.jxpilot.common.Const.MAX_CHARS);
+
+        /** BEHAVIOR: u8 bank, then the text with a u8 length (at most 255 chars, see {@link Wire#putString8}). */
+        public void write(ByteBuffer b) {
+            b.put((byte) bank);
+            Wire.putString8(b, text);
+        }
+
+        /** BEHAVIOR: reads the bank (0..255, unchecked) and the whole text. */
+        public void read(ByteBuffer b) {
+            bank = b.get() & 0xFF;
+            Wire.getString8(b, text);
+        }
+
+        public void send(ReliableChannel ch) {
+            Msg.send(ch, this, ReliableType.MODIFIER_BANK);
         }
     }
 

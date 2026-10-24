@@ -47,7 +47,7 @@ import java.util.Map;
 
 /**
  * Loader and replay set-up for the C item traces in {@code src/test/resources/ctrace/items} (patch 0004 line
- * formats, and the patch 0005 lines of the replay traces; see the README there). Used by {@link CTraceItemsTest}.
+ * formats, and the patch 0006 lines of the replay traces; see the README there). Used by {@link CTraceItemsTest}.
  */
 final class CTraceItems {
     private CTraceItems() {}
@@ -98,7 +98,7 @@ final class CTraceItems {
     }
 
     /**
-     * One XPRAND line (patch 0005): a C {@code rfrac()} ({@code real}) or {@code randomMT()} draw, its C function and
+     * One XPRAND line (patch 0006): a C {@code rfrac()} ({@code real}) or {@code randomMT()} draw, its C function and
      * {@code file:line}; {@code caller} is the C function that called {@code Make_debris} for the draws inside it,
      * and {@code first} marks the first draw of each {@code Make_debris} call (its particle count).
      */
@@ -109,7 +109,7 @@ final class CTraceItems {
         }
     }
 
-    /** One XPDEBRIS line (patch 0005): a C {@code Make_debris} call and its caller. */
+    /** One XPDEBRIS line (patch 0006): a C {@code Make_debris} call and its caller. */
     record CDebris(String caller, String site, float x, float y, float vx, float vy, int id, int team, int type,
                    float mass, long status, int color, int radius, int minDebris, int maxDebris, int minDir,
                    int maxDir, float minSpeed, float maxSpeed, int minLife, int maxLife) {
@@ -122,7 +122,7 @@ final class CTraceItems {
         }
     }
 
-    /** One XPCANNON line (patch 0005): a cannon that is not idle. */
+    /** One XPCANNON line (patch 0006): a cannon that is not idle. */
     record CCannon(int index, int deadTime, int damaged, int tractorCount, int used, int shieldLeft,
                    int phasingLeft) {}
 
@@ -159,7 +159,7 @@ final class CTraceItems {
         final List<CCannon> cannons = new ArrayList<>();
     }
 
-    /** True when the trace has the patch 0005 lines (draws, keys) that a full replay needs. */
+    /** True when the trace has the patch 0006 lines (draws, keys) that a full replay needs. */
     static boolean replayable(List<CFrame> frames) {
         for (CFrame f : frames) {
             if (!f.draws.isEmpty()) {
@@ -186,7 +186,7 @@ final class CTraceItems {
                 if (c.length < 3 || c[0].endsWith("_HDR")) {
                     continue;
                 }
-                // patch 0005 lines carry no usable frame number: they belong to the tick of the next XPTRACE
+                // patch 0006 lines carry no usable frame number: they belong to the tick of the next XPTRACE
                 switch (c[0]) {
                     case "XPRAND" -> {
                         // one value, or several in order (tools/xpilot-ref/compact-rand.sh)

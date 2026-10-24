@@ -1,4 +1,4 @@
-xpilot-ref patch 0005: optional random number, debris and cannon trace.
+xpilot-ref patch 0006: optional random number, debris and cannon trace.
 
 This patch modifies XPilot 4.5.5 (GPL-2.0-or-later, Copyright (C) 1991-2010
 by Bjoern Stabell, Ken Ronny Schouten, Bert Gijsbers, Dick Balaska et al.).
@@ -6,7 +6,7 @@ It is a derivative work distributed under the same license.
 
 Why: so that a reimplementation can replay a C game with the C server's own
 random numbers and compare the results exactly (item packs and drops, missile
-aim errors, explosion debris counts, cannons...).  Applies on top of 0004.
+aim errors, explosion debris counts, cannons...).  Applies on top of 0005.
 Every rfrac() and randomMT() call in src/server goes through a wrapper in
 server.c (macros at the end of src/server/proto.h; the two declarations in
 src/common/commonproto.h are parenthesized so the macros cannot touch them),
@@ -33,8 +33,8 @@ XPILOT_TRACE_RAND is set; then it prints to stderr:
                                        keys_t numbers it holds down
 Game logic and the random sequence are unchanged.
 
---- a/src/common/commonproto.h	2026-10-23 22:59:43
-+++ b/src/common/commonproto.h	2026-10-23 23:00:50
+--- a/src/common/commonproto.h	2026-10-23 23:54:15
++++ b/src/common/commonproto.h	2026-10-23 23:54:16
 @@ -33,10 +33,10 @@
  /* randommt.c */
  extern void seedMT(unsigned int seed);
@@ -48,14 +48,14 @@ Game logic and the random sequence are unchanged.
  extern int mod(int x, int y);
  extern void Make_table(void);
  
---- a/src/server/netserver.c	2026-10-23 22:59:43
-+++ b/src/server/netserver.c	2026-10-23 23:06:13
+--- a/src/server/netserver.c	2026-10-23 23:54:15
++++ b/src/server/netserver.c	2026-10-23 23:54:16
 @@ -2208,6 +2208,17 @@
  	pl = Players[GetInd[connp->id]];
  	memcpy(pl->last_keyv, connp->r.ptr, size);
  	connp->r.ptr += size;
 +	if (xpref_trace_rand()) {
-+	    /* xpilot-ref patch 0005: the keys this update holds down */
++	    /* xpilot-ref patch 0006: the keys this update holds down */
 +	    int k, n = 0;
 +	    fprintf(stderr, "XPKEYS %ld %d", frame_loops, (int)pl->id);
 +	    for (k = 0; k < NUM_KEYS; k++) {
@@ -68,8 +68,8 @@ Game logic and the random sequence are unchanged.
  	Handle_keyboard(GetInd[connp->id]);
      }
      if (connp->num_keyboard_updates++ && (connp->state & CONN_PLAYING)) {
---- a/src/server/play.c	2026-10-23 22:59:43
-+++ b/src/server/play.c	2026-10-23 23:00:50
+--- a/src/server/play.c	2026-10-23 23:54:15
++++ b/src/server/play.c	2026-10-23 23:54:16
 @@ -142,6 +142,7 @@
   */
  
@@ -83,7 +83,7 @@ Game logic and the random sequence are unchanged.
      modifiers		mods;
  
 +    if (xpref_trace_rand()) {
-+	/* xpilot-ref patch 0005: the call and its caller, floats exact */
++	/* xpilot-ref patch 0006: the call and its caller, floats exact */
 +	fprintf(stderr, "XPDEBRIS %ld %s %s:%d %a %a %a %a %d %d %d %a %ld"
 +		" %d %d %d %d %d %d %a %a %d %d\n",
 +		frame_loops, xpref_debris_func, xpref_debris_file,
@@ -98,15 +98,15 @@ Game logic and the random sequence are unchanged.
      if (BIT(World.rules->mode, WRAP_PLAY)) {
  	if (x < 0) x += World.width;
  	else if (x >= World.width) x -= World.width;
---- a/src/server/proto.h	2026-10-23 22:59:43
-+++ b/src/server/proto.h	2026-10-23 23:00:50
+--- a/src/server/proto.h	2026-10-23 23:54:15
++++ b/src/server/proto.h	2026-10-23 23:54:16
 @@ -407,4 +407,23 @@
   */
  char *showtime(void);
  
 +/*
 + * xpref_rfrac(), xpref_randomMT(), the Make_debris call-site record
-+ * (xpilot-ref patch 0005, not part of upstream XPilot 4.5.5): every server
++ * (xpilot-ref patch 0006, not part of upstream XPilot 4.5.5): every server
 + * call of rfrac() and randomMT() goes through server.c, which prints the
 + * value and its call site when XPILOT_TRACE_RAND is set; Make_debris
 + * learns its caller.  The values and their order are unchanged.
@@ -124,13 +124,13 @@ Game logic and the random sequence are unchanged.
 +		     xpref_debris_line = __LINE__), Make_debris
 +
  #endif
---- a/src/server/server.c	2026-10-23 22:59:43
-+++ b/src/server/server.c	2026-10-23 23:53:21
+--- a/src/server/server.c	2026-10-23 23:54:16
++++ b/src/server/server.c	2026-10-23 23:54:33
 @@ -293,6 +293,83 @@
  }
  
  /*
-+ * xpilot-ref random number and cannon trace (patch 0005, not part of
++ * xpilot-ref random number and cannon trace (patch 0006, not part of
 + * upstream XPilot 4.5.5).  Inert unless XPILOT_TRACE_RAND is set; then every
 + * server rfrac()/randomMT() call prints "XPRAND func file:line f|i value"
 + * (value = the 32 bit randomMT() number; rfrac() is value / 2^32), every
@@ -210,11 +210,12 @@ Game logic and the random sequence are unchanged.
   * xpilot-ref object trace hook (not part of upstream XPilot 4.5.5).
   * When the environment variable XPILOT_TRACE_OBJS is set, print after each
   * Update_objects() call one "XPOBJ" line for every object in Obj[] except
-@@ -506,6 +583,7 @@
- 	Trace_players();
+@@ -584,6 +661,7 @@
  	Trace_wreckage();
  	Trace_objects();
+ 	Trace_modes();
 +	Trace_cannons();
  
  	if ((main_loops % UPDATES_PR_FRAME) == 0) {
  	    Frame_update();
+Only in orig2/src/server: server.c.orig

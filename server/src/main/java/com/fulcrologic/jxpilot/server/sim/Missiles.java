@@ -46,6 +46,13 @@ import com.fulcrologic.jxpilot.server.world.World;
  * velocities and speeds are C floats, the direction a C {@code u_byte} taken modulo RES.
  */
 public final class Missiles {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_FUEL_UNITS_TO_FIRE = Texts.of(" fuel units to fire ");
+    private static final String T_HAS_LAUNCHED = Texts.of(" has launched ");
+    private static final String T_MISSILES_TO_FIRE = Texts.of(" missiles to fire ");
+    private static final String T_YOU_NEED_AT_LEAST = Texts.of("You need at least ");
+
     static final double MISSILE_POWER_SPEED_FACT = 0.25;
     static final double MISSILE_POWER_TURNSPEED_FACT = 0.75;
     static final int MINI_TORPEDO_SPREAD_TIME = 6;
@@ -208,7 +215,7 @@ public final class Missiles {
                 used = Mods.isFullNuclear(mods) ? pl.items[Item.MISSILE.ordinal()] : ip.nukeMinSmarts;
                 if (pl.items[Item.MISSILE.ordinal()] < ip.nukeMinSmarts) {
                     StringBuilder m = w.events.playerMessage(Msg.Text.KIND_GAME, Obj.NO_ID, pl.id)
-                        .append("You need at least ").append(ip.nukeMinSmarts).append(" missiles to fire ");
+                        .append(T_YOU_NEED_AT_LEAST).append(ip.nukeMinSmarts).append(T_MISSILES_TO_FIRE);
                     ShotNames.append(m, type, status, mods, false).append('!');
                     return;
                 }
@@ -272,7 +279,7 @@ public final class Missiles {
         if (pl != null) {
             if (pl.fuel < -drain) {
                 StringBuilder m = w.events.playerMessage(Msg.Text.KIND_GAME, Obj.NO_ID, pl.id)
-                    .append("You need at least ").append((-drain) >> 8).append(" fuel units to fire ");
+                    .append(T_YOU_NEED_AT_LEAST).append((-drain) >> 8).append(T_FUEL_UNITS_TO_FIRE);
                 ShotNames.append(m, type, status, mods, false).append('!');
                 return;
             }
@@ -280,7 +287,7 @@ public final class Missiles {
             pl.items[Item.MISSILE.ordinal()] -= used;
             if (used > 1) {
                 StringBuilder m = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name)
-                    .append(" has launched ");
+                    .append(T_HAS_LAUNCHED);
                 ShotNames.append(m, type, status, mods, false).append('!');
                 Sounds.playAll(w, SoundEvent.NUKE_LAUNCH);
             } else if (type == Obj.SMART_SHOT) {

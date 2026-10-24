@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.robot;
 
+import com.fulcrologic.jxpilot.server.sim.Texts;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.SoundEvent;
 import com.fulcrologic.jxpilot.common.config.Opt;
@@ -56,6 +57,16 @@ import com.fulcrologic.jxpilot.server.world.World;
  * {@code -rawMode}). Allocation free per tick.
  */
 public final class RobotManager {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_LEFT_OUT_OF_DISAPPOINTMENT = Texts.of(" left out of disappointment.");
+    private static final String T_PLAYED_TOO_BADLY = Texts.of(" played too badly.");
+    private static final String T_PUNCT = Texts.of(" (");
+    private static final String T_PUNCT_2 = Texts.of(", ");
+    private static final String T_RETIRED = Texts.of(" retired.");
+    private static final String T_STARTS_AT_STARTPOS = Texts.of(") starts at startpos ");
+    private static final String T_UPSET_THE_GODS_AND_WAS = Texts.of("\" upset the gods and was kicked out of the game.");
+
     private final World w;
     private final Simulation sim;
     private final RobotData[] data;
@@ -557,8 +568,8 @@ public final class RobotManager {
         talk.says(RobotTalk.ENTER, pl.name, null);
         if (logRobots && log != null) {
             logLine.setLength(0);
-            logLine.append(pl.name).append(" (").append(w.numPlayers).append(", ").append(robotRealName)
-                .append(") starts at startpos ").append(pl.homeBase).append('.');
+            logLine.append(pl.name).append(T_PUNCT).append(w.numPlayers).append(T_PUNCT_2).append(robotRealName)
+                .append(T_STARTS_AT_STARTPOS).append(pl.homeBase).append('.');
             log.accept(logLine);
         }
         sim.rounds.robotEntered();
@@ -589,7 +600,7 @@ public final class RobotManager {
         }
         if (kicked) {
             w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append('"').append(pl.name)
-                .append("\" upset the gods and was kicked out of the game.");
+                .append(T_UPSET_THE_GODS_AND_WAS);
         }
         int id = pl.id;
         data[pl.slot].clear();
@@ -615,11 +626,11 @@ public final class RobotManager {
         }
         String reason;
         if (robotLeaveLife > 0 && pl.life >= robotLeaveLife) {
-            reason = " retired.";
+            reason = T_RETIRED;
         } else if (robotLeaveScore != 0 && pl.score < robotLeaveScore) {
-            reason = " left out of disappointment.";
+            reason = T_LEFT_OUT_OF_DISAPPOINTMENT;
         } else if (robotLeaveRatio != 0 && pl.score / (pl.life + 1) < robotLeaveRatio) {
-            reason = " played too badly.";
+            reason = T_PLAYED_TOO_BADLY;
         } else {
             return false;
         }

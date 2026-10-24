@@ -232,6 +232,44 @@ class ItemSectionsTest {
                 () -> assertEquals("0,0,0,0,0,0,0,0,3,0,0,2,0,0,0,0,0,0,0,0,0", items, "the item counts"));
         }
 
+        /** SELF_ITEMS' loseItem for viewer {@code v} (-1 without a SELF_ITEMS record). */
+        int loseItemOf(Player v) {
+            for (ByteBuffer b : parts) {
+                b.clear();
+            }
+            int n = new SnapshotBuilder(w).build(v, 0, w.events.burstSeq(), false, parts);
+            SnapshotReader r = new SnapshotReader();
+            r.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
+            for (int p = 0; p < n; p++) {
+                ByteBuffer buf = parts[p].duplicate();
+                buf.flip();
+                r.begin(buf);
+                while (r.nextSection()) {
+                    if (r.type() == Section.SELF_ITEMS) {
+                        return new Records.SelfItems().wrap(r, 0).loseItem();
+                    }
+                }
+            }
+            return -1;
+        }
+
+        @Test
+        @DisplayName("SELF_ITEMS carries the viewer's lose item (C Send_loseitem), whatever its lose_item_state")
+        void loseItem() {
+            a.loseItem = Item.MINE.ordinal();
+            a.loseItemState = 0;
+            int idle = loseItemOf(a);
+            a.loseItem = Item.LASER.ordinal();
+            a.loseItemState = 2;
+            int selecting = loseItemOf(a);
+            b.loseItem = Item.ECM.ordinal();
+            int other = loseItemOf(a);
+            assertAll(
+                () -> assertEquals(Item.MINE.ordinal(), idle, "sent while not selecting too (state 0)"),
+                () -> assertEquals(Item.LASER.ordinal(), selecting, "the current lose item while selecting"),
+                () -> assertEquals(Item.LASER.ordinal(), other, "the viewer's own, not another player's"));
+        }
+
         @Test
         @DisplayName("SELF: lock distance/direction only when LOCK_VISIBLE; the modifiers in SELF's layout")
         void lockAndMods() {
@@ -294,8 +332,10 @@ class ItemSectionsTest {
             w.roundDelay = 0;
             w.roundTime = -1;
             String none = records(a, Section.TIMERS, false).get(0);
+            w.params.maxRoundTime = 10;
             w.roundTime = 120;
             w.roundDelay = 24;
+            w.roundDelaySend = 3;
             String limited = records(a, Section.TIMERS, false).get(0);
             assertAll(
                 () -> assertEquals("40 0 -1 d0 t0/0 s0/0 p0/0 x-1", none, "damaged 40, no delay, no limit"),
@@ -626,8 +666,8 @@ class ItemSectionsTest {
                     "A's own fused (owner-immune) mine: friendly, not armed"),
                 () -> assertEquals(confused, m.subList(4, 10),
                     "confused identified mines: nobody shown, friendliness from the snapshot RNG"),
-                () -> assertEquals("310.0,120.0 f" + armed + " o" + Protocol.NO_ID, m.get(10),
-                    "an unowned mine shows nobody"),
+                () -> assertEquals("310.0,120.0 f" + armed + " o" + Records.Mine.EXPIRED_MINE_ID, m.get(10),
+                    "an identified unowned mine shows C's EXPIRED_MINE_ID (frame.c:873)"),
                 () -> assertEquals("420.0,120.0 f" + friendly + " o" + Protocol.NO_ID, m.get(11),
                     "out of sensing range a confused mine follows the normal rule: A's own fused mine is friendly"),
                 () -> assertEquals("430.0,120.0 f" + armed + " o" + Protocol.NO_ID, m.get(12),

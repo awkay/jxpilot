@@ -184,11 +184,12 @@ class DefaultRobotPlayTest {
             t.it.random = true;
             t.objects();
             assertAll(
-                () -> assertEquals(near, handy, "the nearer handy item (cells nearest first; ties go to the later one)"),
+                () -> assertEquals(far, handy,
+                    "the nearer item ranks best, but C turns item_i into the first unowned object (robotdef.c:2163)"),
                 () -> assertEquals(100, dist, "100 px"),
                 () -> assertEquals(-1, ignored, "autopilots are ignored"),
                 () -> assertEquals(1, t.r.itemImp, "random items are handy"),
-                () -> assertTrue(t.r.itemI == near || t.r.itemI == far, "one of them"));
+                () -> assertEquals(far, t.r.itemI, "and again the first unowned object"));
         }
 
         @Test

@@ -75,23 +75,23 @@ public final class Ecm {
     /** Ball detaching hook (null until balls exist). */
     public BallDetacher ballDetacher;
 
-    public Ecm(World w, Simulation sim) {
-        this.w = w;
-        this.sim = sim;
-    }
-
-    /** {@code StrictMath.pow(0.75, n)} for item counts 0..255, computed once: pow allocates without escape analysis. */
-    private static final double[] POW075 = new double[256];
+    /** {@code StrictMath.pow(0.75, n)} for item counts 0..255 (StrictMath.pow allocates until it is compiled). */
+    private static final double[] POW_075 = new double[256];
 
     static {
-        for (int n = 0; n < POW075.length; n++) {
-            POW075[n] = StrictMath.pow(0.75, n);
+        for (int n = 0; n < POW_075.length; n++) {
+            POW_075[n] = StrictMath.pow(0.75, n);
         }
     }
 
-    /** BEHAVIOR: C's pow(0.75, n), from the table for 0..255. */
+    /** BEHAVIOR: exactly {@code StrictMath.pow(0.75, n)}, from the table for 0..255. */
     static double pow075(int n) {
-        return n >= 0 && n < POW075.length ? POW075[n] : StrictMath.pow(0.75, n);
+        return n >= 0 && n < POW_075.length ? POW_075[n] : StrictMath.pow(0.75, n);
+    }
+
+    public Ecm(World w, Simulation sim) {
+        this.w = w;
+        this.sim = sim;
     }
 
     /**

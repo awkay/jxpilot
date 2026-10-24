@@ -15,6 +15,7 @@ INTERVAL=0.5
 ROBOTS=""
 ALL_PLAYERS=0
 OBJS=0
+MODES=0
 RAND=0
 NAME2=""
 MAP_FILE=""
@@ -35,6 +36,7 @@ while [ $# -gt 0 ]; do
         --robots) ROBOTS="$2"; shift 2;;
         --all-players) ALL_PLAYERS=1; shift;;
         --objs) OBJS=1; shift;;
+        --modes) MODES=1; shift;;
         --rand) RAND=1; shift;;
         --name2) NAME2="$2"; shift 2;;
         --map-file) MAP_FILE="$2"; shift 2;;
@@ -63,6 +65,7 @@ args=(--name "$NAME" --after "$AFTER" --robots "$ROBOTS" --out /out ${PASS[@]+"$
 if [ "$MODE" = trace ]; then
     args+=(--trace)
     [ "$OBJS" = 1 ] && args+=(--trace-objs)
+    [ "$MODES" = 1 ] && args+=(--trace-modes)
     [ "$RAND" = 1 ] && args+=(--trace-rand)
     if [ "$ALL_PLAYERS" = 0 ]; then
         # The server capitalises the first letter of the nick.
@@ -78,9 +81,8 @@ budget=$(awk -v a="$AFTER" -v k="$key_sleep" -v f="$FRAMES" -v i="$INTERVAL" -v 
 
 tmp="$(xpref_tmpdir)"
 if [ -n "$MAP_FILE" ]; then
-    # a map that is not in the image: copied into the run's /out mount
-    cp "$MAP_FILE" "$tmp/" || die "cannot read $MAP_FILE"
-    chmod 644 "$tmp/$(basename "$MAP_FILE")"
+    # a map from the host: copied next to the outputs, which the container sees as /out
+    cp "$MAP_FILE" "$tmp/" || die "cannot copy $MAP_FILE"
     args+=(--map "/out/$(basename "$MAP_FILE")")
 fi
 cname=$(xpref_container_name "$MODE")

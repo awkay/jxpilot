@@ -87,11 +87,12 @@ final class ItemSections {
     }
 
     /**
-     * BEHAVIOR: one SELF_ITEMS record with the viewer's item counts (tanks as its tank count).
+     * BEHAVIOR: one SELF_ITEMS record with the viewer's item counts (tanks as its tank count) and its lose item
+     * (C {@code Frame_lose_item_state} sends {@code pl->lose_item} as PKT_LOSEITEM while selecting; here always).
      */
     void writeSelfItems(Player v) {
         if (b.need(Section.SELF_ITEMS, 0)) {
-            Records.SelfItems.put(b.writer(), v.items);
+            Records.SelfItems.put(b.writer(), v.items, v.loseItem);
         }
     }
 
@@ -137,21 +138,31 @@ final class ItemSections {
     }
 
     /**
-     * BEHAVIOR: one TIMERS record: frames of blindness ({@code damaged}), the round delay, the round time left in
-     * seconds (-1 without a round limit), self-destruct frames left, and the emergency thrust, emergency shield and
-     * phasing meters (left and maximum while in use, C Send_thrusttime/shieldtime/phasingtime; 0 otherwise).
+     * BEHAVIOR: one TIMERS record: frames of blindness ({@code damaged}); the round delay while C sends it
+     * ({@code round_delay_send}, which runs one second past the delay so clients see 0), else 0; the time left in
+     * seconds: the gameDuration timer's wall-clock seconds while it runs, else with maxRoundTime the round time
+     * rounded up (frame.c:1309-1313), else -1; self-destruct frames left; the emergency thrust, emergency shield and
+     * phasing meters (left and maximum while in use, C Send_thrusttime/shieldtime/phasingtime; 0 otherwise); and
+     * the shutdown countdown after a gameDuration game over (C Send_shutdown: frames left, ShutdownDelay), -1 none.
      */
     void writeTimers(Player v) {
         if (b.need(Section.TIMERS, 0)) {
-            int left = w.roundTime >= 0 ? w.roundTime / Math.max(1, w.params.fps) : -1;
+            int fps = w.params.fps;
+            int left;
+            if (w.gameDuration > 0 && w.oldTimeLeft > 0) {
+                left = (int) w.oldTimeLeft;
+            } else {
+                left = w.params.maxRoundTime > 0 && w.roundTime >= 0 ? (w.roundTime + fps - 1) / fps : -1;
+            }
+            int delay = w.roundDelaySend > 0 ? w.roundDelay : 0;
             boolean et = (v.used & Has.EMERGENCY_THRUST) != 0;
             boolean es = (v.used & Has.EMERGENCY_SHIELD) != 0;
             boolean ph = (v.used & Has.PHASING_DEVICE) != 0;
-            Records.Timers.put(b.writer(), Math.min(0xFFFF, v.damaged), Math.min(0xFFFF, w.roundDelay), left,
+            Records.Timers.put(b.writer(), Math.min(0xFFFF, v.damaged), Math.min(0xFFFF, delay), left,
                 (v.status & Obj.SELF_DESTRUCT) != 0 ? Math.max(0, v.count) : 0,
                 et ? v.emergencyThrustLeft : 0, et ? v.emergencyThrustMax : 0,
                 es ? v.emergencyShieldLeft : 0, es ? v.emergencyShieldMax : 0,
-                ph ? v.phasingLeft : 0, ph ? v.phasingMax : 0, -1, 0);
+                ph ? v.phasingLeft : 0, ph ? v.phasingMax : 0, w.shutdownServer, World.SHUTDOWN_DELAY);
         }
     }
 
@@ -273,14 +284,18 @@ final class ItemSections {
     }
 
     /**
-     * BEHAVIOR: the identified controller's id ({@link Protocol#NO_ID} when unknown, unowned or confused; a
+     * BEHAVIOR: the identified controller's id ({@link Protocol#NO_ID} when not identified or confused; an
+     * identified mine nobody owns is {@code EXPIRED_MINE_ID}, C frame.c:873; a
      * confused mine of a paused controller still shows it, C frame.c:877-889 resets the id only outside the
      * paused branch).
      */
     int mineId(int h, Player v) {
         Objects o = w.objects;
-        if (!identified(h, v) || o.owner[h] == Obj.NO_ID) {
+        if (!identified(h, v)) {
             return Protocol.NO_ID;
+        }
+        if (o.owner[h] == Obj.NO_ID) {
+            return Records.Mine.EXPIRED_MINE_ID;
         }
         Player owner = w.byId(o.owner[h]);
         if ((o.status[h] & Obj.CONFUSED) != 0 && (owner == null || (owner.status & Obj.PAUSE) == 0)) {

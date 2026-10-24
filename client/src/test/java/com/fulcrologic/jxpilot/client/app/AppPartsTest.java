@@ -75,7 +75,21 @@ class AppPartsTest {
                 () -> assertEquals(Const.TARGET_DAMAGE, t.targetDamage(0), "fresh: intact"),
                 () -> assertEquals(1, s.selfTeam(), "own team"),
                 () -> assertEquals(42L, s.loops(), "loops as set"),
-                () -> assertEquals(0, s.nextCheckpoint(), "checkpoints not modelled"));
+                () -> assertEquals(0, s.nextCheckpoint(), "no TIMING yet: checkpoint 0"));
+        }
+
+        @Test
+        @DisplayName("the next checkpoint is the own player's check from TIMING")
+        void nextCheckpoint() {
+            AppFixture f = new AppFixture(true).players();
+            com.fulcrologic.jxpilot.common.net.Msg.Timing t = new com.fulcrologic.jxpilot.common.net.Msg.Timing();
+            t.id = f.game.players().selfId();
+            t.check = 3;
+            t.round = 1;
+            java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(16);
+            t.write(b);
+            f.game.onReliable(com.fulcrologic.jxpilot.common.net.ReliableType.TIMING, b.flip());
+            assertEquals(3, new WorldMapState(f.game).nextCheckpoint(), "TIMING check of the own player");
         }
 
         @Test
@@ -215,12 +229,17 @@ class AppPartsTest {
         }
 
         @Test
-        @DisplayName("launcher: HELP exits 2; LOCAL with a map that does not load exits 3 without opening a window")
+        @DisplayName("launcher: HELP exits 2; LOCAL with a map that does not load exits 3 and VIEW_MAP with an unknown map"
+            + " exits 2, both without opening a window; LIST_MAPS exits 0")
         void launcher() throws Exception {
             assertAll(
                 () -> assertEquals(2, AppLauncher.run(AppOptions.parse(new String[0], "u")), "help: usage, exit 2"),
                 () -> assertEquals(3, AppLauncher.run(AppOptions.parse(new String[] {"--local", "--map",
-                    Path.of("no-such-map.xp").toString()}, "u")), "the local server cannot start: exit 3"));
+                    Path.of("no-such-map.xp").toString()}, "u")), "the local server cannot start: exit 3"),
+                () -> assertEquals(2, AppLauncher.run(AppOptions.parse(new String[] {"--view-map", "no-such-map"}, "u")),
+                    "the viewer's map is resolved before any window: exit 2"),
+                () -> assertEquals(0, AppLauncher.run(AppOptions.parse(new String[] {"--list-maps"}, "u")),
+                    "the bundled map list: exit 0"));
         }
     }
 

@@ -34,7 +34,8 @@ GameConnection c = GameConnections.open(t, clientGame, "Nick", Protocol.NO_TEAM,
    `XpMap` turns it back into `.xp` text and builds a `WorldMap`. The C numbers of cannons, fuel
    stations, targets and bases (x-major scan order) are mapped to the `WorldMap` list indices.
 5. The client sends shape, PKT_PLAY, power settings (×256), PKT_DISPLAY (view 1024×1024, debris
-   colours 0, sparkProb 0.5), audio off and the frame rate, and repeats them until REPLY(PLAY).
+   colours 0, sparkProb 0.5), the four PKT_MODIFIERBANK (the `modifierBank1..4` resources), audio off and
+   the frame rate, and repeats them until REPLY(PLAY).
 6. Frames follow. `XpFrameDecoder` decodes every C frame into an `XpFrame`. `XpTranslator` then
    encodes it as one native SNAPSHOT body with one tick per C frame, so `ClientWorld` interpolates
    at the server's framesPerSecond. Reliable packets become native PLAYER_JOIN, SCORE, MESSAGE,
@@ -67,7 +68,8 @@ with a status line and never throws.
 | ITEM, MINE, MISSILE, BALL, LASER, ASTEROID, WRECKAGE, ECM, CONNECTOR, TRANS | native M2 sections, modelled and drawn (balls and missiles interpolated) |
 | WORMHOLE | TEMP_WORMHOLE section, not drawn yet |
 | DAMAGED, ROUNDDELAY, TIME_LEFT | TIMERS section: ECM flash, round-delay countdown and red ships, HUD time left |
-| DESTRUCT, SHUTDOWN, THRUSTTIME, SHIELDTIME, PHASINGTIME, EYES, LOSEITEM | decoded into `XpFrame`; only DESTRUCT reaches the model (SELF_DESTRUCT); no model slot for the rest |
+| LOSEITEM | SELF_ITEMS loseItem; the last value is kept over frames without one (C `lose_item`) |
+| DESTRUCT, SHUTDOWN, THRUSTTIME, SHIELDTIME, PHASINGTIME, EYES | decoded into `XpFrame`; only DESTRUCT reaches the model (SELF_DESTRUCT); no model slot for the rest |
 | AUDIO | counted (no sound) |
 | RELIABLE | C stream: in-order append, gaps and duplicates acked, overlap trimmed |
 | REPLY, MAGIC, QUIT, TALK_ACK | connection control |

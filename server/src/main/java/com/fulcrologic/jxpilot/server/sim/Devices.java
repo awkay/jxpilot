@@ -45,10 +45,41 @@ import com.fulcrologic.jxpilot.server.world.World;
  * the player loop of {@code Update_objects} (update.c:825-870, 932-936) and its second loop (update.c:1254-1274).
  */
 public final class Devices {
+
+    // ---- message texts as fields: resolved when the class loads, never inside a tick (no allocation)
+    private static final String T_AN_AFTERBURNER = Texts.of("an afterburner");
+    private static final String T_AN_ARMOR = Texts.of("an armor");
+    private static final String T_AN_AUTOPILOT = Texts.of("an autopilot");
+    private static final String T_AN_ECM = Texts.of("an ECM");
+    private static final String T_AN_EMERGENCY_SHIELD = Texts.of("an emergency shield");
+    private static final String T_AN_EMERGENCY_THRUST = Texts.of("an emergency thrust");
+    private static final String T_A_CANNON = Texts.of("A cannon");
+    private static final String T_A_CLOAKING_DEVICE = Texts.of("a cloaking device");
+    private static final String T_A_DEFLECTOR = Texts.of("a deflector");
+    private static final String T_A_HYPERJUMP = Texts.of("a hyperjump");
+    private static final String T_A_LASER = Texts.of("a laser");
+    private static final String T_A_MINE = Texts.of("a mine");
+    private static final String T_A_MIRROR = Texts.of("a mirror");
+    private static final String T_A_PHASING_DEVICE = Texts.of("a phasing device");
+    private static final String T_A_REARSHOT = Texts.of("a rearshot");
+    private static final String T_A_SENSOR = Texts.of("a sensor");
+    private static final String T_A_TANK = Texts.of("a tank");
+    private static final String T_A_TRACTOR_BEAM = Texts.of("a tractor beam");
+    private static final String T_A_TRANSPORTER = Texts.of("a transporter");
+    private static final String T_A_WIDEANGLE = Texts.of("a wideangle");
+    private static final String T_FROM = Texts.of(" from ");
+    private static final String T_MISSILES_FROM = Texts.of(" missiles from ");
+    private static final String T_OF_FUEL_FROM = Texts.of("%) of fuel from ");
+    private static final String T_STOLE = Texts.of(" stole ");
+    private static final String T_STOLE_A_MISSILE_FROM = Texts.of(" stole a missile from ");
+    private static final String T_UNITS = Texts.of(" units (");
+
     /** C {@code ED_PHASING_DEVICE}, {@code ED_CLOAKING_DEVICE}, {@code ED_DEFLECTOR} after the (long) cast. */
     static final long ED_PHASING_DEVICE = (long) (-0.40 * 256);
     static final long ED_CLOAKING_DEVICE = (long) (-0.07 * 256);
     static final long ED_DEFLECTOR = (long) (-0.15 * 256);
+    /** C {@code ED_DEFLECTOR} uncast (-38.4): item.c:564 compares the fuel with it before the (long) payment. */
+    static final double ED_DEFLECTOR_F = -0.15 * 256;
     /** C {@code ED_TRANSPORTER}, {@code ED_HYPERJUMP} (-60 fuel units). */
     static final long ED_TRANSPORTER = -60 * 256;
     static final long ED_HYPERJUMP = -60 * 256;
@@ -84,6 +115,9 @@ public final class Devices {
             }
             pl.used |= Has.PHASING_DEVICE;
             pl.used &= ~(Has.REFUEL | Has.REPAIR | Has.TRACTOR_BEAM);
+            if ((pl.used & Has.CONNECTOR) != 0) {
+                pl.ball = -1; // update.c:131-132: no reaching for a ball while phased
+            }
             pl.status &= ~Obj.GRAVITY;
             Sounds.play(w, pl.px, pl.py, SoundEvent.PHASING_ON);
         } else {
@@ -459,7 +493,7 @@ public final class Devices {
         int n = pl.items[Item.DEFLECTOR.ordinal()];
         float range = (float) ((n * 0.5 + 1) * Const.BLOCK_SZ);
         float maxforce = (float) (n * 0.2);
-        if (pl.fuel < -ED_DEFLECTOR) {
+        if (pl.fuel < -ED_DEFLECTOR_F) {
             if ((pl.used & Has.DEFLECTOR) != 0) {
                 deflector(pl, false);
             }
@@ -701,11 +735,11 @@ public final class Devices {
         }
         String what = null;
         boolean fullMsg = false;
-        CharSequence thief = pl != null ? pl.name : "A cannon";
+        CharSequence thief = pl != null ? pl.name : T_A_CANNON;
         StringBuilder msg = null;
         switch (kind) {
             case AFTERBURNER -> {
-                what = "an afterburner";
+                what = T_AN_AFTERBURNER;
                 if (victim.items[item] == 0) {
                     victim.have &= ~Has.AFTERBURNER;
                 }
@@ -714,49 +748,49 @@ public final class Devices {
                 amount = Math.min(victim.items[item], 3);
                 msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID);
                 if (amount == 1) {
-                    msg.append(thief).append(" stole a missile from ").append(victim.name).append('.');
+                    msg.append(thief).append(T_STOLE_A_MISSILE_FROM).append(victim.name).append('.');
                 } else {
-                    msg.append(thief).append(" stole ").append(amount).append(" missiles from ").append(victim.name);
+                    msg.append(thief).append(T_STOLE).append(amount).append(T_MISSILES_FROM).append(victim.name);
                 }
                 fullMsg = true;
             }
             case CLOAK -> {
-                what = "a cloaking device";
+                what = T_A_CLOAKING_DEVICE;
                 victim.updateVisibility = true;
                 if (victim.items[item] == 0) {
                     cloak(victim, false);
                 }
             }
-            case WIDEANGLE -> what = "a wideangle";
-            case REARSHOT -> what = "a rearshot";
-            case MINE -> what = "a mine";
+            case WIDEANGLE -> what = T_A_WIDEANGLE;
+            case REARSHOT -> what = T_A_REARSHOT;
+            case MINE -> what = T_A_MINE;
             case SENSOR -> {
-                what = "a sensor";
+                what = T_A_SENSOR;
                 victim.updateVisibility = true;
             }
-            case ECM -> what = "an ECM";
+            case ECM -> what = T_AN_ECM;
             case ARMOR -> {
-                what = "an armor";
+                what = T_AN_ARMOR;
                 if (victim.items[item] == 0) {
                     victim.have &= ~Has.ARMOR;
                 }
             }
-            case TRANSPORTER -> what = "a transporter";
+            case TRANSPORTER -> what = T_A_TRANSPORTER;
             case MIRROR -> {
-                what = "a mirror";
+                what = T_A_MIRROR;
                 if (victim.items[item] == 0) {
                     victim.have &= ~Has.MIRROR;
                 }
             }
             case DEFLECTOR -> {
-                what = "a deflector";
+                what = T_A_DEFLECTOR;
                 if (victim.items[item] == 0) {
                     deflector(victim, false);
                 }
             }
-            case HYPERJUMP -> what = "a hyperjump";
+            case HYPERJUMP -> what = T_A_HYPERJUMP;
             case PHASING -> {
-                what = "a phasing device";
+                what = T_A_PHASING_DEVICE;
                 if (victim.items[item] == 0) {
                     if ((victim.used & Has.PHASING_DEVICE) != 0) {
                         phasing(victim, false);
@@ -764,9 +798,9 @@ public final class Devices {
                     victim.have &= ~Has.PHASING_DEVICE;
                 }
             }
-            case LASER -> what = "a laser";
+            case LASER -> what = T_A_LASER;
             case EMERGENCY_THRUST -> {
-                what = "an emergency thrust";
+                what = T_AN_EMERGENCY_THRUST;
                 if (victim.items[item] == 0) {
                     if ((victim.used & Has.EMERGENCY_THRUST) != 0) {
                         emergencyThrust(victim, false);
@@ -775,7 +809,7 @@ public final class Devices {
                 }
             }
             case EMERGENCY_SHIELD -> {
-                what = "an emergency shield";
+                what = T_AN_EMERGENCY_SHIELD;
                 if (victim.items[item] == 0) {
                     if ((victim.used & Has.EMERGENCY_SHIELD) != 0) {
                         emergencyShield(victim, false);
@@ -788,13 +822,13 @@ public final class Devices {
                 }
             }
             case TRACTOR_BEAM -> {
-                what = "a tractor beam";
+                what = T_A_TRACTOR_BEAM;
                 if (victim.items[item] == 0) {
                     victim.have &= ~Has.TRACTOR_BEAM;
                 }
             }
             case AUTOPILOT -> {
-                what = "an autopilot";
+                what = T_AN_AUTOPILOT;
                 if (victim.items[item] == 0) {
                     if ((victim.used & Has.AUTOPILOT) != 0) {
                         autopilot(victim, false);
@@ -803,7 +837,7 @@ public final class Devices {
                 }
             }
             case TANK -> {
-                what = "a tank";
+                what = T_A_TANK;
                 int ti = (int) (w.rfrac() * victim.numTanks) + 1;
                 amount = (long) victim.tankFuel[ti];
                 sim.tanks.remove(victim, ti);
@@ -814,16 +848,16 @@ public final class Devices {
                 float percent = (float) (10.0f + 40.0f * w.rfrac());
                 amount = (long) ((float) victim.fuel * percent / 100);
                 msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID);
-                msg.append(thief).append(" stole ").append(amount >> 8).append(" units (")
-                    .append((int) (percent + 0.5)).append("%) of fuel from ").append(victim.name).append('.');
+                msg.append(thief).append(T_STOLE).append(amount >> 8).append(T_UNITS)
+                    .append((int) (percent + 0.5)).append(T_OF_FUEL_FROM).append(victim.name).append('.');
                 fullMsg = true;
                 victim.addFuel(-amount);
             }
             default -> { }
         }
         if (!fullMsg) {
-            w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(thief).append(" stole ").append(what)
-                .append(" from ").append(victim.name).append('.');
+            w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(thief).append(T_STOLE).append(what)
+                .append(T_FROM).append(victim.name).append('.');
         }
         if (pl == null) {
             stolenItem = item;
@@ -878,37 +912,6 @@ public final class Devices {
     public void hyperjump(Player pl) {
         pl.status |= Obj.WARPING;
         pl.wormHoleHit = -1;
-    }
-
-    /** Destination of the last {@link #hyperjumpDestination} (pixels). */
-    public float jumpX;
-    public float jumpY;
-
-    /**
-     * The hyperjump destination of the warp code (update.c:1137-1167, temporary wormholes not made).
-     * <p>
-     * BEHAVIOR: up to 20 random positions until one is on a space block; after 20 failures the ship stays
-     * where it is.
-     */
-    public void hyperjumpDestination(Player pl) {
-        int counter;
-        float x = 0;
-        float y = 0;
-        for (counter = 20; counter > 0; counter--) {
-            x = (int) (w.rfrac() * w.pixelWidth);
-            y = (int) (w.rfrac() * w.pixelHeight);
-            int bx = (int) (x / Const.BLOCK_SZ);
-            int by = (int) (y / Const.BLOCK_SZ);
-            if ((com.fulcrologic.jxpilot.common.map.BlockType.bit(w.map.block(bx, by)) & Items.SPACE_BLOCKS) != 0) {
-                break;
-            }
-        }
-        if (counter == 0) {
-            x = pl.px;
-            y = pl.py;
-        }
-        jumpX = x;
-        jumpY = y;
     }
 
     /**

@@ -29,6 +29,7 @@ NAME=refpilot
 TRACE=0
 TRACE_NAME=""
 TRACE_OBJS=0
+TRACE_MODES=0
 TRACE_RAND=0
 NAME2=""
 SEED=""
@@ -39,7 +40,7 @@ TILE=""
 usage() {
     sed -n '2,20p' "$0"
     echo "options: --map M --robots N --after S --size WxH --keys 'ACTIONS' --frames N"
-    echo "         --interval S --tile CxR --out DIR --name NAME --trace [--trace-name NAME] [--trace-objs] --seed N"
+    echo "         --interval S --tile CxR --out DIR --name NAME --trace [--trace-name NAME] [--trace-objs] [--trace-modes] --seed N"
     echo "         --server-opt OPT (repeatable) --client-opt OPT (repeatable)"
     echo "         --trace-rand --name2 NAME (a second client, joins after the first)"
     echo "ACTIONS: space separated: down:KEY up:KEY key:KEY sleep:SECS type:TEXT"
@@ -61,6 +62,7 @@ while [ $# -gt 0 ]; do
         --trace) TRACE=1; shift;;
         --trace-name) TRACE_NAME="$2"; shift 2;;
         --trace-objs) TRACE_OBJS=1; shift;;
+        --trace-modes) TRACE_MODES=1; shift;;
         --trace-rand) TRACE_RAND=1; shift;;
         --name2) NAME2="$2"; shift 2;;
         --seed) SEED="$2"; shift 2;;
@@ -95,8 +97,8 @@ cleanup() {
         fi
     done
     if [ -f "$OUT/server.raw" ]; then
-        grep -aE '^XP(TRACE|OBJ|PULSE|ECM|ITEMS|RAND|DEBRIS|DEB|CANNON|KEYS)' "$OUT/server.raw" > "$OUT/trace.txt" || true
-        grep -avE '^XP(TRACE|OBJ|PULSE|ECM|ITEMS|RAND|DEBRIS|DEB|CANNON|KEYS)' "$OUT/server.raw" > "$OUT/server.log" || true
+        grep -aE '^XP(TRACE|OBJ|PULSE|ECM|ITEMS|MOBJ|PL2|TRS|TGT|TEAM|RAND|DEBRIS|DEB|CANNON|KEYS)' "$OUT/server.raw" > "$OUT/trace.txt" || true
+        grep -avE '^XP(TRACE|OBJ|PULSE|ECM|ITEMS|MOBJ|PL2|TRS|TGT|TEAM|RAND|DEBRIS|DEB|CANNON|KEYS)' "$OUT/server.raw" > "$OUT/server.log" || true
         rm -f "$OUT/server.raw"
         [ "$TRACE" = 1 ] || rm -f "$OUT/trace.txt"
     fi
@@ -123,13 +125,14 @@ if [ "$TRACE" = 1 ]; then
     export XPILOT_TRACE=1
     export XPILOT_TRACE_NAME="$TRACE_NAME"
     [ "$TRACE_OBJS" = 1 ] && export XPILOT_TRACE_OBJS=1
+    [ "$TRACE_MODES" = 1 ] && export XPILOT_TRACE_MODES=1
     [ "$TRACE_RAND" = 1 ] && export XPILOT_TRACE_RAND=1
 fi
 [ -n "$SEED" ] && export XPILOT_SEED="$SEED"
 xpilots -map "$MAP" -robots "$ROBOTS" -minRobots "$ROBOTS" -noQuit \
         +reportToMetaServer "${SERVER_OPTS[@]}" > "$OUT/server.raw" 2>&1 &
 SERVER_PID=$!
-unset XPILOT_TRACE XPILOT_TRACE_NAME XPILOT_TRACE_OBJS XPILOT_TRACE_RAND XPILOT_SEED
+unset XPILOT_TRACE XPILOT_TRACE_NAME XPILOT_TRACE_OBJS XPILOT_TRACE_MODES XPILOT_TRACE_RAND XPILOT_SEED
 for _ in $(seq 1 100); do
     grep -aq "Server runs at" "$OUT/server.raw" 2>/dev/null && break
     kill -0 "$SERVER_PID" 2>/dev/null || break

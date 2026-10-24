@@ -34,7 +34,7 @@ import java.util.Optional;
 import java.util.function.Predicate;
 
 /**
- * Replays the C server's random draws (patch 0005 XPRAND lines) into a Java {@link World} ({@link World#replay}):
+ * Replays the C server's random draws (patch 0006 XPRAND lines) into a Java {@link World} ({@link World#replay}):
  * every Java draw is matched, by its Java call site, to the next unused C draw of the same tick made by the C
  * function that the Java method ports. Java draws whose site C does not have (robots, the burst seeds) come from a
  * private RNG. Differences in the draw structure are recorded as problems: a Java draw C did not make, a C draw of
@@ -66,9 +66,11 @@ final class CDraws implements World.Draws {
         Map.entry("Crashes.playerCrashed", func("Player_crash")),
         Map.entry("Collisions.killingShot", func("Player_collides_with_killing_shot")),
         Map.entry("Ships.pickStartPos", func("Pick_startpos")),
-        Map.entry("Ships.warp", at("Update_objects", "update.c:1080", "update.c:1082", "update.c:1125")),
+        Map.entry("Ships.warp", at("Update_objects", "update.c:1080", "update.c:1082", "update.c:1125",
+            "update.c:1140", "update.c:1141")),
         Map.entry("Ships.nearestAhead", at("Update_objects", "update.c:1080", "update.c:1082", "update.c:1125")),
-        Map.entry("Devices.hyperjumpDestination", at("Update_objects", "update.c:1140", "update.c:1141")),
+        Map.entry("Ships.goHome", func("Go_home")),
+        Map.entry("Balls.ecmDetach", func("Fire_general_ecm")),
         Map.entry("Ships.deathReset", func("Player_death_reset")),
         Map.entry("Cannons.update", at("Update_objects", "update.c:636")),
         Map.entry("CannonWeapons.defend", at("Update_objects", "update.c:629")),

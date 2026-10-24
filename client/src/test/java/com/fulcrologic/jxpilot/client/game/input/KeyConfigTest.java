@@ -327,4 +327,33 @@ class KeyConfigTest {
             return p[0] + ": " + String.join(" ", f);
         }).toList();
     }
+
+    @Nested
+    @DisplayName("modifier banks (C modifierBank1..4)")
+    class ModifierBanks {
+        @Test
+        @DisplayName("modifierBank1..4 set the four texts as written; others stay empty; over 79 chars is cut and reported")
+        void banks() {
+            KeyConfig c = KeyConfig.load(String.join("\n",
+                "modifierBank1: FN C V2",
+                "xpilot.modifierBank3:",
+                "modifierBank4: X4 LS",
+                "modifierBank4: Z1",
+                "modifierBank5: N",
+                "modifierBank2: " + "B".repeat(85)), "rc", null);
+            String[] banks = c.modifierBanks();
+            banks[0] = "changed";
+            assertAll(
+                () -> assertEquals("FN C V2", c.modifierBanks()[0], "bank 1 as written"),
+                () -> assertEquals("B".repeat(79), c.modifierBanks()[1], "bank 2 cut to 79 chars (C MAX_CHARS buffer)"),
+                () -> assertEquals("", c.modifierBanks()[2], "an empty value is an empty bank"),
+                () -> assertEquals("Z1", c.modifierBanks()[3], "the last line for a bank wins"),
+                () -> assertEquals(List.of("rc:5: resource 'modifierBank5' is not used by JXPilot (ignored)",
+                    "rc:6: modifierBank2: longer than 79 chars, cut"), c.problems(),
+                    "only bank 5 (no such bank) and the long text are reported"),
+                () -> assertEquals(List.of("", "", "", ""), List.of(KeyConfig.defaults(null).modifierBanks()),
+                    "the defaults are four empty banks (C default \"\")"),
+                () -> assertEquals("FN C V2", c.modifierBanks()[0], "modifierBanks() returns a copy"));
+        }
+    }
 }

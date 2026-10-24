@@ -160,7 +160,8 @@ public final class Shots {
     /**
      * C {@code Fire_general_shot} for OBJ_SHOT / OBJ_CANNON_SHOT.
      * <p>
-     * BEHAVIOR: nothing when the pool is full or the (wrapped) start is outside the world.
+     * BEHAVIOR: nothing when the pool is full; a (wrapped) start outside a flat world makes C's unpositioned object (the
+     * last freed one with the life, mass, type, owner and team set: it expires and gives the shot back) and returns -1.
      * BEHAVIOR: a player's shot needs 0.2 fuel (51.2 fixed, C compares with the uncast ED_SHOT) and costs
      * (long)ED_SHOT = 51; the shot count goes up.
      * BEHAVIOR: shots have mass shotMass, life shotLife and speed shotSpeed; cannon shots mass 0.4,
@@ -208,17 +209,22 @@ public final class Shots {
         int fuse = (int) ((2.0 * (float) Const.SHIP_SZ) / p.shotSpeed + 1.0);
         x = (float) w.wrapXPixel(x);
         y = (float) w.wrapYPixel(y);
-        if (x < 0 || x >= w.pixelWidth || y < 0 || y >= w.pixelHeight) {
-            return -1;
-        }
-        int h = o.alloc();
+        boolean outside = x < 0 || x >= w.pixelWidth || y < 0 || y >= w.pixelHeight;
+        // C allocates and fills these first; off a flat world it continues with the object allocated and the
+        // rest left as its previous use left it (shot.c:950-994); Delete_shot later gives the shot back
+        int h = outside ? o.allocStale() : o.alloc();
         o.life[h] = life;
         o.fuseLife[h] = life - fuse;
         o.mass[h] = mass;
+        o.counter[h] = 0;
+        o.info[h] = 0;
         o.type[h] = type;
         o.owner[h] = pl != null ? pl.id : Obj.NO_ID;
         o.team[h] = team;
         o.color[h] = Records.ObjColor.WHITE;
+        if (outside) {
+            return -1;
+        }
         o.initPixels(h, x, y);
         o.vx[h] = (float) ((pl != null ? pl.vx : 0.0) + Trig.tcos(dir) * p.shotSpeed);
         o.vy[h] = (float) ((pl != null ? pl.vy : 0.0) + Trig.tsin(dir) * p.shotSpeed);
@@ -240,9 +246,12 @@ public final class Shots {
      * fragments, life 2, kinetic mass) or else 6 + (int)(rfrac*3) red debris of mass 4.5 at speed 20, life 8-16
      * (intensity 32).
      * BEHAVIOR: sparks and debris just vanish.
+     * BEHAVIOR: a ball is handled by {@link Balls#deleting}; when it is to be recreated, a new ball is made in
+     * its treasure after the old one is freed.
      */
     public void delete(int h) {
         Objects o = w.objects;
+        int ballTreasure = -1;
         switch (o.type[h]) {
             case Obj.SHOT -> {
                 if (o.owner[h] != Obj.NO_ID && (o.status[h] & Obj.FROMCANNON) == 0
@@ -254,6 +263,8 @@ public final class Shots {
                 }
             }
             case Obj.CANNON_SHOT, Obj.MINE, Obj.HEAT_SHOT, Obj.TORPEDO, Obj.SMART_SHOT -> explode(h);
+            case Obj.BALL -> ballTreasure = sim.balls.deleting(h);
+            case Obj.ASTEROID -> sim.asteroids.broken(h);
             case Obj.ITEM -> {
                 sim.items.delete(h);
                 return;
@@ -261,6 +272,9 @@ public final class Shots {
             default -> { }
         }
         o.free(h);
+        if (ballTreasure >= 0) {
+            sim.balls.makeTreasureBall(ballTreasure);
+        }
     }
 
     /**

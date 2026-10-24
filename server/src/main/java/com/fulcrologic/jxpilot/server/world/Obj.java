@@ -69,7 +69,10 @@ public final class Obj {
     public static final int REPROGRAM = 1 << 20;
     public static final int NOEXPLOSION = 1 << 21;
     public static final int COLLISIONSHOVE = 1 << 22;
+    /** Reached the race finish this frame. */
     public static final int FINISH = 1 << 23;
+    /** Finished the race and scored (server-modes). */
+    public static final int RACE_OVER = 1 << 24;
     /** An item that shows up to clients as a random item type. */
     public static final int RANDOM_ITEM = 1 << 25;
 

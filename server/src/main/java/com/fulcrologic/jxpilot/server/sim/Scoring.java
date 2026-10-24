@@ -110,14 +110,25 @@ public final class Scoring {
     }
 
     /**
+     * C {@code Players[winner]->alliance != ALLIANCE_NOT_SET && == Players[loser]->alliance} (score.c:131).
+     * <p>
+     * BEHAVIOR: false: alliances are not ported yet (server-commands adds them; replace this body then).
+     */
+    boolean sameAlliance(Player winner, Player loser) {
+        return false;
+    }
+
+    /**
      * C {@code Score_players}.
      * <p>
-     * BEHAVIOR: team mates get both scores made non-positive (no profit from team kills), then each gets
-     * their score via {@link #score} at the loser's block position with their own label.
+     * BEHAVIOR: team mates, alliance members ({@link #sameAlliance}) and a player who kills its own tank get both
+     * scores made non-positive (score.c:128-140: no profit from killing your own side), then each gets their
+     * score via {@link #score} at the loser's block position with their own label.
      */
     public void scorePlayers(Player winner, double winnerScore, CharSequence winnerMsg, Player loser,
                              double loserScore, CharSequence loserMsg) {
-        if (w.sameTeam(winner, loser)) {
+        if (w.sameTeam(winner, loser) || sameAlliance(winner, loser)
+            || (loser.tank && loser.lockPlId == winner.id)) {
             if (winnerScore > 0) {
                 winnerScore = -winnerScore;
             }

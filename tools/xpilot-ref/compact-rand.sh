@@ -1,5 +1,5 @@
 #!/bin/bash
-# Shrinks the patch 0005 random-draw lines of a trace (trace.sh --rand) for
+# Shrinks the patch 0006 random-draw lines of a trace (trace.sh --rand) for
 # committing as a golden replay trace:
 #   - drops the draws of the frame code (Frame_* functions: JXPilot draws
 #     those from a per-viewer RNG by design) and the per-particle draws of

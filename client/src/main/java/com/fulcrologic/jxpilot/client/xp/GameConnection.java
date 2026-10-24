@@ -84,6 +84,14 @@ public interface GameConnection extends AutoCloseable {
         return false;
     }
 
+    /**
+     * The C client's modifier banks ({@code modifierBank1..4}, C {@code modBankStr}): what every (re)join sends
+     * (C {@code Send_modifier_bank} at login). Protocols without them ignore it.
+     *
+     * @param banks four texts (bank 0..3)
+     */
+    default void setModifierBanks(String[] banks) { }
+
     /** Leave the game; the state becomes CLOSED. */
     void disconnect(long nowNanos);
 

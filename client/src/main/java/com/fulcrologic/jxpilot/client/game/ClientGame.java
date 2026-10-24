@@ -59,6 +59,7 @@ public final class ClientGame implements ConnectionListener {
     private final Msg.TeamScore teamScore = new Msg.TeamScore();
     private final Msg.Text text = new Msg.Text();
     private final Msg.BaseOwner baseOwner = new Msg.BaseOwner();
+    private final Msg.Timing timing = new Msg.Timing();
     private final Msg.GameEvent gameEvent = new Msg.GameEvent();
     private final Msg.ScoreObject scoreObject = new Msg.ScoreObject();
     // ---- server-items: SEEK (C Handle_seek)
@@ -183,6 +184,10 @@ public final class ClientGame implements ConnectionListener {
             case ReliableType.BASE_OWNER -> {
                 baseOwner.read(p);
                 world.setBaseOwner(baseOwner.baseIndex, baseOwner.playerId);
+            }
+            case ReliableType.TIMING -> {
+                timing.read(p);
+                players.setTiming(timing.id, timing.check, timing.round);
             }
             case ReliableType.GAME_EVENT -> {
                 gameEvent.read(p);

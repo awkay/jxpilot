@@ -1,0 +1,25 @@
+# JXPilot golden-trace map (GPL-2.0-or-later, see LICENSE): one base and one
+# treasure 3 blocks to its left, no cannons; for the ball connector trace.
+mapName: ball-tow
+mapAuthor: JXPilot
+mapWidth: 12
+mapHeight: 10
+teamPlay: no
+edgeWrap: no
+# the C server also reads lib/defaults: pin what it sets there
+gravity: -0.25
+maxItemDensity: 0
+movingItemProb: 0
+framesPerSecond: 14
+mapData: \multiline: EndOfMapdata
+xxxxxxxxxxxx
+x          x
+x          x
+x          x
+x          x
+x          x
+x          x
+x          x
+x  *  _    x
+xxxxxxxxxxxx
+EndOfMapdata

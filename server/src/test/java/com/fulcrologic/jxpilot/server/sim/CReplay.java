@@ -54,7 +54,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Full replay of a patch 0005 C trace: the Java world is configured like the C server ({@link CTraceItems#cworld}),
+ * Full replay of a patch 0006 C trace: the Java world is configured like the C server ({@link CTraceItems#cworld}),
  * the players join when they joined in C and hold the keys C received (XPKEYS), and every random draw is C's own
  * ({@link CDraws}). Nothing is copied from C after the start, so every frame is compared exactly: each player's
  * physics, status and items, every object C traced (missiles, mines, items, shots, cannon shots, wreckage...), laser
@@ -138,9 +138,6 @@ final class CReplay {
             }
             List<String> co = new ArrayList<>();
             for (CObj o : f.objs) {
-                if (o.type() == Obj.BALL) {
-                    continue; // balls are not simulated by this code (their own port, see DEVIATIONS-server.md)
-                }
                 co.add(key(o));
                 byType.merge(o.type(), 1, Integer::sum);
             }
@@ -297,8 +294,9 @@ final class CReplay {
     static String key(int type, int id, int cx, int cy, int px, int py, float vx, float vy, float ax, float ay,
                       float mass, long life, int status, long info, long count, int dir, int plRange, int plRadius,
                       String mods) {
+        String l = life > 1L << 40 ? "inf" : Long.toString(life); // balls never expire (C LONG_MAX, Java huge)
         return type + " #" + id + " c" + cx + "," + cy + " p" + px + "," + py + " v" + vx + "," + vy + " a" + ax + ","
-            + ay + " m" + mass + " l" + life + " s" + Integer.toHexString(status) + " i" + info + " n" + count + " d"
+            + ay + " m" + mass + " l" + l + " s" + Integer.toHexString(status) + " i" + info + " n" + count + " d"
             + dir + " r" + plRange + "/" + plRadius + " mods" + mods;
     }
 

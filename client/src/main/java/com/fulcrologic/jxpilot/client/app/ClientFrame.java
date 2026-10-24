@@ -116,6 +116,7 @@ public final class ClientFrame {
         this.help = new KeyHelp("Keys (" + keys.source() + ")" + (helpHint != null ? " - " + helpKeys.get(0)
             + " closes" : ""), keys.helpLines());
         conn.sendSettings(settings.copyTo(settingsMsg), 0);
+        conn.setModifierBanks(keys.modifierBanks());
     }
 
     /**
@@ -131,7 +132,8 @@ public final class ClientFrame {
      * BEHAVIOR: while not playing the HUD's status line shows the connection's current status; on the first
      * PLAYING frame a message names the key help key ("F1: keys"), unless keyHelp is unbound.
      * BEHAVIOR: lays out the key help overlay ({@link #helpHud()}).
-     * BEHAVIOR: fills the scene, radar, view HUD, HUD extras and the score list panel (at
+     * BEHAVIOR: fills the scene, radar, view HUD, HUD extras (with the lose-item outline of the
+     * {@link KeyRouter#loseSelection}, aged by dt) and the score list panel (at
      * {@code (0, scoreTop)}, {@code panelW} wide).
      */
     public void step(long nowNanos, int viewW, int viewH, double zoom, TextMetrics m, int panelW, int scoreTop) {
@@ -175,6 +177,7 @@ public final class ClientFrame {
         hud.zoom = zoom;
         hud.build(viewHud, game, talk, viewW, viewH, m, dt * game.gameFps());
         extras.fill(game, hud, viewW, viewH, zoom, centreX, centreY, scene.loops);
+        extras.loseItem(router.loseSelection(), dt);
         panelHud.clear();
         hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, m);
         help.layout(helpHud, viewW, viewH, m);
