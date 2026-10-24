@@ -47,7 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Golden traces of the game modes against the original C server (tools/xpilot-ref trace.sh with
- * {@code --trace-objs}, patch 0004; see {@code src/test/resources/ctrace/README.txt}). The same map and inputs
+ * {@code --modes}, patch 0005; see {@code src/test/resources/ctrace/README.txt}). The same map and inputs
  * are replayed in the Java simulation and the ship, every ball/asteroid/wreckage object and the race state are
  * compared frame by frame with no tolerance.
  * <p>
@@ -64,7 +64,7 @@ class ModeTraceTest {
         return new Simulation(new World(o, seed));
     }
 
-    /** A Java object as the C XPOBJ columns that matter (life as frames below the "infinite" start). */
+    /** A Java object as the C XPMOBJ columns that matter (life as frames below the "infinite" start). */
     static String objKey(World w, int h) {
         Objects o = w.objects;
         StringBuilder sb = new StringBuilder();

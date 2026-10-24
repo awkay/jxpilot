@@ -34,11 +34,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Parsed C golden trace with the game-mode lines of xpilot-ref patch 0004 (XPOBJ, XPPL2, XPTRS, XPTGT,
+ * Parsed C golden trace with the game-mode lines of xpilot-ref patch 0005 (XPMOBJ, XPPL2, XPTRS, XPTGT,
  * XPTEAM) next to the XPTRACE player lines of patch 0002, grouped by C frame ({@code frame_loops}).
  */
 final class ModeTrace {
-    /** One XPOBJ line: a ball, asteroid or wreckage after the frame. */
+    /** One XPMOBJ line: a ball, asteroid or wreckage after the frame. */
     record Obj(String ptr, int type, int cx, int cy, int prevX, int prevY, float vx, float vy, long life, int id,
                int team, int status, float mass, int a, int b, float c, long d) {}
 
@@ -77,7 +77,7 @@ final class ModeTrace {
                 Frame f = by.computeIfAbsent(frame, Frame::new);
                 switch (c[0]) {
                     case "XPTRACE" -> f.ship = CTraceTest.Frame.parse(l);
-                    case "XPOBJ" -> f.objs.add(new Obj(c[3], Integer.parseInt(c[4]), Integer.parseInt(c[5]),
+                    case "XPMOBJ" -> f.objs.add(new Obj(c[3], Integer.parseInt(c[4]), Integer.parseInt(c[5]),
                         Integer.parseInt(c[6]), Integer.parseInt(c[7]), Integer.parseInt(c[8]),
                         Float.parseFloat(c[9]), Float.parseFloat(c[10]), Long.parseLong(c[11]),
                         Integer.parseInt(c[12]), Integer.parseInt(c[13]), Integer.decode(c[14]),

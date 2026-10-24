@@ -21,7 +21,6 @@ are deliberate.
 | Ball life | `LONG_MAX`, counted down every frame; "loose for N frames" is `LONG_MAX - life` | 2^52 (exact in a double), the same countdown and message | `Objects.life` is a double. |
 | Connector reach (`pl->ball`) | a plain pointer: after the ball is deleted the slot may hold another object, and C can then "connect" to it | the handle is checked to still be a live ball | C undefined behaviour. |
 | Radar balls and asteroids | only within the viewer's `sensor_range` | the whole world | Sensor range is not ported (items). |
-| Wreckage on the wire | sent when the client's `sparkProb` is not 0 or with `wreckageCollisionMayKill` | always sent | `sparkProb` is a client display setting. |
 | Temporary wormholes | unlimited (`realloc`); `remove_temp_wormhole` leaves the moved wormhole's `itemID` stale | at most 64 at a time; the moved wormhole's object index is updated | Fixed pool; C bug. |
 | Warp of a removed temporary wormhole | `break` leaves the whole player loop for this frame | only this ship's warp ends | C bug. |
 | Asteroid item drops | `Choose_random_item` + `Make_item` | an `Asteroids.ItemDrop` hook, called once per item after C's rolls; nothing drops until the item code installs it | Items are ported separately. |
