@@ -124,7 +124,8 @@ public final class AppLauncher {
                 o.sound() && maxVolume(o, keys) > 0, (int) System.nanoTime(), GameConnector.environmentIdentity(
                     keys.options().text(ClientOption.USER), keys.options().text(ClientOption.HOST),
                     keys.options().text(ClientOption.DISPLAY)),
-                keys.options().integer(ClientOption.CLIENT_PORT_START), keys.options().integer(ClientOption.CLIENT_PORT_END));
+                keys.options().integer(ClientOption.CLIENT_PORT_START), keys.options().integer(ClientOption.CLIENT_PORT_END),
+                GameConnector.debrisColors(keys.options()));
         } catch (IOException e) {
             // C xpilot.c: an unknown host or a socket that cannot open is an error message and exit 1
             System.err.println("Cannot connect to " + target + ": " + e.getMessage());

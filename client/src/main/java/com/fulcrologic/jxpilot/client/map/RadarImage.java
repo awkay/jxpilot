@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.client.map;
 
+import com.fulcrologic.jxpilot.client.paint.PaintStyle;
 import com.fulcrologic.jxpilot.client.render.Palette;
 import com.fulcrologic.jxpilot.common.map.BlockType;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
@@ -68,14 +69,20 @@ public final class RadarImage {
      * DECOR_* decorRadarColor iff {@code showDecor}; everything else is not shown.
      */
     static int colorIndex(int type, boolean showDecor) {
+        return colorIndex(type, showDecor, Palette.WALL_RADAR_COLOR, Palette.TARGET_RADAR_COLOR,
+            Palette.DECOR_RADAR_COLOR);
+    }
+
+    /** {@link #colorIndex(int, boolean)} with the live {@code wallRadarColor}, {@code targetRadarColor}, {@code decorRadarColor}. */
+    static int colorIndex(int type, boolean showDecor, int wallColor, int targetColor, int decorColor) {
         if (type == BlockType.FILLED || BlockType.isDiagonal(type) || type == BlockType.FUEL) {
-            return Palette.WALL_RADAR_COLOR;
+            return wallColor;
         }
         if (type == BlockType.TARGET) {
-            return Palette.TARGET_RADAR_COLOR;
+            return targetColor;
         }
         if (showDecor && BlockType.isDecor(type)) {
-            return Palette.DECOR_RADAR_COLOR;
+            return decorColor;
         }
         return -1;
     }
@@ -88,6 +95,13 @@ public final class RadarImage {
      * index; other blocks as {@link #colorIndex}.
      */
     static int walkColor(WorldMap m, int x, int y, boolean showDecor, IntPredicate targetAlive) {
+        return walkColor(m, x, y, showDecor, targetAlive, Palette.WALL_RADAR_COLOR, Palette.TARGET_RADAR_COLOR,
+            Palette.DECOR_RADAR_COLOR);
+    }
+
+    /** {@link #walkColor(WorldMap, int, int, boolean, IntPredicate)} with the live radar colours (client-ui-look). */
+    static int walkColor(WorldMap m, int x, int y, boolean showDecor, IntPredicate targetAlive, int wallColor,
+                         int targetColor, int decorColor) {
         int type = m.block(x, y);
         if (type == BlockType.TARGET) {
             int t = targetAt(m, x, y);
@@ -95,7 +109,7 @@ public final class RadarImage {
                 return -1;
             }
         }
-        return colorIndex(type, showDecor);
+        return colorIndex(type, showDecor, wallColor, targetColor, decorColor);
     }
 
     /** BEHAVIOR: the index of the target on block (x, y), -1 when none. */
@@ -130,6 +144,20 @@ public final class RadarImage {
      * BEHAVIOR: {@code px} must hold at least {@code WIDTH * height(m)} entries; it is returned.
      */
     public static int[] build(WorldMap m, Palette p, boolean showDecor, IntPredicate targetAlive, int[] px) {
+        PaintStyle st = new PaintStyle();
+        st.showDecor = showDecor;
+        return build(m, p, st, targetAlive, px);
+    }
+
+    /**
+     * As {@link #build(WorldMap, Palette, boolean, IntPredicate, int[])} with the live look options:
+     * {@code showDecor}, {@code wallRadarColor}, {@code targetRadarColor}, {@code decorRadarColor}.
+     */
+    public static int[] build(WorldMap m, Palette p, PaintStyle st, IntPredicate targetAlive, int[] px) {
+        boolean showDecor = st.showDecor;
+        int wc = st.wallRadarColor;
+        int tc = st.targetRadarColor;
+        int dc = st.decorRadarColor;
         int h = height(m);
         java.util.Arrays.fill(px, 0, WIDTH * h, p.color(Palette.BLACK));
         Walker w = new Walker(px, h, p);
@@ -139,7 +167,7 @@ public final class RadarImage {
             for (int xi = 0; xi < m.width(); xi++) {
                 w.startColumn((int) (xi * xs + 0.5f));
                 for (int yi = 0; yi < m.height(); yi++) {
-                    w.cell(walkColor(m, xi, yi, showDecor, targetAlive), (int) (yi * ys + 0.5f), yi == m.height() - 1);
+                    w.cell(walkColor(m, xi, yi, showDecor, targetAlive, wc, tc, dc), (int) (yi * ys + 0.5f), yi == m.height() - 1);
                 }
             }
         } else {
@@ -150,11 +178,11 @@ public final class RadarImage {
                 w.startColumn(xi);
                 for (int yi = 0; yi < h; yi++) {
                     int ym = (int) (yi * ys + 0.5f);
-                    w.cell(walkColor(m, xm, ym, showDecor, targetAlive), yi, yi == h - 1);
+                    w.cell(walkColor(m, xm, ym, showDecor, targetAlive, wc, tc, dc), yi, yi == h - 1);
                 }
             }
         }
-        int target = p.color(Palette.TARGET_RADAR_COLOR);
+        int target = p.color(tc);
         for (int i = 0; i < m.targets().size(); i++) {
             if (targetAlive.test(i)) {
                 block(px, h, m.width(), m.height(), m.targets().get(i).bx(), m.targets().get(i).by(), target);

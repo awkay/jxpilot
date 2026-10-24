@@ -28,7 +28,10 @@ import com.fulcrologic.jxpilot.client.net.ConnectionListener;
 import com.fulcrologic.jxpilot.client.net.Endpoint;
 import com.fulcrologic.jxpilot.client.net.Transport;
 import com.fulcrologic.jxpilot.client.net.UdpTransport;
+import com.fulcrologic.jxpilot.client.game.options.ClientOption;
+import com.fulcrologic.jxpilot.client.game.options.ClientOptions;
 import com.fulcrologic.jxpilot.client.paint.PaintConfig;
+import com.fulcrologic.jxpilot.client.paint.PaintStyle;
 import com.fulcrologic.jxpilot.client.xp.ConnectTarget;
 import com.fulcrologic.jxpilot.client.xp.GameConnection;
 import com.fulcrologic.jxpilot.client.xp.NativeGameConnection;
@@ -72,14 +75,25 @@ public final class GameConnector {
      */
     public static GameConnection open(ConnectTarget target, Endpoint bind, ConnectionListener listener, String name,
                                       int team, String shape, boolean audio, int seed, XpIdentity identity,
-                                      int portStart, int portEnd)
+                                      int portStart, int portEnd) throws IOException {
+        return open(target, bind, listener, name, team, shape, audio, seed, identity, portStart, portEnd,
+            PaintConfig.SPARK_COLORS.length);
+    }
+
+    /**
+     * As above, asking an XPilot server for {@code debrisColors} debris temperature levels ({@link #debrisColors}:
+     * as many as {@code sparkColors} names).
+     */
+    public static GameConnection open(ConnectTarget target, Endpoint bind, ConnectionListener listener, String name,
+                                      int team, String shape, boolean audio, int seed, XpIdentity identity,
+                                      int portStart, int portEnd, int debrisColors)
         throws IOException {
         Endpoint ep = target.endpoint();
         String label = ep.toString();
         if (target.protocol() == ConnectTarget.Protocol.XPILOT) {
             XpIdentity id = identity != null ? identity : environmentIdentity("", "", "");
             return new XpConnection(port -> openUdp(new Endpoint(ep.host(), port), bind, portStart, portEnd), listener,
-                label, xpLogin(name, team, shape, audio, id));
+                label, xpLogin(name, team, shape, audio, id, debrisColors));
         }
         UdpTransport t = openUdp(ep, bind, portStart, portEnd);
         return new NativeGameConnection(identity != null
@@ -144,17 +158,32 @@ public final class GameConnector {
      * (PKT_REQUEST_AUDIO) as given.
      */
     static XpConnection.Login xpLogin(String name, int team, String shape, boolean audio, XpIdentity id) {
+        return xpLogin(name, team, shape, audio, id, PaintConfig.SPARK_COLORS.length);
+    }
+
+    /** {@link #xpLogin(String, int, String, boolean, XpIdentity)} with {@code debrisColors} temperature levels. */
+    static XpConnection.Login xpLogin(String name, int team, String shape, boolean audio, XpIdentity id,
+                                      int debrisColors) {
         XpConnection.Login login = new XpConnection.Login();
         login.audio = audio;
         login.nick = name;
         login.team = team;
         login.shape = shape == null ? "" : shape;
-        login.debrisColors = PaintConfig.SPARK_COLORS.length;
+        login.debrisColors = debrisColors;
         login.sparkProb = 1.0;
         login.realName = id.realName();
         login.host = id.host();
         login.display = id.display();
         return login;
+    }
+
+    /**
+     * C {@code num_spark_colors}, what the XPilot login asks for as {@code debris_colors}: the number of colours
+     * {@code sparkColors} names under {@code maxColors} ({@link LookOptions#sparkColors}).
+     */
+    public static int debrisColors(ClientOptions options) {
+        return LookOptions.sparkColors(options.text(ClientOption.SPARK_COLORS),
+            LookOptions.maxColors(options.integer(ClientOption.MAX_COLORS)), new int[PaintStyle.MAX_SPARK_COLORS]);
     }
 
     /**

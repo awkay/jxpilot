@@ -45,6 +45,8 @@ public final class SoundPlayer {
     public static final double LOOP_HOLD_FRAMES = 2.5;
     /** ...or this many intervals between snapshots, when those arrive less often (snapshotDivisor, a paused C player). */
     public static final double LOOP_HOLD_ARRIVALS = 1.5;
+    /** The clip that stands in for the X bell ({@link #bell}). */
+    public static final String BELL_CLIP = "blip.wav";
     /** C's default {@code maxVolume} resource. */
     public static final int DEFAULT_MAX_VOLUME = 100;
     /** Largest {@code maxVolume} C's configure menu accepts. */
@@ -58,6 +60,8 @@ public final class SoundPlayer {
     private final int[] loopVoice;
     /** First one-shot voice (voices below it belong to loops). */
     private final int firstShot;
+    /** Map clip index of {@link #BELL_CLIP}, -1 when the map has no such clip. */
+    private final int bellClip;
 
     // per voice (voiceClip and started: one-shot voices only; a voice that is not playing matches nothing)
     private final int[] voiceClip;
@@ -89,6 +93,13 @@ public final class SoundPlayer {
             throw new IllegalArgumentException(loops + " loop clips need more than " + n + " voices");
         }
         firstShot = loops;
+        int bc = -1;
+        for (int c = 0; c < map.clipCount(); c++) {
+            if (map.clipName(c).equals(BELL_CLIP)) {
+                bc = c;
+            }
+        }
+        bellClip = bc;
         voiceClip = new int[n];
         started = new long[n];
         gain = new float[n];
@@ -207,6 +218,29 @@ public final class SoundPlayer {
         voiceClip[v] = clip;
         started[v] = nowNanos;
         gain[v] = g;
+    }
+
+    /**
+     * The C client's {@code XBell} (the last 10 seconds of game time, {@code Handle_time_left}): JXPilot has no
+     * system bell, so it plays the {@link #BELL_CLIP} clip as a one-shot.
+     * <p>
+     * BEHAVIOR: nothing when muted or when the sound map has no such clip; otherwise the clip on a one-shot voice
+     * (as {@link #play} picks one) at full volume capped by {@code maxVolume}; returns whether it played.
+     */
+    public boolean bell(long nowNanos) {
+        if (muted || bellClip < 0) {
+            return false;
+        }
+        float g = gain(SoundEvent.MAX_VOLUME, maxVolume);
+        if (g <= 0) {
+            return false;
+        }
+        int v = pickVoice();
+        dev.play(v, handle[bellClip], g, false);
+        voiceClip[v] = bellClip;
+        started[v] = nowNanos;
+        gain[v] = g;
+        return true;
     }
 
     /** A free one-shot voice, else the quietest, oldest first. */

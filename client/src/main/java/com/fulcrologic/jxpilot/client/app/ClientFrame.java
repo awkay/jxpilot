@@ -85,6 +85,14 @@ public final class ClientFrame {
     /** The C client options (client-ui): pushed into the HUD, messages and talk line when they change. */
     private final LiveOptions liveOptions;
     private final PlayActions play;
+    // ---- client-ui-look: the look options, live (palette, painter style, extras)
+    private final com.fulcrologic.jxpilot.client.render.Palette palette =
+        com.fulcrologic.jxpilot.client.render.Palette.xpilotDefault();
+    private final com.fulcrologic.jxpilot.client.paint.PaintStyle style =
+        new com.fulcrologic.jxpilot.client.paint.PaintStyle();
+    private final LookOptions lookOptions;
+    private final LookFrame look;
+    // ---- end client-ui-look
     /** The button bar, CONFIG panel and information window (client-ui). */
     private final ClientUi ui;
     private String[] modifierBanks;
@@ -138,6 +146,9 @@ public final class ClientFrame {
         this.router = new KeyRouter(input, talk, settings);
         this.mapState = new WorldMapState(game);
         this.liveOptions = new LiveOptions(keys.options());
+        this.lookOptions = new LookOptions(keys.options(), System.out);
+        this.look = new LookFrame(keys.options());
+        filler.setStyle(style);
         this.ui = new ClientUi(new UiHost(), keys.options(), settings, keys.maxVolume() >= 0 ? keys.maxVolume()
             : com.fulcrologic.jxpilot.client.sound.SoundPlayer.DEFAULT_MAX_VOLUME);
         this.ui.saveContext("", input.bindings(), keys.modifierBanks());
@@ -180,6 +191,8 @@ public final class ClientFrame {
         double dt = started ? (nowNanos - lastNow) / 1e9 : 0;
         started = true;
         liveOptions.apply(hud, game, extras, talk, filler, input);
+        lookOptions.apply(palette, style);
+        hud.bitmapMeters = style.texturedObjects;
         lastNow = nowNanos;
         conn.update(nowNanos);
         serverClosed(nowNanos);
@@ -234,9 +247,11 @@ public final class ClientFrame {
         ui.layout(radarHeight, viewH, viewW, viewH, map != null && map.edgeWrap(), textFont, buttonFont);
         int scoreTop = ui.scoreTop();
         if (!ui.coversScores()) {
-            hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW, Math.max(0, viewH - scoreTop),
+            hud.scoreboard(panelHud, game.scoreboard(), 0, scoreTop, panelW,
+                style.texturedObjects ? 0 : Math.max(0, viewH - scoreTop), // texturedObjects: bitmaps (GameApp)
                 fonts.of(FontRole.SCORE_LIST));
         }
+        lookExtras(viewW, fonts.of(FontRole.GAME), fonts.of(FontRole.SCORE_LIST), scoreTop, panelW);
         ui.draw(panelHud, textFont, buttonFont, 0);
         String motdText = game.takeMotd();
         if (motdText != null) {
@@ -248,6 +263,30 @@ public final class ClientFrame {
             help.layout(helpHud, viewW, viewH, fonts.of(help.role()));
         }
     }
+
+    /**
+     * client-ui-look: the packet meters in the view HUD (while PLAYING), the clock over the score window (unless a panel covers it), the
+     * bell and the title flip of this frame ({@link LookFrame}).
+     */
+    private void lookExtras(int viewW, TextMetrics gameFont, TextMetrics scoreFont, int scoreTop, int panelW) {
+        if (game.state() == ConnectionState.PLAYING) {
+            look.packetMeters(viewHud, hud, hud.extent(viewW), conn.packetStats(), gameFont);
+        }
+        if (!ui.coversScores()) {
+            look.clock(panelHud, 0, scoreTop, panelW, scoreFont, scene.loops, scene.fps);
+        }
+        bell = look.bell(extras.timeLeft);
+        titleChange = look.title(scene.loops);
+    }
+
+    private boolean bell;
+    private int titleChange;
+
+    /** True when this frame rings the bell (last 10 s of game time, {@link LookFrame#bell}). */
+    public boolean bell() { return bell; }
+
+    /** This frame's window title change ({@link LookFrame#title}: KEEP, NORMAL or COPYRIGHT). */
+    public int titleChange() { return titleChange; }
 
     /** {@link #step(long, int, int, double, FontRole.Metrics, int, int)} with one metrics for every role (tests). */
     public void step(long nowNanos, int viewW, int viewH, double zoom, TextMetrics m, int panelW, int radarHeight) {
@@ -707,6 +746,15 @@ public final class ClientFrame {
     public com.fulcrologic.jxpilot.client.game.options.ClientOptions options() { return liveOptions.options(); }
 
     public SceneData scene() { return scene; }
+
+    /** The live palette ({@code color0..15}, {@code maxColors}). */
+    public com.fulcrologic.jxpilot.client.render.Palette palette() { return palette; }
+
+    /** The live look options the painters read. */
+    public com.fulcrologic.jxpilot.client.paint.PaintStyle style() { return style; }
+
+    /** The look extras of this frame: packet meters, clock, bell, title flip ({@link LookFrame}). */
+    public LookFrame look() { return look; }
 
     public RadarBlips radar() { return radar; }
 }

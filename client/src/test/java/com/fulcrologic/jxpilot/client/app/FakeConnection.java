@@ -49,6 +49,10 @@ final class FakeConnection implements GameConnection {
     /** Every sendSettings call as "power turnSpeed turnResistance altPower altTurnSpeed altTurnResistance". */
     final List<String> settings = new ArrayList<>();
     boolean settingsSent = true;
+    /** The packet meters' stats this fake reports. */
+    final com.fulcrologic.jxpilot.client.net.PacketStats stats = new com.fulcrologic.jxpilot.client.net.PacketStats();
+
+    @Override public com.fulcrologic.jxpilot.client.net.PacketStats packetStats() { return stats; }
 
     @Override public ConnectTarget.Protocol protocol() { return ConnectTarget.Protocol.JXPILOT; }
 

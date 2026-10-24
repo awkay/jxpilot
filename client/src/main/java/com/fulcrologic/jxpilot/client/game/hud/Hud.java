@@ -65,6 +65,10 @@ public final class Hud {
     public static final int BORDER = 3;
     /** C {@code METER_WIDTH}. */
     public static final int METER_WIDTH = 200;
+    /** client-ui-look: {@code texturedObjects} (C {@code blockBitmaps}) draws meters with the meter bitmap. */
+    public boolean bitmapMeters;
+    /** The meter bitmap's height (C {@code PaintMeter(..., WINSCALE(11), ...)}). */
+    public static final int METER_BITMAP_HEIGHT = 11;
     /** C {@code METER_HEIGHT}. */
     public static final int METER_HEIGHT = 8;
     /** Paint_meter's BORDER. */
@@ -433,6 +437,9 @@ public final class Hud {
      * geometry is scaled (C WINSCALE / Rectangle_add / Segment_add), the title offsets are not.
      * BEHAVIOR: a red bar (x+2, y+2, (METER_WIDTH-3)*val/max, METER_HEIGHT-3), a white outline, five
      * white scale ticks, and the title at baseline y + (ascent + METER_HEIGHT)/2. max 0 counts as 1.
+     * BEHAVIOR: with {@link #bitmapMeters} the bar, outline and ticks are the meter bitmap instead: its full picture
+     * over the first {@code WINSCALE((METER_WIDTH-3)*val/max)} pixels, the empty one over the rest of WINSCALE(200),
+     * 11 pixels high (rects of METER_FULL and METER_EMPTY).
      */
     public void meter(HudFrame out, int viewW, int xoff, int y, CharSequence title, int val, int max, TextMetrics m) {
         int x;
@@ -445,14 +452,21 @@ public final class Hud {
             x = viewW - (METER_WIDTH - xoff);
             xstr = ws(x) - (METER_BORDER + tw);
         }
-        out.rect(ws(x + 2), ws(y + 2), ws(((METER_WIDTH - 3) * val) / (max != 0 ? max : 1)), ws(METER_HEIGHT - 3), true,
-            HudColor.RED);
-        out.rect(ws(x), ws(y), ws(METER_WIDTH), ws(METER_HEIGHT), false, HudColor.WHITE);
-        tick(out, x, y - 4, y + METER_HEIGHT + 4);
-        tick(out, x + METER_WIDTH, y - 4, y + METER_HEIGHT + 4);
-        tick(out, x + METER_WIDTH / 2, y - 3, y + METER_HEIGHT + 3);
-        tick(out, x + METER_WIDTH / 4, y - 1, y + METER_HEIGHT + 1);
-        tick(out, x + 3 * METER_WIDTH / 4, y - 1, y + METER_HEIGHT + 1);
+        if (bitmapMeters) {
+            // client-ui-look, texturedObjects (C blockBitmaps: PaintMeter of the meter bitmap, 11 pixels high)
+            int full = ws(((METER_WIDTH - 3) * val) / (max != 0 ? max : 1));
+            out.rect(ws(x), ws(y), full, ws(METER_BITMAP_HEIGHT), true, HudColor.METER_FULL);
+            out.rect(ws(x) + full, ws(y), ws(METER_WIDTH) - full, ws(METER_BITMAP_HEIGHT), true, HudColor.METER_EMPTY);
+        } else {
+            out.rect(ws(x + 2), ws(y + 2), ws(((METER_WIDTH - 3) * val) / (max != 0 ? max : 1)), ws(METER_HEIGHT - 3), true,
+                HudColor.RED);
+            out.rect(ws(x), ws(y), ws(METER_WIDTH), ws(METER_HEIGHT), false, HudColor.WHITE);
+            tick(out, x, y - 4, y + METER_HEIGHT + 4);
+            tick(out, x + METER_WIDTH, y - 4, y + METER_HEIGHT + 4);
+            tick(out, x + METER_WIDTH / 2, y - 3, y + METER_HEIGHT + 3);
+            tick(out, x + METER_WIDTH / 4, y - 1, y + METER_HEIGHT + 1);
+            tick(out, x + 3 * METER_WIDTH / 4, y - 1, y + METER_HEIGHT + 1);
+        }
         CharBuf t = out.text(xstr, ws(y) + (m.ascent() + METER_HEIGHT) / 2, HudColor.WHITE);
         if (t != null) {
             t.append(title);

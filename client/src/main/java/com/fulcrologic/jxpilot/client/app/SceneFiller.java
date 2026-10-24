@@ -28,12 +28,13 @@ import com.fulcrologic.jxpilot.client.game.ClientWorld;
 import com.fulcrologic.jxpilot.client.game.ObjectLists;
 import com.fulcrologic.jxpilot.client.game.ParticlePool;
 import com.fulcrologic.jxpilot.client.game.Players;
-import com.fulcrologic.jxpilot.client.paint.PaintConfig;
+import com.fulcrologic.jxpilot.client.paint.PaintStyle;
 import com.fulcrologic.jxpilot.client.paint.Particles;
 import com.fulcrologic.jxpilot.client.paint.RadarPainter;
 import com.fulcrologic.jxpilot.client.paint.SceneData;
 import com.fulcrologic.jxpilot.client.paint.ShipPainter;
 import com.fulcrologic.jxpilot.client.render.Palette;
+import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.map.WorldMap;
 import com.fulcrologic.jxpilot.common.math.ShipShape;
 import com.fulcrologic.jxpilot.common.math.XMath;
@@ -72,6 +73,14 @@ public final class SceneFiller {
 
     /** C option {@code showMineName} (default yes, SHOW_MINE_NAME): label mines with their owner. */
     public boolean showMineName = true;
+
+    /** The live look options: {@code sparkColors} colour the particles. */
+    private PaintStyle style = new PaintStyle();
+
+    /** Use the shared live look options ({@code sparkColors}). */
+    public void setStyle(PaintStyle style) {
+        this.style = style;
+    }
 
     /**
      * Fill {@code out} and {@code radar} for the frame the world was last updated to.
@@ -121,9 +130,9 @@ public final class SceneFiller {
             out.addShot(w.shotX(i), w.shotY(i), shotColor(c, harmless), teamShot(c, harmless));
         }
         objects(out, w, p);
-        particles(out, w);
+        particles(out, w, style);
         for (int i = 0; i < w.pointCount(); i++) {
-            out.addParticle(w.pointX(i), w.pointY(i), pointColor(w.pointColor(i)));
+            out.addParticle(w.pointX(i), w.pointY(i), pointColor(w.pointColor(i), style));
         }
         boolean blinked = g.radarBlinked();
         for (int i = 0; i < w.radarCount(); i++) {
@@ -208,7 +217,7 @@ public final class SceneFiller {
         }
         for (int i = 0; i < o.count(ObjectLists.LASER); i++) {
             out.addLaser(o.get(ObjectLists.LASER, i, 0), o.get(ObjectLists.LASER, i, 1), o.get(ObjectLists.LASER, i, 3),
-                res(o.get(ObjectLists.LASER, i, 2)), pointColor((int) o.get(ObjectLists.LASER, i, 4)));
+                res(o.get(ObjectLists.LASER, i, 2)), pointColor((int) o.get(ObjectLists.LASER, i, 4), style));
         }
         for (int i = 0; i < o.count(ObjectLists.ASTEROID); i++) {
             int sizeByte = (int) o.get(ObjectLists.ASTEROID, i, 2);
@@ -311,8 +320,9 @@ public final class SceneFiller {
      * C {@code Gui_calculate_ship_color}'s friend test.
      * <p>
      * BEHAVIOR: true when the server marked the ship FRIENDLY; else, both players known and the ship not
-     * the own one: true when both have the same non-blank alliance mark (C guiobjects.c:680-684), or in team
-     * play on the same team (not {@link Protocol#NO_TEAM}).
+     * the own one: true when both have the same non-blank alliance mark (C guiobjects.c:680-684), when it is the
+     * viewer's own tank ({@link #myTank}, guiobjects.c:687), or in team play on the same team (not
+     * {@link Protocol#NO_TEAM}).
      */
     /**
      * C {@code Paint_checkpoint_radar}: only in race mode ({@code TIMING}), the checkpoint {@code nextCheckPoint}.
@@ -343,7 +353,41 @@ public final class SceneFiller {
         if (p.alliance(self) != ' ' && p.alliance(self) == p.alliance(slot)) {
             return true; // C Gui_calculate_ship_color: same alliance
         }
+        if (myTank(p, self, slot, teamPlay)) {
+            return true; // C Gui_calculate_ship_color: Gui_is_my_tank (L6)
+        }
         return teamPlay && p.team(slot) != Protocol.NO_TEAM && p.team(slot) == p.team(self);
+    }
+
+    /** C {@code "'s tank"}: the name the server gives a player's detached tank. */
+    static final String TANK_SUFFIX = "'s tank";
+
+    /**
+     * C {@code Gui_is_my_tank}.
+     * <p>
+     * BEHAVIOR: true iff the player in {@code slot} is a tank ('T'), in team play on the viewer's team, and named
+     * the viewer's name plus "'s tank", cut to {@code MAX_NAME_LEN - 1} characters as C's {@code strlcat} cuts it
+     * (no suffix at all when the viewer's own name already fills the buffer).
+     */
+    static boolean myTank(Players p, int self, int slot, boolean teamPlay) {
+        if (p.statusChar(slot) != 'T' || teamPlay && p.team(self) != p.team(slot)) {
+            return false;
+        }
+        CharSequence own = p.name(self);
+        CharSequence other = p.name(slot);
+        int max = Const.MAX_NAME_LEN - 1;
+        int ownLen = Math.min(own.length(), max);
+        int len = own.length() < Const.MAX_NAME_LEN ? Math.min(max, ownLen + TANK_SUFFIX.length()) : ownLen;
+        if (other.length() != len) {
+            return false;
+        }
+        for (int i = 0; i < len; i++) {
+            char want = i < ownLen ? own.charAt(i) : TANK_SUFFIX.charAt(i - ownLen);
+            if (other.charAt(i) != want) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -391,7 +435,7 @@ public final class SceneFiller {
         return harmless || objColor == Records.ObjColor.RED;
     }
 
-    private static void particles(SceneData out, ClientWorld w) {
+    private static void particles(SceneData out, ClientWorld w, PaintStyle style) {
         ParticlePool pp = w.particles();
         float ff = w.frameFraction();
         double rt = w.renderTick();
@@ -399,7 +443,7 @@ public final class SceneFiller {
         for (int i = 0; i < pp.count(); i++) {
             if (pp.visible(i)) {
                 double tick = pp.own(i) ? own : rt;
-                out.addParticle(pp.x(i), pp.y(i), particleColor(pp.life(i), pp.birth(i), tick, ff, pp.color(i)));
+                out.addParticle(pp.x(i), pp.y(i), particleColor(pp.life(i), pp.birth(i), tick, ff, pp.color(i), style));
             }
         }
     }
@@ -413,9 +457,20 @@ public final class SceneFiller {
      * {@link Particles#colorIndex(int, boolean)} of the two.
      */
     static int particleColor(float life, double birth, double tick, float frameFraction, int objColor) {
-        int left = (int) (life - (tick - birth) * frameFraction);
-        return Particles.colorIndex(left, objColor == Records.ObjColor.BLUE);
+        return particleColor(life, birth, tick, frameFraction, objColor, DEFAULT_STYLE);
     }
+
+    /**
+     * {@link #particleColor(float, double, double, float, int)} with the live {@code sparkColors}: as many
+     * temperature levels as spark colours ({@link Particles#colorIndex(int, boolean, PaintStyle)}).
+     */
+    static int particleColor(float life, double birth, double tick, float frameFraction, int objColor,
+                             PaintStyle style) {
+        int left = (int) (life - (tick - birth) * frameFraction);
+        return Particles.colorIndex(left, objColor == Records.ObjColor.BLUE, style);
+    }
+
+    private static final PaintStyle DEFAULT_STYLE = new PaintStyle();
 
     /**
      * Palette colour of a position-only point particle.
@@ -425,9 +480,19 @@ public final class SceneFiller {
      * anything else white.
      */
     static int pointColor(int code) {
+        return pointColor(code, DEFAULT_STYLE);
+    }
+
+    /**
+     * {@link #pointColor(int)} with the live {@code sparkColors}.
+     * <p>
+     * BEHAVIOR: a temperature level is clamped to the spark colours there are now (the server was told the count
+     * at login; C clamps {@code debris_colors} to {@code num_spark_colors}) and mapped by
+     * {@link PaintStyle#levelColor}.
+     */
+    static int pointColor(int code, PaintStyle style) {
         if (code >= ClientWorld.POINT_LEVEL_BASE) {
-            int n = PaintConfig.SPARK_COLORS.length;
-            return Particles.colorIndex(Math.min(code - ClientWorld.POINT_LEVEL_BASE, n - 1), PaintConfig.SPARK_COLORS);
+            return style.levelColor(Math.min(code - ClientWorld.POINT_LEVEL_BASE, style.sparkCount() - 1));
         }
         return switch (code) {
             case Records.ObjColor.RED -> Palette.RED;

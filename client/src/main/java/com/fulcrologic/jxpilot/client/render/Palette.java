@@ -29,6 +29,10 @@ package com.fulcrologic.jxpilot.client.render;
  * <p>
  * Colours are packed as {@code 0xAABBGGRR}, i.e. the int whose little-endian bytes are
  * {@code R G B A}: the layout {@link VertexBatch} writes for its normalized ubyte4 colour attribute.
+ * <p>
+ * Mutable: the {@code color0..15} options change entries live ({@link #set}); painters read
+ * {@link #color} per draw, and consumers that bake colours (static map mesh, radar picture) rebuild when
+ * {@link #version()} changes.
  */
 public final class Palette {
     /** Colour indices with fixed meaning in the C client. */
@@ -59,6 +63,7 @@ public final class Palette {
     };
 
     private final int[] rgba;
+    private int version;
 
     private Palette(int[] rgba) {
         this.rgba = rgba;
@@ -76,6 +81,24 @@ public final class Palette {
     /** Packed colour for a palette index (0..15). */
     public int color(int index) {
         return rgba[index];
+    }
+
+    /** BEHAVIOR: sets entry {@code index}; bumps {@link #version()} iff the colour changed. */
+    public void set(int index, int color) {
+        if (rgba[index] != color) {
+            rgba[index] = color;
+            version++;
+        }
+    }
+
+    /** C's default colour of entry {@code index} ({@code color_defaults}). */
+    public static int defaultColor(int index) {
+        return parseHex(DEFAULT_HEX[index]);
+    }
+
+    /** Incremented by every change of an entry. */
+    public int version() {
+        return version;
     }
 
     /** Number of entries. */

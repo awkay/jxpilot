@@ -137,6 +137,15 @@ public interface GameConnection extends AutoCloseable {
     /** Snapshots delivered to the listener. */
     long snapshotsReceived();
 
+    /**
+     * The packet meters' measurements (C {@code packet_size}, {@code packet_loss}, {@code packet_drop},
+     * {@code packet_lag}): the connection feeds them, the HUD reads them every frame. Never null; a connection
+     * that measures nothing returns one that stays at zero.
+     */
+    default com.fulcrologic.jxpilot.client.net.PacketStats packetStats() {
+        return com.fulcrologic.jxpilot.client.net.PacketStats.NONE;
+    }
+
     /** Release sockets (after {@link #disconnect}). */
     @Override
     void close();
