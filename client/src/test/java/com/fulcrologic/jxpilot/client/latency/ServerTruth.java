@@ -24,6 +24,8 @@
 package com.fulcrologic.jxpilot.client.latency;
 
 import com.fulcrologic.jxpilot.common.math.XMath;
+import com.fulcrologic.jxpilot.common.sim.Obj;
+import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 
@@ -42,6 +44,16 @@ final class ServerTruth {
     private final int[] dir = new int[MAX_TICKS];
     private final float[] vx = new float[MAX_TICKS];
     private final float[] vy = new float[MAX_TICKS];
+    private final long[] shotTime = new long[MAX_TICKS];
+    private final int[] shots = new int[MAX_TICKS];
+    /** The press's own shot (the first own shot of the fire tick), followed while it lives. */
+    private final double[] pressX = new double[MAX_TICKS];
+    private final double[] pressY = new double[MAX_TICKS];
+    private final boolean[] pressAlive = new boolean[MAX_TICKS];
+    private int pressHandle = -1;
+    private int pressBorn = -1;
+    private int pressDied = -1;
+    private double pressLife;
     private final Map<Integer, double[]> xs = new HashMap<>();
     private final Map<Integer, double[]> ys = new HashMap<>();
     private final Map<Integer, boolean[]> present = new HashMap<>();
@@ -56,6 +68,9 @@ final class ServerTruth {
         for (int k = 0; k < w.numPlayers; k++) {
             Player p = w.playerAt(k);
             put(tick, p.id, VirtualServer.px(p.cx), VirtualServer.px(p.cy), p.isAlive(), p.dir, p.vx, p.vy);
+            if (p.id == ownId && tick < MAX_TICKS) {
+                putShots(tick, p.shotTime, p.shots);
+            }
         }
     }
 
@@ -77,6 +92,115 @@ final class ServerTruth {
 
     int lastTick() {
         return last;
+    }
+
+    /** Record the own player's last fire frame ({@code shotTime}) and live shot count after {@code tick}. */
+    void putShots(int tick, long lastFire, int liveShots) {
+        if (tick < MAX_TICKS) {
+            shotTime[tick] = lastFire;
+            shots[tick] = liveShots;
+        }
+    }
+
+    /**
+     * Start following the press's shot at its fire tick: the first own OBJ_SHOT in the pool (the baseline never
+     * fires, so every own shot of this tick is the press's). Then call {@link #followPressShot} every tick.
+     */
+    void startPressShot(World w, int tick) {
+        Objects o = w.objects;
+        for (int i = 0; i < o.count(); i++) {
+            int h = o.active[i];
+            if (o.type[h] == Obj.SHOT && o.owner[h] == ownId) {
+                pressHandle = h;
+                pressBorn = tick;
+                pressLife = o.life[h];
+                putPress(tick, VirtualServer.px(o.cx[h]), VirtualServer.px(o.cy[h]), true);
+                return;
+            }
+        }
+    }
+
+    /**
+     * Record where the press's shot is after {@code tick}: alive while its handle is live, still an own OBJ_SHOT
+     * and its life has not grown and fell by at most 1.5 since the tick before (a handle freed and reused by a later
+     * autofire shot starts again at full life); the first tick it is not marks its death, after which it stays dead.
+     */
+    void followPressShot(World w, int tick) {
+        if (pressHandle < 0 || pressDied >= 0 || tick <= pressBorn) {
+            return;
+        }
+        Objects o = w.objects;
+        int h = pressHandle;
+        boolean live = false;
+        for (int i = 0; i < o.count() && !live; i++) {
+            live = o.active[i] == h;
+        }
+        // a reused handle (a later autofire shot) starts again at full life: the press's own life only runs down
+        if (live && o.type[h] == Obj.SHOT && o.owner[h] == ownId && o.life[h] <= pressLife
+            && o.life[h] >= pressLife - 1.5) {
+            pressLife = o.life[h];
+            putPress(tick, VirtualServer.px(o.cx[h]), VirtualServer.px(o.cy[h]), true);
+        } else {
+            pressDied = tick;
+            putPress(tick, 0, 0, false);
+        }
+    }
+
+    /** Record the press's shot at {@code tick} (also used by tests). */
+    void putPress(int tick, double x, double y, boolean alive) {
+        if (tick < MAX_TICKS) {
+            pressX[tick] = x;
+            pressY[tick] = y;
+            pressAlive[tick] = alive;
+            if (pressBorn < 0 && alive) {
+                pressBorn = tick;
+            }
+            if (!alive && pressDied < 0 && pressBorn >= 0) {
+                pressDied = tick;
+            }
+        }
+    }
+
+    /** The first tick the press's shot was dead, -1 while it lives (or before it was fired). */
+    int pressDied() {
+        return pressDied;
+    }
+
+    /** The tick the press's shot was fired, -1 before. */
+    int pressBorn() {
+        return pressBorn;
+    }
+
+    /**
+     * Where the press's shot is at fractional tick {@code t} (into {@code out}), as a client interpolating the
+     * snapshots around it draws it: linear between ticks a = floor(t) and a + 1 when it lives at both (wrap-aware),
+     * else where tick a has it (a shot that died before a + 1 stays where a had it).
+     *
+     * @return false when it did not live at tick a
+     */
+    boolean pressShotAt(double t, double worldW, double worldH, boolean wrap, double[] out) {
+        int a = (int) Math.floor(t);
+        if (a < 0 || a >= MAX_TICKS || !pressAlive[a]) {
+            return false;
+        }
+        out[0] = pressX[a];
+        out[1] = pressY[a];
+        if (a + 1 < MAX_TICKS && pressAlive[a + 1]) {
+            double f = t - a;
+            out[0] += f * XMath.wrapDelta(pressX[a + 1] - pressX[a], worldW, wrap);
+            out[1] += f * XMath.wrapDelta(pressY[a + 1] - pressY[a], worldH, wrap);
+        }
+        return true;
+    }
+
+    /** BEHAVIOR: true when the own player's last fire frame differs between the recordings at {@code tick}. */
+    boolean shotTimeDiffers(ServerTruth o, int tick) {
+        return shotTime[tick] != o.shotTime[tick];
+    }
+
+    /** BEHAVIOR: true when the own player has more live shots here than in {@code o} at {@code tick}. */
+    boolean moreShots(ServerTruth o, int tick) {
+        return shots[tick] > o.shots[tick];
     }
 
     /** BEHAVIOR: true when the own player's heading differs between the two recordings at {@code tick}. */
