@@ -70,6 +70,11 @@ public final class RobotManager {
     /** C {@code NumRobots}. */
     int numRobots;
 
+    /** Server log for C's {@code logRobots} lines (robot.c:835-837); null logs nothing. */
+    public java.util.function.Consumer<String> log;
+    final boolean logRobots;
+    final String robotRealName;
+
     final boolean allowShipShapes;
     final int robotLeaveLife;
     final int robotLeaveScore;
@@ -87,6 +92,8 @@ public final class RobotManager {
         this.items = new RobotItems();
         this.robot = new DefaultRobot(w, sim, items);
         allowShipShapes = w.options.getBool(Opt.ALLOW_SHIP_SHAPES);
+        logRobots = w.options.getBool(Opt.LOG_ROBOTS);
+        robotRealName = w.options.getString(Opt.ROBOT_REAL_NAME);
         robotLeaveLife = w.options.getInt(Opt.ROBOT_LEAVE_LIFE);
         robotLeaveScore = w.options.getInt(Opt.ROBOT_LEAVE_SCORE);
         robotLeaveRatio = w.options.getInt(Opt.ROBOT_LEAVE_RATIO);
@@ -521,7 +528,8 @@ public final class RobotManager {
      * BEHAVIOR: picks a robot ({@link #pick}), joins it (its ship shape with allowShipShapes; team per
      * {@link #pickTeam} in team play) with turnspeed 64, power 55, turnresistance 0.12 (also the alternate
      * settings) and fuel levels 100/200/500 units, then lets the robot type initialise it.
-     * BEHAVIOR: says ENTER (even without robotsTalk), then C's round part ({@code Rounds.robotEntered}: as the
+     * BEHAVIOR: says ENTER (even without robotsTalk); with logRobots logs "NAME (players, robotRealName) starts at
+     * startpos BASE." (robot.c:835-837); then C's round part ({@code Rounds.robotEntered}: as the
      * first player, or during a round delay, it (re)starts and announces the round delay).
      * BEHAVIOR: returns null (nothing changes) when the join fails.
      */
@@ -552,6 +560,9 @@ public final class RobotManager {
         robot.create(d, def.config());
         numRobots++;
         talk.says(RobotTalk.ENTER, pl.name, null);
+        if (logRobots && log != null) {
+            log.accept(pl.name + " (" + w.numPlayers + ", " + robotRealName + ") starts at startpos " + pl.homeBase + ".");
+        }
         sim.rounds.robotEntered();
         w.events.add(Events.THRUST, pl.id, pl.afterburners(), 0, (float) pl.power);
         return pl;

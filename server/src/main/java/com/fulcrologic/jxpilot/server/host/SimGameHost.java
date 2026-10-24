@@ -132,7 +132,9 @@ public final class SimGameHost implements GameHost {
         this.sim = sim;
         this.w = sim.world;
         this.builder = new SnapshotBuilder(w);
-        this.talk = new Talk(w);
+        String adminFile = w.options.getString(Opt.ADMIN_MESSAGE_FILE_NAME);
+        this.talk = new Talk(w, new AdminLog(adminFile == null || adminFile.isEmpty() ? null : java.nio.file.Path.of(adminFile),
+            w.options.getInt(Opt.ADMIN_MESSAGE_FILE_SIZE_LIMIT), java.time.ZonedDateTime::now));
         this.rawMode = w.options.getBool(Opt.IDLE_RUN);
         this.mapName = w.options.getString(Opt.MAP_NAME);
         this.mapAuthor = w.options.getString(Opt.MAP_AUTHOR);

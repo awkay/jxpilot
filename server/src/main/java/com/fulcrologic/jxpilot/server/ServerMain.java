@@ -58,6 +58,17 @@ public final class ServerMain {
      * on Ctrl-C) returns 0. The shutdown hook is removed again when the server stops on its own.
      */
     static int run(String[] args, Server.Settings settings, PrintStream err) {
+        return run(args, settings, System.out, err);
+    }
+
+    /** BEHAVIOR: an information request ({@link ServerInfo}: -help, -version, -dump...) prints to out and returns 0. */
+    static int run(String[] args, Server.Settings settings, PrintStream out, PrintStream err) {
+        String info = ServerInfo.request(args, ServerInfo.version());
+        if (info != null) {
+            out.print(info);
+            out.flush();
+            return 0;
+        }
         Server server;
         try {
             server = Server.start(args, settings);

@@ -100,11 +100,11 @@ public final class Server implements AutoCloseable {
         if (port < 0 || port > 0xFFFF) {
             throw new IllegalArgumentException("port " + port + " out of range");
         }
-        ConfigTransfer.Blob blob = ConfigTransfer.encode(opts.toConfigText());
+        ConfigTransfer.Blob blob = ConfigTransfer.encode(opts.toConfigText(ClientMap.of(opts.mapData(), opts)));
 
         List<String> warnings = new java.util.ArrayList<>();
         List<BindSelector> selectors = BindPlan.resolveNames(
-            BindSelector.parseAll(opts.getList(Opt.BIND)), s.interfaces.snapshot(), s.resolver, warnings);
+            BindSelector.parseAll(ServerArgs.bindList(opts)), s.interfaces.snapshot(), s.resolver, warnings);
         BindPlan.Choice choice = BindPlan.choose(selectors, s.interfaces.snapshot());
         warnings.addAll(choice.warnings());
         for (String w : warnings) {

@@ -66,6 +66,8 @@ public final class SnapshotBuilder {
     static final int SHOT_SECTIONS_PER_PART = 8;
 
     private final World w;
+    /** C {@code playersOnRadar}: other teams' ships appear on the radar (frame.c:1152-1170). */
+    private final boolean playersOnRadar;
     private final SnapshotWriter wr = new SnapshotWriter();
     private final ShotHash hash;
     /** {@link World#frames} when {@link #hash} was last rebuilt (-1: never). */
@@ -93,6 +95,7 @@ public final class SnapshotBuilder {
 
     public SnapshotBuilder(World w) {
         this.w = w;
+        this.playersOnRadar = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.PLAYERS_ON_RADAR);
         wr.setWorld(w.pixelWidth, w.pixelHeight, w.wrap);
         shotList = new int[w.objects.capacity];
         shotVariant = new int[w.objects.capacity];
@@ -431,7 +434,7 @@ public final class SnapshotBuilder {
     private void writeRadar(Player v) {
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
-            if (!pl.isAlive() || !need(Section.RADAR, 0)) {
+            if (!pl.isAlive() || (!playersOnRadar && pl != v && !w.sameTeam(pl, v)) || !need(Section.RADAR, 0)) {
                 continue;
             }
             int flags = 0;

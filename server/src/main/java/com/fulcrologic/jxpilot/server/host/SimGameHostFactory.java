@@ -41,24 +41,33 @@ import java.util.function.IntSupplier;
  */
 public final class SimGameHostFactory implements GameHostFactory {
     private final IntSupplier seeds;
+    private final java.util.function.Consumer<String> log;
 
-    /** World RNG seeds from the clock (every game differs). */
+    /** World RNG seeds from the clock (every game differs); robot log lines go to stderr like the server log. */
     public SimGameHostFactory() {
         this(() -> (int) System.nanoTime());
     }
 
     /** @param seeds world RNG seed per created game (tests fix it) */
     public SimGameHostFactory(IntSupplier seeds) {
+        this(seeds, System.err::println);
+    }
+
+    /** @param log server log for the logRobots lines */
+    public SimGameHostFactory(IntSupplier seeds, java.util.function.Consumer<String> log) {
         this.seeds = seeds;
+        this.log = log;
     }
 
     /**
      * BEHAVIOR: the world uses {@code options} (the map was parsed into them); {@code robotFile}, when set,
-     * replaces the default robot roster (an unreadable file keeps the defaults, as C).
+     * replaces the default robot roster (an unreadable file keeps the defaults, as C); the robots log to the
+     * factory's log (logRobots).
      */
     @Override
     public GameHost create(Options options, WorldMap map) {
         Simulation sim = new Simulation(new World(options, seeds.getAsInt()));
+        sim.robots.log = log;
         String robotFile = options.getString(Opt.ROBOT_FILE);
         if (robotFile != null && !robotFile.isEmpty()) {
             sim.robots.setRoster(RobotRoster.load(Path.of(robotFile)));
