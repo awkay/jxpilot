@@ -65,11 +65,11 @@ final class CReplay {
 
     /** What one replay compared and the frames that differed. */
     record Result(int frames, List<String> mismatches, int objects, Map<Integer, Integer> objectsByType, int draws,
-                  int bursts, int particles, int cannonFrames, int pulses, int ecms) {
+                  int bursts, int particles, int particleFrames, int cannonFrames, int pulses, int ecms) {
         /** What was compared, without the mismatches. */
         String summary() {
             return frames + " frames, " + objects + " object-frames " + objectsByType + ", " + draws + " C draws, "
-                + bursts + " bursts (" + particles + " particles), " + cannonFrames + " busy-cannon frames, " + pulses
+                + bursts + " bursts (" + particles + " particles, traced in " + particleFrames + " frames), " + cannonFrames + " busy-cannon frames, " + pulses
                 + " pulse-frames, " + ecms + " ECM-frames";
         }
 
@@ -104,6 +104,7 @@ final class CReplay {
         int cannonFrames = 0;
         int pulses = 0;
         int ecms = 0;
+        int debFrames = 0;
         for (CFrame f : c) {
             List<String> d = new ArrayList<>();
             int problems = draws.problems.size();
@@ -160,12 +161,25 @@ final class CReplay {
             List<String> jb = jBursts(w.events, seq);
             List<String> ck = keys(cb);
             if (ck.equals(jb)) {
-                d.addAll(syncParticles(w, cb, w.events, seq, before));
+                d.addAll(syncParticles(w, cb, w.events, seq, before, f.debSlot));
                 for (CBurst b : cb) {
                     particles += b.count();
                 }
             }
             diff("debris", ck, jb, d);
+            if (!f.debs.isEmpty()) { // traced around explosions (tools/xpilot-ref/compact-rand.sh)
+                List<String> jd = new ArrayList<>();
+                for (int k = 0; k < o.count(); k++) {
+                    int h = o.active[k];
+                    if ((o.type[h] & (Obj.SPARK | Obj.DEBRIS)) != 0 && (o.status[h] & Obj.OWNERIMMUNE) == 0
+                        && o.life[h] > 0) {
+                        jd.add(particle(o.type[h], o.owner[h], o.cx[h], o.cy[h], o.vx[h], o.vy[h], o.mass[h],
+                            (long) o.life[h], o.status[h]));
+                    }
+                }
+                debFrames += f.debs.isEmpty() ? 0 : 1;
+                diff("explosion particles", new ArrayList<>(f.debs), jd, d);
+            }
             List<String> cc = new ArrayList<>();
             for (CCannon q : f.cannons) {
                 cc.add(q.index() + " dead" + q.deadTime() + " dmg" + q.damaged() + " tr" + q.tractorCount() + " u"
@@ -181,7 +195,8 @@ final class CReplay {
                 s.locks.hudLock(p);
             }
         }
-        return new Result(c.size(), bad, objects, byType, draws.matched, bursts, particles, cannonFrames, pulses, ecms);
+        return new Result(c.size(), bad, objects, byType, draws.matched, bursts, particles, debFrames, cannonFrames,
+            pulses, ecms);
     }
 
     /** Join a C player in Java (its base by C's draw, checked against C's first position) with C's settings. */
@@ -252,7 +267,7 @@ final class CReplay {
     /** The compared state of a C object: everything the trace prints but its Obj[] slot. */
     static String key(CObj c) {
         return key(c.type(), c.id(), c.cx(), c.cy(), c.prevX(), c.prevY(), c.vx(), c.vy(), c.ax(), c.ay(), c.mass(),
-            c.life(), c.status() & 0xFFFFFF, c.info(), c.count(), c.dir(), c.plRange(), c.plRadius(),
+            c.life(), c.status() & 0xFFFFFF, c.info(), c.count(), dir(c.type(), c.dir()), c.plRange(), c.plRadius(),
             Arrays.toString(c.mods())) + " " + norm(c.extra());
     }
 
@@ -269,8 +284,16 @@ final class CReplay {
             default -> "";
         };
         return key(o.type[h], o.owner[h], o.cx[h], o.cy[h], o.prevX[h], o.prevY[h], o.vx[h], o.vy[h], o.accX[h],
-            o.accY[h], o.mass[h], (long) o.life[h], o.status[h] & 0xFFFFFF, o.info[h], o.counter[h], o.missileDir[h],
+            o.accY[h], o.mass[h], (long) o.life[h], o.status[h] & 0xFFFFFF, o.info[h], o.counter[h], dir(o.type[h], o.missileDir[h]),
             o.plRange[h], o.plRadius[h], Arrays.toString(mods)) + " " + (extra.isEmpty() ? "" : norm(extra.split(",")));
+    }
+
+    /**
+     * missile_dir only where C sets it (missiles): Object_allocate does not clear it, so other C objects show
+     * whatever an earlier object in their Obj[] slot left there.
+     */
+    static int dir(int type, int dir) {
+        return (type & (Obj.SMART_SHOT | Obj.HEAT_SHOT | Obj.TORPEDO)) != 0 ? dir : 0;
     }
 
     /** A float of the extra columns, as {@link #norm} writes C's. */
@@ -382,11 +405,12 @@ final class CReplay {
             }
             float minSp = q.minSpeed();
             float maxSp = q.maxSpeed();
+            // C World.hypotenuse is an int (map.h:219): integer divisions
             if (minSp * maxLife > p.hypotenuse) {
-                minSp = (float) (p.hypotenuse / maxLife);
+                minSp = (int) p.hypotenuse / maxLife;
             }
             if (maxSp * minLife > p.hypotenuse) {
-                maxSp = (float) (p.hypotenuse / minLife);
+                maxSp = (int) p.hypotenuse / minLife;
             }
             if (maxSp < minSp) {
                 maxSp = minSp;
@@ -427,10 +451,13 @@ final class CReplay {
      *
      * @return problems found (Java particles not found, C draws missing)
      */
-    static List<String> syncParticles(World w, List<CBurst> cb, Events e, long from, boolean[] before) {
+    static List<String> syncParticles(World w, List<CBurst> cb, Events e, long from, boolean[] before,
+                                      Map<String, Integer> cSlot) {
         List<String> bad = new ArrayList<>();
         Objects o = w.objects;
         boolean[] claimed = new boolean[o.capacity];
+        List<Integer> madeAt = new ArrayList<>();
+        List<float[]> states = new ArrayList<>();
         int bi = 0;
         for (long seq = from; seq < e.burstSeq() && bi < cb.size(); seq++, bi++) {
             int ei = Events.burstIndex(seq);
@@ -443,17 +470,20 @@ final class CReplay {
             for (int k = 0; k < o.count(); k++) {
                 int h = o.active[k];
                 if (!claimed[h] && o.type[h] == type && o.owner[h] == e.burstOwner[ei] && o.cx[h] == ocx
-                    && o.cy[h] == ocy && (!before[h] || o.fuseLife[h] - o.life[h] <= 1)) {
+                    && o.cy[h] == ocy && o.mass[h] == c.q().mass() && o.status[h] == (int) c.q().status()
+                    && (!before[h] || o.fuseLife[h] - o.life[h] <= 1)) {
                     idx.add(k);
                 }
             }
-            if (idx.size() != c.count()) {
+            if (idx.size() < c.count()) {
                 bad.add("particles: burst " + c.key() + " has " + idx.size() + " Java particles");
                 continue;
             }
+            // several bursts at one origin (a ship and the mines it carried): each takes the next ones made
             if (idx.size() > 1 && idx.get(1) - idx.get(0) > 1) {
-                idx.add(idx.remove(0)); // C moved the last particle into the freed slot
+                idx.add(c.count() - 1, idx.remove(0)); // C moved this burst's last particle into the freed slot
             }
+            idx = idx.subList(0, c.count());
             if (c.draws().size() < 1 + 4 * c.count()) {
                 bad.add("particles: burst " + c.key() + " has " + (c.draws().size() - 1) / 4 + " C particle draws");
                 continue;
@@ -462,6 +492,7 @@ final class CReplay {
             for (int i = 0; i < idx.size(); i++) {
                 int h = o.active[idx.get(i)];
                 claimed[h] = true;
+                madeAt.add(idx.get(i));
                 double r1 = c.draws().get(1 + 4 * i).rfrac();
                 float diroff = (float) c.draws().get(2 + 4 * i).rfrac();
                 double r3 = c.draws().get(3 + 4 * i).rfrac();
@@ -472,8 +503,8 @@ final class CReplay {
                 float dy = Trig.tsin(dir) + (Trig.tsin(dirPlus) - Trig.tsin(dir)) * diroff;
                 float speed = (float) (c.minSpeed() + r3 * (c.maxSpeed() - c.minSpeed()));
                 int life = (int) (c.minLife() + r4 * (c.maxLife() - c.minLife()) + 1);
-                if (life * speed > w.params.hypotenuse) {
-                    life = (int) ((float) w.params.hypotenuse / speed);
+                if (life * speed > (int) w.params.hypotenuse) {
+                    life = (int) ((int) w.params.hypotenuse / speed);
                 }
                 double aged = o.fuseLife[h] - o.life[h];
                 o.initPixels(h, c.x(), c.y());
@@ -481,9 +512,44 @@ final class CReplay {
                 o.vy[h] = q.vy() + dy * speed;
                 o.life[h] = life - aged;
                 o.fuseLife[h] = life;
+                states.add(new float[] {o.cx[h], o.cy[h], o.vx[h], o.vy[h], (float) o.life[h], (float) o.fuseLife[h]});
+            }
+        }
+        // C's Obj[] order of the new particles (XPDEB slots): Java's are given C's states in that order, since the
+        // order in which particles push a ship changes the result
+        if (!cSlot.isEmpty() && bad.isEmpty() && !states.isEmpty()) {
+            Integer[] order = new Integer[states.size()];
+            int[] slot = new int[states.size()];
+            boolean all = true;
+            for (int i = 0; i < order.length; i++) {
+                float[] st = states.get(i);
+                Integer sl = cSlot.get((int) st[0] + "," + (int) st[1] + " " + st[2] + "," + st[3]);
+                all &= sl != null;
+                slot[i] = sl == null ? 0 : sl;
+                order[i] = i;
+            }
+            if (all) {
+                java.util.Arrays.sort(order, (a, b) -> Integer.compare(slot[a], slot[b]));
+                List<Integer> js = new ArrayList<>(madeAt);
+                js.sort(null);
+                for (int i = 0; i < order.length; i++) {
+                    float[] st = states.get(order[i]);
+                    int h = o.active[js.get(i)];
+                    o.setClicks(h, (int) st[0], (int) st[1]);
+                    o.vx[h] = st[2];
+                    o.vy[h] = st[3];
+                    o.life[h] = st[4];
+                    o.fuseLife[h] = st[5];
+                }
             }
         }
         return bad;
+    }
+
+    /** The compared state of an explosion particle (XPDEB line or Java object). */
+    static String particle(int type, int id, int cx, int cy, float vx, float vy, float mass, long life, int status) {
+        return type + " #" + id + " c" + cx + "," + cy + " v" + vx + "," + vy + " m" + mass + " l" + life + " s"
+            + Integer.toHexString(status & 0xFFFFFF);
     }
 
     /** A C colour (draw.h WHITE 1, BLUE 2, RED 3) as Java's {@link Records.ObjColor}. */

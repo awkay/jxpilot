@@ -27,10 +27,8 @@ import com.fulcrologic.jxpilot.common.config.ConfigParser;
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.OptionOrigin;
 import com.fulcrologic.jxpilot.common.config.Options;
-import com.fulcrologic.jxpilot.common.map.Base;
 import com.fulcrologic.jxpilot.common.net.ControlKey;
 import com.fulcrologic.jxpilot.server.net.DefaultsFile;
-import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 
 import java.io.BufferedReader;
@@ -157,16 +155,10 @@ final class CTraceItems {
         /** Players whose client sent two keyboard updates in this tick (Java sees only the last). */
         final List<Integer> keysTwice = new ArrayList<>();
         final List<CCannon> cannons = new ArrayList<>();
-    }
-
-    /** True when the trace has the patch 0006 lines (draws, keys) that a full replay needs. */
-    static boolean replayable(List<CFrame> frames) {
-        for (CFrame f : frames) {
-            if (!f.draws.isEmpty()) {
-                return true;
-            }
-        }
-        return false;
+        /** XPDEB: explosion particles (sparks and debris that are not owner-immune), as {@link CReplay#particle}. */
+        final List<String> debs = new ArrayList<>();
+        /** The Obj[] slot of each XPDEB particle, by its "cx,cy vx,vy". */
+        final Map<String, Integer> debSlot = new LinkedHashMap<>();
     }
 
     static List<CFrame> load(String name) throws IOException {
@@ -263,6 +255,12 @@ final class CTraceItems {
                         fr.status.put(id, (int) Long.decode(c[21]).longValue());
                         fr.names.put(id, String.join(" ", Arrays.copyOfRange(c, 22, c.length)));
                     }
+                    case "XPDEB" -> {
+                        fr.debSlot.put(c[6] + "," + c[7] + " " + f(c[8]) + "," + f(c[9]), Integer.parseInt(c[3]));
+                        fr.debs.add(CReplay.particle(Integer.parseInt(c[4]), Integer.parseInt(c[5]),
+                        Integer.parseInt(c[6]), Integer.parseInt(c[7]), f(c[8]), f(c[9]), f(c[10]), Long.parseLong(c[11]),
+                        (int) Long.decode(c[12]).longValue()));
+                    }
                     case "XPCANNON" -> fr.cannons.add(new CCannon(Integer.parseInt(c[3]), Integer.parseInt(c[4]),
                         Integer.parseInt(c[5]), Integer.parseInt(c[6]), (int) Long.decode(c[7]).longValue(),
                         Integer.parseInt(c[8]), Integer.parseInt(c[9])));
@@ -293,38 +291,6 @@ final class CTraceItems {
     }
 
     /**
-     * The Java world for a trace: default.xp with the C server's settings for these recordings (the C
-     * lib/defaults file's SoftWalls, allowModifiers, gravity -0.14 from the command line) plus the scenario's
-     * options; random item spawns off (C's are random and never reached the ship), cannons silent.
-     */
-    static Simulation world(String... opts) {
-        try {
-            Options o = new Options();
-            Path p = Path.of("..", "maps", "default.xp");
-            if (!p.toFile().exists()) {
-                p = Path.of("maps", "default.xp");
-            }
-            ConfigParser.parseFile(p, OptionOrigin.MAP, o);
-            o.force(Opt.GRAVITY, "-0.14");
-            o.force(Opt.MAX_UNSHIELDED_WALL_BOUNCE_SPEED, "180");
-            o.force(Opt.MAX_SHIELDED_WALL_BOUNCE_SPEED, "180");
-            o.force(Opt.MAX_UNSHIELDED_PLAYER_WALL_BOUNCE_ANGLE, "180");
-            o.force(Opt.MAX_SHIELDED_PLAYER_WALL_BOUNCE_ANGLE, "180");
-            o.force(Opt.ALLOW_MODIFIERS, "yes");
-            o.force(Opt.SPARKS_WALL_BOUNCE, "no");
-            o.force(Opt.ITEM_PROB_MULT, "0");
-            for (int i = 0; i + 1 < opts.length; i += 2) {
-                o.force(Opt.find(opts[i]), opts[i + 1]);
-            }
-            Simulation s = new Simulation(new World(o, 1));
-            Arrays.fill(s.world.cannonDeadTime, Integer.MAX_VALUE);
-            return s;
-        } catch (IOException e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
-    /**
      * The Java world of a replay trace, configured as the C server was: the bundled lib/defaults, then the map,
      * then the scenario's command line ({@code opts}: option name and value pairs). Nothing is silenced: item
      * spawns, cannons and every random draw follow C through {@link CDraws}.
@@ -348,21 +314,5 @@ final class CTraceItems {
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
-    }
-
-    /** Join the traced player on the base C used (the block of the first traced position), with C's settings. */
-    static Player join(Simulation s, CFrame first) {
-        World w = s.world;
-        Player p = s.ships.join("Refpilot", 0);
-        int bx = (first.ship.cx() >> 6) / 35;
-        int by = (first.ship.cy() >> 6) / 35;
-        for (Base b : w.map.bases()) {
-            if (b.bx() == bx && b.by() == by) {
-                p.homeBase = b.index();
-            }
-        }
-        s.ships.goHome(p);
-        s.ships.applySettings(p, 45f, 35f, 30 / 256f, 35f, 25f, 30 / 256f);
-        return p;
     }
 }
