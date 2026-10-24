@@ -59,8 +59,6 @@ import java.nio.ByteBuffer;
  * human is in it or with {@code rawMode} (C {@code Main_loop}: {@code NumPlayers > NumRobots || RawMode}).
  */
 public final class SimGameHost implements GameHost {
-    /** Inputs kept per player between two ticks; more overwrite the newest (several packets per tick are rare). */
-    public static final int INPUT_QUEUE = 16;
     /** Snapshot parts per viewer (as {@code ServerNet.MAX_SNAPSHOT_PARTS}). */
     static final int SNAPSHOT_PARTS = 4;
     /** Ids are 1..MAX_IDS-1. */
@@ -106,8 +104,12 @@ public final class SimGameHost implements GameHost {
     private final Player[] bound = new Player[IDS];
     /** Team for the spawn ({@code Ships.spawn}), chosen at login. */
     private final int[] spawnTeam = new int[IDS];
-    private final long[][] queue = new long[IDS][INPUT_QUEUE];
-    private final int[] queued = new int[IDS];
+    /** The input for the next tick ({@link #input}): held mask, taps, and whether one came. */
+    private final long[] inKeys = new long[IDS];
+    private final long[] inTaps = new long[IDS];
+    private final boolean[] queued = new boolean[IDS];
+    /** The client's input lead in ticks ({@link #inputLead}), for the owner's view cull. */
+    private final int[] leadOf = new int[IDS];
     /** Next event to deliver to a viewer. */
     private final long[] cursor = new long[IDS];
     /** First burst a viewer has not seen. */
@@ -334,7 +336,8 @@ public final class SimGameHost implements GameHost {
         int id = pl.id;
         bound[id] = pl;
         spawnTeam[id] = t;
-        queued[id] = 0;
+        queued[id] = false;
+        leadOf[id] = 0;
         pendingSettings[id] = false;
         java.util.Arrays.fill(pendingBanks[id], 0);
         pl.viewWidth = Msg.Display.DEF_VIEW_SIZE;
@@ -450,7 +453,7 @@ public final class SimGameHost implements GameHost {
     private void kickNow(Player p, String reason) {
         int id = p.id;
         bound[id] = null;
-        queued[id] = 0;
+        queued[id] = false;
         keysBySlot[p.slot] = 0;
         sim.ships.leave(p);
         sessions.kick(id, reason);
@@ -488,7 +491,7 @@ public final class SimGameHost implements GameHost {
             return;
         }
         bound[playerId] = null;
-        queued[playerId] = 0;
+        queued[playerId] = false;
         keysBySlot[p.slot] = 0;
         cancelKick(playerId);
         sim.ships.leave(p);
@@ -650,13 +653,13 @@ public final class SimGameHost implements GameHost {
     }
 
     /**
-     * BEHAVIOR: a spawned player's mask is queued for the next tick (the newest replaces the last entry when
-     * {@link #INPUT_QUEUE} are waiting); input before READY and for unbound ids is dropped.
+     * BEHAVIOR: a spawned player's input is kept for the next tick (a second call before it replaces the first);
+     * input before READY and for unbound ids is dropped.
      * BEHAVIOR: a non-zero aimTurn is pointer control's movement: applied at once, as C applies PKT_POINTER_MOVE
      * when it reads it ({@link com.fulcrologic.jxpilot.server.sim.Keys#pointerMove}).
      */
     @Override
-    public void input(int playerId, int seq, long keys, int aimTurn) {
+    public void input(int playerId, int tick, long keys, long taps, int aimTurn) {
         Player p = boundPlayer(playerId);
         if (p == null || !p.spawned) {
             return;
@@ -664,12 +667,17 @@ public final class SimGameHost implements GameHost {
         if (aimTurn != 0) {
             sim.keys.pointerMove(p, aimTurn);
         }
-        int n = queued[playerId];
-        if (n == INPUT_QUEUE) {
-            n--;
+        inKeys[playerId] = keys;
+        inTaps[playerId] = taps;
+        queued[playerId] = true;
+    }
+
+    /** BEHAVIOR: the lead is kept per id for the owner's snapshot view cull; negative counts as 0. */
+    @Override
+    public void inputLead(int playerId, int ticks) {
+        if (isId(playerId)) {
+            leadOf[playerId] = Math.max(0, ticks);
         }
-        queue[playerId][n] = keys;
-        queued[playerId] = n + 1;
     }
 
     // ================================================================ ticking
@@ -679,9 +687,11 @@ public final class SimGameHost implements GameHost {
      * <p>
      * BEHAVIOR: kicks asked for since the last tick happen first.
      * BEHAVIOR: the game runs only with a human in it or rawMode: then robots are enabled, each spawned human's
-     * queued masks are applied in player order (every edge counts, C Handle_keyboard per packet), the last one
-     * stays its input, robots get none, and the sim runs tick {@code tick}. Otherwise robots are disabled, the
-     * world only takes the tick number and queued input is dropped.
+     * input for the tick is applied in player order (C Handle_keyboard): taps not held go down first
+     * ({@code keys | taps}) and come up again ({@code keys}), so a key tapped within the tick still gives both
+     * edges; the held mask stays its input, a human with none keeps the last, robots get none, and the sim runs
+     * tick {@code tick}. Otherwise robots are disabled, the world only takes the tick number and the input is
+     * dropped.
      * BEHAVIOR: a connected human the sim removed during the tick (maxPauseTime) is kicked.
      * BEHAVIOR: first the shutdown countdown after a gameDuration game over (C Main_loop): once it ran out
      * nothing else happens and {@link #shutdownDue} is true. The first running tick with a human starts the
@@ -704,7 +714,7 @@ public final class SimGameHost implements GameHost {
         if (!run) {
             w.tick = tick;
             for (int id = 1; id < IDS; id++) {
-                queued[id] = 0;
+                queued[id] = false;
             }
             return;
         }
@@ -774,13 +784,17 @@ public final class SimGameHost implements GameHost {
                 keysBySlot[p.slot] = 0;
                 continue;
             }
-            int n = queued[p.id];
-            long[] q = queue[p.id];
-            for (int i = 0; i < n; i++) {
-                sim.keys.apply(p, q[i]);
-                keysBySlot[p.slot] = q[i];
+            if (!queued[p.id]) {
+                continue;
             }
-            queued[p.id] = 0;
+            long keys = inKeys[p.id];
+            long down = inTaps[p.id] & ~keys;
+            if (down != 0) {
+                sim.keys.apply(p, keys | down);
+            }
+            sim.keys.apply(p, keys);
+            keysBySlot[p.slot] = keys;
+            queued[p.id] = false;
         }
     }
 
@@ -793,7 +807,7 @@ public final class SimGameHost implements GameHost {
                 int id = e.a[i];
                 if (isId(id) && bound[id] != null && !(bound[id].inUse && bound[id].id == id)) {
                     bound[id] = null;
-                    queued[id] = 0;
+                    queued[id] = false;
                     sessions.kick(id, KICK_PAUSED_TOO_LONG);
                 }
             }

@@ -82,10 +82,17 @@ final class InputToPhoton {
      * @param phaseNanos the INPUT's planned arrival phase within a server tick
      * @param positionMs thrust only: t0 to the first frame whose drawn position is more than 1 px from the
      *                   baseline's; NaN for turns and when it did not happen in the window
+     * @param tickMs     t0 to the server tick the key reached (its state first differs from the baseline's; ServerNet
+     *                   runs tick k at {@link LatencyRig#tickTime}(k - 1)); NaN when it did not
      */
-    record Trial(ControlKey key, long t0, double ms, Outcome outcome, long phaseNanos, double positionMs) {
+    record Trial(ControlKey key, long t0, double ms, Outcome outcome, long phaseNanos, double positionMs,
+                 double tickMs) {
         Trial(ControlKey key, long t0, double ms, Outcome outcome) {
-            this(key, t0, ms, outcome, 0, Double.NaN);
+            this(key, t0, ms, outcome, 0, Double.NaN, Double.NaN);
+        }
+
+        Trial(ControlKey key, long t0, double ms, Outcome outcome, long phaseNanos, double positionMs) {
+            this(key, t0, ms, outcome, phaseNanos, positionMs, Double.NaN);
         }
     }
 
@@ -348,7 +355,7 @@ final class InputToPhoton {
                 out.add(new Trial(key, t0, Double.NaN, Outcome.NO_DEPARTURE, phase, Double.NaN));
             } else {
                 out.add(new Trial(key, t0, (found[0] - t0) / 1e6, Outcome.MEASURED, phase,
-                    moved[0] < 0 ? Double.NaN : (moved[0] - t0) / 1e6));
+                    moved[0] < 0 ? Double.NaN : (moved[0] - t0) / 1e6, (rig.tickTime(changed[0] - 1) - t0) / 1e6));
                 if (!visible[0]) {
                     counts[1]++;
                 }

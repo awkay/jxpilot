@@ -28,6 +28,7 @@ import com.fulcrologic.jxpilot.common.map.WorldMap;
 import com.fulcrologic.jxpilot.common.math.Rng;
 import com.fulcrologic.jxpilot.common.net.ConfigTransfer;
 import com.fulcrologic.jxpilot.common.net.InputHistory;
+import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
 import com.fulcrologic.jxpilot.common.net.Msg;
 import com.fulcrologic.jxpilot.common.net.PacketHeader;
 import com.fulcrologic.jxpilot.common.net.PacketType;
@@ -42,11 +43,13 @@ import java.nio.ByteBuffer;
 /**
  * Client side of the JXPilot protocol (docs/PROTOCOL.md) over a {@link Transport}: the
  * CONNECT / ACCEPT / reliable WELCOME handshake, config (map) transfer, the reliable channel, INPUT
- * with redundancy, timeouts and reconnects. Decoded data goes to a {@link ConnectionListener}.
+ * per predicted tick with redundancy ({@link PredictedClock}), timeouts and reconnects. Decoded data goes to a
+ * {@link ConnectionListener}.
  * <p>
  * Time is passed in (nanoseconds, any monotonic origin) so the class is deterministic under test.
  * Single threaded. Per client frame call, in order: {@link #update(long)} (receive and timers),
- * {@link #sendInput(long, int, long)} (it decides itself whether an INPUT goes out this frame), then
+ * {@link #sendInput(long, int, long)} (it decides itself whether an INPUT goes out this frame: one per predicted
+ * tick, plus one at once on a key change), then
  * {@link #flush(long)} (reliable resends, idle ACK).
  * <p>
  * Hostile or broken servers cannot crash the client: every datagram is decoded under a
@@ -60,8 +63,8 @@ public final class ClientConnection {
     /** Most INPUT entries per packet ({@link InputHistory#MAX_REDUNDANCY}). */
     public static final int MAX_INPUT_REDUNDANCY = InputHistory.MAX_REDUNDANCY;
     /**
-     * Shortest gap between two INPUT datagrams (a 120/s ceiling). A time, not a fraction of the tick: at
-     * 14 Hz a key change must still go out at once, or it can miss the server's next frame.
+     * Shortest gap between two early (key change) INPUT datagrams and the previous send (a 120/s ceiling); the
+     * once-per-tick final send is never held back.
      */
     public static final long MIN_INPUT_GAP_NANOS = 1_000_000_000L / 120;
     /** After a transport error INPUT, reliable data and ACKs pause this long (CONNECT keeps its own timer). */
@@ -143,14 +146,20 @@ public final class ClientConnection {
     private int latestTick;
     private long now;
 
-    // INPUT rate control (see sendInput)
+    // INPUT per predicted tick (see sendInput)
+    private final PredictedClock clock = new PredictedClock();
     private long inputIntervalNanos = 1_000_000_000L / 60;
     private boolean inputSent;
     private long lastInputSend;
-    private long nextInputDue;
     private long lastSentKeys;
+    /** The newest tick whose entry is final (sent at its boundary). */
+    private int finalTick;
+    /** Keys of the previous frame, and keys that went down during the tick being collected (for taps). */
+    private long frameKeys;
+    private long pressedKeys;
     private int pendingAim;
-    private int ackedInputSeq;
+    private int ackedInputTick;
+    private boolean haveInputAck;
 
     // transport errors
     private boolean ioBackoff;
@@ -190,13 +199,13 @@ public final class ClientConnection {
     /** The last status line (connecting, lost, rejected...). */
     public CharSequence status() { return status; }
 
-    /** Newest snapshot tick received (the INPUT ackTick). */
+    /** Newest snapshot tick received. */
     public int latestTick() { return latestTick; }
 
     /** Client-to-server reliable channel: queue CHAT/SETTINGS/... with {@code Msg.*.send(channel())}. */
     public ReliableChannel channel() { return channel; }
 
-    /** The INPUT history (sequence numbers). */
+    /** The INPUT history (entries by tick). */
     public InputHistory input() { return input; }
 
     /** CONNECT datagrams sent in the current attempt cycle. */
@@ -212,11 +221,14 @@ public final class ClientConnection {
     /** Transport IOExceptions on send or receive (each counts as not sent / nothing received). */
     public long ioErrors() { return ioErrors; }
 
-    /** Newest INPUT sequence the server echoed in a snapshot header (lastInputSeq). */
-    public int ackedInputSeq() { return ackedInputSeq; }
+    /** Newest input tick the server reported applied in a snapshot header (inputTick); the redundancy covers later ones. */
+    public int ackedInputTick() { return ackedInputTick; }
 
-    /** Minimum time between two INPUT datagrams without a key change: 1 / simHz (from WELCOME). */
+    /** The tick length from WELCOME (1 / simHz). */
     public long inputIntervalNanos() { return inputIntervalNanos; }
+
+    /** The predicted clock the INPUT entries are tagged with. */
+    public PredictedClock predictedClock() { return clock; }
 
     public long snapshotsReceived() { return snapshots; }
 
@@ -268,7 +280,12 @@ public final class ClientConnection {
         lastReceive = nowNanos;
         inputSent = false;
         pendingAim = 0;
-        ackedInputSeq = input.latestSeq();
+        pressedKeys = 0;
+        frameKeys = 0;
+        input.reset();
+        haveInputAck = false;
+        ackedInputTick = 0;
+        clock.reset(clock.simHz());
         ioBackoff = false;
         pingArmed = false; // open probes of the old session cannot match: its PONGs carry the old session id
     }
@@ -403,20 +420,21 @@ public final class ClientConnection {
     }
 
     /**
-     * Offer this frame's input; an INPUT datagram goes out only when it is due, so a fast render loop does
-     * not flood the server (PROTOCOL.md "INPUT").
+     * Offer this frame's input (protocol v2, PROTOCOL.md "INPUT"). Entries are tagged with the {@link PredictedClock}
+     * tick: the input collected while the predicted clock runs from N-1 to N is entry N, final when the clock
+     * reaches N.
      * <p>
-     * BEHAVIOR: only while PLAYING (before that the server has not spawned the player); returns the new
-     * input sequence, or 0 when nothing was sent this frame.
-     * BEHAVIOR: sends at once when the key mask differs from the last one sent (and for the first input);
-     * otherwise when {@link #inputIntervalNanos()} (1/simHz) has passed since the last periodic send.
-     * BEHAVIOR: never two sends closer than {@link #MIN_INPUT_GAP_NANOS} (a 120/s ceiling at any tick
-     * rate): a change inside that window waits and goes out with whatever mask is current then (coalesced).
-     * BEHAVIOR: aimTurn of frames that sent nothing is summed into the next INPUT (clamped to i16).
-     * BEHAVIOR: a sequence is recorded only for a datagram actually sent; it carries every history entry
-     * newer than the lastInputSeq the server echoed in its newest snapshot, at least 1 and at most
-     * {@link #MAX_INPUT_REDUNDANCY}.
-     * BEHAVIOR: nothing is sent during the transport-error pause ({@link #IO_BACKOFF_NANOS}).
+     * BEHAVIOR: only while PLAYING and once a snapshot has started the predicted clock; returns the tick of the
+     * entry sent, or 0 when nothing was sent this frame.
+     * BEHAVIOR: when the predicted tick N passes the last final one, entry N is set (keys held now, taps = keys that
+     * went down during its tick and are up now, the aim summed over its tick) and sent at once; that starts the
+     * next tick's collection. Ticks the clock skipped hold the previous keys ({@link InputHistory#set}).
+     * BEHAVIOR: within a tick, a key change sends an early copy of the next entry (N+1, as collected so far),
+     * at most once per {@link #MIN_INPUT_GAP_NANOS}; a change inside that gap goes out with the next send.
+     * BEHAVIOR: every INPUT carries the entries newer than the inputTick of the newest snapshot, at least 1 and
+     * at most {@link #MAX_INPUT_REDUNDANCY}.
+     * BEHAVIOR: aimTurn is clamped to i16 per entry; nothing is sent during the transport-error pause
+     * ({@link #IO_BACKOFF_NANOS}), while the frames still collect.
      *
      * @param keys    {@link com.fulcrologic.jxpilot.common.net.ControlKey} mask
      * @param aimTurn pointer-control turn in u16 angle units (0 = none)
@@ -427,45 +445,54 @@ public final class ClientConnection {
             return 0;
         }
         pendingAim = clampAim(pendingAim + aimTurn);
+        pressedKeys |= keys & ~frameKeys;
+        frameKeys = keys;
         if (inIoBackoff(nowNanos)) {
             return 0;
         }
-        boolean changed = !inputSent || keys != lastSentKeys;
-        boolean timer = !inputSent || nowNanos - nextInputDue >= 0;
-        if (!changed && !timer) {
+        double t = clock.tick(nowNanos);
+        if (Double.isNaN(t)) {
             return 0;
         }
-        if (inputSent && nowNanos - lastInputSend < MIN_INPUT_GAP_NANOS) {
-            return 0;
+        diagnostics.leadTicks = clock.leadTicks(nowNanos);
+        int n = (int) Math.floor(t);
+        if (inputSent && n - finalTick < 0) {
+            n = finalTick;                   // the clock went back (guard rail): no entry older than the last final
         }
-        int seq = input.record(keys, pendingAim);
-        stats.keyboardSent(seq, latestTick / slotTicks);
+        if (!inputSent || n - finalTick > 0) {
+            input.set(n, keys, pressedKeys & ~keys, pendingAim);
+            finalTick = n;
+            pressedKeys = 0;
+            pendingAim = 0;
+            stats.keyboardSent(n, latestTick / slotTicks);
+            transmitInput(keys, nowNanos);
+            clock.sent(n, nowNanos);
+            return n;
+        }
+        if (keys != lastSentKeys && nowNanos - lastInputSend >= MIN_INPUT_GAP_NANOS) {
+            int next = n + 1;
+            input.set(next, keys, pressedKeys & ~keys, pendingAim);
+            transmitInput(keys, nowNanos);
+            return next;
+        }
+        if (nowNanos - lastInputSend >= inputIntervalNanos / 2) {
+            transmitInput(lastSentKeys, nowNanos);   // a mid-tick repeat: a second copy before the deadline
+            return input.newestTick();
+        }
+        return 0;
+    }
+
+    private void transmitInput(long keys, long nowNanos) {
         begin(PacketType.INPUT);
-        input.write(tx, latestTick, inputRedundancy());
+        input.write(tx, haveInputAck ? ackedInputTick : input.newestTick() - MAX_INPUT_REDUNDANCY);
         transmit();
-        if (!inputSent) {
-            nextInputDue = nowNanos + inputIntervalNanos;
-        } else if (timer) {
-            nextInputDue += inputIntervalNanos;
-            if (nextInputDue - nowNanos <= 0) {
-                nextInputDue = nowNanos + inputIntervalNanos;
-            }
-        }
         inputSent = true;
         lastInputSend = nowNanos;
         lastSentKeys = keys;
-        pendingAim = 0;
-        return seq;
     }
 
     private static int clampAim(int aim) {
         return Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, aim));
-    }
-
-    /** BEHAVIOR: entries newer than the echoed lastInputSeq, clamped to 1..{@link #MAX_INPUT_REDUNDANCY}. */
-    int inputRedundancy() {
-        int d = input.latestSeq() - ackedInputSeq;
-        return Math.max(1, Math.min(MAX_INPUT_REDUNDANCY, d));
     }
 
     /**
@@ -474,8 +501,9 @@ public final class ClientConnection {
      * <p>
      * BEHAVIOR: nothing is sent unless a session exists (JOINING or PLAYING), nor during the
      * transport-error pause.
-     * BEHAVIOR: while PLAYING a PING (id, send time) goes out {@link #PING_INTERVAL_NANOS} after the first PLAYING
-     * flush and every interval after that; its PONG is an RTT sample ({@link #netDiagnostics()}).
+     * BEHAVIOR: while PLAYING a PING (id, send time) goes out on the first PLAYING flush (the initial input lead
+     * needs the RTT) and every {@link #PING_INTERVAL_NANOS} after that; its PONG is an RTT sample
+     * ({@link #netDiagnostics()}, {@link PredictedClock#rtt}).
      */
     public void flush(long nowNanos) {
         now = nowNanos;
@@ -485,8 +513,9 @@ public final class ClientConnection {
         if (state == ConnectionState.PLAYING) {
             if (!pingArmed) {
                 pingArmed = true;
-                nextPingAt = nowNanos + PING_INTERVAL_NANOS;
-            } else if (nowNanos - nextPingAt >= 0) {
+                nextPingAt = nowNanos;
+            }
+            if (nowNanos - nextPingAt >= 0) {
                 nextPingAt += PING_INTERVAL_NANOS;
                 if (nextPingAt - nowNanos <= 0) {
                     nextPingAt = nowNanos + PING_INTERVAL_NANOS;
@@ -693,6 +722,7 @@ public final class ClientConnection {
         if (probeOpen[slot] && probeIds[slot] == id && probeTimes[slot] == sent) {
             probeOpen[slot] = false;
             diagnostics.rttSample(now - sent);
+            clock.rtt(diagnostics.rttMs() * 1e6, now);
         }
     }
 
@@ -712,12 +742,22 @@ public final class ClientConnection {
             diagnostics.snapshot(tick, now);
             stats.measure(tick / slotTicks, PacketStats.DRAW);
             stats.frameSize(in.limit());
-            if (in.remaining() >= 8) {
-                int seq = in.getInt(in.position() + 4);
-                if (seq - ackedInputSeq > 0 && seq - input.latestSeq() <= 0) {
-                    ackedInputSeq = seq;
-                    stats.keyboardAck(seq, drawn);
+            clock.snapshot(tick, now);
+            if (in.remaining() >= SnapshotWriter.HEADER_SIZE) {
+                int p = in.position();
+                int applied = in.getInt(p + 4);
+                int slack = in.get(p + 8);
+                boolean starved = (in.get(p + SnapshotWriter.FLAGS_OFFSET) & SnapshotWriter.FLAG_INPUT_STARVED) != 0;
+                if (input.started() && applied - input.newestTick() <= 0
+                    && (!haveInputAck || applied - ackedInputTick > 0)) {
+                    ackedInputTick = applied;
+                    haveInputAck = true;
+                    stats.keyboardAck(applied, drawn);
                 }
+                if (slack != SnapshotWriter.NO_SLACK) {
+                    diagnostics.inputSlackTicks = slack / 16.0;
+                }
+                clock.feedback(tick, slack, starved, diagnostics.jitterMs() * 1e6, now);
             }
         } else {
             stats.measure(tick / slotTicks, PacketStats.DROP);
@@ -766,6 +806,7 @@ public final class ClientConnection {
         slotTicks = Math.max(1, simHz / snapHz);
         stats.reset(Math.max(1, simHz / slotTicks));
         diagnostics.reset(simHz, slotTicks);
+        clock.reset(simHz);
         try {
             config = new ConfigTransfer.Receiver(welcome);
         } catch (RuntimeException e) {

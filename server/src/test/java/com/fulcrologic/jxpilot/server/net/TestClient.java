@@ -35,6 +35,7 @@ import com.fulcrologic.jxpilot.common.net.ReliableHandler;
 import com.fulcrologic.jxpilot.common.net.ReliableType;
 import com.fulcrologic.jxpilot.common.net.Section;
 import com.fulcrologic.jxpilot.common.net.SnapshotReader;
+import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -68,7 +69,10 @@ final class TestClient implements ReliableHandler {
     String configText;
     final List<String> reliableLog = new ArrayList<>();
     final List<Integer> snapshotTicks = new ArrayList<>();
-    final List<Integer> snapshotInputSeqs = new ArrayList<>();
+    /** The snapshot header's inputTick and inputSlack of each part 0. */
+    final List<Integer> snapshotInputTicks = new ArrayList<>();
+    final List<Integer> snapshotInputSlacks = new ArrayList<>();
+    final List<Boolean> snapshotStarved = new ArrayList<>();
     final List<String> snapshotParts = new ArrayList<>();
     int radarSnapshots;
     float lastSelfX;
@@ -76,6 +80,12 @@ final class TestClient implements ReliableHandler {
     int pongs;
     long lastPongNanos;
     int lastAckTick;
+    /** The server tick the next input is for, minus 1 ({@link Harness} points this at the server). */
+    java.util.function.IntSupplier serverTick = () -> lastAckTick + 1;
+    /** How many ticks after the server's current tick {@link #input(long)}'s entry is for. */
+    int lead = 1;
+    /** The inputTick of the newest snapshot: the INPUT redundancy covers the ticks after it. */
+    int lastInputTick;
     boolean readySent;
     /** Session packets dropped because they arrived before ACCEPT or carry another session. */
     int staleSession;
@@ -107,11 +117,17 @@ final class TestClient implements ReliableHandler {
         return b.flip();
     }
 
+    /** An INPUT holding {@code keys} for the server's tick {@link #lead} ahead. */
     ByteBuffer input(long keys) {
-        inputs.record(keys, 0);
+        return input(serverTick.getAsInt() + lead, keys, 0);
+    }
+
+    /** An INPUT with the entry for {@code tick} (and the redundant older ones the server has not applied). */
+    ByteBuffer input(int tick, long keys, long taps) {
+        inputs.set(tick, keys, taps, 0);
         ByteBuffer b = buf();
         PacketHeader.write(b, PacketType.INPUT, session, ch.ack());
-        inputs.write(b, lastAckTick, 4);
+        inputs.write(b, lastInputTick);
         return b.flip();
     }
 
@@ -236,10 +252,13 @@ final class TestClient implements ReliableHandler {
         if (!snap.begin(data)) {
             throw new AssertionError("malformed snapshot");
         }
-        snapshotParts.add(snap.tick() + ":" + snap.part() + "/" + snap.partCount() + (snap.flags() == 1 ? "L" : ""));
+        snapshotParts.add(snap.tick() + ":" + snap.part() + "/" + snap.partCount() + ((snap.flags() & SnapshotWriter.FLAG_LAST_PART) != 0 ? "L" : ""));
         if (snap.part() == 0) {
             snapshotTicks.add(snap.tick());
-            snapshotInputSeqs.add(snap.lastInputSeq());
+            snapshotInputTicks.add(snap.inputTick());
+            snapshotInputSlacks.add(snap.inputSlack());
+            snapshotStarved.add((snap.flags() & SnapshotWriter.FLAG_INPUT_STARVED) != 0);
+            lastInputTick = snap.inputTick();
             lastAckTick = snap.tick();
         }
         while (snap.nextSection()) {

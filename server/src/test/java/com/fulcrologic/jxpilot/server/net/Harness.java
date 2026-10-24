@@ -135,6 +135,7 @@ final class Harness implements Datagrams {
 
     /** One client frame up (reliable + input) then one server tick, then delivery down. */
     void step(TestClient c, int channel, SocketAddress from, long keys) {
+        c.serverTick = net::currentTick;
         for (ByteBuffer b : c.frame(now, keys)) {
             in(channel, from, b);
         }
@@ -144,6 +145,7 @@ final class Harness implements Datagrams {
 
     /** Connect, receive the map and send READY; runs ticks until snapshots flow. */
     void join(TestClient c, int channel, SocketAddress from, String name) {
+        c.serverTick = net::currentTick;
         in(channel, from, c.connect(name, 255, ""));
         deliver(c, from);
         for (int i = 0; i < 600 && c.snapshotTicks.isEmpty(); i++) {

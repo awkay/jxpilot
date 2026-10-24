@@ -110,7 +110,6 @@ class AllocationTest {
         for (int i = 0; i < CLIENTS; i++) {
             input[i] = ByteBuffer.allocateDirect(Protocol.MAX_PACKET);
             rel[i] = ByteBuffer.allocateDirect(Protocol.MAX_PACKET);
-            seq[i] = cs[i].inputs.latestSeq();
             loop.clients[i] = cs[i];
         }
         long keys = ControlKey.THRUST.mask() | ControlKey.FIRE_SHOT.mask();
@@ -132,9 +131,10 @@ class AllocationTest {
                 ByteBuffer b = input[i];
                 b.clear();
                 PacketHeader.write(b, PacketType.INPUT, c.session, c.ch.ack());
-                b.putInt(seq[i]).putInt(0).put((byte) 4);
+                int t = net.currentTick() + 1;
+                b.putInt(t).put((byte) 4);
                 for (int k = 0; k < 4; k++) {
-                    b.putLong(keys ^ (seq[i] - k & 1)).putShort((short) 0);
+                    b.putLong(keys ^ (t - k & 1)).putLong(t - k & 2).putShort((short) 0);
                 }
                 b.flip();
                 net.onDatagram(0, loop.addrs[i], b, h.now);

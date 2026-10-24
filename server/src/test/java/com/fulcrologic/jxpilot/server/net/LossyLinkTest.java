@@ -96,6 +96,11 @@ class LossyLinkTest {
         LossyLink up = new LossyLink(1, 0.2, 2);
         LossyLink down = new LossyLink(2, 0.2, 2);
         TestClient c = new TestClient(42);
+        c.serverTick = h.net::currentTick;
+        // Redundant copies only help while their tick is still ahead: with a lead of L ticks an entry rides in the
+        // L packets sent before its tick, so a 6-tick lead over 20% loss and a 0..2-tick delay leaves ~0.05%
+        // of ticks without any copy in time (a 3-tick lead leaves ~7%).
+        c.lead = 6;
         long t;
         int sentInputs = 0;
         int chatSent = 0;
@@ -144,17 +149,18 @@ class LossyLinkTest {
         for (int i = 0; i < 10; i++) {
             expectedEvents.add("MESSAGE event " + i);
         }
-        List<Long> seqs = new ArrayList<>();
+        List<Long> ticks = new ArrayList<>();
         for (String s : h.host.callsStartingWith("input")) {
-            seqs.add(Long.parseLong(s.substring(s.indexOf("seq=") + 4, s.indexOf(" keys"))));
+            ticks.add(Long.parseLong(s.substring(s.indexOf("tick=") + 5, s.indexOf(" keys"))));
         }
         boolean inc = true;
-        for (int i = 1; i < seqs.size(); i++) {
-            inc &= seqs.get(i) > seqs.get(i - 1);
+        for (int i = 1; i < ticks.size(); i++) {
+            inc &= ticks.get(i) == ticks.get(i - 1) + 1;
         }
         boolean increasing = inc;
-        int applied = seqs.size();
+        long starved = h.net.inputStarvations(c.playerId);
         int inputsSent = sentInputs;
+        int calls = ticks.size();
         int snapshots = c.snapshotTicks.size();
         assertAll(
             () -> assertTrue(up.dropped > 100 && down.dropped > 100, "the link really dropped packets both ways"),
@@ -162,9 +168,9 @@ class LossyLinkTest {
             () -> assertEquals(1, h.host.callsStartingWith("msg 0 type=64").size(), "READY reaches the host exactly once"),
             () -> assertEquals(expectedChats, chats, "every chat line reaches the host once, in order"),
             () -> assertEquals(expectedEvents, events, "every server event reaches the client once, in order"),
-            () -> assertTrue(increasing, "inputs reach the host in strictly increasing sequence, without duplicates"),
-            () -> assertTrue(applied >= inputsSent - 10,
-                "4x redundancy recovers nearly every input (" + applied + " of " + inputsSent + ")"),
+            () -> assertTrue(increasing, "the host gets one input per tick, on consecutive ticks"),
+            () -> assertTrue(calls > 2000 && inputsSent > 2000, "inputs flowed (" + calls + " calls, " + inputsSent + " sent)"),
+            () -> assertTrue(starved <= 10, "the redundancy recovers nearly every entry (" + starved + " starved ticks)"),
             () -> assertTrue(snapshots > 600, "most snapshots arrive (" + snapshots + ")"),
             () -> assertEquals(1, h.net.connections(), "the session survives"),
             () -> assertEquals(0, h.net.malformed(), "nothing was considered malformed"));

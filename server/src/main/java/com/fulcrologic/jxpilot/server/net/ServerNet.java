@@ -67,9 +67,9 @@ public final class ServerNet {
     /** Upper bound on snapshot datagrams per viewer per tick. */
     public static final int MAX_SNAPSHOT_PARTS = 4;
     /** Offset of the snapshot partCount byte within a SNAPSHOT datagram. */
-    static final int PART_COUNT_OFFSET = PacketHeader.SIZE + 9;
+    static final int PART_COUNT_OFFSET = PacketHeader.SIZE + SnapshotWriter.PART_COUNT_OFFSET;
     /** Offset of the snapshot flags byte within a SNAPSHOT datagram. */
-    static final int FLAGS_OFFSET = PacketHeader.SIZE + 10;
+    static final int FLAGS_OFFSET = PacketHeader.SIZE + SnapshotWriter.FLAGS_OFFSET;
     /** PING body: u32 id, u64 nanos. */
     static final int PING_SIZE = 12;
     /** DISCONNECT is sent this many times (it is unreliable). */
@@ -110,6 +110,10 @@ public final class ServerNet {
     private final ByteBuffer[] parts = new ByteBuffer[MAX_SNAPSHOT_PARTS];
 
     private int tick;
+    /** When the last tick ran (nanos), for the input margins. */
+    private long lastTickAt;
+    private boolean haveTickTime;
+    private final double tickNanos;
     private boolean shutdownDue;
     private long malformed;
     private long rateLimited;
@@ -138,8 +142,10 @@ public final class ServerNet {
         boolean initialSent;
         int syncSequence;
         boolean snapshotsOn;
-        boolean hasInput;
-        int lastInputSeq;
+        /** Inputs by the tick they are for (protocol v2). */
+        InputBuffer inputs;
+        /** {@code inputs.starvations()} when the last snapshot went out (for FLAG_INPUT_STARVED). */
+        long starvationsReported;
 
         /** A host that throws on a message must not wedge the channel: the message counts as malformed. */
         @Override
@@ -188,6 +194,7 @@ public final class ServerNet {
         this.sessions = new SplittableRandom(sessionSeed);
         this.sessionPerNano = cfg.sessionRatePerSecond / 1e9;
         this.reliablePerTick = cfg.reliablePacketsPerTick();
+        this.tickNanos = 1e9 / cfg.simHz;
         active = new Connection[cfg.maxConnections];
         free = new Connection[cfg.maxConnections];
         for (int i = 0; i < cfg.maxConnections; i++) {
@@ -308,7 +315,7 @@ public final class ServerNet {
                         malformed++;
                     }
                 }
-                case PacketType.INPUT -> onInput(c, data);
+                case PacketType.INPUT -> onInput(c, data, now);
                 case PacketType.PING -> onPing(c, data);
                 case PacketType.DISCONNECT -> drop(c, Msg.Disconnect.REASON_QUIT, "quit", false);
                 case PacketType.ACK -> { }
@@ -391,8 +398,11 @@ public final class ServerNet {
         c.sender = null;
         c.initialSent = false;
         c.snapshotsOn = false;
-        c.hasInput = false;
-        c.lastInputSeq = 0;
+        if (c.inputs == null) {
+            c.inputs = new InputBuffer(cfg.simHz, cfg.simHz);
+        }
+        c.inputs.reset();
+        c.starvationsReported = 0;
         active[activeCount++] = c;
         peers(channel).put(from, c);
         sendAccept(c);
@@ -426,22 +436,24 @@ public final class ServerNet {
         return n;
     }
 
-    private void onInput(Connection c, ByteBuffer data) {
+    /**
+     * INPUT v2: each entry goes into the connection's {@link InputBuffer} under its tick, oldest first. The margin of
+     * an entry is how long before its tick runs it arrived: whole ticks to the next tick, plus the part of the current
+     * tick interval still to go.
+     */
+    private void onInput(Connection c, ByteBuffer data, long now) {
         if (!input.wrap(data)) {
             malformed++;
             return;
         }
+        int next = tick + 1;
+        double toGo = haveTickTime ? 1 - Math.clamp((now - lastTickAt) / tickNanos, 0, 1) : 1;
+        int packetTick = input.newestTick();
         for (int i = input.count() - 1; i >= 0; i--) {
-            int s = input.seq(i);
-            if (!c.hasInput || s - c.lastInputSeq > 0) {
-                c.lastInputSeq = s;
-                c.hasInput = true;
-                try {
-                    host.input(c.playerId, s, input.keys(i), input.aimTurn(i));
-                } catch (RuntimeException e) {
-                    malformed++;
-                }
-            }
+            int t = input.tick(i);
+            double margin = (double) (t - next) + toGo;
+            int m16 = (int) Math.floor(Math.clamp(margin * 16, -1e6, 1e6));
+            c.inputs.offer(t, input.keys(i), input.taps(i), input.aimTurn(i), packetTick, next, m16);
         }
     }
 
@@ -481,6 +493,9 @@ public final class ServerNet {
      */
     public void tick(long now) {
         tick++;
+        lastTickAt = now;
+        haveTickTime = true;
+        applyInputs();
         host.tick(tick);
         if (host.shutdownDue()) {
             shutdownDue = true;
@@ -502,6 +517,46 @@ public final class ServerNet {
                 service(c, snapshot, radar, now);
             }
         }
+    }
+
+    /**
+     * Every connection's input for this tick goes to the host before the tick runs: the buffered entry, or the held
+     * mask when it is missing (a starvation). Nothing goes out for a connection whose inputs have not started.
+     */
+    private void applyInputs() {
+        for (int i = 0; i < activeCount; i++) {
+            Connection c = active[i];
+            c.inputs.take(tick);
+            if (c.verified && c.inputs.started()) {
+                try {
+                    host.input(c.playerId, tick, c.inputs.keys(), c.inputs.taps(), c.inputs.aimTurn());
+                    host.inputLead(c.playerId, c.inputs.lead(tick + 1));
+                } catch (RuntimeException e) {
+                    malformed++;
+                }
+            }
+        }
+    }
+
+    /** Input starvations of {@code playerId}'s connection (ticks with no entry after its inputs started); -1 unknown. */
+    public long inputStarvations(int playerId) {
+        Connection c = connectionOf(playerId);
+        return c == null ? -1 : c.inputs.starvations();
+    }
+
+    /** Late inputs of {@code playerId}'s connection (entries arriving after their tick starved); -1 unknown. */
+    public long inputLate(int playerId) {
+        Connection c = connectionOf(playerId);
+        return c == null ? -1 : c.inputs.late();
+    }
+
+    private Connection connectionOf(int playerId) {
+        for (int i = 0; i < activeCount; i++) {
+            if (active[i].playerId == playerId) {
+                return active[i];
+            }
+        }
+        return null;
     }
 
     private void resendAccept(Connection c, long now) {
@@ -558,7 +613,7 @@ public final class ServerNet {
             ByteBuffer b = parts[part];
             b.clear();
             PacketHeader.write(b, PacketType.SNAPSHOT, c.session, c.ch.ack());
-            writer.begin(b, tick, c.lastInputSeq, part, 0, 0, vx, vy);
+            writer.begin(b, tick, c.inputs.appliedTick(), c.inputs.slack16(), part, 0, 0, vx, vy);
             n = part + 1;
             if (!host.fillSnapshot(c.playerId, part, radar, writer)) {
                 break;
@@ -567,10 +622,13 @@ public final class ServerNet {
                 truncatedSnapshots++;
             }
         }
+        long starved = c.inputs.starvations();
+        int starvedFlag = starved != c.starvationsReported ? SnapshotWriter.FLAG_INPUT_STARVED : 0;
+        c.starvationsReported = starved;
         for (int p = 0; p < n; p++) {
             ByteBuffer b = parts[p];
             b.put(PART_COUNT_OFFSET, (byte) n);
-            b.put(FLAGS_OFFSET, (byte) (p == n - 1 ? SnapshotWriter.FLAG_LAST_PART : 0));
+            b.put(FLAGS_OFFSET, (byte) ((p == n - 1 ? SnapshotWriter.FLAG_LAST_PART : 0) | starvedFlag));
             b.flip();
             out.send(c.channel, c.addr, b);
         }

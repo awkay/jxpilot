@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.client.latency;
 
+import com.fulcrologic.jxpilot.client.net.PredictedClock;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -34,23 +35,31 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The I2P harness measures what it should (bug-hunter M1): on a clean link the same trial at RTT 100 ms takes
- * exactly 100 ms more than at RTT 0, and the stratified phases give the mean the stages add up to.
+ * The I2P harness measures what it should (bug-hunter M1). Protocol v2 tags each input with the predicted tick, so
+ * the tick a key lands on is the client's choice (its lead over the server), no longer its arrival phase; the
+ * exact relation left to check is the harness's own arithmetic: every trial's I2P is the time to the server tick
+ * the key reached plus the downlink, plus at most one frame for the draw. The stratified phases are still those
+ * of the schedule. On a clean link the predicted clock settles before the first trial, at both RTTs to a slack
+ * within the controller's deadband of the same target ({@link PredictedClock}), so RTT 100 adds 100 ms on average
+ * within that band, and per trial within a tick.
  */
 @DisplayName("InputToPhoton calibration")
 class InputToPhotonCalibrationTest {
     static final int TRIALS = 24;
     static final double FRAME_MS = 1000.0 / LatencyRig.FRAME_HZ;
+    static final double TICK_MS = 1000.0 / 14;
 
     @Test
     @Timeout(value = 2, unit = TimeUnit.MINUTES)
-    @DisplayName("per trial, I2P at RTT 100 minus I2P at RTT 0 is 100 ms within one frame; phases are stratified")
-    void rttShiftsEveryTrial() {
+    @DisplayName("per trial, I2P is the time to the tick the key reached plus the downlink, within one frame; RTT 100 adds 100 ms")
+    void tickPlusDownlink() {
         InputToPhoton.Result zero = InputToPhoton.measure(Course.WALLS,
             new Scenario(0, Scenario.Jitter.NONE, Scenario.Loss.NONE), TRIALS, 3);
         InputToPhoton.Result hundred = InputToPhoton.measure(Course.WALLS,
             new Scenario(100, Scenario.Jitter.NONE, Scenario.Loss.NONE), TRIALS, 3);
         double worst = 0;
+        double low = Double.MAX_VALUE;
+        double worstShift = 0;
         int compared = 0;
         boolean phasesMatch = true;
         boolean stratified = true;
@@ -60,19 +69,23 @@ class InputToPhotonCalibrationTest {
             phasesMatch &= a.phaseNanos() == b.phaseNanos();
             stratified &= a.phaseNanos() == InputToPhoton.arrivalPhase(j, TRIALS, 14);
             if (a.outcome() == InputToPhoton.Outcome.MEASURED && b.outcome() == InputToPhoton.Outcome.MEASURED) {
-                worst = Math.max(worst, Math.abs(b.ms() - a.ms() - 100));
+                double ra = a.ms() - a.tickMs();
+                double rb = b.ms() - b.tickMs() - 50;
+                worstShift = Math.max(worstShift, Math.abs(b.ms() - a.ms() - 100));
+                worst = Math.max(worst, Math.max(ra, rb));
+                low = Math.min(low, Math.min(ra, rb));
                 compared++;
             }
         }
         double w = worst;
+        double lo = low;
+        double ws = worstShift;
         int n = compared;
         boolean pm = phasesMatch;
         boolean st = stratified;
-        // tick wait averages T/2 = 35.7 ms over stratified phases, plus about half a frame each for the key poll and
-        // the draw: about 44 ms
-        double mean = zero.mean();
-        System.out.printf(java.util.Locale.ROOT, "[I2P calibration] worst |diff - 100| %.3f ms, mean at RTT 0 %.2f ms,"
-            + " at RTT 100 %.2f ms%n", worst, mean, hundred.mean());
+        double shift = hundred.mean() - zero.mean();
+        System.out.printf(java.util.Locale.ROOT, "[I2P calibration] I2P - (tick + downlink) in [%.3f, %.3f] ms;"
+            + " mean at RTT 0 %.2f ms, at RTT 100 %.2f ms (shift %.2f)%n", low, worst, zero.mean(), hundred.mean(), shift);
         assertAll(
             () -> assertEquals(TRIALS, n, "every trial measured at both RTTs"),
             () -> assertEquals(0, zero.invisible(), "at RTT 0 every I2P frame draws what the baseline does not"),
@@ -80,7 +93,11 @@ class InputToPhotonCalibrationTest {
             () -> assertEquals(0, zero.preT0Mismatches() + hundred.preT0Mismatches(), "runs identical before t0"),
             () -> assertTrue(st, "trial j arrives at phase (j + 1/2) / N of a tick"),
             () -> assertTrue(pm, "the same phases at both RTTs"),
-            () -> assertTrue(w <= FRAME_MS, "every trial is exactly 100 ms later, within a frame: worst " + w + " ms"),
-            () -> assertTrue(mean >= 40 && mean <= 48, "mean I2P at RTT 0 is about T/2 + one frame: " + mean));
+            () -> assertTrue(lo >= 0, "never drawn before the tick's snapshot can have arrived: " + lo + " ms"),
+            () -> assertTrue(w <= FRAME_MS, "drawn within a frame of its arrival: worst " + w + " ms"),
+            () -> assertTrue(ws <= TICK_MS + FRAME_MS, "every trial is 100 ms later within a tick: the settled clocks"
+                + " agree within the deadband, which can move a key across a tick boundary: worst " + ws + " ms"),
+            () -> assertEquals(100, shift, PredictedClock.DEADBAND * TICK_MS + FRAME_MS,
+                "on average RTT 100 adds 100 ms within the controller's deadband"));
     }
 }

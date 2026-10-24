@@ -45,7 +45,7 @@ public final class DyingHost implements GameHost {
     @Override public int team(int playerId) { return d.team(playerId); }
     @Override public void leave(int playerId) { d.leave(playerId); }
     @Override public void clientMessage(int playerId, int type, ByteBuffer payload) { d.clientMessage(playerId, type, payload); }
-    @Override public void input(int playerId, int seq, long keys, int aimTurn) { d.input(playerId, seq, keys, aimTurn); }
+    @Override public void input(int playerId, int tick, long keys, long taps, int aimTurn) { d.input(playerId, tick, keys, taps, aimTurn); }
 
     @Override
     public void tick(int tick) {

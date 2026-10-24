@@ -31,7 +31,7 @@ import java.nio.ByteBuffer;
  * Builds a SNAPSHOT body into a datagram buffer (after the {@link PacketHeader}). Reusable and
  * allocation free.
  * <pre>
- *   header: u32 tick, u32 lastInputSeq, u8 part, u8 partCount, u8 flags, u16 viewX, u16 viewY   (15 bytes)
+ *   header: u32 tick, u32 inputTick, i8 inputSlack, u8 part, u8 partCount, u8 flags, u16 viewX, u16 viewY  (16 bytes)
  *   then sections: u8 type, u8 recordSize, u8 variant, u16 count, count * record
  * </pre>
  * {@code viewX/viewY} (u16 half pixels) is the receiver's view centre; view-culled records store
@@ -39,7 +39,7 @@ import java.nio.ByteBuffer;
  * Usage:
  * <pre>
  *   w.setWorld(worldW, worldH, wrap);                       // once per map
- *   w.begin(buf, tick, lastInputSeq, 0, 1, FLAG_LAST_PART, camX, camY);
+ *   w.begin(buf, tick, inputTick, inputSlack, 0, 1, FLAG_LAST_PART, camX, camY);
  *   if (w.beginSection(Section.SHOT, ShotKind.SHOT &lt;&lt; 4 | ObjColor.ENEMY)) {
  *       for (...) { if (!w.hasRoom()) break; Records.Shot.put(w, x, y, vx, vy); }
  *       w.endSection();
@@ -50,9 +50,20 @@ import java.nio.ByteBuffer;
  */
 public final class SnapshotWriter {
     /** Snapshot header size. */
-    public static final int HEADER_SIZE = 15;
+    public static final int HEADER_SIZE = 16;
+    /** Offset of the part count byte in the header. */
+    public static final int PART_COUNT_OFFSET = 10;
+    /** Offset of the flags byte in the header. */
+    public static final int FLAGS_OFFSET = 11;
+    /** {@code inputSlack} value meaning "no input arrived in the measurement window". */
+    public static final int NO_SLACK = -128;
     /** Header flag: this part is the last one the server will send for this tick. */
     public static final int FLAG_LAST_PART = 1;
+    /**
+     * Header flag: at least one of this client's ticks since the previous snapshot to it ran without its input entry
+     * (the server held the last keys: a starvation); the client's lead is too short.
+     */
+    public static final int FLAG_INPUT_STARVED = 2;
 
     private ByteBuffer out;
     private int sectionPos = -1;
@@ -103,13 +114,19 @@ public final class SnapshotWriter {
      * <p>
      * BEHAVIOR: the view centre is stored quantized to half pixels and relative positions are
      * measured from that quantized value, so decoding adds back exactly.
+     * BEHAVIOR: inputSlack is clamped to i8 (-127..127; {@link #NO_SLACK} -128 is kept as "no report").
+     *
+     * @param inputTick  the tick whose client input the server applied in this tick (the held one on starvation)
+     * @param inputSlack the smallest margin (1/16 tick) by which this client's inputs arrived ahead of their tick
+     *                   over the last second, or {@link #NO_SLACK}
      */
-    public void begin(ByteBuffer buf, int tick, int lastInputSeq, int part, int partCount, int flags,
+    public void begin(ByteBuffer buf, int tick, int inputTick, int inputSlack, int part, int partCount, int flags,
                       double viewCenterX, double viewCenterY) {
         out = buf;
         sectionPos = -1;
         buf.putInt(tick);
-        buf.putInt(lastInputSeq);
+        buf.putInt(inputTick);
+        buf.put((byte) (inputSlack == NO_SLACK ? NO_SLACK : Math.max(-127, Math.min(127, inputSlack))));
         buf.put((byte) part);
         partCountPos = buf.position();
         buf.put((byte) partCount);
@@ -120,6 +137,12 @@ public final class SnapshotWriter {
         buf.putShort((short) vy);
         viewX = vx * 0.5;
         viewY = vy * 0.5;
+    }
+
+    /** {@link #begin(ByteBuffer, int, int, int, int, int, int, double, double)} with no slack report. */
+    public void begin(ByteBuffer buf, int tick, int inputTick, int part, int partCount, int flags,
+                      double viewCenterX, double viewCenterY) {
+        begin(buf, tick, inputTick, NO_SLACK, part, partCount, flags, viewCenterX, viewCenterY);
     }
 
     /** Patch the part count after the fact (e.g. when the split is decided while writing). */

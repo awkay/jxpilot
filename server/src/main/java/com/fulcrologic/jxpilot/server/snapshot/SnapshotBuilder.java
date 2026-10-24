@@ -104,7 +104,7 @@ public final class SnapshotBuilder {
     private int curType = -1;
     private int curVariant;
     private int tick;
-    private int lastInputSeq;
+    private int inputTick;
     private double cx;
     private double cy;
     /** The item sections (server-items). */
@@ -200,11 +200,11 @@ public final class SnapshotBuilder {
      * @param burstFrom first burst sequence number the viewer has not seen
      * @param radar    include the RADAR section
      */
-    public int build(Player viewer, int lastInputSeq, long burstFrom, boolean radar, ByteBuffer[] parts) {
+    public int build(Player viewer, int inputTick, long burstFrom, boolean radar, ByteBuffer[] parts) {
         this.parts = parts;
         this.maxParts = Math.min(parts.length, MAX_PARTS);
         this.tick = w.tick;
-        this.lastInputSeq = lastInputSeq;
+        this.inputTick = inputTick;
         this.cx = viewer.cx / (double) Click.CLICK;
         this.cy = viewer.cy / (double) Click.CLICK;
         if (hashFrames != w.frames) {
@@ -237,8 +237,8 @@ public final class SnapshotBuilder {
         int count = part + 1;
         for (int i = 0; i < count; i++) {
             ByteBuffer b = parts[i];
-            b.put(partStart[i] + 9, (byte) count);
-            b.put(partStart[i] + 10, (byte) (i == count - 1 ? SnapshotWriter.FLAG_LAST_PART : 0));
+            b.put(partStart[i] + SnapshotWriter.PART_COUNT_OFFSET, (byte) count);
+            b.put(partStart[i] + SnapshotWriter.FLAGS_OFFSET, (byte) (i == count - 1 ? SnapshotWriter.FLAG_LAST_PART : 0));
         }
         return count;
     }
@@ -247,7 +247,7 @@ public final class SnapshotBuilder {
         part++;
         ByteBuffer b = parts[part];
         partStart[part] = b.position();
-        wr.begin(b, tick, lastInputSeq, part, 1, 0, cx, cy);
+        wr.begin(b, tick, inputTick, part, 1, 0, cx, cy);
     }
 
     private void closeSection() {

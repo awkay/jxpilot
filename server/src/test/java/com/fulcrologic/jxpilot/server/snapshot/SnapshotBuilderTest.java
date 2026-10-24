@@ -148,7 +148,7 @@ class SnapshotBuilderTest {
             ByteBuffer buf = parts[p].duplicate();
             buf.flip();
             assertTrue(r.begin(buf), "part " + p + " has a header");
-            d.headers.add(new int[] {r.tick(), r.lastInputSeq(), r.part(), r.partCount(), r.flags()});
+            d.headers.add(new int[] {r.tick(), r.inputTick(), r.part(), r.partCount(), r.flags()});
             while (r.nextSection()) {
                 d.types.add(r.type());
                 for (int i = 0; i < r.count(); i++) {

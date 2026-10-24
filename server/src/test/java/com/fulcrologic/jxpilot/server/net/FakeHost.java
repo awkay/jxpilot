@@ -162,14 +162,14 @@ final class FakeHost implements GameHost {
     }
 
     @Override
-    public void input(int playerId, int seq, long keys, int aimTurn) {
+    public void input(int playerId, int tick, long keys, long taps, int aimTurn) {
         if (throwOnInput != null && keys == throwOnKeys) {
             throw throwOnInput;
         }
         inputCount++;
         keySum += keys;
         if (record) {
-            calls.add("input " + playerId + " seq=" + seq + " keys=" + keys + " aim=" + aimTurn);
+            calls.add("input " + playerId + " tick=" + tick + " keys=" + keys + " taps=" + taps + " aim=" + aimTurn);
         }
     }
 

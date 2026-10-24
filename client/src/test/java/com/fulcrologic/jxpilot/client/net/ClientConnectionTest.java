@@ -34,6 +34,7 @@ import com.fulcrologic.jxpilot.common.net.PacketType;
 import com.fulcrologic.jxpilot.common.net.Protocol;
 import com.fulcrologic.jxpilot.common.net.ReliableChannel;
 import com.fulcrologic.jxpilot.common.net.ReliableType;
+import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -53,21 +54,22 @@ class ClientConnectionTest {
     static final long INTERVAL = 1_000_000_000L / 60;
     static final int SESSION = 0x2345;
 
-    /** A decoded INPUT datagram. */
-    record Input(int type, int latest, int ackTick, List<Long> keys, List<Integer> aims) {
+    /** A decoded INPUT datagram (v2): entry i is for tick newest - i. */
+    record Input(int type, int newest, List<Long> keys, List<Long> taps, List<Integer> aims) {
         static Input of(ByteBuffer p) {
             PacketHeader h = new PacketHeader();
             h.read(p);
-            int latest = p.getInt();
-            int ack = p.getInt();
+            int newest = p.getInt();
             int n = p.get();
             List<Long> keys = new ArrayList<>();
+            List<Long> taps = new ArrayList<>();
             List<Integer> aims = new ArrayList<>();
             for (int i = 0; i < n; i++) {
                 keys.add(p.getLong());
+                taps.add(p.getLong());
                 aims.add((int) p.getShort());
             }
-            return new Input(h.type(), latest, ack, keys, aims);
+            return new Input(h.type(), newest, keys, taps, aims);
         }
     }
 
@@ -82,9 +84,14 @@ class ClientConnectionTest {
         return r;
     }
 
-    /** A snapshot body: tick and the echoed lastInputSeq. */
-    static byte[] snapshot(int tick, int lastInputSeq) {
-        return pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(tick).putInt(lastInputSeq));
+    /** A snapshot with a full v2 header: tick, the applied inputTick, inputSlack (1/16 tick) and flags. */
+    static byte[] snapshot(int tick, int inputTick, int slack16, int flags) {
+        return pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(tick).putInt(inputTick).put((byte) slack16)
+            .put((byte) 0).put((byte) 1).put((byte) flags).putShort((short) 0).putShort((short) 0));
+    }
+
+    static byte[] snapshot(int tick, int inputTick) {
+        return snapshot(tick, inputTick, SnapshotWriter.NO_SLACK, SnapshotWriter.FLAG_LAST_PART);
     }
 
     /** Transport fake: scripted incoming datagrams, recorded outgoing ones. */
@@ -249,6 +256,39 @@ class ClientConnectionTest {
         welcome(blob(), 0);
         reliable(now);
         c.update(now);
+    }
+
+    /** The newest PING sent, positioned after its header. */
+    ByteBuffer lastPing() {
+        for (int i = t.out.size() - 1; i >= 0; i--) {
+            ByteBuffer b = t.out.get(i).duplicate();
+            PacketHeader h = new PacketHeader();
+            if (h.read(b) && h.type() == PacketType.PING) {
+                return b;
+            }
+        }
+        throw new AssertionError("no PING sent");
+    }
+
+    long pings() {
+        return t.types().stream().filter(x -> x == PacketType.PING).count();
+    }
+
+    /** First snapshot tick of {@link #ticking}. */
+    static final int T0 = 500;
+    /** The first entry's tick: T0 plus the initial lead without an RTT, ceil(30 ms / (1/60 s)) + 1 = 3. */
+    static final int E0 = T0 + 3;
+
+    /** PLAYING with the predicted clock started: snapshot T0 at time 0 (60 Hz, no RTT yet). */
+    void ticking() {
+        playing(0);
+        t.in.add(snapshot(T0, 0));
+        c.update(0);
+    }
+
+    /** Time k ticks after the first snapshot, 1 ms into the tick (1e9/60 is not a whole number of nanoseconds). */
+    static long at(int k) {
+        return k * INTERVAL + MS;
     }
 
     @Nested
@@ -477,7 +517,7 @@ class ClientConnectionTest {
     @DisplayName("while playing")
     class Playing {
         @Test
-        @DisplayName("INPUT carries the unacknowledged inputs and the newest snapshot tick; nothing before PLAYING")
+        @DisplayName("INPUT: one entry per predicted tick, newest first, from the first snapshot on; nothing before")
         void input() {
             c.start(0);
             int early = c.sendInput(1, 0, 0);
@@ -486,24 +526,29 @@ class ClientConnectionTest {
             welcome(blob(), 0);
             reliable(0);
             c.update(0);
-            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(500)));
-            t.in.add(pkt(PacketType.SNAPSHOT, SESSION, 0, b -> b.putInt(498)));
-            c.update(MS);
-            for (int i = 1; i <= 5; i++) {
-                c.sendInput(i, i * 10, i * FRAME);
+            int noClock = c.sendInput(1, 0, 0);
+            t.in.add(snapshot(T0, 0));
+            t.in.add(snapshot(T0 - 2, 0));
+            c.update(0);
+            int[] ticks = new int[5];
+            for (int i = 0; i < 5; i++) {
+                ticks[i] = c.sendInput(i + 1, (i + 1) * 10, at(i));
             }
             Input in = Input.of(t.last());
             assertAll(
                 () -> assertEquals(0, early, "no input before PLAYING"),
                 () -> assertEquals(1, sentEarly, "only the CONNECT went out"),
+                () -> assertEquals(0, noClock, "no input before a snapshot starts the predicted clock"),
+                () -> assertArrayEquals(new int[] {E0, E0 + 1, E0 + 2, E0 + 3, E0 + 4}, ticks,
+                    "one entry per tick, starting at the initial lead (3 ticks) over the snapshot tick"),
                 () -> assertEquals(PacketType.INPUT, in.type, "INPUT"),
-                () -> assertEquals(5, in.latest, "latest sequence"),
-                () -> assertEquals(500, in.ackTick, "the newest snapshot tick, not the late one"),
-                () -> assertEquals(5, in.keys.size(), "all five inputs: the server echoed none yet"),
-                () -> assertEquals(List.of(5L, 4L, 3L, 2L, 1L), in.keys, "newest keys first"),
-                () -> assertEquals(List.of(50, 40, 30, 20, 10), in.aims, "aims of the entries"),
-                () -> assertEquals(List.of(500, 498), rec.snapshotTicks, "snapshots delivered in arrival order"),
-                () -> assertEquals(2, c.snapshotsReceived(), "counted"));
+                () -> assertEquals(E0 + 4, in.newest, "the newest tick"),
+                () -> assertEquals(List.of(5L, 4L, 3L, 2L, 1L), in.keys, "every entry: the server reported none applied"),
+                () -> assertEquals(List.of(0L, 0L, 0L, 0L, 0L), in.taps, "no taps"),
+                () -> assertEquals(List.of(50, 40, 30, 20, 10), in.aims, "each entry's aim"),
+                () -> assertEquals(List.of(T0, T0 - 2), rec.snapshotTicks, "snapshots delivered in arrival order"),
+                () -> assertEquals(2, c.snapshotsReceived(), "counted"),
+                () -> assertEquals(3, c.netDiagnostics().leadTicks, 0.1, "the HUD's lead: 3 ticks"));
         }
 
         @Test
@@ -549,6 +594,7 @@ class ClientConnectionTest {
             int afterAck = t.out.size();
             m.send(server);
             reliable(3 * MS);
+            t.in.add(snapshot(T0, 0));
             c.update(3 * MS);
             int beforeInput = t.out.size();
             c.sendInput(0, 0, 3 * MS);
@@ -564,34 +610,26 @@ class ClientConnectionTest {
         }
 
         @Test
-        @DisplayName("our PING goes out 1 s after the first PLAYING flush and every second; a matching PONG is an RTT sample")
+        @DisplayName("our PING goes out on the first PLAYING flush and every second; a matching PONG is an RTT sample")
         void rttProbe() {
             playing(0);
-            c.flush(0); // arms the probe
-            c.flush(999 * MS);
-            boolean early = t.types().contains(PacketType.PING);
-            c.flush(1000 * MS);
-            ByteBuffer p = t.last();
-            PacketHeader h = new PacketHeader();
-            h.read(p);
+            c.flush(0);
+            ByteBuffer p = lastPing();
             int id = p.getInt();
             long sentAt = p.getLong();
-            int pings = (int) t.types().stream().filter(x -> x == PacketType.PING).count();
+            c.flush(999 * MS);
+            int pings = (int) pings();
             t.in.add(pkt(PacketType.PONG, SESSION, 0, b -> b.putInt(id).putLong(sentAt)));
-            c.update(1180 * MS);
+            c.update(180 * MS);
             double rtt = c.netDiagnostics().rttMs();
-            c.flush(1500 * MS);
-            int stillOne = (int) t.types().stream().filter(x -> x == PacketType.PING).count();
-            c.flush(2000 * MS);
-            int two = (int) t.types().stream().filter(x -> x == PacketType.PING).count();
+            c.flush(1000 * MS);
+            int two = (int) pings();
             assertAll(
-                () -> assertFalse(early, "no PING before 1 s"),
-                () -> assertEquals(PacketType.PING, h.type(), "a PING at 1 s"),
-                () -> assertEquals(1, pings, "one"),
-                () -> assertEquals(1000 * MS, sentAt, "carrying its send time"),
+                () -> assertEquals(1, pings, "a PING on the first flush (the input lead needs the RTT), one by 999 ms"),
+                () -> assertEquals(0L, sentAt, "carrying its send time"),
                 () -> assertEquals(180, rtt, 1e-9, "the PONG 180 ms later is a 180 ms RTT"),
-                () -> assertEquals(1, stillOne, "none at 1.5 s"),
-                () -> assertEquals(2, two, "the next at 2 s"));
+                () -> assertTrue(c.predictedClock().haveRtt(), "the predicted clock has its RTT"),
+                () -> assertEquals(2, two, "the next at 1 s"));
         }
 
         @Test
@@ -654,12 +692,12 @@ class ClientConnectionTest {
             long early = pings();
             c.flush(8300 * MS);
             assertAll(
-                () -> assertEquals(1, beforePhase, "one PING by 1999 ms"),
-                () -> assertEquals(2, atPhase, "the second at 2000 ms: the phase is kept"),
-                () -> assertEquals(3, afterStall, "one PING after the stall"),
-                () -> assertEquals(3, noBurst, "no catch-up burst"),
-                () -> assertEquals(3, early, "none before 8300 ms"),
-                () -> assertEquals(4, pings(), "the next 1 s after the stall's PING"));
+                () -> assertEquals(2, beforePhase, "the first at 0, the second at 1004 ms, none more by 1999 ms"),
+                () -> assertEquals(3, atPhase, "the third at 2000 ms: the phase is kept"),
+                () -> assertEquals(4, afterStall, "one PING after the stall"),
+                () -> assertEquals(4, noBurst, "no catch-up burst"),
+                () -> assertEquals(4, early, "none before 8300 ms"),
+                () -> assertEquals(5, pings(), "the next 1 s after the stall's PING"));
         }
 
         @Test
@@ -673,25 +711,9 @@ class ClientConnectionTest {
             long stillOne = pings();
             c.flush(3000 * MS);
             assertAll(
-                () -> assertEquals(1, one, "one PING"),
-                () -> assertEquals(1, stillOne, "not again on the next frame"),
-                () -> assertEquals(2, pings(), "the next at 3000 ms"));
-        }
-
-        /** The newest PING sent, positioned after its header. */
-        ByteBuffer lastPing() {
-            for (int i = t.out.size() - 1; i >= 0; i--) {
-                ByteBuffer b = t.out.get(i).duplicate();
-                PacketHeader h = new PacketHeader();
-                if (h.read(b) && h.type() == PacketType.PING) {
-                    return b;
-                }
-            }
-            throw new AssertionError("no PING sent");
-        }
-
-        long pings() {
-            return t.types().stream().filter(x -> x == PacketType.PING).count();
+                () -> assertEquals(2, one, "the first at 0, one at 2000 ms"),
+                () -> assertEquals(2, stillOne, "not again on the next frame"),
+                () -> assertEquals(3, pings(), "the next at 3000 ms"));
         }
 
         @Test
@@ -843,18 +865,20 @@ class ClientConnectionTest {
         }
 
         @Test
-        @DisplayName("sendInput returns the sequence (0 when nothing went out); header acks release our reliable messages")
+        @DisplayName("sendInput returns the entry's tick (0 when nothing went out); header acks release our reliable messages")
         void sequenceAndAck() {
-            playing(0);
-            int s1 = c.sendInput(0, 0, MS);
-            int s2 = c.sendInput(1, 0, MS + FRAME);
+            ticking();
+            int s1 = c.sendInput(0, 0, at(0));
+            int none = c.sendInput(0, 0, at(0) + MS);
+            int s2 = c.sendInput(1, 0, at(1));
             c.flush(MS);
             int unackedBefore = c.channel().unacked();
             t.in.add(pkt(PacketType.ACK, SESSION, 7, b -> { }));
             c.update(200 * MS);
             assertAll(
-                () -> assertEquals(1, s1, "first sequence"),
-                () -> assertEquals(2, s2, "second"),
+                () -> assertEquals(E0, s1, "the first entry's tick"),
+                () -> assertEquals(0, none, "same tick, same keys: nothing"),
+                () -> assertEquals(E0 + 1, s2, "the next tick"),
                 () -> assertEquals(7, unackedBefore, "SETTINGS, DISPLAY, 4 MODIFIER_BANKs and READY in flight"),
                 () -> assertEquals(0, c.channel().unacked(), "acked by the header"));
         }
@@ -863,6 +887,7 @@ class ClientConnectionTest {
         @DisplayName("at most 8 RELIABLE datagrams per flush")
         void flushLimit() {
             playing(0);
+            c.flush(0); // the first PLAYING flush also sends the first PING
             for (int i = 0; i < 12; i++) {
                 ByteBuffer b = c.channel().begin(ReliableType.CHAT);
                 b.put(new byte[1000]);
@@ -975,35 +1000,56 @@ class ClientConnectionTest {
     }
 
     @Nested
-    @DisplayName("INPUT rate")
-    class InputRate {
+    @DisplayName("INPUT per predicted tick")
+    class InputTicks {
         @Test
-        @DisplayName("at 144 fps unchanged keys still average simHz: the send schedule keeps its phase")
-        void phaseKept() {
-            playing(0);
-            long frame = 1_000_000_000L / 144;
-            int sent = 0;
-            for (int f = 0; f < 1440; f++) {
-                if (c.sendInput(3, 0, 100 * MS + f * frame) != 0) {
-                    sent++;
-                }
-            }
-            int fSent = sent;
-            assertTrue(fSent >= 598 && fSent <= 601, "about 600 in 10 s (not 1 per 3 frames = 480): " + fSent);
+        @DisplayName("entry N is final when the clock reaches N; a change within the tick sends an early copy of N+1")
+        void finalAndEarly() {
+            ticking();
+            int fin0 = c.sendInput(0, 0, at(0));
+            int inGapAfterFinal = c.sendInput(4, 0, at(0) + 3 * MS);
+            int early = c.sendInput(4, 0, at(0) + 10 * MS);
+            Input earlyIn = Input.of(t.last());
+            int releasedInGap = c.sendInput(0, 0, at(0) + 12 * MS);
+            int fin1 = c.sendInput(0, 0, at(1));
+            Input fin1In = Input.of(t.last());
+            int pressAgain = c.sendInput(8, 0, at(1) + 9 * MS);
+            Input againIn = Input.of(t.last());
+            c.sendInput(8, 0, at(2));
+            c.sendInput(0, 0, at(2) + 9 * MS);
+            int fin3 = c.sendInput(0, 0, at(3));
+            Input fin3In = Input.of(t.last());
+            assertAll(
+                () -> assertEquals(E0, fin0, "entry E0 at its tick"),
+                () -> assertEquals(0, inGapAfterFinal, "a press 3 ms after a send waits for the 1/120 s ceiling"),
+                () -> assertEquals(E0 + 1, early, "then it sends the next entry early"),
+                () -> assertEquals(4L, (long) earlyIn.keys.get(0), "with the key held so far"),
+                () -> assertEquals(E0 + 1, earlyIn.newest, "as entry E0+1"),
+                () -> assertEquals(0, releasedInGap, "the release 2 ms later waits"),
+                () -> assertEquals(E0 + 1, fin1, "the final E0+1 at its tick"),
+                () -> assertEquals(0L, (long) fin1In.keys.get(0), "keys up"),
+                () -> assertEquals(4L, (long) fin1In.taps.get(0), "the press and release within the tick are a tap"),
+                () -> assertEquals(E0 + 2, pressAgain, "an early copy of E0+2, not a final: E0+1 stays the last final"),
+                () -> assertEquals(8L, (long) againIn.keys.get(0), "with 8"),
+                () -> assertEquals(E0 + 3, fin3, "E0+3"),
+                () -> assertEquals(0L, (long) fin3In.taps.get(0),
+                    "a key pressed in an earlier tick and released in this one is a release, not a tap"),
+                () -> assertEquals(8L, (long) fin3In.keys.get(1), "E0+2 held 8"));
         }
 
         @Test
-        @DisplayName("a 1000 fps render loop sends at most 120 INPUTs per second; steady keys at simHz")
-        void thousandFps() {
-            playing(0);
+        @DisplayName("steady keys send two INPUTs per tick at any frame rate (the final and a mid-tick repeat);"
+            + " toggling keys at most 3 per tick")
+        void rate() {
+            ticking();
             int steady = 0;
-            for (long f = 1; f <= 1000; f++) {
+            for (int f = 0; f < 1000; f++) {
                 if (c.sendInput(7, 0, f * MS) != 0) {
                     steady++;
                 }
             }
             int toggling = 0;
-            for (long f = 1001; f <= 2000; f++) {
+            for (int f = 1000; f < 2000; f++) {
                 if (c.sendInput(f & 1, 0, f * MS) != 0) {
                     toggling++;
                 }
@@ -1011,146 +1057,144 @@ class ClientConnectionTest {
             int fSteady = steady;
             int fToggling = toggling;
             assertAll(
-                () -> assertTrue(fSteady >= 58 && fSteady <= 61, "unchanged keys: about simHz = 60 per second, got " + fSteady),
-                () -> assertTrue(fToggling >= 110 && fToggling <= 120, "keys changing every frame: capped near 120/s, got "
-                    + fToggling),
-                () -> assertEquals(fSteady + fToggling, c.input().latestSeq(), "a sequence only for each datagram sent"),
-                () -> assertEquals(fSteady + fToggling, inputs().size(), "one INPUT datagram per sequence"));
+                () -> assertEquals(120, fSteady, 1, "steady keys at 1000 fps: the final and a repeat per tick (60 Hz)"),
+                () -> assertTrue(fToggling <= 180, "toggling: the final per tick plus early copies 1/120 s apart ("
+                    + fToggling + ")"),
+                () -> assertTrue(fToggling >= 120, "early copies do go out (" + fToggling + ")"),
+                () -> assertEquals(fSteady + fToggling, inputs().size(), "one INPUT datagram per send"));
         }
 
         @Test
-        @DisplayName("a key change at 60 fps is sent the same frame; unchanged keys wait for 1/simHz")
-        void changeSentAtOnce() {
-            playing(0);
-            long t0 = 100 * MS;
-            int first = c.sendInput(0, 0, t0);
-            int sameKeysNextFrame = c.sendInput(0, 0, t0 + INTERVAL - 1);
-            int sameKeysDue = c.sendInput(0, 0, t0 + INTERVAL);
-            int pressed = c.sendInput(4, 0, t0 + INTERVAL + FRAME);
+        @DisplayName("half a tick after the last send, unchanged keys repeat the INPUT (a second copy before the deadline)")
+        void repeat() {
+            ticking();
+            c.sendInput(3, 0, at(0));
+            int early = c.sendInput(3, 0, at(0) + 7 * MS);
+            int half = c.sendInput(3, 0, at(0) + 9 * MS);
+            Input in = Input.of(t.last());
+            int again = c.sendInput(3, 0, at(0) + 15 * MS);
             assertAll(
-                () -> assertEquals(1, first, "the first input goes out at once"),
-                () -> assertEquals(0, sameKeysNextFrame, "unchanged keys are not resent before 1/simHz"),
-                () -> assertEquals(2, sameKeysDue, "unchanged keys are resent at exactly 1/simHz"),
-                () -> assertEquals(3, pressed, "a changed mask goes out in the frame it changed"),
-                () -> assertEquals(4L, inputs().get(2).keys.get(0), "with the new mask"));
+                () -> assertEquals(0, early, "nothing before half a tick (8.3 ms)"),
+                () -> assertEquals(E0, half, "the repeat carries the newest entry"),
+                () -> assertEquals(E0, in.newest, "for E0"),
+                () -> assertEquals(3L, (long) in.keys.get(0), "unchanged"),
+                () -> assertEquals(0, again, "not again within the half tick"),
+                () -> assertEquals(2, inputs().size(), "two datagrams"));
         }
 
         @Test
-        @DisplayName("a change within 1/120 s is coalesced: sent at the ceiling with the current mask and summed aim")
-        void coalesce() {
-            playing(0);
-            long t0 = 100 * MS;
-            c.sendInput(1, 5, t0);
-            int tooSoon = c.sendInput(2, 7, t0 + 2 * MS);
-            int stillSoon = c.sendInput(3, 11, t0 + ClientConnection.MIN_INPUT_GAP_NANOS - 1);
-            int atCeiling = c.sendInput(3, 13, t0 + ClientConnection.MIN_INPUT_GAP_NANOS);
-            Input last = inputs().get(inputs().size() - 1);
+        @DisplayName("aim is summed per entry (early copies carry the sum so far) and saturates at the i16 range")
+        void aim() {
+            ticking();
+            c.sendInput(1, 0, at(0));
+            c.sendInput(1, 30_000, at(0) + MS);
+            c.sendInput(2, 30_000, at(0) + 9 * MS);
+            Input early = Input.of(t.last());
+            c.sendInput(2, 5, at(0) + 10 * MS);
+            c.sendInput(2, 0, at(1));
+            Input fin = Input.of(t.last());
+            c.sendInput(2, -40_000, at(1) + MS);
+            c.sendInput(2, 0, at(2));
+            Input next = Input.of(t.last());
             assertAll(
-                () -> assertEquals(0, tooSoon, "2 ms after a send: held back"),
-                () -> assertEquals(0, stillSoon, "just under 1/120 s: held back"),
-                () -> assertEquals(2, atCeiling, "1/120 s after the last send: sent"),
-                () -> assertEquals(3L, last.keys.get(0), "the coalesced INPUT carries the current mask"),
-                () -> assertEquals(7 + 11 + 13, (int) last.aims.get(0), "aim of the held frames is summed"),
-                () -> assertEquals(5, (int) last.aims.get(1), "the earlier input keeps its own aim"),
-                () -> assertEquals(2, c.input().latestSeq(), "held frames record no sequence"));
+                () -> assertEquals(E0 + 1, early.newest, "an early copy of E0+1"),
+                () -> assertEquals(32767, (int) early.aims.get(0), "60000 so far, clamped"),
+                () -> assertEquals(32767, (int) fin.aims.get(0), "the final: still clamped"),
+                () -> assertEquals(-32768, (int) next.aims.get(0), "the next entry starts from 0: -40000 clamped"),
+                () -> assertEquals(32767, (int) next.aims.get(1), "the previous entry unchanged"));
         }
 
         @Test
-        @DisplayName("summed aim saturates at the i16 range")
-        void aimClamp() {
-            playing(0);
-            c.sendInput(1, 0, 100 * MS);
-            c.sendInput(1, 30_000, 101 * MS);
-            c.sendInput(1, 30_000, 102 * MS);
-            c.sendInput(1, 0, 100 * MS + INTERVAL);
-            c.sendInput(1, -30_000, 100 * MS + INTERVAL + MS);
-            c.sendInput(1, -30_000, 100 * MS + INTERVAL + 2 * MS);
-            c.sendInput(1, -30_000, 100 * MS + INTERVAL + 3 * MS);
-            c.sendInput(1, 0, 100 * MS + 2 * INTERVAL);
-            List<Input> in = inputs();
-            assertAll(
-                () -> assertEquals(32767, (int) in.get(1).aims.get(0), "positive sum clamps to 32767"),
-                () -> assertEquals(-32768, (int) in.get(2).aims.get(0), "negative sum clamps to -32768"));
-        }
-
-        @Test
-        @DisplayName("redundancy: every entry newer than the echoed lastInputSeq, at least 1 and at most 8")
-        void redundancyFollowsAck() {
-            playing(0);
-            for (int i = 1; i <= 12; i++) {
-                c.sendInput(i, 0, i * INTERVAL);
+        @DisplayName("redundancy: every entry newer than the newest snapshot's inputTick, at least 1, at most 8")
+        void redundancy() {
+            ticking();
+            for (int i = 0; i < 12; i++) {
+                c.sendInput(i, 0, at(i));
             }
             int capped = inputs().get(11).keys.size();
-            t.in.add(snapshot(100, 9));
-            c.update(13 * INTERVAL);
-            c.sendInput(13, 0, 13 * INTERVAL);
+            t.in.add(snapshot(T0 + 1, E0 + 9));
+            c.update(at(12));
+            c.sendInput(12, 0, at(12));
             Input afterAck = inputs().get(12);
-            t.in.add(snapshot(102, 13));
-            c.update(14 * INTERVAL);
-            c.sendInput(14, 0, 14 * INTERVAL);
-            int allAcked = inputs().get(13).keys.size();
-            t.in.add(snapshot(104, 99));
-            t.in.add(snapshot(103, 14));
-            t.in.add(snapshot(106, 5));
-            c.update(15 * INTERVAL);
-            int ignored = c.ackedInputSeq();
+            int acked = c.ackedInputTick();
+            t.in.add(snapshot(T0 + 2, E0 + 99));
+            t.in.add(snapshot(T0 + 1, E0 + 12));
+            c.update(at(13));
+            c.sendInput(13, 0, at(13));
+            Input ignored = inputs().get(13);
+            t.in.add(snapshot(T0 + 3, E0 + 13));
+            c.update(at(14));
+            c.sendInput(14, 0, at(14));
+            int allApplied = inputs().get(14).keys.size();
             assertAll(
-                () -> assertEquals(8, capped, "12 unacknowledged inputs: capped at 8"),
-                () -> assertEquals(List.of(13L, 12L, 11L, 10L), afterAck.keys, "acked up to 9: entries 10..13"),
-                () -> assertEquals(1, allAcked, "everything older acked: only the new entry"),
-                () -> assertEquals(13, ignored,
-                    "a lastInputSeq ahead of anything sent, from an older tick, or older than the acked one, is ignored"));
+                () -> assertEquals(8, capped, "12 unacknowledged entries: capped at 8"),
+                () -> assertEquals(3, afterAck.keys.size(), "E0+10..E0+12 are newer than the applied E0+9"),
+                () -> assertEquals(E0 + 9, acked, "the applied tick is kept"),
+                () -> assertEquals(4, ignored.keys.size(),
+                    "an inputTick beyond the newest entry is ignored, and so is an older snapshot's header"),
+                () -> assertEquals(1, allApplied, "everything applied: only the newest"));
         }
 
         @Test
-        @DisplayName("a new session starts with nothing acknowledged: one entry, not the old session's backlog")
-        void redundancyResetsWithSession() {
-            playing(0);
-            for (int i = 1; i <= 12; i++) {
-                c.sendInput(i, 0, i * INTERVAL);
+        @DisplayName("a new session starts with a fresh history: one entry, not the old session's backlog")
+        void newSession() {
+            ticking();
+            for (int i = 0; i < 10; i++) {
+                c.sendInput(i, 0, at(i));
             }
-            c.start(20 * INTERVAL);
-            accept(20 * INTERVAL);
+            c.start(at(20));
+            accept(at(20));
             welcome(blob(), 0);
-            reliable(20 * INTERVAL);
-            c.update(20 * INTERVAL);
-            c.sendInput(1, 0, 21 * INTERVAL);
+            reliable(at(20));
+            c.update(at(20));
+            t.in.add(snapshot(10, 0));
+            c.update(at(20));
+            int tick = c.sendInput(1, 0, at(20));
             Input first = inputs().get(inputs().size() - 1);
             assertAll(
-                () -> assertEquals(13, first.latest, "sequences continue across sessions"),
-                () -> assertEquals(List.of(1L), first.keys, "only the new session's input"));
+                () -> assertEquals(10 + 3, tick, "the new session's clock: snapshot 10 plus the initial lead"),
+                () -> assertEquals(1, first.keys.size(), "one entry"),
+                () -> assertEquals(13, first.newest, "for tick 13, though the old session was past 500"));
         }
 
         @Test
-        @DisplayName("WELCOME's simHz sets the interval; after a long stall the schedule restarts without a burst")
-        void intervalAndStall() {
-            c.start(0);
-            accept(0);
-            Msg.Welcome w = new Msg.Welcome();
-            w.simHz = 30;
-            w.snapshotHz = 15;
-            blob().fill(w);
-            w.send(server);
-            new ConfigTransfer.Sender(blob()).pump(server, 0);
-            reliable(0);
-            c.update(0);
-            long iv = c.inputIntervalNanos();
-            long t0 = 100 * MS;
-            c.sendInput(0, 0, t0);
-            int changeSoon = c.sendInput(5, 0, t0 + ClientConnection.MIN_INPUT_GAP_NANOS);
-            int beforeInterval = c.sendInput(5, 0, t0 + iv - 1);
-            int atInterval = c.sendInput(5, 0, t0 + iv);
-            int afterStall = c.sendInput(5, 0, t0 + 50 * iv + 3);
-            int nextFrame = c.sendInput(5, 0, t0 + 50 * iv + 3 + FRAME);
-            int nextInterval = c.sendInput(5, 0, t0 + 51 * iv + 3);
+        @DisplayName("after a stall the entry is for the tick reached; the skipped ticks hold the previous keys")
+        void stall() {
+            ticking();
+            c.sendInput(5, 0, at(0));
+            int after = c.sendInput(6, 0, at(4));
+            Input in = Input.of(t.last());
+            int nextFrame = c.sendInput(6, 0, at(4) + 2 * MS);
             assertAll(
-                () -> assertEquals(1_000_000_000L / 30, iv, "1/30 s at simHz 30"),
-                () -> assertEquals(2, changeSoon, "a key change 8.3 ms later goes out at once, not after half a tick"),
-                () -> assertEquals(0, beforeInterval, "unchanged keys: not before the interval"),
-                () -> assertEquals(3, atInterval, "at the interval"),
-                () -> assertEquals(4, afterStall, "after a stall: sent at once"),
-                () -> assertEquals(0, nextFrame, "no catch-up burst after a stall"),
-                () -> assertEquals(5, nextInterval, "one interval after the stall send"));
+                () -> assertEquals(E0 + 4, after, "the tick reached"),
+                () -> assertEquals(List.of(6L, 5L, 5L, 5L, 5L), in.keys, "the skipped ticks hold 5"),
+                () -> assertEquals(0, nextFrame, "no burst after the stall"));
+        }
+
+        @Test
+        @DisplayName("header feedback: a starvation flag jumps the clock a tick; the slack reaches the HUD; the RTT sets the lead")
+        void feedback() {
+            ticking();
+            c.sendInput(0, 0, at(0));
+            t.in.add(snapshot(T0 + 1, 0, 8, SnapshotWriter.FLAG_LAST_PART | SnapshotWriter.FLAG_INPUT_STARVED));
+            c.update(at(1));
+            int jumped = c.sendInput(0, 0, at(1));
+            double slack = c.netDiagnostics().inputSlackTicks;
+            c.flush(at(1));
+            ByteBuffer p = lastPing();
+            int id = p.getInt();
+            long sentAt = p.getLong();
+            t.in.add(pkt(PacketType.PONG, SESSION, 0, b -> b.putInt(id).putLong(sentAt)));
+            c.update(at(1) + 100 * MS);
+            int withRtt = c.sendInput(0, 0, at(1) + 100 * MS);
+            double lead = c.netDiagnostics().leadTicks;
+            assertAll(
+                () -> assertEquals(E0 + 2, jumped, "one tick later and one tick up"),
+                () -> assertEquals(1, c.predictedClock().jumps(), "one jump"),
+                () -> assertEquals(0.5, slack, 1e-9, "inputSlack 8/16 tick"),
+                () -> assertEquals(T0 + 7 + 3 + 6, withRtt,
+                    "100 ms RTT: the server's present (snapshot + 7 ticks + RTT/2 = 3 ticks) + ceil((50+30)/16.7)+1 = 6"),
+                () -> assertEquals(6, lead, 0.1, "the HUD's lead over the server's present"));
         }
     }
 
@@ -1320,7 +1364,7 @@ class ClientConnectionTest {
         @Test
         @DisplayName("a receive IOException is 'nothing received': counted, sends pause, the timeout still reconnects")
         void receiveFails() {
-            playing(0);
+            ticking();
             c.sendInput(0, 0, MS);
             t.failReceive = new IOException("network is unreachable");
             int before = t.out.size();
@@ -1342,7 +1386,7 @@ class ClientConnectionTest {
         @Test
         @DisplayName("server port closed (ICMP per datagram): the pause keeps errors far below one per frame; the timeout reconnects")
         void portUnreachableOutage() {
-            playing(0);
+            ticking();
             t.portClosed = true;
             for (long ms = 1; ms <= 10_100; ms += 1) {
                 c.update(ms * MS);
@@ -1360,7 +1404,7 @@ class ClientConnectionTest {
         @Test
         @DisplayName("a send IOException is 'not sent': counted, nothing escapes, and a valid datagram ends the pause")
         void sendFails() {
-            playing(0);
+            ticking();
             t.failSend = new IOException("no route to host");
             long sent = c.packetsSent();
             int seq = c.sendInput(1, 0, MS);
@@ -1370,11 +1414,11 @@ class ClientConnectionTest {
             c.update(MS + 2 * FRAME);
             int afterValid = c.sendInput(3, 0, MS + 2 * FRAME);
             assertAll(
-                () -> assertEquals(1, seq, "the attempt recorded a sequence"),
+                () -> assertEquals(E0, seq, "the attempt recorded its entry"),
                 () -> assertEquals(sent, c.packetsSent() - 1, "only the later INPUT counts as sent"),
                 () -> assertEquals(1, c.ioErrors(), "the failure counted"),
                 () -> assertEquals(0, paused, "the next frame is inside the pause"),
-                () -> assertEquals(2, afterValid, "a valid datagram from the server ends the pause at once"));
+                () -> assertEquals(E0 + 2, afterValid, "a valid datagram from the server ends the pause at once"));
         }
     }
 }

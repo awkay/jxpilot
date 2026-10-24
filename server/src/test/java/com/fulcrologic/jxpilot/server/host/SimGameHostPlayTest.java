@@ -336,27 +336,31 @@ class SimGameHostPlayTest {
     @DisplayName("input and tick")
     class InputAndTick {
         @Test
-        @DisplayName("every queued mask is applied in order, so each press counts; the last one stays the input")
+        @DisplayName("a tap gives a press and a release in its tick; a held key presses once; no input holds the mask")
         void edges() {
             Simulation s = sim("", THREE);
             World w = s.world;
             SimGameHost h = new SimGameHost(s);
             int ann = enter(h, "Ann", 0);
             Player p = w.byId(ann);
-            for (long k : new long[] {DEC, 0, DEC, 0, DEC}) {
-                h.input(ann, 1, k, 7);
-            }
+            h.input(ann, 1, 0, DEC, 7);
             h.tick(1);
-            float three = p.power;
+            float tapped = p.power;
+            long afterTap = p.prevKeys;
+            h.input(ann, 2, DEC, 0, 0);
             h.tick(2);
-            float held = p.power;
-            h.input(ann, 2, DEC, 0);
+            float pressed = p.power;
             h.tick(3);
-            float stillHeld = p.power;
+            float held = p.power;
+            h.input(ann, 4, DEC, DEC, 0);
+            h.tick(4);
+            float tapWhileHeld = p.power;
             assertAll(
-                () -> assertEquals(dec(45f, 3), three, "three presses in one tick: power 45 * 0.9^3"),
-                () -> assertEquals(dec(45f, 3), held, "no new input: the last mask (DEC) is held, no new press"),
-                () -> assertEquals(dec(45f, 3), stillHeld, "DEC again after DEC is no press"),
+                () -> assertEquals(dec(45f, 1), tapped, "a tap alone is one press: power 45 * 0.9"),
+                () -> assertEquals(0L, afterTap, "after the tap the key is up again"),
+                () -> assertEquals(dec(45f, 2), pressed, "DEC held from tick 2 is a second press"),
+                () -> assertEquals(dec(45f, 2), held, "no input for tick 3: DEC is held, no new press"),
+                () -> assertEquals(dec(45f, 2), tapWhileHeld, "a tap of a held key gives no extra press"),
                 () -> assertEquals(DEC, p.prevKeys, "the held mask is the player's"));
         }
 
@@ -383,23 +387,19 @@ class SimGameHostPlayTest {
         }
 
         @Test
-        @DisplayName("a full queue keeps the oldest 15 and the newest mask")
-        void overflow() {
+        @DisplayName("a second input before the tick replaces the first")
+        void replaced() {
             Simulation s = sim("", THREE);
             World w = s.world;
             SimGameHost h = new SimGameHost(s);
             int ann = enter(h, "Ann", 0);
             Player p = w.byId(ann);
-            for (int i = 0; i < SimGameHost.INPUT_QUEUE / 2; i++) {
-                h.input(ann, i, DEC, 0);
-                h.input(ann, i, 0, 0);
-            }
-            h.input(ann, 99, INC, 0);
+            h.input(ann, 1, DEC, 0, 0);
+            h.input(ann, 1, INC, 0, 0);
             h.tick(1);
-            float expected = (float) (dec(45f, 8) * 1.10);
             assertAll(
-                () -> assertEquals(expected, p.power, "8 DEC presses, then INC replaces the 16th entry (a release)"),
-                () -> assertEquals(INC, p.prevKeys, "the newest mask is the held one"));
+                () -> assertEquals((float) (45f * 1.10), p.power, "only INC is applied"),
+                () -> assertEquals(INC, p.prevKeys, "INC is the held mask"));
         }
 
         @Test

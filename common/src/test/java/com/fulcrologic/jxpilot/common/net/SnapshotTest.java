@@ -56,6 +56,32 @@ class SnapshotTest {
     @Nested
     @DisplayName("header and relative positions")
     class Header {
+        static int slack(int v) {
+            ByteBuffer b = ByteBuffer.allocate(64);
+            new SnapshotWriter().begin(b, 1, 1, v, 0, 1, 0, 0, 0);
+            b.flip();
+            SnapshotReader r = new SnapshotReader();
+            r.begin(b);
+            return r.inputSlack();
+        }
+
+        @Test
+        @DisplayName("inputSlack: signed 1/16 ticks clamped to -127..127, NO_SLACK kept and the default")
+        void inputSlack() {
+            ByteBuffer b = ByteBuffer.allocate(64);
+            new SnapshotWriter().begin(b, 1, 1, 0, 1, 0, 0, 0);
+            b.flip();
+            SnapshotReader r = new SnapshotReader();
+            r.begin(b);
+            assertAll(
+                () -> assertEquals(8, slack(8), "half a tick ahead"),
+                () -> assertEquals(-5, slack(-5), "late arrivals are negative"),
+                () -> assertEquals(127, slack(1000), "clamped to 127"),
+                () -> assertEquals(-127, slack(-1000), "clamped to -127, never NO_SLACK"),
+                () -> assertEquals(SnapshotWriter.NO_SLACK, slack(SnapshotWriter.NO_SLACK), "NO_SLACK is kept"),
+                () -> assertEquals(SnapshotWriter.NO_SLACK, r.inputSlack(), "the overload without slack writes NO_SLACK"));
+        }
+
         @Test
         @DisplayName("header fields and wrap-aware relative positions")
         void header() {
@@ -90,7 +116,7 @@ class SnapshotTest {
             boolean headerOk = r.begin(b);
             assertAll(
                 () -> assertEquals(123456, r.tick(), "carries the tick"),
-                () -> assertEquals(77, r.lastInputSeq(), "carries the last applied input sequence"),
+                () -> assertEquals(77, r.inputTick(), "carries the tick whose input was applied"),
                 () -> assertEquals(1, r.part(), "carries the part index"),
                 () -> assertEquals(3, r.partCount(), "carries the part count"),
                 () -> assertEquals(SnapshotWriter.FLAG_LAST_PART, r.flags(), "carries the flags"),
@@ -499,7 +525,7 @@ class SnapshotTest {
                 () -> assertEquals(14, Records.Ship.SIZE, "ships are 14 bytes"),
                 () -> assertEquals(2, Records.Sound.SIZE, "sound events are 2 bytes"),
                 () -> assertEquals(5, Section.HEADER_SIZE, "section headers are 5 bytes"),
-                () -> assertEquals(15, SnapshotWriter.HEADER_SIZE, "snapshot headers are 15 bytes"),
+                () -> assertEquals(16, SnapshotWriter.HEADER_SIZE, "snapshot headers are 16 bytes"),
                 () -> assertEquals(0, Section.recordSize(0), "type 0 is unassigned"),
                 () -> assertEquals(0, Section.recordSize(-1), "negative types are unknown"),
                 () -> assertEquals(0, Section.recordSize(256), "types above 255 are unknown"));
@@ -566,17 +592,17 @@ class SnapshotTest {
             int radarHeavy = scene(8, 0, 0, 332);
             int radarHeavyAll = scene(31, 0, 0, 332);
             assertAll(
-                () -> assertEquals(8 + 15 + (5 + 47) + (5 + 15 * 14) + 3 * 5 + 150 * 6 + (5 + 5 * 27) + (5 + 15 * 3),
-                    fight, "fight = 1395 bytes"),
-                () -> assertEquals(1395, fight, "fight size in bytes"),
+                () -> assertEquals(8 + 16 + (5 + 47) + (5 + 15 * 14) + 3 * 5 + 150 * 6 + (5 + 5 * 27) + (5 + 15 * 3),
+                    fight, "fight = 1396 bytes"),
+                () -> assertEquals(1396, fight, "fight size in bytes"),
                 () -> assertTrue(fight <= 1800, "the fight with thrusting ships is within the 1.8 KB target"),
-                () -> assertEquals(1345, fightNoRadar, "the fight without radar (2 of 3 snapshots) is 1345 bytes"),
-                () -> assertEquals(419, typical, "typical scene is 419 bytes"),
+                () -> assertEquals(1346, fightNoRadar, "the fight without radar (2 of 3 snapshots) is 1346 bytes"),
+                () -> assertEquals(420, typical, "typical scene is 420 bytes"),
                 () -> assertTrue(typical <= Protocol.MAX_PACKET, "a typical scene fits one datagram"),
-                () -> assertEquals(8 + 15 + 52 + (5 + 8 * 14) + (5 + 332 * 3), radarHeavy,
-                    "radar-heavy: 332 blips at 3 bytes plus 8 ships = 1193 bytes"),
+                () -> assertEquals(8 + 16 + 52 + (5 + 8 * 14) + (5 + 332 * 3), radarHeavy,
+                    "radar-heavy: 332 blips at 3 bytes plus 8 ships = 1194 bytes"),
                 () -> assertTrue(radarHeavy <= Protocol.MAX_PACKET, "radar-heavy with 8 ships in view fits one datagram"),
-                () -> assertEquals(1515, radarHeavyAll, "radar-heavy with all 31 ships in view is 1515 bytes (2 parts)"));
+                () -> assertEquals(1516, radarHeavyAll, "radar-heavy with all 31 ships in view is 1516 bytes (2 parts)"));
         }
     }
 
@@ -705,8 +731,8 @@ class SnapshotTest {
                 () -> assertEquals(Records.Ship.SIZE, b.get(afterHeader + 1), "writes the record size"),
                 () -> assertEquals(7, b.get(afterHeader + 2), "writes the variant"),
                 () -> assertEquals(2, b.getShort(afterHeader + 3), "patches the count into the section header"),
-                () -> assertEquals(5, b.get(9), "setPartCount patches the header"),
-                () -> assertEquals(9, b.get(10), "setFlags patches the header"),
+                () -> assertEquals(5, b.get(SnapshotWriter.PART_COUNT_OFFSET), "setPartCount patches the header"),
+                () -> assertEquals(9, b.get(SnapshotWriter.FLAGS_OFFSET), "setFlags patches the header"),
                 () -> assertFalse(refused, "refuses to open a section that cannot hold one record"),
                 () -> assertThrows(IllegalStateException.class, w::endSection, "endSection without a section throws"),
                 () -> assertThrows(IllegalArgumentException.class, () -> {

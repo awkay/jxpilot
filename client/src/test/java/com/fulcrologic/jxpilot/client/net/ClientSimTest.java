@@ -104,7 +104,7 @@ class ClientSimTest {
                 () -> assertEquals(2, w.shotCount(), "both shots"),
                 () -> assertTrue(w.particles().count() > 0, "thrust sparks of the robot exist"),
                 () -> assertEquals(KEYS, r.server.lastKeys, "the key mask reached the server"),
-                () -> assertTrue(r.server.ackTick > 0, "INPUT acknowledges snapshot ticks"),
+                () -> assertTrue(r.server.lastInputTick - r.server.tick > 0, "INPUT entries are for ticks ahead of the server's"),
                 () -> assertTrue(r.sim.digest().startsWith("state=PLAYING player=7 map=Fake Arena 20x10"),
                     "digest summarises: " + r.sim.digest()));
         }

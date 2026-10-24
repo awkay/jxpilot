@@ -102,9 +102,9 @@ public final class FakeServer {
     public int connects;
     public int accepts;
     public int inputPackets;
-    public int lastInputSeq;
+    /** The newest tick an INPUT carried an entry for. */
+    public int lastInputTick;
     public long lastKeys;
-    public int ackTick;
     public final List<String> chats = new ArrayList<>();
     /** SETTINGS received, as "power/turnSpeed". */
     public final List<String> settings = new ArrayList<>();
@@ -160,12 +160,9 @@ public final class FakeServer {
                     if (header.session() == SESSION) {
                         channel.onAck(header.reliableAck(), now);
                         inputPackets++;
-                        int seq = rx.getInt(rx.position());
-                        ackTick = rx.getInt(rx.position() + 4);
-                        int count = rx.get(rx.position() + 8) & 0xFF;
-                        if (count > 0 && seq - lastInputSeq > 0) {
-                            lastInputSeq = seq;
-                            lastKeys = rx.getLong(rx.position() + 9);
+                        if (inputReader.wrap(rx) && inputReader.newestTick() - lastInputTick >= 0) {
+                            lastInputTick = inputReader.newestTick();
+                            lastKeys = inputReader.keys(0);
                         }
                     }
                 }
@@ -334,7 +331,7 @@ public final class FakeServer {
 
     private void sendSnapshot() throws IOException {
         begin(PacketType.SNAPSHOT, SESSION);
-        writer.begin(tx, tick, lastInputSeq, 0, 1, SnapshotWriter.FLAG_LAST_PART, 350, 175);
+        writer.begin(tx, tick, Math.min(lastInputTick, tick), 0, 1, SnapshotWriter.FLAG_LAST_PART, 350, 175);
         writer.beginSection(Section.SELF);
         Records.Self.put(writer, PLAYER_ID, 0, 100, 100, 1, 0, 0, 900, 1000, Protocol.NO_ID, 0, 0, 0);
         writer.endSection();
