@@ -125,7 +125,7 @@
             <param>com.fulcrologic.jxpilot.client.sound.*</param>
           </targetClasses>
           <!-- DemoWorld and DemoHud are fake animation data for the demo viewer mode; UdpTransport and
-               ClientSim are I/O edges covered by loopback tests; GameApp and AppLauncher are GL/GLFW glue;
+               ClientSim are I/O edges covered by loopback tests; GameApp, AppLauncher and MapLook are GL/GLFW glue;
                OpenAlDevice is OpenAL glue (SoundSystemTest drives it on a real device when there is one). -->
           <excludedClasses>
             <param>com.fulcrologic.jxpilot.client.viewer.DemoWorld</param>
@@ -135,6 +135,7 @@
             <param>com.fulcrologic.jxpilot.client.xp.XpClientSim*</param>
             <param>com.fulcrologic.jxpilot.client.app.GameApp*</param>
             <param>com.fulcrologic.jxpilot.client.app.AppLauncher</param>
+            <param>com.fulcrologic.jxpilot.client.app.MapLook</param>
             <param>com.fulcrologic.jxpilot.client.sound.OpenAlDevice</param>
           </excludedClasses>
           <targetTests>
