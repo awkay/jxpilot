@@ -59,7 +59,7 @@ public final class Tanks {
 
     /** C {@code TANK_FUEL(n)}: (cap * (5 + (randomMT() &amp; 3))) / 32, a C long. */
     long tankFuel(int n) {
-        return ((long) cap(n) * (5 + (w.rng.nextInt() & 3))) / 32;
+        return ((long) cap(n) * (5 + (w.randomMT() & 3))) / 32;
     }
 
     /** C {@code TANK_MASS}. */

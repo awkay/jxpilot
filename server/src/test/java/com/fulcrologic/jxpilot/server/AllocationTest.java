@@ -32,6 +32,7 @@ import com.fulcrologic.jxpilot.server.sim.Simulation;
 import com.fulcrologic.jxpilot.server.snapshot.SnapshotBuilder;
 import com.fulcrologic.jxpilot.server.world.Events;
 import com.fulcrologic.jxpilot.server.world.Has;
+import com.fulcrologic.jxpilot.server.world.Mods;
 import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
@@ -375,6 +376,7 @@ class AllocationTest {
             parts[i] = ByteBuffer.allocateDirect(Protocol.MAX_PACKET);
         }
         long[] in = new long[w.players.length];
+        warmItemBranches(s, sb, parts, in);
         Rng keys = new Rng(11);
         int[] seen = new int[6];
         long allocated = 0;
@@ -414,6 +416,70 @@ class AllocationTest {
             () -> assertTrue(seen[3] > 0, "laser pulses flew (" + seen[3] + ")"),
             () -> assertTrue(seen[4] > 0, "ECMs went off (" + seen[4] + ")"),
             () -> assertTrue(seen[5] > 0, "detached tanks played (" + seen[5] + ")"));
+    }
+
+    /** Modifier sets the scripted warm-up fires every weapon with: none, nuclear, full nuclear, cluster, mini. */
+    private static final int[] WARM_MODS = {
+        0, Mods.withNuclear(0, Mods.NUCLEAR), Mods.withNuclear(0, Mods.NUCLEAR | Mods.FULLNUCLEAR),
+        Mods.withWarhead(0, 1), Mods.withSpread(Mods.withMini(0, Mods.MINI_MAX), 1),
+        Mods.withLaser(Mods.withPower(Mods.withVelocity(0, 2), 2), Mods.STUN), Mods.withLaser(0, Mods.BLIND)
+    };
+
+    /**
+     * A scripted warm-up before the random phase, so that no first-time path (class loading, lazy init) can land in
+     * the measured window by chance: every human presses every item key alone, with every modifier set, next to a
+     * robot that sits in front of its nose (so ECMs, lasers, transporters, tractor beams and missiles reach a
+     * robot); each round ends with a kill of a human holding more mines and missiles than the initial counts
+     * (thrown and detonated items, explosion, wreckage) and the round's respawn.
+     */
+    private static void warmItemBranches(Simulation s, SnapshotBuilder sb, ByteBuffer[] parts, long[] in) {
+        World w = s.world;
+        for (int i = 0; i < 40; i++) {
+            warmTick(s, sb, parts, in); // robots join
+        }
+        for (int mods : WARM_MODS) {
+            for (int k = 0; k < w.numPlayers; k++) {
+                Player pl = w.playerAt(k);
+                if (pl.robot || pl.tank || (pl.status & Obj.PLAYING) == 0) {
+                    continue;
+                }
+                Player robot = null;
+                for (int r = 0; r < w.numPlayers; r++) {
+                    if (w.playerAt(r).robot && (w.playerAt(r).status & Obj.PLAYING) != 0) {
+                        robot = w.playerAt(r);
+                    }
+                }
+                for (ControlKey key : ITEM_KEYS) {
+                    pl.mods = mods;
+                    if (robot != null) {
+                        robot.initPixels(pl.px + 90 * com.fulcrologic.jxpilot.server.world.Trig.tcos(pl.dir),
+                            pl.py + 90 * com.fulcrologic.jxpilot.server.world.Trig.tsin(pl.dir));
+                    }
+                    in[pl.slot] = key.mask();
+                    warmTick(s, sb, parts, in);
+                    warmTick(s, sb, parts, in);
+                    in[pl.slot] = 0;
+                    warmTick(s, sb, parts, in);
+                }
+                pl.items[com.fulcrologic.jxpilot.common.Item.MINE.ordinal()] = 6;
+                pl.items[com.fulcrologic.jxpilot.common.Item.MISSILE.ordinal()] = 6;
+                pl.status |= Obj.KILLED;
+                for (int t = 0; t < 30; t++) {
+                    warmTick(s, sb, parts, in);
+                }
+            }
+        }
+    }
+
+    private static void warmTick(Simulation s, SnapshotBuilder sb, ByteBuffer[] parts, long[] in) {
+        World w = s.world;
+        s.tick(in);
+        for (int k = 0; k < w.numPlayers; k++) {
+            for (ByteBuffer b : parts) {
+                b.clear();
+            }
+            sb.build(w.playerAt(k), w.tick, 0, (w.tick % 3) == 0, parts);
+        }
     }
 
     private static void count(World w, int[] seen) {
