@@ -483,22 +483,58 @@ public final class Rounds {
     }
 
     /**
-     * The gameDuration part of C {@code Frame_update}, after each frame.
+     * The gameDuration start in C {@code Main_loop} (server.c:261-268), each frame the game runs, before the
+     * objects move.
      * <p>
-     * BEHAVIOR: once the frame clock reaches {@link World#gameOverFrame} the game is over ({@link #gameOver})
-     * and the server is to shut down in 30 seconds ({@link World#shutdownDelay}); only once.
-     * BEHAVIOR: the shutdown countdown runs down by one frame.
+     * BEHAVIOR: the first frame with a human in the game starts the timer once: with gameDuration &gt; 0 the
+     * game ends at wall-clock second (time_t)(gameDuration * 60) + now ({@link World#gameOverTime}).
+     */
+    public void startGameDuration(boolean humans) {
+        if (w.noPlayersEnteredYet && humans) {
+            w.noPlayersEnteredYet = false;
+            if (w.gameDuration > 0) {
+                w.gameOverTime = (long) (w.gameDuration * 60) + w.wallSeconds.getAsLong();
+            }
+        }
+    }
+
+    /**
+     * The gameDuration part of C {@code Frame_update} (frame.c:1256-1267, 1357), after each frame.
+     * <p>
+     * BEHAVIOR: while gameDuration &gt; 0 and the game was not ended by it, the seconds left are
+     * {@link World#gameOverTime} minus the wall clock; when they change from last frame and are &lt;= 0 the
+     * game is over ({@link #gameOver}) and the server shuts down in 30 * FPS frames
+     * ({@link World#shutdownServer}). Otherwise the seconds left count as 0. As in C, a server running only
+     * robots (rawMode) before any human came has no end time yet and ends the game at once.
      */
     public void checkGameDuration() {
-        if (w.shutdownDelay > 0) {
-            w.shutdownDelay--;
+        long newTimeLeft = 0;
+        if (w.gameDuration > 0 && !w.gameOverCalled
+            && w.oldTimeLeft != (newTimeLeft = w.gameOverTime - w.wallSeconds.getAsLong())) {
+            if (newTimeLeft <= 0) {
+                gameOver();
+                w.shutdownServer = 30 * w.params.fps;
+                w.gameOverCalled = true;
+            }
         }
-        if (w.gameOverFrame < 0 || w.frames < w.gameOverFrame) {
-            return;
+        w.oldTimeLeft = newTimeLeft;
+    }
+
+    /**
+     * The shutdown countdown at the top of C {@code Main_loop} (server.c:248-255), every tick whether or not
+     * the game runs.
+     * <p>
+     * BEHAVIOR: with {@link World#shutdownServer} at 0 the server is to stop now (C {@code End_game}: true);
+     * above 0 it counts down by one; at -1 nothing happens.
+     */
+    public boolean shutdownTick() {
+        if (w.shutdownServer >= 0) {
+            if (w.shutdownServer == 0) {
+                return true;
+            }
+            w.shutdownServer--;
         }
-        w.gameOverFrame = -1;
-        gameOver();
-        w.shutdownDelay = 30 * w.params.fps;
+        return false;
     }
 
     /** C {@code Count_rounds}: with roundsToPlay, announce the round and end the game after the last one. */

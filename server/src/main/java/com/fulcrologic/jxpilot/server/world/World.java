@@ -30,6 +30,7 @@ import com.fulcrologic.jxpilot.common.map.Wormhole;
 import com.fulcrologic.jxpilot.common.math.Rng;
 
 import java.util.Arrays;
+import java.util.function.LongSupplier;
 
 /**
  * All simulation state: the map (owned: blocks change when cannons die), resolved parameters, the
@@ -113,13 +114,20 @@ public final class World {
     public int roundsPlayed;
     /** C {@code gameDuration} after {@code Game_Over} sets it to -1 (the game no longer ends rounds). */
     public float gameDuration;
-    /**
-     * Frame ({@link #frames}) at which a positive gameDuration ends the game (C {@code gameOverTime}, which is
-     * wall-clock time from the server start), or -1.
-     */
-    public long gameOverFrame = -1;
-    /** C {@code ShutdownServer}: frames until the server should shut down after the game ended, -1 none. */
-    public int shutdownDelay = -1;
+    /** C {@code time(NULL)}: wall-clock seconds, read by the gameDuration timer only (tests replace it). */
+    public LongSupplier wallSeconds = () -> System.currentTimeMillis() / 1000;
+    /** C {@code NoPlayersEnteredYet}: no human has been in the game yet. */
+    public boolean noPlayersEnteredYet = true;
+    /** C {@code gameOverTime}: wall-clock second at which a positive gameDuration ends the game, 0 until set. */
+    public long gameOverTime;
+    /** C {@code Frame_update}'s static {@code oldTimeLeft}: the last frame's seconds left (0 when not timing). */
+    public long oldTimeLeft;
+    /** C {@code Frame_update}'s static {@code game_over_called}. */
+    public boolean gameOverCalled;
+    /** C {@code ShutdownServer}: frames until the server shuts down, -1 none; counted by the host. */
+    public int shutdownServer = -1;
+    /** C {@code ShutdownDelay}: the full shutdown time the clients' meter is drawn against. */
+    public static final int SHUTDOWN_DELAY = 1000;
 
     /** Build the map from {@code options} (map data + settings) and the initial state. */
     public World(Options options, int seed) {
@@ -156,9 +164,6 @@ public final class World {
         initWormholes();
         worms = new WormTable(this);
         gameDuration = params.gameDuration;
-        if (gameDuration > 0) {
-            gameOverFrame = frames + (long) (gameDuration * 60 * params.fps);
-        }
         roundTime = params.maxRoundTime > 0 ? params.maxRoundTime * params.fps : -1;
     }
 

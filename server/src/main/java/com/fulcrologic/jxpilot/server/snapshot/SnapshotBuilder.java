@@ -559,18 +559,20 @@ public final class SnapshotBuilder {
      * BEHAVIOR: the viewer's HUD timers, sent while any is active and once more after they all stopped (so the
      * client, which keeps the last values, sees them cleared): ECM damage frames, the round delay while C
      * would send it (round_delay_send, which runs one second past the delay so clients see 0), and the time
-     * left: the gameDuration timer, else the round timer with maxRoundTime, rounded up to seconds, else -1.
+     * left: the gameDuration timer's wall-clock seconds while it runs, else the round timer with
+     * maxRoundTime, rounded up to seconds, else -1; and the shutdown countdown after a gameDuration game
+     * over (C Send_shutdown: frames left and ShutdownDelay), -1 without one.
      */
     void writeTimers(Player v) {
         int delay = w.roundDelaySend > 0 ? w.roundDelay : 0;
         int fps = w.params.fps;
         int left;
-        if (w.gameOverFrame >= 0) {
-            left = (int) ((w.gameOverFrame - w.frames + fps - 1) / fps);
+        if (w.gameDuration > 0 && w.oldTimeLeft > 0) {
+            left = (int) w.oldTimeLeft;
         } else {
             left = w.params.maxRoundTime > 0 && w.roundTime >= 0 ? (w.roundTime + fps - 1) / fps : -1;
         }
-        boolean active = w.roundDelaySend > 0 || left >= 0 || v.damaged > 0;
+        boolean active = w.roundDelaySend > 0 || left >= 0 || v.damaged > 0 || w.shutdownServer >= 0;
         if (!active && !timersSent[v.slot]) {
             return;
         }
@@ -578,7 +580,8 @@ public final class SnapshotBuilder {
             return;
         }
         timersSent[v.slot] = active;
-        Records.Timers.put(wr, Math.max(0, v.damaged), delay, left);
+        Records.Timers.put(wr, Math.max(0, v.damaged), delay, left, 0, 0, 0, 0, 0, 0, 0, w.shutdownServer,
+            World.SHUTDOWN_DELAY);
     }
 
     /**

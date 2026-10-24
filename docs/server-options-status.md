@@ -170,10 +170,10 @@ follow C; the alias is the C command-line name.
 | `teamShareScore` |  | bool | `no` | ANY+VIS | implemented (Params) |
 | `ecmsReprogramMines` |  | bool | `yes` | ANY+VIS | server-items (weapons) |
 | `ecmsReprogramRobots` |  | bool | `yes` | ANY+VIS | server-items (weapons) |
-| `targetKillTeam` |  | bool | `no` | ANY+VIS | implemented (Params) |
-| `targetTeamCollision` | targetCollision | bool | `yes` | ANY+VIS | implemented (Params) |
-| `targetSync` |  | bool | `no` | ANY+VIS | implemented (Params) |
-| `targetDeadTime` |  | sec | `60` | ANY+VIS | implemented (Params) |
+| `targetKillTeam` |  | bool | `no` | ANY+VIS | implemented (server-modes): destroying a team's last target kills its live members and gives the killer a kill (Targets, walls.c Object_hits_target) |
+| `targetTeamCollision` | targetCollision | bool | `yes` | ANY+VIS | implemented (server-modes): with it off, a team's own shots and ships pass its targets (Segment, Targets; walls.c Move_segment) |
+| `targetSync` |  | bool | `no` | ANY+VIS | implemented (server-modes): a team's targets all come back together (Targets.update, update.c) |
+| `targetDeadTime` |  | sec | `60` | ANY+VIS | implemented (server-modes): seconds a destroyed target stays down (Targets.update, update.c) |
 | `treasureKillTeam` |  | bool | `no` | ANY+VIS | implemented (server-modes): a destroyed treasure kills its team (Balls.punishTeam, play.c Punish_team) |
 | `captureTheFlag` | ctf | bool | `no` | ANY+VIS | implemented (server-modes): a ball is cashed only while the home treasure holds its own ball (Balls.atTreasure, walls.c Move_segment) |
 | `treasureCollisionDestroys` | treasureCollisionDestroy | bool | `yes` | ANY+VIS | implemented (server-modes): a ball hit by a ship, an asteroid or an object dies and is recreated (Balls, Asteroids) |
@@ -186,7 +186,7 @@ follow C; the alias is the C command-line name.
 | `wreckageCollisionMayKill` | wreckageUnshieldedCollisionKills | bool | `no` | ANY+VIS | implemented (server-batch2): wreckage kills unshielded ships without armor, or takes one armor (collision.c:1099-1138); robots avoid it |
 | `asteroidCollisionMayKill` | asteroidUnshieldedCollisionKills | bool | `yes` | ANY+VIS | implemented (server-modes): an unshielded ship without armor or out of fuel hit by an asteroid dies (Asteroids.playerHit, collision.c Player_collides_with_asteroid) |
 | `ignore20MaxFPS` |  | bool | `true` | CMD+DEF+VIS | not applicable: the native protocol has no client maxFPS request; snapshots run at the map's framesPerSecond |
-| `timing` | race | bool | `no` | ANY+VIS | implemented (MapLoader) |
+| `timing` | race | bool | `no` | ANY+VIS | implemented (server-modes): race mode: checkpoints, laps, lap times, race scoring and the TIMING message (Race, collision.c, player.c) |
 | `ballrace` |  | bool | `false` | ANY+VIS | implemented (server-modes): in race mode a ball passing a checkpoint advances its owner (Balls.collide, collision.c BallCollision) |
 | `ballraceConnected` |  | bool | `false` | ANY+VIS | implemented (server-modes): with ballrace, only a connected ball counts (Balls.collide) |
 | `edgeWrap` |  | bool | `no` | ANY+VIS | implemented (MapLoader) |
@@ -340,7 +340,7 @@ follow C; the alias is the C command-line name.
 | `maxTractorBeams` |  | int | `4` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
 | `maxAutopilots` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
 | `maxEmergencyShields` |  | int | `10` | ANY+VIS | read (Params); the feature belongs to server-items (counts are kept; using the items is M2 items work) |
-| `gameDuration` | time | real | `0.0` | ANY+VIS | implemented (Params) |
+| `gameDuration` | time | real | `0.0` | ANY+VIS | implemented (server-modes): the game ends gameDuration wall-clock minutes after the first human entered, and the server stops 30 s of frames later (Rounds, SimGameHost, Server; server.c:248-268, frame.c:1256-1267) |
 | `allowViewing` |  | bool | `false` | ANY+VIS | not implemented, no owner: player locks (event.c Player_lock_*, the LOCK keys) and viewing through a locked player are not ported yet; these options only change those |
 | `friction` |  | real | `0.0` | ANY+VIS | implemented (Params) |
 | `blockFriction` |  | real | `0.0` | ANY+VIS | implemented (Params) |

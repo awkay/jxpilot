@@ -101,7 +101,9 @@ class SnapshotModesTest {
                         }
                         case Section.TIMERS -> {
                             tm.wrap(r, i);
-                            o.timers.add(tm.damaged() + ":" + tm.roundDelay() + ":" + tm.timeLeft());
+                            o.timers.add(tm.damaged() + ":" + tm.roundDelay() + ":" + tm.timeLeft()
+                                + (tm.shutdownCount() >= 0 ? " shutdown " + tm.shutdownCount() + "/" + tm.shutdownDelay()
+                                : ""));
                         }
                         case Section.BALL -> {
                             bl.wrap(r, i);
@@ -189,6 +191,33 @@ class SnapshotModesTest {
             () -> assertTrue(o.wrecks().get(0).startsWith("315,105:"), "at its place"),
             () -> assertEquals(List.of(Records.ShipFlags.HAS_BALL | Records.ShipFlags.REPAIRING), o.shipFlags(),
                 "H carries a ball and repairs"));
+    }
+
+    @Test
+    @DisplayName("gameDuration: the wall-clock seconds left while it runs, then the shutdown countdown (C Send_shutdown)")
+    void gameDurationTimers() {
+        Simulation s = TestWorlds.sim("teamPlay: yes\ngravity: 0\ngameDuration: 1\nmaxRoundTime: 60\n", ROWS);
+        World w = s.world;
+        Player v = TestWorlds.join(s, "V", 1);
+        long[] now = {500};
+        w.wallSeconds = () -> now[0];
+        w.roundTime = 14 * 10;
+        Out before = build(s, v, false);
+        s.rounds.startGameDuration(true);
+        s.rounds.checkGameDuration();
+        Out running = build(s, v, false);
+        now[0] = 560;
+        s.rounds.checkGameDuration();
+        w.roundTime = -1;
+        Out over = build(s, v, false);
+        w.shutdownServer = -1;
+        Out stopped = build(s, v, false);
+        assertAll(
+            () -> assertEquals(List.of("0:0:10"), before.timers(), "not started: the round timer"),
+            () -> assertEquals(List.of("0:0:60"), running.timers(), "60 s left on the wall clock"),
+            () -> assertEquals(List.of("0:0:-1 shutdown 420/1000"), over.timers(),
+                "game over: 30 * 14 frames to shutdown, against C's ShutdownDelay 1000"),
+            () -> assertEquals(List.of("0:0:-1"), stopped.timers(), "no countdown: the all-clear record"));
     }
 
     @Test

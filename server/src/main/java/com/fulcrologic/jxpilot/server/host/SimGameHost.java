@@ -77,6 +77,7 @@ public final class SimGameHost implements GameHost {
     private final SnapshotBuilder builder;
     private final Talk talk;
     private final boolean rawMode;
+    private boolean shutdown;
     private final String mapName;
     private final String mapAuthor;
 
@@ -477,11 +478,19 @@ public final class SimGameHost implements GameHost {
      * stays its input, robots get none, and the sim runs tick {@code tick}. Otherwise robots are disabled, the
      * world only takes the tick number and queued input is dropped.
      * BEHAVIOR: a connected human the sim removed during the tick (maxPauseTime) is kicked.
+     * BEHAVIOR: first the shutdown countdown after a gameDuration game over (C Main_loop): once it ran out
+     * nothing else happens and {@link #shutdownDue} is true. The first running tick with a human starts the
+     * gameDuration clock.
      */
     @Override
     public void tick(int tick) {
+        if (shutdown || sim.rounds.shutdownTick()) {
+            shutdown = true;
+            return;
+        }
         runKicks();
-        boolean run = rawMode || humans() > 0;
+        int humans = humans();
+        boolean run = rawMode || humans > 0;
         if (sim.robots.enabled() != run) {
             sim.robots.setEnabled(run);
         }
@@ -493,9 +502,16 @@ public final class SimGameHost implements GameHost {
             return;
         }
         applyQueuedInput();
+        sim.rounds.startGameDuration(humans > 0);
         long from = w.events.seq();
         sim.tick(tick, keysBySlot);
         kickRemoved(from);
+    }
+
+    /** BEHAVIOR: true once the shutdown countdown after a gameDuration game over has run out (C End_game). */
+    @Override
+    public boolean shutdownDue() {
+        return shutdown;
     }
 
     private void runKicks() {

@@ -28,6 +28,7 @@ import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Player;
 import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -37,6 +38,7 @@ import static com.fulcrologic.jxpilot.server.sim.ModeFx.teamSim;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.messages;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("Rounds with treasures (player.c Compute_game_status team part) and the gameDuration timer")
@@ -130,29 +132,118 @@ class RoundsModesTest {
             () -> assertTrue(a.id > 0, "(a)"));
     }
 
-    @Test
-    @DisplayName("gameDuration: game over after that many minutes of game time, then a 30 s shutdown countdown")
-    void duration() {
-        Simulation s = two("gameDuration: 0.1\n");
-        World w = s.world;
-        long end = w.gameOverFrame;
-        w.frames = end - 1;
-        s.rounds.checkGameDuration();
-        int before = w.shutdownDelay;
-        w.frames = end;
-        long from = w.events.seq();
-        s.rounds.checkGameDuration();
-        int after = w.shutdownDelay;
-        s.rounds.checkGameDuration();
-        Simulation off = two("");
-        assertAll(
-            () -> assertEquals(1 + (long) (0.1f * 60 * 14), end, "6 s of frames after the start (frame 1)"),
-            () -> assertEquals(-1, before, "not yet"),
-            () -> assertEquals("Game over...", messages(w, from).get(0), "Game_Over"),
-            () -> assertEquals(30 * 14, after, "shutdown in 30 s"),
-            () -> assertEquals(30 * 14 - 1, w.shutdownDelay, "counting down, and only once over"),
-            () -> assertEquals(-1.0f, w.gameDuration, "rounds are no longer judged"),
-            () -> assertTrue((w.playerAt(0).status & Obj.GAME_OVER) != 0, "everybody GAME_OVER"),
-            () -> assertEquals(-1, off.world.gameOverFrame, "no gameDuration: no timer"));
+    @Nested
+    @DisplayName("gameDuration (server.c Main_loop, frame.c Frame_update: wall clock from the first human)")
+    class Duration {
+        /** A world whose wall clock reads {@code now[0]}. */
+        Simulation timed(String extra, long[] now) {
+            Simulation s = two(extra);
+            s.world.wallSeconds = () -> now[0];
+            return s;
+        }
+
+        @Test
+        @DisplayName("the first frame with a human starts the clock once: end = (time_t)(minutes * 60) + now")
+        void start() {
+            long[] now = {1000};
+            Simulation s = timed("gameDuration: 0.1\n", now);
+            World w = s.world;
+            s.rounds.startGameDuration(false);
+            long beforeHuman = w.gameOverTime;
+            boolean waiting = w.noPlayersEnteredYet;
+            s.rounds.startGameDuration(true);
+            long set = w.gameOverTime;
+            now[0] = 2000;
+            s.rounds.startGameDuration(true);
+            Simulation tiny = timed("gameDuration: 0.01\n", now);
+            tiny.rounds.startGameDuration(true);
+            Simulation none = timed("", now);
+            none.rounds.startGameDuration(true);
+            assertAll(
+                () -> assertEquals(0, beforeHuman, "robots alone do not start it"),
+                () -> assertTrue(waiting, "still waiting for a human"),
+                () -> assertEquals(1006, set, "0.1 min = 6 s after the human came"),
+                () -> assertEquals(1006, w.gameOverTime, "only the first human counts"),
+                () -> assertEquals(2000, tiny.world.gameOverTime, "0.01 min = 0.6 s truncates to 0 s"),
+                () -> assertEquals(0, none.world.gameOverTime, "no gameDuration: no end time"),
+                () -> assertFalse(none.world.noPlayersEnteredYet, "but the first human is noted"));
+        }
+
+        @Test
+        @DisplayName("game over when the seconds left change to <= 0; then a 30 * FPS shutdown; only once")
+        void over() {
+            long[] now = {1000};
+            Simulation s = timed("gameDuration: 0.1\n", now);
+            World w = s.world;
+            s.rounds.startGameDuration(true);
+            s.rounds.checkGameDuration();
+            long left0 = w.oldTimeLeft;
+            now[0] = 1005;
+            s.rounds.checkGameDuration();
+            int notYet = w.shutdownServer;
+            now[0] = 1006;
+            long from = w.events.seq();
+            s.rounds.checkGameDuration();
+            int shutdown = w.shutdownServer;
+            long leftAtEnd = w.oldTimeLeft;
+            now[0] = 1010;
+            w.shutdownServer = 77;
+            s.rounds.checkGameDuration();
+            assertAll(
+                () -> assertEquals(6, left0, "6 s left at the start"),
+                () -> assertEquals(-1, notYet, "1 s left: still running"),
+                () -> assertEquals("Game over...", messages(w, from).get(0), "Game_Over"),
+                () -> assertEquals(30 * 14, shutdown, "the server stops in 30 s of frames"),
+                () -> assertEquals(-1.0f, w.gameDuration, "rounds are no longer judged"),
+                () -> assertTrue((w.playerAt(0).status & Obj.GAME_OVER) != 0, "everybody GAME_OVER"),
+                () -> assertEquals(0, leftAtEnd, "(the last seconds left)"),
+                () -> assertEquals(77, w.shutdownServer, "nothing happens again"),
+                () -> assertEquals(0, w.oldTimeLeft, "the timer is off: 0 left"));
+        }
+
+        @Test
+        @DisplayName("C quirks: 0 s left at the start waits for the next second; robots alone (rawMode) end at once")
+        void quirks() {
+            long[] now = {1000};
+            Simulation tiny = timed("gameDuration: 0.01\n", now);
+            tiny.rounds.startGameDuration(true);
+            tiny.rounds.checkGameDuration();
+            int sameSecond = tiny.world.shutdownServer;
+            now[0] = 1001;
+            tiny.rounds.checkGameDuration();
+            Simulation raw = timed("gameDuration: 5\n", now);
+            raw.rounds.startGameDuration(false);
+            raw.rounds.checkGameDuration();
+            Simulation ended = timed("gameDuration: 5\n", now);
+            ended.rounds.startGameDuration(true);
+            ended.world.gameDuration = -1;
+            now[0] = 999_999;
+            ended.rounds.checkGameDuration();
+            assertAll(
+                () -> assertEquals(-1, sameSecond, "0 left equals the initial 0: no change, no game over"),
+                () -> assertEquals(30 * 14, tiny.world.shutdownServer, "one second later: -1 left, game over"),
+                () -> assertEquals(30 * 14, raw.world.shutdownServer, "no human: end time 0, already past"),
+                () -> assertEquals(-1, ended.world.shutdownServer, "a game ended by rounds stops the timer"));
+        }
+
+        @Test
+        @DisplayName("shutdownTick: -1 does nothing; it counts down to 0, then the server is to stop")
+        void shutdownTick() {
+            Simulation s = two("");
+            World w = s.world;
+            boolean idle = s.rounds.shutdownTick();
+            int idleValue = w.shutdownServer;
+            w.shutdownServer = 2;
+            boolean t1 = s.rounds.shutdownTick();
+            boolean t2 = s.rounds.shutdownTick();
+            int zero = w.shutdownServer;
+            boolean t3 = s.rounds.shutdownTick();
+            assertAll(
+                () -> assertFalse(idle, "no shutdown pending"),
+                () -> assertEquals(-1, idleValue, "stays -1"),
+                () -> assertFalse(t1 || t2, "2 -> 1 -> 0 keep running"),
+                () -> assertEquals(0, zero, "counted down to 0"),
+                () -> assertTrue(t3, "at 0 the server stops (End_game)"));
+        }
     }
 }

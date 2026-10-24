@@ -906,7 +906,7 @@ public final class Records {
      * 10 u16 thrustLeft  12 u16 thrustMax (emergency thrust, max 0 = none)
      * 14 u16 shieldLeft  16 u16 shieldMax (emergency shield, max 0 = none)
      * 18 u16 phasingLeft 20 u16 phasingMax (phasing device, max 0 = none)
-     * 22 i16 shutdownCount (seconds until server shutdown, -1 none)  24 u16 shutdownDelay
+     * 22 i16 shutdownCount (frames until server shutdown, C ShutdownServer, -1 none)  24 u16 shutdownDelay (C ShutdownDelay)
      * </pre>
      * Readers of a shorter (older) record get 0 for the appended fields (-1 for shutdownCount).
      */
