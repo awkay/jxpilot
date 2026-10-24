@@ -155,6 +155,36 @@ class ClientWorldEdgeTest {
     }
 
     @Nested
+    @DisplayName("temporary wormholes")
+    class TempWormholes {
+        @Test
+        @DisplayName("the newest tick's TEMP_WORMHOLE records (all its parts); a newer tick replaces them, older ones are ignored")
+        void newestOnly() {
+            WorldFixture f = new WorldFixture(false);
+            ClientWorld w = f.world;
+            f.begin(100, 0, 2).tempWormhole(3, 4).tempWormhole(5, 6).ingestAtTick(100);
+            f.begin(100, 1, 2).tempWormhole(7, 8).ingestAtTick(100);
+            int first = w.tempWormholes();
+            String third = w.tempWormholeBx(2) + "," + w.tempWormholeBy(2);
+            f.begin(99).tempWormhole(1, 1).ingestAtTick(100);
+            int afterOld = w.tempWormholes();
+            f.begin(101).ingestAtTick(101);
+            int afterNew = w.tempWormholes();
+            f.begin(102);
+            for (int i = 0; i < ClientWorld.TEMP_WORMHOLES + 3; i++) {
+                f.tempWormhole(i, 0);
+            }
+            f.ingestAtTick(102);
+            assertAll(
+                () -> assertEquals(3, first, "both parts of tick 100"),
+                () -> assertEquals("7,8", third, "in order"),
+                () -> assertEquals(3, afterOld, "an older tick does not touch them"),
+                () -> assertEquals(0, afterNew, "tick 101 has none"),
+                () -> assertEquals(ClientWorld.TEMP_WORMHOLES, w.tempWormholes(), "clipped at capacity"));
+        }
+    }
+
+    @Nested
     @DisplayName("ingest boundaries")
     class IngestBounds {
         @Test

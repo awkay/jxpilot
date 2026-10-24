@@ -34,6 +34,7 @@ import com.fulcrologic.jxpilot.server.world.Obj;
 import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Params;
 import com.fulcrologic.jxpilot.server.world.Player;
+import com.fulcrologic.jxpilot.server.world.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
 
 /**
@@ -77,6 +78,9 @@ public final class Debris implements DebrisBurst.Sink {
      * BEHAVIOR: when {@code burstKind >= 0} the quantized burst is recorded as an event for clients.
      * BEHAVIOR: OBJ_SHOT fragments are cluster shots: without shotsGravity they lose GRAVITY, and with
      * shotHitFuelDrainUsesKineticEnergy their mass is mass/(speed/shotSpeed)^2.
+     * BEHAVIOR: replaying a C server's random draws (tests, {@code World.replay}) the burst is still recorded but
+     * the particles are C's own: at the unrounded origin, each drawing its direction, offset, speed and life from
+     * C's draws ({@link #cParticles}).
      *
      * @param color     {@code Records.ObjColor} of the particles
      * @param burstKind {@code Records.BurstKind}, or -1 for particles clients do not draw as a burst
@@ -97,13 +101,14 @@ public final class Debris implements DebrisBurst.Sink {
         if (fx < 0 || fx >= w.pixelWidth || fy < 0 || fy >= w.pixelHeight) {
             return 0;
         }
-        fx = ThrustSparks.wirePos(fx);
-        fy = ThrustSparks.wirePos(fy);
+        boolean c = w.replay != null;
+        float bx = ThrustSparks.wirePos(fx);
+        float by = ThrustSparks.wirePos(fy);
         if (w.wrap) {
-            fx = (float) w.wrapXPixel(fx);
-            fy = (float) w.wrapYPixel(fy);
+            bx = (float) w.wrapXPixel(bx);
+            by = (float) w.wrapYPixel(by);
         }
-        if (fx >= w.pixelWidth || fy >= w.pixelHeight) {
+        if (!c && (bx >= w.pixelWidth || by >= w.pixelHeight)) {
             return 0;
         }
         if (maxLife < minLife) {
@@ -140,9 +145,10 @@ public final class Debris implements DebrisBurst.Sink {
         if (num <= 0) {
             return 0;
         }
+        boolean kinetic = type == Obj.SHOT && p.shotHitFuelDrainUsesKineticEnergy;
         DebrisBurst d = burstKind >= 0 ? w.events.addBurst(burstKind, color, owner, w.tick) : scratch;
-        d.x = fx;
-        d.y = fy;
+        d.x = bx;
+        d.y = by;
         d.vx = vx;
         d.vy = vy;
         d.seed = w.rng.nextInt();
@@ -155,8 +161,69 @@ public final class Debris implements DebrisBurst.Sink {
         d.maxLife = maxLife;
         d.hypotenuse = (float) p.hypotenuse;
         Records.Burst.quantize(d);
-        return expand(d, owner, team, type, mass, status, color, radius,
-            type == Obj.SHOT && p.shotHitFuelDrainUsesKineticEnergy);
+        if (c) {
+            // the burst is still recorded for clients; the particles are C's
+            return cParticles(fx, fy, vx, vy, owner, team, type, mass, status, color, radius, num, minDir, maxDir,
+                minSp, maxSp, minLife, maxLife, kinetic);
+        }
+        return expand(d, owner, team, type, mass, status, color, radius, kinetic);
+    }
+
+    /**
+     * Replaying a C server's random stream (tests): the particles of C {@code Make_debris} (play.c:207-243), each
+     * drawing its direction, offset between it and the next, speed and life in C's order and precision.
+     * <p>
+     * BEHAVIOR: up to {@code num} particles (fewer if the pool fills) at (x, y) with velocity (vx, vy) plus
+     * speed along the interpolated direction; a life whose path would pass the world diagonal is cut to
+     * diagonal / speed.
+     */
+    @SuppressWarnings("checkstyle:ParameterNumber")
+    private int cParticles(float x, float y, float vx, float vy, int owner, int team, int type, float mass,
+                           int status, int color, int radius, int num, int minDir, int maxDir, float minSpeed,
+                           float maxSpeed, int minLife, int maxLife, boolean kinetic) {
+        Objects o = w.objects;
+        // C World.hypotenuse is an int
+        float hypotenuse = (int) w.params.hypotenuse;
+        lastCount = 0;
+        for (int i = 0; i < num; i++) {
+            int h = o.alloc();
+            if (h < 0) {
+                break;
+            }
+            int dir = Trig.mod(minDir + (int) (w.rfrac() * (maxDir - minDir)));
+            int dirPlus = Trig.mod(dir + 1);
+            float dirOff = (float) w.rfrac();
+            float dx = Trig.tcos(dir) + (Trig.tcos(dirPlus) - Trig.tcos(dir)) * dirOff;
+            float dy = Trig.tsin(dir) + (Trig.tsin(dirPlus) - Trig.tsin(dir)) * dirOff;
+            float speed = (float) (minSpeed + w.rfrac() * (maxSpeed - minSpeed));
+            int life = (int) (minLife + w.rfrac() * (maxLife - minLife) + 1);
+            if (life * speed > hypotenuse) {
+                life = (int) (hypotenuse / speed);
+            }
+            lastCount++;
+            o.type[h] = type;
+            o.status[h] = status;
+            o.owner[h] = owner;
+            o.team[h] = team;
+            o.color[h] = color;
+            o.initPixels(h, x, y);
+            o.vx[h] = vx + dx * speed;
+            o.vy[h] = vy + dy * speed;
+            if (kinetic) {
+                float r = speed / w.params.shotSpeed;
+                o.mass[h] = mass / (r * r);
+            } else {
+                o.mass[h] = mass;
+            }
+            if (type == Obj.SHOT) {
+                o.mods[h] = Obj.MOD_CLUSTER;
+            }
+            o.life[h] = life;
+            o.fuseLife[h] = life;
+            o.plRange[h] = radius;
+            o.plRadius[h] = radius;
+        }
+        return lastCount;
     }
 
     /**
@@ -253,9 +320,14 @@ public final class Debris implements DebrisBurst.Sink {
      * <p>
      * BEHAVIOR: red sparks of mass THRUST_MASS and blue afterburner sparks of mass
      * THRUST_MASS*ALT_SPARK_MASS_FACT, owner immune, radius 8.
+     * BEHAVIOR: replaying a C server's random stream (tests), C's own exhaust instead ({@link #cThrust}).
      */
     public void thrust(Player pl) {
         Sounds.play(w, pl.px, pl.py, SoundEvent.THRUST);
+        if (w.replay != null) {
+            cThrust(pl);
+            return;
+        }
         Params p = w.params;
         int dir = pl.dir;
         ThrustSparks.computeWire(w.tick, pl.id, pl.cx / (double) Click.CLICK, pl.cy / (double) Click.CLICK,
@@ -280,6 +352,33 @@ public final class Debris implements DebrisBurst.Sink {
             return true;
         }
         return d.x >= 0 && d.x < w.pixelWidth && d.y >= 0 && d.y < w.pixelHeight;
+    }
+
+    /** C {@code Thrust}'s static {@code keep_rand} (one for the whole server, as in C). */
+    private int cKeepRand;
+
+    /**
+     * Replaying a C server's random stream (tests): C's {@code Thrust} (ship.c:57-111) exhaust, in place of the
+     * client-replayable sparks: the static {@code keep_rand} draws one {@code randomMT()} whenever it shifted down
+     * to 0 (a negative one never does: C's signed shift), then {@link #make} with C's red and blue sparks.
+     */
+    void cThrust(Player pl) {
+        int thisRand = ((cKeepRand >>= 2) != 0 ? cKeepRand : (cKeepRand = w.randomMT())) & 0x03;
+        int tot = (int) ((pl.power * 0.15) + thisRand + 1);
+        int ab = pl.afterburners();
+        int alt = ab != 0 ? (((tot - 1) * ab) >> 4) + 1 : 0;
+        int minDir = (int) (pl.dir + Const.RES / 2 - Const.RES * 0.2 - 1);
+        int maxDir = (int) (pl.dir + Const.RES / 2 + Const.RES * 0.2 + 1);
+        float maxSpeed = (float) (1 + (pl.power * 0.14));
+        int maxLife = 3 + (int) (pl.power * 0.35);
+        float x = pl.px + pl.ship.engineX[pl.dir];
+        float y = pl.py + pl.ship.engineY[pl.dir];
+        int status = Obj.GRAVITY | Obj.OWNERIMMUNE;
+        make(x, y, pl.vx, pl.vy, pl.id, pl.team, Obj.SPARK, (float) ThrustSparks.THRUST_MASS, status,
+            Records.ObjColor.RED, -1, 8, tot - alt, tot - alt, minDir, maxDir, 1.0, maxSpeed, 3, maxLife);
+        make(x, y, pl.vx, pl.vy, pl.id, pl.team, Obj.SPARK,
+            (float) (ThrustSparks.THRUST_MASS * ThrustSparks.ALT_SPARK_MASS_FACT), status, Records.ObjColor.BLUE, -1,
+            8, alt, alt, minDir, maxDir, 1.0, maxSpeed, 3, maxLife);
     }
 
     /**

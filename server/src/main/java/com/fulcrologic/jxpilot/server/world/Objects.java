@@ -58,6 +58,12 @@ public final class Objects {
     public final double[] fuseLife;
     public final int[] plRange;
     public final int[] plRadius;
+    /**
+     * When the object last joined its map cell (C {@code Cell_add_object}: created or moved); {@link Grid}
+     * lists each cell's objects latest first, like C's cell lists.
+     */
+    public final long[] cellSeq;
+    private long cellClock;
     public final int[] color;
     public final int[] missileDir;
     /** Modifier bits ({@link Mods}). */
@@ -115,6 +121,7 @@ public final class Objects {
         fuseLife = new double[capacity];
         plRange = new int[capacity];
         plRadius = new int[capacity];
+        cellSeq = new long[capacity];
         color = new int[capacity];
         missileDir = new int[capacity];
         mods = new int[capacity];
@@ -189,6 +196,7 @@ public final class Objects {
         slot[h] = count;
         active[count++] = h;
         version++;
+        cellSeq[h] = ++cellClock;
         type[h] = 0;
         status[h] = 0;
         owner[h] = Obj.NO_ID;
@@ -241,6 +249,11 @@ public final class Objects {
         slot[h] = -1;
         freeStack[freeTop++] = h;
         version++;
+    }
+
+    /** C {@code Cell_add_object} after a move: the object is now the first of its cell. */
+    public void touchCell(int h) {
+        cellSeq[h] = ++cellClock;
     }
 
     /** True if the handle is live. */

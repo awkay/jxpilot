@@ -152,6 +152,8 @@ final class CTraceItems {
         final List<List<CDraw>> debrisDraws = new ArrayList<>();
         /** Keyboard updates of this tick: player id to its key mask (Java {@link ControlKey} bits). */
         final Map<Integer, Long> keys = new LinkedHashMap<>();
+        /** Every key each player held in any keyboard update of this tick (a tap may press and release in one). */
+        final Map<Integer, Long> keysAny = new LinkedHashMap<>();
         /** Players whose client sent two keyboard updates in this tick (Java sees only the last). */
         final List<Integer> keysTwice = new ArrayList<>();
         final List<CCannon> cannons = new ArrayList<>();
@@ -167,6 +169,7 @@ final class CTraceItems {
         List<CDebris> debris = new ArrayList<>();
         List<List<CDraw>> debrisDraws = new ArrayList<>();
         Map<Integer, Long> keys = new LinkedHashMap<>();
+        Map<Integer, Long> keysAny = new LinkedHashMap<>();
         List<Integer> twice = new ArrayList<>();
         String caller = null;
         boolean first = false;
@@ -217,6 +220,7 @@ final class CTraceItems {
                             twice.add(id);
                         }
                         keys.put(id, mask);
+                        keysAny.merge(id, mask, (a, b) -> a | b);
                         continue;
                     }
                     default -> { }
@@ -237,6 +241,8 @@ final class CTraceItems {
                     fr.debris.addAll(debris);
                     fr.debrisDraws.addAll(debrisDraws);
                     fr.keys.putAll(keys);
+                    fr.keysAny.putAll(keysAny);
+                    keysAny.clear();
                     fr.keysTwice.addAll(twice);
                     twice.clear();
                     draws.clear();
@@ -284,9 +290,11 @@ final class CTraceItems {
                 }
             }
         }
+        // a trace without player items (no --objs, e.g. the game-mode traces) keeps every frame with a player
+        boolean items = frames.values().stream().anyMatch(f -> f.items != null);
         List<CFrame> out = new ArrayList<>();
         for (CFrame f : frames.values()) {
-            if (f.ship != null && f.items != null) {
+            if (f.ship != null && (f.items != null || !items)) {
                 out.add(f);
             }
         }

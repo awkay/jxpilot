@@ -73,7 +73,7 @@ public final class Race {
      * pass (it may have died in it).
      * <p>
      * BEHAVIOR: only in race mode; a ship that started its first lap counts one more race frame.
-     * BEHAVIOR: a ship still alive near its next checkpoint passes it (not in a ball race).
+     * BEHAVIOR: a ship (not a tank) still alive near its next checkpoint passes it (not in a ball race).
      */
     public void playerFrame(Player pl) {
         ModeParams mp = w.modeParams;
@@ -83,7 +83,7 @@ public final class Race {
         if (pl.round != 0) {
             pl.time++;
         }
-        if ((pl.status & (Obj.PLAYING | Obj.KILLED)) == Obj.PLAYING && !mp.ballrace
+        if ((pl.status & (Obj.PLAYING | Obj.KILLED)) == Obj.PLAYING && !pl.tank && !mp.ballrace
             && nearCheckpoint(pl.px, pl.py, pl.check)) {
             passCheckpoint(pl);
         }
@@ -201,7 +201,7 @@ public final class Race {
     /**
      * The race part of C {@code Compute_game_status}.
      * <p>
-     * BEHAVIOR: counts non-paused ships: alive, waiting ('W'), finished this frame (FINISH), finished earlier
+     * BEHAVIOR: counts non-paused ships that are not tanks: alive, waiting ('W'), finished this frame (FINISH), finished earlier
      * (RACE_OVER, each pushes the position down) and active (all but waiting); nothing to do without active
      * or waiting ships.
      * BEHAVIOR: ships that finished this frame share position P: each gets total/finishers points where total
@@ -220,7 +220,7 @@ public final class Race {
         Player lastAlive = null;
         for (int k = 0; k < w.numPlayers; k++) {
             Player pl = w.playerAt(k);
-            if ((pl.status & Obj.PAUSE) != 0) {
+            if ((pl.status & Obj.PAUSE) != 0 || pl.tank) {
                 continue;
             }
             if ((pl.status & Obj.GAME_OVER) == 0) {
@@ -254,7 +254,7 @@ public final class Race {
             }
             for (int k = 0; k < w.numPlayers; k++) {
                 Player pl = w.playerAt(k);
-                if ((pl.status & Obj.PAUSE) != 0 || waiting(pl) || (pl.status & Obj.FINISH) == 0) {
+                if ((pl.status & Obj.PAUSE) != 0 || waiting(pl) || pl.tank || (pl.status & Obj.FINISH) == 0) {
                     continue;
                 }
                 pl.status &= ~Obj.FINISH;
@@ -307,17 +307,23 @@ public final class Race {
      * 5 + active points ("NAME had/shares the best lap time of T s", "[Fastest lap]"/"[Joint fastest lap]");
      * with no lap completed and humans racing: "No-one even managed to complete one lap, you should be ashamed
      * of yourselves.". Then every player is reset for the next race and the round is counted.
+     * BEHAVIOR: tanks take no part (C IS_TANK_PTR); a ship the reset deleted (a robot out of lives) is skipped.
      */
     public void gameOver() {
         int n = w.numPlayers;
         int numOrdered = 0;
         for (int i = 0; i < n; i++) {
             Player pl = w.playerAt(i);
+            if (pl.tank) {
+                // C skips tanks but goes on inserting at player index i, which leaves an unset slot it then
+                // reads; we insert among the ordered players (the same order when no tank comes first)
+                continue;
+            }
             int j;
             if ((pl.status & Obj.PAUSE) != 0 || waiting(pl) || pl.bestLap <= 0) {
-                j = i;
+                j = numOrdered;
             } else {
-                for (j = 0; j < i; j++) {
+                for (j = 0; j < numOrdered; j++) {
                     Player o = w.playerAt(order[j]);
                     if (pl.bestLap < o.bestLap) {
                         break;
@@ -327,7 +333,7 @@ public final class Race {
                     }
                 }
             }
-            for (int k = i - 1; k >= j; k--) {
+            for (int k = numOrdered - 1; k >= j; k--) {
                 order[k + 1] = order[k];
             }
             order[j] = i;
@@ -349,7 +355,7 @@ public final class Race {
         for (int i = n - 1; i >= 0; i--) {
             Player pl = w.playerAt(i);
             pl.status &= ~(Obj.RACE_OVER | Obj.FINISH);
-            if ((pl.status & Obj.PAUSE) != 0 || waiting(pl)) {
+            if ((pl.status & Obj.PAUSE) != 0 || waiting(pl) || pl.tank) {
                 continue;
             }
             active++;
@@ -357,6 +363,9 @@ public final class Race {
                 sim.ships.kill(pl);
             } else {
                 sim.ships.deathReset(pl);
+            }
+            if (!pl.inUse) {
+                continue; // deleted by Kill_player (a robot out of lives): C's pl != Players[i] (player.c:1182)
             }
             if ((pl.bestLap < bestLap || bestLap == 0) && pl.bestLap > 0) {
                 bestLap = pl.bestLap;
@@ -369,7 +378,7 @@ public final class Race {
         if (bestLap > 0) {
             for (int i = 0; i < n; i++) {
                 Player pl = w.playerAt(i);
-                if ((pl.status & Obj.PAUSE) != 0 || waiting(pl)) {
+                if ((pl.status & Obj.PAUSE) != 0 || waiting(pl) || pl.tank) {
                     continue;
                 }
                 if (pl.bestLap == bestLap) {

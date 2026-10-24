@@ -52,7 +52,10 @@ final class CDraws implements World.Draws {
         Map.entry("Items.damage", func("Item_damage")),
         Map.entry("Items.delete", func("Delete_shot")),
         Map.entry("Items.pickup", func("Player_collides_with_item")),
-        Map.entry("Debris.make", d -> "Make_debris".equals(d.func()) && d.first() && !"Thrust".equals(d.caller())),
+        Map.entry("Debris.make", d -> "Make_debris".equals(d.func()) && d.first()),
+        // the particle draws of the Make_debris call whose count Debris.make took last (see take)
+        Map.entry("Debris.cParticles", func("Make_debris")),
+        Map.entry("Debris.cThrust", func("Thrust")),
         Map.entry("Wreckage.make", func("xpref_wreck_rfrac")),
         Map.entry("Missiles.fire", func("Fire_general_shot")),
         Map.entry("Missiles.move", func("Move_smart_shot")),
@@ -81,13 +84,21 @@ final class CDraws implements World.Draws {
         Map.entry("Cannons.aim", func("Cannon_aim")),
         Map.entry("CannonWeapons.fire", func("Cannon_fire")),
         Map.entry("CannonWeapons.throwItems", func("Cannon_throw_items")),
-        Map.entry("Devices.generalTransporter", func("Do_general_transporter")));
+        Map.entry("Devices.generalTransporter", func("Do_general_transporter")),
+        Map.entry("Asteroids.make", func("Make_asteroid")),
+        Map.entry("Asteroids.place", func("Place_asteroid")),
+        Map.entry("Asteroids.update", func("Asteroid_update")),
+        Map.entry("Asteroids.broken", func("Break_asteroid")));
 
     private static final StackWalker WALKER = StackWalker.getInstance();
 
     private final Rng fallback = new Rng(12345);
     private List<CDraw> draws = List.of();
     private boolean[] used = new boolean[0];
+    /** Index of the count draw of the Make_debris call Java is making particles for, or -1. */
+    private int call = -1;
+    /** Draws of that call taken so far (the count included). */
+    private int callTaken;
     private long frame;
     /** Draws matched to C so far. */
     int matched;
@@ -107,6 +118,7 @@ final class CDraws implements World.Draws {
         frame = f;
         draws = d;
         used = new boolean[d.size()];
+        call = -1;
     }
 
     /** End the tick: a C draw of a ported function that Java did not take is a problem. */
@@ -150,6 +162,9 @@ final class CDraws implements World.Draws {
         if (s == null) {
             return null;
         }
+        if (s.equals("Debris.cParticles")) {
+            return particle(real);
+        }
         Predicate<CDraw> p = SITES.get(s);
         for (int i = 0; i < draws.size(); i++) {
             if (!used[i] && p.test(draws.get(i))) {
@@ -160,10 +175,35 @@ final class CDraws implements World.Draws {
                         + " where C drew " + (d.real() ? "rfrac()" : "randomMT()") + " at " + d.site());
                 }
                 matched++;
+                if (s.equals("Debris.make")) {
+                    call = i;
+                    callTaken = 1;
+                }
                 return d;
             }
         }
         problems.add("frame " + frame + ": Java drew in " + s + ", C did not");
+        return null;
+    }
+
+    /**
+     * A particle draw of C's Make_debris (Debris.cParticles): the next draw of the call whose count Debris.make
+     * took. A thrust exhaust's particle draws may have been left out of the trace (compact-rand.sh): then the
+     * draw is the fallback's, as Java's own exhaust would be, without a problem.
+     */
+    private CDraw particle(boolean real) {
+        int i = call + callTaken;
+        if (call >= 0 && i < draws.size() && !used[i] && !draws.get(i).first()
+            && "Make_debris".equals(draws.get(i).func())
+            && java.util.Objects.equals(draws.get(i).caller(), draws.get(call).caller())) {
+            used[i] = true;
+            callTaken++;
+            matched++;
+            return draws.get(i);
+        }
+        if (call < 0 || !"Thrust".equals(draws.get(call).caller())) {
+            problems.add("frame " + frame + ": Java drew a particle in Debris.cParticles, C did not");
+        }
         return null;
     }
 
