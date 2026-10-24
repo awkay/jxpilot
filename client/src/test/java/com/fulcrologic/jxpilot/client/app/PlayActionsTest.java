@@ -98,6 +98,69 @@ class PlayActionsTest {
         }
 
         @Test
+        @DisplayName("only the events present act; macro bits beyond 20 are ignored")
+        void onlyPresentEvents() {
+            AppFixture f = new AppFixture(true).players();
+            PlayActions a = actions(f);
+            options.apply(ClientOption.message(1), "one");
+            options.apply(ClientOption.message(2), "two");
+            a.handle(0, 0, T0);
+            boolean idAfterNone = f.game.scoreboard().idMode();
+            a.handle(KeyRouter.TALK_MACRO, 1 << 20 | 1, T0);
+            assertAll(
+                () -> assertFalse(idAfterNone, "no event: no ID mode"),
+                () -> assertEquals("", outBytes.toString(StandardCharsets.UTF_8), "no event: nothing printed"),
+                () -> assertEquals(List.of("chat:one"), chats(), "macro 1 only; bit 20 is no macro"));
+        }
+
+        @Test
+        @DisplayName("the macro context: self and lock slots, team play, files, randomness")
+        void contextSlots() throws Exception {
+            AppFixture f = new AppFixture(true);
+            f.join(AppFixture.FOE, 2, 0, "Foe", "");
+            f.join(AppFixture.SELF, 1, com.fulcrologic.jxpilot.common.net.Msg.PlayerJoin.FLAG_SELF, "Me", "");
+            f.twice(x -> x.self(0, 100f, 100f, 0f, AppFixture.FOE));
+            PlayActions a = actions(f);
+            java.nio.file.Path tmp = java.nio.file.Files.createTempFile("macro", ".txt");
+            java.nio.file.Files.writeString(tmp, "from a file");
+            java.util.Set<Integer> draws = new java.util.HashSet<>();
+            for (int i = 0; i < 20; i++) {
+                draws.add(a.random(1000));
+            }
+            assertAll(
+                () -> assertEquals(f.game.players().slotOf(AppFixture.SELF), a.selfSlot(), "own slot (not 0 here)"),
+                () -> assertTrue(a.selfSlot() > 0, "the own player joined second"),
+                () -> assertEquals(f.game.players().slotOf(AppFixture.FOE), a.lockSlot(), "the locked player's slot"),
+                () -> assertTrue(a.teamPlay(), "team play from the game"),
+                () -> assertEquals("from a file", a.readFile(tmp.toString()), "files are read"),
+                () -> assertTrue(draws.size() > 1, "random draws vary"),
+                () -> assertEquals("", a.resources().talkMacros[0], "the resources as taken from the options"),
+                () -> assertFalse(new PlayActions(new com.fulcrologic.jxpilot.client.game.ClientGame(), conn, options, out,
+                    err, 1).teamPlay(), "no team play before a WELCOME says so"));
+        }
+
+        @Test
+        @DisplayName("pointer buttons 1 and 5 work; a changed button option applies at once; an action's event returns")
+        void buttonEdges() {
+            AppFixture f = new AppFixture(true).players();
+            PlayActions a = actions(f);
+            InputState input = new InputState(KeyRouter.bindings(null));
+            KeyRouter router = new KeyRouter(input, new TalkLine());
+            a.handle(KeyRouter.POINTER_CONTROL, 0, T0);
+            options.apply(ClientOption.pointerButton(5), "keyFireMissile");
+            a.button(router, 5, true);
+            long five = input.keys();
+            a.button(router, 1, true);
+            long one = input.keys();
+            options.apply(ClientOption.pointerButton(2), "keyIdMode");
+            int ev = a.button(router, 2, true);
+            assertAll(
+                () -> assertNotEquals(0L, five & ControlKey.FIRE_MISSILE.mask(), "button 5, from the changed option"),
+                () -> assertNotEquals(0L, one & ControlKey.FIRE_SHOT.mask(), "button 1"),
+                () -> assertEquals(KeyRouter.ID_MODE, ev, "a client action's event comes back"));
+        }
+
+        @Test
         @DisplayName("the macro context: no lock without an own ship; limited lives from the options; a missing file is null")
         void context() {
             AppFixture f = new AppFixture(true).players();
@@ -205,6 +268,25 @@ class PlayActionsTest {
                 () -> assertEquals(ControlKey.FIRE_MISSILE.mask(), wheel & ControlKey.FIRE_MISSILE.mask(),
                     "wheel up (button 4) taps its function"),
                 () -> assertEquals(0, conn.lastKeys & ControlKey.FIRE_MISSILE.mask(), "released by the next frame"));
+        }
+
+        @Test
+        @DisplayName("window mouse events: under pointer control they steer and press (C's grab); otherwise the C windows get them")
+        void windowRouting() {
+            AppFixture f = new AppFixture(true).players();
+            ClientFrame cf = frame(f, "");
+            cf.step(T0, 800, 600, 1, ClientFrameTest.M, 256, 100);
+            boolean usedOff = cf.mouseMove(700, 300, 266);
+            cf.key(GLFW_KEY_KP_ENTER, GLFW_PRESS, 0, T0);
+            boolean moved = cf.mouseMove(266 + 400 + 30, 300, 266);
+            boolean pressed = cf.mouseButton(GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 266 + 430, 300, 266);
+            cf.step(T0 + 1000, 800, 600, 1, ClientFrameTest.M, 256, 100);
+            assertAll(
+                () -> assertFalse(usedOff, "pointer control off: the game view does not take motion"),
+                () -> assertTrue(moved && pressed, "on: the game view takes both"),
+                () -> assertEquals(30, conn.aims.get(conn.aims.size() - 1), "the 30-pixel move in view coordinates"),
+                () -> assertEquals(ControlKey.SHIELD.mask(), conn.lastKeys & ControlKey.SHIELD.mask(),
+                    "the right button (X button 3) shields"));
         }
 
         @Test

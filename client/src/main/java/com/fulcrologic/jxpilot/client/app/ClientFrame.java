@@ -375,17 +375,28 @@ public final class ClientFrame {
     /**
      * A GLFW mouse button event at window position (x, y) (logical pixels, origin top-left).
      * <p>
-     * BEHAVIOR: the C windows ({@link ClientUi#mouseButton}) get it first; returns whether they used it (an
-     * unused event belongs to the game view, e.g. pointer control).
+     * BEHAVIOR: under pointer control the button is a pointer button ({@link #mouseButton(int, int, long)}, C's
+     * grab); otherwise the C windows ({@link ClientUi#mouseButton}) get it; returns whether it was used.
      *
      * @param viewX where the game view starts (the panel's width plus the gap)
      */
     public boolean mouseButton(int button, int action, double x, double y, int viewX) {
+        if (play.pointer().grabbed()) {
+            mouseButton(button, action, System.nanoTime()); // C: the grabbed pointer belongs to the game view
+            return true;
+        }
         return ui.mouseButton(button, action, x, y, viewX);
     }
 
-    /** BEHAVIOR: pointer motion: the C windows first ({@link ClientUi#mouseMove}); returns whether they used it. */
+    /**
+     * BEHAVIOR: pointer motion: under pointer control it steers ({@link #cursor}, view coordinates); otherwise the
+     * C windows first ({@link ClientUi#mouseMove}); returns whether it was used.
+     */
     public boolean mouseMove(double x, double y, int viewX) {
+        if (play.pointer().grabbed()) {
+            cursor(x - viewX, y);
+            return true;
+        }
         return ui.mouseMove(x, y, viewX);
     }
 

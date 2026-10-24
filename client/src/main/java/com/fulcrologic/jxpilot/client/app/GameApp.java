@@ -245,9 +245,7 @@ public final class GameApp {
                 frame.focusGained();
             }
         });
-        glfwSetMouseButtonCallback(h, (w, button, action, mods) -> frame.mouseButton(button, action, System.nanoTime()));
         glfwSetScrollCallback(h, (w, dx, dy) -> frame.scroll(dy, System.nanoTime()));
-        glfwSetCursorPosCallback(h, (w, x, y) -> frame.cursor(x - viewLeft, y));
     }
 
     /** Left edge of the game view in window coordinates (the panel is on the left). */
