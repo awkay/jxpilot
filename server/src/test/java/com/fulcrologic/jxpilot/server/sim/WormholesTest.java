@@ -79,7 +79,8 @@ class WormholesTest {
         }
 
         @Test
-        @DisplayName("countDown removes expired temporaries (blocks restored, the last takes the freed index)")
+        @DisplayName("countDown removes expired temporaries (blocks restored, the last takes the freed index; as C, "
+            + "its block keeps the index it left, then a new temporary's)")
         void countDown() {
             Simulation s = sim("wormTime: 1\n");
             World w = s.world;
@@ -90,27 +91,43 @@ class WormholesTest {
             t.countDown();
             int afterOne = t.count();
             int movedIdx = w.map.itemId(20, 15);
+            int staleType = t.type(movedIdx);
+            int staleBx = t.bx(movedIdx);
             w.wormCountdown[0] = 3;
             t.countDown();
+            t.addTemp(12, 6, 22, 16);
+            int reused = w.map.itemId(20, 15);
             assertAll(
                 () -> assertEquals(3, afterOne, "the expired IN went"),
                 () -> assertEquals(BlockType.SPACE, w.map.block(10, 5), "its block is SPACE again"),
                 () -> assertEquals(-1, w.map.itemId(10, 5), "and its index restored"),
-                () -> assertEquals(2, movedIdx, "the OUT took index 2"),
+                () -> assertEquals(3, movedIdx, "the moved OUT's block keeps index 3, past the table (map.c:1368-1382)"),
+                () -> assertEquals(WormTable.OUT, staleType, "where the copy it left is read (as C in practice)"),
+                () -> assertEquals(20, staleBx, "(the copy's x)"),
                 () -> assertEquals(20, t.bx(2), "OUT moved to 2"),
+                () -> assertEquals(3, reused, "a new pair takes index 3: the old OUT's block now leads into the new IN"),
+                () -> assertEquals(WormTable.IN, t.type(reused), "(an IN)"),
                 () -> assertEquals(3, t.countdown(2), "its countdown runs on"),
                 () -> assertEquals(2, w.wormCountdown[0], "map countdowns run too"));
         }
 
         @Test
-        @DisplayName("no more than TEMP_CAPACITY temporaries")
+        @DisplayName("no limit, as C's realloc: the table grows past TEMP_CAPACITY and keeps every wormhole")
         void capacity() {
             Simulation s = sim("wormTime: 9\n");
             WormTable t = s.world.worms;
-            for (int i = 0; i < WormTable.TEMP_CAPACITY / 2 + 3; i++) {
-                t.addTemp(10, 5, 20, 15);
+            int pairs = WormTable.TEMP_CAPACITY + 3;
+            for (int i = 0; i < pairs; i++) {
+                t.addTemp(1 + i % 20, 5, 20, 15);
             }
-            assertEquals(WormTable.TEMP_CAPACITY, t.tempCount(), "capped");
+            int first = t.mapCount;
+            int last = t.count() - 2;
+            assertAll(
+                () -> assertEquals(2 * pairs, t.tempCount(), "every pair"),
+                () -> assertEquals(1, t.bx(first), "the first IN kept"),
+                () -> assertEquals(1 + (pairs - 1) % 20, t.bx(last), "the last IN"),
+                () -> assertEquals(last + 1, t.lastDest(last), "leading to its OUT"),
+                () -> assertEquals(9 * 14, t.countdown(last), "with wormTime"));
         }
     }
 

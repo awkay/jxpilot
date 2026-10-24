@@ -35,7 +35,7 @@ import com.fulcrologic.jxpilot.common.map.WorldMap;
  * temporary wormholes exist at a time.
  */
 public final class WormTable {
-    /** Temporary wormholes that can exist at once (C reallocs without a limit). */
+    /** Temporary wormholes the table holds before it grows (C reallocs without a limit; so does this table). */
     public static final int TEMP_CAPACITY = 64;
     /** {@link Wormhole.Type} ordinals as ints. */
     public static final int NORMAL = 0;
@@ -46,13 +46,13 @@ public final class WormTable {
     private final WorldMap map;
     public final int mapCount;
     private int tempCount;
-    private final int[] tBx = new int[TEMP_CAPACITY];
-    private final int[] tBy = new int[TEMP_CAPACITY];
-    private final int[] tType = new int[TEMP_CAPACITY];
-    private final int[] tLastDest = new int[TEMP_CAPACITY];
-    private final int[] tCountdown = new int[TEMP_CAPACITY];
-    private final byte[] tLastBlock = new byte[TEMP_CAPACITY];
-    private final int[] tLastId = new int[TEMP_CAPACITY];
+    private int[] tBx = new int[TEMP_CAPACITY];
+    private int[] tBy = new int[TEMP_CAPACITY];
+    private int[] tType = new int[TEMP_CAPACITY];
+    private int[] tLastDest = new int[TEMP_CAPACITY];
+    private int[] tCountdown = new int[TEMP_CAPACITY];
+    private byte[] tLastBlock = new byte[TEMP_CAPACITY];
+    private int[] tLastId = new int[TEMP_CAPACITY];
 
     WormTable(World w) {
         this.w = w;
@@ -116,11 +116,19 @@ public final class WormTable {
      * C {@code add_temp_wormholes}: an IN wormhole at (xin, yin) leading to an OUT wormhole at (xout, yout), both
      * for wormTime frames; their blocks become WORMHOLE (the old block and object index are kept for later).
      * <p>
-     * BEHAVIOR: nothing when {@link #TEMP_CAPACITY} would be exceeded.
+     * BEHAVIOR: without a limit, as C's realloc: a full table doubles (the only allocation, never in a steady
+     * state).
      */
     public void addTemp(int xin, int yin, int xout, int yout) {
-        if (tempCount + 2 > TEMP_CAPACITY) {
-            return;
+        if (tempCount + 2 > tBx.length) {
+            int n = tBx.length * 2;
+            tBx = java.util.Arrays.copyOf(tBx, n);
+            tBy = java.util.Arrays.copyOf(tBy, n);
+            tType = java.util.Arrays.copyOf(tType, n);
+            tLastDest = java.util.Arrays.copyOf(tLastDest, n);
+            tCountdown = java.util.Arrays.copyOf(tCountdown, n);
+            tLastBlock = java.util.Arrays.copyOf(tLastBlock, n);
+            tLastId = java.util.Arrays.copyOf(tLastId, n);
         }
         int in = count();
         put(tempCount, xin, yin, IN, in + 1);
@@ -144,7 +152,11 @@ public final class WormTable {
 
     /**
      * C {@code remove_temp_wormhole}: the block and object index return, and the last temporary wormhole takes
-     * the freed index. (C does not update the moved wormhole's object index; here it is updated.)
+     * the freed index.
+     * <p>
+     * BEHAVIOR: as C (map.c:1368-1382), the moved wormhole's block keeps its old object index, the slot it left:
+     * entering it finds the copy left there (C reads its shrunk array past the end, which in practice holds the
+     * same copy) until a new temporary wormhole takes that index and the block leads into the new one.
      */
     public void removeTemp(int i) {
         int t = i - mapCount;
@@ -159,9 +171,6 @@ public final class WormTable {
             tCountdown[t] = tCountdown[tempCount];
             tLastBlock[t] = tLastBlock[tempCount];
             tLastId[t] = tLastId[tempCount];
-            if (map.block(tBx[t], tBy[t]) == BlockType.WORMHOLE) {
-                map.setItemId(tBx[t], tBy[t], i);
-            }
         }
     }
 
