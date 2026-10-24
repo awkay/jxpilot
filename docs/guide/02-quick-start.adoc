@@ -85,7 +85,8 @@ built into the jar; `--list-maps` lists them all, and any of them works the same
 (<<07-client-reference.adoc#client-map-names,Map names>>).
 Your player name is your login name; choose another with `--name`. The keys are XPilot's: kbd:[A] and
 kbd:[S] turn, kbd:[Shift] thrusts, kbd:[Enter] fires, kbd:[Space] is the shield, kbd:[M] opens the talk
-line and kbd:[Esc] quits (<<03-playing.adoc#controls,Controls>>).
+line and kbd:[Esc] swaps to the alternative engine settings. To quit, close the window, press kbd:[Cmd+Q] on
+macOS or click QUIT above the score list (<<03-playing.adoc#controls,Controls>>).
 
 To look at a map without playing, use the map viewer:
 `java -jar jxpilot-client-VERSION.jar --view-map default` (add `--demo` to

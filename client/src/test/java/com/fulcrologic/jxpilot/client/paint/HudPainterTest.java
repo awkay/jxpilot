@@ -233,7 +233,7 @@ class HudPainterTest {
                 () -> assertEquals(List.of("'3'@301,354#" + H, "'0'@301,337#" + H), Drawn.runStrings(b),
                     "counts 3 px left of the symbols, baseline v + 8 + 10 / 2"),
                 () -> assertEquals(0, b.segmentCount(), "no lose frame"),
-                () -> assertEquals((784 + 16) / 1024f, b.u(2), 1e-4f, "the symbol's right texel edge is atlasX + 16"));
+                () -> assertEquals((784 + 16) / 2048f, b.u(2), 1e-4f, "the symbol's right texel edge is atlasX + 16"));
         }
 
         @Test

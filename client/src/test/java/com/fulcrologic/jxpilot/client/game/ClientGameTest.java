@@ -156,6 +156,23 @@ class ClientGameTest {
     }
 
     @Test
+    @DisplayName("PLAYER_JOIN's real name and host show in ID mode as C's NAME=REAL@HOST, under NICK=USER@HOST")
+    void identityFromJoin() {
+        ClientGame g = configured();
+        Msg.PlayerJoin j = join(9, 1, "Ann");
+        j.realName.append("ann");
+        j.hostName.append("box.example");
+        g.onReliable(ReliableType.PLAYER_JOIN, payload(j));
+        g.scoreboard().setIdMode(true);
+        g.scoreboard().update(g.players());
+        assertAll(
+            () -> assertEquals("ann", g.players().realName(g.players().slotOf(9)).toString(), "real name kept"),
+            () -> assertEquals("box.example", g.players().host(g.players().slotOf(9)).toString(), "host kept"),
+            () -> assertEquals("Ann=ann@box.example", g.scoreboard().label(0).toString(), "C paint.c:512"),
+            () -> assertEquals("NICK=USER@HOST", g.scoreboard().heading().toString(), "C paint.c:441"));
+    }
+
+    @Test
     @DisplayName("PLAYER_LEAVE logs C's \"NAME left this world.\" except for robots and tanks (client.c:1023)")
     void leftThisWorld() {
         ClientGame g = configured();

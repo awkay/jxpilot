@@ -196,16 +196,18 @@ class ClientFrameTest {
         }
 
         @Test
-        @DisplayName("the score list goes into the panel at the given place; the HUD zoom is set")
+        @DisplayName("the score list goes into the panel under the radar and the button bar; the HUD zoom is set")
         void panel() {
             AppFixture f = new AppFixture(true).players().score(SELF, 5, 3);
             ClientFrame cf = frame(f);
             cf.step(T0, 800, 600, 2, M, 256, 100);
             HudFrame p = cf.panelHud();
+            int top = 100 + (M.ascent() + M.descent() + 8) + 2;
             assertAll(
+                () -> assertEquals(top, cf.ui().scoreTop(), "C: RadarHeight + ButtonHeight + 2"),
                 () -> assertTrue(p.textCount() >= 4, "heading and three rows"),
                 () -> assertEquals(6f, p.textX(0), "left at SCORE_BORDER"),
-                () -> assertEquals(100f + 6 + 10, p.textY(0), "heading baseline: top + border + ascent"),
+                () -> assertEquals(top + 6f + M.ascent(), p.textY(0), "heading baseline: top + border + ascent"),
                 () -> assertEquals(2.0, cf.hud().zoom, "HUD zoom from the step"));
         }
 
@@ -285,7 +287,7 @@ class ClientFrameTest {
         }
 
         @Test
-        @DisplayName("Escape requests quit; the swap key is reported once")
+        @DisplayName("Escape swaps settings (C), keyQuit requests quit; the swap key is reported once")
         void quitAndSwap() {
             ClientFrame cf = new ClientFrame(new AppFixture(true).game, conn, new InputState(KeyRouter.bindings("F12")),
                 new SceneData(), new RadarBlips(4));
@@ -307,9 +309,15 @@ class ClientFrameTest {
             cf.key(GLFW_KEY_E, GLFW_PRESS, 0, T0);
             double fuelShown = cf.hud().fuelCount();
             cf.key(GLFW_KEY_ESCAPE, GLFW_PRESS, 0, T0);
+            boolean afterEscape = cf.quitRequested();
+            cf.input().bindings().bind(com.fulcrologic.jxpilot.client.game.input.ClientAction.QUIT, "F11");
+            cf.key(GLFW_KEY_F11, GLFW_PRESS, 0, T0);
             assertAll(
+                () -> assertFalse(afterEscape, "Escape does not quit"),
                 () -> assertTrue(itemsBefore, "showItems on by default (C)"),
                 () -> assertFalse(itemsToggled, "the owned-items key toggles showItems"),
+                () -> assertFalse(cf.options().flag(com.fulcrologic.jxpilot.client.game.options.ClientOption.SHOW_ITEMS),
+                    "through the showItems option (CONFIG and Save see it)"),
                 () -> assertTrue(messagesBefore, "showMessages on by default (C)"),
                 () -> assertFalse(messagesToggled, "the messages key toggles showMessages"),
                 () -> assertEquals(0.0, fuelBefore, "no fuel notification at start"),
@@ -321,7 +329,7 @@ class ClientFrameTest {
                 () -> assertFalse(noSound, "the swap key is no sound toggle"),
                 () -> assertTrue(sound1, "the sound key is reported"),
                 () -> assertFalse(sound2, "once"),
-                () -> assertTrue(cf.quitRequested(), "Escape: quit"));
+                () -> assertTrue(cf.quitRequested(), "keyQuit: quit"));
         }
 
         @Test

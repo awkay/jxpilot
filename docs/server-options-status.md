@@ -105,10 +105,10 @@ follow C; the alias is the C command-line name.
 | `robotTeam` |  | int | `0` | ANY+VIS | implemented (Params) |
 | `restrictRobots` |  | bool | `true` | ANY+VIS | implemented (Params) |
 | `reserveRobotTeam` |  | bool | `true` | ANY+VIS | implemented (Params) |
-| `robotRealName` |  | string | `robot` | ANY+VIS | used in the logRobots line only (no real names on the wire) |
-| `robotHostName` |  | string | `xpilot.org` | ANY+VIS | unsupported: the native protocol carries no real or host names (C shows them in the player list); robotRealName is only used in the logRobots line |
-| `tankRealName` |  | string | `tank` | ANY+VIS | implemented (server-items): tanks are pseudo-players named "NAME's tank"; the real/host name part is unsupported like robotRealName/robotHostName |
-| `tankHostName` |  | string | `tanks.org` | ANY+VIS | implemented (server-items): tanks are pseudo-players named "NAME's tank"; the real/host name part is unsupported like robotRealName/robotHostName |
+| `robotRealName` |  | string | `robot` | ANY+VIS | implemented (server-batch2): a robot's real name (C robot.c:784), sent in PLAYER_JOIN, shown in ID mode and the logRobots line, matched by player-name commands |
+| `robotHostName` |  | string | `xpilot.org` | ANY+VIS | implemented (server-batch2): a robot's host name (C robot.c:785), sent in PLAYER_JOIN and shown in ID mode |
+| `tankRealName` |  | string | `tank` | ANY+VIS | implemented (server-items, server-batch2): tanks are pseudo-players named "NAME's tank" with this real name (C ship.c:439), sent in PLAYER_JOIN |
+| `tankHostName` |  | string | `tanks.org` | ANY+VIS | implemented (server-items, server-batch2): tanks are pseudo-players named "NAME's tank" with this host name (C ship.c:440), sent in PLAYER_JOIN |
 | `tankScoreDecrement` | tankDecrement | int | `500` | ANY+VIS | implemented (server-items) |
 | `turnThrust` | turnFuel | bool | `false` | ANY+VIS | implemented (Params) |
 | `selfImmunity` |  | bool | `false` | ANY+VIS | implemented (Params) |
@@ -204,7 +204,7 @@ follow C; the alias is the C command-line name.
 | `treasureCollisionMayKill` | treasureUnshieldedCollisionKills | bool | `no` | ANY+VIS | implemented (server-modes): an unshielded ship without armor hit by a ball dies (Balls.playerHit, collision.c Player_collides_with_ball) |
 | `wreckageCollisionMayKill` | wreckageUnshieldedCollisionKills | bool | `no` | ANY+VIS | implemented (server-batch2): wreckage kills unshielded ships without armor, or takes one armor (collision.c:1099-1138); robots avoid it |
 | `asteroidCollisionMayKill` | asteroidUnshieldedCollisionKills | bool | `yes` | ANY+VIS | implemented (server-modes): an unshielded ship without armor or out of fuel hit by an asteroid dies (Asteroids.playerHit, collision.c Player_collides_with_asteroid) |
-| `ignore20MaxFPS` |  | bool | `true` | CMD+DEF+VIS | not applicable: the native protocol has no client maxFPS request; snapshots run at the map's framesPerSecond |
+| `ignore20MaxFPS` |  | bool | `true` | CMD+DEF+VIS | not applicable: C uses it to ignore the 20 fps cap old C clients request; JXPilot clients ask for no frame rate (snapshots follow the map's framesPerSecond) |
 | `timing` | race | bool | `no` | ANY+VIS | implemented (server-modes): race mode: checkpoints, laps, lap times, race scoring and the TIMING message (Race, collision.c, player.c) |
 | `ballrace` |  | bool | `false` | ANY+VIS | implemented (server-modes): in race mode a ball passing a checkpoint advances its owner (Balls.collide, collision.c BallCollision) |
 | `ballraceConnected` |  | bool | `false` | ANY+VIS | implemented (server-modes): with ballrace, only a connected ball counts (Balls.collide) |
@@ -375,7 +375,7 @@ follow C; the alias is the C command-line name.
 | `roundDelay` | roundDelaySeconds | int | `0` | ANY+VIS | implemented (Params) |
 | `maxRoundTime` |  | int | `0` | ANY+VIS | implemented (Params) |
 | `roundsToPlay` |  | int | `0` | ANY+VIS | implemented (Params) |
-| `maxVisibleObject` | maxVisibleObjects | int | `1000` | ANY+VIS | not implemented: the snapshot byte budget (nearest first) limits objects instead |
+| `maxVisibleObject` | maxVisibleObjects | int | `1000` | ANY+VIS | implemented (server-batch2): a viewer gets at most this many objects, the nearest of every kind (SnapshotBuilder, frame.c:648, 739), on top of the snapshot's byte budget; bursts (one record per explosion) are not counted |
 | `pLockServer` |  | bool | `false` | CMD+DEF+VIS | not applicable: JVM server (no mlock, no signal timer) |
 | `timerResolution` |  | int | `0` | CMD+DEF+VIS | not applicable: JVM server (no mlock, no signal timer) |
 | `password` |  | string | `(none)` | CMD+DEF+PWD | implemented (server-commands): `/password` gives operator status; never sent to clients; `/get password` is refused; `/set password` changes it quietly |

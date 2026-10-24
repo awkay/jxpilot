@@ -77,7 +77,7 @@ class SimGameHostEventsTest {
             Player robot = w.playerAt(2);
             h.join("Res", 0, "");
             s.ships.pause(bob, true);
-            ann.score = 12.5;
+            ann.score = 12.5f;
             HostFx.Wire wire = new HostFx.Wire();
             h.initialState(bob.id, wire.out);
             List<String> got = wire.take();
@@ -245,7 +245,7 @@ class SimGameHostEventsTest {
             h.leave(bob);
             h.drainEvents(ann, a.out);
             assertEquals(List.of("BASE " + base + " 2", "EVENT 3 2 " + base + " 0.0",
-                    "MSG 3 from=65535 Bob has entered \"Arena\", made by Bob.", "BASE " + base + " 65535", "LEAVE 2"),
+                    "MSG 3 from=65535 Bob (X) has entered \"Arena\", made by Bob.", "BASE " + base + " 65535", "LEAVE 2"),
                 a.take(), "no PLAYER_JOIN for Bob, who is gone");
         }
 

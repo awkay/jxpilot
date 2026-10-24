@@ -110,6 +110,9 @@ XPilot distribution); see `maps/README.md` (also in the jars)
 |XPilot 4.5.5 server defaults file (`lib/defaults`) |`server/src/main/resources/xpilot/defaults`; inside the
 server and client jars |GPL v2 or later (part of the XPilot distribution); see `server/src/main/resources/xpilot/README.md`
 |Fira Code font |`client/src/main/resources/fonts/` |SIL Open Font License 1.1 (`FiraCode-LICENSE.txt`)
+|Liberation fonts 2.1.5 (Red Hat; Serif Regular/Bold/Italic/BoldItalic, Sans Regular/Bold/BoldItalic, Mono
+Regular/Bold), from github.com/liberationfonts/liberation-fonts |`client/src/main/resources/fonts/Liberation*.ttf`
+|SIL Open Font License 1.1 (`Liberation-LICENSE.txt`)
 |Sound effects: Juhani Junkala, "The Essential Retro Video Game Sound Effects Collection [512 sounds]"
 (opengameart.org) |`client/src/main/resources/sounds/` (21 clips) |CC0 1.0 (`CC0-1.0.txt`; `LICENSE-sounds.txt`: source,
 sha256, per-clip origin and modifications)

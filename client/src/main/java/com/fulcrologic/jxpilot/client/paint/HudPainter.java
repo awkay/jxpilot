@@ -76,8 +76,8 @@ public final class HudPainter {
     public static final int MAX_SHIP_POINTS = 64;
     /** Chords/triangles per circle or disc. */
     public static final int CIRCLE_SEGMENTS = 16;
-    /** UI atlas side in texels (item symbols, see {@link ItemBitmaps}). */
-    public static final int ATLAS_SIZE = 1024;
+    /** UI atlas side in texels (item symbols, see {@link ItemBitmaps}; gl.UiAtlas.SIZE). */
+    public static final int ATLAS_SIZE = 2048;
 
     static final String AUTOPILOT = "Autopilot";
 
@@ -270,6 +270,23 @@ public final class HudPainter {
                 maxWidth = -1;
             }
         }
+    }
+
+    /**
+     * C {@code Paint_item} in a window (the information window's item list), window coordinates y down.
+     * <p>
+     * BEHAVIOR: a BLUE triangle outline through (x - S, y - S), (x, y + S), (x + S, y - S) with
+     * S = {@link PaintConfig#ITEM_TRIANGLE_SIZE}, and the item's symbol in RED with its top-left corner at
+     * (x - ITEM_SIZE / 2, y - S + 2).
+     */
+    public void paintItemIcon(VertexBatch b, ScreenSpace ss, int item, int x, int y) {
+        b.setLineWidth(VertexBatch.DEFAULT_LINE_WIDTH);
+        int s = PaintConfig.ITEM_TRIANGLE_SIZE;
+        int blue = palette.color(Palette.BLUE);
+        seg(b, ss, x - s, y - s, x, y + s, blue);
+        seg(b, ss, x, y + s, x + s, y - s, blue);
+        seg(b, ss, x + s, y - s, x - s, y - s, blue);
+        itemSymbol(b, ss, item, x - PaintConfig.ITEM_SIZE / 2, y - s + 2, palette.color(Palette.RED));
     }
 
     /**

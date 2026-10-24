@@ -58,8 +58,8 @@ class CollisionsTest {
     static final double FUEL0 = 1000 * 256;
 
     /** C score.c Rate(winner, loser). */
-    static double rate(double winner, double loser) {
-        double t = (10.0 * 1024) / (Math.abs(loser - winner) + 1024);
+    static float rate(float winner, float loser) {
+        float t = (10 * 1024) / (Math.abs(loser - winner) + 1024); // C DFLOAT: float arithmetic
         return loser > winner ? 20 - t : t;
     }
 
@@ -134,8 +134,8 @@ class CollisionsTest {
                     "a path across the x seam the other way hits an object just across it"),
                 () -> assertTrue(wrap.inRange(698, 100, 698, 100, 695, 100, 5, 100, 5),
                     "the object's path crossing the seam hits a stationary ship on the high side"),
-                () -> assertTrue(wrap.inRange(100, 695, 100, 5, 100, 698, 100, 698, 5),
-                    "a path across the y seam hits an object just across it"),
+                () -> assertFalse(wrap.inRange(100, 695, 100, 5, 100, 698, 100, 698, 5),
+                    "a path across the y seam misses an object just across it: C's y shift tests 'q crossed' twice"),
                 () -> assertTrue(wrap.inRange(100, 698, 100, 698, 100, 695, 100, 5, 5),
                     "the object's path crossing the y seam hits a stationary ship on the high side"),
                 () -> assertTrue(wrap.inRange(100, 5, 100, 695, 100, 2, 100, 2, 5),
@@ -144,15 +144,15 @@ class CollisionsTest {
                     "an object crossing the seam passes a stationary ship on the low side"),
                 () -> assertFalse(wrap.inRange(695, 100, 5, 100, 350, 100, 350, 100, 5),
                     "a seam-crossing path does not hit an object in the middle of the world"),
-                // Not in C: neither crossed the seam but they sit on opposite sides of it
-                () -> assertTrue(wrap.inRange(2, 100, 2, 100, 698, 100, 698, 100, 10),
-                    "objects 4 px apart across the x seam are in range (fix over C)"),
-                () -> assertTrue(wrap.inRange(698, 100, 698, 100, 2, 100, 2, 100, 10),
-                    "objects across the x seam are in range whichever side p is on"),
-                () -> assertTrue(wrap.inRange(100, 2, 100, 2, 100, 698, 100, 698, 10),
-                    "objects 4 px apart across the y seam are in range (fix over C)"),
-                () -> assertTrue(wrap.inRange(100, 698, 100, 698, 100, 2, 100, 2, 10),
-                    "objects across the y seam are in range whichever side p is on"),
+                // As C: neither crossed the seam, so objects on opposite sides of it are not seen as close
+                () -> assertFalse(wrap.inRange(2, 100, 2, 100, 698, 100, 698, 100, 10),
+                    "objects 4 px apart across the x seam are not in range (C)"),
+                () -> assertFalse(wrap.inRange(698, 100, 698, 100, 2, 100, 2, 100, 10),
+                    "whichever side p is on (x)"),
+                () -> assertFalse(wrap.inRange(100, 2, 100, 2, 100, 698, 100, 698, 10),
+                    "objects 4 px apart across the y seam are not in range (C)"),
+                () -> assertFalse(wrap.inRange(100, 698, 100, 698, 100, 2, 100, 2, 10),
+                    "whichever side p is on (y)"),
                 () -> assertFalse(wrap.inRange(2, 100, 2, 100, 340, 100, 340, 100, 10),
                     "objects less than half a world apart are not shifted"),
                 () -> assertTrue(wrap.inRange(0, 100, 350, 100, 175, 100, 175, 100, 5),
@@ -166,30 +166,30 @@ class CollisionsTest {
         }
 
         @Test
-        @DisplayName("an object moving next to the seam is brought to the ship's side as a whole path")
+        @DisplayName("as C, an object moving along the other side of the seam (neither crossed it) is not seen")
         void seamPaths() {
             assertAll(
-                // B: end points 20 apart, closest approach 4 (mid path); A: end points 5 apart
-                () -> assertTrue(wrap.inRange(698, 100, 698, 100, 2, 80, 2, 120, 6),
+                // on one map copy the paths pass within 4 or end within 5, but C compares raw coordinates here
+                () -> assertFalse(wrap.inRange(698, 100, 698, 100, 2, 80, 2, 120, 6),
                     "x, ship on the high side: the object's path passes within 4"),
-                () -> assertTrue(wrap.inRange(698, 100, 698, 100, 2, 80, 2, 97, 6),
+                () -> assertFalse(wrap.inRange(698, 100, 698, 100, 2, 80, 2, 97, 6),
                     "x, ship on the high side: the object's end is within 5"),
-                () -> assertTrue(wrap.inRange(2, 100, 2, 100, 698, 80, 698, 120, 6),
+                () -> assertFalse(wrap.inRange(2, 100, 2, 100, 698, 80, 698, 120, 6),
                     "x, ship on the low side: the object's path passes within 4"),
-                () -> assertTrue(wrap.inRange(2, 100, 2, 100, 698, 80, 698, 97, 6),
+                () -> assertFalse(wrap.inRange(2, 100, 2, 100, 698, 80, 698, 97, 6),
                     "x, ship on the low side: the object's end is within 5"),
-                () -> assertTrue(wrap.inRange(100, 698, 100, 698, 80, 2, 120, 2, 6),
+                () -> assertFalse(wrap.inRange(100, 698, 100, 698, 80, 2, 120, 2, 6),
                     "y, ship on the high side: the object's path passes within 4"),
-                () -> assertTrue(wrap.inRange(100, 698, 100, 698, 80, 2, 97, 2, 6),
+                () -> assertFalse(wrap.inRange(100, 698, 100, 698, 80, 2, 97, 2, 6),
                     "y, ship on the high side: the object's end is within 5"),
-                () -> assertTrue(wrap.inRange(100, 2, 100, 2, 80, 698, 120, 698, 6),
+                () -> assertFalse(wrap.inRange(100, 2, 100, 2, 80, 698, 120, 698, 6),
                     "y, ship on the low side: the object's path passes within 4"),
-                () -> assertTrue(wrap.inRange(100, 2, 100, 2, 80, 698, 97, 698, 6),
+                () -> assertFalse(wrap.inRange(100, 2, 100, 2, 80, 698, 97, 698, 6),
                     "y, ship on the low side: the object's end is within 5"));
         }
 
         @Test
-        @DisplayName("on a wrapping map it equals C in_range_acd whenever the C end points are within half a world")
+        @DisplayName("on a wrapping map it equals C in_range_acd (collision.c:144-222) in every case")
         void matchesC() {
             Rng r = new Rng(42);
             int same = 0;
@@ -204,15 +204,35 @@ class CollisionsTest {
                     a[k + 1] = Math.floorMod(a[k - 1] + Integer.remainderUnsigned(r.nextInt(), 81) - 40, 700);
                 }
                 int rad = 1 + Integer.remainderUnsigned(r.nextInt(), 60);
-                Boolean c = cInRange(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], rad, 700, 700);
-                if (c == null) {
-                    continue;
-                }
+                boolean c = cInRange(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], rad, 700, 700);
                 same++;
                 assertEquals(c, wrap.inRange(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], rad),
                     "equals C for case " + i);
             }
-            assertTrue(same > 10000, "most random cases are comparable");
+            assertEquals(20000, same, "every random case is compared");
+        }
+
+        @Test
+        @DisplayName("equals the literal C port on the seam and half-world boundaries (moves of exactly half the world, ends at 350)")
+        void matchesCAtBoundaries() {
+            int[] v = {0, 1, 9, 10, 339, 340, 349, 350, 351, 360, 361, 689, 690, 699};
+            int[] radii = {1, 10, 11, 20, 350};
+            Rng r = new Rng(9);
+            int hits = 0;
+            for (int i = 0; i < 200_000; i++) {
+                int[] a = new int[8];
+                for (int k = 0; k < 8; k++) {
+                    a[k] = v[Integer.remainderUnsigned(r.nextInt(), v.length)];
+                }
+                int rad = radii[Integer.remainderUnsigned(r.nextInt(), radii.length)];
+                boolean c = cInRange(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], rad, 700, 700);
+                if (c) {
+                    hits++;
+                }
+                assertEquals(c, wrap.inRange(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], rad),
+                    "equals C for boundary case " + i + " " + java.util.Arrays.toString(a) + " r " + rad);
+            }
+            assertTrue(hits > 10_000 && hits < 190_000, "both outcomes occur (" + hits + " in range)");
         }
 
         @Test
@@ -255,8 +275,8 @@ class CollisionsTest {
                 () -> assertFalse(wrap.farApart(0, 0, 0, 0, 690, 0, 690, 0, 20), "across the seam the gap is 10"));
         }
 
-        /** Literal port of C in_range_acd (WRAP_PLAY); null when the fix would apply (end points > half apart). */
-        Boolean cInRange(int p1x, int p1y, int p2x, int p2y, int q1x, int q1y, int q2x, int q2y, int r, int ww,
+        /** Literal port of C in_range_acd (WRAP_PLAY). */
+        boolean cInRange(int p1x, int p1y, int p2x, int p2y, int q1x, int q1y, int q2x, int q2y, int r, int ww,
                          int wh) {
             boolean mpx = Math.abs(p2x - p1x) > ww / 2;
             if (mpx) {
@@ -306,9 +326,6 @@ class CollisionsTest {
                 p1y -= wh;
                 p2y -= wh;
             }
-            if (Math.abs(p2x - q2x) > ww / 2 || Math.abs(p2y - q2y) > wh / 2) {
-                return null;
-            }
             if ((p2x - q2x) * (p2x - q2x) + (p2y - q2y) * (p2y - q2y) < r * r) {
                 return true;
             }
@@ -350,8 +367,8 @@ class CollisionsTest {
                 () -> assertEquals(List.of("2:" + a.id + ":" + b.id), gameEvents(w, seq),
                     "emits CRASH(first, other): b = a player who crashed, c = the other"),
                 // sc = Rate(B, A) * crashScoreMult; sc2 = Rate(A, B) * crashScoreMult (collision.c PlayerCollision)
-                () -> assertEquals(100 - rate(0, 100) * 0.75, a.score, EPS, "A loses Rate(B, A) * crashScoreMult"),
-                () -> assertEquals(-rate(100, 0) * 0.75, b.score, EPS, "B loses Rate(A, B) * crashScoreMult"),
+                () -> assertEquals(100 - rate(0, 100) * 0.75f, a.score, EPS, "A loses Rate(B, A) * crashScoreMult"),
+                () -> assertEquals(-rate(100, 0) * 0.75f, b.score, EPS, "B loses Rate(A, B) * crashScoreMult"),
                 // ED_PL_CRASH = -100*256 per frame of overlap
                 () -> assertEquals(FUEL0 - 25600, a.fuel, EPS, "A pays ED_PL_CRASH for the bounce"),
                 () -> assertEquals(FUEL0 - 25600, b.fuel, EPS, "B pays ED_PL_CRASH for the bounce"),
@@ -376,7 +393,7 @@ class CollisionsTest {
             a.score = 100;
             long seq = w.events.seq();
             check(s);
-            double sc = rate(0, 100) * 0.25;
+            float sc = rate(0, 100) * 0.25f;
             assertAll(
                 () -> assertTrue(killed(a), "the unshielded ship dies"),
                 () -> assertFalse(killed(b), "the shielded ship survives"),
@@ -679,7 +696,7 @@ class CollisionsTest {
             int h = shot(k.id, 21);
             long seq = w.events.seq();
             check(s);
-            double sc = rate(50, 100) * 2;
+            float sc = rate(50, 100) * 2;
             assertAll(
                 () -> assertTrue(killed(v), "the victim dies"),
                 () -> assertEquals(List.of("V was killed by a shot from K."), messages(w, seq), "names the killer"),
@@ -705,7 +722,7 @@ class CollisionsTest {
             w.objects.fuseLife[h] = 10;
             long seq = w.events.seq();
             check(s);
-            double sc = rate(0, 100) * 0.5 * 2;
+            float sc = rate(0, 100) * 0.5f * 2;
             assertAll(
                 () -> assertTrue(aliveBeforeFuse, "the owner is immune while life > fuse life"),
                 () -> assertEquals(10.0, lifeBeforeFuse, EPS, "the shot flies on through its owner"),
@@ -756,7 +773,7 @@ class CollisionsTest {
             shot(Obj.NO_ID, 21);
             long seq = w.events.seq();
             check(s);
-            double sc = rate(0, 100) * 0.5 * 2;
+            float sc = rate(0, 100) * 0.5f * 2;
             assertAll(
                 () -> assertTrue(killed(v), "an unowned shot kills"),
                 () -> assertEquals(List.of("V was killed by a shot."), messages(w, seq), "no killer named"),
@@ -1051,7 +1068,7 @@ class CollisionsTest {
             int h = debris(k.id);
             long seq = w.events.seq();
             check(s);
-            double sc = rate(50, 100) * 0.4f;
+            float sc = rate(50, 100) * 0.4f;
             assertAll(
                 () -> assertTrue(killed(v), "an empty tank means death"),
                 () -> assertEquals(List.of("V succumbed to an explosion from K."), messages(w, seq), "names the owner"),
@@ -1083,7 +1100,7 @@ class CollisionsTest {
             debris(Obj.NO_ID);
             long seq2 = w.events.seq();
             check(s);
-            double sc = rate(0, 100) * 0.4f * 0.5f;
+            float sc = rate(0, 100) * 0.4f * 0.5f;
             assertAll(
                 () -> assertEquals(List.of("V succumbed to an explosion from V.  How strange!"), own, "own debris is strange"),
                 () -> assertEquals(List.of("1:-1:" + v.id), ownEv, "own debris: KILL(NO_ID, V)"),

@@ -171,8 +171,8 @@ public final class Players {
      * BEHAVIOR: the engine offset comes from the shape read without limits as C client.c Handle_player's
      * {@code Convert_shape_str} (default ship when empty or invalid);
      * score, lives and status reset (0, -1 unlimited, 0), race progress too (C {@code other->timing = 0});
-     * the alliance mark is blank; no war target (C {@code war_id = -1}); no real name or host until
-     * {@link #setIdentity}.
+     * the alliance mark is blank; no war target (C {@code war_id = -1}); the real name and host as sent (C
+     * {@code Handle_player}), each cut to {@link #MAX_IDENTITY} chars.
      */
     public int join(Msg.PlayerJoin j) {
         int s = slotOf(j.id);
@@ -206,7 +206,9 @@ public final class Players {
         timingTick[s] = 0;
         warId[s] = Protocol.NO_ID;
         realName[s].setLength(0);
+        realName[s].append(j.realName, 0, Math.min(j.realName.length(), MAX_IDENTITY));
         host[s].setLength(0);
+        host[s].append(j.hostName, 0, Math.min(j.hostName.length(), MAX_IDENTITY));
         if ((j.flags & Msg.PlayerJoin.FLAG_SELF) != 0) {
             selfId = j.id;
         }

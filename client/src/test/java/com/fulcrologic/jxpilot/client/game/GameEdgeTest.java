@@ -416,6 +416,8 @@ class GameEdgeTest {
                 () -> assertSame(f.map, g.map(), "map kept"),
                 () -> assertTrue(g.teamPlay(), "team play"),
                 () -> assertFalse(plain.teamPlay(), "no team play flag"),
+                () -> assertTrue(g.timing(), "timing (race) from WELCOME"),
+                () -> assertFalse(plain.timing(), "no timing flag"),
                 () -> assertEquals(50, plain.snapshotHz(), "snapshotHz falls back to simHz (snapshot divisor 1)"));
         }
 

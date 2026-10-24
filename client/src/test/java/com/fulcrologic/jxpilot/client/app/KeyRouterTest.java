@@ -187,12 +187,15 @@ class KeyRouterTest {
     @DisplayName("bindings")
     class Bindings {
         @Test
-        @DisplayName("XPilot defaults, Escape freed from swap-settings, the swap key bound only when given")
+        @DisplayName("XPilot defaults (Escape swaps settings, as in C), keyQuit unbound, the swap key bound only when given")
         void bindings() {
             KeyBindings b = KeyRouter.bindings("F13");
             KeyBindings none = KeyRouter.bindings(null);
             assertAll(
-                () -> assertEquals(0L, b.gameMask(GLFW_KEY_ESCAPE), "Escape sends nothing"),
+                () -> assertEquals(ControlKey.SWAP_SETTINGS.mask(), b.gameMask(GLFW_KEY_ESCAPE),
+                    "Escape is C's keySwapSettings"),
+                () -> assertEquals(java.util.List.of(), b.keysyms(com.fulcrologic.jxpilot.client.game.input.KeyFunctions.of(
+                    ClientAction.QUIT)), "keyQuit is unbound"),
                 () -> assertEquals(ControlKey.THRUST.mask(), b.gameMask(GLFW_KEY_RIGHT_SHIFT), "defaults kept"),
                 () -> assertTrue(KeyBindings.has(b.actionMask(GLFW_KEY_F13), ClientAction.SWAP_SCALEFACTOR),
                     "swap key bound"),
@@ -221,10 +224,15 @@ class KeyRouterTest {
         }
 
         @Test
-        @DisplayName("Escape quits; the swap key swaps scale; characters are ignored")
+        @DisplayName("Escape swaps the settings; the swap key swaps scale; characters are ignored")
         void escapeAndSwap() {
+            double power = r.settings().power;
+            int esc = press(GLFW_KEY_ESCAPE);
             assertAll(
-                () -> assertEquals(KeyRouter.QUIT, press(GLFW_KEY_ESCAPE), "Escape: quit"),
+                () -> assertEquals(KeyRouter.SHOW_CONTROLS, esc, "Escape: settings swapped, meters shown (C)"),
+                () -> assertEquals(power, r.settings().altPower, "the power went to the alternate"),
+                () -> assertNotEquals(0L, input.keys() & ControlKey.SWAP_SETTINGS.mask(),
+                    "and the swap key goes to the server"),
                 () -> assertEquals(KeyRouter.SWAP_SCALE, press(GLFW_KEY_F13), "swap key: swap"),
                 () -> assertEquals(KeyRouter.TOGGLE_SOUND, press(GLFW_KEY_MINUS), "minus: sound toggle (ClientAction.TOGGLE_SOUND, a key C leaves unbound)"),
                 () -> assertEquals(KeyRouter.TOGGLE_ITEMS, press(GLFW_KEY_KP_8),
@@ -236,6 +244,28 @@ class KeyRouterTest {
                     assertFalse(talk.isOpen(), "characters do not open talk");
                     assertEquals(0, talk.text().length(), "nothing typed while not talking");
                 });
+        }
+
+        @Test
+        @DisplayName("keyQuit quits; Command-Q quits iff Command-Q is the platform's quit (and is not sent)")
+        void quit() {
+            InputState in = new InputState(KeyRouter.bindings(null));
+            in.bindings().bind(ClientAction.QUIT, "F13"); // F2-F12 are talk macro keys
+            KeyRouter mac = new KeyRouter(in, new TalkLine(), new com.fulcrologic.jxpilot.client.game.input.ControlSettings(),
+                true);
+            KeyRouter other = new KeyRouter(new InputState(KeyRouter.bindings(null)), new TalkLine(),
+                new com.fulcrologic.jxpilot.client.game.input.ControlSettings(), false);
+            int f11 = mac.key(GLFW_KEY_F13, GLFW_PRESS, 0);
+            int cmdQ = mac.key(GLFW_KEY_Q, GLFW_PRESS, GLFW_MOD_SUPER);
+            long sentOnMac = in.keys();
+            int plainQ = mac.key(GLFW_KEY_Q, GLFW_PRESS, 0);
+            int otherCmdQ = other.key(GLFW_KEY_Q, GLFW_PRESS, GLFW_MOD_SUPER);
+            assertAll(
+                () -> assertEquals(KeyRouter.QUIT, f11, "keyQuit: quit"),
+                () -> assertEquals(KeyRouter.QUIT, cmdQ, "Command-Q on macOS: quit"),
+                () -> assertEquals(0L, sentOnMac & ControlKey.HYPERJUMP.mask(), "Command-Q does not hyperjump"),
+                () -> assertEquals(KeyRouter.NONE, plainQ, "plain q is the hyperjump key"),
+                () -> assertEquals(KeyRouter.NONE, otherCmdQ, "Command-Q elsewhere is just q"));
         }
 
         @Test

@@ -58,13 +58,16 @@ important keys:
 |kbd:[M] |Talk (type a message, kbd:[Enter] sends it; <<talking>>)
 |kbd:[F1] |Show or hide the key help
 |kbd:[-] |Sound off and on (<<sound>>)
-|kbd:[Esc] |Quit the game (in XPilot it swaps engine settings)
+|kbd:[Esc] |Swap to the alternative engine settings (<<engine-settings>>), as in XPilot
 |===
+
+To quit, close the window, press kbd:[Cmd+Q] on macOS, or click QUIT in the button bar above the score
+list, as in XPilot. `keyQuit` (JXPilot only) binds a quit key; it is unbound by default.
 
 JXPilot's additions to XPilot's defaults: kbd:[Alt]/kbd:[Option] also connects to a ball, so a Mac
 laptop's single kbd:[Control] can stay refuel; kbd:[0] also self-destructs, since kbd:[End] needs kbd:[fn]
-on a Mac laptop; kbd:[F1] shows the key help (XPilot uses it for talk macro 1); kbd:[-] mutes; and
-kbd:[Esc] always quits. All of this can be changed (<<key-bindings>>).
+on a Mac laptop; kbd:[F1] shows the key help (XPilot uses it for talk macro 1); and kbd:[-] mutes. All of
+this can be changed (<<key-bindings>>).
 
 [[laptop-keys]]
 TIP: *Mac laptops and other compact keyboards* have no Page Up, Page Down, End or keypad keys of their
@@ -82,8 +85,8 @@ which is 35 in XPilot), and the alternative settings power 35, turn speed 25, tu
 The power and turn speed keys (keypad kbd:[*] kbd:[/] kbd:[+] kbd:[-]) change your settings in the client,
 by 10% and 5% per press, and send them to the server, as the XPilot client does. While you change them,
 power and turn speed meters show below the fuel gauge (top right) for 100 frames. XPilot swaps to the
-alternative settings with kbd:[Esc]; in JXPilot kbd:[Esc] quits, so bind `keySwapSettings` to another key
-if you want the swap. The six settings can be set in your keys file (<<key-bindings>>).
+alternative settings with kbd:[Esc] (`keySwapSettings`), and the meters show then too. The six settings can be
+set in your keys file (<<key-bindings>>).
 
 [[all-keys]]
 === All keys
@@ -102,7 +105,9 @@ endif::[]
 
 include::generated/keys.adoc[]
 
-XPilot's talk macros (`keySendMsg1` to `keySendMsg20`), ID mode, the message and item toggles, pointer
+kbd:[Keypad 8] (`keyToggleOwnedItems`) switches the HUD's list of your items between always shown and
+shown only for a moment after a count changes (`showItems`), and kbd:[Keypad 9] (`keyToggleMessages`)
+hides or shows the messages. XPilot's talk macros (`keySendMsg1` to `keySendMsg20`), ID mode, pointer
 control, recording and printing messages are not in JXPilot.
 
 [[key-bindings]]
@@ -134,7 +139,7 @@ The rules:
   and `shipShapeFile` choose your ship (<<ship-shapes>>).
 * `maxVolume` (0 to 255) sets the sound volume (<<sound>>). XPilot's other sound resources, `sounds`
   and `audioServer`, are not used: the sounds are built in.
-* kbd:[Esc] always quits and cannot be bound; the Command (Super) keys are never bound.
+* The Command (Super) keys are never bound (kbd:[Cmd+Q] quits on macOS).
 * Every problem (an unknown function or key name, a bad number, a key bound to more than one function)
   is printed when the client starts, as `jxpilot keys: FILE:LINE: ...`, and the rest of the file still
   applies.
@@ -170,7 +175,7 @@ These keys act in the client and are never sent to the server.
 |kbd:[F1] |Show or hide the key help
 |kbd:[M] |Open the talk line
 |kbd:[-] |Sound off and on (<<sound>>)
-|kbd:[Esc] |Quit (or, in the talk line, cancel the message)
+|`keyQuit` |Quit (JXPilot only; unbound by default). kbd:[Esc] cancels the talk line while it is open.
 |`keySwapScaleFactor`, or `--swap-scale-key KEY` |Swap between the normal and the alternative zoom
 (`--scale-factor`, `--alt-scale-factor`; <<07-client-reference.adoc#game-flags,Game flags>>). Unbound by
 default, as in XPilot.
@@ -270,8 +275,10 @@ when `playersOnRadar` is on, and other objects per the `...OnRadar` server optio
 also marks the next checkpoint.
 Scoreboard (left, under the radar):: Players with team, score and name. Your own line is marked.
 HUD (around your ship):: Dashed HUD lines, your fuel gauge and fuel meter, the items you carry with
-their counts, the player you have locked on (name and distance), time left in the round, weapon
-modifiers and an "Autopilot" note when it is on.
+their counts, the player you have locked on (name, and distance when the server sends one), time left
+in the round, weapon modifiers and an "Autopilot" note when it is on. The item list is always shown
+with `showItems` (the default); without it an item shows for `showItemsTime` seconds after its count
+changes. The refuel, repair and tank keys show your fuel on the HUD for 3 seconds.
 Messages (bottom left):: Game events ("pilot04 crashed into a wall.") and chat, which fade after a
 while. Crash messages say what you hit: a wall, a target, a treasure, a cannon, the edge of the world
 or another ship.
@@ -563,7 +570,7 @@ waiting player sees the game through the locked player's eyes.
 Each *tank* item adds a fuel tank: more fuel capacity and quicker refuelling, but more weight.
 kbd:[E] and kbd:[W] choose the active tank (the one fuel is used from); kbd:[R] detaches the active
 tank (or the last extra tank). A detached tank looks like your ship, carries your name, thrusts away and
-draws heat seekers after it.
+draws heat seekers after it. It never passes race checkpoints.
 
 [[devices]]
 === Devices

@@ -54,8 +54,8 @@ class ScoringTest {
                 () -> assertEquals(10.0, Scoring.rate(0, 0), "equal scores give RATE_SIZE/2"),
                 () -> assertEquals(15.0, Scoring.rate(0, 1024), "beating someone 1024 better gives 20 - 5"),
                 () -> assertEquals(5.0, Scoring.rate(1024, 0), "beating someone 1024 worse gives 5"),
-                () -> assertEquals(10240.0 / 1124, Scoring.rate(100, 0), 1e-12, "beating a 100-worse player"),
-                () -> assertEquals(20 - 10240.0 / 1124, Scoring.rate(-50, 50), 1e-12, "a 100-better loser"));
+                () -> assertEquals(10240.0f / 1124, Scoring.rate(100, 0), 1e-12, "beating a 100-worse player"),
+                () -> assertEquals(20 - 10240.0f / 1124, Scoring.rate(-50, 50), 1e-12, "a 100-better loser"));
         }
     }
 
@@ -67,7 +67,7 @@ class ScoringTest {
             Simulation s = sim(C_FRAMES, ShipFx.ROOM);
             Player p = s.ships.join("a", 0);
             p.scoreDirty = false;
-            s.scoring.score(p, 12.5, 0, 0, "");
+            s.scoring.score(p, 12.5f, 0, 0, "");
             assertAll(
                 () -> assertEquals(12.5, p.score, "points are added"),
                 () -> assertTrue(p.scoreDirty, "the player is marked for a SCORE event"),
@@ -176,7 +176,7 @@ class ScoringTest {
             Player b = s.ships.join("b", 2);
             b.robot = true;
             long seq = s.world.events.seq();
-            s.scoring.score(a, -12.5, 7, 9, "[Wall]");
+            s.scoring.score(a, -12.5f, 7, 9, "[Wall]");
             s.scoring.score(b, 4, 1, 1, "x");
             s.scoring.scorePlayers(a, 6, "bob", b, -6, "ann");
             assertEquals(java.util.List.of("SCORE_OBJECT " + a.id + " 7 9 -12.5 [Wall]",

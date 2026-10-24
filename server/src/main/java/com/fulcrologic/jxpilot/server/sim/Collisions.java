@@ -93,61 +93,65 @@ public final class Collisions {
      * <p>
      * BEHAVIOR: true if the end points are closer than r, or the closest approach during the move is.
      * BEHAVIOR: on wrapping maps a segment longer than half the world is unwrapped (it crossed the seam), then
-     * q is moved by a world size so the end points are within half a world (C's cross-seam shifts, plus a fix
-     * for objects on opposite sides of the seam that did not cross it).
+     * C's four shifts move the other segment by one world size when only one of them crossed and the other lies
+     * in the upper half (collision.c:183-201), with C's copy-paste kept for parity: both y shifts test "q crossed,
+     * p did not", so a p that crossed in y never moves q. Objects on opposite sides of the seam that did not
+     * cross it are not seen as close (as C).
      */
     boolean inRange(int p1x, int p1y, int p2x, int p2y, int q1x, int q1y, int q2x, int q2y, int r) {
         if (w.wrap) {
             int ww = w.pixelWidth;
             int wh = w.pixelHeight;
             // C: a segment longer than half the world crossed the seam; unwrap it.
-            if (Math.abs(p2x - p1x) > ww / 2) {
+            boolean mpx = Math.abs(p2x - p1x) > ww / 2;
+            if (mpx) {
                 if (p1x > p2x) {
                     p1x -= ww;
                 } else {
                     p2x -= ww;
                 }
             }
-            if (Math.abs(p2y - p1y) > wh / 2) {
+            boolean mpy = Math.abs(p2y - p1y) > wh / 2;
+            if (mpy) {
                 if (p1y > p2y) {
                     p1y -= wh;
                 } else {
                     p2y -= wh;
                 }
             }
-            if (Math.abs(q2x - q1x) > ww / 2) {
+            boolean mqx = Math.abs(q2x - q1x) > ww / 2;
+            if (mqx) {
                 if (q1x > q2x) {
                     q1x -= ww;
                 } else {
                     q2x -= ww;
                 }
             }
-            if (Math.abs(q2y - q1y) > wh / 2) {
+            boolean mqy = Math.abs(q2y - q1y) > wh / 2;
+            if (mqy) {
                 if (q1y > q2y) {
                     q1y -= wh;
                 } else {
                     q2y -= wh;
                 }
             }
-            // Then move q by a world size so its end point is within half a world of p's. This subsumes C's
-            // four cross-seam shifts (which only translate q, or p, by one world size; the test is translation
-            // invariant) and also fixes C for objects on opposite sides of the seam that did not cross it.
-            // Results differ from C only for end points exactly half a world apart.
-            long ex = (long) p2x - q2x;
-            if (ex > ww / 2) {
-                q1x += ww;
-                q2x += ww;
-            } else if (ex < -ww / 2) {
+            // C's cross-seam shifts (collision.c:183-201)
+            if (mpx && !mqx && (q2x > ww / 2 || q1x > ww / 2)) {
                 q1x -= ww;
                 q2x -= ww;
             }
-            long ey = (long) p2y - q2y;
-            if (ey > wh / 2) {
-                q1y += wh;
-                q2y += wh;
-            } else if (ey < -wh / 2) {
+            // C bug kept for parity: this test should read mpy && !mqy (it repeats the next one)
+            if (mqy && !mpy && (q2y > wh / 2 || q1y > wh / 2)) {
                 q1y -= wh;
                 q2y -= wh;
+            }
+            if (mqx && !mpx && (p2x > ww / 2 || p1x > ww / 2)) {
+                p1x -= ww;
+                p2x -= ww;
+            }
+            if (mqy && !mpy && (p2y > wh / 2 || p1y > wh / 2)) {
+                p1y -= wh;
+                p2y -= wh;
             }
         }
         long dx = (long) p2x - q2x;
@@ -271,8 +275,8 @@ public final class Collisions {
                 .append(T_CRASHED);
             w.events.add(Events.GAME_EVENT, Msg.GameEvent.CRASH, pl.id, o.id, Msg.GameEvent.CRASH_SHIPS);
             if (!pl.tank && !o.tank) {
-                double sc = Scoring.rate(o.score, pl.score) * p.crashScoreMult;
-                double sc2 = Scoring.rate(pl.score, o.score) * p.crashScoreMult;
+                float sc = Scoring.rate(o.score, pl.score) * p.crashScoreMult;
+                float sc2 = Scoring.rate(pl.score, o.score) * p.crashScoreMult;
                 sim.scoring.scorePlayers(pl, -sc, o.name, o, -sc2, pl.name);
             } else if (pl.tank) {
                 tankCrash(pl, o, p);
@@ -296,7 +300,7 @@ public final class Collisions {
         if (owner == null) {
             return;
         }
-        double sc = Scoring.rate(owner.score, other.score) * p.tankKillScoreMult;
+        float sc = Scoring.rate(owner.score, other.score) * p.tankKillScoreMult;
         sim.scoring.scorePlayers(owner, sc, other.name, other, -sc, tank.name);
     }
 
@@ -312,7 +316,7 @@ public final class Collisions {
         Sounds.play(w, victim.px, victim.py, SoundEvent.PLAYER_RAN_OVER_PLAYER);
         winner.kills++;
         Player scorer = winner;
-        double sc;
+        float sc;
         if (winner.tank) {
             Player owner = w.byId(winner.lockPlId);
             if (owner != null && owner != victim) {
@@ -535,7 +539,7 @@ public final class Collisions {
                 pl.bx, pl.by, killer == null ? T_EXPLOSION : pl.name);
         } else {
             killer.kills++;
-            double sc = Scoring.rate(killer.score, pl.score) * p.explosionKillScoreMult;
+            float sc = Scoring.rate(killer.score, pl.score) * p.explosionKillScoreMult;
             w.events.kill(killer.id, pl.id, 0f, Events.KILL_EXPLOSION);
             sim.scoring.scorePlayers(killer, sc, pl.name, pl, -sc, killer.name);
         }
@@ -606,7 +610,7 @@ public final class Collisions {
             return;
         }
         Player killer = null;
-        double sc;
+        float sc;
         StringBuilder msg = w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name);
         boolean fromCannon = (o.status[h] & Obj.FROMCANNON) != 0;
         if (fromCannon) {
@@ -631,7 +635,7 @@ public final class Collisions {
                 sc = Scoring.rate(killer.score, pl.score);
             }
         }
-        double factor;
+        float factor;
         switch (type) {
             case Obj.SHOT -> factor = Mods.isCluster(o.mods[h]) ? p.clusterKillScoreMult : p.shotKillScoreMult;
             case Obj.TORPEDO -> factor = w.items.torpedoKillScoreMult;

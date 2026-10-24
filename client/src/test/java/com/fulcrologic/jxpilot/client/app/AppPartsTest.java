@@ -354,6 +354,29 @@ class AppPartsTest {
         }
 
         @Test
+        @DisplayName("the user and host resources (--user, --host, ~/.xpilotrc) give the real and host names; blank or absent is null")
+        void userAndHost(@org.junit.jupiter.api.io.TempDir Path home) throws Exception {
+            java.io.PrintStream err = new java.io.PrintStream(java.io.OutputStream.nullOutputStream());
+            java.nio.file.Files.writeString(home.resolve(".xpilotrc"), "xpilot.user: filer\nxpilot.host:   \n");
+            AppOptions file = AppOptions.parse(new String[] {"--connect", "h"}, "u");
+            AppOptions cli = AppOptions.parse(new String[] {"--connect", "h", "--user", " Ann ", "--host", "box.org"}, "u");
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig kf = AppLauncher.keyConfig(file, home, err);
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig kc = AppLauncher.keyConfig(cli, home, err);
+            com.fulcrologic.jxpilot.client.game.input.KeyConfig none =
+                com.fulcrologic.jxpilot.client.game.input.KeyConfig.defaults(null);
+            com.fulcrologic.jxpilot.client.game.options.ClientOption user =
+                com.fulcrologic.jxpilot.client.game.options.ClientOption.USER;
+            com.fulcrologic.jxpilot.client.game.options.ClientOption host =
+                com.fulcrologic.jxpilot.client.game.options.ClientOption.HOST;
+            assertAll(
+                () -> assertEquals("filer", AppLauncher.resource(kf, user), "the file's user"),
+                () -> assertNull(AppLauncher.resource(kf, host), "a blank host: the local host name"),
+                () -> assertEquals("Ann", AppLauncher.resource(kc, user), "--user wins, trimmed"),
+                () -> assertEquals("box.org", AppLauncher.resource(kc, host), "--host"),
+                () -> assertNull(AppLauncher.resource(none, user), "no resource: the login name"));
+        }
+
+        @Test
         @DisplayName("maxVolume: --volume wins, else the key file's maxVolume (~/.xpilotrc), else C's 100")
         void maxVolume() {
             com.fulcrologic.jxpilot.client.game.input.KeyConfig rc =

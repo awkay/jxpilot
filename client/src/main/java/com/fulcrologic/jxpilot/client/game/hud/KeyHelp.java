@@ -28,7 +28,9 @@ import java.util.List;
 /**
  * The in-game key help (JXPilot keyHelp, F1; in the spirit of the C client's keys help): the effective
  * bindings as "keys  description" lines in columns over a black panel, conflicts last in red. The lines are
- * fixed at construction (bindings do not change while playing); {@link #layout} allocates nothing.
+ * fixed at construction (bindings do not change while playing); {@link #layout} allocates nothing. Its text is
+ * in one {@link FontRole} ({@link FontRole#KEY_LIST} for the key list, {@link FontRole#MOTD} for the MOTD panel),
+ * which the caller lays it out with ({@link #role()}).
  */
 public final class KeyHelp {
     /** Panel margin and padding (px). */
@@ -40,6 +42,7 @@ public final class KeyHelp {
     private final String[] keys;
     private final String[] help;
     private final boolean[] warn;
+    private final FontRole role;
     private boolean visible;
 
     /**
@@ -47,7 +50,17 @@ public final class KeyHelp {
      * @param entries {keys, description}; entries whose keys start with "* " are conflicts (red)
      */
     public KeyHelp(String title, List<String[]> entries) {
+        this(title, entries, FontRole.KEY_LIST);
+    }
+
+    /**
+     * @param title   first line
+     * @param entries {keys, description}; entries whose keys start with "* " are conflicts (red)
+     * @param role    the font of every line
+     */
+    public KeyHelp(String title, List<String[]> entries, FontRole role) {
         this.title = title;
+        this.role = role;
         int n = entries.size();
         keys = new String[n];
         help = new String[n];
@@ -70,6 +83,9 @@ public final class KeyHelp {
 
     public String title() { return title; }
 
+    /** The font of the panel's text. */
+    public FontRole role() { return role; }
+
     /**
      * Lay the help out in a {@code viewW x viewH} view.
      * <p>
@@ -77,7 +93,7 @@ public final class KeyHelp {
      * outline at {@link #MARGIN}, the title at the top, then the entries top to bottom in as many columns as
      * the panel height needs (line height ascent + descent + 2; at least one row); each column is as wide as
      * its widest keys plus {@link #GAP} plus its widest description; keys in the HUD colour, descriptions
-     * white, conflict entries red.
+     * white, conflict entries red; every text in {@link #role()}.
      */
     public void layout(HudFrame out, int viewW, int viewH, TextMetrics m) {
         out.clear();
@@ -115,8 +131,8 @@ public final class KeyHelp {
         }
     }
 
-    private static void put(HudFrame out, int x, int y, String s, int color) {
-        com.fulcrologic.jxpilot.client.game.CharBuf t = out.text(x, y, color);
+    private void put(HudFrame out, int x, int y, String s, int color) {
+        com.fulcrologic.jxpilot.client.game.CharBuf t = out.text(x, y, role, color);
         if (t != null) {
             t.append(s);
         }

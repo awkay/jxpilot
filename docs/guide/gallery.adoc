@@ -168,6 +168,9 @@ your own with `selfImmunity`) are blue crosses; nuclear shots blink red.
 
 |image:gallery/mines.png[Mines,width=100]
 |*Mines*: someone else's mine (filled blue, left) and a team mine (outline, with its owner's name).
+With the client's `showMineName` and the server's `identifyMines`, a mine near you shows its owner's
+name: `Expired` when it has no owner any more (for example, the owner left), and `Not of this world!`
+when the client does not know the owner.
 
 |image:gallery/missiles.png[Missiles,width=100]
 |*Missiles*: thick white lines, pointing where they fly.

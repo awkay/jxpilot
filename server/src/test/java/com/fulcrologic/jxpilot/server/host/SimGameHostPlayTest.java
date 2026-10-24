@@ -114,9 +114,10 @@ class SimGameHostPlayTest {
             long fromT = t.world.events.seq();
             ht.clientMessage(cid, ReliableType.READY, empty());
             assertAll(
-                () -> assertEquals(List.of("MESSAGE 3 -1 0 Bob has entered \"Arena\", made by Bob."),
-                    HostFx.only(events(s.world, from), "MESSAGE"), "the second player: \"NAME has entered\", no round message"),
-                () -> assertEquals(List.of("MESSAGE 3 -1 0 Cid (team 2) has entered \"Arena\", made by Bob."),
+                () -> assertEquals(List.of("MESSAGE 3 -1 0 Bob (X) has entered \"Arena\", made by Bob."),
+                    HostFx.only(events(s.world, from), "MESSAGE"),
+                    "the second player: \"NAME (REALNAME) has entered\" (X: no real name sent), no round message"),
+                () -> assertEquals(List.of("MESSAGE 3 -1 0 Cid (X, team 2) has entered \"Arena\", made by Bob."),
                     HostFx.only(events(t.world, fromT), "MESSAGE"), "team play names the team"));
         }
 

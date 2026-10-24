@@ -70,7 +70,12 @@ public enum ClientAction {
      */
     TOGGLE_SOUND("keyToggleSound", "minus", "Toggle sound on/off (JXPilot)."),
     /** JXPilot: show or hide the key help overlay. */
-    HELP("keyHelp", "F1", "Show or hide this key help (JXPilot).");
+    HELP("keyHelp", "F1", "Show or hide this key help (JXPilot)."),
+    /**
+     * JXPilot only: quit. C has no quit key (it quits by its QUIT button or the window manager); unbound by
+     * default, as Escape is C's keySwapSettings.
+     */
+    QUIT("keyQuit", "", "Quit the game (JXPilot).");
 
     /** The X resource name ({@code keyXxx}). */
     public final String resource;

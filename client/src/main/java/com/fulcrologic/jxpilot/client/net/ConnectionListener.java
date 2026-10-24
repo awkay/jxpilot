@@ -59,10 +59,4 @@ public interface ConnectionListener {
 
     /** The state changed; {@code status} is a human-readable line for the HUD (valid during the call). */
     void onStateChange(ConnectionState state, CharSequence status);
-
-    /**
-     * A player's real (login) name and host, for ID mode (C {@code PKT_PLAYER}'s real and host), after its
-     * PLAYER_JOIN. Client-side only: not a wire message.
-     */
-    default void onIdentity(int playerId, CharSequence realName, CharSequence host) { }
 }

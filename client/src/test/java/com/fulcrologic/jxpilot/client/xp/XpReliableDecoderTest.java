@@ -205,7 +205,7 @@ class XpReliableDecoderTest {
         void playerRealNameAndHostGoToOnIdentity() {
             rec.identities.clear();
             decode(new CPackets().player(5, 0, ' ', "Ann", "ann", "box.example", "", ""));
-            assertEquals(List.of("5 ann@box.example"), rec.identities, "C Handle_player's real and host, after the join");
+            assertEquals(List.of("5 ann@box.example"), rec.identities, "C Handle_player's real and host, in the PLAYER_JOIN");
         }
 
         @Test

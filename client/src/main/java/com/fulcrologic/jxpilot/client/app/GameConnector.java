@@ -70,7 +70,9 @@ public final class GameConnector {
                 xpLogin(name, team, shape, audio, id));
         }
         UdpTransport t = UdpTransport.open(ep, bind);
-        return new NativeGameConnection(nativeConnection(t, label, listener, name, team, shape), t);
+        return new NativeGameConnection(identity != null
+            ? nativeConnection(t, label, listener, name, team, shape, identity)
+            : nativeConnection(t, label, listener, name, team, shape), t);
     }
 
     /** C's identity from the user/host/display resources, the environment, the login and the local host name. */
@@ -116,11 +118,24 @@ public final class GameConnector {
      * shape is the default ship) and written canonically ({@link ShipShape#toWireString}).
      */
     static ClientConnection nativeConnection(Transport t, String label, ConnectionListener listener, String name,
+                                             int team, String shape, XpIdentity id) {
+        ClientConnection c = nativeConnection(t, label, listener, name, team, shape);
+        c.connect.realName.setLength(0);
+        c.connect.realName.append(id.realName());
+        c.connect.hostName.setLength(0);
+        c.connect.hostName.append(id.host());
+        return c;
+    }
+
+    /** As above with {@code GameConnections}' real name and host. */
+    static ClientConnection nativeConnection(Transport t, String label, ConnectionListener listener, String name,
                                              int team, String shape) {
         ClientConnection c = new ClientConnection(t, listener, label, (int) System.nanoTime());
         c.connect.name.append(name);
         c.connect.team = team;
         c.connect.shape.append(ShipShape.convert(shape).toWireString());
+        c.connect.realName.append(com.fulcrologic.jxpilot.client.xp.GameConnections.realName());
+        c.connect.hostName.append(com.fulcrologic.jxpilot.client.xp.GameConnections.hostName());
         return c;
     }
 }

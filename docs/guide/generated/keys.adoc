@@ -95,8 +95,8 @@
 |Toggle pause mode.
 
 |`+keySwapSettings+`
-|-
-|Swap control settings. _XPilot's default: `+Escape+` (pass:c[Esc])._
+|`+Escape+` (pass:c[Esc])
+|Swap control settings.
 
 |`+keyChangeHome+`
 |`+Home+`, `+h+`
@@ -393,6 +393,10 @@
 |`+keyHelp+`
 |`+F1+`
 |Show or hide this key help (JXPilot). _XPilot's default: none._
+
+|`+keyQuit+`
+|-
+|Quit the game (JXPilot).
 
 |===
 

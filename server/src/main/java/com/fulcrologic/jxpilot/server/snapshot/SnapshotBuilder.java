@@ -34,6 +34,7 @@ import com.fulcrologic.jxpilot.common.net.Section;
 import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
 import com.fulcrologic.jxpilot.server.world.Click;
 import com.fulcrologic.jxpilot.server.world.Events;
+import com.fulcrologic.jxpilot.server.world.Grid;
 import com.fulcrologic.jxpilot.server.world.Has;
 import com.fulcrologic.jxpilot.server.world.ModeState;
 import com.fulcrologic.jxpilot.server.world.Obj;
@@ -108,6 +109,13 @@ public final class SnapshotBuilder {
     private double cy;
     /** The item sections (server-items). */
     private final ItemSections itemSections;
+    /** C {@code maxVisibleObject} (frame.c:648, 739): a viewer is sent at most this many objects, the nearest. */
+    private int maxVisible;
+    /** C's cells as of this round, for the {@link #cVisible} pass (our own: snapshots may run off the sim thread). */
+    private final Grid cells;
+    /** Objects among the viewer's nearest {@link #maxVisible} have {@code visStamp[h] == visRound}. */
+    private final int[] visStamp;
+    private int visRound;
 
     public SnapshotBuilder(World w) {
         this.w = w;
@@ -116,6 +124,8 @@ public final class SnapshotBuilder {
         wormholeVisible = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.WORMHOLE_VISIBLE);
         shotVariant = new int[w.objects.capacity];
         wrecks = new int[w.objects.capacity];
+        visStamp = new int[w.objects.capacity];
+        cells = new Grid(w.width, w.height, w.wrap, w.objects.capacity);
         hash = new ShotHash(w);
         itemSections = new ItemSections(w, this);
         initRecordClasses();
@@ -146,6 +156,8 @@ public final class SnapshotBuilder {
      */
     public void beginRound() {
         hash.rebuild();
+        cells.rebuild(w.objects);
+        maxVisible = w.options.getInt(com.fulcrologic.jxpilot.common.config.Opt.MAX_VISIBLE_OBJECT);
         hashFrames = w.frames;
         Objects o = w.objects;
         wreckCount = 0;
@@ -201,6 +213,7 @@ public final class SnapshotBuilder {
         part = -1;
         failedSize = Integer.MAX_VALUE;
         curType = -1;
+        markVisible(viewer);
         startPart();
         writeSelf(viewer);
         writeSounds(viewer);
@@ -274,6 +287,29 @@ public final class SnapshotBuilder {
         curType = type;
         curVariant = variant;
         return true;
+    }
+
+    /**
+     * C's {@code Cell_get_objects(viewer block, ..., MIN(NumObjs, maxVisibleObject))} for frame.c's object loop:
+     * mark the viewer's nearest objects of every kind (sparks and debris count), nearest blocks first.
+     * <p>
+     * BEHAVIOR: the blocks searched cover our view (with its margin), so only the count limits; objects not
+     * marked are not sent ({@link #cVisible}) even when there is room. Bursts are unaffected (one record per
+     * explosion, not per particle).
+     */
+    private void markVisible(Player v) {
+        visRound++;
+        int n = Math.min(w.objects.count(), maxVisible);
+        int range = (int) Math.ceil(Math.max(viewHalfX, viewHalfY) / Const.BLOCK_SZ) + 1;
+        cells.query(v.bx, v.by, range, n);
+        for (int i = 0; i < cells.resultCount; i++) {
+            visStamp[cells.result[i]] = visRound;
+        }
+    }
+
+    /** BEHAVIOR: whether object {@code h} is among the viewer's nearest {@code maxVisibleObject} ({@link #markVisible}). */
+    boolean cVisible(int h) {
+        return visStamp[h] == visRound;
     }
 
     boolean visible(double x, double y, double margin) {
@@ -461,7 +497,7 @@ public final class SnapshotBuilder {
                 continue;
             }
             for (int i = hs.start[c], e = hs.start[c + 1]; i < e && n < cap; i++) {
-                if (!visible(hs.x[i], hs.y[i], 0)) {
+                if (!visible(hs.x[i], hs.y[i], 0) || !cVisible(hs.handle[i])) {
                     continue;
                 }
                 shotList[n] = i;
@@ -499,7 +535,7 @@ public final class SnapshotBuilder {
             int h = wrecks[i];
             double x = o.cx[h] / (double) Click.CLICK;
             double y = o.cy[h] / (double) Click.CLICK;
-            if (!visible(x, y, 0) || !need(Section.WRECKAGE, 0)) {
+            if (!visible(x, y, 0) || !cVisible(h) || !need(Section.WRECKAGE, 0)) {
                 continue;
             }
             Records.Wreckage.put(wr, x, y, o.info[h] & 0x7F, o.size[h], o.rotation[h] * (2 * Math.PI / Const.RES));
@@ -636,7 +672,7 @@ public final class SnapshotBuilder {
             }
             double x = o.cx[h] / (double) Click.CLICK;
             double y = o.cy[h] / (double) Click.CLICK;
-            if (!visible(x, y, 0)) {
+            if (!visible(x, y, 0) || !cVisible(h)) {
                 continue;
             }
             if (type == Obj.BALL) {
@@ -646,7 +682,9 @@ public final class SnapshotBuilder {
                         o.owner[h] == Obj.NO_ID ? Protocol.NO_ID : o.owner[h]);
                 }
             } else if (need(Section.ASTEROID, 0)) {
-                Records.Asteroid.put(wr, x, y, o.size[h], o.rotation[h] * (2 * Math.PI / Const.RES));
+                // C Send_asteroid's type_size: the outline type (info, frame.c:812) above the size (netserver.c:1871)
+                Records.Asteroid.put(wr, x, y, (o.info[h] & 0x0F) << 4 | (o.size[h] & 0x0F),
+                    o.rotation[h] * (2 * Math.PI / Const.RES));
             }
         }
         for (int k = 0; k < w.numPlayers; k++) {

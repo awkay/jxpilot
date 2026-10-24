@@ -235,8 +235,7 @@ public final class XpReliableDecoder {
         if (s1.length() > XpProto.MAX_NAME_LEN - 1) {
             s1.setLength(XpProto.MAX_NAME_LEN - 1);
         }
-        events.player(id, team, mychar, s1, shape);
-        events.identity(id, real, host);
+        events.player(id, team, mychar, s1, shape, real, host);
         return OK;
     }
 

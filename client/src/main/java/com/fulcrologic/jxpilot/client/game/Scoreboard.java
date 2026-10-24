@@ -100,8 +100,15 @@ public final class Scoreboard {
 
     /** BEHAVIOR: flips ID mode (C {@code Key_press_id_mode}); the next {@link #update} rebuilds. */
     public void toggleIdMode() {
-        idMode = !idMode;
-        builtVersion = -1;
+        setIdMode(!idMode);
+    }
+
+    /** BEHAVIOR: sets ID mode (C MENU / SCORE off, PLAYER on); a change makes the next {@link #update} rebuild. */
+    public void setIdMode(boolean on) {
+        if (on != idMode) {
+            idMode = on;
+            builtVersion = -1;
+        }
     }
 
     /** BEHAVIOR: TEAM_SCORE; teams outside 0..9 are ignored. */
@@ -290,6 +297,10 @@ public final class Scoreboard {
 
     private void buildHeading() {
         heading.clear();
+        if (idMode) {
+            heading.append("NICK=USER@HOST"); // C Paint_score_start with showRealName
+            return;
+        }
         heading.append(teamPlay ? " TM " : " AL ");
         heading.append("  SCORE  ");
         if (limitedLives) {

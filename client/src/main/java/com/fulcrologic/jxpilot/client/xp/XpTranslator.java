@@ -825,6 +825,12 @@ public final class XpTranslator {
      * shape strings concatenated.
      */
     public void player(int id, int team, int mychar, CharSequence name, CharSequence shape) {
+        player(id, team, mychar, name, shape, "", "");
+    }
+
+    /** As above with the player's real name and host (C {@code Handle_player}; ID mode), carried in PLAYER_JOIN. */
+    public void player(int id, int team, int mychar, CharSequence name, CharSequence shape, CharSequence realName,
+                       CharSequence hostName) {
         if (expectSelf) {
             expectSelf = false;
             selfId = id;
@@ -839,12 +845,11 @@ public final class XpTranslator {
         join.name.append(name);
         join.shape.setLength(0);
         join.shape.append(shape, 0, Math.min(shape.length(), Msg.MAX_SHAPE_LEN));
+        join.realName.setLength(0);
+        join.realName.append(realName);
+        join.hostName.setLength(0);
+        join.hostName.append(hostName);
         deliver(join, ReliableType.PLAYER_JOIN);
-    }
-
-    /** C {@code Handle_player}'s real name and host: BEHAVIOR: passed on as is ({@code onIdentity}). */
-    public void identity(int id, CharSequence realName, CharSequence host) {
-        listener.onIdentity(id & 0xFFFF, realName, host);
     }
 
     static int joinFlags(int mychar) {

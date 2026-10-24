@@ -190,11 +190,6 @@ final class E2eClient implements ConnectionListener, AutoCloseable {
     }
 
     @Override
-    public void onIdentity(int id, CharSequence realName, CharSequence host) {
-        game.onIdentity(id, realName, host);
-    }
-
-    @Override
     public void close() {
         conn.close();
     }

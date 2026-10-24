@@ -291,8 +291,8 @@ class ShipsDeathTest {
             p.count = 1;
             tick(s, p, 0);
             // score.c Rate(0, 100) = 20 - 10240/1124
-            double rate = 20 - (10.0 * 1024) / (100 + 1024);
-            assertEquals(100 - rate * 2, p.score, 1e-12, "score -= Rate(0, score) * selfDestructScoreMult");
+            float rate = 20 - (10 * 1024) / (100f + 1024); // C DFLOAT: float arithmetic
+            assertEquals(100 - rate * 2f, p.score, 1e-12, "score -= Rate(0, score) * selfDestructScoreMult");
         }
 
         @Test

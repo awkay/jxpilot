@@ -39,6 +39,10 @@ public final class HudColor {
     public static final int BLACK = 4;
     /** Score list text (white with a shadow in C). */
     public static final int SCORE = 5;
-    /** Score list text of dead/paused/waiting players. */
+    /** Score list text of dead/paused/waiting players (C: BLACK on the blue window, grey 12 with blockBitmaps). */
     public static final int SCORE_DIM = 6;
+    /** C {@code windowColor} (BLUE): the score list, button bar forms and information windows. */
+    public static final int WINDOW = 7;
+    /** C {@code buttonColor} (RED): button faces. */
+    public static final int BUTTON = 8;
 }
