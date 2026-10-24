@@ -121,6 +121,19 @@ final class SimFixture {
         return out;
     }
 
+    /** KILL events since {@code from} as "killer:victim:cause:aux" (the server-internal kill cause tag). */
+    static List<String> killCauses(World w, long from) {
+        List<String> out = new ArrayList<>();
+        Events e = w.events;
+        for (long s = from; s < e.seq(); s++) {
+            int i = Events.index(s);
+            if (e.kind[i] == Events.GAME_EVENT && e.a[i] == com.fulcrologic.jxpilot.common.net.Msg.GameEvent.KILL) {
+                out.add(e.b[i] + ":" + e.c[i] + ":" + e.cause[i] + ":" + e.aux[i]);
+            }
+        }
+        return out;
+    }
+
     /** The most recently recorded burst. */
     static DebrisBurst lastBurst(World w) {
         return w.events.burst[Events.burstIndex(w.events.burstSeq() - 1)];

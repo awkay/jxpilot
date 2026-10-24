@@ -31,7 +31,7 @@ import java.util.concurrent.CompletionException;
 
 /**
  * Headless server entry point:
- * {@code ServerMain --map <file> [--port N] [--bind sel ...] [--bindWait] [config file]}.
+ * {@code ServerMain --map <file> [--port N] [--bind sel ...] [--bindWait] [--defaults FILE|none] [config file]}.
  * Any XPilot server option may also be given as {@code -name value}. Runs until interrupted (Ctrl-C)
  * or until the server loop dies, in which case the process exits with status 2 instead of lingering.
  */
@@ -63,7 +63,8 @@ public final class ServerMain {
             server = Server.start(args, settings);
         } catch (IllegalArgumentException | IOException e) {
             err.println("jxpilot server: " + e.getMessage());
-            err.println("usage: ServerMain --map <file> [--port N] [--bind sel ...] [--bindWait] [config file]");
+            err.println("usage: ServerMain --map <file> [--port N] [--bind sel ...] [--bindWait] [--defaults FILE|none]"
+                + " [config file]");
             return EXIT_USAGE;
         }
         Thread hook = new Thread(() -> {

@@ -83,7 +83,8 @@ public final class Crashes {
      * kill; the victim loses Rate(average pusher score, score) * shoveKillScoreMult. Without shovers the
      * victim loses Rate(WALL_SCORE, score).
      * BEHAVIOR: the GAME_EVENT comes before the score changes it causes: CRASH(victim, NO_ID, sub-type) without
-     * shovers, else KILL(last pusher, victim, sub-type) ({@link #crashKind}).
+     * shovers, else KILL(last pusher, victim, sub-type) ({@link #crashKind}) with cause KILL_SHOVE and, as aux,
+     * the pusher at (int)(rfrac * number of pushers), drawn after the scores (walls.c:2195-2197).
      */
     public void playerCrashed(Player pl, MoveState ms, int pt) {
         String how;
@@ -134,7 +135,7 @@ public final class Crashes {
             msg.append('.');
             return;
         }
-        w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, pushers[num - 1].id, pl.id, kind);
+        int ev = w.events.kill(pushers[num - 1].id, pl.id, kind, Events.KILL_SHOVE);
         int total = 0;
         double totalScore = 0;
         for (int i = 0; i < num; i++) {
@@ -154,6 +155,8 @@ public final class Crashes {
         sim.scoring.score(pl, -Scoring.rate(average, pl.score) * w.params.shoveKillScoreMult, pl.bx, pl.by,
             "[Shove]");
         msg.append('.');
+        // walls.c:2195-2197: robots declare war on a random pusher
+        w.events.aux[ev] = pushers[(int) (w.rfrac() * num)].id;
     }
 
     /** BEHAVIOR: the {@code Msg.GameEvent} crash sub-type of a crash code. */

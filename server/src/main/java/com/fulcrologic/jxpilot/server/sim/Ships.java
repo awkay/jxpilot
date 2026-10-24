@@ -1016,7 +1016,8 @@ public final class Ships {
      * respawn count = max(3*FPS, count).
      * BEHAVIOR: fuel = max((long)(fuel*0.9), initialFuel*256 + (int)(rfrac*(1+that)*0.2)), capped at the tank.
      * BEHAVIOR: unless paused: deaths++; with limited lives a life is lost and the last one ends the game
-     * (GAME_OVER, mychar 'D'), without limited lives life counts up (C).
+     * (GAME_OVER, mychar 'D'), without limited lives life counts up (C). A robot losing its last life may
+     * leave the game instead ({@code RobotManager.leaveOutOfLives}); then nothing else is reset.
      * BEHAVIOR: abilities reset to DEF_HAVE / DEF_USED minus USED_KILL.
      */
     public void deathReset(Player pl) {
@@ -1043,6 +1044,9 @@ public final class Ships {
             if (p.limitedLives) {
                 pl.life--;
                 if (pl.life == -1) {
+                    if (pl.robot && sim.robots.leaveOutOfLives(pl)) {
+                        return;
+                    }
                     pl.life = 0;
                     pl.status |= Obj.GAME_OVER;
                     pl.mychar = 'D';

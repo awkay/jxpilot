@@ -247,7 +247,7 @@ public final class Collisions {
             .append(victim.name).append('.');
         winner.kills++;
         double sc = Scoring.rate(winner.score, victim.score) * p.runoverKillScoreMult;
-        w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, winner.id, victim.id, 0f);
+        w.events.kill(winner.id, victim.id, 0f, Events.KILL_RUNOVER);
         sim.scoring.scorePlayers(winner, sc, victim.name, victim, -sc, winner.name);
     }
 
@@ -407,13 +407,13 @@ public final class Collisions {
             msg.append('.');
         }
         if (killer == null || killer == pl) {
-            w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, Obj.NO_ID, pl.id, 0f);
+            w.events.kill(Obj.NO_ID, pl.id, 0f, Events.KILL_EXPLOSION);
             sim.scoring.score(pl, -Scoring.rate(0, pl.score) * p.explosionKillScoreMult * p.selfKillScoreMult,
                 pl.bx, pl.by, killer == null ? "[Explosion]" : pl.name);
         } else {
             killer.kills++;
             double sc = Scoring.rate(killer.score, pl.score) * p.explosionKillScoreMult;
-            w.events.add(Events.GAME_EVENT, Msg.GameEvent.KILL, killer.id, pl.id, 0f);
+            w.events.kill(killer.id, pl.id, 0f, Events.KILL_EXPLOSION);
             sim.scoring.scorePlayers(killer, sc, pl.name, pl, -sc, killer.name);
         }
         o.life[h] = 0;

@@ -242,10 +242,11 @@ public final class RobotManager {
      * React to the sim's events since the last update.
      * <p>
      * BEHAVIOR: SPAWN of a robot: C Robot_go_home (mode TAKE_OFF).
-     * BEHAVIOR: KILL by another player: C Robot_war(victim, killer) (C calls it for shot and ball kills; the
-     * event does not tell run-overs and explosions apart, which C does not call it for).
-     * BEHAVIOR: CRASH of two ships (b = crasher, c = other): each robot at war with the other stops the war
-     * (collision.c).
+     * BEHAVIOR: KILL by its cause ({@code Events.KILL_*}): a weapon kill (shots, balls, lasers) is C
+     * Robot_war(victim, killer); a shove is Robot_war(victim, the drawn pusher in aux); a run-over victim robot
+     * at war with its killer stops that war (collision.c:447-460); explosions do nothing.
+     * BEHAVIOR: CRASH of two ships (b = crasher, c = other): both died, so each robot at war with the other stops
+     * the war (collision.c:447-460).
      * BEHAVIOR: a deadly crash of walls.c {@code Player_crash} (CRASH alone with a sub-type other than
      * CRASH_UNIVERSE, which is collision.c's; or a KILL with a crash sub-type in value, a shove into a wall):
      * a robot victim with a negative score gets a new home base.
@@ -270,8 +271,8 @@ public final class RobotManager {
                 } else if (g == Msg.GameEvent.KILL) {
                     Player killer = w.byId(ev.b[i]);
                     Player victim = w.byId(ev.c[i]);
-                    if (killer != null && victim != null) {
-                        war(victim, killer);
+                    if (victim != null) {
+                        killed(victim, killer, ev.cause[i], w.byId(ev.aux[i]));
                     }
                     if (victim != null && ev.value[i] != 0) {
                         rehomeIfLosing(victim);
@@ -292,6 +293,30 @@ public final class RobotManager {
             }
         }
         cursor = to;
+    }
+
+    /** The C robot hooks of a kill, by cause (see {@link #handleEvents}). */
+    private void killed(Player victim, Player killer, int cause, Player warTarget) {
+        switch (cause) {
+            case Events.KILL_WEAPON -> {
+                if (killer != null) {
+                    war(victim, killer);
+                }
+            }
+            case Events.KILL_SHOVE -> {
+                if (warTarget != null) {
+                    war(victim, warTarget);
+                }
+            }
+            case Events.KILL_RUNOVER -> {
+                if (killer != null) {
+                    resetWarIfOn(victim, killer.id);
+                }
+            }
+            default -> {
+                // explosions: C calls no robot hook
+            }
+        }
     }
 
     private void resetWarIfOn(Player pl, int id) {
@@ -593,6 +618,22 @@ public final class RobotManager {
         w.events.message(Msg.Text.KIND_GAME, Obj.NO_ID).append(pl.name).append(reason);
         delete(pl, false);
         return true;
+    }
+
+    /**
+     * player.c:1938-1951 ({@code Player_death_reset}): a robot has just lost its last life (limited lives).
+     * <p>
+     * BEHAVIOR: outside race and team play, or with robotsLeave and a score below robotLeaveScore, the robot is
+     * deleted (C {@code Robot_delete(ind, false)}: no message) and true is returned; {@link #update} later
+     * replaces it as usual. Otherwise false: the caller ends its game (GAME_OVER).
+     */
+    public boolean leaveOutOfLives(Player pl) {
+        Params p = w.params;
+        if (!(w.map.timing() || p.teamPlay) || (p.robotsLeave && pl.score < robotLeaveScore)) {
+            delete(pl, false);
+            return true;
+        }
+        return false;
     }
 
     // ================================================================ API for the server

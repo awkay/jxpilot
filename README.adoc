@@ -99,6 +99,8 @@ changes.
 |===
 |Component |Where |License
 |XPilot 4.5.5 maps |`maps/*.xp` |GPL v2 or later (part of the XPilot distribution); see `maps/README.md`
+|XPilot 4.5.5 server defaults file (`lib/defaults`) |`server/src/main/resources/xpilot/defaults`; inside the
+server and client jars |GPL v2 or later (part of the XPilot distribution); see `server/src/main/resources/xpilot/README.md`
 |Fira Code font |`client/src/main/resources/fonts/` |SIL Open Font License 1.1 (`FiraCode-LICENSE.txt`)
 |LWJGL 3 and its natives (GLFW, stb, libffi, liburing; Khronos headers) |Maven dependency; bundled
 only in the release client jar (texts in `dist/src/main/resources/META-INF/licenses/lwjgl/`) |BSD

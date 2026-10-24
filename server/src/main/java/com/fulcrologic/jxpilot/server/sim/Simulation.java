@@ -212,6 +212,9 @@ public final class Simulation {
             Player pl = w.playerAt(k);
             if ((pl.status & Obj.KILLED) != 0) {
                 ships.kill(pl);
+                if (!pl.inUse) {
+                    continue; // a robot out of lives left the game (player.c:1951)
+                }
                 if (!pl.robot && w.frames - pl.frameLastBusy > 60L * w.params.fps && humans() > 1) {
                     ships.pause(pl, true);
                 }
