@@ -202,7 +202,13 @@ class AppPartsTest {
                 () -> assertEquals("ax.b-c.dx", XpIdentity.fixHostName("a..b-c.d-"), "doubled or trailing . and -"),
                 () -> assertEquals("axb", XpIdentity.fixHostName("a_b"), "other characters"),
                 () -> assertEquals(63, XpIdentity.fixHostName("h".repeat(80)).length(), "63 chars"),
-                () -> assertEquals("xxx.xxx", XpIdentity.fixHostName(""), "empty host"));
+                () -> assertEquals("xxx.xxx", XpIdentity.fixHostName(""), "empty host"),
+                () -> assertEquals("abx", XpIdentity.fixHostName("ab."), "a trailing dot"),
+                () -> assertEquals("ax-b", XpIdentity.fixHostName("a.-b"), "a dot before a dash"),
+                () -> assertEquals("AZaz09", XpIdentity.fixHostName("AZaz09"), "the letter and digit edges"),
+                () -> assertEquals("Axxxxxx", XpIdentity.fixHostName("A@[`{/:"), "their neighbours are not"),
+                () -> assertEquals("!~xx", XpIdentity.fixRealName("!~ \u007f"), "C isgraph: '!'..'~' only"),
+                () -> assertEquals("abcdefghijklmno", XpIdentity.fixRealName("abcdefghijklmno"), "exactly 15 kept"));
         }
 
         @Test

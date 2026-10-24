@@ -205,6 +205,51 @@ class TalkMacrosTest {
     }
 
     @Nested
+    @DisplayName("limits (C's pos checks)")
+    class Limits {
+        @Test
+        void namesScoresAndHomeStopAtTheLineLimit() {
+            f.self = f.join(1, 3, "Abcdefghijklmnop", 123456.78f, 2);
+            f.home = "/home/ann";
+            assertAll(
+                () -> assertEquals(List.of("x".repeat(70) + "Abcdefgh"), send("x".repeat(70) + "#sn"),
+                    "a name stops at 78 chars"),
+                () -> assertEquals(List.of("x".repeat(72) + "123456."), send("x".repeat(72) + "#ss"),
+                    "a score starts below 73 and stops at 79 chars"),
+                () -> assertEquals(List.of("x".repeat(73)), send("x".repeat(73) + "#ss"), "from 73 on no score"),
+                () -> assertEquals(List.of("x".repeat(75) + "/ho"), send("x".repeat(75) + "#h"), "$HOME stops at 78"));
+        }
+
+        @Test
+        void aLockedPlayerInSlotZeroCounts() {
+            f.lock = f.join(1, 3, "Ann", 0, 0);
+            assertAll(
+                () -> assertEquals(0, f.lock, "slot 0"),
+                () -> assertEquals(List.of("hi Ann"), send("hi #ln"), "slot 0 is a player"));
+        }
+
+        @Test
+        void everyRecursionCountsTowardsTheDepth() {
+            // a recursion that did not count would recurse until the stack overflows
+            f.files.put("r", "y#r[#f[r]]");
+            f.files.put("t", "z#=[a|a|#f[t]]");
+            f.files.put("e", "w#=[a|b|x|#f[e]]");
+            f.files.put("c", "#=[#f[c]|b|c|d]");
+            assertAll(
+                () -> assertFalse(send("#f[r]").isEmpty(), "#r in a file"),
+                () -> assertFalse(send("#f[t]").isEmpty(), "#= then-branch"),
+                () -> assertFalse(send("#f[e]").isEmpty(), "#= else-branch"),
+                () -> assertDoesNotThrow(() -> send("#f[c]"), "a compared field"),
+                () -> assertEquals(List.of("q".repeat(TalkMacros.MAX_DEPTH)), send(nested(20)),
+                    "nested then-branches keep what they wrote up to the depth limit"));
+        }
+
+        String nested(int n) {
+            return n == 0 ? "" : "#=[a|a|q" + nested(n - 1) + "]";
+        }
+    }
+
+    @Nested
     @DisplayName("field helpers")
     class Helpers {
         @Test
@@ -219,7 +264,9 @@ class TalkMacrosTest {
                 () -> assertEquals("d", TalkMacros.field("x[a|[b|c]|d]y", 0, 3), "the last field"),
                 () -> assertEquals("", TalkMacros.field("[a|b]", 0, 3), "no such field"),
                 () -> assertEquals(-1, TalkMacros.fieldsInfo("[a|b", 0, n), "unclosed"),
-                () -> assertEquals("", TalkMacros.field("]a", 0, 1), "a ']' before any '['"));
+                () -> assertEquals("", TalkMacros.field("]a", 0, 1), "a ']' before any '['"),
+                () -> assertEquals("", TalkMacros.field("[a", 0, 1), "an unclosed group: no field (no overrun)"),
+                () -> assertEquals(-1, TalkMacros.fieldsInfo("]a", 0, n), "a ']' first: not a group"));
         }
     }
 }
