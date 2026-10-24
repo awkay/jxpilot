@@ -84,6 +84,8 @@ public final class ServerNetConfig {
     public int reliablePacketsPerSecond = 480;
     /** Reliable window slots kept free for game messages while the map streams. */
     public int configReserveSlots = 4;
+    /** C {@code denyHosts}: CONNECTs from these networks are ignored ({@link DenyList}). */
+    public Cidr[] denyHosts = new Cidr[0];
 
     /** BEHAVIOR: reliable datagrams per peer per tick: reliablePacketsPerSecond / simHz rounded up, at least 1. */
     public int reliablePacketsPerTick() {
@@ -97,7 +99,7 @@ public final class ServerNetConfig {
      * pixel size; the tick rate simHz and gameFps are framesPerSecond (simHz clamped to 1..255, it is a
      * u8 in WELCOME); the server name includes the map name.
      * BEHAVIOR: snapshotDivisor (clamped to 1..simHz), radarDivisor (at least 1), the per-source and
-     * per-session packet rates and bursts (at least 1) and maxClientsPerIP come from the options.
+     * per-session packet rates and bursts (at least 1), maxClientsPerIP and denyHosts come from the options.
      */
     public static ServerNetConfig of(Options options, WorldMap map) {
         ServerNetConfig c = new ServerNetConfig();
@@ -117,6 +119,7 @@ public final class ServerNetConfig {
         c.sessionRatePerSecond = Math.max(1, options.getDouble(Opt.SESSION_PACKET_RATE));
         c.sessionRateBurst = Math.max(1, options.getDouble(Opt.SESSION_PACKET_BURST));
         c.maxPerIp = options.getInt(Opt.MAX_CLIENTS_PER_IP);
+        c.denyHosts = DenyList.parse(options.getString(Opt.DENY_HOSTS));
         return c;
     }
 }

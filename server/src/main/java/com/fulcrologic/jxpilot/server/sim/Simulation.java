@@ -64,6 +64,8 @@ public final class Simulation {
     public final World world;
     public final Scoring scoring;
     public final Debris debris;
+    /** C {@code Make_wreckage} (ship.c). */
+    public final Wreckage wreckage;
     public final Crashes crashes;
     public final Mover mover;
     public final Shots shots;
@@ -79,6 +81,7 @@ public final class Simulation {
         this.world = world;
         this.scoring = new Scoring(world);
         this.debris = new Debris(world);
+        this.wreckage = new Wreckage(world);
         this.crashes = new Crashes(world, this);
         this.mover = new Mover(world, this);
         this.shots = new Shots(world, this);
@@ -169,13 +172,17 @@ public final class Simulation {
 
     /**
      * Object speed and movement (update.c:551-582, C {@code update_object_speed} in float):
-     * {@code vel += acc + gravity} (gravity only with GRAVITY), then move.
+     * wreckage turns first ({@link Wreckage#rotate}), then {@code vel += acc + gravity} (gravity only with
+     * GRAVITY), then move.
      */
     void moveObjects() {
         World w = world;
         Objects o = w.objects;
         for (int k = 0; k < o.count(); k++) {
             int h = o.active[k];
+            if (o.type[h] == Obj.WRECKAGE) {
+                wreckage.rotate(h);
+            }
             if ((o.status[h] & Obj.GRAVITY) != 0) {
                 int bx = o.px[h] / Const.BLOCK_SZ;
                 int by = o.py[h] / Const.BLOCK_SZ;
@@ -213,6 +220,9 @@ public final class Simulation {
             Player pl = w.playerAt(k);
             if ((pl.status & Obj.KILLED) != 0) {
                 ships.kill(pl);
+                if (!pl.inUse) {
+                    continue; // a robot out of lives left the game (player.c:1951)
+                }
                 if (!pl.robot && w.frames - pl.frameLastBusy > 60L * w.params.fps && humans() > 1) {
                     ships.pause(pl, true);
                 }

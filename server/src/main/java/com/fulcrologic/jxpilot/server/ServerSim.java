@@ -26,6 +26,7 @@ package com.fulcrologic.jxpilot.server;
 import com.fulcrologic.jxpilot.common.config.ConfigParser;
 import com.fulcrologic.jxpilot.common.config.OptionOrigin;
 import com.fulcrologic.jxpilot.common.config.Options;
+import com.fulcrologic.jxpilot.server.net.DefaultsFile;
 import com.fulcrologic.jxpilot.server.sim.Digest;
 import com.fulcrologic.jxpilot.server.sim.RandomPilot;
 import com.fulcrologic.jxpilot.server.sim.Simulation;
@@ -110,6 +111,7 @@ public final class ServerSim {
             return;
         }
         Options o = new Options();
+        DefaultsFile.applyBundled(o); // as the server does (lib/defaults before the map)
         ConfigParser.parseFile(Path.of(a.map()), OptionOrigin.MAP, o);
         long t0 = System.nanoTime();
         run(o, a, System.out);
