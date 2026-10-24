@@ -88,6 +88,9 @@ public final class RobotManager {
     public java.util.function.Consumer<CharSequence> log;
     /** The log line, reused (robots join during play: no allocation here). */
     private final StringBuilder logLine = new StringBuilder(80);
+    /** Wall clock (epoch ms) and zone of the log lines' C {@code showtime()} stamp (tests replace them). */
+    public java.util.function.LongSupplier wallClock = System::currentTimeMillis;
+    public java.util.TimeZone logZone = java.util.TimeZone.getDefault();
     boolean logRobots;
     String robotRealName;
 
@@ -660,6 +663,7 @@ public final class RobotManager {
         talk.says(RobotTalk.ENTER, pl.name, null);
         if (logRobots && log != null) {
             logLine.setLength(0);
+            com.fulcrologic.jxpilot.server.world.ShowTime.append(logLine, wallClock.getAsLong(), logZone).append(' ');
             logLine.append(pl.name).append(T_PUNCT).append(w.numPlayers).append(T_PUNCT_2).append(robotRealName)
                 .append(T_STARTS_AT_STARTPOS).append(pl.homeBase).append('.');
             log.accept(logLine);
