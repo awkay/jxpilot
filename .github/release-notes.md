@@ -1,6 +1,6 @@
-JXPilot @VERSION@: an independent Java reimplementation of XPilot 4.5.5. **Work in progress**: see the
-[user guide](https://github.com/awkay/jxpilot/blob/main/docs/guide/01-introduction.adoc#status) for what
-works today.
+JXPilot @VERSION@: an independent Java reimplementation of XPilot 4.5.5. The
+[user guide](https://github.com/awkay/jxpilot/blob/main/docs/guide/01-introduction.adoc#status) says what
+works and where JXPilot differs from XPilot.
 
 > JXPilot is an independent derivative port. The original XPilot authors were not involved and do not
 > endorse it; please report problems here, not to them.

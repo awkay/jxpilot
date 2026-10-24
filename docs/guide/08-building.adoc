@@ -121,8 +121,12 @@ that matches no rule is listed under "Other options".
 
 The pictures in <<gallery.adoc#on-screen,What you see on screen>> are rendered by the client's real
 drawing code. `GalleryCapture` (in `dist/src/test/java/.../dist/gallery/`) draws scripted scenes on two
-fixture maps, `docs/guide/gallery/features.xp` and `race.xp`, with a fixed frame counter, and crops each
-picture; `GalleryShots` lists every picture, its camera, zoom, map state, scene objects and crop.
+fixture maps, `docs/guide/gallery/features.xp` and `race.xp`, with a fixed frame counter and the
+client's default per-role fonts, and crops each picture; `GalleryShots` lists every picture, its camera,
+zoom, map state, scene objects and crop. The whole screen, the panel, the windows and the look options
+are screenshots of the real client: the script runs the client's `DevRun` harness (`GameApp` against
+its scripted server on `features.xp`, with scripted clicks and look options on the command line) and
+crops its screenshots; those pictures change a little from run to run.
 Regenerate them all with:
 
 [source,shell]

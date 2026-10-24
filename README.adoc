@@ -21,9 +21,10 @@ and do not endorse it. Please don't send them bug reports about JXPilot; open an
 here instead.
 ====
 
-Status: work in progress, but playable: the Java server runs the XPilot game with robots, and the
-client plays on it or on original XPilot servers. The server has the whole XPilot game: items, ball
-games, targets, races, asteroids, alliances and the `/` commands. See `docs/SPEC.md` for the plan and milestones, and the user guide's
+Status: version 1.0, a complete and playable port. The Java server runs the whole XPilot game (items,
+ball games, targets, races, asteroids, alliances, robots and the `/` commands), frame for frame like the
+C server on recorded reference games, and the client plays on it or on original XPilot servers with the
+XPilot client's look and controls. See `docs/SPEC.md` for the plan and milestones, and the user guide's
 link:docs/guide/01-introduction.adoc#status[status table].
 
 == Documentation

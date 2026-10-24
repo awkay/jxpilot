@@ -227,7 +227,11 @@ default, as in XPilot.
 kbd:[M] opens the talk line at the bottom of the screen. Type, then kbd:[Enter] sends and kbd:[Esc]
 cancels. kbd:[Left] and kbd:[Right] move the cursor, kbd:[Up] and kbd:[Down] browse the lines you sent
 before, kbd:[Backspace] and kbd:[Delete] erase, kbd:[Home] and kbd:[End] jump to the start and end.
-As in XPilot, the server cuts a message to 79 characters.
+As in XPilot, the server cuts a message to 79 characters, and the cursor is a blinking `_`.
+
+*Cut and paste* (as XPilot's `selectionAndHistory`, on by default): drag with the left mouse button over
+the talk line or the messages to select text; it is copied to the clipboard when you let go. The middle
+mouse button pastes at the click, and so do kbd:[Ctrl+V] and, on macOS, kbd:[Cmd+V] (JXPilot only).
 
 As in XPilot, a prefix before a colon decides who reads a line (the Java server; an original XPilot
 server works the same way):

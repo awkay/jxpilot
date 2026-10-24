@@ -13,6 +13,9 @@ Bundled third-party components:
   - Fira Code font (SIL Open Font License 1.1): fonts/FiraCode-LICENSE.txt (client jar)
   - Liberation fonts 2.1.5, Red Hat (SIL Open Font License 1.1): fonts/Liberation-LICENSE.txt
     (client jar)
+  - XPilot 4.5.5 client textures (GPL v2 or later, part of the XPilot distribution):
+    textures/README.md (client jar)
+  - X.Org rgb.txt colour names (MIT/X11): colors/LICENSE-rgb.txt (client jar)
   - LWJGL 3 and its native libraries, including OpenAL Soft (GNU LGPL 2 or later):
     META-INF/licenses/lwjgl/ (client jar)
   - Sound effects by Juhani Junkala and Kenney (CC0 1.0): sounds/LICENSE-sounds.txt and

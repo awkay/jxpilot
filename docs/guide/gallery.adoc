@@ -14,10 +14,11 @@ endif::[]
 
 Everything below was drawn by the JXPilot client's own drawing code, which follows the XPilot client's
 look (<<08-building.adoc#gallery-pictures,how the pictures are made>>). Most pictures are enlarged
-twice; the animated ones loop at the game's 14 frames per second. "Map symbol" is the character that
+twice; the animated ones loop at the game's 14 frames per second. The whole screen, the panel, the
+windows and the look options are screenshots of the real client. "Map symbol" is the character that
 puts the feature into a map file (<<06-config-and-maps.adoc#map-symbols,Map symbols>>).
 
-image::gallery/screen.png[The whole screen: radar, scoreboard, HUD around your ship, talk line and messages,width=100%]
+image::gallery/screen.png[The whole screen: the panel with radar, button bar and score list on the left; the game view with the HUD around your ship and the messages,width=100%]
 
 [[on-screen-map]]
 == Map features
@@ -243,16 +244,14 @@ and `LS`/`LB` for a stun or blinding laser. The picture shows nuclear cluster, v
 |image:gallery/score-popup.png[Score popup,width=100]
 |*Score popup*: points you just gained or lost, where it happened.
 
-|image:gallery/fuel-gauge.png[Fuel gauge,width=250]
-|*Fuel gauge* (top right).
-
-|image:gallery/radar.png[Radar,width=268]
+|image:gallery/radar.png[Radar,width=256]
 |*Radar* (top left): the map in miniature, your ship with its heading line, other players (team mates
-blue) and objects such as asteroids.
+blue) and objects such as asteroids. On race maps it marks the next checkpoint.
 
-|image:gallery/score-list.png[Score list,width=270]
-|*Score list*: team, score and name; `*` marks you, `R` a robot, `D` a player out of lives, `P` a
-paused player and `W` one waiting for the next round. Outside team play the first column shows
+|image:gallery/score-list.png[Score list,width=256]
+|*Score list*, XPilot's blue window under the button bar: team (or alliance), score and name. The best
+player is underlined with dashes; `R` marks a robot, and players out of lives (`D`), paused (`P`) or
+waiting for the next round (`W`) are drawn dimmed. Outside team play the first column shows
 alliances: `+` for your allies, or each player's alliance number when the server announces alliances.
 A robot at war shows its target, as `Robot (Target)`. In ID mode (kbd:[U]) the rows show
 `NICK=USER@HOST`.
@@ -260,6 +259,61 @@ A robot at war shows its target, as `Robot (Target)`. In ID mode (kbd:[U]) the r
 |image:gallery/talk-line.png[Talk line,width=420]
 |*Talk line*, opened with kbd:[M].
 
-|image:gallery/messages.png[Messages,width=320]
+|image:gallery/messages.png[Messages,width=290]
 |*Messages*: game events and chat, fading after a while.
+|===
+
+[[on-screen-windows]]
+== The button bar and windows
+
+[cols="2,3",options="header"]
+|===
+|Picture |What it is
+
+|image:gallery/button-bar.png[Button bar,width=256]
+|*Button bar* under the radar: QUIT, ABOUT and MENU (<<03-playing.adoc#button-bar,The button bar,
+CONFIG and ABOUT>>).
+
+|image:gallery/menu.png[MENU pulldown,width=256]
+|*MENU*, held open: KEYS, CONFIG, SCORE, PLAYER and MOTD. Release the mouse button over an entry.
+
+|image:gallery/config-1.png[CONFIG page 1,width=256]
+image:gallery/config-2.png[CONFIG page 2,width=256]
+|*CONFIG*: XPilot's settings, a page at a time, over the score list. Yes/No buttons toggle; the arrows
+change numbers. NEXT and PREV turn the pages; the last page ends with "Save Configuration".
+
+|image:gallery/about.png[ABOUT window,width=400]
+|*ABOUT*: XPilot's information window, here its first page, the bonus items.
+|===
+
+[[on-screen-look]]
+== Look options
+
+These are XPilot client options (<<07-client-reference.adoc#client-look,Look options>>); the pictures
+show them switched on.
+
+[cols="2,3",options="header"]
+|===
+|Picture |What it is
+
+|image:gallery/look-panel.png[Textured panel with clock,width=200]
+|`texturedObjects` gives the score list XPilot's textured background and logo; `clock` shows the time
+in its top right corner.
+
+|image:gallery/look-textures.png[Textured walls and objects,width=300]
+|`texturedWalls` and `texturedObjects`: walls, fuel stations, ships, balls and items drawn with XPilot's
+textures.
+
+|image:gallery/look-meters.png[Packet meters,width=270]
+|`packetSizeMeter`, `packetLossMeter`, `packetDropMeter` and `packetLagMeter`: the network meters (top
+right).
+
+|image:gallery/look-colours.png[Changed colours,width=300]
+|Colours: `color0` to `color15` take X colour names or `#RRGGBB`. Here `color2` (walls) is SteelBlue,
+`color4` (the HUD) orange and `color3` (red) HotPink.
+
+|image:gallery/visible-border.png[Visible-area border,width=400]
+|*Visible-area border*: when your view is larger than the 1024 x 1024 pixels around your ship that the
+server sends, XPilot draws a frame (in `hudColor`) around that area; outside it you see the map but no
+ships or shots. Here `scaleFactor` is 1.5.
 |===

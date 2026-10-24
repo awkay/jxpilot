@@ -40,6 +40,10 @@ https://github.com/awkay/jxpilot.
 |XPilot 4.5.5 maps |Server and client jars (`xpilot/maps/`, with `xpilot/maps/README.md` on their origin),
 `maps/*.xp`, the maps zip |GPL v2 or later (part of the XPilot distribution; `META-INF/LICENSE` in the
 jars); authors in <<06-config-and-maps.adoc#shipped-maps,Shipped maps>>
+|XPilot 4.5.5 client textures and block bitmaps (`lib/textures/`, 46 files) |Client jar (`textures/`)
+|GPL v2 or later (part of the XPilot distribution); `textures/README.md` in the client jar
+|X.Org colour name database (`rgb.txt`, from X.Org's rgb package) |Client jar (`colors/rgb.txt`) |MIT/X11;
+`colors/LICENSE-rgb.txt` has the source, checksum and the package's copyright notice
 |Fira Code font |Client jar (`fonts/`) |SIL Open Font License 1.1 (`fonts/FiraCode-LICENSE.txt`)
 |Liberation fonts 2.1.5 (Red Hat): Serif, Sans and Mono faces, from
 https://github.com/liberationfonts/liberation-fonts, unmodified |Client jar (`fonts/`) |SIL Open Font
@@ -127,6 +131,8 @@ in XPilot)
 |Turn speed default |35 |40
 |Engine sound |a short sound every frame |a loop while you thrust
 |Recording (`keyToggleRecord`) |available |not supported
+|`maxFPS` default |20, which the server ignores by default (`ignore20MaxFPS`) |0: asks for the full rate,
+with the same result
 |Showing frames |each frame as it arrives |smooth motion at your screen's refresh rate: other ships about
 90 ms behind the latest frame, your own ship predicted forward from it
 |===

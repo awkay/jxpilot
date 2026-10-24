@@ -175,11 +175,21 @@ The client knows all of the XPilot client's resources: the key bindings and cont
 `-RESOURCE VALUE` works too), for example `--showMineName no`. The command line wins over the file.
 `--name`, `--team`, `--size`, `--scale-factor` and `--alt-scale-factor` set the `name`, `team`,
 `geometry`, `scaleFactor` and `altScaleFactor` resources. `join`, `noLocalMotd`,
-`text`, `list`, `mono` and `erase` take no value on the command line.
+`text`, `list`, `mono` and `erase` take no value on the command line. `--version` (or `-version`)
+prints `JXPilot client VERSION (a Java port of the XPilot 4.5.5 client)` and exits.
 
 These take effect:
 
 * `name`, `team`, `user` and `host` (and `display`, sent to XPilot servers at login);
+* `geometry` (`WxH+X+Y`: the window size and position; `--size` sets it), and `port`, the server port
+  for a `--connect` target without one;
+* `clientPortStart` and `clientPortEnd`: without `--bind`, the client's UDP sockets take the first free
+  local port in that range, for firewalls that open only a range (0, the default, means any port);
+* `autoServerMotdPopup` (default on): open the server's message of the day when you join; MENU / MOTD
+  shows it again, and with `refreshMotd` an XPilot server is asked for a fresh copy;
+* `maxFPS`: the frame rate asked of an XPilot server. JXPilot's default is 0, the full rate; another
+  value is kept between half the server's rate and its full rate, as in XPilot (<<client-maxfps>>);
+* the look options (<<client-look>>);
 * the fonts (<<client-fonts>>) and `scaleFactor`, `altScaleFactor`;
 * `toggleShield` and `autoShield`;
 * the talk macros `msg1` to `msg20` (<<03-playing.adoc#talk-macros,Talk macros>>), `pointerControl`
@@ -188,13 +198,44 @@ These take effect:
 * the HUD: `showHUD`, `verticalHUDLine`, `horizontalHUDLine`, `speedFactHUD`, `speedFactPTR`,
   `fuelMeter`, `fuelGauge`, `fuelNotify`, `fuelWarning`, `fuelCritical`, `turnSpeedMeter`, `powerMeter`;
 * items and mines: `showItems`, `showItemsTime`, `showMineName`;
-* messages and scores: `showMessages`, `maxMessages`, `charsPerSecond`, `maxLinesInHistory`,
-  `showScoreDecimals`.
+* messages and scores: `showMessages`, `maxMessages`, `charsPerSecond`, `reverseScroll` (newest
+  message at the top of both lists), `selectionAndHistory` (mouse cut and paste and the talk history),
+  `maxLinesInHistory` (up to 128), `showScoreDecimals`.
 
 The CONFIG panel changes them while you play and saves them
-(<<03-playing.adoc#button-bar,The button bar, CONFIG and ABOUT>>). XPilot's look options, such as the
-packet meters, the clock, textures and colours, are read and kept but do not change the picture yet,
-and the X11-only ones (`keyboard`, `geometry` and so on) never will.
+(<<03-playing.adoc#button-bar,The button bar, CONFIG and ABOUT>>; `maxFPS` is never saved, as in
+XPilot). A few have no effect, each for a reason: the X11, Windows and C-internal ones (`display` apart
+from the login, `keyboard`, `visual`, `multibuffer` and so on), `join` (JXPilot always joins),
+`noLocalMotd` (there is no local message of the day), `text` and `list` (no text interface),
+`recordFile` (no recording), `teamShotSize` and `shieldDrawSolid` (XPilot never uses them either).
+
+[[client-look]]
+==== Look options
+
+All of XPilot's look options work, on JXPilot and XPilot servers
+(<<gallery.adoc#on-screen-look,pictures>>):
+
+* walls and decorations: `outlineWorld`, `filledWorld`, `texturedWalls`, `wallTextureFile`, `showDecor`,
+  `outlineDecor`, `filledDecor`, `texturedDecor`, `decorTextureFile`, `texturePath`;
+* objects: `texturedObjects` (ships, shots, items and XPilot's textured score list background),
+  `texturedBalls`, `ballTextureFile`, `markingLights`, `showShipName`, `shotSize`, `showNastyShots`,
+  `sparkSize`, `sparkProb`, `sparkColors`, `backgroundPointDist`, `backgroundPointSize`;
+* the panel and HUD: `clock` and `clockAMPM` (in the score list), the network meters `packetSizeMeter`,
+  `packetLossMeter`, `packetDropMeter` and `packetLagMeter`, `showHUDRadar`, `slidingRadar` (on
+  wrapping maps), `titleFlip` (the window title);
+* colours: `maxColors`, `color0` to `color15` (and `black`, `white`, `blue`, `red`), as X colour names
+  from X.Org's `rgb.txt` or `#RRGGBB`, and the colour numbers `hudColor`, `hudLockColor`, `wallColor`,
+  `wallRadarColor`, `decorColor`, `decorRadarColor`, `oldMessagesColor`, `targetRadarColor`.
+
+XPilot's textures are bundled. When the view is larger than the 1024 x 1024 pixels around your ship that
+the server sends (a big window or a `scaleFactor` above 1), the client draws XPilot's visible-area
+border around that area, in `hudColor`. In the last 10 seconds of a timed round you hear a short bell, and
+your own detached tanks are drawn blue outside team play, as in XPilot.
+
+[[client-maxfps]]
+NOTE: XPilot's default `maxFPS` is 20, which an XPilot server with its default `ignore20MaxFPS` ignores,
+so a default XPilot client gets the full frame rate. JXPilot's default 0 asks for the full rate directly:
+the same result.
 
 [[client-fonts]]
 ==== Fonts
@@ -374,6 +415,11 @@ name), host (`$XPILOTHOST`, else this computer's name) and display (`$DISPLAY`, 
 the server is silent, "No response from server" appears every 10 seconds and the client keeps waiting,
 as XPilot's does, until you quit. A server host name that cannot be resolved
 ends the client with a message and exit status 1.
+
+When an XPilot server refuses you or ends the game, the client shows XPilot's text (for example
+`Your nick is already used` or `Got quit packet: "..."`) in the window for 5 seconds, prints it to
+standard error, and exits with status 1 (XPilot's client exits at once). The client tells the server
+your view size whenever the window or zoom changes, within XPilot's limits of 384 to 1024 pixels.
 * XPilot server versions older than 4.5.5's protocol (0x4203 to 0x44ff) should work but were not
   tested.
 

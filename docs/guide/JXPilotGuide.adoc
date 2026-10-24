@@ -48,8 +48,8 @@ ifndef::env-github[]
 == About this guide
 
 This guide is for people who want to play JXPilot or run a JXPilot server; the last chapter is for
-people who want to build or change it. JXPilot is a work in progress, and the guide says plainly which
-features exist today and which are planned.
+people who want to build or change it. The guide says plainly what works, where JXPilot differs from
+XPilot, and what is left for later.
 
 This copy describes version *{revnumber}*.
 

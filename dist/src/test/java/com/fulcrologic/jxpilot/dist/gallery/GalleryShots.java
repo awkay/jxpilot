@@ -379,7 +379,6 @@ final class GalleryShots {
             s.addShip((float) (hx + 320), (float) (hy + 140), Math.PI, ship, 1, 0, Palette.WHITE, false, "enemy");
             s.addShip((float) (hx - 260), (float) (hy - 120), 0, ship, 2, 0, Palette.BLUE, false, "mate");
         };
-        hud("screen", hx, hy, hud, game, Anchor.CENTRE, 1280, 800, 0, 0, true);
         hud("hud-box", hx, hy, hud, game, Anchor.CENTRE, 300, 220, 0, 0, true);
         hud("hud-lock", hx, hy, hud, game, Anchor.CENTRE, 200, 70, 45, -75, true);
         hud("hud-items", hx, hy, hud, game, Anchor.CENTRE, 70, 120, -85, -30, true);
@@ -387,12 +386,8 @@ final class GalleryShots {
         hud("hud-time-left", hx, hy, hud, game, Anchor.CENTRE, 70, 28, -85, -82, true);
         hud("hud-modifiers", hx, hy, hud, game, Anchor.CENTRE, 100, 28, -90, 83, true);
         hud("score-popup", hx, hy, hud, game, Anchor.CENTRE, 100, 50, 255, 105, true);
-        // panel parts without the map behind them
-        hud("fuel-gauge", hx, hy, hud, game, Anchor.TOP_LEFT, 250, 34, 1028, 6, false);
-        hud("radar", hx, hy, hud, game, Anchor.TOP_LEFT, 268, 196, 2, 2, false);
-        hud("score-list", hx, hy, hud, game, Anchor.TOP_LEFT, 270, 100, 4, 200, false);
-        hud("talk-line", hx, hy, hud, game, Anchor.TOP_LEFT, 420, 40, 40, 584, false);
-        hud("messages", hx, hy, hud, game, Anchor.BOTTOM_LEFT, 320, 60, 2, 2, false);
+        // the screen, the panel (radar, button bar, score list), the talk line, messages, windows and look options
+        // come from the real client: capture-gallery.sh runs DevRun for them
     }
 
     private void hud(String name, double x, double y, Hud hud, SceneFn game, Anchor anchor, double w, double h,

@@ -23,7 +23,14 @@
  */
 package com.fulcrologic.jxpilot.dist.gallery;
 
+import com.fulcrologic.jxpilot.client.app.AppOptions;
+import com.fulcrologic.jxpilot.client.app.RoleFontSet;
+import com.fulcrologic.jxpilot.client.app.RoleFonts;
+import com.fulcrologic.jxpilot.client.game.options.ClientOptions;
+import com.fulcrologic.jxpilot.client.gl.FontBaker;
 import com.fulcrologic.jxpilot.client.gl.GlRenderer;
+import com.fulcrologic.jxpilot.client.game.hud.FontRole;
+import com.fulcrologic.jxpilot.client.render.FontSpec;
 import com.fulcrologic.jxpilot.client.gl.UiAtlas;
 import com.fulcrologic.jxpilot.client.gl.Window;
 import com.fulcrologic.jxpilot.client.map.MapSymbols;
@@ -64,7 +71,10 @@ import static org.lwjgl.opengl.GL33C.*;
  * Renders the guide's "What you see on screen" pictures with the real client drawing code (static map
  * meshes, {@link MapSymbols}, {@link ScenePainter}, the HUD painters and the radar), the same calls as
  * the map viewer's {@code --demo} mode, but with scripted scenes and map states from {@link GalleryShots}
- * instead of random ones, and a fixed frame counter, so every run gives the same pictures.
+ * instead of random ones, and a fixed frame counter, so every run gives the same pictures. Text uses the
+ * client's per-role fonts at their defaults ({@link RoleFonts}: C's gameFont and the others, drawn with the
+ * bundled Liberation faces), as the game does. The panel, windows and look options come from the real
+ * client instead ({@code capture-gallery.sh} runs the client's DevRun for them).
  * <p>
  * {@code GalleryCapture MAPFILE OUTDIR FRAMEDIR}: still pictures go to OUTDIR as PNGs; animations go
  * to FRAMEDIR/NAME/fNNN.png for {@code capture-gallery.sh} to turn into GIFs. Needs a display (GL).
@@ -89,6 +99,7 @@ public final class GalleryCapture {
     private Window window;
     private GlRenderer gl;
     private UiAtlas atlas;
+    private final RoleFontSet fonts = new RoleFontSet();
     private TextWriter text;
     private HudListPainter hudList;
     private HudPainter hudPainter;
@@ -118,10 +129,13 @@ public final class GalleryCapture {
         ByteBuffer pt = null;
         try {
             double ratio = window.pixelRatio();
-            atlas = new UiAtlas(null, (float) (LaunchFont.SIZE * ratio));
+            atlas = new UiAtlas();
             gl = new GlRenderer(atlas.texture());
-            text = new TextWriter(atlas.font());
-            hudList = HudListPainter.xpilot(text, palette);
+            FontSpec[] specs = RoleFonts.resolve(new ClientOptions(), null, AppOptions.FONT_SIZE_UNSET,
+                FontBaker::isFontFile).specs();
+            fonts.set(specs, atlas.bakeFonts(specs, ratio), ratio);
+            text = fonts.writer(FontRole.GAME);
+            hudList = HudListPainter.xpilot(fonts.writers(), palette);
             hudPainter = new HudPainter(text, palette);
             tri = MemoryUtil.memAlloc(DYNAMIC_VERTICES * VertexBatch.STRIDE);
             seg = MemoryUtil.memAlloc(Math.min(DYNAMIC_SEGMENTS, gl.maxSegments()) * VertexBatch.SEGMENT_STRIDE);
@@ -359,10 +373,5 @@ public final class GalleryCapture {
         BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
         out.getGraphics().drawImage(img.getSubimage(x, y, w, h), 0, 0, null);
         return out;
-    }
-
-    /** The viewer's default font size. */
-    static final class LaunchFont {
-        static final double SIZE = 13;
     }
 }

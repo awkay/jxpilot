@@ -47,9 +47,10 @@ client cannot join a JXPilot server.
 [[status]]
 == Status: what works today
 
-JXPilot is a *work in progress*, but it is playable: you can fly, fight and score against robots and
-other players on the JXPilot server, or play on an original XPilot server. This table is the honest
-state of things.
+JXPilot 1.0 is a complete, playable port of XPilot 4.5.5: the JXPilot server plays the whole XPilot
+game, frame for frame like the C server on recorded reference games, and the client plays on it or on
+original XPilot servers, with the XPilot client's look and controls. This table is the honest state of
+things.
 
 [cols="3,2,5",options="header"]
 |===
@@ -99,11 +100,11 @@ alliances, custom ship shapes, the login queue and the message of the day
 (<<03-playing.adoc#commands,Commands>>, <<04-running-a-server.adoc#operators,Operator commands>>).
 
 |Client options and look
-|In progress
+|Works
 |XPilot's button bar (QUIT, ABOUT, MENU), the CONFIG panel with "Save Configuration", XPilot's score
-list and per-role fonts are done, and every XPilot client resource is accepted in `~/.xpilotrc` or as
-`--RESOURCE VALUE` (<<07-client-reference.adoc#client-resources,Client resources>>). Still in progress:
-XPilot's look options, such as the packet meters, the clock, textures and colours.
+list, per-role fonts and all of XPilot's look options: textures, colours, network meters, the clock and
+the visible-area border. Every XPilot client resource can be set in `~/.xpilotrc` or as
+`--RESOURCE VALUE` (<<07-client-reference.adoc#client-resources,Client resources>>).
 
 |Map viewer
 |Works
@@ -111,7 +112,7 @@ XPilot's look options, such as the packet meters, the clock, textures and colour
 (<<07-client-reference.adoc#viewer-flags,Viewer flags>>).
 
 |Lag hiding
-|In progress
+|Partial
 |Your own ship is no longer drawn a frame behind: the client predicts it forward from the newest frame
 the server sent and blends corrections in over a few screen frames. Your keys still take a round trip
 to the server, plus the wait for its next frame. Predicting your keys, shots and exhaust on the client
