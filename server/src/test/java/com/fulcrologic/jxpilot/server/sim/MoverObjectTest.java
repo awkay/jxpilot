@@ -89,6 +89,23 @@ class MoverObjectTest {
         }
 
         @Test
+        @DisplayName("a moved object joins its cell last (C Cell_add_object), in free flight and when traced")
+        void joinsCell() {
+            Simulation s = open(FPS60);
+            World w = s.world;
+            Objects o = w.objects;
+            int free = spawn(w, Obj.SHOT, 4 * BC + 1000, 4 * BC + 1000, 1, 0);
+            int traced = spawn(w, Obj.SHOT, 100, 4 * BC + 1000, -1, 0);
+            int other = spawn(w, Obj.SHOT, 4 * BC + 1000, 4 * BC + 1000, 0, 0);
+            s.mover.moveObject(free);
+            long afterFree = o.cellSeq[free];
+            s.mover.moveObject(traced);
+            assertAll(
+                () -> assertTrue(afterFree > o.cellSeq[other], "free flight"),
+                () -> assertTrue(o.cellSeq[traced] > afterFree, "near a wall (traced through the blocks)"));
+        }
+
+        @Test
         @DisplayName("at 14 fps a tick moves one whole frame")
         void wholeFrame() {
             Simulation s = open("");

@@ -23,9 +23,16 @@
  */
 package com.fulcrologic.jxpilot.server.sim;
 
+import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.math.CRandom;
+import com.fulcrologic.jxpilot.common.math.ThrustSparks;
+import com.fulcrologic.jxpilot.common.net.Records;
+import com.fulcrologic.jxpilot.server.world.Click;
+import com.fulcrologic.jxpilot.server.world.Obj;
+import com.fulcrologic.jxpilot.server.world.Objects;
 import com.fulcrologic.jxpilot.server.world.Player;
+import com.fulcrologic.jxpilot.server.world.Trig;
 import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,8 +40,9 @@ import org.junit.jupiter.api.Test;
 import static com.fulcrologic.jxpilot.server.sim.SimFixture.ready;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** The random draws C's Thrust and Make_debris make, counted when a test replays C's generator. */
+/** C's Thrust and Make_debris in a C replay: their random draws and the particles they make. */
 @DisplayName("Debris: C's thrust draws in a C replay (ship.c Thrust, play.c Make_debris)")
 class DebrisCReplayTest {
     /** A C generator whose next value (564929546) is positive, so keep_rand shifts down to 0. */
@@ -162,5 +170,100 @@ class DebrisCReplayTest {
             () -> assertEquals(1, out, "only keep_rand"),
             () -> assertEquals(1 + (1 + 4L * t) + 1, wrapped, "wrapped to the far edge: the sparks' draws"),
             () -> assertEquals(1, below, "below the world: only keep_rand"));
+    }
+
+    /**
+     * C's particle values (play.c:207-243) for the {@code num} particles made last, from an independent generator.
+     *
+     * @return how many lives were cut to the world diagonal
+     */
+    static int assertCParticles(World w, CRandom c, int num, float x, float y, float vx, float vy, int minDir,
+                                 int maxDir, float minSpeed, float maxSpeed, int minLife, int maxLife, String what) {
+        Objects o = w.objects;
+        float hypotenuse = (int) w.params.hypotenuse;
+        int cut = 0;
+        for (int i = 0; i < num; i++) {
+            int h = o.active[o.count() - num + i];
+            int dir = (minDir + (int) (c.rfrac() * (maxDir - minDir))) & (Const.RES - 1);
+            int dirPlus = (dir + 1) & (Const.RES - 1);
+            float off = (float) c.rfrac();
+            float dx = Trig.tcos(dir) + (Trig.tcos(dirPlus) - Trig.tcos(dir)) * off;
+            float dy = Trig.tsin(dir) + (Trig.tsin(dirPlus) - Trig.tsin(dir)) * off;
+            float speed = (float) (minSpeed + c.rfrac() * (maxSpeed - minSpeed));
+            int life = (int) (minLife + c.rfrac() * (maxLife - minLife) + 1);
+            if (life * speed > hypotenuse) {
+                life = (int) (hypotenuse / speed);
+                cut++;
+            }
+            String p = what + " particle " + i;
+            int lf = life;
+            assertAll(
+                () -> assertEquals(vx + dx * speed, o.vx[h], p + " vx"),
+                () -> assertEquals(vy + dy * speed, o.vy[h], p + " vy"),
+                () -> assertEquals(lf, o.life[h], p + " life"),
+                () -> assertEquals(lf, o.fuseLife[h], p + " fuse life"),
+                () -> assertEquals(Click.fromPixels(x), o.cx[h], p + " x, not rounded to the wire"),
+                () -> assertEquals(Click.fromPixels(y), o.cy[h], p + " y"));
+        }
+        return cut;
+    }
+
+    @Test
+    @DisplayName("C's own particles: direction, offset, speed and life drawn per particle in C's order and float "
+        + "precision, at the unrounded origin; a life whose path passes the diagonal is cut; no burst is recorded")
+    void cParticles() {
+        Simulation s = SimFixture.sim(SimFixture.FPS14, 30, 30, "_");
+        World w = s.world;
+        w.rng.useC(new CRandom(42));
+        CRandom c = new CRandom(42);
+        long bursts = w.events.seq();
+        int n = s.debris.make(100.3, 200.7, 1.5f, -2.25f, 7, 2, Obj.DEBRIS, 4.5f, Obj.GRAVITY,
+            Records.ObjColor.RED, Records.BurstKind.DEBRIS, 6, 3, 9, 10, 40, 1.0, 5.0, 3, 8);
+        int num = 3 + (int) (c.rfrac() * (9 - 3));
+        assertCParticles(w, c, num, 100.3f, 200.7f, 1.5f, -2.25f, 10, 40, 1f, 5f, 3, 8, "slow");
+        long made = w.events.seq() - bursts;
+        // speeds 20..60 and lives 20..40 (within make's caps) on a 1484 px diagonal: many paths pass it
+        int fast = s.debris.make(500, 500, 0, 0, 7, 2, Obj.DEBRIS, 4.5f, Obj.GRAVITY, Records.ObjColor.RED, -1, 6, 40,
+            40, 0, Const.RES - 1, 20, 60, 20, 40);
+        int fastNum = 40 + (int) (c.rfrac() * 0);
+        int cutLives = assertCParticles(w, c, fastNum, 500, 500, 0, 0, 0, Const.RES - 1, 20, 60, 20, 40, "fast");
+        assertAll(
+            () -> assertEquals(num, n, "count = min + (int)(rfrac * (max - min))"),
+            () -> assertEquals(0, made, "no burst event in a C replay"),
+            () -> assertEquals(40, fast, "40 fast particles"),
+            () -> assertTrue(cutLives > 0, "(some fast lives were cut to the diagonal)"),
+            () -> assertEquals(c.draws(), ((CRandom) w.rng.c()).draws(), "the same draws as C"));
+    }
+
+    @Test
+    @DisplayName("C replay thrust: C's red sparks of THRUST_MASS from the engine, min/max dir dir+RES/2-+(RES*0.2+1), "
+        + "speed 1..1+power*0.14, life 3..3+power*0.35, owner immune with gravity")
+    void cThrustSparks() {
+        Simulation s = SimFixture.sim(SimFixture.FPS14, 30, 30, "_");
+        World w = s.world;
+        Player p = ready(s, "P", 0, 500, 500);
+        p.vx = 2;
+        p.vy = -1;
+        CRandom gen = positiveNext();
+        w.rng.useC(gen);
+        CRandom c = positiveNext();
+        int before = w.objects.count();
+        s.debris.thrust(p);
+        c.next(); // keep_rand
+        int t = tot(564929546, p.power);
+        int num = t + (int) (c.rfrac() * 0);
+        float x = p.px + p.ship.engineX[p.dir];
+        float y = p.py + p.ship.engineY[p.dir];
+        assertCParticles(w, c, num, x, y, 2, -1, (int) (p.dir + Const.RES / 2 - Const.RES * 0.2 - 1),
+            (int) (p.dir + Const.RES / 2 + Const.RES * 0.2 + 1), 1, (float) (1 + p.power * 0.14), 3,
+            3 + (int) (p.power * 0.35), "thrust");
+        int h = w.objects.active[w.objects.count() - 1];
+        assertAll(
+            () -> assertEquals(num, w.objects.count() - before, "tot sparks, no blue ones"),
+            () -> assertEquals(Obj.SPARK, w.objects.type[h], "sparks"),
+            () -> assertEquals((float) ThrustSparks.THRUST_MASS, w.objects.mass[h], "of THRUST_MASS"),
+            () -> assertEquals(Obj.GRAVITY | Obj.OWNERIMMUNE, w.objects.status[h], "owner immune, with gravity"),
+            () -> assertEquals(p.id, w.objects.owner[h], "owned by the ship"),
+            () -> assertEquals(8, w.objects.plRadius[h], "radius 8"));
     }
 }

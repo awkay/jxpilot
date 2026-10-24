@@ -1214,6 +1214,7 @@ public final class Ships {
                 o.life[h] = 0;
             } else {
                 o.initPixels(h, bx, by);
+                o.touchCell(h);
             }
         }
     }
