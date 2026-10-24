@@ -75,11 +75,16 @@ public final class Collisions {
     private final World w;
     private final Simulation sim;
     /** C {@code wreckageCollisionMayKill}. */
-    private final boolean wreckageMayKill;
+    private boolean wreckageMayKill;
 
     public Collisions(World w, Simulation sim) {
         this.w = w;
         this.sim = sim;
+        reloadOptions();
+    }
+
+    /** server-commands: (re)read the options this class keeps (at construction, and after {@code /set}). */
+    public void reloadOptions() {
         this.wreckageMayKill = w.options.getBool(com.fulcrologic.jxpilot.common.config.Opt.WRECKAGE_COLLISION_MAY_KILL);
     }
 

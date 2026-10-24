@@ -65,6 +65,7 @@ public final class ClientGame implements ConnectionListener {
     // ---- server-items: SEEK (C Handle_seek)
     private final Msg.Seek seek = new Msg.Seek();
     private final StringBuilder seekText = new StringBuilder(3 * 32 + 32);
+    private final Msg.PlayerAlliance alliance = new Msg.PlayerAlliance();
 
     private ConnectionState state = ConnectionState.IDLE;
     private WorldMap map;
@@ -137,7 +138,7 @@ public final class ClientGame implements ConnectionListener {
     /**
      * Apply one reliable server message.
      * <p>
-     * BEHAVIOR: PLAYER_JOIN/LEAVE/TEAM/THRUST and SCORE update {@link Players}; TEAM_SCORE the
+     * BEHAVIOR: PLAYER_JOIN/LEAVE/TEAM/THRUST/ALLIANCE and SCORE update {@link Players}; TEAM_SCORE the
      * scoreboard; MESSAGE the message log; BASE_OWNER the world; GAME_EVENT the event ring (sub-types in
      * {@code value} kept as sent). Unknown types are ignored.
      * BEHAVIOR: SEEK adds C's "has programmed ... to seek ..." message ({@link #seek}).
@@ -196,6 +197,10 @@ public final class ClientGame implements ConnectionListener {
             case ReliableType.SEEK -> {
                 seek.read(p);
                 seek(seek.programmerId, seek.robotId, seek.soughtId);
+            }
+            case ReliableType.PLAYER_ALLIANCE -> {
+                alliance.read(p);
+                players.setAlliance(alliance.id, alliance.mark);
             }
             default -> { } // newer message types are ignored (PROTOCOL.md "Extending")
         }

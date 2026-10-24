@@ -365,7 +365,7 @@ class PauseAndLifecycleTest {
         }
 
         @Test
-        @DisplayName("I9: a reused slot starts with the default ship")
+        @DisplayName("I9: a reused slot starts with the default ship (C Init_player with an empty client shape)")
         void shipReset() {
             Simulation s = sim("");
             Player p = TestWorlds.join(s, "a", 0);

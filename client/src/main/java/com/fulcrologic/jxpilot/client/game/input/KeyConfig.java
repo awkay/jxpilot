@@ -62,6 +62,8 @@ public final class KeyConfig {
     private int maxVolume = -1;
     private final List<String> problems = new ArrayList<>();
     private final String source;
+    private String shipShape;
+    private String shipShapeFile;
 
     private KeyConfig(String source) {
         this.bindings = KeyBindings.defaults();
@@ -88,6 +90,8 @@ public final class KeyConfig {
      * BEHAVIOR: power, turnSpeed, turnResistance, altPower, altTurnSpeed and altTurnResistance set the
      * control settings; a value that is not a number is reported; one outside C's range (5-55, 4-64, 0-1)
      * is clamped and reported.
+     * BEHAVIOR: shipShape and shipShapeFile are kept as given ({@link #shipShape()}, {@link #shipShapeFile()};
+     * the last entry wins).
      * BEHAVIOR: maxVolume (C default.c) sets {@link #maxVolume()}: an integer, clamped to C's 0-255 and
      * reported when outside; a value that is not an integer is reported and ignored.
      * BEHAVIOR: modifierBank1..4 (C default.c) set {@link #modifierBanks()} to the text as written (the server
@@ -117,6 +121,14 @@ public final class KeyConfig {
             return;
         }
         if (setting(src, e)) {
+            return;
+        }
+        if (e.name().equals("shipShape")) {
+            shipShape = e.value();
+            return;
+        }
+        if (e.name().equals("shipShapeFile")) {
+            shipShapeFile = e.value();
             return;
         }
         if (e.name().startsWith("key")) {
@@ -258,6 +270,12 @@ public final class KeyConfig {
 
     /** "defaults" or "defaults + FILE". */
     public String source() { return source; }
+
+    /** The file's {@code shipShape} resource (C default.c), or null when it has none. */
+    public String shipShape() { return shipShape; }
+
+    /** The file's {@code shipShapeFile} resource, or null when it has none. */
+    public String shipShapeFile() { return shipShapeFile; }
 
     /**
      * Keys bound to more than one function where C's defaults do not already do so (C allows it, so it is

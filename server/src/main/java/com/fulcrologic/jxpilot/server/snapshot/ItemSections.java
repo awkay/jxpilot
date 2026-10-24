@@ -454,7 +454,8 @@ final class ItemSections {
      * itself, a team mate or the viewer's own tank.
      */
     boolean shipShown(Player pl, Player v) {
-        return pl == v || v.canSee[pl.ind] || w.sameTeam(pl, v) || (pl.tank && pl.lockPlId == v.id);
+        return pl == v || v.canSee[pl.ind] || w.sameTeam(pl, v) || (pl.tank && pl.lockPlId == v.id)
+            || w.allied(pl, v);
     }
 
     /**
@@ -469,7 +470,7 @@ final class ItemSections {
         if ((pl.status & (Obj.PLAYING | Obj.PAUSE | Obj.GAME_OVER)) != Obj.PLAYING) {
             return false;
         }
-        boolean friend = w.sameTeam(pl, v) || (pl.tank && pl.lockPlId == v.id);
+        boolean friend = w.sameTeam(pl, v) || (pl.tank && pl.lockPlId == v.id) || w.allied(v, pl);
         if (!friend && (!w.items.playersOnRadar || !v.canSee[pl.ind])) {
             return false;
         }
@@ -487,8 +488,8 @@ final class ItemSections {
         return (v.used & Has.COMPASS) != 0 && (v.lockTagged & Player.LOCK_PLAYER) != 0 && v.lockPlId == pl.id;
     }
 
-    /** BEHAVIOR: C's radar 0x80 (friendly) for {@code pl} seen by {@code v}: a team mate or {@code v}'s own tank. */
+    /** BEHAVIOR: C's radar 0x80 (friendly) for {@code pl} seen by {@code v}: a team mate, an ally or {@code v}'s own tank (frame.c:1187). */
     boolean radarFriendly(Player pl, Player v) {
-        return w.sameTeam(pl, v) || (pl.tank && pl.lockPlId == v.id);
+        return w.sameTeam(pl, v) || w.allied(v, pl) || (pl.tank && pl.lockPlId == v.id);
     }
 }

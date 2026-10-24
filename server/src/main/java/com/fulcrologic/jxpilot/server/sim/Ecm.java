@@ -234,6 +234,9 @@ public final class Ecm {
             if (w.params.teamPlay && p.team == team) {
                 continue;
             }
+            if (pl != null && w.allied(pl, p)) { // server-commands: item.c:1133
+                continue;
+            }
             if ((p.used & Has.PHASING_DEVICE) != 0) {
                 continue;
             }

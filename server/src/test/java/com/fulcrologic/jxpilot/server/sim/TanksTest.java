@@ -497,15 +497,17 @@ class TanksTest {
         }
 
         @Test
-        @DisplayName("with shields allowed there is no shield timer, and without ship shapes the default ship")
+        @DisplayName("with shields allowed there is no shield timer; the tank wears Ships.tankShipShape, which without"
+            + " ship shapes is defaultShipShape (C ship.c:416-418, Init_player)")
         void shieldsAllowed() {
             prepare();
-            w.items.allowShipShapes = false;
             t.detach(p);
             Player d = tankOf(p);
+            Simulation noShapes = sim(FRAME + "allowShipShapes: no\n", 20, 20, "__");
             assertAll(
                 () -> assertEquals(0, d.shieldTime, "no shield time"),
-                () -> assertSame(ShipGeom.defaultShip(), d.ship, "the default ship"));
+                () -> assertSame(s.ships.tankShipShape, d.ship, "the one parsed tank ship"),
+                () -> assertSame(noShapes.ships.defaultShipShape, noShapes.ships.tankShipShape, "without ship shapes"));
         }
 
         @Test
