@@ -152,7 +152,10 @@ class FontSpecTest {
                 () -> assertEquals(new FontSpec(null, "C:\\f.ttf", 21), spec("C:\\f.ttf"),
                     "a drive colon is not a size"),
                 () -> assertEquals("unknown font", problem("a.ttf:"), "an empty size is part of the name, no longer a .ttf"),
-                () -> assertEquals("size 0 is outside 4..200", problem("a.ttf:0"), "size 0"));
+                () -> assertEquals("size 0 is outside 4..200", problem("a.ttf:0"), "size 0"),
+                () -> assertEquals(new FontSpec(null, "/usr/share/fonts/x", 21), spec("/usr/share/fonts/x"),
+                    "a leading slash makes a path, without an extension"),
+                () -> assertEquals(new FontSpec(null, "\\fonts", 21), spec("\\fonts"), "so does a leading backslash"));
         }
 
         @Test
@@ -167,7 +170,9 @@ class FontSpecTest {
                 () -> assertEquals(FontSpec.of(Face.MONO_BOLD, 11), spec("LiberationMono-Bold:11"), "sized face"),
                 () -> assertEquals("unknown font", problem("LiberationSans-Italic"), "a face not bundled"),
                 () -> assertEquals("unknown font", problem("FiraCode:12345"), "a five-digit size is part of the name"),
-                () -> assertEquals("size 201 is outside 4..200", problem("FiraCode:201"), "too large"));
+                () -> assertEquals("size 201 is outside 4..200", problem("FiraCode:201"), "too large"),
+                () -> assertEquals("size 1000 is outside 4..200", problem("FiraCode:1000"), "four digits are a size"),
+                () -> assertEquals("size 0 is outside 4..200", problem("FiraCode:0"), "size 0 is given, not missing"));
         }
 
         @Test
@@ -180,6 +185,7 @@ class FontSpecTest {
                 () -> assertEquals(FontSpec.of(Face.MONO_BOLD, 15), spec("9x15bold"), "9x15bold"),
                 () -> assertEquals(FontSpec.of(Face.MONO_BOLD, 13), spec("8x13B"), "8x13B"),
                 () -> assertEquals(FontSpec.of(Face.MONO_BOLD, 18), spec("7x13bold:18"), "sized bold alias"),
+                () -> assertEquals("size 0 is outside 4..200", problem("fixed:0"), "an alias at size 0"),
                 () -> assertEquals("unknown font", problem("x15"), "no width"),
                 () -> assertEquals("unknown font", problem("ax15"), "a non-number width"),
                 () -> assertEquals("unknown font", problem("9x"), "no height"),

@@ -61,6 +61,24 @@ class RoleFontSetTest {
     }
 
     @Test
+    @DisplayName("a rebake replaces every writer with one for the new font")
+    void rebake() {
+        Font[] first = new Font[N];
+        Font[] second = new Font[N];
+        for (int i = 0; i < N; i++) {
+            first[i] = new Font(10, 10, 1, 1);
+            second[i] = new Font(10, 10, 2, 2);
+        }
+        FontSpec[] specs = RoleFontsTest.all(FontSpec.of(Face.SERIF_REGULAR, 10));
+        RoleFontSet s = new RoleFontSet();
+        s.set(specs, first, 1);
+        s.set(specs, second, 1);
+        assertAll(
+            () -> assertSame(second[0], s.writer(FontRole.GAME).font(), "the first role draws in its new font"),
+            () -> assertSame(second[N - 1], s.writer(FontRole.KEY_LIST).font(), "the last role too"));
+    }
+
+    @Test
     @DisplayName("needs a bake until set, and again when the specs or the ratio change")
     void needs() {
         Font f = new Font(10, 10, 1, 1);

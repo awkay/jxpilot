@@ -112,11 +112,11 @@ class HudListPainterTest {
             TextWriter moved = new TextWriter(shifted());
             HudListPainter byFont = HudListPainter.xpilot(new TextWriter[] {plain, moved, null}, P);
             byFont.paint(b, ss, new List_().text("a", 1, 10, 20, WHITE, 0).text("b", 1, 10, 40, WHITE, 1)
-                .text("c", 1, 10, 60, WHITE, 2).text("d", 1, 10, 80, WHITE, 7).text("e", 1, 10, 100, WHITE, -1));
+                .text("c", 1, 10, 60, WHITE, 2).text("d", 1, 10, 80, WHITE, 3).text("e", 1, 10, 100, WHITE, -1));
             assertAll(
                 () -> assertEquals(List.of("'a'@10,580#" + hex(1), "'b'@13,560#" + hex(1), "'c'@10,540#" + hex(1),
                     "'d'@10,520#" + hex(1), "'e'@10,500#" + hex(1)), Drawn.runStrings(b),
-                    "font 0 plain, font 1 shifted by 3; a null writer and indexes 7 and -1 fall back to writer 0"),
+                    "font 0 plain, font 1 shifted by 3; a null writer and indexes 3 (one past the end) and -1 fall back to writer 0"),
                 () -> assertSame(moved, byFont.writer(1), "writer 1 is the second"),
                 () -> assertSame(plain, byFont.writer(2), "a null entry is writer 0"));
         }
