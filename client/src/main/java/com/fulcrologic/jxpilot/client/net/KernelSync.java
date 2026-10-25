@@ -486,8 +486,16 @@ public final class KernelSync {
      * the server's as of its snapshot ({@link #stateCurrent}).
      */
     public boolean valid() {
+        return usable() && stateCurrent();
+    }
+
+    /**
+     * As {@link #valid} without the kernel state check: the PREDICT's ship can be replayed, on a world whose state
+     * may be behind (a KERNEL_STATE in flight) or ahead of its tick.
+     */
+    public boolean usable() {
         return have && rareVersion == coreVersion && keysKnown && roundKnown && world != null
-            && (kernelVersion & 0xFF) == coreKernel && stateCurrent();
+            && (kernelVersion & 0xFF) == coreKernel;
     }
 
     /**

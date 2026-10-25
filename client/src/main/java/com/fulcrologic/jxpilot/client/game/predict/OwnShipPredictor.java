@@ -200,8 +200,9 @@ public final class OwnShipPredictor {
      * <p>
      * BEHAVIOR: inactive (and reset) when disabled, without a source, a kernel world or a final entry; the world
      * changing rebuilds the kernel and drops the ring. A PREDICT that is not valid (its rare part or key masks not
-     * known, or the kernel world is not the server's as of its tick) is not compared: before the first valid one nothing
-     * is predicted, after it the ring rides on.
+     * known) is not used: before the first valid one nothing is predicted, after it the ring rides on. A valid one
+     * whose world state is not the server's as of its tick ({@link PredictionSource#worldAsOf}) is reconciled and
+     * replayed like any other, but not judged.
      * BEHAVIOR: a new PREDICT for tick S: with the ring holding S, it is compared ({@link Listener}) and on a
      * difference reseeded and replayed (the predicted ship's move is the smoother's correction); without, the ring is
      * seeded at S (no correction). Only a comparison of a ship in play both in the ring and on the server is
@@ -243,12 +244,13 @@ public final class OwnShipPredictor {
             return;
         }
         InputHistory h = src.input();
-        // a PREDICT that cannot be used (its rare part or key masks were lost, or the world state it ran with has not
-        // arrived, or a newer one has) is skipped: the ring rides on
-        if (src.predictValid() && src.predicts() != lastPredicts && src.worldAsOf(src.predictTick())) {
+        // a PREDICT that cannot be used (its rare part or key masks were lost) is skipped: the ring rides on. One
+        // whose world state differs (a KERNEL_STATE in flight, or a newer one applied) is still adopted, the server's
+        // ship being the truth at its tick, but not judged: the replay through the changed world part may differ
+        if (src.predictValid() && src.predicts() != lastPredicts) {
             lastPredicts = src.predicts();
             roundDelay = src.predictRoundDelay();
-            reconcile(src, h, was);
+            reconcile(src, h, was, src.worldAsOf(src.predictTick()));
         }
         if (!seeded || halted || roundDelay > 0) {
             return;
@@ -306,7 +308,7 @@ public final class OwnShipPredictor {
         head = k;
     }
 
-    private void reconcile(PredictionSource s, InputHistory h, boolean wasDrawn) {
+    private void reconcile(PredictionSource s, InputHistory h, boolean wasDrawn, boolean worldExact) {
         int sTick = s.predictTick();
         ShipBody server = s.predictBody();
         boolean known = has(sTick);
@@ -315,8 +317,8 @@ public final class OwnShipPredictor {
         double beforeH = 0;
         int oldHead = head;
         // only a prediction of a ship in play that the server also has in play is judged (a death on the server, a
-        // respawn or a pause is not a prediction error: those are drawn from the snapshots)
-        boolean judged = known && predictableState(server) && predictableState(ring[idx(sTick)]);
+        // respawn or a pause is not a prediction error: those are drawn from the snapshots), on the server's world
+        boolean judged = worldExact && known && predictableState(server) && predictableState(ring[idx(sTick)]);
         if (known) {
             boolean same = ring[idx(sTick)].sameState(server, s.predictFrames());
             if (judged) {
