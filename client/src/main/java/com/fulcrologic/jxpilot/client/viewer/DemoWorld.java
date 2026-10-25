@@ -45,6 +45,8 @@ import java.util.SplittableRandom;
 public final class DemoWorld {
     /** Seconds a shot flies before it is fired again. */
     static final double SHOT_LIFE = 1.5;
+    /** Shots younger than this (seconds) get a fading tracer from the gun, as new bullets do with prediction on. */
+    static final double TRACER_AGE = 0.15;
     /** Particle life in game frames. */
     static final int PARTICLE_LIFE = 40;
 
@@ -224,8 +226,14 @@ public final class DemoWorld {
             float y0 = yAt(k, fired);
             float d = (float) (shotSpeed[i] * age) + 16;
             boolean team = i % 4 == 0;
-            s.addShot(wrapX(x0 + d * (float) Math.cos(h)), wrapY(y0 + d * (float) Math.sin(h)),
-                team ? Palette.BLUE : Palette.WHITE, team);
+            float x = wrapX(x0 + d * (float) Math.cos(h));
+            float y = wrapY(y0 + d * (float) Math.sin(h));
+            s.addShot(x, y, team ? Palette.BLUE : Palette.WHITE, team);
+            if (age < TRACER_AGE) {
+                // from the gun (16 px out), unwrapped next to the shot
+                s.addTracer(x - (d - 16) * (float) Math.cos(h), y - (d - 16) * (float) Math.sin(h), x, y,
+                    team ? Palette.BLUE : Palette.WHITE, (float) (1 - age / TRACER_AGE));
+            }
         }
     }
 

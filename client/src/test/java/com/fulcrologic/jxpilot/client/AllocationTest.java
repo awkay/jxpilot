@@ -65,6 +65,7 @@ class AllocationTest {
         Palette p = Palette.xpilotDefault();
         long[] flushed = new long[1];
         long[] points = new long[1];
+        long[] tracers = new long[1];
         VertexBatch b = Fixtures.batch(512, 64, batch -> {
             flushed[0] += batch.vertexCount() + batch.segmentCount();
             points[0] += batch.pointCount();
@@ -150,6 +151,7 @@ class AllocationTest {
                 text.drawInt(b, (int) n, 0, 0, 0);
                 text.drawFixed(b, n * 0.37, 2, 0, 0, 0);
                 points[0] += b.pointCount();
+                tracers[0] += scene.tracerCount;
             }
         };
         for (int i = 0; i < WARMUP; i++) {
@@ -171,6 +173,7 @@ class AllocationTest {
             () -> assertTrue(cam.offsetCount() > 1, "the view spans world copies"),
             () -> assertTrue(flushed[0] > 0, "the batch overflowed and flushed during the run"),
             () -> assertTrue(points[0] > 0, "dead-cannon dots were drawn"),
+            () -> assertTrue(tracers[0] > 0, "new shots' tracers were drawn (ScenePainter.tracers)"),
             () -> assertTrue(allZeroAfterFirst(windows), "at most the first window allocates; windows: " + all));
     }
 

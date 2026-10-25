@@ -49,7 +49,7 @@ class DemoWorldTest {
             () -> assertEquals(5000, s.particleCount, "5000 particles"),
             () -> assertEquals(Item.COUNT, s.itemCount, "all 21 items"),
             () -> assertTrue(s.mineCount > 0 && s.ballCount > 0 && s.missileCount > 0 && s.laserCount > 0
-                && s.wreckCount > 0 && s.asteroidCount > 0 && s.ecmCount > 0 && s.pausedCount > 0 && s.linkCount > 0,
+                && s.wreckCount > 0 && s.tracerCount > 0 && s.asteroidCount > 0 && s.ecmCount > 0 && s.pausedCount > 0 && s.linkCount > 0,
                 "every other kind is present"),
             () -> assertEquals(0, s.selfId, "ship 0 is self"),
             () -> assertEquals(21, s.loops, "1.5 s at 14 frames per second"),

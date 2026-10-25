@@ -157,6 +157,13 @@ final class LatencyRig {
      * send run outside the measurement (ClientNetAllocationTest covers them; the emulated link is test code).
      */
     GameFrameMeter gameFrameMeter;
+    /** With {@link #gameFrameMeter}: also fill the scene and radar from the game ({@code SceneFiller}) in the metered part. */
+    boolean meterSceneFill;
+    final com.fulcrologic.jxpilot.client.paint.SceneData scene = new com.fulcrologic.jxpilot.client.paint.SceneData();
+    private final com.fulcrologic.jxpilot.client.app.RadarBlips radar = new com.fulcrologic.jxpilot.client.app.RadarBlips(1024);
+    private final com.fulcrologic.jxpilot.client.app.SceneFiller filler = new com.fulcrologic.jxpilot.client.app.SceneFiller();
+    /** Tracers the scene fills carried (all metered frames). */
+    long sceneTracers;
     private static final com.sun.management.ThreadMXBean MX =
         (com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory.getThreadMXBean();
     private long lastStep = Long.MIN_VALUE;
@@ -168,6 +175,10 @@ final class LatencyRig {
         client.connection().sendInput(keys, 0, now);
         long a = MX.getCurrentThreadAllocatedBytes();
         client.game().frame(now, dt);
+        if (meterSceneFill) {
+            filler.fill(scene, radar, client.game());
+            sceneTracers += scene.tracerCount;
+        }
         gameFrameMeter.measured(MX.getCurrentThreadAllocatedBytes() - a);
         client.connection().flush(now);
     }
