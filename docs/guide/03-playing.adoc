@@ -215,6 +215,8 @@ These keys act in the client and are never sent to the server.
 |kbd:[F1] |Show or hide the key help
 |kbd:[M] |Open the talk line
 |kbd:[-] |Sound off and on (<<sound>>)
+|kbd:[Insert] |Show or hide the net diagnostics line (JXPilot only; <<net-stats>>)
+|Keypad kbd:[3] |Switch prediction on or off (JXPilot only; <<prediction-switch>>)
 |`keyQuit` |Quit (JXPilot only; unbound by default). kbd:[Esc] cancels the talk line while it is open.
 |`keySwapScaleFactor`, or `--swap-scale-key KEY` |Swap between the normal and the alternative zoom
 (`--scale-factor`, `--alt-scale-factor`; <<07-client-reference.adoc#game-flags,Game flags>>). Unbound by
@@ -375,6 +377,108 @@ paused player, your own shots with `selfImmunity`) are drawn in a different colo
 Talk line (middle):: Opens with kbd:[M] for typing a chat message.
 Key help:: kbd:[F1] shows every key binding over the game, and hides it again.
 Meters (top right):: The fuel gauge, and the power and turn speed meters while you change them.
+Net diagnostics (top right, JXPilot only):: Off by default; kbd:[Insert] shows it
+(<<net-stats,The net diagnostics line>>).
+
+[[long-distance]]
+== Playing over long distances
+
+On a JXPilot server, the client hides most of the delay between you and the server. Your ship turns,
+thrusts and fires on the next screen frame, at any distance: about 4 ms after the key on average, 8 ms
+at most, measured at round trip times (RTT) up to 300 ms with jitter and packet loss. Without this, every
+key would take a full round trip to the server and back before you saw it.
+
+The client does this by *predicting*: it runs the same ship physics as the server (thrust, turning,
+gravity, walls and bounces), from the server's exact state of your ship, with your keys, ahead of the
+server's frames. When the server's verdict arrives, the client checks it against its prediction. They
+usually agree to the bit.
+
+Prediction needs a JXPilot server. On an original XPilot server (`xp://`) nothing is predicted, and the
+game plays as before (<<07-client-reference.adoc#xpilot-protocol,Playing on original XPilot servers>>).
+
+[[predicted]]
+=== What is predicted
+
+* *Your ship*: turning, thrust, gravity, walls, bounces and recoil, and the camera that follows it.
+* *Your exhaust and your shield as drawn on your ship*, from your keys.
+* *Your shots*: drawn the moment you fire, then checked against the server's. A shot the server did not
+  fire (out of fuel, the shot limit reached) disappears.
+* *Everybody else's shots, and the cannons'*: drawn where they will be when a key you press now reaches
+  the server, moved with the server's own rules for shots (gravity, walls). What you dodge on screen is
+  what you dodge on the server.
+
+[[not-predicted]]
+=== What is not predicted
+
+* *Other ships* are drawn slightly in the past: about half your RTT plus 90 ms (the server's frame
+  interval and a margin for jitter). So is everything else that is not a shot: missiles, mines, lasers,
+  balls, items, asteroids and explosions. Aim a little ahead of a moving ship, more the farther away the
+  server is.
+* *Hits and shields are the server's call.* The shield on your ship shows at once, but the shield that
+  protects you goes up when your key reaches the server: about half your RTT plus 70 ms after the press.
+  Raise it early. Likewise, a shot that kills you shows after the round trip: your ship flies on for a
+  moment, then explodes where the server says it died.
+* Your ship is drawn from the server's frames, unpredicted, while you are dead or paused, during the
+  delay before a round, in a wormhole or a hyperjump, and under the autopilot.
+
+[[corrections]]
+=== Corrections and snaps
+
+Sometimes the server's ship differs from the predicted one: something the client could not know pushed
+it. Shots, ships, sparks and tractor beams of other players; a cannon; a ball on its connector; items and
+fuel picked up (they change the ship's mass); devices that use fuel; and, rarely, a wall bounce where two
+choices were equally good. On a lossy link, a key can also reach the server a frame late.
+
+The client then moves your ship to the server's path and replays your keys from there. Small corrections
+glide in over a tenth of a second (faster near walls), so you see a slight drift rather than a jump. Your
+ship jumps (snaps) only when it respawns, goes through a wormhole or hyperjumps, or when the correction is
+larger than 10 blocks. Corrections are rare when nobody touches you, and more frequent in a close fight.
+
+If corner bounces correct you often, the server operator can turn on `predictableBounces`
+(<<04-running-a-server.adoc#predictable-bounces,Predictable bounces>>).
+
+[[prediction-switch]]
+=== Switching prediction off
+
+Prediction is on by default. Turn it off for a game with `--no-predict`
+(<<07-client-reference.adoc#game-flags,Game flags>>), or switch it while you play with keypad kbd:[3]
+(`keyTogglePrediction`; kbd:[F7] in the <<mac-laptop-keymap,Mac laptop keymap>>). The switch shows nothing
+on screen, so it works for blind comparisons: let a friend press it now and then, and say which feels
+better.
+
+With prediction off, your ship is drawn from the newest frame the server sent, so it reacts after the
+round trip plus about 70 ms, and shots are drawn on the delayed timeline of the other ships.
+
+[[net-stats]]
+=== The net diagnostics line
+
+kbd:[Insert] (`keyToggleNetStats`; kbd:[=] in the <<mac-laptop-keymap,Mac laptop keymap>>) shows or hides
+a line at the top right of the game view:
+
+----
+rtt 182 ms  interp 91 ms  jitter 3.1 ms  loss 0.0% late 0.0%  lead 1.6  slack 0.31  corr 0.4/s 12 px
+----
+
+A figure the client does not know yet shows as `-`. One tick is one server frame, 1/14 s at the default
+14 frames per second.
+
+[cols="1,5",options="header"]
+|===
+|Field |Meaning
+|`rtt` |Round trip time to the server, smoothed, from a ping every second.
+|`interp` |How far in the past other ships are drawn, after the network delay: one server frame plus a margin.
+|`jitter` |How unevenly the server's frames arrive.
+|`loss` |Server frames lost on the way, over the last 2 seconds.
+|`late` |Server frames that arrived out of order, after a newer one.
+|`lead` |How many ticks ahead of the server your keys are sent: about half your RTT plus `slack`.
+|`slack` |The server's report: the smallest margin, in ticks, by which your keys arrived before they were
+needed, over the last second. The client keeps it a little above zero; below zero, keys arrived too late
+and the client sends them earlier from then on.
+|`corr` |Prediction corrections per second, and the size of the last one in pixels.
+|===
+
+A steady `rtt`, low `jitter` and `loss`, and a `corr` near 0 when nobody is near you make a good link. On an
+original XPilot server every field is `-`.
 
 [[scoring]]
 == Scoring

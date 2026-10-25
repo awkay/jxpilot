@@ -142,6 +142,12 @@ selects bundled Fira Code at that size; without it the size is 13.
 |sound on
 |Play sound effects or not (JXPilot only; <<03-playing.adoc#sound,Sound>>).
 
+|`--predict`, `--no-predict`
+|prediction on
+|Predict your own ship and shots, and draw other shots where they will be when your keys land, or not
+(JXPilot servers only; <<03-playing.adoc#long-distance,Playing over long distances>>). Keypad kbd:[3]
+switches it while you play.
+
 |`--volume N`
 |`maxVolume` from the keys file, else `100`
 |XPilot's `maxVolume`, 0 to 255: the loudest a sound plays. `0` is no sound; above 100 plays like 100.
@@ -414,6 +420,9 @@ java -jar jxpilot-client-VERSION.jar --connect xp://HOST:15345 --name Ace --team
 On an XPilot server everything works, items, balls and races included, because the C server runs the
 game; the JXPilot client draws it with the same painters, HUD and keys. Known differences:
 
+* Nothing is predicted (<<03-playing.adoc#long-distance,Playing over long distances>>): an XPilot server
+  sends too little of the game's state. Your keys take the round trip to the server, as with the XPilot
+  client, and the net diagnostics line shows `-`.
 * XPilot sends only what is within 1024 x 1024 pixels of your ship.
 * Paused ships carry no name on the wire, so the client cannot show their names or shapes.
 
