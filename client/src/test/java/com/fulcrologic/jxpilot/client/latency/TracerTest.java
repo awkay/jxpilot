@@ -62,6 +62,7 @@ class TracerTest {
         int[] precision = new int[4];
         java.util.Map<Integer, Long> lastEvent = new java.util.HashMap<>(); // bullet id: last first-sight frame
         long[] frame = {0};
+        int[] limit = {0}; // "old": fired more than this many ticks before the frame (interval + RTT at the sim rate)
         int[] events = {0};
         java.util.Set<Integer> drawnIds = new java.util.HashSet<>();
         LatencyRig.withPrediction(true, () -> {
@@ -77,7 +78,8 @@ class TracerTest {
                 ClientWorld w = r.world();
                 tracersSeen[0] += w.tracerCount();
                 int serverTick = r.server.net.currentTick();
-                int oldLimit = (int) Math.ceil(w.snapshotIntervalTicks() + s.rttMs() * 60 / 1000.0 /* 60 Hz sim */);
+                int oldLimit = (int) Math.ceil(w.snapshotIntervalTicks() + s.rttMs() * r.client.game().simHz() / 1000.0);
+                limit[0] = oldLimit;
                 int[] frameIds = new int[w.shotCount()];
                 for (int k = 0; k < w.shotCount(); k++) {
                     frameIds[k] = w.shotSourceTick(k) == Integer.MIN_VALUE ? -1 : truth.otherShotIdAt(
@@ -142,9 +144,9 @@ class TracerTest {
         });
         Stats l = new Stats(len, nl[0]);
         System.out.printf(java.util.Locale.ROOT, "TRACER first-sight tracers %d (cannon %d, %d at their cannon),"
-                + " length p50 %.1f px p95 %.1f px; tracer-frames %d; precision per tracer: %d fresh, %d old"
+                + " length p50 %.1f px p95 %.1f px; tracer-frames %d; precision per tracer (old > %d ticks): %d fresh, %d old"
                 + " and drawn before (tracker misses), %d old entering the view; %d tracer frames unmatched%n",
-            stats[0], stats[1], stats[2], l.p50(), l.p95(), tracersSeen[0], precision[2], precision[1], precision[3],
+            stats[0], stats[1], stats[2], l.p50(), l.p95(), tracersSeen[0], limit[0], precision[2], precision[1], precision[3],
             precision[0]);
         assertAll(
             () -> assertTrue(stats[0] > 50, "new bullets got a tracer at first sight: " + stats[0]),

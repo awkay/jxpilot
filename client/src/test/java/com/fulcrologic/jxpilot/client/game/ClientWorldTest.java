@@ -352,6 +352,8 @@ class ClientWorldTest {
                 () -> assertArrayEquals(ox, java.util.Arrays.copyOf(b.shotOriginX, LIFE), 0f, "nor its origins"),
                 () -> assertArrayEquals(wantAges, java.util.Arrays.copyOf(b.shotAge, LIFE),
                     "104's ages: ticks since fired, the same via 102"),
+                () -> assertEquals(1, b.shotAge[indexOf(s104, 103)], "the bullet fired at 103 (only in 104, unlinked"
+                    + " from the late 102) keeps its age from its source"),
                 () -> assertEquals(0, fWrong, "100 to 102 and 102 to 104 link each bullet to itself"));
         }
     }
