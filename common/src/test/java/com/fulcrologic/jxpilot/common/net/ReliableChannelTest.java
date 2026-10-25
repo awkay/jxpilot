@@ -206,6 +206,36 @@ class ReliableChannelTest {
     @DisplayName("overflow queue")
     class Overflow {
         @Test
+        @DisplayName("a sender that writes only while wantsSend: overflowing messages still flow once acks empty the"
+            + " window")
+        void wantsSendAfterOverflow() {
+            ReliableChannel tx = new ReliableChannel(2, 16, 1000);
+            ReliableChannel rx = new ReliableChannel(2, 16, 1000);
+            Recorder rec = new Recorder();
+            for (int i = 0; i < 4; i++) {
+                queue(tx, 1, i); // 2 in the window, 2 overflowing
+            }
+            ByteBuffer p = packet(tx, 0);
+            rx.read(p, rec);
+            tx.onAck(rx.ack(), 0);
+            boolean wantsWithOverflow = tx.wantsSend(MS); // the window is empty and nothing is due for resend
+            long now = MS;
+            for (int round = 0; round < 10 && tx.wantsSend(now); round++) {
+                ByteBuffer q = packet(tx, now);
+                rx.read(q, rec);
+                tx.onAck(rx.ack(), now);
+                now += MS;
+            }
+            boolean wantsWhenDone = tx.wantsSend(now);
+            assertAll(
+                () -> assertTrue(wantsWithOverflow, "wants to send while messages overflow and the window has room"),
+                () -> assertEquals(List.of("1:0/0", "1:1/0", "1:2/0", "1:3/0"), rec.got, "all four delivered, in"
+                    + " order"),
+                () -> assertEquals(0, tx.overflowing(), "the overflow drained"),
+                () -> assertFalse(wantsWhenDone, "then nothing more to send"));
+        }
+
+        @Test
         @DisplayName("messages beyond the window wait in order and flow in as acks free slots")
         void overflow() {
             ReliableChannel tx = new ReliableChannel(2, 16, 1);
