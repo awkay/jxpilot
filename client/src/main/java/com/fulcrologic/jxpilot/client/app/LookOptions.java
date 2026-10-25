@@ -92,6 +92,7 @@ public final class LookOptions {
         style.sparkSize = options.integer(SPARK_SIZE);
         style.shotSize = options.integer(SHOT_SIZE);
         style.nastyShots = options.flag(SHOW_NASTY_SHOTS);
+        style.shotTracers = options.flag(SHOW_SHOT_TRACERS);
         style.markingLights = options.flag(MARKING_LIGHTS);
         style.showShipName = options.flag(SHOW_SHIP_NAME);
         style.texturedBalls = options.flag(TEXTURED_BALLS);

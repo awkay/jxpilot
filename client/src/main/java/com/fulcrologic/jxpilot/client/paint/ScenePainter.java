@@ -288,10 +288,11 @@ public final class ScenePainter {
      * Tracers of new bullets (prediction on, JXPilot only): a thin line from the bullet's source to where it is drawn,
      * in its colour, fading out; under the shots.
      * <p>
-     * BEHAVIOR: drawn when either end is in copy k's view, at the tracer's alpha times the colour's.
+     * BEHAVIOR: drawn when the segment's bounding box meets copy k's view, at the tracer's alpha times the colour's;
+     * none with {@code showShotTracers} off ({@link PaintStyle#shotTracers}).
      */
     private void tracers(VertexBatch b, Camera cam, int k, SceneData s) {
-        for (int i = 0; i < s.tracerCount; i++) {
+        for (int i = 0; i < s.tracerCount && style.shotTracers; i++) {
             // the segment's bounding box (its start is unwrapped next to its end): one crossing the view with both
             // ends outside it is drawn too
             if (cam.isVisible(Math.min(s.tracerX1[i], s.tracerX2[i]), Math.min(s.tracerY1[i], s.tracerY2[i]),

@@ -85,8 +85,14 @@ class LookOptionsTest {
             o.apply(SPARK_COLORS, "1 2");
             o.apply(BACKGROUND_POINT_DIST, "3");
             o.apply(BACKGROUND_POINT_SIZE, "5");
+            s.shotTracers = false;
+            look.apply(p, s);
+            boolean tracersByDefault = s.shotTracers;
+            o.apply(SHOW_SHOT_TRACERS, "no");
             look.apply(p, s);
             assertAll(
+                () -> assertTrue(tracersByDefault, "showShotTracers: Yes by default"),
+                () -> assertFalse(s.shotTracers, "showShotTracers no turns them off"),
                 () -> assertEquals(6, s.shotSize, "shotSize"),
                 () -> assertEquals(4, s.sparkSize, "sparkSize"),
                 () -> assertEquals(128, s.sparkRand, "sparkProb 1 is spark_rand 128"),

@@ -36,7 +36,7 @@ import java.util.Map;
  * C's ranges: the {@code LIMIT}s of {@code Parse_options}, else the bounds of the option's
  * {@code Config_create_*} widget ({@code configure.c}), else none. An option with a {@link #notApplicable}
  * reason is accepted and kept but changes nothing in JXPilot (X11 or platform details, the server list, the
- * replay recorder).
+ * replay recorder). JXPilot's own resources follow C's, at the end.
  */
 public enum ClientOption {
     NAME("name", Type.STRING, "", "Set the nickname."),
@@ -239,7 +239,10 @@ public enum ClientOption {
     MSG17("msg17", Type.STRING, "", "Talkmessage 17."),
     MSG18("msg18", Type.STRING, "", "Talkmessage 18."),
     MSG19("msg19", Type.STRING, "", "Talkmessage 19."),
-    MSG20("msg20", Type.STRING, "", "Talkmessage 20.");
+    MSG20("msg20", Type.STRING, "", "Talkmessage 20."),
+    // JXPilot's own resources (not in C)
+    SHOW_SHOT_TRACERS("showShotTracers", Type.BOOL, "Yes",
+        "JXPilot only: with prediction on, draw a short fading line from a new bullet's source to where it is drawn.");
 
     /** Value types (C {@code Get_bool_resource}, {@code Get_int_resource}, {@code Get_float_resource}, string). */
     public enum Type { BOOL, INT, FLOAT, STRING }

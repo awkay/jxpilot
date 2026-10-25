@@ -334,6 +334,9 @@ class AppOptionsTest {
                     new com.fulcrologic.jxpilot.client.game.input.XpilotRc.Entry("keyThrust", "w", 20)),
                     o.resources(), "every resource in order, with its argument position"),
                 () -> assertEquals("Ace", o.name(), "--name still sets the name"),
+                () -> assertEquals(java.util.List.of(
+                    new com.fulcrologic.jxpilot.client.game.input.XpilotRc.Entry("showShotTracers", "no", 4)),
+                    parse("--connect", "h", "--showShotTracers", "no").resources(), "JXPilot's own resource too"),
                 () -> assertEquals(java.util.List.of(), parse("--connect", "h").resources(), "none by default"),
                 () -> assertEquals("Unknown option: --frobnicate", error("--connect", "h", "--frobnicate", "1"),
                     "unknown resources are still errors"),

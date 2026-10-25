@@ -214,6 +214,7 @@ public final class ClientUi {
         e.add(flag("clockAMPM", CLOCK_AMPM));
         e.add(number("scaleFactor", ConfigEntry.Kind.FLOAT, SCALE_FACTOR, 0.2, 8));
         e.add(number("altScaleFactor", ConfigEntry.Kind.FLOAT, ALT_SCALE_FACTOR, 0.2, 8));
+        e.add(flag("shotTracers", SHOW_SHOT_TRACERS)); // JXPilot only, after C's
         return e;
     }
 
@@ -506,6 +507,7 @@ public final class ClientUi {
         SHOT_SIZE, TEAM_SHOT_SIZE, SHOW_NASTY_SHOTS, HUD_COLOR, HUD_LOCK_COLOR, WALL_COLOR, DECOR_COLOR, SHOW_DECOR,
         OUTLINE_DECOR, FILLED_DECOR, TEXTURED_DECOR, TEXTURED_BALLS, RECEIVE_WINDOW_SIZE, CHARS_PER_SECOND,
         MARKING_LIGHTS, TOGGLE_SHIELD, AUTO_SHIELD, CLIENT_PORT_START, CLIENT_PORT_END,
+        SHOW_SHOT_TRACERS, // JXPilot only, after C's
     };
 
     private RcWriter.Resource opt(ClientOption o) {

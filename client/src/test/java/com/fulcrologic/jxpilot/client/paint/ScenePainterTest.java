@@ -125,6 +125,29 @@ class ScenePainterTest {
     }
 
     @Test
+    @org.junit.jupiter.api.DisplayName("showShotTracers off: no tracer is drawn, the shots still are")
+    void tracersOff() {
+        SceneData s = new SceneData(1, 4, 1, 1);
+        s.addTracer(480, 500, 520, 500, Palette.RED, 1f);
+        s.addShot(520, 500, Palette.WHITE, false);
+        PaintStyle st = new PaintStyle();
+        st.shotTracers = false;
+        ScenePainter off = new ScenePainter(P, st);
+        off.setSparkProb(1);
+        VertexBatch b = batch();
+        off.draw(b, TEXT, cam(10000, 10000, false, 500, 500), s);
+        int red = P.color(Palette.RED) & 0x00FFFFFF;
+        int lines = 0;
+        for (int i = 0; i < b.segmentCount(); i++) {
+            lines += (b.segColor(i) & 0x00FFFFFF) == red ? 1 : 0;
+        }
+        int fLines = lines;
+        assertAll(
+            () -> assertEquals(0, fLines, "no tracer line"),
+            () -> assertTrue(modes(b).contains(VertexBatch.POINTS), "the shot is drawn"));
+    }
+
+    @Test
     void commandsFollowCsDeferredFlushes() {
         VertexBatch b = batch();
         painter().draw(b, TEXT, cam(10000, 10000, false, 500, 500), scene());

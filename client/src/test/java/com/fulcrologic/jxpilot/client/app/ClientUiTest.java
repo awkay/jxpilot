@@ -112,7 +112,7 @@ class ClientUiTest {
                     "outlineDecor", "filledDecor", "texturedDecor", "texturedBalls", "maxFPS", "maxVolume",
                     "showShipName", "showMineName", "fuelMeter", "powerMeter", "turnSpeedMeter", "packetSizeMeter",
                     "packetLossMeter", "packetDropMeter", "packetLagMeter", "clock", "clockAMPM", "scaleFactor",
-                    "altScaleFactor"), wrap, "every entry in C's order"),
+                    "altScaleFactor", "shotTracers"), wrap, "every entry in C's order, then JXPilot's"),
                 () -> assertFalse(flat.contains("slidingRadar"), "no slidingRadar without edge wrap"),
                 () -> assertEquals(wrap.size() - 1, flat.size(), "only that one is left out"));
         }

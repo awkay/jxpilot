@@ -46,6 +46,8 @@ public final class PaintStyle {
     public int sparkSize = PaintConfig.SPARK_SIZE;
     /** {@code showNastyShots}: fast shots as an X or + instead of a square (C {@code Gui_paint_fastshot}). */
     public boolean nastyShots;
+    /** {@code showShotTracers} (JXPilot only): new bullets' tracers, prediction on ({@code ScenePainter}). */
+    public boolean shotTracers = true;
     /** {@code markingLights}. */
     public boolean markingLights = true;
     /** {@code showShipName}. */
