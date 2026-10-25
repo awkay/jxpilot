@@ -12,8 +12,9 @@ ifdef::env-github[]
 endif::[]
 
 This chapter is for developers. The design documents are in the repository: `docs/SPEC.md` (the
-plan, architecture, performance rules and milestones), `docs/PROTOCOL.md` (the wire protocol) and
-`docs/TESTING.md` (the testing standard, which is mandatory for contributions).
+plan, architecture, performance rules and milestones), `docs/PROTOCOL.md` (the wire protocol),
+`docs/latency-fixes.md` and `docs/latency-measurements.md` (prediction: the plan and its measurements)
+and `docs/TESTING.md` (the testing standard, which is mandatory for contributions).
 
 [[build-requirements]]
 == Requirements
@@ -46,7 +47,8 @@ from there (`../maps/planetx.xp`); built-in map names need no path.
 |===
 |Directory |Contents
 |`common/` |Map and config parsing, the option registry (`Opt`, `Options`), wall geometry, ship shapes,
-the network protocol codecs.
+the network protocol codecs, and the ship and shot movement code (`common.sim`) that the server runs
+and the client predicts with.
 |`server/` |The game simulation, robots and the network server.
 |`client/` |The game client: LWJGL/OpenGL renderer, HUD, radar, input, networking for JXPilot and XPilot
 servers, the embedded server for `--local`. `client/scripts/run-client.sh` runs it from a build.
@@ -56,6 +58,8 @@ of this guide's reference tables.
 copies them into the jars as `xpilot/maps/` (listed by `common/src/main/resources/xpilot/maps/index.txt`,
 which a test keeps in step with `maps/`).
 |`docs/` |Design documents; `docs/guide/` is this guide.
+|`tools/lagproxy/` |A UDP proxy that emulates a slow or lossy link between clients and a server
+(<<04-running-a-server.adoc#lagproxy,lagproxy>>).
 |`tools/xpilot-ref/` |A Docker harness that runs the original C XPilot 4.5.5 server and client
 headlessly, for screenshots and physics traces to compare against.
 |===

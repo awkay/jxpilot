@@ -85,8 +85,15 @@ source.
 error
 |Player names |must start with a capital letter (the XPilot client capitalizes) |any non-empty name;
 names already in use are refused, ignoring case
-|Keys |every key press in a client packet counts |the server sees your keys once per frame; a key
-pressed and released within one frame (1/14 s) is lost
+|Keys |every key press in a client packet counts, in the frame after the packet arrives |the client
+sends your keys for each frame, a little ahead, and the server applies them in that frame; a key pressed
+and released within one frame (1/14 s) still counts once, a second press of it within the frame does not
+|Wall bounce ties |the game's random numbers pick between two equally good bounces |the same; with
+`predictableBounces` (a JXPilot option, off by default) the frame number and the player pick, so your
+client predicts the same bounce (<<04-running-a-server.adoc#predictable-bounces,Predictable bounces>>)
+|Hidden map features |gravity, wormholes, concentrators and friction blocks hidden by the `...Visible`
+options are not sent |sent to every client for prediction, but not drawn
+(<<04-running-a-server.adoc#hidden-map,Hidden map features>>)
 |Random events |XPilot's random number generator |another generator: random details (sparks, explosions, robot
 choices) differ, nothing else
 |Exhaust sparks |drawn from the server's random numbers |every client computes the server's sparks
@@ -113,8 +120,8 @@ minutes
 |not available; operators use `/get` and `/set` in the game
 |Password file |`LIBDIR/password` unless named otherwise; a missing file is skipped |read only when
 `passwordFileName` names it; a named file that cannot be read is an error
-|Network |XPilot's protocol, one port per player, meta server |JXPilot's protocol on one UDP port; no meta
-server; the JXPilot client can still join XPilot servers
+|Network |XPilot's protocol, one port per player, meta server |JXPilot's protocol (version 2) on one UDP
+port; no meta server; the JXPilot client can still join XPilot servers
 |===
 
 [[differences-client]]
@@ -134,7 +141,11 @@ in XPilot)
 |Race scoreboard |a row with no race progress shows the previous row's checkpoint letter (an XPilot bug: the
 client reuses one text buffer) |fixed: the column is blank
 |Showing frames |each frame as it arrives |smooth motion at your screen's refresh rate: other ships about
-90 ms behind the latest frame, your own ship predicted forward from it
+90 ms behind the latest frame; on JXPilot servers your own ship and shots predicted ahead of the server,
+and other shots drawn where they will be when your keys land (<<03-playing.adoc#long-distance,Playing
+over long distances>>)
+|Lag display |the packet meters |the packet meters, and a net diagnostics line on kbd:[Insert]
+(<<03-playing.adoc#net-stats,The net diagnostics line>>)
 |===
 
 [appendix]
@@ -189,11 +200,21 @@ with `--name`.
 |Client: stays at "connecting" and never starts
 |Nothing comes back from the server. Check the address and port, that the server is running, and the
 firewalls on both sides; the server answers only from the address you contacted
-(<<04-running-a-server.adoc#multi-homed,Replies from the right address>>).
+(<<04-running-a-server.adoc#multi-homed,Replies from the right address>>). A server of another JXPilot
+version (1.1.1 or earlier against this version, or the reverse) looks the same: update both
+(<<01-introduction.adoc#compatibility,Which versions play together>>).
 
 |Client: the game feels sluggish, your ship reacts late
-|Your keys take a round trip to the server, plus the wait for its next frame (up to 1/14 s). Play on a
-server closer to you, or host it half way between the players (<<04-running-a-server.adoc#hosting,Hosting for friends far away>>).
+|On a JXPilot server your ship should answer at once: check that prediction is on (keypad kbd:[3] switches
+it; `--no-predict` turns it off). On an original XPilot server, and for what the server decides (hits,
+shields), your keys take a round trip to the server. Play on a server closer to you, or host it where the
+farthest player's round trip is shortest (<<04-running-a-server.adoc#choosing-a-host,Choosing where to
+host>>).
+
+|Client: your ship jumps or drifts now and then
+|Corrections: the server's ship differed from the prediction, usually because something hit or pushed you
+(<<03-playing.adoc#corrections,Corrections and snaps>>). Many corrections with nobody near you point to a
+lossy link: check `loss` and `jitter` on the net diagnostics line (kbd:[Insert]).
 
 |Client: `jxpilot keys: ...` lines at startup
 |Your `~/.xpilotrc` (or `--keys` file) has a line JXPilot cannot use, or a key bound to more than one
@@ -221,6 +242,17 @@ Can I join an original XPilot server, or use the original XPilot client with a J
 The JXPilot client joins original XPilot 4.5.5 servers with `xp://`
 (<<07-client-reference.adoc#xpilot-protocol,Playing on original XPilot servers>>). The original XPilot
 client cannot join a JXPilot server.
+
+Can I play with friends who still run JXPilot 1.1?::
+No: this version's protocol (version 2) is new, and 1.1.1 and earlier clients and servers cannot talk
+to it. Everyone updates, server included (<<01-introduction.adoc#compatibility,Which versions play
+together>>).
+
+Can I play with friends on another continent?::
+Yes. Your own ship and shots answer your keys at once at any distance; other ships are drawn a little in
+the past, and hits are decided by the server (<<03-playing.adoc#long-distance,Playing over long
+distances>>). Host where the farthest player's round trip is shortest
+(<<04-running-a-server.adoc#choosing-a-host,Choosing where to host>>).
 
 Does the server need a big machine?::
 No: about 50-60 MB of memory and under 1% of a CPU core with six robots
