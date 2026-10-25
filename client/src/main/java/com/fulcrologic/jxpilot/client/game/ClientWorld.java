@@ -220,6 +220,8 @@ public final class ClientWorld {
     private boolean predicted;
     /** The snapshot's own bullets are left out (the predictor draws them). */
     private boolean hideOwnShots;
+    /** An own bullet no provisional shot stands for is drawn anyway (set while one is put). */
+    private boolean allowOwn;
     /** The own normal bullet's SHOT variant without the harmless bit. */
     private static final int OWN_SHOT = Records.ShotKind.variant(Records.ShotKind.SHOT, Records.ObjColor.OWN);
     /** Provisional own shots the last update appended to the shot list (drawn after the snapshot shots). */
@@ -276,6 +278,10 @@ public final class ClientWorld {
     private final float[] outShotX;
     private final float[] outShotY;
     private final int[] outShotVariant;
+    /** Each drawn shot's source record: the snapshot tick and its position there (none: Integer.MIN_VALUE tick). */
+    private final int[] outShotSrcTick;
+    private final float[] outShotSrcX;
+    private final float[] outShotSrcY;
     private int outPoints;
     private final float[] outPointX;
     private final float[] outPointY;
@@ -316,6 +322,9 @@ public final class ClientWorld {
         outShotX = new float[shotCap];
         outShotY = new float[shotCap];
         outShotVariant = new int[shotCap];
+        outShotSrcTick = new int[shotCap];
+        outShotSrcX = new float[shotCap];
+        outShotSrcY = new float[shotCap];
         outPointX = new float[shotCap];
         outPointY = new float[shotCap];
         outPointColor = new int[shotCap];
@@ -516,7 +525,8 @@ public final class ClientWorld {
         f.complete = partCount > 0 && (f.parts & all) == all;
         if (predictor != null && !f.shotsConfirmed && f.complete) {
             f.shotsConfirmed = true;
-            predictor.shots().confirm(f.tick, Math.min(f.shots, shotCap), f.shotX, f.shotY, f.shotVariant);
+            predictor.shots().confirm(f.tick, Math.min(f.shots, shotCap), f.shotX, f.shotY, f.shotVariant,
+                f.shotOwnMatched);
         }
         if (f.hasSelf && (!haveSelfState || f.tick - selfStateTick >= 0)) {
             haveSelfState = true;
@@ -600,6 +610,7 @@ public final class ClientWorld {
                     f.shotState[k] = f.shotVx[k] != 0 || f.shotVy[k] != 0 ? Tracker.KNOWN : Tracker.UNKNOWN;
                     f.shotNext[k] = -1;
                     f.shotLinked[k] = false;
+                    f.shotAge[k] = 0;
                 }
             }
             case Section.BURST -> {
@@ -1089,6 +1100,7 @@ public final class ClientWorld {
                 b.shotLinkVx[j] = (float) (XMath.wrapDelta(b.shotX[j] - a.shotX[i], worldW, wrap) / ticks);
                 b.shotLinkVy[j] = (float) (XMath.wrapDelta(b.shotY[j] - a.shotY[i], worldH, wrap) / ticks);
                 b.shotLinked[j] = true;
+                b.shotAge[j] = a.shotAge[i] + ticks;
             }
         }
         for (int j = 0; j < sm; j++) {
@@ -1183,7 +1195,7 @@ public final class ClientWorld {
         }
         if (a == null) {
             for (int i = 0; i < b.shots && i < shotCap; i++) {
-                putShot(b.shotX[i], b.shotY[i], b.shotVariant[i]);
+                putShot(b.shotX[i], b.shotY[i], b.shotVariant[i], b, i);
             }
             return;
         }
@@ -1193,18 +1205,19 @@ public final class ClientWorld {
             int j = b == null ? -1 : a.shotNext[i];
             if (j >= 0) {
                 putShot(wrapX(a.shotX[i] + XMath.wrapDelta(b.shotX[j] - a.shotX[i], worldW, wrap) * t),
-                    wrapY(a.shotY[i] + XMath.wrapDelta(b.shotY[j] - a.shotY[i], worldH, wrap) * t), a.shotVariant[i]);
+                    wrapY(a.shotY[i] + XMath.wrapDelta(b.shotY[j] - a.shotY[i], worldH, wrap) * t), a.shotVariant[i],
+                    a, i);
                 continue;
             }
             if (b != null && a.shotState[i] == Tracker.KNOWN) {
                 // F14: a tracked shot with no continuation died between A and B (wall, ship): drawn where A had
                 // it, as C does, instead of flying on past the impact
-                putShot(a.shotX[i], a.shotY[i], a.shotVariant[i]);
+                putShot(a.shotX[i], a.shotY[i], a.shotVariant[i], a, i);
                 continue;
             }
             double vx = a.shotEstVx[i];
             double vy = a.shotEstVy[i];
-            putShot(wrapX(a.shotX[i] + vx * dt), wrapY(a.shotY[i] + vy * dt), a.shotVariant[i]);
+            putShot(wrapX(a.shotX[i] + vx * dt), wrapY(a.shotY[i] + vy * dt), a.shotVariant[i], a, i);
         }
     }
 
@@ -1229,11 +1242,22 @@ public final class ClientWorld {
         }
     }
 
+    private void putShot(float x, float y, byte variant, SnapshotFrame src, int i) {
+        int k = outShots;
+        putShot(x, y, variant);
+        if (outShots > k) {
+            outShotSrcTick[k] = src.tick;
+            outShotSrcX[k] = src.shotX[i];
+            outShotSrcY[k] = src.shotY[i];
+        }
+    }
+
     private void putShot(float x, float y, byte variant) {
-        if (outShots >= outShotX.length || hideOwnShots && (variant & 0x7F) == OWN_SHOT) {
+        if (outShots >= outShotX.length || hideOwnShots && !allowOwn && (variant & 0x7F) == OWN_SHOT) {
             return; // the predictor draws the own bullets (provisional shots) on the own ship's timeline
         }
         int k = outShots++;
+        outShotSrcTick[k] = Integer.MIN_VALUE;
         outShotX[k] = x;
         outShotY[k] = y;
         outShotVariant[k] = variant & 0xFF;
@@ -1250,8 +1274,11 @@ public final class ClientWorld {
      * colours TEAM, else none (an enemy's team is not on the wire: its own cannons and targets crash it here).
      * <p>
      * BEHAVIOR: the gap is capped at the own ship's lead over the server's tick now plus 2 snapshot intervals; a shot
-     * that ends on the way (a wall) is drawn where it ends; the own bullets are the provisional shots' (left out
-     * here). Returns false without a frame (the interpolated drawing then runs).
+     * that ends on the way (a wall, or its life: shotLife for a player's bullet from the tick it was first seen, at
+     * most {@link #CANNON_SHOT_LIFE_MAX} for a cannon's) is not drawn. The own bullets are the provisional shots',
+     * except own records no provisional shot was matched to in the frame's reconciliation (bullets the client did not
+     * predict), which are reckoned like the others. Returns false without a frame (the interpolated drawing then
+     * runs).
      */
     private boolean drawShotsPredicted() {
         SnapshotFrame n = null;
@@ -1280,8 +1307,9 @@ public final class ClientWorld {
         int whole = (int) gap;
         double frac = gap - whole;
         for (int j = 0; j < n.shots && j < shotCap; j++) {
-            if ((n.shotVariant[j] & 0x7F) == OWN_SHOT) {
-                continue;
+            boolean own = (n.shotVariant[j] & 0x7F) == OWN_SHOT;
+            if (own && !(n.shotsConfirmed && !n.shotOwnMatched[j])) {
+                continue; // a provisional shot stands for it (or the frame was not reconciled: not known)
             }
             float vx = n.shotEstVx[j] * frameFraction;
             float vy = n.shotEstVy[j] * frameFraction;
@@ -1298,29 +1326,42 @@ public final class ClientWorld {
             boolean alive = true;
             boolean cannon = Records.ShotKind.kindOf(n.shotVariant[j]) == Records.ShotKind.CANNON_SHOT;
             // the server marks a team mate's (or own team cannon's) bullet TEAM: the own team; any other is not ours
-            int team = Records.ShotKind.colorOf(n.shotVariant[j]) == Records.ObjColor.TEAM ? predictor.shots().team()
-                : com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET;
+            int team = own || Records.ShotKind.colorOf(n.shotVariant[j]) == Records.ObjColor.TEAM
+                ? predictor.shots().team() : com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET;
+            // its life left after the frame's tick, as far as it is knowable: a player's bullet lives shotLife ticks
+            // from the tick it was first seen (or earlier), a cannon's at most CANNON_SHOT_LIFE_MAX
+            long life = (cannon ? CANNON_SHOT_LIFE_MAX : predictor.shots().shotLife()) - n.shotAge[j] - 1;
+            alive = life > 0;
             for (int k = 0; k < whole && alive; k++) {
-                alive = m.tick(x, y, vx, vy, Long.MAX_VALUE, cannon, team, shotStep);
+                alive = m.tick(x, y, vx, vy, life, cannon, team, shotStep);
                 if (alive) {
                     x = shotStep.x;
                     y = shotStep.y;
                     vx = shotStep.vx;
                     vy = shotStep.vy;
+                    life = shotStep.life;
                 }
+            }
+            if (!alive) {
+                continue; // it ends on the way (a wall, its life): not drawn stuck at the wall
             }
             double px = x / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK;
             double py = y / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK;
-            if (alive && frac > 0 && m.tick(x, y, vx, vy, Long.MAX_VALUE, cannon, team, shotStep)) {
+            if (frac > 0 && m.tick(x, y, vx, vy, life, cannon, team, shotStep)) {
                 px += frac * XMath.wrapDelta(shotStep.x / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK - px,
                     worldW, wrap);
                 py += frac * XMath.wrapDelta(shotStep.y / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK - py,
                     worldH, wrap);
             }
-            putShot(wrapX(px), wrapY(py), n.shotVariant[j]);
+            allowOwn = own;
+            putShot(wrapX(px), wrapY(py), n.shotVariant[j], n, j);
+            allowOwn = false;
         }
         return true;
     }
+
+    /** C CANNON_SHOT_LIFE_MAX bound: a cannon's bullet lives 8 + rand(24) ticks, at most 31. */
+    static final int CANNON_SHOT_LIFE_MAX = 31;
 
     /** px per frame: the wire's velocity is rounded to whole px, a linked move must be within this of it. */
     static final double LINK_VEL_SLACK = 1.0;
@@ -1747,6 +1788,17 @@ public final class ClientWorld {
     public float shotX(int i) { return outShotX[i]; }
 
     public float shotY(int i) { return outShotY[i]; }
+
+    /**
+     * The snapshot tick of drawn shot {@code i}'s source record (the record it was interpolated or reckoned from),
+     * Integer.MIN_VALUE for a provisional own shot.
+     */
+    public int shotSourceTick(int i) { return outShotSrcTick[i]; }
+
+    /** That record's position (the server's at that tick, to the wire's half pixel). */
+    public float shotSourceX(int i) { return outShotSrcX[i]; }
+
+    public float shotSourceY(int i) { return outShotSrcY[i]; }
 
     /** {@link Records.ShotKind} (the variant's 3 kind bits). */
     public int shotKind(int i) { return Records.ShotKind.kindOf(outShotVariant[i]); }

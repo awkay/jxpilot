@@ -89,6 +89,15 @@ final class ServerTruth {
      * its own id (a handle whose life went up, or that moved more than 100 px in a tick, was reused by a new bullet).
      */
     void recordOtherShots(World w, int tick) {
+        recordShots(w, tick, false);
+    }
+
+    /** As {@link #recordOtherShots}, the own player's bullets instead (in the same store: use one truth for each). */
+    void recordOwnShots(World w, int tick) {
+        recordShots(w, tick, true);
+    }
+
+    private void recordShots(World w, int tick, boolean own) {
         Objects o = w.objects;
         int n = 0;
         int[] ids = new int[o.count()];
@@ -97,7 +106,7 @@ final class ServerTruth {
         java.util.Set<Integer> seen = new java.util.HashSet<>();
         for (int i = 0; i < o.count(); i++) {
             int h = o.active[i];
-            if ((o.type[h] != Obj.SHOT && o.type[h] != Obj.CANNON_SHOT) || o.owner[h] == ownId) {
+            if ((o.type[h] != Obj.SHOT && o.type[h] != Obj.CANNON_SHOT) || (o.owner[h] == ownId) != own) {
                 continue;
             }
             double px = VirtualServer.px(o.cx[h]);
@@ -155,6 +164,31 @@ final class ServerTruth {
             out[1] += f * XMath.wrapDelta(shotYs.get(a + 1)[j] - out[1], worldH, wrap);
         }
         return true;
+    }
+
+    /**
+     * The other bullet at (x, y) after {@code tick} within {@code px} (wrap-aware; the nearest), -1 when none: the one a
+     * snapshot record of that tick stands for.
+     */
+    int otherShotIdAt(int tick, double x, double y, double px, double worldW, double worldH, boolean wrap) {
+        int[] ids = shotIds.get(tick);
+        if (ids == null) {
+            return -1;
+        }
+        double[] xs = shotXs.get(tick);
+        double[] ys = shotYs.get(tick);
+        int best = -1;
+        double bestD = px * px;
+        for (int i = 0; i < ids.length; i++) {
+            double dx = XMath.wrapDelta(xs[i] - x, worldW, wrap);
+            double dy = XMath.wrapDelta(ys[i] - y, worldH, wrap);
+            double d = dx * dx + dy * dy;
+            if (d <= bestD) {
+                bestD = d;
+                best = ids[i];
+            }
+        }
+        return best;
     }
 
     private int indexOf(int tick, int id) {

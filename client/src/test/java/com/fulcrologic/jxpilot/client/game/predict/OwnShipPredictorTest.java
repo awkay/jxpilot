@@ -776,6 +776,8 @@ class OwnShipPredictorTest {
             p.update(s, 0);
             assertAll(
                 () -> assertEquals(0, afterNewer, "tick 16 beyond the head 15: a seed"),
+                () -> assertEquals(2, p.corrections(), "both seeds moved the drawn ship: counted as corrections"),
+                () -> assertEquals(Math.hypot(30, 30), p.lastCorrectionPx(), 0.05, "from 150,150 to 120,120"),
                 () -> assertEquals(0, p.reconciliations(), "tick 9 before the base 16: a seed"),
                 () -> assertFalse(p.active(), "seeded at 9, which has no entry 10 left: halted"));
         }

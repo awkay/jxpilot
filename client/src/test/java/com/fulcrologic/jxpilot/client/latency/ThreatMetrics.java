@@ -37,10 +37,10 @@ import java.util.Map;
  * <ul>
  *   <li><b>Shot threat error</b>: per frame and drawn non-own bullet (SHOT and CANNON_SHOT kinds), the distance to the server's position of that
  *   shot at the tick the frame's input lands: the predicted clock's tick (protocol v2 applies the input collected now at
- *   it, whether the own ship is predicted or not). The drawn shot is identified as the server shot nearest to it at the render tick or at that
- *   tick (whichever is nearer), so both an interpolated and a dead-reckoned drawing are matched to their shot. A shot
- *   the server has destroyed by then counts as {@link Result#goneByThen}; none within {@link #MATCH_PX} as
- *   {@link Result#unmatched}.</li>
+ *   it, whether the own ship is predicted or not). The drawn shot is identified by its source record (the snapshot record it was interpolated or
+ *   reckoned from: its tick and half-pixel position, the server's there, within {@link #MATCH_PX}), so neither drawing
+ *   can be matched to a neighbouring bullet. A shot the server has destroyed by then counts as
+ *   {@link Result#goneByThen}; one without a source bullet as {@link Result#unmatched}.</li>
  *   <li><b>Shield reaction</b>: SHIELD goes down every {@link #PERIOD_MS} for {@link #HOLD_MS}; per press, from the
  *   key to the server tick after which the shield is up (the shield is a server verdict: this is what the slack
  *   costs), for presses while alive whose server shield was down at the key.</li>
@@ -54,7 +54,8 @@ final class ThreatMetrics {
     static final long HOLD_MS = 300;
     /** Presses start this long after the spawn (the first release drops the spawn shield). */
     static final long FIRST_MS = 2000;
-    static final double MATCH_PX = 200;
+    /** A source record within this of a server bullet at its tick is that bullet (the wire has half pixels). */
+    static final double MATCH_PX = 1;
     static final int MAX = 1 << 21;
 
     record Result(Stats threatError, long drawnShots, long unmatched, long goneByThen, Stats shieldReaction,
@@ -89,6 +90,9 @@ final class ThreatMetrics {
         double[] fy = new double[MAX];
         double[] fref = new double[MAX];
         double[] frender = new double[MAX];
+        int[] fsrcTick = new int[MAX];
+        double[] fsrcX = new double[MAX];
+        double[] fsrcY = new double[MAX];
         int[] n = {0};
         double[] world = new double[3];
         long[] pressAt = new long[4096];
@@ -120,6 +124,9 @@ final class ThreatMetrics {
                 fy[n[0]] = w.shotY(i);
                 fref[n[0]] = r.client.connection().predictedTick(t);
                 frender[n[0]] = w.renderTick();
+                fsrcTick[n[0]] = w.shotSourceTick(i);
+                fsrcX[n[0]] = w.shotSourceX(i);
+                fsrcY[n[0]] = w.shotSourceY(i);
                 n[0]++;
             }
         };
@@ -133,31 +140,13 @@ final class ThreatMetrics {
         long gone = 0;
         double[] p = new double[2];
         for (int i = 0; i < n[0]; i++) {
-            double best = MATCH_PX;
-            int bestId = -1;
-            int[] ids1 = truth.otherShotIds((int) Math.floor(frender[i]));
-            int[] ids2 = truth.otherShotIds((int) Math.floor(fref[i]));
-            for (int[] ids : new int[][] {ids1, ids2}) {
-                for (int id : ids) {
-                    if (truth.otherShotAt(id, frender[i], ww, wh, wrap, p)) {
-                        double d = MotionMetrics.distance(fx[i], fy[i], p[0], p[1], ww, wh, wrap);
-                        if (d < best) {
-                            best = d;
-                            bestId = id;
-                        }
-                    }
-                    if (truth.otherShotAt(id, fref[i], ww, wh, wrap, p)) {
-                        double d = MotionMetrics.distance(fx[i], fy[i], p[0], p[1], ww, wh, wrap);
-                        if (d < best) {
-                            best = d;
-                            bestId = id;
-                        }
-                    }
-                }
-            }
-            if (bestId < 0) {
+            // the drawn shot is the server bullet its source record stands for (the record's half-pixel position is
+            // the server's at that tick)
+            int id = fsrcTick[i] == Integer.MIN_VALUE ? -1
+                : truth.otherShotIdAt(fsrcTick[i], fsrcX[i], fsrcY[i], MATCH_PX, ww, wh, wrap);
+            if (id < 0) {
                 unmatched++;
-            } else if (truth.otherShotAt(bestId, fref[i], ww, wh, wrap, p)) {
+            } else if (truth.otherShotAt(id, fref[i], ww, wh, wrap, p)) {
                 err[ne++] = MotionMetrics.distance(fx[i], fy[i], p[0], p[1], ww, wh, wrap);
             } else {
                 gone++;

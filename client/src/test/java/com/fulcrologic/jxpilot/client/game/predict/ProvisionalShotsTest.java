@@ -619,6 +619,39 @@ class ProvisionalShotsTest {
         }
 
         @Test
+        @DisplayName("with shotsWallBounce a bullet bounces off a wall but crashes into a treasure")
+        void treasure() {
+            String t = "        *   ";
+            String x = "        x   ";
+            Options ot = options("gravity: 0\nshotsWallBounce: yes", t, t, t, t, t, t, t, t, t, t, t, t);
+            Options ox = options("gravity: 0\nshotsWallBounce: yes", x, x, x, x, x, x, x, x, x, x, x, x);
+            ShotStep out = new ShotStep();
+            boolean intoTreasure = new KernelShotMotion(KernelWorld.of(ot), ot).tick(Click.fromPixels(270f),
+                Click.fromPixels(200f), 20, 0, 50, false, com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET, out);
+            boolean intoWall = new KernelShotMotion(KernelWorld.of(ox), ox).tick(Click.fromPixels(270f),
+                Click.fromPixels(200f), 20, 0, 50, false, com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET, out);
+            assertAll(
+                () -> assertTrue(!intoTreasure, "the treasure ends it"),
+                () -> assertTrue(intoWall, "the wall bounces it"),
+                () -> assertTrue(out.vx < 0, "back: " + out.vx));
+        }
+
+        @Test
+        @DisplayName("at the edge of a map without wrap, edgeBounce bounces it back at no life cost")
+        void edge() {
+            Options on = options("gravity: 0\nedgeBounce: yes", OPEN);
+            ShotStep out = new ShotStep();
+            boolean bounced = new KernelShotMotion(KernelWorld.of(on), on).tick(Click.fromPixels(414f),
+                Click.fromPixels(200f), 10, 0, 50, false, com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET, out);
+            float vx = out.vx;
+            long life = out.life;
+            assertAll(
+                () -> assertTrue(bounced, "edgeBounce: alive"),
+                () -> assertTrue(vx < 0, "going back: " + vx),
+                () -> assertEquals(49, life, "only the tick's life"));
+        }
+
+        @Test
         @DisplayName("the bounce rules are clamped as the server's: factors to [0, 1], the speed limit to the diagonal")
         void clamps() {
             Options o = options("gravity: 0\nshotsWallBounce: yes\nobjectWallBounceLifeFactor: 3\n"
@@ -652,6 +685,44 @@ class ProvisionalShotsTest {
                 () -> assertTrue(cannon, "the cannon's shot leaves its cannon"),
                 () -> assertTrue(cannonY > 95, "moving up: " + cannonY),
                 () -> assertTrue(!player, "a player's shot there crashes into the cannon"));
+        }
+    }
+
+    @Nested
+    @DisplayName("own records and long lives")
+    class OwnRecords {
+        @Test
+        @DisplayName("confirm tells which own records a provisional shot stands for; without a world none")
+        void ownMatched() {
+            ProvisionalShots s = shots("", OPEN);
+            s.fired(10, 0, 100, 100, 0, 0, false);
+            s.advanceTo(10);
+            boolean[] matched = new boolean[3];
+            s.confirm(10, 3, new float[] {100, 200, 100}, new float[] {100, 200, 100}, new byte[] {OWN, OWN, ENEMY},
+                matched);
+            boolean[] none = {true, true};
+            new ProvisionalShots().confirm(10, 2, new float[] {1, 2}, new float[] {1, 2}, new byte[] {OWN, OWN}, none);
+            assertAll(
+                () -> assertTrue(matched[0], "the own record at the provisional shot: matched"),
+                () -> assertTrue(!matched[1], "an own record no provisional shot stands for: not matched"),
+                () -> assertTrue(!matched[2], "an enemy's record: not an own one"),
+                () -> assertTrue(!none[0] && !none[1], "without a world: none matched"));
+        }
+
+        @Test
+        @DisplayName("the end ring outgrows a long shotLife: ends a ring apart do not alias; shotLife and team kept")
+        void longLife() {
+            ProvisionalShots s = shots("shotLife: 3000", OPEN);
+            s.fired(10, 0, 100, 100, 0, 0, false);
+            s.fired(10 + 1024, 0, 100, 200, 0, 0, false);
+            s.fired(10 + 2048, 0, 100, 300, 0, 0, false);
+            s.setTeam(4);
+            assertAll(
+                () -> assertEquals(1, s.endingAt(10 + 2999), "the first ends at f + shotLife - 1"),
+                () -> assertEquals(1, s.endingAt(10 + 1024 + 2999), "the second, 1024 ticks later, too"),
+                () -> assertEquals(1, s.endingAt(10 + 2048 + 2999), "and the third"),
+                () -> assertEquals(3000, s.shotLife(), "shotLife"),
+                () -> assertEquals(4, s.team(), "team"));
         }
     }
 }

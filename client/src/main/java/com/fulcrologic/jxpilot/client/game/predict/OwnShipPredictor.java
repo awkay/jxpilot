@@ -338,6 +338,9 @@ public final class OwnShipPredictor {
             beforeY = old.cy / (double) (1 << Click.SHIFT);
             beforeH = old.dir;
         }
+        boolean wasSeeded = seeded;
+        double oldX = wasSeeded ? ring[idx(head)].cx / (double) (1 << Click.SHIFT) : 0;
+        double oldY = wasSeeded ? ring[idx(head)].cy / (double) (1 << Click.SHIFT) : 0;
         ShipBody b = ring[idx(sTick)];
         b.copyFrom(server);
         ringTick[idx(sTick)] = sTick;
@@ -349,6 +352,19 @@ public final class OwnShipPredictor {
         frozen = (b.status & Obj.KILLED) != 0;
         halted = false;
         if (!known) {
+            // a seed the ring could not compare (after a halt, a gap, or a newer tick than its head): the ship moves
+            // to the server's state unsmoothed; while it was drawn that move is a correction like any other
+            if (wasDrawn && wasSeeded && predictableState(server)) {
+                double px = Math.hypot(
+                    XMath.wrapDelta(b.cx / (double) (1 << Click.SHIFT) - oldX, world.pixelWidth(), world.wrap()),
+                    XMath.wrapDelta(b.cy / (double) (1 << Click.SHIFT) - oldY, world.pixelHeight(), world.wrap()));
+                corrections++;
+                windowCorrections++;
+                lastCorrectionPx = px;
+                if (listener != null) {
+                    listener.reconciled(sTick, false, px);
+                }
+            }
             smoother.clear();
             return;
         }

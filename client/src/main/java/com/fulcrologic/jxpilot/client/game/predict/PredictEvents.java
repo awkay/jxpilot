@@ -130,7 +130,11 @@ public final class PredictEvents implements KernelEvents {
         }
     }
 
-    /** BEHAVIOR: PAUSE is remembered ({@link #pauseKey}); no key stops the kernel's key handling here. */
+    /**
+     * BEHAVIOR: PAUSE is remembered ({@link #pauseKey}); no key stops the kernel's key handling here. (The server's
+     * returns true for a PAUSE that pauses: its key loop ends there. The predictor stops predicting at the PAUSE
+     * instead, so the keys after it in the same entry are never used.)
+     */
     @Override
     public boolean keyPressed(ShipBody b, ControlKey k) {
         if (k == ControlKey.PAUSE) {

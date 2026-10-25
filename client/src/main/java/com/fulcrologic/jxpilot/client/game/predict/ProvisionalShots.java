@@ -73,8 +73,10 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
     private final int[] end = new int[CAP];
     /** Final shots ending in each tick (a ring of ticks, tagged), kept after they ended for the replays. */
     public static final int END_RING = 1024;
-    private final int[] endTag = new int[END_RING];
-    private final int[] endCount = new int[END_RING];
+    /** A ring of ticks over twice the longest life, so no live shot's end aliases another tick's (power of two). */
+    private int[] endTag = new int[END_RING];
+    private int[] endCount = new int[END_RING];
+    private int endMask = END_RING - 1;
     private PredictEvents.ShotSink tap;
     private final byte[] misses = new byte[CAP];
     private int used;
@@ -121,6 +123,12 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
         world = w;
         motion = m;
         shotLife = o == null ? OwnShipPredictor.DEFAULT_SHOT_LIFE : o.getInt(Opt.SHOT_LIFE);
+        int ring = Integer.highestOneBit(Math.max(END_RING, 2 * Math.max(1, shotLife)) * 2 - 1);
+        if (ring != endTag.length) {
+            endTag = new int[ring];
+            endCount = new int[ring];
+            endMask = ring - 1;
+        }
         clear();
     }
 
@@ -128,6 +136,9 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
     public void setTeam(int t) {
         team = t;
     }
+
+    /** The server's shotLife (KERNEL_CONFIG). */
+    public int shotLife() { return shotLife; }
 
     /** The own team the own bullets move with. */
     public int team() { return team; }
@@ -222,12 +233,12 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
      * then); dropped and speculative shots do not count.
      */
     public int endingAt(int k) {
-        int j = k & (END_RING - 1);
+        int j = k & endMask;
         return endTag[j] == k ? endCount[j] : 0;
     }
 
     private void countEnd(int k) {
-        int j = k & (END_RING - 1);
+        int j = k & endMask;
         if (endTag[j] != k) {
             endTag[j] = k;
             endCount[j] = 0;
@@ -236,7 +247,7 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
     }
 
     private void uncountEnd(int k) {
-        int j = k & (END_RING - 1);
+        int j = k & endMask;
         if (endTag[j] == k && endCount[j] > 0) {
             endCount[j]--;
         }
@@ -361,7 +372,21 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
      * BEHAVIOR: a shot whose own steps end before {@code t} is left to its own expiry.
      */
     public void confirm(int t, int n, float[] xs, float[] ys, byte[] variants) {
+        confirm(t, n, xs, ys, variants, null);
+    }
+
+    /**
+     * As {@link #confirm(int, int, float[], float[], byte[])}, also telling which own records a provisional shot was
+     * matched to ({@code ownMatched}, may be null): the others are bullets the client did not predict (a starved tick
+     * holding FIRE, a press landing a tick late), drawn from the snapshots.
+     * <p>
+     * BEHAVIOR: without a world no own record is matched.
+     */
+    public void confirm(int t, int n, float[] xs, float[] ys, byte[] variants, boolean[] ownMatched) {
         if (world == null) {
+            if (ownMatched != null) {
+                java.util.Arrays.fill(ownMatched, 0, Math.min(n, ownMatched.length), false);
+            }
             return;
         }
         for (int j = 0; j < n; j++) {
@@ -418,6 +443,11 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
                 // the count keeps its end, right for the second and early by the rest of its life for a hit
                 state[i] = FREE;
                 ended++;
+            }
+        }
+        if (ownMatched != null) {
+            for (int jj = 0; jj < n && jj < ownMatched.length; jj++) {
+                ownMatched[jj] = (variants[jj] & 0x7F) == OWN_SHOT && taken[jj];
             }
         }
     }

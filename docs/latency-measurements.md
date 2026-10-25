@@ -253,14 +253,38 @@ the option makes no measurable difference on these courses.
   skipped and the ring rides on.
 
 **Provisional shots** come from the kernel's own fire, so their spawn and velocity are exact, and move as
-the server moves a SHOT (a client port of `Move_object`'s SHOT branch on the common `Segment`: gravity,
-walls, shotsWallBounce, edge wrap; the server's mover is untouched). Each complete snapshot confirms them
-against its own-colour SHOT records (the server already marks the receiver's own bullets, so no
-`OWN_SHOTS` section was needed), and the snapshot's own bullets are not drawn meanwhile. Over 4 courses x 3
+the server moves a SHOT, with the server's own `Move_object` (moved into `common.sim.ObjectMover`; the
+server's `Mover` delegates to it, its trace and digest tests bit-identical) and the shot rules from
+KERNEL_CONFIG. Each complete snapshot confirms them against its own-colour SHOT records (the server already
+marks the receiver's own bullets, so no `OWN_SHOTS` section was needed); the matched records are not drawn
+meanwhile, and an own record no provisional shot matched (a bullet the client did not predict: a press that
+landed late, a starved tick holding FIRE) is drawn dead-reckoned like the others' bullets. Over 4 courses x 3
 seeds x 60 s of the active pilot per link: 207-272 shots confirmed per link, unconfirmed 0.37% at RTT 0,
 0% at 100 and 300 and at 100/σ15/1%, 0.93% at 200/spikes/5% bursty. The largest match distance was 0.35 px
 (the wire's half pixel), so no shot was ever moved at confirmation (no adoption jump). A confirmed shot
 that leaves the snapshots (out of the view, or a hit) ends there.
+
+**Incoming shots** (`ThreatMetrics`; the user's "the shield did not come up although the shot was still
+far away"): the shield is a server verdict, so what matters is where a drawn bullet is against where the server
+will have it when an input pressed now lands (the predicted clock's tick). With prediction on, other players'
+and cannons' bullets are dead-reckoned from the newest complete snapshot to that tick with the server's mover
+(`ShotMotion` over `ObjectMover`, the gap capped at the own lead plus 2 snapshot intervals; a bullet that ends on
+the way is not drawn); off, they are interpolated an interpolation delay in the past. Each drawn bullet is
+identified by its source record (tick and half-pixel position, the server's there). Dogfight, 6 robots firing,
+seed 1, 60 s, after the 1b lean lead:
+
+| link | threat error p50 / p95 px, off | on | drawn after the server's end, off / on | shield reaction p50 / p95 ms |
+|---|---|---|---|---|
+| 0/0/0 | 35.8 / 57.7 | 0.4 / 0.9 | 4846 / 860 of ~48k | 61.5 / 92.4 |
+| 100/0/0 | 63.5 / 91.7 | 0.8 / 1.6 | 8418 / 2838 | 113.9 / 148.4 |
+| 200/0/0 | 89.1 / 122.2 | 1.1 / 2.3 | 8480 / 3886 | 160.3 / 191.3 |
+| 300/0/0 | 115.3 / 189.0 | 1.5 / 2.9 | 10671 / 4766 | 210.3 / 241.3 |
+| 100/s15/1%u | 70.0 / 99.3 | 0.9 / 1.8 | 9215 / 3318 | 140.1 / 171.0 |
+| 200/spk/5%b | 99.3 / 150.0 | 1.8 / 22.5 | 8706 / 4615 | 231.7 / 273.4 |
+
+The shield reaction (a SHIELD press to the server tick after which it is up) is the input lead's: prediction
+does not change it. "Drawn after the server's end" counts bullet-frames whose bullet the server destroyed before
+the input's tick (it hit something the client cannot model); the next snapshot removes it.
 
 **Allocation**: `PredictNetAllocationTest` runs 300 s of game frames against the real server over
 100/σ15/1% with 4 robots and the active pilot (prediction, replays after about 1000 corrections, the
@@ -464,6 +488,33 @@ all 12 shot presses of one block of free flight at RTT 300 with bursty loss, **w
 (the same trials): a phase 1b harness/protocol interaction under burst loss, not prediction. Prediction
 off, seeds 2 and 3 also exceed 1b's impaired p50 bound (RTT + 180 ms) in some spike/bursty cells (up to
 RTT + 196): 1b's bounds were set from seed 1.
+
+### Mutation testing of the predictor and the shared object mover
+
+The module poms pin PIT's target classes, so these runs use PIT's API directly (`EntryPoint` over the module's
+test classpath, from the module's directory, DEFAULTS mutators):
+
+- **`client.game.predict`** (tests in the same package): 525 mutations, 485 killed, **92.4%**.
+  OwnShipPredictor 244/257, ProvisionalShots 165/178, PredictEvents 26/26, CorrectionSmoother 27/33,
+  KernelShotMotion 23/31. The survivors:
+  - equivalent: the smoother's `dt <= 0` and epsilon boundaries (a zero step and an exact epsilon decay to the
+    same values), the exhaust ring's overflow boundary (`>` vs `>=` at exactly 16 leaves the same read index),
+    the uncount `> 0` guard (a count is never below 0), the wall-touch window's `>= -1` boundary (the drawn
+    frame's tick), the end ring's sizing arithmetic for the default shotLife (a larger ring changes nothing);
+  - the C frame clock's offset in `step` (`baseFrames + (k - base - 1)`): the kernel reads the clock only
+    through differences (shot age, wall touch), so a constant shift is invisible to every comparison;
+  - the gravity guard and the cannon/team/kill flags in `KernelShotMotion` where the courses' maps make them
+    agree (no gravity on the test maps for that branch, a cannon shot in a map where killings are on);
+  - the bounce clamps' boundaries (a factor of exactly 0 or 1 clamps to itself);
+  - the replay's snap and `!known` correction details whose only effect is the counters on paths the tests
+    reach with zero offsets, and the listener call on a seed path no test reaches;
+  - `setTeam` from the predictor (the tests' maps have no team play), `motion()` and a constant tie lambda.
+- **`common.sim.ObjectMover`, `ObjectBody`, `ObjectState`** (tests in `common.sim`): 82 mutations, 71 killed,
+  **86.6%** (the server's trace and digest tests, which pin it bit for bit, are not in that run). The 11 survivors
+  are equivalent or unreachable from its own tests: the block clamp for positions inside the map (5), the
+  `walldist > 2` boundary (at 2 the free step is 0 px, the same as tracing a zero move), the five-steps-without-
+  progress `CRASH_UNKNOWN` (3; no test map produces it), and the wrap's `< 0` boundaries (a position of exactly 0
+  wraps to the width and back).
 
 ### Mutation testing of the harness parts
 

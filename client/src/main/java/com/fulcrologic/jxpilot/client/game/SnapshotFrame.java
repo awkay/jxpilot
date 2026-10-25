@@ -91,6 +91,10 @@ final class SnapshotFrame {
     final float[] shotLinkVx;
     final float[] shotLinkVy;
     final boolean[] shotLinked;
+    /** Ticks since the shot was first seen (through its links), 0 when new. */
+    final int[] shotAge;
+    /** Own bullets a provisional shot was matched to when the frame was reconciled ({@link #shotsConfirmed}). */
+    final boolean[] shotOwnMatched;
     /** Index of the same shot in the next frame of the last association, or -1. */
     final int[] shotNext;
     /** Point particles sent as positions only (C debris on the XPilot path), drawn tracked like shots. */
@@ -130,6 +134,8 @@ final class SnapshotFrame {
         shotLinkVx = new float[shotCap];
         shotLinkVy = new float[shotCap];
         shotLinked = new boolean[shotCap];
+        shotAge = new int[shotCap];
+        shotOwnMatched = new boolean[shotCap];
         shotEstVy = new float[shotCap];
         shotNext = new int[shotCap];
         shotState = new byte[shotCap];
