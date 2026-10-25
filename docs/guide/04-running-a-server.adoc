@@ -312,7 +312,8 @@ and for packets outside a session.
 |`ipPacketBurst` |800 |Burst size, in packets, for `ipPacketRate`.
 |`sessionPacketRate` |400 |Packets per second accepted from one connected player.
 |`sessionPacketBurst` |800 |Burst size, in packets, for `sessionPacketRate`.
-|`snapshotDivisor` |1 |Send a snapshot every N simulation frames (1 = every frame).
+|`snapshotDivisor` |1 |Send a snapshot every N simulation frames (1 = every frame). Keep it at 1 for
+players far away: a higher value saves bandwidth but draws other ships and objects further in the past.
 |`radarDivisor` |3 |Include the radar in every Nth snapshot.
 |`denyHosts` |none |Addresses whose connection attempts are ignored, separated by commas, semicolons or
 spaces: an IP address, `address/prefix` (`203.0.113.0/24`, `2001:db8::/32`) or, as in XPilot,
@@ -360,7 +361,8 @@ holds two players from your address); or the requested team is full.
 |`game locked` |An operator locked the game against newcomers.
 |`too many players from your address` |More than `maxClientsPerIP` players from one address.
 |`name not accepted` |The name is empty or already in use.
-|`incompatible version` |The client speaks another JXPilot protocol version.
+|`incompatible version` |The client speaks another JXPilot protocol version. A client of another
+version cannot read this answer, so it shows nothing and keeps trying (<<01-introduction.adoc#compatibility,Which versions play together>>).
 |`join refused` |Team play without a valid team, and `teamAssign` is off.
 |===
 
@@ -597,14 +599,10 @@ A JXPilot server is small. Measured with six robots on `default.xp`, it uses abo
 
 * *One port.* Everything goes over one UDP port, the default 15345, or the one you set with `--port`.
   Open that port in the firewall (<<firewalls>>), and nothing else.
-* *Where to host.* Every player's game lags by their round trip time to the server. For players on
-  different continents, a cheap cloud VM roughly half way between them is fairer and smoother than a
-  home server at one end: two players with 150 ms to a server in the middle each lag 150 ms, while a
-  server at one player's home gives the other the whole 300 ms.
-* *Today's lag.* Your own ship reacts to your keys after one round trip to the server plus the wait
-  for the server's next frame (up to 1/14 s). The client draws your ship predicted forward from the
-  newest frame, so the client adds almost no display delay of its own. Predicting your keys on the client is future
-  work; see https://github.com/awkay/jxpilot/blob/main/docs/latency-fixes.md[docs/latency-fixes.md].
+* *Bandwidth* is small: at 14 frames per second, about 60 kbit/s per player from the server in a typical
+  scene and up to about 180 kbit/s in a big fight, and under 20 kbit/s of game data from each player.
+* *Where to host* matters, even though the client hides the delay of your own ship
+  (<<03-playing.adoc#long-distance,Playing over long distances>>): see <<choosing-a-host>>.
 * *Run it as a service* so it survives logouts and reboots (<<service>>), and give friends the address
   from the `listening on` lines.
 
@@ -619,6 +617,159 @@ A minimal setup on a fresh Linux VM:
 ----
 java -XX:+UseZGC -Xmx128m -jar jxpilot-server-VERSION.jar --map default -robots 4 -noQuit
 ----
+
+Use ZGC (`-XX:+UseZGC`), as here. The server sends a frame every 1/14 s, and every player's client
+keeps its keys only a small margin ahead of the frame that needs them (`slack` on the
+<<03-playing.adoc#net-stats,net diagnostics line>>). A long garbage collection pause delays a frame for
+everyone; ZGC keeps the pauses far below a millisecond.
+
+[[choosing-a-host]]
+=== Choosing where to host
+
+With prediction, your own ship feels the same at any distance from the server. The distance still shows
+in three places:
+
+* *Other ships* are drawn about half your round trip time (RTT) plus 90 ms in the past. Between two players,
+  the gap is roughly the average of their two RTTs plus 90 ms.
+* *The server decides* hits, shields, pickups and collisions. Your shield protects you about half your
+  RTT plus 70 ms after you press the key.
+* *Corrections* (<<03-playing.adoc#corrections,Corrections and snaps>>) are larger the farther ahead of the
+  server your ship runs.
+
+So choose the host that makes the *largest* player RTT smallest, not the average. For friends on several
+continents that is usually a cheap cloud server between them, not a home at one end: a home server gives
+its owner 0 ms and the farthest friend everything.
+
+*Measure* from each player to each candidate host for a few minutes, at the time of day you play, and look
+at both the average and the spread:
+
+[source,shell]
+----
+ping -c 300 HOST                 # macOS, Linux: the summary line gives min/avg/max/stddev (mdev)
+ping -n 300 HOST                 # Windows
+mtr -rwc 300 HOST                # macOS (brew install mtr), Linux: loss and delay per hop
+----
+
+Then put the figures side by side and take the host whose worst row is best. For example, with made-up
+figures:
+
+[cols="2,1,1,1,1",options="header"]
+|===
+|Candidate host |Alice |Bob |Chen |Worst
+|Bob's home |140 ms |5 ms |230 ms |230 ms
+|Cloud VM, US west |150 ms |60 ms |130 ms |150 ms
+|Cloud VM, US east |80 ms |40 ms |210 ms |210 ms
+|===
+
+Here the US west VM wins, although Bob's home has the lowest average. A large spread (`stddev` or `mdev`
+over about 10 ms) or any loss in `mtr`'s last hop costs more than a few milliseconds of average: the
+client needs a larger margin, and lost frames turn into corrections. Cloud providers' networks are often
+shorter and steadier than home connections over the public internet; that is a rule of thumb, so
+measure.
+
+[[vpn-paths]]
+=== Over a VPN
+
+A VPN such as WireGuard or Tailscale is a good way to keep a friends' server private
+(<<bind-examples,Binding examples>>). Make sure every player's path to the server is direct. Tailscale
+relays traffic through its DERP servers when two machines cannot reach each other directly, which can add
+50 to 150 ms. Check from each player's machine:
+
+[source,shell]
+----
+tailscale ping SERVERNAME       # "pong from ... via 203.0.113.7:41641" is direct; "via DERP(fra)" is relayed
+tailscale status                # "direct" or "relay" for each peer
+----
+
+A relayed path usually means a firewall blocks UDP between the two machines. On the server, allow
+Tailscale's UDP port (41641 by default) inbound. Plain WireGuard is always direct. JXPilot's datagrams
+(at most 1200 bytes) fit inside any VPN tunnel without fragmentation.
+
+[[predictable-bounces]]
+=== Predictable bounces: `predictableBounces`
+
+When a ship hits a corner where two bounces are equally good, the server picks one at random, from the
+game's random numbers, as XPilot does. A client cannot know that choice, so it may predict the other bounce
+and correct a moment later.
+
+With `predictableBounces` on (a JXPilot option, off by default), the server picks from the frame number and
+the player instead, so the owner's client makes the same choice. Turn it on for a friends' game if ships
+visibly jump at corners. It does not change how the game plays, only which of two equal bounces happens;
+in tests such ties were rare, and the option made no measurable difference. It changes the server's
+random numbers, so leave it off when you compare a game with the XPilot server. Set it on the command line
+(`-predictableBounces`), in the config file or in a map (`predictableBounces: yes`); `/set` cannot change it
+while the server runs. Option reference:
+<<05-server-options.adoc#opt-predictableBounces,predictableBounces>>.
+
+[[hidden-map]]
+=== Hidden map features are sent to clients
+
+Some maps hide features: XPilot's `gravityVisible`, `wormholeVisible`, `itemConcentratorVisible`,
+`asteroidConcentratorVisible` and `blockFrictionVisible` options, when off, keep gravity blocks, wormholes,
+concentrators and friction blocks off the players' maps. Your own ship's prediction needs them, so a
+JXPilot server sends every client the complete map and the physics options, visible or not. The JXPilot
+client still draws only the visible map and shows only the visible options, but a modified client could
+show the rest. What can leak is the map's layout and physics, never other players' state; a player learns
+most of it by flying anyway. There is no switch yet to keep these features secret.
+
+[[lagproxy]]
+=== Testing a bad connection: lagproxy
+
+`lagproxy` is a small UDP proxy, in the source as `tools/lagproxy/`, that puts a slow, jittery or lossy
+link between real clients and a real server, on one machine or a LAN. Use it to try a long-distance game
+before your friends do, or to compare prediction on and off (<<03-playing.adoc#prediction-switch,Switching
+prediction off>>). It needs no root and runs on macOS, Linux and Windows. It is not in the release
+downloads: build it from the source (<<08-building.adoc#build-commands,Building>>):
+
+[source,shell]
+----
+MAVEN_OPTS= mvn -q -DskipTests package -pl tools/lagproxy -am
+----
+
+Then, from the repository root, start the server, the proxy and a client:
+
+[source,shell]
+----
+java -jar jxpilot-server-VERSION.jar --map default -noQuit -maxClientsPerIP 0
+java -cp tools/lagproxy/target/classes:common/target/classes:common/target/test-classes \
+  com.fulcrologic.jxpilot.lagproxy.LagProxy --listen 15400 --server 127.0.0.1:15345 \
+  --rtt 200 --jitter 15 --bursty 2%,3
+java -jar jxpilot-client-VERSION.jar --connect 127.0.0.1:15400
+----
+
+(On Windows, separate the class path with `;`.) Every player who connects to the proxy's port gets the
+same impairments, on a path of their own. All of them reach the server from the proxy's address, and the
+server allows 2 players from one address by default: hence `-maxClientsPerIP 0` (no limit)
+(<<abuse-limits>>).
+
+Each impairment applies to both directions; prefix it with `up-` (client to server) or `down-` (server to
+client) for one direction only, for example `--down-loss 2%`. Probabilities are fractions (`0.02`) or
+percentages (`2%`).
+
+[cols="2,5",options="header"]
+|===
+|Flag |Meaning
+|`--listen [HOST:]PORT` |Where clients connect (required). A bare port listens on every IPv4 address; 0 picks a free port and prints it.
+|`--server HOST:PORT` |The real server (required); `[ADDRESS]:PORT` for IPv6.
+|`--rtt MS` |A round trip of MS: a delay of MS/2 each way.
+|`--delay MS` |A one-way delay.
+|`--jitter MS` |Normal jitter with a standard deviation of MS (the delay never goes below 0).
+|`--spikes P,MS[,SHAPE[,CAP]]` |A share P of packets gets a delay spike (Pareto: scale MS, shape default 1.5, optional cap in ms).
+|`--loss P` |Independent loss.
+|`--bursty P,LEN` |Loss in bursts: a long-run share P, in bursts of LEN packets on average. Closer to real long-distance links than `--loss`.
+|`--reorder P,MS` |A share P of packets is held back by MS, so later ones overtake it.
+|`--dup P` |A share P of packets is delivered twice.
+|`--rate BYTES[,QUEUE_MS]` |A bottleneck of BYTES per second per client (with 28 bytes of IP and UDP header per packet); packets that would wait longer than QUEUE_MS (default 500) are dropped.
+|`--no-fifo` |Let jitter reorder packets. By default a late packet holds back the ones behind it, as on a real path.
+|`--seed N` |The seed of the random impairments (default 1), so a run can be repeated.
+|`--stats S` |Print each direction's counters every S seconds (default 10; 0 never).
+|`--idle S` |Forget a client that has been silent for S seconds (default 60).
+|`--spin-ms MS` |Poll instead of sleeping for the last MS before each delivery (default 2.5), for timing within a millisecond; 0 always sleeps and saves CPU.
+|===
+
+The proxy prints its settings, each new client, and the counters (sent, delivered, lost, dropped,
+duplicated, reordered, spikes, in flight); stop it with kbd:[Ctrl+C]. It carries up to 64 clients. The
+details are in `tools/lagproxy/README.md` in the source.
 
 [[service]]
 == Running as a service (systemd)
