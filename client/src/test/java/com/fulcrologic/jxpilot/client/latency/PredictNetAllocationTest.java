@@ -39,8 +39,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The game frame with the own ship predicted allocates nothing in steady state: the predictor's reconciliations,
  * replays and speculative steps, the predicted ship's drawing and exhaust, against the real server over a jittery,
  * lossy link with robots around (so PREDICTs disagree now and then and the ring is replayed), while the pilot turns,
- * thrusts and fires. Only the game frame and the scene fill are measured ({@link LatencyRig#gameFrameMeter}); the connection's receive
- * and send are ClientNetAllocationTest's. After a warm-up until the JIT is quiet ({@link JitQuiet}), at most
+ * thrusts and fires. The connection's update (receive and snapshot ingest, where frames are associated and new
+ * bullets' sources found), INPUT, the game frame and the scene fill are measured ({@link LatencyRig#gameFrameMeter});
+ * the flush is ClientNetAllocationTest's. After a warm-up until the JIT is quiet ({@link JitQuiet}), at most
  * {@value #MAX_NONZERO_FRAMES} frames may allocate (at most {@value #MAX_FRAME_BYTES} bytes each) and none in the
  * second half. Runs in the net allocation execution, escape analysis off.
  */
@@ -90,6 +91,7 @@ class PredictNetAllocationTest {
         long correctionsBefore = p.corrections();
         long reckonedBefore = rig.world().reckonedShots();
         long tracersBefore = rig.world().tracersDrawn();
+        long sourcesBefore = rig.world().tracerSources();
         long sceneTracersBefore = rig.sceneTracers;
         long stepsBefore = rig.world().reckoningSteps();
         long endsBefore = p.shots().endSteps();
@@ -104,6 +106,7 @@ class PredictNetAllocationTest {
         long act = active[0];
         long reckoned = rig.world().reckonedShots() - reckonedBefore;
         long tracers = rig.world().tracersDrawn() - tracersBefore;
+        long sources = rig.world().tracerSources() - sourcesBefore;
         long sceneTracers = rig.sceneTracers - sceneTracersBefore;
         long steps = rig.world().reckoningSteps() - stepsBefore;
         long ends = p.shots().endSteps() - endsBefore;
@@ -121,6 +124,7 @@ class PredictNetAllocationTest {
             () -> assertTrue(reckoned > 1000, "others' bullets were dead-reckoned while measured: " + reckoned),
             () -> assertTrue(tracers > 100, "new bullets' tracers were drawn while measured: " + tracers),
             () -> assertEquals(tracers, sceneTracers, "and filled into the scene (SceneFiller, metered too)"),
+            () -> assertTrue(sources > 20, "new bullets' sources were found on ingest (metered too): " + sources),
             () -> assertTrue(steps > 100 && steps < reckoned, "with the whole-tick cache refilled now and then: "
                 + steps),
             () -> assertTrue(fired > 50, "own bullets were fired (provisional shots): " + fired),

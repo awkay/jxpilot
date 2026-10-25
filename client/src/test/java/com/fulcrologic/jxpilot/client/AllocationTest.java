@@ -66,6 +66,7 @@ class AllocationTest {
         long[] flushed = new long[1];
         long[] points = new long[1];
         long[] tracers = new long[1];
+        boolean[] measuring = {false};
         VertexBatch b = Fixtures.batch(512, 64, batch -> {
             flushed[0] += batch.vertexCount() + batch.segmentCount();
             points[0] += batch.pointCount();
@@ -151,7 +152,9 @@ class AllocationTest {
                 text.drawInt(b, (int) n, 0, 0, 0);
                 text.drawFixed(b, n * 0.37, 2, 0, 0, 0);
                 points[0] += b.pointCount();
-                tracers[0] += scene.tracerCount;
+                if (measuring[0]) {
+                    tracers[0] += scene.tracerCount;
+                }
             }
         };
         for (int i = 0; i < WARMUP; i++) {
@@ -160,6 +163,7 @@ class AllocationTest {
         // Five back-to-back windows: a late JIT (re)install can allocate once inside the JVM, which is
         // tolerated only in the first window; any later window, or two of them, means real per-frame
         // (or periodic) allocation. All windows are shown on failure.
+        measuring[0] = true;
         long[] windows = new long[WINDOWS];
         for (int w = 0; w < WINDOWS; w++) {
             long before = mx.getCurrentThreadAllocatedBytes();
@@ -173,7 +177,7 @@ class AllocationTest {
             () -> assertTrue(cam.offsetCount() > 1, "the view spans world copies"),
             () -> assertTrue(flushed[0] > 0, "the batch overflowed and flushed during the run"),
             () -> assertTrue(points[0] > 0, "dead-cannon dots were drawn"),
-            () -> assertTrue(tracers[0] > 0, "new shots' tracers were drawn (ScenePainter.tracers)"),
+            () -> assertTrue(tracers[0] > 0, "new shots' tracers were drawn while measured (ScenePainter.tracers)"),
             () -> assertTrue(allZeroAfterFirst(windows), "at most the first window allocates; windows: " + all));
     }
 

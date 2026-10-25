@@ -1403,6 +1403,7 @@ public final class ClientWorld {
         if (!found) {
             return; // no source: not a new bullet whose origin we can show
         }
+        tracerSources++;
         f.shotAge[j] = (int) Math.max(0, Math.round(age));
         f.shotSeenNanos[j] = f.arrivalNanos;
         f.shotOriginX[j] = (float) ox;
@@ -1634,6 +1635,11 @@ public final class ClientWorld {
 
     /** Tracer i's bullet's SHOT variant (kind and colour). */
     public int tracerVariant(int i) { return outTracerVariant[i]; }
+
+    private long tracerSources;
+
+    /** New bullets whose source was found ({@link #tracerOrigin}) since the start. */
+    public long tracerSources() { return tracerSources; }
 
     /** Tracers drawn since the start (all updates). */
     public long tracersDrawn() { return tracersDrawn; }

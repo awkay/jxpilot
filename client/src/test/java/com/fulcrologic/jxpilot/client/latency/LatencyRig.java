@@ -152,9 +152,9 @@ final class LatencyRig {
     }
 
     /**
-     * When set, each render frame runs {@link ClientSim#step}'s parts itself and reports what the game frame (the
-     * own-ship predictor, the world, particles, messages) allocated on this thread; the connection's receive and
-     * send run outside the measurement (ClientNetAllocationTest covers them; the emulated link is test code).
+     * When set, each render frame runs {@link ClientSim#step}'s parts itself and reports what the connection's update
+     * (receive and snapshot ingest: frame association, tracer sources), INPUT and the game frame (the own-ship
+     * predictor, the world, particles, messages) allocated on this thread; the flush runs outside the measurement.
      */
     GameFrameMeter gameFrameMeter;
     /** With {@link #gameFrameMeter}: also fill the scene and radar from the game ({@code SceneFiller}) in the metered part. */
@@ -171,9 +171,9 @@ final class LatencyRig {
     private void meteredStep(long now) {
         double dt = lastStep == Long.MIN_VALUE ? 0 : (now - lastStep) / 1e9;
         lastStep = now;
-        client.connection().update(now);
-        client.connection().sendInput(keys, 0, now);
         long a = MX.getCurrentThreadAllocatedBytes();
+        client.connection().update(now); // receive and ingest: frame association, tracer sources
+        client.connection().sendInput(keys, 0, now);
         client.game().frame(now, dt);
         if (meterSceneFill) {
             filler.fill(scene, radar, client.game());
