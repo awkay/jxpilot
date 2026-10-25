@@ -151,8 +151,6 @@ public final class ClientConnection implements com.fulcrologic.jxpilot.client.ga
     // INPUT per predicted tick (see sendInput)
     private final PredictedClock clock = new PredictedClock();
     private final KernelSync kernel = new KernelSync();
-    /** The server's visible options from the config transfer (null before it). */
-    private Options serverOptions;
     private long inputIntervalNanos = 1_000_000_000L / 60;
     private boolean inputSent;
     private long lastInputSend;
@@ -304,8 +302,6 @@ public final class ClientConnection implements com.fulcrologic.jxpilot.client.ga
     @Override
     public com.fulcrologic.jxpilot.common.config.Options kernelOptions() { return kernel.kernelOptions(); }
 
-    @Override
-    public Options serverOptions() { return serverOptions; }
 
     public long snapshotsReceived() { return snapshots; }
 
@@ -933,7 +929,6 @@ public final class ClientConnection implements com.fulcrologic.jxpilot.client.ga
         }
         config = null;
         kernel.onConfig(opts, map);
-        serverOptions = opts;
         listener.onConfig(welcome, opts, map);
         settings.send(channel);
         display.send(channel);

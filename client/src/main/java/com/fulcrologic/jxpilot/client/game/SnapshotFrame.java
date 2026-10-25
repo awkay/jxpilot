@@ -87,12 +87,11 @@ final class SnapshotFrame {
     /** {@link Tracker} velocity state of each shot (KNOWN from the wire or a link, GUESSED seed, UNKNOWN). */
     final byte[] shotState;
     /**
-     * Velocity (px per tick) from the shot's own position in the frame before (the move of the last tick, gravity
-     * included), when it was linked to one; the dead reckoning's velocity.
+     * The SHOT record's velocity, exact to 1/16 px per frame (0 when the record has none): the dead reckoning's
+     * velocity.
      */
-    final float[] shotLinkVx;
-    final float[] shotLinkVy;
-    final boolean[] shotLinked;
+    final float[] shotWireVx;
+    final float[] shotWireVy;
     /** Ticks since the shot was first seen (through its links), 0 when new. */
     final int[] shotAge;
     /** Own bullets a provisional shot was matched to when the frame was reconciled ({@link #shotsConfirmed}). */
@@ -133,9 +132,8 @@ final class SnapshotFrame {
         shotVy = new byte[shotCap];
         shotVariant = new byte[shotCap];
         shotEstVx = new float[shotCap];
-        shotLinkVx = new float[shotCap];
-        shotLinkVy = new float[shotCap];
-        shotLinked = new boolean[shotCap];
+        shotWireVx = new float[shotCap];
+        shotWireVy = new float[shotCap];
         shotAge = new int[shotCap];
         shotOwnMatched = new boolean[shotCap];
         shotEstVy = new float[shotCap];

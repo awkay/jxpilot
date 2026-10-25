@@ -146,7 +146,6 @@ final class PredictFx {
         @Override public int predictRoundDelay() { return roundDelay; }
         @Override public KernelWorld kernelWorld() { return world; }
         @Override public Options kernelOptions() { return options; }
-        @Override public Options serverOptions() { return options; }
         @Override public InputHistory input() { return input; }
         @Override public double predictedTick(long nowNanos) { return clock; }
         @Override public int finalTick() { return finalTick; }

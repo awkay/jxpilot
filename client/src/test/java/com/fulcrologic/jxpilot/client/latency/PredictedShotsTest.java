@@ -35,12 +35,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * With prediction on, other players' and cannons' bullets are drawn dead-reckoned to the own ship's predicted tick
  * (where they will be when the player's input lands); off, interpolated an interpolation delay in the past. Against
- * the real server on the dogfight course with robots firing, RTT 100 ({@link ThreatMetrics}).
+ * the real server on the dogfight course with robots firing, RTT 100 ({@link ThreatMetrics}). The reckoning moves
+ * each bullet at its SHOT record's velocity (exact to 1/16 px per frame): within a pixel of the server's.
  */
 class PredictedShotsTest {
     @Test
     @Timeout(value = 3, unit = TimeUnit.MINUTES)
-    @DisplayName("on: drawn bullets within a few px of the server's at the input's tick; off: tens of px behind")
+    @DisplayName("on: drawn bullets within a px of the server's at the input's tick; off: tens of px behind")
     void threat() {
         Scenario s = new Scenario(100, Scenario.Jitter.NONE, Scenario.Loss.NONE);
         ThreatMetrics.Result on = LatencyRig.withPrediction(true, () -> ThreatMetrics.measure(s, 6, 20, 1));
@@ -48,8 +49,8 @@ class PredictedShotsTest {
         assertAll(
             () -> assertTrue(on.drawnShots() > 1000 && off.drawnShots() > 1000, "bullets drawn: " + on.drawnShots()
                 + ", " + off.drawnShots()),
-            () -> assertTrue(on.threatError().p50() < 3, "on: p50 " + on.threatError().p50()),
-            () -> assertTrue(on.threatError().p95() < 30, "on: p95 " + on.threatError().p95()),
+            () -> assertTrue(on.threatError().p50() < 0.5, "on: p50 " + on.threatError().p50()),
+            () -> assertTrue(on.threatError().p95() < 1, "on: p95 " + on.threatError().p95()),
             () -> assertTrue(off.threatError().p50() > 30, "off: p50 " + off.threatError().p50()),
             () -> assertTrue(on.goneByThen() * 2 < off.goneByThen(), "on: fewer drawn after their end: "
                 + on.goneByThen() + " vs " + off.goneByThen()));

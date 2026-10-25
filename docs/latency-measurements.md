@@ -271,16 +271,23 @@ and cannons' bullets are dead-reckoned from the newest complete snapshot to that
 (`ShotMotion` over `ObjectMover`, the gap capped at the own lead plus 2 snapshot intervals; a bullet that ends on
 the way is not drawn); off, they are interpolated an interpolation delay in the past. Each drawn bullet is
 identified by its source record (tick and half-pixel position, the server's there). Dogfight, 6 robots firing,
-seed 1, 60 s, after the 1b lean lead:
+seed 1, 60 s, after the 1b lean lead. Each bullet moves at its SHOT record's velocity, exact to 1/16 px per
+frame since 1b's 12-bit SHOT velocity. Before that the wire velocity was whole pixels, and the reckoning
+preferred the bullet's own move since the frame before (Δpos over the link); with the precise wire velocity
+that path is worse (0/100/300 clean: p50 0.37 / 0.72 / 1.36, p95 0.90 / 1.56 / 2.87 against 0.20 / 0.20 / 0.23
+and 0.35 / 0.37 / 0.46 wire only) and is gone. "on, Δpos" is the earlier column; cells marked * were not rerun.
 
-| link | threat error p50 / p95 px, off | on | drawn after the server's end, off / on | shield reaction p50 / p95 ms |
-|---|---|---|---|---|
-| 0/0/0 | 35.8 / 57.7 | 0.4 / 0.9 | 4846 / 860 of ~48k | 61.5 / 92.4 |
-| 100/0/0 | 63.5 / 91.7 | 0.8 / 1.6 | 8418 / 2838 | 113.9 / 148.4 |
-| 200/0/0 | 89.1 / 122.2 | 1.1 / 2.3 | 8480 / 3886 | 160.3 / 191.3 |
-| 300/0/0 | 115.3 / 189.0 | 1.5 / 2.9 | 10671 / 4766 | 210.3 / 241.3 |
-| 100/s15/1%u | 70.0 / 99.3 | 0.9 / 1.8 | 9215 / 3318 | 140.1 / 171.0 |
-| 200/spk/5%b | 99.3 / 150.0 | 1.8 / 22.5 | 8706 / 4615 | 231.7 / 273.4 |
+| link | threat error p50 / p95 px, off | on | on, Δpos | drawn after the server's end, off / on | shield reaction p50 / p95 ms |
+|---|---|---|---|---|---|
+| 0/0/0 | 35.8 / 57.7 | 0.20 / 0.35 | 0.4 / 0.9 | 4846 / 856 of ~48k | 61.5 / 92.4 |
+| 100/0/0 | 63.5 / 91.7 | 0.20 / 0.37 | 0.8 / 1.6 | 8418 / 2812 | 113.9 / 148.4 |
+| 200/0/0 | 89.1 / 122.2 | * | 1.1 / 2.3 | 8480 / 3886 | 160.3 / 191.3 |
+| 300/0/0 | 115.3 / 189.0 | 0.23 / 0.46 | 1.5 / 2.9 | 10671 / 4752 | 210.3 / 241.3 |
+| 100/s15/1%u | 70.0 / 99.3 | * | 0.9 / 1.8 | 9215 / 3318 | 140.1 / 171.0 |
+| 200/spk/5%b | 99.3 / 150.0 | 0.28 / 22.1 | 1.8 / 22.5 | 8706 / 4575 | 231.7 / 273.4 |
+
+The p95 under spikes and bursty loss is the gap cap: a spike starves the snapshots, the newest complete frame
+is old and the reckoning stops at the own lead plus 2 snapshot intervals (the velocity does not change that).
 
 The shield reaction (a SHIELD press to the server tick after which it is up) is the input lead's: prediction
 does not change it. "Drawn after the server's end" counts bullet-frames whose bullet the server destroyed before

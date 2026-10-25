@@ -233,7 +233,7 @@ public final class OwnShipPredictor {
             // the client through the same rebuild as the server's
             com.fulcrologic.jxpilot.common.config.Options o = src.kernelOptions();
             predictable = o != null && o.getBool(Opt.PREDICTABLE_BOUNCES);
-            shots.configure(world, o, src.serverOptions());
+            shots.configure(world, o);
             reset();
         }
         ownId = src.ownId();

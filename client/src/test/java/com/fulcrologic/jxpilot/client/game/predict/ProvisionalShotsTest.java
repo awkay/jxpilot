@@ -686,6 +686,24 @@ class ProvisionalShotsTest {
                 () -> assertTrue(cannonY > 95, "moving up: " + cannonY),
                 () -> assertTrue(!player, "a player's shot there crashes into the cannon"));
         }
+
+        @Test
+        @DisplayName("allowPlayerKilling comes from the kernel options: with it a cannon's shot crashes into a"
+            + " target, without it bounces off it (a wall to it)")
+        void cannonKillings() {
+            boolean[] alive = new boolean[2];
+            String[] flags = {"yes", "no"};
+            for (int i = 0; i < 2; i++) {
+                Options o = options("gravity: 0\nshotsWallBounce: yes\nallowPlayerKilling: " + flags[i], TEAM);
+                KernelShotMotion m = new KernelShotMotion(KernelWorld.of(o), o);
+                // above the target's block (35..70), going down into it
+                alive[i] = m.tick(Click.fromPixels(5 * 35 + 17.5f), Click.fromPixels(2 * 35 + 10f), 0, -25, 100, true,
+                    com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET, new ShotStep());
+            }
+            assertAll(
+                () -> assertTrue(!alive[0], "allowPlayerKilling yes: crashes into the target"),
+                () -> assertTrue(alive[1], "allowPlayerKilling no: bounces off it"));
+        }
     }
 
     @Nested

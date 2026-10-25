@@ -56,15 +56,6 @@ public final class KernelShotMotion implements ShotMotion {
      * clamped to [0, the world's diagonal] and the brake and life factors to [0, 1], as the server does.
      */
     public KernelShotMotion(KernelWorld w, Options o) {
-        this(w, o, o);
-    }
-
-    /**
-     * @param o       the kernel options (KERNEL_CONFIG: the shot motion options, the same values the server reads)
-     * @param visible the server's visible options, for allowPlayerKilling (whether a cannon's shot crashes into
-     *                cannons and targets), which KERNEL_CONFIG does not carry; null: C's default (yes)
-     */
-    public KernelShotMotion(KernelWorld w, Options o, Options visible) {
         world = w;
         mover = new ObjectMover(w, () -> 0.5);
         mover.objectWallBounceLifeFactor = 0.8f;
@@ -74,14 +65,12 @@ public final class KernelShotMotion implements ShotMotion {
             gravity = o.getBool(Opt.SHOTS_GRAVITY);
             wallBounce = o.getBool(Opt.SHOTS_WALL_BOUNCE);
             edgeBounce = o.getBool(Opt.EDGE_BOUNCE);
+            killings = o.getBool(Opt.ALLOW_PLAYER_KILLING);
             // clamped as the server's Params.resolve (walls.c Move_init)
             mover.objectWallBounceLifeFactor = (float) clamp(o.getDouble(Opt.OBJECT_WALL_BOUNCE_LIFE_FACTOR), 0, 1);
             mover.maxObjectWallBounceSpeed = (float) clamp(o.getDouble(Opt.MAX_OBJECT_WALL_BOUNCE_SPEED), 0,
                 w.shipParams().hypotenuse);
             mover.objectWallBrakeFactor = (float) clamp(o.getDouble(Opt.OBJECT_WALL_BOUNCE_BRAKE_FACTOR), 0, 1);
-        }
-        if (visible != null) {
-            killings = visible.getBool(Opt.ALLOW_PLAYER_KILLING);
         }
     }
 

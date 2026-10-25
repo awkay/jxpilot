@@ -44,7 +44,9 @@ public interface PredictionSource {
 
     /**
      * Whether the kernel world is the server's as of tick {@code tick} (no world-state change newer than it has
-     * arrived, and the initial state has): a replay from a PREDICT of that tick may use it.
+     * arrived, and the initial state has): a replay from a PREDICT of that tick may use it. The other direction of
+     * {@link #predictValid}'s state check (the world not older than the newest snapshot): together, a replay runs on
+     * the world exactly as the server had it.
      */
     boolean worldAsOf(int tick);
 
@@ -68,12 +70,6 @@ public interface PredictionSource {
 
     /** The kernel options from KERNEL_CONFIG; null before one. */
     Options kernelOptions();
-
-    /**
-     * The server's visible options from the config transfer (allowPlayerKilling, which KERNEL_CONFIG does not carry);
-     * null before it.
-     */
-    Options serverOptions();
 
     /** The entries sent, by predicted tick. */
     InputHistory input();

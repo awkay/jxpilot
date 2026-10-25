@@ -613,12 +613,13 @@ public final class ClientWorld {
                     f.shotY[k] = shotRec.y();
                     f.shotVx[k] = (byte) shotRec.vx();
                     f.shotVy[k] = (byte) shotRec.vy();
+                    f.shotWireVx[k] = shotRec.vxf();
+                    f.shotWireVy[k] = shotRec.vyf();
                     f.shotVariant[k] = variant;
                     f.shotEstVx[k] = f.shotVx[k];
                     f.shotEstVy[k] = f.shotVy[k];
                     f.shotState[k] = f.shotVx[k] != 0 || f.shotVy[k] != 0 ? Tracker.KNOWN : Tracker.UNKNOWN;
                     f.shotNext[k] = -1;
-                    f.shotLinked[k] = false;
                     f.shotAge[k] = 0;
                 }
             }
@@ -1107,9 +1108,6 @@ public final class ClientWorld {
         for (int i = 0; i < sn; i++) {
             int j = a.shotNext[i];
             if (j >= 0 && j < sm && ticks > 0) {
-                b.shotLinkVx[j] = (float) (XMath.wrapDelta(b.shotX[j] - a.shotX[i], worldW, wrap) / ticks);
-                b.shotLinkVy[j] = (float) (XMath.wrapDelta(b.shotY[j] - a.shotY[i], worldH, wrap) / ticks);
-                b.shotLinked[j] = true;
                 b.shotAge[j] = a.shotAge[i] + ticks;
             }
         }
@@ -1278,9 +1276,8 @@ public final class ClientWorld {
      * a shield pressed now is judged against the shots where they will be when the press lands, not where they were
      * an interpolation delay ago. Each shot of the newest complete frame (else the newest) moves on from it as the
      * server moves bullets ({@link com.fulcrologic.jxpilot.client.game.predict.ShotMotion}: gravity, walls) for the
-     * gap to the predicted tick, the last fraction blended; its velocity is its move of the last tick when it was
-     * linked to the frame before (and that agrees with the wire's whole-pixel velocity within
-     * {@link #LINK_VEL_SLACK}), else the wire's (or the estimate). Its team: the own team for a bullet the server
+     * gap to the predicted tick, the last fraction blended; its velocity is the SHOT record's (exact to 1/16 px per
+     * frame; the tracker's estimate for a record without one). Its team: the own team for a bullet the server
      * colours TEAM, else none (an enemy's team is not on the wire: its own cannons and targets crash it here).
      * <p>
      * BEHAVIOR: the gap is capped at the own ship's lead over the server's tick now plus 2 snapshot intervals; a shot
@@ -1352,9 +1349,6 @@ public final class ClientWorld {
     /** C CANNON_SHOT_LIFE_MAX bound: a cannon's bullet lives 8 + rand(24) ticks, at most 31. */
     static final int CANNON_SHOT_LIFE_MAX = 31;
 
-    /** px per frame: the wire's velocity is rounded to whole px, a linked move must be within this of it. */
-    static final double LINK_VEL_SLACK = 1.0;
-
 
     /**
      * Step each drawable bullet of {@code n} by the gap's whole ticks into the dead reckoning's cache (redone only when
@@ -1369,16 +1363,10 @@ public final class ClientWorld {
             if (own && !(n.shotsConfirmed && !n.shotOwnMatched[j])) {
                 continue; // a provisional shot stands for it (or the frame was not reconciled: not known)
             }
-            float vx = n.shotEstVx[j] * frameFraction;
-            float vy = n.shotEstVy[j] * frameFraction;
-            boolean wire = n.shotVx[j] != 0 || n.shotVy[j] != 0;
-            // the link's move is exact (half pixels, gravity included); a link to another shot (a burst from one
-            // gun) is not: against a wire velocity (whole px per frame) it must agree within the wire's rounding
-            if (n.shotLinked[j] && (!wire || Math.abs(n.shotLinkVx[j] - vx) <= LINK_VEL_SLACK * frameFraction
-                && Math.abs(n.shotLinkVy[j] - vy) <= LINK_VEL_SLACK * frameFraction)) {
-                vx = n.shotLinkVx[j];
-                vy = n.shotLinkVy[j];
-            }
+            // the wire's velocity is exact to 1/16 px per frame; a record without one has the tracker's estimate
+            boolean wire = n.shotWireVx[j] != 0 || n.shotWireVy[j] != 0;
+            float vx = (wire ? n.shotWireVx[j] : n.shotEstVx[j]) * frameFraction;
+            float vy = (wire ? n.shotWireVy[j] : n.shotEstVy[j]) * frameFraction;
             int x = com.fulcrologic.jxpilot.common.sim.Click.fromPixels(n.shotX[j]);
             int y = com.fulcrologic.jxpilot.common.sim.Click.fromPixels(n.shotY[j]);
             boolean cannon = Records.ShotKind.kindOf(n.shotVariant[j]) == Records.ShotKind.CANNON_SHOT;
