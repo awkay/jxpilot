@@ -271,6 +271,46 @@ class ClientWorldTest {
                 () -> assertEquals(208.0, f.world.shipX(flying), CLOCK_EPS, "a flying ship with the same vx does move"));
         }
 
+        /** Frame {@code tick}: the own ship 7 at (x, 50) and every kind of line with an end on it. */
+        static void ownLines(WorldFixture f, int tick, double x) {
+            f.begin(tick).self(7, 0, (float) x, 50, 4, 0, 0)
+                .connector(300, 50, x, 50, Records.Connector.KIND_REFUEL)
+                .connector(90, 40, x, 50, Records.Connector.KIND_BALL)
+                .connector(x + 4, 46, 200, 100, Records.Connector.KIND_TRACTOR)
+                .transporter(x, 50, 250, 80)
+                .ingestAtTick(tick);
+        }
+
+        @Test
+        @DisplayName("lines ending on the own ship end where it is drawn, not where the render tick's frames had it")
+        void ownLines() {
+            WorldFixture f = new WorldFixture(true);
+            ownLines(f, 100, 100);
+            ownLines(f, 102, 102);
+            ClientWorld w = f.world;
+            w.update(at(103.5));
+            double renderSelf = 100 + 2 * (w.renderTick() - 100) / 2.0;
+            ObjectLists o = w.objects();
+            int c = ObjectLists.CONNECTOR;
+            float sx = w.selfX();
+            float sy = w.selfY();
+            assertAll(
+                () -> assertTrue(w.renderTick() > 100 && w.renderTick() < 102, "the render tick is between the frames ("
+                    + w.renderTick() + ")"),
+                () -> assertTrue(sx - renderSelf > 1, "the own ship is drawn ahead of where the frames had it ("
+                    + sx + " vs " + renderSelf + ")"),
+                () -> assertEquals(sx, o.get(c, 0, 2), 1e-3, "refuel: the ship end is the drawn ship's x"),
+                () -> assertEquals(sy, o.get(c, 0, 3), 1e-3, "and y"),
+                () -> assertEquals(300f, o.get(c, 0, 0), 1e-3, "the fuel station end stays"),
+                () -> assertEquals(sx, o.get(c, 1, 2), 1e-3, "ball pick-up: the ship end follows"),
+                () -> assertEquals(90f, o.get(c, 1, 0), 1e-3, "the ball end stays"),
+                () -> assertEquals(sx + 4, o.get(c, 2, 0), 1e-3, "tractor on us: the hull point keeps its offset"),
+                () -> assertEquals(sy - 4, o.get(c, 2, 1), 1e-3, "in y too"),
+                () -> assertEquals(200f, o.get(c, 2, 2), 1e-3, "the beamer far away stays"),
+                () -> assertEquals(sx, o.get(ObjectLists.TRANSPORTER, 0, 0), 1e-3, "transporter: the victim end follows"),
+                () -> assertEquals(250f, o.get(ObjectLists.TRANSPORTER, 0, 2), 1e-3, "the thief's end stays"));
+        }
+
         @Test
         @DisplayName("the own ship is drawn at the render tick: the later SELF as is, the latest extrapolated (capped)")
         void self() {

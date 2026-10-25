@@ -141,6 +141,20 @@ final class WorldFixture {
         return this;
     }
 
+    WorldFixture connector(double x0, double y0, double x1, double y1, int kind) {
+        w.beginSection(Section.CONNECTOR);
+        Records.Connector.put(w, x0, y0, x1, y1, kind);
+        w.endSection();
+        return this;
+    }
+
+    WorldFixture transporter(double x0, double y0, double x1, double y1) {
+        w.beginSection(Section.TRANSPORTER);
+        Records.Transporter.put(w, x0, y0, x1, y1);
+        w.endSection();
+        return this;
+    }
+
     WorldFixture cannon(int index, int flags) {
         w.beginSection(Section.CANNON);
         Records.CannonState.put(w, index, flags);

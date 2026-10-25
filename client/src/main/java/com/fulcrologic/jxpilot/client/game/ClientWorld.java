@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.client.game;
 
+import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.Options;
@@ -920,7 +921,8 @@ public final class ClientWorld {
      * BEHAVIOR: shots and point particles are linked from A to their continuations in B
      * ({@link #associate}) and interpolated; unlinked ones move by their velocity (wire, else estimated)
      * from A; with only B they are drawn at B (see {@link #drawShots}).
-     * BEHAVIOR: the own ship is predicted to the server tick now ({@link #predictSelf}).
+     * BEHAVIOR: the own ship is predicted to the server tick now ({@link #predictSelf}); the line ends that are on it
+     * (refuel, ball pick-up, tractor/pressor and transporter beams) follow it ({@link #anchorOwnLines}).
      * BEHAVIOR: with the own-ship predictor active, shots are instead dead-reckoned to the predicted tick
      * ({@link #drawShotsPredicted}).
      * BEHAVIOR: particles are advanced to the render tick, the own exhaust to the own ship's drawn tick.
@@ -963,6 +965,7 @@ public final class ClientWorld {
         drawPoints(a, b);
         drawObjects(a, b);
         predictSelf(nowNanos);
+        anchorOwnLines(a, b);
         particles.step(renderTick, outSelf ? drawnTick : renderTick, frameFraction, worldW, worldH, wrap);
     }
 
@@ -1248,6 +1251,77 @@ public final class ClientWorld {
             outObjs.interpolateLines(b.objs, t, TRACK_PX_PER_FRAME * (b.tick - a.tick) * frameFraction, worldW,
                 worldH, wrap);
         }
+    }
+
+    /** How far from the own ship a line end may be and still be on it (its hull, plus the wire's rounding). */
+    static final double OWN_LINE_PX = Const.SHIP_SZ + 2;
+
+    /**
+     * The lines drawn from the render tick's frames end on the own ship where the server had it then, an interpolation
+     * delay (and, predicted, the input lead) behind where it is drawn. Their ends on the own ship move with it.
+     * <p>
+     * BEHAVIOR: with the own ship drawn from its own SELF (not while watching another player): each ship end of a
+     * CONNECTOR (refuel and ball: the second end; tractor and pressor: both, the target's hull points and the beamer)
+     * or of a TRANSPORTER (both ends) within {@link #OWN_LINE_PX} of the own ship at the render tick (A's SELF moved
+     * towards B's as the lines are, else A's) is moved by the drawn position minus that one: an end at the ship lands
+     * on the drawn ship, a hull point keeps its offset. Other ends (the fuel station, the ball) are not moved.
+     */
+    private void anchorOwnLines(SnapshotFrame a, SnapshotFrame b) {
+        if (!outSelf || a == null || !a.hasSelf || a.selfId != outSelfId || players.selfId() != Protocol.NO_ID
+            && outSelfId != players.selfId()) {
+            return;
+        }
+        double t = b == null || !b.hasSelf || b.selfId != a.selfId ? 0 : (renderTick - a.tick) / (double) (b.tick - a.tick);
+        double rx = a.selfX;
+        double ry = a.selfY;
+        if (t > 0) {
+            rx = wrapX(rx + XMath.wrapDelta(b.selfX - a.selfX, worldW, wrap) * t);
+            ry = wrapY(ry + XMath.wrapDelta(b.selfY - a.selfY, worldH, wrap) * t);
+        }
+        double dx = XMath.wrapDelta(outSelfX - rx, worldW, wrap);
+        double dy = XMath.wrapDelta(outSelfY - ry, worldH, wrap);
+        ObjectLists o = outObjs;
+        for (int i = 0; i < o.count(ObjectLists.CONNECTOR); i++) {
+            int kind = (int) o.get(ObjectLists.CONNECTOR, i, 4);
+            boolean tractor = kind == Records.Connector.KIND_TRACTOR || kind == Records.Connector.KIND_PRESSOR;
+            if (tractor) {
+                anchorEnd(o, ObjectLists.CONNECTOR, i, 0, rx, ry, a.selfX, a.selfY, dx, dy);
+            }
+            if (tractor || kind == Records.Connector.KIND_REFUEL || kind == Records.Connector.KIND_BALL) {
+                anchorEnd(o, ObjectLists.CONNECTOR, i, 2, rx, ry, a.selfX, a.selfY, dx, dy);
+            }
+        }
+        for (int i = 0; i < o.count(ObjectLists.TRANSPORTER); i++) {
+            anchorEnd(o, ObjectLists.TRANSPORTER, i, 0, rx, ry, a.selfX, a.selfY, dx, dy);
+            anchorEnd(o, ObjectLists.TRANSPORTER, i, 2, rx, ry, a.selfX, a.selfY, dx, dy);
+        }
+    }
+
+    /**
+     * Move end (field, field + 1) of line i by (dx, dy) when it is within {@link #OWN_LINE_PX} of the own ship at the
+     * render tick (rx, ry), or, for a line seen only in A (not interpolated), of A's own ship (ax, ay).
+     */
+    private void anchorEnd(ObjectLists o, int kind, int i, int field, double rx, double ry, double ax, double ay,
+                           double dx, double dy) {
+        float x = o.get(kind, i, field);
+        float y = o.get(kind, i, field + 1);
+        double ex = XMath.wrapDelta(x - rx, worldW, wrap);
+        double ey = XMath.wrapDelta(y - ry, worldH, wrap);
+        double fx = XMath.wrapDelta(x - ax, worldW, wrap);
+        double fy = XMath.wrapDelta(y - ay, worldH, wrap);
+        double ox;
+        double oy;
+        if (ex * ex + ey * ey <= OWN_LINE_PX * OWN_LINE_PX) {
+            ox = dx;
+            oy = dy;
+        } else if (fx * fx + fy * fy <= OWN_LINE_PX * OWN_LINE_PX) {
+            ox = XMath.wrapDelta(outSelfX - ax, worldW, wrap);
+            oy = XMath.wrapDelta(outSelfY - ay, worldH, wrap);
+        } else {
+            return;
+        }
+        o.set(kind, i, field, (float) wrapX(x + ox));
+        o.set(kind, i, field + 1, (float) wrapY(y + oy));
     }
 
     private void putShot(float x, float y, byte variant, SnapshotFrame src, int i) {
