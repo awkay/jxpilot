@@ -35,7 +35,7 @@ import java.util.Map;
  * dogfight course with robots firing at the ship, how far the drawn enemy and cannon shots are from where the server
  * will have them when the player's input lands, and how long a shield press takes to raise the server's shield.
  * <ul>
- *   <li><b>Shot threat error</b>: per frame and drawn non-own shot, the distance to the server's position of that
+ *   <li><b>Shot threat error</b>: per frame and drawn non-own bullet (SHOT and CANNON_SHOT kinds), the distance to the server's position of that
  *   shot at the tick the frame's input lands: the predicted clock's tick (protocol v2 applies the input collected now at
  *   it, whether the own ship is predicted or not). The drawn shot is identified as the server shot nearest to it at the render tick or at that
  *   tick (whichever is nearer), so both an interpolated and a dead-reckoned drawing are matched to their shot. A shot
@@ -111,8 +111,10 @@ final class ThreatMetrics {
                 return;
             }
             for (int i = 0; i < w.shotCount() && n[0] < MAX; i++) {
-                if (w.shotColor(i) == Records.ObjColor.OWN) {
-                    continue;
+                int kind = w.shotKind(i);
+                if (w.shotColor(i) == Records.ObjColor.OWN
+                    || kind != Records.ShotKind.SHOT && kind != Records.ShotKind.CANNON_SHOT) {
+                    continue; // own bullets are the provisional shots; cluster fragments and pulses are not judged
                 }
                 fx[n[0]] = w.shotX(i);
                 fy[n[0]] = w.shotY(i);

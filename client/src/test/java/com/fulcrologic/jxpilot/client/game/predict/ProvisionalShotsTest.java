@@ -580,4 +580,29 @@ class ProvisionalShotsTest {
                 () -> assertEquals(1, h.endingAt(end), "still counted (most often only out of the view)"));
         }
     }
+
+    @Nested
+    @DisplayName("ClientShotMotion")
+    class Motion2 {
+        @Test
+        @DisplayName("a cannon's shot flies through cannons outside team play; a player's shot crashes into one")
+        void cannonShot() throws java.io.IOException {
+            // doggy.xp's bottom-row cannons: a shot just fired from one starts inside its block
+            Options o = new Options();
+            com.fulcrologic.jxpilot.common.config.ConfigParser.parse(
+                java.nio.file.Files.readString(java.nio.file.Path.of("..", "maps", "doggy.xp"),
+                    java.nio.charset.StandardCharsets.ISO_8859_1), "doggy", com.fulcrologic.jxpilot.common.config.OptionOrigin.MAP, o);
+            ClientShotMotion m = new ClientShotMotion(KernelWorld.of(o), o);
+            ShotStep out = new ShotStep();
+            int x = Click.fromPixels(787f);
+            int y = Click.fromPixels(81f);
+            boolean cannon = m.tick(x, y, 6, 20, 100, true, out);
+            float cannonY = out.y / (float) Click.CLICK;
+            boolean player = m.tick(x, y, 6, 20, 100, false, out);
+            assertAll(
+                () -> assertTrue(cannon, "the cannon's shot leaves its cannon"),
+                () -> assertTrue(cannonY > 95, "moving up: " + cannonY),
+                () -> assertTrue(!player, "a player's shot there crashes into the cannon"));
+        }
+    }
 }

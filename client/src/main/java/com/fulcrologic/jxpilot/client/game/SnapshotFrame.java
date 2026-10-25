@@ -35,6 +35,8 @@ final class SnapshotFrame {
     long parts;
     /** The provisional own shots were reconciled with this (complete) frame. */
     boolean shotsConfirmed;
+    /** Every part of this tick arrived. */
+    boolean complete;
     /** First tick whose thrust sparks this frame generates (later than {@link #tick} = none). */
     int sparkFrom;
 
@@ -82,6 +84,13 @@ final class SnapshotFrame {
     final float[] shotEstVy;
     /** {@link Tracker} velocity state of each shot (KNOWN from the wire or a link, GUESSED seed, UNKNOWN). */
     final byte[] shotState;
+    /**
+     * Velocity (px per tick) from the shot's own position in the frame before (the move of the last tick, gravity
+     * included), when it was linked to one; the dead reckoning's velocity.
+     */
+    final float[] shotLinkVx;
+    final float[] shotLinkVy;
+    final boolean[] shotLinked;
     /** Index of the same shot in the next frame of the last association, or -1. */
     final int[] shotNext;
     /** Point particles sent as positions only (C debris on the XPilot path), drawn tracked like shots. */
@@ -118,6 +127,9 @@ final class SnapshotFrame {
         shotVy = new byte[shotCap];
         shotVariant = new byte[shotCap];
         shotEstVx = new float[shotCap];
+        shotLinkVx = new float[shotCap];
+        shotLinkVy = new float[shotCap];
+        shotLinked = new boolean[shotCap];
         shotEstVy = new float[shotCap];
         shotNext = new int[shotCap];
         shotState = new byte[shotCap];
@@ -141,6 +153,7 @@ final class SnapshotFrame {
         arrivalNanos = now;
         parts = 0;
         shotsConfirmed = false;
+        complete = false;
         sparkFrom = sparkFromTick;
         hasSelf = false;
         ships = 0;

@@ -29,21 +29,12 @@ import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.math.XMath;
 import com.fulcrologic.jxpilot.common.sim.Click;
 import com.fulcrologic.jxpilot.common.sim.KernelWorld;
-import com.fulcrologic.jxpilot.common.sim.MoveState;
-import com.fulcrologic.jxpilot.common.sim.Obj;
-import com.fulcrologic.jxpilot.common.sim.Segment;
 
 /**
  * Provisional own shots (docs/latency-fixes.md §4.7): the bullets the own-ship predictor fires, drawn on the
  * predicted timeline from the kernel's exact spawn and velocity.
  * <ul>
- *   <li><b>Motion</b>, as the server moves a SHOT each tick (its {@code moveObjects} and C {@code Move_object}):
- *   gravity at its block with shotsGravity, then free flight (wrapped) far from walls, else traced through the
- *   blocks with the common {@link Segment}; a crash (wall, cannon, target, treasure) ends it; with
- *   shotsWallBounce a bounce costs life (objectWallBounceLifeFactor) and speed (objectWallBounceBrakeFactor), and
- *   one faster than maxObjectWallBounceSpeed ends it. The server code is not shared (it moves pool objects), so this
- *   is a port of the SHOT branch onto the client's {@link KernelWorld}; wormholes do not warp a provisional shot
- *   (the kernel world has no objects: the object branch of wormholes finds none).</li>
+ *   <li><b>Motion</b>, as the server moves a SHOT each tick ({@link ShotMotion}).</li>
  *   <li><b>Life</b>: shotLife ticks after the tick it was fired, as the server's expiry (the state after tick
  *   f + shotLife - 1 no longer has it).</li>
  *   <li><b>Replays</b>: a shot is keyed by (tick, ordinal); stepping a tick again ({@link #beginStep}) first drops the
@@ -52,7 +43,7 @@ import com.fulcrologic.jxpilot.common.sim.Segment;
  *   <li><b>Drawing</b>: each live shot at the drawn tick: between its state after the newest final tick and one
  *   more step, by the same alpha as the ship ({@link #draw}).</li>
  * </ul>
- * Allocation free after construction (a new kernel world builds a new {@link Segment}).
+ * Allocation free after construction (a new kernel world builds a new {@link ShotMotion}).
  */
 public final class ProvisionalShots implements PredictEvents.ShotSink {
     /** Provisional shots at most (C's shotMax default is 300 per player; more are not drawn). */
@@ -89,16 +80,10 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
     private int used;
     private final boolean[] taken = new boolean[CAP];
 
-    private final MoveState ms = new MoveState();
     private KernelWorld world;
-    private Segment seg;
+    private ShotMotion motion;
+    private final ShotStep step = new ShotStep();
     private int shotLife = OwnShipPredictor.DEFAULT_SHOT_LIFE;
-    private boolean gravity = true;
-    private boolean wallBounce;
-    private boolean edgeBounce = true;
-    private float bounceLifeFactor = 0.8f;
-    private float maxBounceSpeed = 40;
-    private float brakeFactor = 0.95f;
 
     // the next state of one shot (scratch for draw and step)
     private int nx;
@@ -120,19 +105,19 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
      * options (C's defaults without them).
      */
     public void configure(KernelWorld w, Options o) {
+        configure(w, o, new ClientShotMotion(w, o));
+    }
+
+    /** As {@link #configure(KernelWorld, Options)}, moving the shots with {@code m}. */
+    public void configure(KernelWorld w, Options o, ShotMotion m) {
         world = w;
-        seg = new Segment(w, () -> 0.5);
-        if (o != null) {
-            shotLife = o.getInt(Opt.SHOT_LIFE);
-            gravity = o.getBool(Opt.SHOTS_GRAVITY);
-            wallBounce = o.getBool(Opt.SHOTS_WALL_BOUNCE);
-            edgeBounce = o.getBool(Opt.EDGE_BOUNCE);
-            bounceLifeFactor = (float) o.getDouble(Opt.OBJECT_WALL_BOUNCE_LIFE_FACTOR);
-            maxBounceSpeed = (float) o.getDouble(Opt.MAX_OBJECT_WALL_BOUNCE_SPEED);
-            brakeFactor = (float) o.getDouble(Opt.OBJECT_WALL_BOUNCE_BRAKE_FACTOR);
-        }
+        motion = m;
+        shotLife = o == null ? OwnShipPredictor.DEFAULT_SHOT_LIFE : o.getInt(Opt.SHOT_LIFE);
         clear();
     }
+
+    /** How shots move ({@link ShotMotion}); null before a world. */
+    public ShotMotion motion() { return motion; }
 
     /** BEHAVIOR: no shots. */
     public void clear() {
@@ -329,108 +314,15 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
         return oneTick(cx[i], cy[i], vx[i], vy[i], life[i]);
     }
 
-    /**
-     * One server tick of a shot at clicks (x, y), velocity (svx, svy), life {@code l}, into the scratch fields: gravity
-     * at its block with shotsGravity, the move, the life tick; false when it ends in that tick.
-     */
+    /** One server tick of a shot ({@link ShotMotion}) into the scratch fields; false when it ends in that tick. */
     private boolean oneTick(int x, int y, float svx, float svy, long l) {
-        if (gravity) {
-            int bx = (x >> Click.SHIFT) / Const.BLOCK_SZ;
-            int by = (y >> Click.SHIFT) / Const.BLOCK_SZ;
-            svx += world.gravityX(bx, by);
-            svy += world.gravityY(bx, by);
-        }
-        nlife = l;
-        return move(x, y, svx, svy) && --nlife > 0;
-    }
-
-    /** The server's block of a pixel, clamped into the map (Mover.blockOf). */
-    private static int blockOf(int pixel, int n) {
-        int b = Math.floorDiv(pixel, Const.BLOCK_SZ);
-        return b < 0 ? 0 : (b >= n ? n - 1 : b);
-    }
-
-    /** C {@code Move_object} for a SHOT, into the scratch fields; false on a crash or a fatal bounce. */
-    private boolean move(int x, int y, float mvx, float mvy) {
-        int tx = Click.fromPixels(mvx);
-        int ty = Click.fromPixels(mvy);
-        int dist = world.wallDist(blockOf(x >> Click.SHIFT, world.width()), blockOf(y >> Click.SHIFT, world.height()));
-        if (dist > 2) {
-            int max = ((dist - 2) * Const.BLOCK_SZ) >> 1;
-            if ((float) (max * max) >= mvx * mvx + mvy * mvy) {
-                nx = world.wrapXClick(x + tx);
-                ny = world.wrapYClick(y + ty);
-                nvx = mvx;
-                nvy = mvy;
-                return true;
-            }
-        }
-        ms.pl = null;
-        ms.obj = -1;
-        ms.edgeWrap = world.wrap();
-        ms.edgeBounce = edgeBounce;
-        ms.wallBounce = wallBounce;
-        ms.cannonCrashes = true;
-        ms.targetCrashes = true;
-        ms.treasureCrashes = wallBounce;
-        ms.wormholeWarps = false;
-        ms.phased = false;
-        ms.team = Const.TEAM_NOT_SET;
-        ms.targetTeam = Const.TEAM_NOT_SET;
-        ms.status = gravity ? Obj.GRAVITY : 0;
-        ms.type = Obj.SHOT;
-        ms.start(x, y, mvx, mvy, tx, ty, 0);
-        int nothingDone = 0;
-        for (;;) {
-            seg.move(ms);
-            if ((ms.doneX | ms.doneY) == 0) {
-                if (ms.crash != MoveState.NOT_A_CRASH) {
-                    return false;
-                }
-                if (ms.bounce != MoveState.NOT_A_BOUNCE && ms.bounce != MoveState.BOUNCE_EDGE) {
-                    nlife = (long) ((float) nlife * bounceLifeFactor);
-                    if (nlife <= 0) {
-                        return false;
-                    }
-                    if (ms.velX * ms.velX + ms.velY * ms.velY > maxBounceSpeed * maxBounceSpeed) {
-                        return false;
-                    }
-                    ms.velX *= brakeFactor;
-                    ms.velY *= brakeFactor;
-                    ms.todoX = (int) (ms.todoX * brakeFactor);
-                    ms.todoY = (int) (ms.todoY * brakeFactor);
-                }
-                if (++nothingDone >= 5) {
-                    return false;
-                }
-            } else {
-                ms.posX += ms.doneX;
-                ms.posY += ms.doneY;
-                nothingDone = 0;
-            }
-            if ((ms.todoX | ms.todoY) == 0) {
-                break;
-            }
-        }
-        if (ms.edgeWrap) {   // Segment can end exactly on the far edge (C Move_object's wrap)
-            if (ms.posX < 0) {
-                ms.posX += world.clickWidth();
-            }
-            if (ms.posX >= world.clickWidth()) {
-                ms.posX -= world.clickWidth();
-            }
-            if (ms.posY < 0) {
-                ms.posY += world.clickHeight();
-            }
-            if (ms.posY >= world.clickHeight()) {
-                ms.posY -= world.clickHeight();
-            }
-        }
-        nx = ms.posX;
-        ny = ms.posY;
-        nvx = ms.velX;
-        nvy = ms.velY;
-        return true;
+        boolean alive = motion.tick(x, y, svx, svy, l, false, step);
+        nx = step.x;
+        ny = step.y;
+        nvx = step.vx;
+        nvy = step.vy;
+        nlife = step.life;
+        return alive;
     }
 
     /** A server shot this close (px) to where a provisional one is at the snapshot's tick is that shot. */

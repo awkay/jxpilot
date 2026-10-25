@@ -513,7 +513,8 @@ public final class ClientWorld {
         generateSparks(f, firstShip, !selfBefore && f.hasSelf);
         int partCount = reader.partCount();
         long all = partCount >= 64 ? -1L : (1L << partCount) - 1;
-        if (predictor != null && !f.shotsConfirmed && partCount > 0 && (f.parts & all) == all) {
+        f.complete = partCount > 0 && (f.parts & all) == all;
+        if (predictor != null && !f.shotsConfirmed && f.complete) {
             f.shotsConfirmed = true;
             predictor.shots().confirm(f.tick, Math.min(f.shots, shotCap), f.shotX, f.shotY, f.shotVariant);
         }
@@ -598,6 +599,7 @@ public final class ClientWorld {
                     f.shotEstVy[k] = f.shotVy[k];
                     f.shotState[k] = f.shotVx[k] != 0 || f.shotVy[k] != 0 ? Tracker.KNOWN : Tracker.UNKNOWN;
                     f.shotNext[k] = -1;
+                    f.shotLinked[k] = false;
                 }
             }
             case Section.BURST -> {
@@ -898,6 +900,8 @@ public final class ClientWorld {
      * ({@link #associate}) and interpolated; unlinked ones move by their velocity (wire, else estimated)
      * from A; with only B they are drawn at B (see {@link #drawShots}).
      * BEHAVIOR: the own ship is predicted to the server tick now ({@link #predictSelf}).
+     * BEHAVIOR: with the own-ship predictor active, shots are instead dead-reckoned to the predicted tick
+     * ({@link #drawShotsPredicted}).
      * BEHAVIOR: particles are advanced to the render tick, the own exhaust to the own ship's drawn tick.
      */
     public void update(long nowNanos) {
@@ -1078,6 +1082,15 @@ public final class ClientWorld {
         }
         tracker.link(sn, a.shotX, a.shotY, a.shotEstVx, a.shotEstVy, a.shotState, keyA, sm, b.shotX, b.shotY, keyB,
             frames, TRACK_PX_PER_FRAME, SHOT_AMBIGUITY_RATIO, MIN_SHOT_SPEED, worldW, worldH, wrap, a.shotNext);
+        int ticks = b.tick - a.tick;
+        for (int i = 0; i < sn; i++) {
+            int j = a.shotNext[i];
+            if (j >= 0 && j < sm && ticks > 0) {
+                b.shotLinkVx[j] = (float) (XMath.wrapDelta(b.shotX[j] - a.shotX[i], worldW, wrap) / ticks);
+                b.shotLinkVy[j] = (float) (XMath.wrapDelta(b.shotY[j] - a.shotY[i], worldH, wrap) / ticks);
+                b.shotLinked[j] = true;
+            }
+        }
         for (int j = 0; j < sm; j++) {
             if (b.shotVx[j] != 0 || b.shotVy[j] != 0) {
                 continue;
@@ -1165,6 +1178,9 @@ public final class ClientWorld {
     private void drawShots(SnapshotFrame a, SnapshotFrame b) {
         outShots = 0;
         hideOwnShots = ownSparksPredicted();
+        if (hideOwnShots && predictor.shots().motion() != null && drawShotsPredicted()) {
+            return;
+        }
         if (a == null) {
             for (int i = 0; i < b.shots && i < shotCap; i++) {
                 putShot(b.shotX[i], b.shotY[i], b.shotVariant[i]);
@@ -1222,6 +1238,91 @@ public final class ClientWorld {
         outShotY[k] = y;
         outShotVariant[k] = variant & 0xFF;
     }
+
+    /**
+     * The shots dead-reckoned to the own ship's predicted tick (prediction on, latency-fixes.md §4.6-B for shots): so
+     * a shield pressed now is judged against the shots where they will be when the press lands, not where they were
+     * an interpolation delay ago. Each shot of the newest complete frame (else the newest) moves on from it as the
+     * server moves bullets ({@link com.fulcrologic.jxpilot.client.game.predict.ShotMotion}: gravity, walls) for the
+     * gap to the predicted tick, the last fraction blended; its velocity is its move of the last tick when it was
+     * linked to the frame before (and that agrees with the wire's whole-pixel velocity within
+     * {@link #LINK_VEL_SLACK}), else the wire's (or the estimate).
+     * <p>
+     * BEHAVIOR: the gap is capped at the own ship's lead over the server's tick now plus 2 snapshot intervals; a shot
+     * that ends on the way (a wall) is drawn where it ends; the own bullets are the provisional shots' (left out
+     * here). Returns false without a frame (the interpolated drawing then runs).
+     */
+    private boolean drawShotsPredicted() {
+        SnapshotFrame n = null;
+        SnapshotFrame any = null;
+        for (SnapshotFrame f : ring) {
+            if (!f.valid) {
+                continue;
+            }
+            if (any == null || f.tick - any.tick > 0) {
+                any = f;
+            }
+            if (f.complete && (n == null || f.tick - n.tick > 0)) {
+                n = f;
+            }
+        }
+        if (n == null) {
+            n = any;
+        }
+        if (n == null) {
+            return false;
+        }
+        com.fulcrologic.jxpilot.client.game.predict.ShotMotion m = predictor.shots().motion();
+        double target = predictor.drawnTick();
+        double cap = Math.max(0, target - serverTickNow) + 2 * snapshotInterval;
+        double gap = Math.max(0, Math.min(target - n.tick, cap));
+        int whole = (int) gap;
+        double frac = gap - whole;
+        for (int j = 0; j < n.shots && j < shotCap; j++) {
+            if ((n.shotVariant[j] & 0x7F) == OWN_SHOT) {
+                continue;
+            }
+            float vx = n.shotEstVx[j] * frameFraction;
+            float vy = n.shotEstVy[j] * frameFraction;
+            boolean wire = n.shotVx[j] != 0 || n.shotVy[j] != 0;
+            // the link's move is exact (half pixels, gravity included); a link to another shot (a burst from one
+            // gun) is not: against a wire velocity (whole px per frame) it must agree within the wire's rounding
+            if (n.shotLinked[j] && (!wire || Math.abs(n.shotLinkVx[j] - vx) <= LINK_VEL_SLACK * frameFraction
+                && Math.abs(n.shotLinkVy[j] - vy) <= LINK_VEL_SLACK * frameFraction)) {
+                vx = n.shotLinkVx[j];
+                vy = n.shotLinkVy[j];
+            }
+            int x = com.fulcrologic.jxpilot.common.sim.Click.fromPixels(n.shotX[j]);
+            int y = com.fulcrologic.jxpilot.common.sim.Click.fromPixels(n.shotY[j]);
+            boolean alive = true;
+            boolean cannon = Records.ShotKind.kindOf(n.shotVariant[j]) == Records.ShotKind.CANNON_SHOT;
+            for (int k = 0; k < whole && alive; k++) {
+                alive = m.tick(x, y, vx, vy, Long.MAX_VALUE, cannon, shotStep);
+                if (alive) {
+                    x = shotStep.x;
+                    y = shotStep.y;
+                    vx = shotStep.vx;
+                    vy = shotStep.vy;
+                }
+            }
+            double px = x / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK;
+            double py = y / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK;
+            if (alive && frac > 0 && m.tick(x, y, vx, vy, Long.MAX_VALUE, cannon, shotStep)) {
+                px += frac * XMath.wrapDelta(shotStep.x / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK - px,
+                    worldW, wrap);
+                py += frac * XMath.wrapDelta(shotStep.y / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK - py,
+                    worldH, wrap);
+            }
+            putShot(wrapX(px), wrapY(py), n.shotVariant[j]);
+        }
+        return true;
+    }
+
+    /** px per frame: the wire's velocity is rounded to whole px, a linked move must be within this of it. */
+    static final double LINK_VEL_SLACK = 1.0;
+
+    private final com.fulcrologic.jxpilot.client.game.predict.ShotStep shotStep =
+        new com.fulcrologic.jxpilot.client.game.predict.ShotStep();
 
     /** As {@link #drawShots}, for position-only point particles (no wire velocity). */
     private void drawPoints(SnapshotFrame a, SnapshotFrame b) {
