@@ -60,7 +60,20 @@ public final class KernelConfig {
         Opt.MAP_WIDTH, Opt.MAP_HEIGHT, Opt.EXTRA_BORDER, Opt.EDGE_WRAP, Opt.TEAM_PLAY, Opt.TIMING,
         // gravity (MapLoader computes the per-block field)
         Opt.GRAVITY, Opt.GRAVITY_POINT, Opt.GRAVITY_ANGLE, Opt.GRAVITY_POINT_SOURCE, Opt.GRAVITY_CLOCKWISE,
-        Opt.GRAVITY_ANTICLOCKWISE);
+        Opt.GRAVITY_ANTICLOCKWISE,
+        // the motion of the ship's bullets (SHOT_MOTION)
+        Opt.SHOT_LIFE, Opt.SHOTS_GRAVITY, Opt.SHOTS_WALL_BOUNCE, Opt.MAX_OBJECT_WALL_BOUNCE_SPEED,
+        Opt.OBJECT_WALL_BOUNCE_BRAKE_FACTOR, Opt.OBJECT_WALL_BOUNCE_LIFE_FACTOR, Opt.PREDICTABLE_BOUNCES);
+
+    /**
+     * What C {@code Move_object} reads for a player's SHOT besides the map, gravity, edgeWrap and edgeBounce (all in
+     * {@link #OPTIONS} already): its life, whether it feels gravity, whether it bounces off walls (which also decides
+     * whether it crashes into treasures, C {@code Move_init}), and the object wall-bounce speed limit, brake and life
+     * factors; and predictableBounces. For the client's predicted own bullets (1c).
+     */
+    public static final Set<Opt> SHOT_MOTION = EnumSet.of(Opt.SHOT_LIFE, Opt.SHOTS_GRAVITY, Opt.SHOTS_WALL_BOUNCE,
+        Opt.MAX_OBJECT_WALL_BOUNCE_SPEED, Opt.OBJECT_WALL_BOUNCE_BRAKE_FACTOR, Opt.OBJECT_WALL_BOUNCE_LIFE_FACTOR,
+        Opt.PREDICTABLE_BOUNCES);
 
     /** BEHAVIOR: true for an option in {@link #OPTIONS}. */
     public static boolean affects(Opt o) {
