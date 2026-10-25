@@ -198,3 +198,8 @@ If the server is full you wait in its queue, and the client shows `Waiting in qu
 N)` until a place frees up. If the server refuses you, the client shows why, for example `Rejected by HOST: name not accepted` when
 your name is already taken (<<04-running-a-server.adoc#joining,Joining, leaving and full servers>>). All
 client flags are in <<07-client-reference.adoc#client-reference,Client reference>>.
+
+The client and a JXPilot server must be of matching versions: this version cannot join a JXPilot 1.1.1 or
+earlier server, nor they this one, and a mismatch looks like a server that does not answer
+(<<01-introduction.adoc#compatibility,Which versions play together>>). Original XPilot servers work with
+any version.
