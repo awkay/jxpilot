@@ -221,8 +221,8 @@ host>>).
 (<<03-playing.adoc#corrections,Corrections and snaps>>). Many corrections with nobody near you point to a
 lossy link: check `loss` and `jitter` on the net diagnostics line (kbd:[Insert]).
 
-|Lobby: you chose a map that was not running, and you are back at the list (the map now shows `*` and 0
-players)
+|Lobby: you chose a map that was not running, and the client seems to hang (or you are back at the
+list); the map shows 0 players
 |A bug in JXPilot 1.1.1 lobby servers, fixed in this version: choose the map again, and it works. If it
 happens with this version, the client says `Could not join MAP (the lobby did not hand us to the game).
 Choose it again.`
