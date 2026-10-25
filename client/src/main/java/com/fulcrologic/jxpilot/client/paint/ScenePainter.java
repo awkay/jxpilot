@@ -292,8 +292,10 @@ public final class ScenePainter {
      */
     private void tracers(VertexBatch b, Camera cam, int k, SceneData s) {
         for (int i = 0; i < s.tracerCount; i++) {
-            if (cam.isVisible(s.tracerX1[i], s.tracerY1[i], s.tracerX1[i], s.tracerY1[i], k, 0)
-                || cam.isVisible(s.tracerX2[i], s.tracerY2[i], s.tracerX2[i], s.tracerY2[i], k, 0)) {
+            // the segment's bounding box (its start is unwrapped next to its end): one crossing the view with both
+            // ends outside it is drawn too
+            if (cam.isVisible(Math.min(s.tracerX1[i], s.tracerX2[i]), Math.min(s.tracerY1[i], s.tracerY2[i]),
+                Math.max(s.tracerX1[i], s.tracerX2[i]), Math.max(s.tracerY1[i], s.tracerY2[i]), k, 0)) {
                 int rgba = palette.color(s.tracerColor[i]);
                 int alpha = Math.round(((rgba >>> 24) & 0xFF) * Math.max(0f, Math.min(1f, s.tracerAlpha[i])));
                 b.line(s.tracerX1[i], s.tracerY1[i], s.tracerX2[i], s.tracerY2[i],
