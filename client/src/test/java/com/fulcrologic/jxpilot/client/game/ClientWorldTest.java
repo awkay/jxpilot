@@ -187,20 +187,21 @@ class ClientWorldTest {
         static final int LIFE = 12; // plus the lone bullet: within the fixture's 16 shots
         static final int STEP = 4; // px per tick: a wire velocity of 16 px per game frame (4 ticks)
         final int lone = Records.ShotKind.variant(Records.ShotKind.SHOT, Records.ObjColor.WHITE);
+        final int gun = Records.ShotKind.variant(Records.ShotKind.SHOT, Records.ObjColor.RED);
 
         /**
-         * A dense stream: one bullet fired every tick at x 50 moving +x, so neighbours are STEP px apart, living
-         * LIFE ticks; the records reversed on every other snapshot. Plus one bullet without a wire velocity moving
+         * A dense stream: one bullet fired every tick at x 50 (the main gun, 15 px ahead, of a ship at x 35) moving +x, so neighbours are STEP px
+         * apart, living LIFE ticks; the records reversed on every other snapshot. Plus one bullet without a wire velocity moving
          * 2 px per tick at y 250. Returns the spawn tick of each record, by index.
          */
         int[] stream(WorldFixture f, int tick) {
-            f.begin(tick);
+            f.begin(tick).ship(9, 0, 35, 100, 0, 0, 0);
             int[] spawn = new int[LIFE];
             boolean reverse = (tick / 2) % 2 == 1;
             for (int k = 0; k < LIFE; k++) {
                 int sp = reverse ? tick - LIFE + 1 + k : tick - k;
                 spawn[k] = sp;
-                f.shot(50 + STEP * (tick - sp), 100, 4 * STEP, 0);
+                f.shot(gun, 50 + STEP * (tick - sp), 100, 4 * STEP, 0);
             }
             f.shot(lone, 300 + 2 * (tick - 100), 250);
             return spawn;
@@ -247,15 +248,8 @@ class ClientWorldTest {
                     }
                 }
                 for (int j = 0; j < LIFE; j++) {
-                    int firstSeen = spawns[n][j];
-                    for (int t : ticks) {
-                        if (t >= firstSeen) {
-                            firstSeen = Math.max(t, 100);
-                            break;
-                        }
-                    }
-                    firstSeen = Math.max(firstSeen, 100);
-                    if (b.shotAge[j] != ticks[n] - firstSeen) {
+                    // ticks since fired: a new bullet's from its source (the ship), the first frame's from then
+                    if (b.shotAge[j] != ticks[n] - Math.max(spawns[n][j], 100)) {
                         ageErrors++;
                     }
                 }
@@ -270,14 +264,38 @@ class ClientWorldTest {
                 () -> assertEquals(0, fMislinks, "no bullet linked to a neighbour STEP px away"),
                 () -> assertEquals(0, fUnlinked, "no continuing bullet left unlinked"),
                 () -> assertEquals(LIFE - 4, fAcross, "104 to 108: the bullets alive in both are linked across the gap"),
-                () -> assertEquals(0, fAgeErrors, "ages: ticks since first seen, also for bullets first seen after the gap"),
+                () -> assertEquals(0, fAgeErrors, "ages: ticks since fired (back to the ship), also for bullets first seen"
+                    + " after the gap"),
                 () -> assertEquals(8f, loneVx, 1e-3f, "the velocity-less bullet: 8 px over the 4-tick gap = 8 px/frame"),
                 () -> assertEquals(Tracker.KNOWN, at108.shotState[LIFE], "from its link (KNOWN)"));
         }
 
         @Test
+        @DisplayName("a bullet new in a frame gets a tracer and its age only from a source on its last stretch of path:"
+            + " one fired by a ship since the last frame does; one mid-flight (lost by the tracker, or flying into"
+            + " view) or with a ship farther back on its path does not")
+        void source() {
+            WorldFixture f = new WorldFixture(false);
+            f.begin(100).ship(9, 0, 35, 100, 0, 0, 0).ship(11, 0, 185, 250, 0, 0, 0).ingestAtTick(100);
+            f.begin(102).ship(9, 0, 35, 100, 0, 0, 0).ship(11, 0, 185, 250, 0, 0, 0)
+                .shot(gun, 54, 100, 4 * STEP, 0) // fired 1 tick ago from ship 9's gun (x 50, 4 px back)
+                .shot(gun, 400, 300, 4 * STEP, 0) // mid-flight, nothing on its path
+                .shot(gun, 240, 250, 4 * STEP, 0) // ship 11's gun on its path 10 ticks back: older than the gap
+                .ingestAtTick(102);
+            SnapshotFrame b = f.world.frameAt(102);
+            assertAll(
+                () -> assertEquals(at(102), b.shotSeenNanos[0], "the fresh bullet: seen now (a tracer)"),
+                () -> assertEquals(50f, b.shotOriginX[0], 1e-3f, "from its ship's main gun (15 px ahead of x 35)"),
+                () -> assertEquals(1, b.shotAge[0], "age: 1 tick back to the ship"),
+                () -> assertEquals(Long.MIN_VALUE, b.shotSeenNanos[1], "mid-flight: no tracer"),
+                () -> assertEquals(0, b.shotAge[1], "and no age known"),
+                () -> assertEquals(Long.MIN_VALUE, b.shotSeenNanos[2],
+                    "a ship 10 ticks back on the path is not its source (at most the gap, 2 ticks, plus 1)"));
+        }
+
+        @Test
         @DisplayName("a late, reordered middle snapshot: the later frame's first sights and tracer origins are kept"
-            + " (no second tracer), its ages count from the late frame, and it links both ways")
+            + " (no second tracer), its ages agree, and it links both ways")
         void lateMiddle() {
             WorldFixture f = new WorldFixture(false);
             int[] s100 = stream(f, 100);
@@ -305,7 +323,7 @@ class ClientWorldTest {
             int[] wantAges = new int[LIFE];
             for (int j = 0; j < LIFE; j++) {
                 int sp = s104[j];
-                wantAges[j] = 104 - (sp <= 100 ? 100 : sp <= 102 ? 102 : 104);
+                wantAges[j] = 104 - Math.max(sp, 100);
             }
             assertAll(
                 () -> assertEquals(ClientWorld.LATE_TICK, r, "102 arrives after 104"),
@@ -314,7 +332,7 @@ class ClientWorldTest {
                     "104's first sights unchanged: no tracer restarted at 102's (later) arrival"),
                 () -> assertArrayEquals(ox, java.util.Arrays.copyOf(b.shotOriginX, LIFE), 0f, "nor its origins"),
                 () -> assertArrayEquals(wantAges, java.util.Arrays.copyOf(b.shotAge, LIFE),
-                    "104's ages learn from 102: ticks since the first snapshot that had the bullet"),
+                    "104's ages: ticks since fired, the same via 102"),
                 () -> assertEquals(0, fWrong, "100 to 102 and 102 to 104 link each bullet to itself"));
         }
     }

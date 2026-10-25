@@ -1167,6 +1167,7 @@ public final class ClientWorld {
         if (tracers) {
             for (int j = 0; j < sm; j++) {
                 b.shotSeenNanos[j] = Long.MIN_VALUE;
+                b.shotAge[j] = 0; // from the links below, or the source (a redo of the pair gives the same)
             }
         }
         for (int i = 0; i < sn; i++) {
@@ -1324,6 +1325,9 @@ public final class ClientWorld {
         }
     }
 
+    private static final com.fulcrologic.jxpilot.common.math.ShipShape DEFAULT_SHAPE =
+        com.fulcrologic.jxpilot.common.math.ShipShape.defaultShip();
+
     /** How long a new bullet's tracer is drawn (it fades out over this time). */
     public static final long TRACER_NANOS = 150_000_000L;
     /** How far from a bullet's backward path a cannon or ship may be and still be taken as its source. */
@@ -1336,9 +1340,11 @@ public final class ClientWorld {
      * <p>
      * BEHAVIOR: back along its velocity (the SHOT record's) for at most {@code ticks} (since the previous frame, when
      * it was not there yet): a cannon's bullet starts at the nearest map cannon within {@link #TRACER_SOURCE_PX} of
-     * that backward path, any other at the nearest ship of the frame (the own ship included) within it; with neither,
-     * half way back (its expected age at first sight). Marks the bullet seen at the frame's arrival. A bullet without
-     * a wire velocity gets no tracer.
+     * that backward path, any other at the main gun of the nearest ship of the frame (the own ship included; its shape,
+     * else the default) within it. With a source
+     * the bullet is marked seen at the frame's arrival and its age is the ticks back to the source (its life in dead
+     * reckoning counts from there). Without one (a bullet the tracker lost mid-flight, or one flying into the view)
+     * it gets no tracer and keeps age 0. A bullet without a wire velocity gets none.
      */
     private void tracerOrigin(SnapshotFrame f, int j, int ticks) {
         double vx = f.shotWireVx[j] * frameFraction;
@@ -1350,13 +1356,33 @@ public final class ClientWorld {
         double px = f.shotX[j];
         double py = f.shotY[j];
         double best = TRACER_SOURCE_PX * TRACER_SOURCE_PX;
-        double ox = px - vx * ticks / 2.0;
-        double oy = py - vy * ticks / 2.0;
+        double ox = 0;
+        double oy = 0;
+        double age = 0;
+        boolean found = false;
         boolean cannon = Records.ShotKind.kindOf(f.shotVariant[j]) == Records.ShotKind.CANNON_SHOT;
         int n = cannon ? cannonPx.length : f.ships + (f.hasSelf ? 1 : 0);
         for (int k = 0; k < n; k++) {
-            double sx = cannon ? cannonPx[k] : k < f.ships ? f.shipX[k] : f.selfX;
-            double sy = cannon ? cannonPy[k] : k < f.ships ? f.shipY[k] : f.selfY;
+            double sx;
+            double sy;
+            if (cannon) {
+                sx = cannonPx[k];
+                sy = cannonPy[k];
+            } else { // a ship's bullet starts at its main gun (C Fire_main_shot: pos + ship->gun[dir])
+                boolean self = k == f.ships;
+                int slot = players.slotOf(self ? f.selfId : f.shipId[k]);
+                com.fulcrologic.jxpilot.common.math.ShipShape shape = slot < 0 ? null : players.shape(slot);
+                if (shape == null) {
+                    shape = DEFAULT_SHAPE;
+                }
+                double h = self ? f.selfHeading : f.shipHeading[k];
+                double c = Math.cos(h);
+                double sn = Math.sin(h);
+                sx = (self ? f.selfX : f.shipX[k])
+                    + com.fulcrologic.jxpilot.common.math.ShipShape.rotX(shape.mainGunX, shape.mainGunY, c, sn);
+                sy = (self ? f.selfY : f.shipY[k])
+                    + com.fulcrologic.jxpilot.common.math.ShipShape.rotY(shape.mainGunX, shape.mainGunY, c, sn);
+            }
             double dx = XMath.wrapDelta(sx - px, worldW, wrap);
             double dy = XMath.wrapDelta(sy - py, worldH, wrap);
             double back = -(dx * vx + dy * vy) / v2; // ticks back along the path to the source's foot
@@ -1370,8 +1396,14 @@ public final class ClientWorld {
                 best = d2;
                 ox = px + dx;
                 oy = py + dy;
+                age = back;
+                found = true;
             }
         }
+        if (!found) {
+            return; // no source: not a new bullet whose origin we can show
+        }
+        f.shotAge[j] = (int) Math.max(0, Math.round(age));
         f.shotSeenNanos[j] = f.arrivalNanos;
         f.shotOriginX[j] = (float) ox;
         f.shotOriginY[j] = (float) oy;

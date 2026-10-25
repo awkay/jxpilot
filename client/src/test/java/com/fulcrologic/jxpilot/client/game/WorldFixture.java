@@ -134,6 +134,13 @@ final class WorldFixture {
         return this;
     }
 
+    WorldFixture shot(int variant, double x, double y, double vx, double vy) {
+        w.beginSection(Section.SHOT, variant);
+        Records.Shot.put(w, x, y, vx, vy);
+        w.endSection();
+        return this;
+    }
+
     WorldFixture shot(int variant, double x, double y) {
         w.beginSection(Section.SHOT, variant);
         Records.Shot.put(w, x, y, 0, 0);
