@@ -26,7 +26,9 @@ JXPilot's goals:
   (<<06-config-and-maps.adoc#shipped-maps,Shipped maps>>).
 * *Run anywhere Java runs*: Windows, macOS and Linux, on x64 and arm64.
 * *Run well on modern networks*: VPNs, multi-homed hosts and IPv6
-  (<<04-running-a-server.adoc#binding,Network binding>>).
+  (<<04-running-a-server.adoc#binding,Network binding>>), and friends on other continents: the client
+  predicts your ship so it answers your keys at once (<<03-playing.adoc#long-distance,Playing over long
+  distances>>).
 
 [[disclaimer]]
 == Relationship to XPilot
@@ -43,6 +45,26 @@ JXPilot servers and clients talk their own network protocol. The JXPilot client 
 protocol, so it can join an original XPilot 4.5.5 server
 (<<07-client-reference.adoc#xpilot-protocol,Playing on original XPilot servers>>). An original XPilot
 client cannot join a JXPilot server.
+
+[[compatibility]]
+=== Which versions play together
+
+This version of JXPilot speaks version 2 of the JXPilot protocol, which carries what the client needs to
+predict your ship (<<03-playing.adoc#long-distance,Playing over long distances>>). JXPilot 1.1.1 and
+earlier speak version 1.
+
+[cols="2,2,3",options="header"]
+|===
+|Client |Server |Result
+|this version |this version's server or lobby |Plays, with prediction.
+|this version |JXPilot 1.1.1 or earlier |Does not connect.
+|JXPilot 1.1.1 or earlier |this version's server or lobby |Does not connect.
+|this version |original XPilot 4.5.5 server (`xp://`) |Plays as before, without prediction.
+|===
+
+So update the server and every player's client together. A mismatched client gets no answer it
+understands: it stays at `Connecting to SERVER (attempt N)...` and then `No answer from SERVER, still
+trying...`, as if the server were down.
 
 [[status]]
 == Status: what works today
@@ -85,7 +107,8 @@ C server (<<03-playing.adoc#items,Items and weapons>>).
 |Java server: network
 |Works
 |One UDP port, flexible address binding for VPNs and multi-homed hosts, abuse limits
-(<<04-running-a-server.adoc#running-a-server,Running a server>>).
+(<<04-running-a-server.adoc#running-a-server,Running a server>>). Protocol version 2, which older JXPilot
+versions cannot talk to (<<compatibility>>).
 
 |Java server: game modes
 |Works
@@ -112,11 +135,12 @@ the visible-area border. Every XPilot client resource can be set in `~/.xpilotrc
 (<<07-client-reference.adoc#viewer-flags,Viewer flags>>).
 
 |Lag hiding
-|Partial
-|Your own ship is no longer drawn a frame behind: the client predicts it forward from the newest frame
-the server sent and blends corrections in over a few screen frames. Your keys still take a round trip
-to the server, plus the wait for its next frame. Predicting your keys, shots and exhaust on the client
-(`docs/latency-fixes.md` in the source) is future work.
+|Works
+|On JXPilot servers your ship, its exhaust and your shots answer your keys on the next screen frame, at
+any distance from the server; other players' and cannons' shots are drawn where they will be when your
+keys land (<<03-playing.adoc#long-distance,Playing over long distances>>). Other ships are still drawn
+slightly in the past, and drawing them in the present is future work (`docs/latency-fixes.md` in the
+source). Nothing is predicted on original XPilot servers.
 
 |Sound
 |Works
@@ -135,6 +159,13 @@ wormholes, death and respawn, scores, chat, robots, radar, HUD, basic team play.
 M2:: items, balls and treasures, targets, checkpoints and races, asteroids, alliances and the `/`
 commands. Done.
 M3:: polish: a configurable keys file and sound. Done.
+
+Since 1.1.1:
+
+* Playing over long distances: own-ship and shot prediction, protocol version 2
+  (<<03-playing.adoc#long-distance,Playing over long distances>>, <<compatibility>>).
+* Fixed: after a burst of packet loss, a client could stop receiving scores, chat, game messages and
+  target and cannon changes for the rest of the session while the game went on, and later be dropped.
 
 Out of scope: the XPilot map editor, replay recording, the metaserver and server browser, and the
 X11-specific parts of the C client.
