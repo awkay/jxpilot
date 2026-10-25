@@ -283,7 +283,11 @@ class ClientWorldTest {
                 .shot(gun, 240, 250, 4 * STEP, 0) // ship 11's gun on its path 10 ticks back: older than the gap
                 .ingestAtTick(102);
             SnapshotFrame b = f.world.frameAt(102);
+            long gunsOnce = f.world.gunComputations();
+            f.world.update(at(103)); // the render pair redoes nothing
             assertAll(
+                () -> assertEquals(1, gunsOnce, "the ships' gun points computed once for the frame's 3 new bullets"),
+                () -> assertEquals(1, f.world.gunComputations(), "and not again for the same parts"),
                 () -> assertEquals(at(102), b.shotSeenNanos[0], "the fresh bullet: seen now (a tracer)"),
                 () -> assertEquals(50f, b.shotOriginX[0], 1e-3f, "from its ship's main gun (15 px ahead of x 35)"),
                 () -> assertEquals(1, b.shotAge[0], "age: 1 tick back to the ship"),
@@ -291,6 +295,21 @@ class ClientWorldTest {
                 () -> assertEquals(0, b.shotAge[1], "and no age known"),
                 () -> assertEquals(Long.MIN_VALUE, b.shotSeenNanos[2],
                     "a ship 10 ticks back on the path is not its source (at most the gap, 2 ticks, plus 1)"));
+        }
+
+        @Test
+        @DisplayName("the gun points follow the frame's parts: the shooter arriving in a later part is then the source")
+        void sourceInLaterPart() {
+            WorldFixture f = new WorldFixture(false);
+            f.begin(100).ship(9, 0, 35, 100, 0, 0, 0).ingestAtTick(100);
+            f.begin(102, 0, 2).ship(11, 0, 400, 300, 0, 0, 0).shot(gun, 54, 100, 4 * STEP, 0).ingestAtTick(102);
+            SnapshotFrame b = f.world.frameAt(102);
+            long before = b.shotSeenNanos[0];
+            f.begin(102, 1, 2).ship(9, 0, 35, 100, 0, 0, 0).ingestAtTick(102);
+            assertAll(
+                () -> assertEquals(Long.MIN_VALUE, before, "part 0 alone: only a far ship (its gun computed), no source"),
+                () -> assertEquals(at(102), b.shotSeenNanos[0], "with part 1's ship: its gun is the source"),
+                () -> assertEquals(1, b.shotAge[0], "age 1"));
         }
 
         @Test

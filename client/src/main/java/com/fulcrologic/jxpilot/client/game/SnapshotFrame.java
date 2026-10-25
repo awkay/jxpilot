@@ -71,6 +71,11 @@ final class SnapshotFrame {
     final float[] shipX;
     final float[] shipY;
     final float[] shipHeading;
+    /** Main-gun points of the ships, then of SELF (at index {@link #ships}): bullet sources, for {@link #gunParts}. */
+    final float[] gunX;
+    final float[] gunY;
+    /** The {@link #parts} the gun points were computed for; -1: none yet. */
+    long gunParts = -1;
     final float[] shipVx;
     final float[] shipVy;
 
@@ -132,6 +137,8 @@ final class SnapshotFrame {
         shipX = new float[shipCap];
         shipY = new float[shipCap];
         shipHeading = new float[shipCap];
+        gunX = new float[shipCap + 1];
+        gunY = new float[shipCap + 1];
         shipVx = new float[shipCap];
         shipVy = new float[shipCap];
         shotX = new float[shotCap];
@@ -178,6 +185,7 @@ final class SnapshotFrame {
         shots = 0;
         points = 0;
         assocValid = false;
+        gunParts = -1;
         objs.clear();
     }
 }

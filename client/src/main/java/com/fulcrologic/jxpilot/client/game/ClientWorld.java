@@ -1325,6 +1325,39 @@ public final class ClientWorld {
         }
     }
 
+    /**
+     * BEHAVIOR: the main-gun point of each ship of {@code f}, then of SELF: its position plus its shape's main gun
+     * (else the default shape's) rotated by its heading; computed once per set of parts (the first new bullet).
+     */
+    private void guns(SnapshotFrame f) {
+        int n = Math.min(f.ships, f.gunX.length - 1);
+        for (int k = 0; k <= n; k++) {
+            boolean self = k == n;
+            if (self && !f.hasSelf) {
+                break;
+            }
+            int slot = players.slotOf(self ? f.selfId : f.shipId[k]);
+            com.fulcrologic.jxpilot.common.math.ShipShape shape = slot < 0 ? null : players.shape(slot);
+            if (shape == null) {
+                shape = DEFAULT_SHAPE;
+            }
+            double h = self ? f.selfHeading : f.shipHeading[k];
+            double c = Math.cos(h);
+            double sn = Math.sin(h);
+            f.gunX[k] = (float) ((self ? f.selfX : f.shipX[k])
+                + com.fulcrologic.jxpilot.common.math.ShipShape.rotX(shape.mainGunX, shape.mainGunY, c, sn));
+            f.gunY[k] = (float) ((self ? f.selfY : f.shipY[k])
+                + com.fulcrologic.jxpilot.common.math.ShipShape.rotY(shape.mainGunX, shape.mainGunY, c, sn));
+        }
+        f.gunParts = f.parts;
+        gunComputations++;
+    }
+
+    private long gunComputations;
+
+    /** Times a frame's gun points were computed (for tests: once per frame and set of parts). */
+    long gunComputations() { return gunComputations; }
+
     private static final com.fulcrologic.jxpilot.common.math.ShipShape DEFAULT_SHAPE =
         com.fulcrologic.jxpilot.common.math.ShipShape.defaultShip();
 
@@ -1369,19 +1402,11 @@ public final class ClientWorld {
                 sx = cannonPx[k];
                 sy = cannonPy[k];
             } else { // a ship's bullet starts at its main gun (C Fire_main_shot: pos + ship->gun[dir])
-                boolean self = k == f.ships;
-                int slot = players.slotOf(self ? f.selfId : f.shipId[k]);
-                com.fulcrologic.jxpilot.common.math.ShipShape shape = slot < 0 ? null : players.shape(slot);
-                if (shape == null) {
-                    shape = DEFAULT_SHAPE;
+                if (f.gunParts != f.parts) {
+                    guns(f);
                 }
-                double h = self ? f.selfHeading : f.shipHeading[k];
-                double c = Math.cos(h);
-                double sn = Math.sin(h);
-                sx = (self ? f.selfX : f.shipX[k])
-                    + com.fulcrologic.jxpilot.common.math.ShipShape.rotX(shape.mainGunX, shape.mainGunY, c, sn);
-                sy = (self ? f.selfY : f.shipY[k])
-                    + com.fulcrologic.jxpilot.common.math.ShipShape.rotY(shape.mainGunX, shape.mainGunY, c, sn);
+                sx = f.gunX[k];
+                sy = f.gunY[k];
             }
             double dx = XMath.wrapDelta(sx - px, worldW, wrap);
             double dy = XMath.wrapDelta(sy - py, worldH, wrap);
