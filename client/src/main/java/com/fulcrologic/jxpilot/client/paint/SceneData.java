@@ -104,6 +104,14 @@ public final class SceneData {
     public final int[] shotColor;
     /** Team (or blinking nuclear) shot: drawn as an X or + ({@link ObjectPainter#teamShot}). */
     public final boolean[] shotTeam;
+    /** Tracers of new bullets (from the source to the drawn bullet), in the shot's colour, with their alpha. */
+    public int tracerCount;
+    public final float[] tracerX1;
+    public final float[] tracerY1;
+    public final float[] tracerX2;
+    public final float[] tracerY2;
+    public final int[] tracerColor;
+    public final float[] tracerAlpha;
 
     // particles
     public final int maxParticles;
@@ -216,6 +224,12 @@ public final class SceneData {
         shotY = new float[shots];
         shotColor = new int[shots];
         shotTeam = new boolean[shots];
+        tracerX1 = new float[shots];
+        tracerY1 = new float[shots];
+        tracerX2 = new float[shots];
+        tracerY2 = new float[shots];
+        tracerColor = new int[shots];
+        tracerAlpha = new float[shots];
         maxParticles = particles;
         particleX = new float[particles];
         particleY = new float[particles];
@@ -287,6 +301,7 @@ public final class SceneData {
         ecmCount = 0;
         pausedCount = 0;
         linkCount = 0;
+        tracerCount = 0;
     }
 
     /** Add a ship; false when full. */
@@ -318,6 +333,21 @@ public final class SceneData {
         shotY[i] = y;
         shotColor[i] = colorIndex;
         shotTeam[i] = team;
+        return true;
+    }
+
+    /** Add a tracer from (x1, y1) to (x2, y2) in palette colour {@code colorIndex} at {@code alpha} (0..1); false when full. */
+    public boolean addTracer(float x1, float y1, float x2, float y2, int colorIndex, float alpha) {
+        if (tracerCount == tracerX1.length) {
+            return false;
+        }
+        int i = tracerCount++;
+        tracerX1[i] = x1;
+        tracerY1[i] = y1;
+        tracerX2[i] = x2;
+        tracerY2[i] = y2;
+        tracerColor[i] = colorIndex;
+        tracerAlpha[i] = alpha;
         return true;
     }
 

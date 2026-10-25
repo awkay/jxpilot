@@ -283,6 +283,20 @@ public final class ClientWorld {
     private final int[] outShotSrcTick;
     private final float[] outShotSrcX;
     private final float[] outShotSrcY;
+    /** Tracers of new bullets (prediction on): from the source to the drawn bullet, with the alpha left. */
+    private int outTracers;
+    private final float[] outTracerX1;
+    private final float[] outTracerY1;
+    private final float[] outTracerX2;
+    private final float[] outTracerY2;
+    private final float[] outTracerAlpha;
+    private final int[] outTracerVariant;
+    private long tracersDrawn;
+    /** Map cannon positions (pixels), the sources of cannons' bullets. */
+    private float[] cannonPx = new float[0];
+    private float[] cannonPy = new float[0];
+    /** The local time of the running {@link #update}. */
+    private long updateNanos;
     private int outPoints;
     private final float[] outPointX;
     private final float[] outPointY;
@@ -334,6 +348,12 @@ public final class ClientWorld {
         drTeams = new int[shotCap];
         outShotSrcX = new float[shotCap];
         outShotSrcY = new float[shotCap];
+        outTracerX1 = new float[shotCap];
+        outTracerY1 = new float[shotCap];
+        outTracerX2 = new float[shotCap];
+        outTracerY2 = new float[shotCap];
+        outTracerAlpha = new float[shotCap];
+        outTracerVariant = new int[shotCap];
         outPointX = new float[shotCap];
         outPointY = new float[shotCap];
         outPointColor = new int[shotCap];
@@ -378,6 +398,12 @@ public final class ClientWorld {
         shotSpeed = opts.getDouble(Opt.SHOT_SPEED);
         clock.reset(simHz);
         cannonFlags = new byte[map.cannons().size()];
+        cannonPx = new float[map.cannons().size()];
+        cannonPy = new float[map.cannons().size()];
+        for (int i = 0; i < cannonPx.length; i++) {
+            cannonPx[i] = (float) map.cannons().get(i).x();
+            cannonPy[i] = (float) map.cannons().get(i).y();
+        }
         fuelLevel = new float[map.fuels().size()];
         targetFlags = new byte[map.targets().size()];
         targetLeft = new float[map.targets().size()];
@@ -543,11 +569,11 @@ public final class ClientWorld {
             selfStateTick = f.tick;
             selfPlaying = (f.selfFlags & Records.ShipFlags.DEAD) == 0;
         }
-        SnapshotFrame prev = frameFor(tick - 1);
+        SnapshotFrame prev = neighbour(tick, -1);
         if (prev != null) {
             associate(prev, f);
         }
-        SnapshotFrame after = frameFor(tick + 1);
+        SnapshotFrame after = neighbour(tick, 1);
         if (after != null) {
             associate(f, after);
         }
@@ -560,6 +586,22 @@ public final class ClientWorld {
 
     private int snapshotIntervalInt() {
         return Math.max(1, (int) Math.round(snapshotInterval));
+    }
+
+    /**
+     * BEHAVIOR: the nearest valid frame before ({@code dir} -1) or after (+1) {@code tick}, at most two snapshot
+     * intervals away (a lost snapshot between them is fine), else null.
+     */
+    private SnapshotFrame neighbour(int tick, int dir) {
+        SnapshotFrame best = null;
+        int reach = (int) Math.ceil(2 * snapshotInterval);
+        for (SnapshotFrame f : ring) {
+            int d = (f.tick - tick) * dir;
+            if (f.valid && d > 0 && d <= reach && (best == null || (f.tick - best.tick) * dir < 0)) {
+                best = f;
+            }
+        }
+        return best;
     }
 
     private SnapshotFrame frameFor(int tick) {
@@ -622,6 +664,7 @@ public final class ClientWorld {
                     f.shotState[k] = f.shotVx[k] != 0 || f.shotVy[k] != 0 ? Tracker.KNOWN : Tracker.UNKNOWN;
                     f.shotNext[k] = -1;
                     f.shotAge[k] = 0;
+                    f.shotSeenNanos[k] = Long.MIN_VALUE;
                 }
             }
             case Section.BURST -> {
@@ -928,8 +971,10 @@ public final class ClientWorld {
      * BEHAVIOR: particles are advanced to the render tick, the own exhaust to the own ship's drawn tick.
      */
     public void update(long nowNanos) {
+        updateNanos = nowNanos;
         outShips = 0;
         outShots = 0;
+        outTracers = 0;
         outPoints = 0;
         outObjs.clear();
         outSelf = false;
@@ -1108,10 +1153,21 @@ public final class ClientWorld {
         tracker.link(sn, a.shotX, a.shotY, a.shotEstVx, a.shotEstVy, a.shotState, keyA, sm, b.shotX, b.shotY, keyB,
             frames, TRACK_PX_PER_FRAME, SHOT_AMBIGUITY_RATIO, MIN_SHOT_SPEED, worldW, worldH, wrap, a.shotNext);
         int ticks = b.tick - a.tick;
+        for (int j = 0; j < sm; j++) {
+            b.shotSeenNanos[j] = Long.MIN_VALUE;
+        }
         for (int i = 0; i < sn; i++) {
             int j = a.shotNext[i];
             if (j >= 0 && j < sm && ticks > 0) {
                 b.shotAge[j] = a.shotAge[i] + ticks;
+                b.shotSeenNanos[j] = a.shotSeenNanos[i];
+                b.shotOriginX[j] = a.shotOriginX[i];
+                b.shotOriginY[j] = a.shotOriginY[i];
+            }
+        }
+        for (int j = 0; j < sm; j++) {
+            if (b.shotAge[j] == 0 && ticks > 0 && ticks <= 2 * snapshotInterval) {
+                tracerOrigin(b, j, ticks); // a new bullet: none of a's continues as it
             }
         }
         for (int j = 0; j < sm; j++) {
@@ -1251,6 +1307,59 @@ public final class ClientWorld {
             outObjs.interpolateLines(b.objs, t, TRACK_PX_PER_FRAME * (b.tick - a.tick) * frameFraction, worldW,
                 worldH, wrap);
         }
+    }
+
+    /** How long a new bullet's tracer is drawn (it fades out over this time). */
+    public static final long TRACER_NANOS = 150_000_000L;
+    /** How far from a bullet's backward path a cannon or ship may be and still be taken as its source. */
+    static final double TRACER_SOURCE_PX = Const.BLOCK_SZ;
+
+    /**
+     * Where the tracer of bullet j of {@code f}, first seen in it, starts: its source. With prediction on, bullets are
+     * drawn dead-reckoned to the predicted tick, so a new one would pop into view RTT plus the lead of flight away
+     * from where it was fired; a short tracer from its source to where it is drawn shows where it came from.
+     * <p>
+     * BEHAVIOR: back along its velocity (the SHOT record's) for at most {@code ticks} (since the previous frame, when
+     * it was not there yet): a cannon's bullet starts at the nearest map cannon within {@link #TRACER_SOURCE_PX} of
+     * that backward path, any other at the nearest ship of the frame (the own ship included) within it; with neither,
+     * half way back (its expected age at first sight). Marks the bullet seen at the frame's arrival. A bullet without
+     * a wire velocity gets no tracer.
+     */
+    private void tracerOrigin(SnapshotFrame f, int j, int ticks) {
+        double vx = f.shotWireVx[j] * frameFraction;
+        double vy = f.shotWireVy[j] * frameFraction;
+        double v2 = vx * vx + vy * vy;
+        if (v2 == 0) {
+            return;
+        }
+        double px = f.shotX[j];
+        double py = f.shotY[j];
+        double best = TRACER_SOURCE_PX * TRACER_SOURCE_PX;
+        double ox = px - vx * ticks / 2.0;
+        double oy = py - vy * ticks / 2.0;
+        boolean cannon = Records.ShotKind.kindOf(f.shotVariant[j]) == Records.ShotKind.CANNON_SHOT;
+        int n = cannon ? cannonPx.length : f.ships + (f.hasSelf ? 1 : 0);
+        for (int k = 0; k < n; k++) {
+            double sx = cannon ? cannonPx[k] : k < f.ships ? f.shipX[k] : f.selfX;
+            double sy = cannon ? cannonPy[k] : k < f.ships ? f.shipY[k] : f.selfY;
+            double dx = XMath.wrapDelta(sx - px, worldW, wrap);
+            double dy = XMath.wrapDelta(sy - py, worldH, wrap);
+            double back = -(dx * vx + dy * vy) / v2; // ticks back along the path to the source's foot
+            if (back < -1 || back > ticks + 1) {
+                continue;
+            }
+            double ex = dx + vx * back;
+            double ey = dy + vy * back;
+            double d2 = ex * ex + ey * ey;
+            if (d2 <= best) {
+                best = d2;
+                ox = px + dx;
+                oy = py + dy;
+            }
+        }
+        f.shotSeenNanos[j] = f.arrivalNanos;
+        f.shotOriginX[j] = (float) ox;
+        f.shotOriginY[j] = (float) oy;
     }
 
     /** How far from the own ship a line end may be and still be on it (its hull, plus the wire's rounding). */
@@ -1416,9 +1525,56 @@ public final class ClientWorld {
             putShot(wrapX(px), wrapY(py), n.shotVariant[j], n, j);
             allowOwn = false;
             reckoned++;
+            putTracer(n, j, px, py);
         }
         return true;
     }
+
+    /**
+     * BEHAVIOR: a bullet of {@code n} first seen less than {@link #TRACER_NANOS} ago gets a tracer from its origin
+     * ({@link #tracerOrigin}, the copy nearest the bullet) to where it is drawn, with alpha 1 at first sight falling
+     * linearly to 0.
+     */
+    private void putTracer(SnapshotFrame n, int j, double px, double py) {
+        long seen = n.shotSeenNanos[j];
+        if (seen == Long.MIN_VALUE || outTracers >= outTracerX1.length) {
+            return;
+        }
+        long age = updateNanos - seen;
+        if (age < 0 || age >= TRACER_NANOS) {
+            return;
+        }
+        int k = outTracers++;
+        outTracerX2[k] = wrapX(px);
+        outTracerY2[k] = wrapY(py);
+        outTracerX1[k] = (float) (outTracerX2[k] - XMath.wrapDelta(outTracerX2[k] - n.shotOriginX[j], worldW, wrap));
+        outTracerY1[k] = (float) (outTracerY2[k] - XMath.wrapDelta(outTracerY2[k] - n.shotOriginY[j], worldH, wrap));
+        outTracerAlpha[k] = 1f - (float) age / TRACER_NANOS;
+        outTracerVariant[k] = n.shotVariant[j] & 0xFF;
+        tracersDrawn++;
+    }
+
+    /** Tracers drawn by the last {@link #update} (new bullets, prediction on). */
+    public int tracerCount() { return outTracers; }
+
+    /** Tracer i's start: its bullet's source (unwrapped: the copy nearest {@link #tracerX2}). */
+    public float tracerX1(int i) { return outTracerX1[i]; }
+
+    public float tracerY1(int i) { return outTracerY1[i]; }
+
+    /** Tracer i's end: where its bullet is drawn. */
+    public float tracerX2(int i) { return outTracerX2[i]; }
+
+    public float tracerY2(int i) { return outTracerY2[i]; }
+
+    /** Tracer i's alpha, 1 at the bullet's first sight down to 0 after {@link #TRACER_NANOS}. */
+    public float tracerAlpha(int i) { return outTracerAlpha[i]; }
+
+    /** Tracer i's bullet's SHOT variant (kind and colour). */
+    public int tracerVariant(int i) { return outTracerVariant[i]; }
+
+    /** Tracers drawn since the start (all updates). */
+    public long tracersDrawn() { return tracersDrawn; }
 
     /** C CANNON_SHOT_LIFE_MAX bound: a cannon's bullet lives 8 + rand(24) ticks, at most 31. */
     static final int CANNON_SHOT_LIFE_MAX = 31;

@@ -143,6 +143,13 @@ public final class SceneFiller {
             int c = nuclearBlink(w.shotKind(i), w.shotColor(i), harmless, w.renderTick());
             out.addShot(w.shotX(i), w.shotY(i), shotColor(c, harmless), teamShot(c, harmless));
         }
+        for (int i = 0; i < w.tracerCount(); i++) {
+            int v = w.tracerVariant(i);
+            boolean harmless = Records.ShotKind.harmless(v);
+            int c = nuclearBlink(Records.ShotKind.kindOf(v), Records.ShotKind.colorOf(v), harmless, w.renderTick());
+            out.addTracer(w.tracerX1(i), w.tracerY1(i), w.tracerX2(i), w.tracerY2(i), shotColor(c, harmless),
+                w.tracerAlpha(i));
+        }
         objects(out, w, p);
         particles(out, w, style);
         for (int i = 0; i < w.pointCount(); i++) {

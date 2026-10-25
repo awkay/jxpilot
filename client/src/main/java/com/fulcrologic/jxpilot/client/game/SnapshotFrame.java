@@ -98,6 +98,14 @@ final class SnapshotFrame {
     final boolean[] shotOwnMatched;
     /** Index of the same shot in the next frame of the last association, or -1. */
     final int[] shotNext;
+    /**
+     * When the shot was first seen (local nanoseconds, the first frame's arrival; {@link Long#MIN_VALUE} when not
+     * known to be new, e.g. no earlier frame to tell) and where its tracer starts (its source, see
+     * {@code ClientWorld#tracerOrigin}).
+     */
+    final long[] shotSeenNanos;
+    final float[] shotOriginX;
+    final float[] shotOriginY;
     /** Point particles sent as positions only (C debris on the XPilot path), drawn tracked like shots. */
     final int pointCap;
     int points;
@@ -139,6 +147,9 @@ final class SnapshotFrame {
         shotEstVy = new float[shotCap];
         shotNext = new int[shotCap];
         shotState = new byte[shotCap];
+        shotSeenNanos = new long[shotCap];
+        shotOriginX = new float[shotCap];
+        shotOriginY = new float[shotCap];
         pointCap = shotCap;
         pointX = new float[pointCap];
         pointY = new float[pointCap];

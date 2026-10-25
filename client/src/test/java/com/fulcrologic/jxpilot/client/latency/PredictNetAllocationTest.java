@@ -87,6 +87,7 @@ class PredictNetAllocationTest {
         }
         long correctionsBefore = p.corrections();
         long reckonedBefore = rig.world().reckonedShots();
+        long tracersBefore = rig.world().tracersDrawn();
         long stepsBefore = rig.world().reckoningSteps();
         long endsBefore = p.shots().endSteps();
         long firedBefore = p.shots().fired();
@@ -99,6 +100,7 @@ class PredictNetAllocationTest {
         long recon = p.reconciliations() - reconBefore;
         long act = active[0];
         long reckoned = rig.world().reckonedShots() - reckonedBefore;
+        long tracers = rig.world().tracersDrawn() - tracersBefore;
         long steps = rig.world().reckoningSteps() - stepsBefore;
         long ends = p.shots().endSteps() - endsBefore;
         long fired = p.shots().fired() - firedBefore;
@@ -113,6 +115,7 @@ class PredictNetAllocationTest {
             () -> assertTrue(recon > 500, "PREDICTs were compared while measured: " + recon),
             () -> assertTrue(corrections > 10, "and some corrected (replays): " + corrections),
             () -> assertTrue(reckoned > 1000, "others' bullets were dead-reckoned while measured: " + reckoned),
+            () -> assertTrue(tracers > 100, "new bullets' tracers were drawn while measured: " + tracers),
             () -> assertTrue(steps > 100 && steps < reckoned, "with the whole-tick cache refilled now and then: "
                 + steps),
             () -> assertTrue(fired > 50, "own bullets were fired (provisional shots): " + fired),

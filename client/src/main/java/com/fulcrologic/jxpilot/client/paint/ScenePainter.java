@@ -121,6 +121,10 @@ public final class ScenePainter {
         }
         for (int k = 0; k < n; k++) {
             cam.applyTo(b, k);
+            tracers(b, cam, k, s);
+        }
+        for (int k = 0; k < n; k++) {
+            cam.applyTo(b, k);
             shotPoints(b, cam, k, s, zoom);
         }
         for (int k = 0; k < n; k++) {
@@ -279,6 +283,24 @@ public final class ScenePainter {
     }
 
     // ------------------------------------------------------------------ step 2: Paint_shots, queued
+
+    /**
+     * Tracers of new bullets (prediction on, JXPilot only): a thin line from the bullet's source to where it is drawn,
+     * in its colour, fading out; under the shots.
+     * <p>
+     * BEHAVIOR: drawn when either end is in copy k's view, at the tracer's alpha times the colour's.
+     */
+    private void tracers(VertexBatch b, Camera cam, int k, SceneData s) {
+        for (int i = 0; i < s.tracerCount; i++) {
+            if (cam.isVisible(s.tracerX1[i], s.tracerY1[i], s.tracerX1[i], s.tracerY1[i], k, 0)
+                || cam.isVisible(s.tracerX2[i], s.tracerY2[i], s.tracerX2[i], s.tracerY2[i], k, 0)) {
+                int rgba = palette.color(s.tracerColor[i]);
+                int alpha = Math.round(((rgba >>> 24) & 0xFF) * Math.max(0f, Math.min(1f, s.tracerAlpha[i])));
+                b.line(s.tracerX1[i], s.tracerY1[i], s.tracerX2[i], s.tracerY2[i],
+                    com.fulcrologic.jxpilot.client.render.Palette.withAlpha(rgba, alpha));
+            }
+        }
+    }
 
     private void shotPoints(VertexBatch b, Camera cam, int k, SceneData s, double zoom) {
         int sparkRand = style.sparkRand;

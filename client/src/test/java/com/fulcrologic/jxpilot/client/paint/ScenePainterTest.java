@@ -87,6 +87,37 @@ class ScenePainterTest {
     }
 
     @Test
+    @org.junit.jupiter.api.DisplayName("a tracer is one line in its colour at its alpha, under the shots; one with both"
+        + " ends out of view is not drawn")
+    void tracers() {
+        SceneData s = new SceneData(1, 4, 1, 1);
+        s.addTracer(480, 500, 520, 500, Palette.RED, 0.5f);
+        s.addTracer(5000, 5000, 5040, 5000, Palette.RED, 1f);
+        s.addShot(520, 500, Palette.WHITE, false);
+        VertexBatch b = batch();
+        painter().draw(b, TEXT, cam(10000, 10000, false, 500, 500), s);
+        int red = P.color(Palette.RED);
+        int expected = com.fulcrologic.jxpilot.client.render.Palette.withAlpha(red, Math.round((red >>> 24) * 0.5f));
+        int tracerSegs = 0;
+        int other = 0;
+        for (int i = 0; i < b.segmentCount(); i++) {
+            if (b.segColor(i) == expected) {
+                tracerSegs++;
+            } else if ((b.segColor(i) & 0x00FFFFFF) == (red & 0x00FFFFFF)) {
+                other++;
+            }
+        }
+        int segs = tracerSegs;
+        int full = other;
+        List<Integer> modes = modes(b);
+        assertAll(
+            () -> assertEquals(1, segs, "one line at half the colour's alpha"),
+            () -> assertEquals(0, full, "the tracer out of view is not drawn"),
+            () -> assertEquals(VertexBatch.LINES, (int) modes.get(0), "lines (the tracer) before"),
+            () -> assertEquals(VertexBatch.POINTS, (int) modes.get(1), "the shot's point"));
+    }
+
+    @Test
     void commandsFollowCsDeferredFlushes() {
         VertexBatch b = batch();
         painter().draw(b, TEXT, cam(10000, 10000, false, 500, 500), scene());
