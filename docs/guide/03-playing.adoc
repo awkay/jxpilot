@@ -97,8 +97,8 @@ MENU:: Hold the mouse button and release over an entry: KEYS shows the key help 
 CONFIG opens the settings panel, SCORE and PLAYER switch the score list between player names and ID
 mode (`NICK=USER@HOST`), and MOTD shows the server's message of the day again.
 
-*CONFIG* covers the score list with XPilot's settings, in XPilot's order, a page at a time (NEXT, PREV,
-CLOSE). A Yes/No setting toggles when clicked; a number changes with its left and right arrows. Changes
+*CONFIG* covers the score list with XPilot's settings, in XPilot's order, then JXPilot's own
+(`shotTracers`, <<shot-tracers,shot tracers>>), a page at a time (NEXT, PREV, CLOSE). A Yes/No setting toggles when clicked; a number changes with its left and right arrows. Changes
 apply at once: the engine settings are sent to the server, and the HUD, message, item and zoom settings
 change what you see. The last entry, *Save Configuration*, writes the settings to `~/.xpilotrc` (or
 the `--keys` file) in XPilot's format: each saved setting's line is replaced where it is, your other
@@ -406,6 +406,16 @@ game plays as before (<<07-client-reference.adoc#xpilot-protocol,Playing on orig
 * *Everybody else's shots, and the cannons'*: drawn where they will be when a key you press now reaches
   the server, moved with the server's own rules for shots (gravity, walls). What you dodge on screen is
   what you dodge on the server.
+* *Lines that end on your ship*: the refuel line, the ball connector, tractor and pressor beams and the
+  transporter beam stay attached to your ship as drawn.
+
+[[shot-tracers]]
+Because shots are drawn where they will be, a shot fired by somebody else (or a cannon) first appears
+about one round trip into its flight, away from the gun that fired it. So the client draws a short
+*tracer*: a line from the shot back to its gun or cannon that fades out over about 150 ms. Only shots
+seen within about a server frame of being fired get one, and only when their gun or cannon is on your
+screen. Turn tracers off with `showShotTracers: no` in `~/.xpilotrc`, `--showShotTracers no`, or
+`shotTracers` in CONFIG (<<button-bar>>). They are a JXPilot addition, drawn only with prediction on.
 
 [[not-predicted]]
 === What is not predicted

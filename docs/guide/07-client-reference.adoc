@@ -182,7 +182,8 @@ switches it while you play.
 === Client resources
 
 The client knows all of the XPilot client's resources: the key bindings and control settings
-(<<03-playing.adoc#key-bindings,Changing the keys>>) and 154 others. Set them in `~/.xpilotrc` (or the
+(<<03-playing.adoc#key-bindings,Changing the keys>>) and 154 others, plus one of JXPilot's own,
+`showShotTracers` (<<client-look>>). Set them in `~/.xpilotrc` (or the
 `--keys` file) as `xpilot.RESOURCE: VALUE`, or on the command line as `--RESOURCE VALUE` (XPilot's
 `-RESOURCE VALUE` works too), for example `--showMineName no`. The command line wins over the file.
 `--name`, `--team`, `--size`, `--scale-factor` and `--alt-scale-factor` set the `name`, `team`,
@@ -235,6 +236,8 @@ All of XPilot's look options work, on JXPilot and XPilot servers
 * the panel and HUD: `clock` and `clockAMPM` (in the score list), the network meters `packetSizeMeter`,
   `packetLossMeter`, `packetDropMeter` and `packetLagMeter`, `showHUDRadar`, `slidingRadar` (on
   wrapping maps), `titleFlip` (the window title);
+* JXPilot only: `showShotTracers` (default Yes): a short fading line from a newly seen shot back to the
+  gun or cannon that fired it, with prediction on (<<03-playing.adoc#shot-tracers,shot tracers>>);
 * colours: `maxColors`, `color0` to `color15` (and `black`, `white`, `blue`, `red`), as X colour names
   from X.Org's `rgb.txt` or `#RRGGBB`, and the colour numbers `hudColor`, `hudLockColor`, `wallColor`,
   `wallRadarColor`, `decorColor`, `decorRadarColor`, `oldMessagesColor`, `targetRadarColor`.

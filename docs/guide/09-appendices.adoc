@@ -146,6 +146,9 @@ and other shots drawn where they will be when your keys land (<<03-playing.adoc#
 over long distances>>)
 |Lag display |the packet meters |the packet meters, and a net diagnostics line on kbd:[Insert]
 (<<03-playing.adoc#net-stats,The net diagnostics line>>)
+|New shots |drawn where the server sent them |with prediction on, drawn ahead where they will be, with a
+short fading tracer back to their gun (`showShotTracers`, on by default;
+<<03-playing.adoc#shot-tracers,shot tracers>>)
 |===
 
 [appendix]
@@ -217,6 +220,12 @@ host>>).
 |Corrections: the server's ship differed from the prediction, usually because something hit or pushed you
 (<<03-playing.adoc#corrections,Corrections and snaps>>). Many corrections with nobody near you point to a
 lossy link: check `loss` and `jitter` on the net diagnostics line (kbd:[Insert]).
+
+|Lobby: you chose a map that was not running, and you are back at the list (the map now shows `*` and 0
+players)
+|A bug in JXPilot 1.1.1 lobby servers, fixed in this version: choose the map again, and it works. If it
+happens with this version, the client says `Could not join MAP (the lobby did not hand us to the game).
+Choose it again.`
 
 |Client: `jxpilot keys: ...` lines at startup
 |Your `~/.xpilotrc` (or `--keys` file) has a line JXPilot cannot use, or a key bound to more than one

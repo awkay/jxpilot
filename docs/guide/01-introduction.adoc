@@ -168,6 +168,8 @@ Since 1.1.1:
   (<<03-playing.adoc#long-distance,Playing over long distances>>, <<compatibility>>).
 * Fixed: after a burst of packet loss, a client could stop receiving scores, chat, game messages and
   target and cannon changes for the rest of the session while the game went on, and later be dropped.
+* Fixed: in a lobby, choosing a map that was not running could put you back at the list instead of in
+  the game; choosing it again worked.
 
 Out of scope: the XPilot map editor, replay recording, the metaserver and server browser, and the
 X11-specific parts of the C client.
