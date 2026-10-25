@@ -446,6 +446,9 @@ Prediction is on by default. Turn it off for a game with `--no-predict`
 on screen, so it works for blind comparisons: let a friend press it now and then, and say which feels
 better.
 
+TIP: Hide the net diagnostics line during a blind comparison: its `corr` field shows `-` with prediction
+off, so it gives the setting away.
+
 With prediction off, your ship is drawn from the newest frame the server sent, so it reacts after the
 round trip plus about 70 ms, and shots are drawn on the delayed timeline of the other ships.
 
@@ -474,7 +477,9 @@ A figure the client does not know yet shows as `-`. One tick is one server frame
 |`slack` |The server's report: the smallest margin, in ticks, by which your keys arrived before they were
 needed, over the last second. The client keeps it a little above zero; below zero, keys arrived too late
 and the client sends them earlier from then on.
-|`corr` |Prediction corrections per second, and the size of the last one in pixels.
+|`corr` |Prediction corrections per second, and the size of the last one in pixels. `-` with prediction
+off; 0/s while prediction is on but your ship is not predicted (dead, paused). `lead` and `slack` show in
+both modes.
 |===
 
 A steady `rtt`, low `jitter` and `loss`, and a `corr` near 0 when nobody is near you make a good link. On an

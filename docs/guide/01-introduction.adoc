@@ -57,14 +57,16 @@ earlier speak version 1.
 |===
 |Client |Server |Result
 |this version |this version's server or lobby |Plays, with prediction.
-|this version |JXPilot 1.1.1 or earlier |Does not connect.
-|JXPilot 1.1.1 or earlier |this version's server or lobby |Does not connect.
+|this version |JXPilot 1.1.1 or earlier |Refused: `Rejected by SERVER: server runs an older JXPilot protocol
+(v1); this client speaks v2`.
+|JXPilot 1.1.1 or earlier |this version's server or lobby |Refused: `Rejected by SERVER: client too old:
+protocol v2`.
 |this version |original XPilot 4.5.5 server (`xp://`) |Plays as before, without prediction.
 |===
 
-So update the server and every player's client together. A mismatched client gets no answer it
-understands: it stays at `Connecting to SERVER (attempt N)...` and then `No answer from SERVER, still
-trying...`, as if the server were down.
+So update the server and every player's client together. A lobby server refuses an older client the same
+way. (A server's refusal is never longer than the request it answers, so after a very short request
+the text can be cut short.)
 
 [[status]]
 == Status: what works today

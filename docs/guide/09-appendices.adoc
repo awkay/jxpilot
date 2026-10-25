@@ -200,9 +200,11 @@ with `--name`.
 |Client: stays at "connecting" and never starts
 |Nothing comes back from the server. Check the address and port, that the server is running, and the
 firewalls on both sides; the server answers only from the address you contacted
-(<<04-running-a-server.adoc#multi-homed,Replies from the right address>>). A server of another JXPilot
-version (1.1.1 or earlier against this version, or the reverse) looks the same: update both
-(<<01-introduction.adoc#compatibility,Which versions play together>>).
+(<<04-running-a-server.adoc#multi-homed,Replies from the right address>>).
+
+|Client: `Rejected by ...: server runs an older JXPilot protocol (v1)` or `client too old: protocol v2`
+|The client and the server are of different JXPilot versions (this version against 1.1.1 or earlier).
+Update both (<<01-introduction.adoc#compatibility,Which versions play together>>).
 
 |Client: the game feels sluggish, your ship reacts late
 |On a JXPilot server your ship should answer at once: check that prediction is on (keypad kbd:[3] switches
@@ -245,8 +247,9 @@ client cannot join a JXPilot server.
 
 Can I play with friends who still run JXPilot 1.1?::
 No: this version's protocol (version 2) is new, and 1.1.1 and earlier clients and servers cannot talk
-to it. Everyone updates, server included (<<01-introduction.adoc#compatibility,Which versions play
-together>>).
+to it; each side refuses the other with a message that says so (`client too old: protocol v2`, or
+`server runs an older JXPilot protocol (v1)`). Everyone updates, server included
+(<<01-introduction.adoc#compatibility,Which versions play together>>).
 
 Can I play with friends on another continent?::
 Yes. Your own ship and shots answer your keys at once at any distance; other ships are drawn a little in

@@ -200,6 +200,7 @@ your name is already taken (<<04-running-a-server.adoc#joining,Joining, leaving 
 client flags are in <<07-client-reference.adoc#client-reference,Client reference>>.
 
 The client and a JXPilot server must be of matching versions: this version cannot join a JXPilot 1.1.1 or
-earlier server, nor they this one, and a mismatch looks like a server that does not answer
+earlier server, nor they this one. The client says so, for example `Rejected by HOST: server runs an older
+JXPilot protocol (v1); this client speaks v2`
 (<<01-introduction.adoc#compatibility,Which versions play together>>). Original XPilot servers work with
 any version.

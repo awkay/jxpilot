@@ -361,8 +361,10 @@ holds two players from your address); or the requested team is full.
 |`game locked` |An operator locked the game against newcomers.
 |`too many players from your address` |More than `maxClientsPerIP` players from one address.
 |`name not accepted` |The name is empty or already in use.
-|`incompatible version` |The client speaks another JXPilot protocol version. A client of another
-version cannot read this answer, so it shows nothing and keeps trying (<<01-introduction.adoc#compatibility,Which versions play together>>).
+|`client too old: protocol v2` |The client speaks an older JXPilot protocol (JXPilot 1.1.1 or earlier).
+A client of a newer protocol is told `server too old: protocol v2`; this version's client shows `server
+runs an older (or newer) JXPilot protocol (vN); this client speaks v2`
+(<<01-introduction.adoc#compatibility,Which versions play together>>).
 |`join refused` |Team play without a valid team, and `teamAssign` is off.
 |===
 
