@@ -310,11 +310,22 @@ class InputBufferTest {
         b.reset();
         boolean had = b.take(25);
         int lateAfter = b.offer(12, A, 0, 0, 12, 26, 0);
+        InputBuffer n = buf();
+        n.offer(10, A, 0, 0, 1, 10, 8);
+        n.offer(12, A, 0, 0, 2, 10, 8);
+        n.reset();
+        n.offer(11, 5L, 0, 0, 1, 11, 8);
+        boolean fresh = n.take(11);
+        boolean stale = n.take(12);
+        long heldAfter = n.keys();
         InputBuffer wide = new InputBuffer(1000, 4);
         int over = wide.offer(10 + InputBuffer.RING, A, 0, 0, 0, 10, 0);
         int edge = wide.offer(10 + InputBuffer.RING - 1, A, 0, 0, 0, 10, 0);
         assertAll(
             () -> assertFalse(had, "the stored 25 is gone"),
+            () -> assertTrue(fresh, "a new session's first entry applies"),
+            () -> assertFalse(stale, "an entry stored before the reset is not the new session's: 12 starves"),
+            () -> assertEquals(5L, heldAfter, "holding the new session's keys"),
             () -> assertEquals(InputBuffer.PAST, lateAfter, "a late entry for 12 (starved before the reset)"),
             () -> assertEquals(0L, b.late(), "is not counted: the starvation marks were cleared"),
             () -> assertEquals(0L, b.keys(), "no held keys"),

@@ -254,7 +254,7 @@ class SnapshotTest {
             pb.items[3] = 4;
             pb.shotTime = 4_000_000_000L - 10;
             w.beginSection(Section.PREDICT);
-            Records.Predict.put(w, pb, 4_000_000_000L, 70_000, 6, 200, 300);
+            Records.Predict.put(w, pb, 4_000_000_000L, 70_000, 6, 200, 300, 70_001);
             w.endSection();
             w.beginSection(Section.PREDICT_RARE);
             Records.PredictRare.put(w, pb, 200, -7);
@@ -332,7 +332,11 @@ class SnapshotTest {
                             () -> assertEquals(1050f, s.x(), "keeps x"),
                             () -> assertEquals(1960.5f, s.y(), "keeps y"),
                             () -> assertEquals(21, s.vx(), "vx rounds to whole px/frame"),
-                            () -> assertEquals(-127, s.vy(), "vy clamps to -127"));
+                            () -> assertEquals(-127, s.vy(), "vy clamps to -127"),
+                            () -> assertEquals(342, s.vx16(), "vx 21.4 to the nearest 1/16: 342"),
+                            () -> assertEquals(21.375f, s.vxf(), "21.375 px/frame"),
+                            () -> assertEquals(-2048, s.vy16(), "vy -200 clamps to -2048 sixteenths"),
+                            () -> assertEquals(-128f, s.vyf(), "-128 px/frame"));
                     }
                     case Section.BURST -> {
                         Records.Burst s = new Records.Burst().wrap(r, 0);
@@ -521,6 +525,7 @@ class SnapshotTest {
                             () -> assertEquals(6, s.appliedHash(), "the applied keys' hash"),
                             () -> assertEquals(200, s.rareVersion(), "keeps the rare version"),
                             () -> assertEquals(300 & 0xFF, s.kernelVersion(), "the kernel version mod 256"),
+                            () -> assertEquals(70_001 & 0xFFFF, s.stateTag(), "the state tag mod 2^16"),
                             () -> assertEquals(64 * 2000 + 5, pd.cy, "decodes the core"),
                             () -> assertEquals(-2.5f, pd.vx, "vx"),
                             () -> assertEquals(4_000_000_000L - 10, pd.shotTime, "shotTime from the age and frames"),
@@ -579,7 +584,7 @@ class SnapshotTest {
         @DisplayName("record sizes are as documented")
         void sizes() {
             assertAll(
-                () -> assertEquals(6, Records.Shot.SIZE, "shots are 6 bytes"),
+                () -> assertEquals(7, Records.Shot.SIZE, "shots are 7 bytes"),
                 () -> assertEquals(27, Records.Burst.SIZE, "bursts are 27 bytes"),
                 () -> assertEquals(3, Records.Radar.SIZE, "radar blips are 3 bytes"),
                 () -> assertEquals(14, Records.Ship.SIZE, "ships are 14 bytes"),
@@ -613,7 +618,7 @@ class SnapshotTest {
             if (predict) {
                 com.fulcrologic.jxpilot.common.sim.ShipBody body = new com.fulcrologic.jxpilot.common.sim.ShipBody();
                 w.beginSection(Section.PREDICT);
-                Records.Predict.put(w, body, 1000, 0, 0, 1, 1);
+                Records.Predict.put(w, body, 1000, 0, 0, 1, 1, 0);
                 w.endSection();
                 if (rare) {
                     w.beginSection(Section.PREDICT_RARE);
@@ -673,26 +678,26 @@ class SnapshotTest {
             System.out.printf("[wire size] typical %d, + PREDICT %d, + rare %d; fight %d, + PREDICT %d%n", typical,
                 typicalPredict, typicalRare, fight, fightPredict);
             assertAll(
-                () -> assertEquals(8 + 16 + (5 + 47) + (5 + 15 * 14) + 3 * 5 + 150 * 6 + (5 + 5 * 27) + (5 + 15 * 3),
-                    fight, "fight = 1396 bytes"),
-                () -> assertEquals(1396, fight, "fight size in bytes"),
+                () -> assertEquals(8 + 16 + (5 + 47) + (5 + 15 * 14) + 3 * 5 + 150 * 7 + (5 + 5 * 27) + (5 + 15 * 3),
+                    fight, "fight = 1546 bytes"),
+                () -> assertEquals(1546, fight, "fight size in bytes"),
                 () -> assertTrue(fight <= 1800, "the fight with thrusting ships is within the 1.8 KB target"),
-                () -> assertEquals(1346, fightNoRadar, "the fight without radar (2 of 3 snapshots) is 1346 bytes"),
-                () -> assertEquals(420, typical, "typical scene is 420 bytes"),
+                () -> assertEquals(1496, fightNoRadar, "the fight without radar (2 of 3 snapshots) is 1496 bytes"),
+                () -> assertEquals(450, typical, "typical scene is 450 bytes"),
                 () -> assertTrue(typical <= Protocol.MAX_PACKET, "a typical scene fits one datagram"),
                 () -> assertEquals(8 + 16 + 52 + (5 + 8 * 14) + (5 + 332 * 3), radarHeavy,
                     "radar-heavy: 332 blips at 3 bytes plus 8 ships = 1194 bytes"),
                 () -> assertTrue(radarHeavy <= Protocol.MAX_PACKET, "radar-heavy with 8 ships in view fits one datagram"),
                 () -> assertEquals(1516, radarHeavyAll, "radar-heavy with all 31 ships in view is 1516 bytes (2 parts)"),
-                () -> assertEquals(66, Records.Predict.SIZE,
-                    "PREDICT: the 63-byte core, u8 appliedHash, u8 rareVersion, u8 kernelVersion"),
+                () -> assertEquals(68, Records.Predict.SIZE,
+                    "PREDICT: the 63-byte core, u8 appliedHash, u8 rareVersion, u8 kernelVersion, u16 stateTag"),
                 () -> assertEquals(64, Records.PredictRare.SIZE,
                     "PREDICT_RARE: u8 version, i32 frameOffset, the 59-byte rare block"),
                 () -> assertEquals(16, Records.PredictKeys.SIZE, "PREDICT_KEYS: two u64 masks"),
                 () -> assertEquals(2, Records.PredictRound.SIZE, "PREDICT_ROUND: u16 roundDelay"),
-                () -> assertEquals(420 + 5 + 66, typicalPredict, "the owner's typical snapshot carries PREDICT: 491 bytes"),
-                () -> assertEquals(491 + 5 + 64, typicalRare, "and with the rare block 560 bytes"),
-                () -> assertEquals(1396 + 71, fightPredict, "the fight with PREDICT: 1467 bytes"),
+                () -> assertEquals(450 + 5 + 68, typicalPredict, "the owner's typical snapshot carries PREDICT: 523 bytes"),
+                () -> assertEquals(523 + 5 + 64, typicalRare, "and with the rare block 592 bytes"),
+                () -> assertEquals(1546 + 73, fightPredict, "the fight with PREDICT: 1619 bytes"),
                 () -> assertTrue(fightPredict + 69 + 21 + 7 <= 1800,
                     "with every PREDICT block (rare, keys, round) still within the 1.8 KB target"),
                 () -> assertTrue(typicalRare + 21 + 7 <= Protocol.MAX_PACKET,
@@ -1083,6 +1088,27 @@ class SnapshotTest {
         }
     }
 
+    @Test
+    @DisplayName("PREDICT: roundDelay 0 leaves the round-delay flag clear; 1 sets it")
+    void roundFlag() {
+        java.util.function.IntFunction<Boolean> flag = rd -> {
+            ByteBuffer b = ByteBuffer.allocate(200);
+            SnapshotWriter w = new SnapshotWriter();
+            w.begin(b, 1, 1, 0, 1, 1, 0, 0);
+            w.beginSection(Section.PREDICT);
+            Records.Predict.put(w, new com.fulcrologic.jxpilot.common.sim.ShipBody(), 10, rd, 0, 0, 0, 0);
+            w.endSection();
+            b.flip();
+            SnapshotReader r = new SnapshotReader();
+            r.begin(b);
+            r.nextSection();
+            return new Records.Predict().wrap(r, 0).roundDelaySet();
+        };
+        assertAll(
+            () -> assertFalse(flag.apply(0), "0: clear"),
+            () -> assertTrue(flag.apply(1), "1: set"));
+    }
+
     @Nested
     @DisplayName("PREDICT's applied-input hash")
     class PredictHash {
@@ -1112,5 +1138,41 @@ class SnapshotTest {
             () -> assertEquals(1 | 2 << 1, f, "the whole byte"),
             () -> assertEquals(1, cleared, "a zero count clears bits 1-7 and keeps bit 0"),
             () -> assertEquals(127, SnapshotWriter.starvations(0xFF), "the counter of a full byte"));
+    }
+
+    @Test
+    @DisplayName("SHOT velocity: every 12-bit pair packs and unpacks exactly; rounding to 1/16 halves up; the whole-pixel"
+        + " accessor rounds as version 1 did")
+    void shotVelocity() {
+        ByteBuffer b = ByteBuffer.allocate(64);
+        SnapshotWriter w = new SnapshotWriter();
+        Records.Shot s = new Records.Shot();
+        SnapshotReader r = new SnapshotReader();
+        int wrong = 0;
+        for (int vx = -2048; vx <= 2047; vx += 7) {
+            for (int vy : new int[] {-2048, -1, 0, 1, 15, 16, 255, 256, 2047, vx}) {
+                b.clear();
+                w.begin(b, 1, 1, 0, 1, 1, 0, 0);
+                w.beginSection(Section.SHOT, 0);
+                Records.Shot.put(w, 0, 0, vx / 16.0, vy / 16.0);
+                w.endSection();
+                b.flip();
+                r.begin(b);
+                r.nextSection();
+                s.wrap(r, 0);
+                if (s.vx16() != vx || s.vy16() != vy) {
+                    wrong++;
+                }
+            }
+        }
+        int checked = wrong;
+        assertAll(
+            () -> assertEquals(0, checked, "every value round-trips (x across the range, y at the bit edges)"),
+            () -> assertEquals(1, Records.Shot.vel16(1.0 / 32), "half a sixteenth rounds up"),
+            () -> assertEquals(0, Records.Shot.vel16(1.0 / 32 - 1e-9), "below it rounds down"),
+            () -> assertEquals(-1, Records.Shot.vel16(-1.0 / 32 - 1e-9), "negative: away below the half"),
+            () -> assertEquals(0, Records.Shot.vel16(-1.0 / 32), "negative half rounds up (towards +)"),
+            () -> assertEquals(2047, Records.Shot.vel16(500), "clamped at 2047"),
+            () -> assertEquals(-2048, Records.Shot.vel16(-500), "and -2048"));
     }
 }

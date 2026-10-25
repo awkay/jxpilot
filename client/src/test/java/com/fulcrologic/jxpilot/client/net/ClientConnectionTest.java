@@ -1267,6 +1267,57 @@ class ClientConnectionTest {
         }
     }
 
+    /** Part {@code part} of 2 of {@code tick} with a PREDICT section (rare version 0, kernel version 0). */
+    static byte[] predictPart(int tick, int part) {
+        return pkt(PacketType.SNAPSHOT, SESSION, 0, b -> {
+            SnapshotWriter w = new SnapshotWriter();
+            w.begin(b, tick, 0, SnapshotWriter.NO_SLACK, part, 2, 0, 0, 0);
+            w.beginSection(com.fulcrologic.jxpilot.common.net.Section.PREDICT);
+            com.fulcrologic.jxpilot.common.net.Records.Predict.put(w, new com.fulcrologic.jxpilot.common.sim.ShipBody(),
+                100, 0, 0, 0, 0, 0);
+            w.endSection();
+        });
+    }
+
+    @Nested
+    @DisplayName("kernel feed")
+    class KernelFeed {
+        @Test
+        @DisplayName("a later part of the newest tick reaches KernelSync (its PREDICT is read); one of an older tick does not")
+        void laterParts() {
+            ticking();
+            t.in.add(snapshot(T0 + 1, 0));
+            c.update(at(1));
+            t.in.add(predictPart(T0 + 1, 1));
+            c.update(at(1));
+            long fromPart1 = c.kernel().predicts();
+            t.in.add(predictPart(T0, 1));
+            c.update(at(1));
+            assertAll(
+                () -> assertEquals(1, fromPart1, "part 1 of the newest tick, after its part 0: PREDICT read"),
+                () -> assertEquals(1, c.kernel().predicts(), "a part of an older tick: not read"));
+        }
+
+        @Test
+        @DisplayName("each final entry records the clock's adjustment: a later slack report covering it reads the jump since")
+        void finalsRecordAdjustment() {
+            ticking();
+            c.sendInput(0, 0, at(0));
+            c.sendInput(0, 0, at(1));
+            t.in.add(snapshot(T0 + 1, 0, SnapshotWriter.NO_SLACK,
+                SnapshotWriter.starveFlags(SnapshotWriter.FLAG_LAST_PART, 1)));
+            c.update(at(1));
+            double adjust = c.predictedClock().adjustment();
+            t.in.add(snapshot(E0 + 1, E0, 4, SnapshotWriter.starveFlags(SnapshotWriter.FLAG_LAST_PART, 1)));
+            c.update(at(1) + MS);
+            double estimate = c.predictedClock().slackEstimate();
+            assertAll(
+                () -> assertEquals(1, adjust, 0.01, "the starvation jumped the clock a tick (no report yet)"),
+                () -> assertEquals(0.25 + adjust, estimate, 0.01,
+                    "the report 0.25 for entries sent before the jump reads 0.25 + the jump now"));
+        }
+    }
+
     @Nested
     @DisplayName("hostile server packets")
     class Hostile {

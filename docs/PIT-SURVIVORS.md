@@ -146,3 +146,32 @@ ones `PIT-SURVIVORS-server.md` justified before the move (same code, new line nu
 | WallDist.java:110 | Boundary | `mindist >= 255` → `>` | maxdist ≤ 255, nothing is lowered from 255. |
 | WallDist.java:115, 120 (4) | Boundary | no-wrap neighbour range at 0 / w | only border blocks, already ≤ 2. |
 | WallDist.java:125, 130 (2) | Boundary | `>` / `<` → `>=` / `<=` | only re-enqueues equal distances (a random Dijkstra oracle agrees). |
+
+## Latency phase 1b fix round: the protocol v2 classes
+
+Run (PIT 1.30.1, in-reactor, the classes 1b added or changed):
+
+```
+MAVEN_OPTS= mvn -o -pl client -am test-compile org.pitest:pitest-maven:mutationCoverage -Dthreads=4 \
+  -DfailWhenNoMutations=false -DexcludedTestClasses='*AllocationTest*,*Benchmark*' \
+  -DtargetClasses='...ShipBody,...SeededTieBreak,...KernelConfig,...InputHistory,...InputReader,...Records$Predict*,...SnapshotWriter' \
+  -DtargetTests='com.fulcrologic.jxpilot.common.*'
+```
+
+**456 mutations, 435 killed (95%), test strength 96%.** Per class: ShipBody 160/162, SnapshotWriter 58/60,
+InputHistory 59/64, InputReader 49/53, KernelConfig 47/48, SeededTieBreak 24/28, Records.Predict 24/27,
+PredictRare 8/8, PredictKeys 3/3, PredictRound 3/3. Killed afterwards by new assertions (each verified by
+breaking the code by hand): InputReader:52 `end - p` → `+` (a short packet after a non-zero position),
+InputReader:69/70 the field-size sum (keys+taps without taps, all three without aim), InputHistory.nextSeq
+(three datagrams: 3), Records.Predict:940/963 the round-delay flag (roundDelay 0 vs 1), SeededTieBreak
+draws/seedTick/seedId (also covered only from the server before). Equivalent:
+
+| file:line | mutator | mutated expression | why equivalent |
+|---|---|---|---|
+| InputHistory.java:108 | Boundary | `tick - newest > 1` → `>= 1` | at 1 the fill loop runs from newest + 1 to tick - 1: no ticks. |
+| InputHistory.java:111 | Boundary | `t - tick < 0` → `<= 0` | the extra put of `tick` is overwritten by the put that follows. |
+| InputHistory.java:134 (2) | Boundary, Math | `newest - tick` range checks | `tickOf[slot] == tick` already decides; a tick outside the ring's range never matches its slot's tick. |
+| InputReader.java:52 | Boundary | `end - p < HEADER_SIZE` → `<=` | a body of exactly the header has no entry and fails the entry loop anyway. |
+| KernelConfig.java:145 | Boundary | `start + len > map.length` → `>=` | at equality `copyOf` returns the same length. |
+| ShipBody.java:174, 176 | Boundary | `addFuel` clamp | (as above) at equality both give the bound. |
+| SnapshotWriter.java:198, 232 | Boundary | `sectionPos >= 0` / `< 0` | a section never starts at offset 0: the header precedes it. |

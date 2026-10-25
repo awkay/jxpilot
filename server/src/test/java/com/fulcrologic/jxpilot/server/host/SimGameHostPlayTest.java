@@ -575,7 +575,7 @@ class SimGameHostPlayTest {
                 parts[i].position(PacketHeader.SIZE);
             }
             SnapshotBuilder builder = new SnapshotBuilder(w);
-            builder.setPredict(true, 0, 1, 0, true);
+            builder.setPredict(true, 0, 1, 0, 0, true);
             int n = builder.build(viewer, 0, burstFrom, radar, parts);
             byte[][] out = new byte[n][];
             for (int i = 0; i < n; i++) {
@@ -661,7 +661,7 @@ class SimGameHostPlayTest {
             b.position(PacketHeader.SIZE);
             com.fulcrologic.jxpilot.common.net.SnapshotReader r = new com.fulcrologic.jxpilot.common.net.SnapshotReader();
             r.begin(b);
-            int[] f = {-1, -1, -1, -1, Integer.MIN_VALUE};
+            int[] f = {-1, -1, -1, -1, Integer.MIN_VALUE, -1};
             while (r.nextSection()) {
                 switch (r.type()) {
                     case com.fulcrologic.jxpilot.common.net.Section.PREDICT -> {
@@ -669,6 +669,7 @@ class SimGameHostPlayTest {
                         f[0] = p.kernelVersion();
                         f[1] = p.rareVersion();
                         f[2] = p.roundDelaySet() ? 1 : 0;
+                        f[5] = p.stateTag();
                     }
                     case com.fulcrologic.jxpilot.common.net.Section.PREDICT_ROUND ->
                         f[3] = new Records.PredictRound().wrap(r, 0).roundDelay();
@@ -678,6 +679,35 @@ class SimGameHostPlayTest {
                 }
             }
             return f;
+        }
+
+        @Test
+        @DisplayName("PREDICT's state tag: the tick of the newest KERNEL_STATE queued to the viewer (the initial state's,"
+            + " then a drained change's); a quiet drain keeps it")
+        void stateTag() {
+            Simulation s = sim("", THREE);
+            World w = s.world;
+            SimGameHost h = new SimGameHost(s);
+            int ann = enter(h, "Ann", 0);
+            h.tick(1);
+            HostFx.Wire wire = new HostFx.Wire();
+            h.initialState(ann, wire.out);
+            int initial = predictFields(h, ann)[5];
+            w.params.wormTime = 100;
+            w.worms.addTemp(5, 1, 7, 1);
+            h.tick(2);
+            h.drainEvents(ann, wire.out);
+            int changed = predictFields(h, ann)[5];
+            h.tick(3);
+            h.drainEvents(ann, wire.out);
+            int quiet = predictFields(h, ann)[5];
+            List<String> sent = HostFx.only(wire.take(), "KSTATE");
+            assertAll(
+                () -> assertEquals(1, initial, "the initial state was tagged with tick 1"),
+                () -> assertEquals(2, changed, "the wormhole change scanned in tick 2"),
+                () -> assertEquals(2, quiet, "nothing new in tick 3: still 2"),
+                () -> assertTrue(sent.size() >= 2 && sent.get(sent.size() - 1).startsWith("KSTATE@2 "),
+                    "the messages queued: " + sent));
         }
 
         @Test

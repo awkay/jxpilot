@@ -76,7 +76,14 @@ class KernelConfigParityTest {
 
     /** The kernel options a client decodes from the server's kernel blob (over its config blob's map). */
     static Options clientKernelOptions(Options server, String clientMap) {
-        ConfigTransfer.Blob kernel = ConfigTransfer.encode(KernelConfig.encode(server, clientMap));
+        return clientKernelOptions(server, clientMap, (opt, v) -> v);
+    }
+
+    /** As above, the server encoding with its host's effective values ({@code GameHost.kernelOptionValue}). */
+    static Options clientKernelOptions(Options server, String clientMap,
+                                       java.util.function.BiFunction<com.fulcrologic.jxpilot.common.config.Opt, String,
+                                           String> effective) {
+        ConfigTransfer.Blob kernel = ConfigTransfer.encode(KernelConfig.encode(server, clientMap, effective));
         ConfigTransfer.Receiver krx = new ConfigTransfer.Receiver(kernel.length, kernel.compressed.length, kernel.crc32);
         java.nio.ByteBuffer kc = java.nio.ByteBuffer.allocate(kernel.compressed.length + 4);
         kc.putInt(0).put(kernel.compressed).flip();
@@ -91,6 +98,8 @@ class KernelConfigParityTest {
             + " treasure " + ((p.objTreasureMask & com.fulcrologic.jxpilot.common.sim.Obj.SHOT) != 0)
             + " cannon " + ((p.objCannonMask & com.fulcrologic.jxpilot.common.sim.Obj.SHOT) != 0)
             + " target " + ((p.objTargetMask & com.fulcrologic.jxpilot.common.sim.Obj.SHOT) != 0)
+            + " cannonShot " + ((p.objCannonMask & com.fulcrologic.jxpilot.common.sim.Obj.CANNON_SHOT) != 0)
+            + "/" + ((p.objTargetMask & com.fulcrologic.jxpilot.common.sim.Obj.CANNON_SHOT) != 0)
             + " maxSpeed " + Float.floatToRawIntBits(p.maxObjectWallBounceSpeed)
             + " brake " + Float.floatToRawIntBits(p.objectWallBrakeFactor)
             + " lifeFactor " + Float.floatToRawIntBits(p.objectWallBounceLifeFactor)
@@ -98,8 +107,10 @@ class KernelConfigParityTest {
     }
 
     /** The shot-motion parameters a client resolves from its decoded kernel options. */
-    static String clientShotMotion(Options server, String clientMap, World w) {
-        Options k = clientKernelOptions(server, clientMap);
+    static String clientShotMotion(Options server, String clientMap, World w,
+                                   java.util.function.BiFunction<com.fulcrologic.jxpilot.common.config.Opt, String,
+                                       String> effective) {
+        Options k = clientKernelOptions(server, clientMap, effective);
         com.fulcrologic.jxpilot.server.world.Params p = com.fulcrologic.jxpilot.server.world.Params.from(k, w.map);
         return shotMotion(p) + " predictable " + k.getBool(com.fulcrologic.jxpilot.common.config.Opt.PREDICTABLE_BOUNCES);
     }
@@ -124,14 +135,28 @@ class KernelConfigParityTest {
         String after = KernelFingerprint.of(client(w.options, clientMap));
         String serverAfter = KernelFingerprint.of(w);
         String shotsBefore = shotMotion(w.params) + " predictable " + s.predictableBounces;
-        String clientShotsBefore = clientShotMotion(w.options, clientMap, w);
+        SimGameHost host = new SimGameHost(s);
+        java.util.function.BiFunction<com.fulcrologic.jxpilot.common.config.Opt, String, String> eff =
+            host::kernelOptionValue;
+        String clientShotsBefore = clientShotMotion(w.options, clientMap, w, eff);
         int sl = t.tune("shotLife", "25");
         int sb = t.tune("shotsWallBounce", "yes");
         int bf = t.tune("objectWallBounceBrakeFactor", "3");
         int lf = t.tune("objectWallBounceLifeFactor", "0.5");
         int ms = t.tune("maxObjectWallBounceSpeed", "17");
         String shotsAfter = shotMotion(w.params) + " predictable " + s.predictableBounces;
-        String clientShotsAfter = clientShotMotion(w.options, clientMap, w);
+        String clientShotsAfter = clientShotMotion(w.options, clientMap, w, eff);
+        // allowPlayerKilling: C applies a /set of it at the next Move_init only, and never restores KILLING_SHOTS
+        int k1 = t.tune("allowPlayerKilling", "no");
+        String killNo = shotMotion(w.params) + " predictable " + s.predictableBounces;
+        String clientKillNo = clientShotMotion(w.options, clientMap, w, eff);
+        String clientKillNoText = clientShotMotion(w.options, clientMap, w, (opt, v) -> v);
+        int k2 = t.tune("ballsWallBounce", "yes");
+        String killMoved = shotMotion(w.params) + " predictable " + s.predictableBounces;
+        String clientKillMoved = clientShotMotion(w.options, clientMap, w, eff);
+        int k3 = t.tune("allowPlayerKilling", "yes");
+        String killBack = shotMotion(w.params) + " predictable " + s.predictableBounces;
+        String clientKillBack = clientShotMotion(w.options, clientMap, w, eff);
         assertAll(
             () -> assertEquals(serverBefore, before, map + ": the client's kernel world is the server's"),
             () -> assertEquals(Tuning.OK, g + m + f + wt - 3 * Tuning.OK, "the four /sets were accepted"),
@@ -142,6 +167,15 @@ class KernelConfigParityTest {
             () -> assertTrue(!shotsAfter.equals(shotsBefore), "and changed the server's shot motion: " + shotsAfter),
             () -> assertTrue(shotsAfter.contains("brake " + Float.floatToRawIntBits(1f)),
                 "a brake factor of 3 is clamped to 1: " + shotsAfter),
-            () -> assertEquals(shotsAfter, clientShotsAfter, map + ": the client's shot motion after the /sets"));
+            () -> assertEquals(shotsAfter, clientShotsAfter, map + ": the client's shot motion after the /sets"),
+            () -> assertEquals(3 * Tuning.OK, k1 + k2 + k3, "the killing /sets were accepted"),
+            () -> assertTrue(killNo.contains("cannonShot true/true"),
+                "allowPlayerKilling no alone: the masks still let cannon shots hit cannons and targets: " + killNo),
+            () -> assertEquals(killNo, clientKillNo, map + ": and so does the client (the blob sends the effective yes)"),
+            () -> assertTrue(!killNo.equals(clientKillNoText), "the option's text alone would be wrong here"),
+            () -> assertTrue(killMoved.contains("cannonShot false/false"), "a Move_init /set applies it: " + killMoved),
+            () -> assertEquals(killMoved, clientKillMoved, map + ": the client follows"),
+            () -> assertEquals(killMoved, killBack, "allowPlayerKilling yes again does not restore KILLING_SHOTS (C)"),
+            () -> assertEquals(killBack, clientKillBack, map + ": nor on the client"));
     }
 }

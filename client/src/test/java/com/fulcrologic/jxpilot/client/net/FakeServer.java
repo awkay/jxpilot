@@ -350,7 +350,7 @@ public final class FakeServer {
         predictBody.prevKeys = lastKeys;
         predictBody.lastReceivedKeys = snapshotsSent % 2 == 0 ? lastKeys : ~lastKeys;
         writer.beginSection(Section.PREDICT);
-        Records.Predict.put(writer, predictBody, tick + 1, 0, lastKeys, 1, 1);
+        Records.Predict.put(writer, predictBody, tick + 1, 0, lastKeys, 1, 1, 0);
         writer.endSection();
         if (snapshotsSent % 14 == 0) {
             writer.beginSection(Section.PREDICT_RARE);

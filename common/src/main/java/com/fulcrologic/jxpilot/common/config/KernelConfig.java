@@ -28,6 +28,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.function.BiFunction;
 
 /**
  * What a client needs to build the ship kernel's world exactly as the server has it (protocol v2, the owner's
@@ -63,17 +64,20 @@ public final class KernelConfig {
         Opt.GRAVITY_ANTICLOCKWISE,
         // the motion of the ship's bullets (SHOT_MOTION)
         Opt.SHOT_LIFE, Opt.SHOTS_GRAVITY, Opt.SHOTS_WALL_BOUNCE, Opt.MAX_OBJECT_WALL_BOUNCE_SPEED,
-        Opt.OBJECT_WALL_BOUNCE_BRAKE_FACTOR, Opt.OBJECT_WALL_BOUNCE_LIFE_FACTOR, Opt.PREDICTABLE_BOUNCES);
+        Opt.OBJECT_WALL_BOUNCE_BRAKE_FACTOR, Opt.OBJECT_WALL_BOUNCE_LIFE_FACTOR, Opt.PREDICTABLE_BOUNCES,
+        Opt.ALLOW_PLAYER_KILLING);
 
     /**
      * What C {@code Move_object} reads for a player's SHOT besides the map, gravity, edgeWrap and edgeBounce (all in
      * {@link #OPTIONS} already): its life, whether it feels gravity, whether it bounces off walls (which also decides
      * whether it crashes into treasures, C {@code Move_init}), and the object wall-bounce speed limit, brake and life
-     * factors; and predictableBounces. For the client's predicted own bullets (1c).
+     * factors; predictableBounces; and allowPlayerKilling, which decides whether a cannon's shot crashes into
+     * cannons and targets (C {@code KILLING_SHOTS} in {@code Move_init}'s masks; the server sends the value its masks
+     * currently follow, see {@link #encode(Options, String, BiFunction)}). For the client's predicted shots (1c).
      */
     public static final Set<Opt> SHOT_MOTION = EnumSet.of(Opt.SHOT_LIFE, Opt.SHOTS_GRAVITY, Opt.SHOTS_WALL_BOUNCE,
         Opt.MAX_OBJECT_WALL_BOUNCE_SPEED, Opt.OBJECT_WALL_BOUNCE_BRAKE_FACTOR, Opt.OBJECT_WALL_BOUNCE_LIFE_FACTOR,
-        Opt.PREDICTABLE_BOUNCES);
+        Opt.PREDICTABLE_BOUNCES, Opt.ALLOW_PLAYER_KILLING);
 
     /** BEHAVIOR: true for an option in {@link #OPTIONS}. */
     public static boolean affects(Opt o) {
@@ -88,9 +92,20 @@ public final class KernelConfig {
      * map of another length (or none) gets the whole map as one run.
      */
     public static byte[] encode(Options o, String clientMapData) {
+        return encode(o, clientMapData, (opt, v) -> v);
+    }
+
+    /**
+     * As {@link #encode(Options, String)}, each option's value passed through {@code effective} first: the server's
+     * simulation may follow another value than the option's text (C applies some /sets only at the next
+     * {@code Move_init}).
+     * <p>
+     * BEHAVIOR: the value written for an option is {@code effective(opt, its text)}.
+     */
+    public static byte[] encode(Options o, String clientMapData, BiFunction<Opt, String, String> effective) {
         StringBuilder sb = new StringBuilder(2048);
         for (Opt opt : OPTIONS) {
-            Options.appendValue(sb, opt.optionName(), o.getRaw(opt.optionName()));
+            Options.appendValue(sb, opt.optionName(), effective.apply(opt, o.getRaw(opt.optionName())));
         }
         byte[] text = sb.toString().getBytes(StandardCharsets.ISO_8859_1);
         String map = o.mapData();

@@ -41,6 +41,14 @@ import java.util.List;
  */
 final class FakeHost implements GameHost {
     final List<String> calls = new ArrayList<>();
+    /** What kernelOptionValue reports for allowPlayerKilling (null: its text). */
+    String killingValue;
+
+    @Override
+    public String kernelOptionValue(com.fulcrologic.jxpilot.common.config.Opt opt, String value) {
+        return opt == com.fulcrologic.jxpilot.common.config.Opt.ALLOW_PLAYER_KILLING && killingValue != null
+            ? killingValue : value;
+    }
     /** server-batch2: every identity call, "id real@host address". */
     final List<String> identities = new ArrayList<>();
     boolean record = true;

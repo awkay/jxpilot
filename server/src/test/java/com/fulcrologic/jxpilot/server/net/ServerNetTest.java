@@ -909,8 +909,8 @@ class ServerNetTest {
     @DisplayName("kernel config")
     class Kernel {
         @Test
-        @DisplayName("after the initial state every peer gets the kernel blob; a kernel option /set sends a new version,"
-            + " another option does not")
+        @DisplayName("after the initial state every peer gets the kernel blob; a /set that changes the encoded kernel"
+            + " config (a kernel option, or the host's effective value of one) sends a new version, another does not")
         void kernel() {
             Harness h = new Harness();
             com.fulcrologic.jxpilot.common.config.Options o = new com.fulcrologic.jxpilot.common.config.Options();
@@ -935,15 +935,28 @@ class ServerNetTest {
             }
             com.fulcrologic.jxpilot.common.config.Options after =
                 com.fulcrologic.jxpilot.common.config.KernelConfig.decode(c.kernelBytes, clientMap);
+            int afterSets = h.net.kernelVersion();
+            long sentTwo = c.reliableLog.stream().filter(x -> x.equals("KERNEL 2")).count();
+            h.host.killingValue = "no";
+            h.net.optionChanged(com.fulcrologic.jxpilot.common.config.Opt.MAX_ROBOTS, o);
+            int afterEffective = h.net.kernelVersion();
+            for (int i = 0; i < 5; i++) {
+                h.step(c, 0, A, 0);
+            }
+            boolean killing = com.fulcrologic.jxpilot.common.config.KernelConfig.decode(c.kernelBytes, clientMap)
+                .getBool(com.fulcrologic.jxpilot.common.config.Opt.ALLOW_PLAYER_KILLING);
             int initialAt = first.indexOf("JOIN 0 self");
             assertAll(
                 () -> assertTrue(first.indexOf("KERNEL 1") > initialAt, "KERNEL_CONFIG version 1 after the initial state: " + first),
                 () -> assertTrue(first.contains("KERNEL done"), "and its chunks"),
                 () -> assertEquals(o.mapData(), decoded.mapData(), "the blob restores the hidden blocks"),
-                () -> assertEquals(2, h.net.kernelVersion(), "the gravity /set made version 2, maxRobots nothing"),
-                () -> assertEquals(1, c.reliableLog.stream().filter(x -> x.equals("KERNEL 2")).count(), "sent once"),
+                () -> assertEquals(2, afterSets, "the gravity /set made version 2, maxRobots nothing"),
+                () -> assertEquals(1, sentTwo, "sent once"),
                 () -> assertEquals(-0.9, after.getDouble(com.fulcrologic.jxpilot.common.config.Opt.GRAVITY), 1e-12,
-                    "with the new gravity"));
+                    "with the new gravity"),
+                () -> assertEquals(3, afterEffective,
+                    "an option whose /set changes a kernel option's effective value (the host's): version 3"),
+                () -> assertFalse(killing, "the blob carries the host's effective value"));
         }
     }
 

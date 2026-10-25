@@ -257,13 +257,19 @@ class KernelStateTest {
         w.modes.targetTeam[0] = 4;
         k.scan();
         List<String> sent = drain(k, 0);
+        long drained = k.messages();
+        int drainTag = k.lastTag();
         w.tick = 9;
         List<String> init = newcomer(k);
         assertAll(
             () -> assertEquals(List.of("KSTATE@5 " + C + ":0,0,1,0 " + T + ":0,0,0,3", "KSTATE@6 " + T + ":0,0,0,4"), sent,
                 "the tick-5 changes in one message, the tick-6 one in the next"),
             () -> assertEquals(List.of("KSTATE@9 " + C + ":0,0,1,0 " + T + ":0,0,0,4"), init,
-                "the initial state is as of now: tick 9"));
+                "the initial state is as of now: tick 9"),
+            () -> assertEquals(2, drained, "two messages counted"),
+            () -> assertEquals(6, drainTag, "the last one tagged 6"),
+            () -> assertEquals(3, k.messages(), "the initial state's counts too"),
+            () -> assertEquals(9, k.lastTag(), "tagged 9"));
     }
 
     @Test
@@ -283,6 +289,14 @@ class KernelStateTest {
         k.scan();
         String closed = String.join(" ", drain(k, beforeClose));
         int afterClose = k.tracked();
+        long beforeAgain = k.seq();
+        w.worms.addTemp(2, 1, 10, 3);
+        k.scan();
+        String again = String.join(" ", drain(k, beforeAgain));
+        int openAgain = k.tracked();
+        w.worms.removeTemp(w.worms.mapCount + 1);
+        w.worms.removeTemp(w.worms.mapCount);
+        k.scan();
         for (int i = 0; i < 200; i++) {
             w.worms.addTemp(3 + i % 5, 1, 10, 1 + i % 3);
             k.scan();
@@ -300,6 +314,10 @@ class KernelStateTest {
             () -> assertTrue(closed.contains(B + ":2,1," + (BlockType.SPACE & 0xFF))
                 && closed.contains(B + ":10,3," + (BlockType.SPACE & 0xFF)), "the restores are logged: " + closed),
             () -> assertEquals(base, afterClose, "then both are dropped"),
+            () -> assertTrue(again.contains(B + ":2,1," + (BlockType.WORMHOLE & 0xFF))
+                && again.contains(B + ":10,3," + (BlockType.WORMHOLE & 0xFF)),
+                "reopened at once on the same blocks: both logged again: " + again),
+            () -> assertEquals(base + 2, openAgain, "and both tracked"),
             () -> assertEquals(base, cycled, "200 open/close cycles leave nothing tracked"),
             () -> assertTrue(reopened.contains(B + ":2,1," + (BlockType.WORMHOLE & 0xFF))
                 && reopened.contains(B + ":10,3," + (BlockType.WORMHOLE & 0xFF)),
