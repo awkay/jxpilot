@@ -420,9 +420,10 @@ public final class LobbyServer implements AutoCloseable {
         try {
             if (!valid) {
                 data.position(start);
-                if (ServerNet.isOtherVersionConnect(data) && data.remaining() >= REJECT_OVERHEAD) {
-                    sendReject(channel, from, data.getInt(start + PacketHeader.SIZE), Msg.Reject.REASON_VERSION,
-                        "incompatible version", data.remaining());
+                if (ServerNet.isOtherVersionHello(data) && data.remaining() >= REJECT_OVERHEAD) {
+                    int peer = data.get(start + 2) & 0xFF;
+                    sendReject(channel, from, peer, data.getInt(start + PacketHeader.SIZE), Msg.Reject.REASON_VERSION,
+                        ServerNet.versionRejectText(peer), data.remaining());
                 } else {
                     malformed++;
                 }
@@ -553,8 +554,14 @@ public final class LobbyServer implements AutoCloseable {
     }
 
     private void sendReject(int channel, SocketAddress to, int nonce, int reason, String text, int maxBytes) {
+        sendReject(channel, to, Protocol.VERSION, nonce, reason, text, maxBytes);
+    }
+
+    /** A REJECT with header version {@code version} (a peer of another protocol version gets its own). */
+    private void sendReject(int channel, SocketAddress to, int version, int nonce, int reason, String text,
+                            int maxBytes) {
         out.clear();
-        PacketHeader.write(out, PacketType.REJECT, 0, 0);
+        PacketHeader.write(out, version, PacketType.REJECT, 0, 0);
         reject.nonce = nonce;
         reject.reason = reason;
         reject.text.setLength(0);

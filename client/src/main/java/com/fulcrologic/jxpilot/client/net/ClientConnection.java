@@ -636,7 +636,15 @@ public final class ClientConnection implements com.fulcrologic.jxpilot.client.ga
 
     private void handlePacket(ByteBuffer in) {
         if (!header.read(in)) {
-            malformed++;
+            int peer = PacketHeader.peekVersion(in);
+            if (peer >= 0 && peer != Protocol.VERSION && PacketHeader.peekType(in) == PacketType.REJECT
+                && (state == ConnectionState.CONNECTING || state == ConnectionState.LOBBY)
+                && in.remaining() >= PacketHeader.SIZE + 5) {
+                in.position(in.position() + PacketHeader.SIZE);
+                onForeignReject(in, peer);
+            } else {
+                malformed++;
+            }
             return;
         }
         int type = header.type();
@@ -707,6 +715,31 @@ public final class ClientConnection implements com.fulcrologic.jxpilot.client.ga
         status.append("Joining ").append(serverLabel).append("...");
         setState(ConnectionState.JOINING);
         proveSession();
+    }
+
+    /**
+     * A REJECT from a server of another protocol version (every version so far shares the header and REJECT
+     * layout): our CONNECT's nonce echoed means the server refused us for the version.
+     * <p>
+     * BEHAVIOR: a stale nonce or a malformed body changes nothing (the body counts as malformed); otherwise the
+     * connection closes with "server runs an older (newer) JXPilot protocol (vN)".
+     */
+    private void onForeignReject(ByteBuffer in, int peer) {
+        try {
+            reject.read(in);
+        } catch (RuntimeException e) {
+            malformed++;
+            return;
+        }
+        if (reject.nonce != connect.nonce) {
+            return;
+        }
+        packetsReceived++;
+        status.setLength(0);
+        status.append("Rejected by ").append(serverLabel).append(": server runs ")
+            .append(peer < Protocol.VERSION ? "an older" : "a newer").append(" JXPilot protocol (v").append(peer)
+            .append("); this client speaks v").append(Protocol.VERSION);
+        setState(ConnectionState.CLOSED);
     }
 
     private void onReject(ByteBuffer in) {

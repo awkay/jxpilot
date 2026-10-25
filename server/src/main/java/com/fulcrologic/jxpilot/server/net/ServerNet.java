@@ -343,8 +343,9 @@ public final class ServerNet {
             if (isOtherVersionConnect(data)) {
                 versionRejects++;
                 if (data.remaining() >= REJECT_OVERHEAD) {
-                    sendReject(channel, from, data.getInt(start + PacketHeader.SIZE), Msg.Reject.REASON_VERSION,
-                        rejectText(Msg.Reject.REASON_VERSION), data.remaining());
+                    int peer = data.get(start + 2) & 0xFF;
+                    sendReject(channel, from, peer, data.getInt(start + PacketHeader.SIZE), Msg.Reject.REASON_VERSION,
+                        versionRejectText(peer), data.remaining());
                 }
             } else {
                 malformed++;
@@ -762,8 +763,17 @@ public final class ServerNet {
      * at least {@link #REJECT_OVERHEAD}: a parsed CONNECT always is, an unparsed one is checked first).
      */
     private void sendReject(int channel, SocketAddress to, int nonce, int reason, String text, int maxBytes) {
+        sendReject(channel, to, Protocol.VERSION, nonce, reason, text, maxBytes);
+    }
+
+    /**
+     * A REJECT with header version {@code version}: a peer of another protocol version gets its own version byte (its
+     * header check drops any other), and the REJECT body every version so far shares (u32 nonce, u8 reason, str8).
+     */
+    private void sendReject(int channel, SocketAddress to, int version, int nonce, int reason, String text,
+                            int maxBytes) {
         outBuf.clear();
-        PacketHeader.write(outBuf, PacketType.REJECT, 0, 0);
+        PacketHeader.write(outBuf, version, PacketType.REJECT, 0, 0);
         reject.nonce = nonce;
         reject.reason = reason;
         reject.text.setLength(0);
@@ -779,6 +789,31 @@ public final class ServerNet {
         PacketHeader.write(outBuf, type, c.session, c.ch.ack());
         outBuf.flip();
         out.send(c.channel, c.addr, outBuf);
+    }
+
+    /**
+     * REJECT VERSION text for a peer of an older protocol: 27 chars, so it fits the REJECT a 41-byte CONNECT allows
+     * (a v1.1.x client's CONNECT with its name, real name and host name is larger); constant, so no allocation.
+     */
+    public static final String VERSION_OLDER_PEER = "client too old: protocol v" + Protocol.VERSION;
+    /** REJECT VERSION text for a peer of a newer protocol (27 chars). */
+    public static final String VERSION_NEWER_PEER = "server too old: protocol v" + Protocol.VERSION;
+
+    /** BEHAVIOR: the REJECT VERSION text for a peer whose header says protocol {@code peer}. */
+    public static String versionRejectText(int peer) {
+        return peer < Protocol.VERSION ? VERSION_OLDER_PEER : VERSION_NEWER_PEER;
+    }
+
+    /**
+     * BEHAVIOR: true for a JX header of another protocol version whose type is CONNECT or (for a lobby) LOBBY_HELLO,
+     * as {@link #isOtherVersionConnect} (both bodies start with the u32 nonce a REJECT echoes).
+     */
+    public static boolean isOtherVersionHello(ByteBuffer d) {
+        int p = d.position();
+        return d.remaining() >= PacketHeader.SIZE
+            && (d.getShort(p) & 0xFFFF) == Protocol.MAGIC
+            && (d.get(p + 2) & 0xFF) != Protocol.VERSION
+            && ((d.get(p + 3) & 0xFF) == PacketType.CONNECT || (d.get(p + 3) & 0xFF) == PacketType.LOBBY_HELLO);
     }
 
     /** BEHAVIOR: operator text for a REJECT reason code. */
