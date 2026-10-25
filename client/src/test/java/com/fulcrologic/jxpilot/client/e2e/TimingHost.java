@@ -36,11 +36,15 @@ import java.nio.ByteBuffer;
 final class TimingHost implements GameHost {
     final GameHost host;
     final long[] tickNanos;
+    /** The robots in the world after each tick ({@link #robotCount}, read on the server thread; -1 without it). */
+    final int[] robots;
     volatile int ticks;
+    volatile java.util.function.IntSupplier robotCount;
 
     TimingHost(GameHost host, int capacity) {
         this.host = host;
         this.tickNanos = new long[capacity];
+        this.robots = new int[capacity];
     }
 
     @Override
@@ -88,9 +92,13 @@ final class TimingHost implements GameHost {
         int n = ticks;
         if (n < tickNanos.length) {
             tickNanos[n] = System.nanoTime();
-            ticks = n + 1;
         }
         host.tick(tick);
+        if (n < tickNanos.length) {
+            java.util.function.IntSupplier rc = robotCount;
+            robots[n] = rc == null ? -1 : rc.getAsInt();
+            ticks = n + 1;
+        }
     }
 
     @Override

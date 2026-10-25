@@ -84,7 +84,16 @@ class JavaServerEndToEndTest {
             s.log = log::add;
             SimGameHostFactory real = new SimGameHostFactory(() -> 4242);
             s.factory = (o, m) -> {
-                TimingHost t = new TimingHost(real.create(o, m), 20_000);
+                SimGameHost sim = (SimGameHost) real.create(o, m);
+                TimingHost t = new TimingHost(sim, 20_000);
+                t.robotCount = () -> {
+                    World w = sim.simulation().world;
+                    int n = 0;
+                    for (int k = 0; k < w.numPlayers; k++) {
+                        n += w.playerAt(k).robot ? 1 : 0;
+                    }
+                    return n;
+                };
                 host.set(t);
                 return t;
             };
@@ -238,6 +247,7 @@ class JavaServerEndToEndTest {
             }
         }
         int robotsAtEnd = robotsInWorld;
+        List<String> robotGaps = robotGaps(timing.robots, timing.ticks, 8, w.params.fps);
         long gameTicks = a.game.world().newestTick() - a.firstTick;
         int fps = w.params.fps;
         List<String> humansLeft = new ArrayList<>();
@@ -285,8 +295,10 @@ class JavaServerEndToEndTest {
             () -> assertTrue(gameTicks >= 60L * fps, "60+ s of game time (" + gameTicks + " ticks at " + fps + ")"),
             () -> assertTrue(robotJoins >= 8, "8 robots (or more: a replaced one is a new id) appeared with the R flag ("
                 + robotJoins + ")"),
-            () -> assertEquals(8, robotsAtEnd, "the server keeps the 8 robots of minRobots (steady state)"),
-            () -> assertTrue(robotsInModelFinal >= 7, "the client's player list shows them as robots (" + robotsInModelFinal + ")"),
+            () -> assertEquals(List.of(), robotGaps, "the server keeps the 8 robots of minRobots: never more, and a robot"
+                + " that leaves is replaced 2*FPS frames per missing robot later (" + robotsAtEnd + " at the end)"),
+            () -> assertTrue(robotsInModelFinal >= robotsAtEnd - 1 && robotsInModelFinal <= 8,
+                "the client's player list shows them as robots (" + robotsInModelFinal + " of " + robotsAtEnd + ")"),
             () -> assertTrue(kills > 0, "kills flowed (" + kills + " KILL events)"),
             () -> assertTrue(a.scores > 20, "scores flowed (" + a.scores + " SCORE messages)"),
             () -> assertTrue(ownScoreTexts > 0, "own score objects arrived with text: " + a.scoreObjects),
@@ -303,6 +315,73 @@ class JavaServerEndToEndTest {
             // the strict timing belongs to the server's own (skippable) timing tests
             () -> assertTrue(p99Dev < ideal, "no tick is skipped or doubled at p99: deviation " + p99Dev + " ms of "
                 + ideal));
+    }
+
+    /**
+     * The minRobots steady state over per-tick robot counts {@code robots[0..n)} (C Robot_update: while fewer than
+     * minRobots robots play, one joins every ROBOT_CREATE_DELAY = 2*fps frames; robots leave by C's rules, retired,
+     * disappointed or playing too badly, at any time).
+     * <p>
+     * BEHAVIOR: from the first tick with {@code min} robots: never more than {@code min}; every run of ticks below
+     * {@code min} lasts at most (robots that left during it) * 2*fps + 2 ticks, and a run still open at the end has
+     * not yet lasted longer (its replacements were still due). Returns the violations ("never reached" when the count
+     * never got to {@code min}).
+     */
+    static List<String> robotGaps(int[] robots, int n, int min, int fps) {
+        List<String> bad = new ArrayList<>();
+        int from = 0;
+        while (from < n && robots[from] != min) {
+            from++;
+        }
+        if (from == n) {
+            bad.add("never reached " + min + " robots");
+            return bad;
+        }
+        int start = -1;
+        int leaves = 0;
+        for (int t = from; t <= n; t++) {
+            int r = t < n ? robots[t] : min;
+            if (t < n && r > min) {
+                bad.add("tick " + t + ": " + r + " robots");
+            }
+            if (start < 0 && r < min) {
+                start = t;
+                leaves = 0;
+            }
+            if (start >= 0 && t < n && r < robots[t - 1]) {
+                leaves += robots[t - 1] - r;
+            }
+            if (start >= 0 && (r >= min || t == n)) {
+                int length = t - start;
+                if (length > leaves * 2 * fps + 2) {
+                    bad.add("ticks " + start + ".." + t + ": " + length + " ticks below " + min + " after " + leaves
+                        + " left" + (t == n ? " (still short at the end)" : ""));
+                }
+                start = -1;
+            }
+        }
+        return bad;
+    }
+
+    @Test
+    @DisplayName("robotGaps: replacements in time pass; a late one, an extra robot, a long shortfall at the end and"
+        + " never filling up are violations")
+    void robotGapsRule() {
+        int fps = 2; // a replacement is due 4 ticks after each leave
+        assertAll(
+            () -> assertEquals(List.of(), robotGaps(new int[] {6, 7, 8, 8, 7, 7, 7, 7, 8, 8}, 10, 8, fps),
+                "a leave replaced 4 ticks later"),
+            () -> assertEquals(List.of(), robotGaps(new int[] {8, 7, 6, 6, 6, 6, 7, 7, 7, 7, 8}, 11, 8, fps),
+                "two leaves, two replacements 4 ticks apart"),
+            () -> assertEquals(List.of(), robotGaps(new int[] {8, 8, 8, 7, 7}, 5, 8, fps),
+                "a shortfall at the end whose replacement is still due"),
+            () -> assertEquals(1, robotGaps(new int[] {8, 7, 7, 7, 7, 7, 7, 7, 8}, 9, 8, fps).size(),
+                "a replacement 7 ticks late: one violation"),
+            () -> assertEquals(1, robotGaps(new int[] {8, 7, 7, 7, 7, 7, 7, 7, 7, 7}, 10, 8, fps).size(),
+                "a shortfall at the end that is overdue"),
+            () -> assertEquals(1, robotGaps(new int[] {8, 9, 8}, 3, 8, fps).size(), "a ninth robot"),
+            () -> assertEquals(List.of("never reached 8 robots"), robotGaps(new int[] {6, 7, 7}, 3, 8, fps),
+                "never full"));
     }
 
     /** An open 60x60 wrapping map without gravity, one base in the middle, no robots: free flight. */
