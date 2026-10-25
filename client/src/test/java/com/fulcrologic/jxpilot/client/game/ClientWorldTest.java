@@ -182,6 +182,144 @@ class ClientWorldTest {
     }
 
     @Nested
+    @DisplayName("association across a lost or late snapshot (frames link to the nearest within 2 intervals)")
+    class Gaps {
+        static final int LIFE = 12; // plus the lone bullet: within the fixture's 16 shots
+        static final int STEP = 4; // px per tick: a wire velocity of 16 px per game frame (4 ticks)
+        final int lone = Records.ShotKind.variant(Records.ShotKind.SHOT, Records.ObjColor.WHITE);
+
+        /**
+         * A dense stream: one bullet fired every tick at x 50 moving +x, so neighbours are STEP px apart, living
+         * LIFE ticks; the records reversed on every other snapshot. Plus one bullet without a wire velocity moving
+         * 2 px per tick at y 250. Returns the spawn tick of each record, by index.
+         */
+        int[] stream(WorldFixture f, int tick) {
+            f.begin(tick);
+            int[] spawn = new int[LIFE];
+            boolean reverse = (tick / 2) % 2 == 1;
+            for (int k = 0; k < LIFE; k++) {
+                int sp = reverse ? tick - LIFE + 1 + k : tick - k;
+                spawn[k] = sp;
+                f.shot(50 + STEP * (tick - sp), 100, 4 * STEP, 0);
+            }
+            f.shot(lone, 300 + 2 * (tick - 100), 250);
+            return spawn;
+        }
+
+        /** Index of {@code spawn} in {@code spawns}, -1 when absent. */
+        int indexOf(int[] spawns, int spawn) {
+            for (int k = 0; k < spawns.length; k++) {
+                if (spawns[k] == spawn) {
+                    return k;
+                }
+            }
+            return -1;
+        }
+
+        @Test
+        @DisplayName("a dense burst with one snapshot lost: every bullet links to itself across the gap, ages run on"
+            + " continuously, and a velocity-less bullet's speed is estimated over the whole gap")
+        void lostSnapshot() {
+            WorldFixture f = new WorldFixture(false);
+            int[] ticks = {100, 102, 104, 108, 110};
+            int[][] spawns = new int[ticks.length][];
+            int mislinks = 0;
+            int unlinked = 0;
+            int acrossGap = 0;
+            int ageErrors = 0;
+            for (int n = 0; n < ticks.length; n++) {
+                spawns[n] = stream(f, ticks[n]);
+                f.ingestAtTick(ticks[n]);
+                if (n == 0) {
+                    continue;
+                }
+                SnapshotFrame a = f.world.frameAt(ticks[n - 1]);
+                SnapshotFrame b = f.world.frameAt(ticks[n]);
+                for (int i = 0; i < LIFE; i++) {
+                    int want = indexOf(spawns[n], spawns[n - 1][i]);
+                    int got = a.shotNext[i];
+                    if (want >= 0 && got < 0) {
+                        unlinked++;
+                    } else if (got != want) {
+                        mislinks++;
+                    } else if (want >= 0 && ticks[n] - ticks[n - 1] == 4) {
+                        acrossGap++;
+                    }
+                }
+                for (int j = 0; j < LIFE; j++) {
+                    int firstSeen = spawns[n][j];
+                    for (int t : ticks) {
+                        if (t >= firstSeen) {
+                            firstSeen = Math.max(t, 100);
+                            break;
+                        }
+                    }
+                    firstSeen = Math.max(firstSeen, 100);
+                    if (b.shotAge[j] != ticks[n] - firstSeen) {
+                        ageErrors++;
+                    }
+                }
+            }
+            SnapshotFrame at108 = f.world.frameAt(108);
+            float loneVx = at108.shotEstVx[LIFE];
+            int fMislinks = mislinks;
+            int fUnlinked = unlinked;
+            int fAcross = acrossGap;
+            int fAgeErrors = ageErrors;
+            assertAll(
+                () -> assertEquals(0, fMislinks, "no bullet linked to a neighbour STEP px away"),
+                () -> assertEquals(0, fUnlinked, "no continuing bullet left unlinked"),
+                () -> assertEquals(LIFE - 4, fAcross, "104 to 108: the bullets alive in both are linked across the gap"),
+                () -> assertEquals(0, fAgeErrors, "ages: ticks since first seen, also for bullets first seen after the gap"),
+                () -> assertEquals(8f, loneVx, 1e-3f, "the velocity-less bullet: 8 px over the 4-tick gap = 8 px/frame"),
+                () -> assertEquals(Tracker.KNOWN, at108.shotState[LIFE], "from its link (KNOWN)"));
+        }
+
+        @Test
+        @DisplayName("a late, reordered middle snapshot: the later frame's first sights and tracer origins are kept"
+            + " (no second tracer), its ages count from the late frame, and it links both ways")
+        void lateMiddle() {
+            WorldFixture f = new WorldFixture(false);
+            int[] s100 = stream(f, 100);
+            f.ingestAtTick(100);
+            int[] s104 = stream(f, 104);
+            f.ingestAtTick(104);
+            SnapshotFrame b = f.world.frameAt(104);
+            long[] seen = java.util.Arrays.copyOf(b.shotSeenNanos, LIFE);
+            float[] ox = java.util.Arrays.copyOf(b.shotOriginX, LIFE);
+            int fresh = 0;
+            for (int j = 0; j < LIFE; j++) {
+                fresh += seen[j] == at(104) ? 1 : 0;
+            }
+            int[] s102 = stream(f, 102);
+            int r = f.ingest(at(104) + 5_000_000L);
+            SnapshotFrame a = f.world.frameAt(100);
+            SnapshotFrame m = f.world.frameAt(102);
+            int fFresh = fresh;
+            int wrongLinks = 0;
+            for (int i = 0; i < LIFE; i++) {
+                wrongLinks += a.shotNext[i] != indexOf(s102, s100[i]) ? 1 : 0;
+                wrongLinks += m.shotNext[i] != indexOf(s104, s102[i]) ? 1 : 0;
+            }
+            int fWrong = wrongLinks;
+            int[] wantAges = new int[LIFE];
+            for (int j = 0; j < LIFE; j++) {
+                int sp = s104[j];
+                wantAges[j] = 104 - (sp <= 100 ? 100 : sp <= 102 ? 102 : 104);
+            }
+            assertAll(
+                () -> assertEquals(ClientWorld.LATE_TICK, r, "102 arrives after 104"),
+                () -> assertEquals(4, fFresh, "104 first showed the 4 bullets fired after 100, with tracers"),
+                () -> assertArrayEquals(seen, java.util.Arrays.copyOf(b.shotSeenNanos, LIFE),
+                    "104's first sights unchanged: no tracer restarted at 102's (later) arrival"),
+                () -> assertArrayEquals(ox, java.util.Arrays.copyOf(b.shotOriginX, LIFE), 0f, "nor its origins"),
+                () -> assertArrayEquals(wantAges, java.util.Arrays.copyOf(b.shotAge, LIFE),
+                    "104's ages learn from 102: ticks since the first snapshot that had the bullet"),
+                () -> assertEquals(0, fWrong, "100 to 102 and 102 to 104 link each bullet to itself"));
+        }
+    }
+
+    @Nested
     @DisplayName("extrapolation")
     class Extrapolation {
         @Test

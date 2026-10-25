@@ -604,6 +604,11 @@ public final class ClientWorld {
         return best;
     }
 
+    /** The frame of {@code tick} held in the ring, else null (for tests). */
+    SnapshotFrame frameAt(int tick) {
+        return frameFor(tick);
+    }
+
     private SnapshotFrame frameFor(int tick) {
         for (SnapshotFrame f : ring) {
             if (f.valid && f.tick == tick) {
@@ -1130,6 +1135,9 @@ public final class ClientWorld {
      * BEHAVIOR: a later shot with a wire velocity keeps it; other linked ones get the displacement over the
      * frames (KNOWN); unlinked ones none (UNKNOWN).
      * BEHAVIOR: the moving M2 objects are associated too ({@link ObjectLists#associate}).
+     * BEHAVIOR: a linked shot's age (ticks since first seen) is its link's plus the gap; it inherits its link's first
+     * sight and tracer origin, and a shot new in {@code b} gets them ({@link #tracerOrigin}); except when {@code a}
+     * arrived after {@code b} (late, reordered): then {@code b}'s first sights and origins are kept (no second tracer).
      */
     private void associate(SnapshotFrame a, SnapshotFrame b) {
         if (a.assocValid && a.assocTick == b.tick && a.assocParts == b.parts && a.assocOwnParts == a.parts) {
@@ -1153,19 +1161,26 @@ public final class ClientWorld {
         tracker.link(sn, a.shotX, a.shotY, a.shotEstVx, a.shotEstVy, a.shotState, keyA, sm, b.shotX, b.shotY, keyB,
             frames, TRACK_PX_PER_FRAME, SHOT_AMBIGUITY_RATIO, MIN_SHOT_SPEED, worldW, worldH, wrap, a.shotNext);
         int ticks = b.tick - a.tick;
-        for (int j = 0; j < sm; j++) {
-            b.shotSeenNanos[j] = Long.MIN_VALUE;
+        // a arrived after b (a late, reordered frame): b's bullets were drawn first, so their first sight (and
+        // tracers) stay as they are; only their ages learn from a
+        boolean tracers = a.arrivalNanos <= b.arrivalNanos;
+        if (tracers) {
+            for (int j = 0; j < sm; j++) {
+                b.shotSeenNanos[j] = Long.MIN_VALUE;
+            }
         }
         for (int i = 0; i < sn; i++) {
             int j = a.shotNext[i];
             if (j >= 0 && j < sm && ticks > 0) {
                 b.shotAge[j] = a.shotAge[i] + ticks;
-                b.shotSeenNanos[j] = a.shotSeenNanos[i];
-                b.shotOriginX[j] = a.shotOriginX[i];
-                b.shotOriginY[j] = a.shotOriginY[i];
+                if (tracers) {
+                    b.shotSeenNanos[j] = a.shotSeenNanos[i];
+                    b.shotOriginX[j] = a.shotOriginX[i];
+                    b.shotOriginY[j] = a.shotOriginY[i];
+                }
             }
         }
-        for (int j = 0; j < sm; j++) {
+        for (int j = 0; j < sm && tracers; j++) {
             if (b.shotAge[j] == 0 && ticks > 0 && ticks <= 2 * snapshotInterval) {
                 tracerOrigin(b, j, ticks); // a new bullet: none of a's continues as it
             }
