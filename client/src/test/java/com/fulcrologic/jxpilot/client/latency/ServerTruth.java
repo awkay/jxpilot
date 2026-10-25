@@ -58,6 +58,15 @@ final class ServerTruth {
     private final Map<Integer, double[]> ys = new HashMap<>();
     private final Map<Integer, boolean[]> present = new HashMap<>();
     private int last = -1;
+    /** Own shield up (HAS_SHIELD used) after each tick. */
+    private final boolean[] shield = new boolean[MAX_TICKS];
+    /** Other bullets (not the own player's) after each tick: ids (one per bullet's life), x, y. */
+    private final Map<Integer, int[]> shotIds = new HashMap<>();
+    private final Map<Integer, double[]> shotXs = new HashMap<>();
+    private final Map<Integer, double[]> shotYs = new HashMap<>();
+    private final Map<Integer, double[]> handleLife = new HashMap<>();
+    private final Map<Integer, Integer> handleId = new HashMap<>();
+    private int nextShotId;
 
     ServerTruth(int ownId) {
         this.ownId = ownId;
@@ -70,8 +79,100 @@ final class ServerTruth {
             put(tick, p.id, VirtualServer.px(p.cx), VirtualServer.px(p.cy), p.isAlive(), p.dir, p.vx, p.vy);
             if (p.id == ownId && tick < MAX_TICKS) {
                 putShots(tick, p.shotTime, p.shots);
+                shield[tick] = p.isAlive() && (p.used & com.fulcrologic.jxpilot.common.sim.Has.SHIELD) != 0;
             }
         }
+    }
+
+    /**
+     * Record the bullets (SHOT and CANNON_SHOT) not fired by the own player after {@code tick}: each bullet's life gets
+     * its own id (a handle whose life went up, or that moved more than 100 px in a tick, was reused by a new bullet).
+     */
+    void recordOtherShots(World w, int tick) {
+        Objects o = w.objects;
+        int n = 0;
+        int[] ids = new int[o.count()];
+        double[] x = new double[o.count()];
+        double[] y = new double[o.count()];
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+        for (int i = 0; i < o.count(); i++) {
+            int h = o.active[i];
+            if ((o.type[h] != Obj.SHOT && o.type[h] != Obj.CANNON_SHOT) || o.owner[h] == ownId) {
+                continue;
+            }
+            double px = VirtualServer.px(o.cx[h]);
+            double py = VirtualServer.px(o.cy[h]);
+            double[] prev = handleLife.get(h);
+            // a handle freed and reused within a tick: its life went up, or it jumped farther than a bullet flies
+            if (prev == null || o.life[h] > prev[0] || XMath.wrapDelta(px - prev[1], w.pixelWidth, w.wrap) * 
+                XMath.wrapDelta(px - prev[1], w.pixelWidth, w.wrap)
+                + XMath.wrapDelta(py - prev[2], w.pixelHeight, w.wrap) * XMath.wrapDelta(py - prev[2], w.pixelHeight, w.wrap)
+                > 100 * 100) {
+                handleId.put(h, nextShotId++);
+                handleLife.put(h, new double[] {o.life[h], px, py});
+            } else {
+                prev[0] = o.life[h];
+                prev[1] = px;
+                prev[2] = py;
+            }
+            seen.add(h);
+            ids[n] = handleId.get(h);
+            x[n] = VirtualServer.px(o.cx[h]);
+            y[n] = VirtualServer.px(o.cy[h]);
+            n++;
+        }
+        handleLife.keySet().retainAll(seen);
+        handleId.keySet().retainAll(seen);
+        shotIds.put(tick, java.util.Arrays.copyOf(ids, n));
+        shotXs.put(tick, java.util.Arrays.copyOf(x, n));
+        shotYs.put(tick, java.util.Arrays.copyOf(y, n));
+    }
+
+    /** The other bullets' ids after {@code tick} (empty when not recorded). */
+    int[] otherShotIds(int tick) {
+        int[] ids = shotIds.get(tick);
+        return ids == null ? new int[0] : ids;
+    }
+
+    /**
+     * Where other bullet {@code id} is at fractional tick {@code t} (linear between floor(t) and the next tick, wrap-
+     * aware; at floor(t) when it is gone by the next) into {@code out}.
+     *
+     * @return false when it was not alive at floor(t)
+     */
+    boolean otherShotAt(int id, double t, double worldW, double worldH, boolean wrap, double[] out) {
+        int a = (int) Math.floor(t);
+        int i = indexOf(a, id);
+        if (i < 0) {
+            return false;
+        }
+        out[0] = shotXs.get(a)[i];
+        out[1] = shotYs.get(a)[i];
+        int j = indexOf(a + 1, id);
+        if (j >= 0) {
+            double f = t - a;
+            out[0] += f * XMath.wrapDelta(shotXs.get(a + 1)[j] - out[0], worldW, wrap);
+            out[1] += f * XMath.wrapDelta(shotYs.get(a + 1)[j] - out[1], worldH, wrap);
+        }
+        return true;
+    }
+
+    private int indexOf(int tick, int id) {
+        int[] ids = shotIds.get(tick);
+        if (ids == null) {
+            return -1;
+        }
+        for (int i = 0; i < ids.length; i++) {
+            if (ids[i] == id) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Whether the own shield was up after {@code tick}. */
+    boolean shieldUp(int tick) {
+        return tick >= 0 && tick < MAX_TICKS && shield[tick];
     }
 
     /** Record one player's state after {@code tick}; the newest tick put is {@link #lastTick()}. */

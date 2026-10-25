@@ -466,4 +466,22 @@ class HarnessPartsTest {
                 () -> assertTrue(quiet.contains("| -/- (0) |"), "no robot seen: no aim error"));
         }
     }
+
+    @Nested
+    @DisplayName("ThreatMetrics")
+    class Threat {
+        @Test
+        @DisplayName("SHIELD is held 300 ms every 1543 ms from 2 s after the spawn, nothing before")
+        void keys() {
+            long ms = ThreatMetrics.MS;
+            long shield = ControlKey.SHIELD.mask();
+            assertAll(
+                () -> assertEquals(0, ThreatMetrics.keys(1999 * ms), "before 2 s: nothing"),
+                () -> assertEquals(shield, ThreatMetrics.keys(2000 * ms), "pressed at 2 s"),
+                () -> assertEquals(shield, ThreatMetrics.keys(2299 * ms), "held to 2.3 s"),
+                () -> assertEquals(0, ThreatMetrics.keys(2300 * ms), "released at 2.3 s"),
+                () -> assertEquals(shield, ThreatMetrics.keys((2000 + 1543) * ms), "again a period later"),
+                () -> assertEquals(0, ThreatMetrics.keys((2000 + 1542) * ms), "not before"));
+        }
+    }
 }

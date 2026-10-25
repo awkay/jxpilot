@@ -86,6 +86,18 @@ class LatencyBaselineTest {
 
     static final List<ExactRow> EXACT = new ArrayList<>();
 
+    /** One incoming-shot run: the dogfight with 6 robots firing, the scenario's link ({@link ThreatMetrics}). */
+    record ThreatRow(Scenario scenario, ThreatMetrics.Result threat) { }
+
+    static final List<ThreatRow> THREAT = new ArrayList<>();
+    static final Scenario[] THREAT_CELLS = {
+        new Scenario(0, Scenario.Jitter.NONE, Scenario.Loss.NONE),
+        new Scenario(100, Scenario.Jitter.NONE, Scenario.Loss.NONE),
+        new Scenario(200, Scenario.Jitter.NONE, Scenario.Loss.NONE),
+        new Scenario(300, Scenario.Jitter.NONE, Scenario.Loss.NONE),
+        new Scenario(100, Scenario.Jitter.NORMAL_15, Scenario.Loss.UNIFORM_1),
+        new Scenario(200, Scenario.Jitter.PARETO, Scenario.Loss.BURSTY_5)};
+
     @BeforeAll
     @Timeout(value = 10, unit = TimeUnit.MINUTES)
     static void measure() throws IOException {
@@ -125,7 +137,10 @@ class LatencyBaselineTest {
                 }
             }
         }
-        String table = MetricTable.format(ROWS) + (PREDICT ? "\n" + exactTable() : "");
+        for (Scenario sc : THREAT_CELLS) {
+            THREAT.add(new ThreatRow(sc, ThreatMetrics.measure(sc, 6, MOTION_SECONDS, SEED)));
+        }
+        String table = MetricTable.format(ROWS) + (PREDICT ? "\n" + exactTable() : "") + "\n" + threatTable();
         System.out.println("[latency baseline] prediction " + (PREDICT ? "on" : "off") + ", " + ROWS.size() + " cells, "
             + TRIALS + " I2P and " + SHOT_TRIALS + " shot trials each, " + MOTION_SECONDS + " s motion runs, seed "
             + SEED + ", " + (System.nanoTime() - t0) / 1_000_000 + " ms");
@@ -133,6 +148,44 @@ class LatencyBaselineTest {
         Path out = Path.of("target", PREDICT ? "latency-baseline.md" : "latency-baseline-off.md");
         Files.createDirectories(out.getParent());
         Files.writeString(out, table);
+    }
+
+    /** The incoming-shot table: shot threat error at the input's tick and shield reaction, per link. */
+    static String threatTable() {
+        StringBuilder sb = new StringBuilder("| dogfight, 6 robots | threat err p50/p95/max | drawn shot-frames |"
+            + " gone by then | unmatched | shield reaction p50/p95/max | presses |\n|---|---:|---:|---:|---:|---:|---:|\n");
+        for (ThreatRow r : THREAT) {
+            ThreatMetrics.Result t = r.threat();
+            sb.append("| ").append(r.scenario().label())
+                .append(" | ").append(MetricTable.num(t.threatError().p50(), 1)).append('/')
+                .append(MetricTable.num(t.threatError().p95(), 1)).append('/')
+                .append(MetricTable.num(t.threatError().max(), 1))
+                .append(" | ").append(t.drawnShots())
+                .append(" | ").append(t.goneByThen())
+                .append(" | ").append(t.unmatched())
+                .append(" | ").append(MetricTable.num(t.shieldReaction().p50(), 1)).append('/')
+                .append(MetricTable.num(t.shieldReaction().p95(), 1)).append('/')
+                .append(MetricTable.num(t.shieldReaction().max(), 1))
+                .append(" | ").append(t.presses()).append(" |\n");
+        }
+        return sb.toString();
+    }
+
+    @Test
+    @DisplayName("incoming shots: robots' shots are drawn and matched to the server's, and shield presses are timed")
+    void threatMeasured() {
+        List<Executable> checks = new ArrayList<>();
+        for (ThreatRow r : THREAT) {
+            ThreatMetrics.Result t = r.threat();
+            String cell = "dogfight " + r.scenario().label() + ": ";
+            checks.add(() -> assertTrue(t.drawnShots() > 1000, cell + "enemy shot-frames drawn: " + t.drawnShots()));
+            checks.add(() -> assertTrue(t.unmatched() * 100 <= t.drawnShots(), cell + "at most 1% unmatched: "
+                + t.unmatched()));
+            checks.add(() -> assertTrue(t.presses() >= 10, cell + "shield presses timed: " + t.presses()));
+            checks.add(() -> assertTrue(t.shieldReaction().percentile(0) >= r.scenario().rttMs() / 2.0, cell
+                + "no shield sooner than the uplink: " + t.shieldReaction().percentile(0)));
+        }
+        assertAll(checks);
     }
 
     /** The exactness table: per course, RTT and predictableBounces, the reconciliations and their corrections. */
