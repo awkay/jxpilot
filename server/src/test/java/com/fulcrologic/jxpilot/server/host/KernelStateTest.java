@@ -257,13 +257,19 @@ class KernelStateTest {
         w.modes.targetTeam[0] = 4;
         k.scan();
         List<String> sent = drain(k, 0);
+        long drained = k.messages();
+        int drainTag = k.lastTag();
         w.tick = 9;
         List<String> init = newcomer(k);
         assertAll(
             () -> assertEquals(List.of("KSTATE@5 " + C + ":0,0,1,0 " + T + ":0,0,0,3", "KSTATE@6 " + T + ":0,0,0,4"), sent,
                 "the tick-5 changes in one message, the tick-6 one in the next"),
             () -> assertEquals(List.of("KSTATE@9 " + C + ":0,0,1,0 " + T + ":0,0,0,4"), init,
-                "the initial state is as of now: tick 9"));
+                "the initial state is as of now: tick 9"),
+            () -> assertEquals(2, drained, "two messages counted"),
+            () -> assertEquals(6, drainTag, "the last one tagged 6"),
+            () -> assertEquals(3, k.messages(), "the initial state's counts too"),
+            () -> assertEquals(9, k.lastTag(), "tagged 9"));
     }
 
     @Test

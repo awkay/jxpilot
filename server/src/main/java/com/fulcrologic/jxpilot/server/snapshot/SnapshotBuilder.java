@@ -178,6 +178,7 @@ public final class SnapshotBuilder {
     private long predictKeys;
     private int predictVersion;
     private int predictKernel;
+    private int predictStateTag;
     private boolean predictRare;
 
     /**
@@ -187,13 +188,16 @@ public final class SnapshotBuilder {
      * @param appliedKeys the input the server applied to the viewer this tick (the key flags compare with it)
      * @param rareVersion   the version of the viewer's rare block
      * @param kernelVersion the KERNEL_CONFIG version the sim runs with
+     * @param stateTag      the tick of the newest KERNEL_STATE message queued to the viewer
      * @param sendRare      also send the rare block
      */
-    public void setPredict(boolean on, long appliedKeys, int rareVersion, int kernelVersion, boolean sendRare) {
+    public void setPredict(boolean on, long appliedKeys, int rareVersion, int kernelVersion, int stateTag,
+                           boolean sendRare) {
         predict = on;
         predictKeys = appliedKeys;
         predictVersion = rareVersion;
         predictKernel = kernelVersion;
+        predictStateTag = stateTag;
         predictRare = sendRare;
     }
 
@@ -461,7 +465,8 @@ public final class SnapshotBuilder {
         }
         predict = false;
         if (need(Section.PREDICT, 0)) {
-            Records.Predict.put(wr, v, w.frames, w.roundDelay, predictKeys, predictVersion, predictKernel);
+            Records.Predict.put(wr, v, w.frames, w.roundDelay, predictKeys, predictVersion, predictKernel,
+                predictStateTag);
         }
         if (w.roundDelay > 0 && need(Section.PREDICT_ROUND, 0)) {
             Records.PredictRound.put(wr, w.roundDelay);

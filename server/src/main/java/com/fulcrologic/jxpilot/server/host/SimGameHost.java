@@ -117,6 +117,8 @@ public final class SimGameHost implements GameHost {
     /** Kernel state changes (KERNEL_STATE) and each viewer's cursor into them. */
     private final KernelState kernelState;
     private final long[] kernelCursor = new long[IDS];
+    /** The tick of the newest KERNEL_STATE message queued to each viewer (PREDICT's state tag). */
+    private final int[] kernelTag = new int[IDS];
     /** The keys applied to the player at the last tick (the PREDICT key flags compare with them). */
     private final long[] applied = new long[IDS];
     // ---- PREDICT rare block per viewer: its last bytes, version, the snapshot it changed at, snapshots sent
@@ -714,6 +716,19 @@ public final class SimGameHost implements GameHost {
         kernelVersion = version;
     }
 
+    /**
+     * BEHAVIOR: allowPlayerKilling is sent as the crash masks follow it: C applies a /set of it only at the next
+     * {@code Move_init} (and never restores KILLING_SHOTS once cleared), so "yes" iff a cannon's shot crashes into
+     * cannons now; every other option as its text.
+     */
+    @Override
+    public String kernelOptionValue(Opt opt, String value) {
+        if (opt == Opt.ALLOW_PLAYER_KILLING) {
+            return (w.params.objCannonMask & Obj.CANNON_SHOT) != 0 ? "yes" : "no";
+        }
+        return value;
+    }
+
     // ================================================================ ticking
 
     /**
@@ -1065,7 +1080,7 @@ public final class SimGameHost implements GameHost {
     private void predictFor(int id, Player p, boolean own) {
         long n = snapshotsSent[id]++;
         if (!own) {
-            builder.setPredict(false, 0, 0, 0, false);
+            builder.setPredict(false, 0, 0, 0, 0, false);
             return;
         }
         p.encodeRare(rareScratch, 0);
@@ -1083,7 +1098,7 @@ public final class SimGameHost implements GameHost {
             rareVersion[id] = (rareVersion[id] + 1) & 0xFF;
             rareChanged[id] = n;
         }
-        builder.setPredict(true, applied[id], rareVersion[id], kernelVersion,
+        builder.setPredict(true, applied[id], rareVersion[id], kernelVersion, kernelTag[id],
             n - rareChanged[id] < RARE_RESEND || n % RARE_REFRESH == 0);
     }
 
@@ -1106,6 +1121,7 @@ public final class SimGameHost implements GameHost {
         cursor[viewerId] = w.events.seq();
         burstCursor[viewerId] = w.events.burstSeq();
         kernelState.initial(out, false);
+        kernelTag[viewerId] = kernelState.lastTag();
         kernelCursor[viewerId] = kernelState.seq();
     }
 
@@ -1199,11 +1215,15 @@ public final class SimGameHost implements GameHost {
             motdPending[viewerId] = false;
             Msg.Motd.sendAll(out, motd.text()); // C sends it when the client asks, right after login
         }
+        long messages = kernelState.messages();
         if (kernelState.behind(kernelCursor[viewerId])) {
             kernelState.initial(out, true);
             kernelCursor[viewerId] = kernelState.seq();
         } else {
             kernelCursor[viewerId] = kernelState.drain(out, kernelCursor[viewerId]);
+        }
+        if (kernelState.messages() != messages) {
+            kernelTag[viewerId] = kernelState.lastTag();
         }
         Events e = w.events;
         long from = cursor[viewerId];

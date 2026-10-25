@@ -184,6 +184,12 @@ class KernelSyncTest {
      */
     static ByteBuffer predict(int tick, int inputTick, com.fulcrologic.jxpilot.common.sim.ShipBody b, long applied,
                               int version, boolean rare, int kernel, int roundDelay, boolean withRound) {
+        return predict(tick, inputTick, b, applied, version, rare, kernel, roundDelay, withRound, 0);
+    }
+
+    /** As above with PREDICT's KERNEL_STATE tag {@code stateTag}. */
+    static ByteBuffer predict(int tick, int inputTick, com.fulcrologic.jxpilot.common.sim.ShipBody b, long applied,
+                              int version, boolean rare, int kernel, int roundDelay, boolean withRound, int stateTag) {
         ByteBuffer out = ByteBuffer.allocate(1200);
         com.fulcrologic.jxpilot.common.net.SnapshotWriter w = new com.fulcrologic.jxpilot.common.net.SnapshotWriter();
         w.begin(out, tick, inputTick, 0, 1, 1, 0, 0);
@@ -191,7 +197,7 @@ class KernelSyncTest {
         w.endSection();
         w.beginSection(com.fulcrologic.jxpilot.common.net.Section.PREDICT);
         com.fulcrologic.jxpilot.common.net.Records.Predict.put(w, b, OFFSET + tick, roundDelay, applied, version,
-            kernel);
+            kernel, stateTag);
         w.endSection();
         if (roundDelay > 0 && withRound) {
             w.beginSection(com.fulcrologic.jxpilot.common.net.Section.PREDICT_ROUND);
@@ -212,7 +218,17 @@ class KernelSyncTest {
         return out;
     }
 
-    /** A KernelSync with the kernel world of {@link #server()} built from blob version {@code version}. */
+    /** An empty KERNEL_STATE message tagged {@code tick} (what a newcomer with nothing to learn gets). */
+    static List<ByteBuffer[]> emptyState(int tick) {
+        ReliableChannel ch = new ReliableChannel();
+        new Msg.KernelState().begin(ch, tick).end(ch, true);
+        return messages(ch);
+    }
+
+    /**
+     * A KernelSync with the kernel world of {@link #server()} built from blob version {@code version}, and the initial
+     * KERNEL_STATE (empty, tick 0).
+     */
     static KernelSync withWorld(int version) {
         Options o = server();
         KernelSync k = new KernelSync();
@@ -220,6 +236,7 @@ class KernelSyncTest {
         ConfigParser.parse(o.toConfigText(clientMap(o)), "c", OptionOrigin.MAP, client);
         k.onConfig(client);
         deliver(k, blob(o, version));
+        deliver(k, emptyState(0));
         return k;
     }
 
@@ -260,7 +277,7 @@ class KernelSyncTest {
         w.begin(out, tick, 40, part, 2, 0, 0, 0);
         if (withPredict) {
             w.beginSection(com.fulcrologic.jxpilot.common.net.Section.PREDICT);
-            com.fulcrologic.jxpilot.common.net.Records.Predict.put(w, b, OFFSET + tick, 0, 6, 3, 1);
+            com.fulcrologic.jxpilot.common.net.Records.Predict.put(w, b, OFFSET + tick, 0, 6, 3, 1, 0);
             w.endSection();
             w.beginSection(com.fulcrologic.jxpilot.common.net.Section.PREDICT_RARE);
             com.fulcrologic.jxpilot.common.net.Records.PredictRare.put(w, b, 3, OFFSET);
@@ -360,6 +377,37 @@ class KernelSyncTest {
             () -> assertEquals(1, k.rareBlocks(), "one PREDICT_RARE"),
             () -> assertEquals(1, k.keyBlocks(), "one PREDICT_KEYS"),
             () -> assertTrue(k.have(), "have"));
+    }
+
+    @Test
+    @DisplayName("the state gate: PREDICT names the newest KERNEL_STATE queued; valid only once it has arrived; the tags"
+        + " compare on 16 bits across the wrap")
+    void stateGate() {
+        com.fulcrologic.jxpilot.common.net.InputHistory in = new com.fulcrologic.jxpilot.common.net.InputHistory();
+        in.set(40, 6, 0, 0);
+        com.fulcrologic.jxpilot.common.sim.ShipBody b = new com.fulcrologic.jxpilot.common.sim.ShipBody();
+        b.prevKeys = 6;
+        b.lastReceivedKeys = 6;
+        KernelSync k = withWorld(1);
+        k.onSnapshot(predict(45, 40, b, 6, 3, true, 1, 0, false, 44), in);
+        boolean inFlight = k.valid();
+        boolean currentBefore = k.stateCurrent();
+        deliver(k, stateAt(44, Msg.KernelState.CANNON, 0, 0, 1, 0));
+        boolean arrived = k.valid();
+        deliver(k, stateAt(65_536 + 3, Msg.KernelState.CANNON, 0, 0, 0, 0));
+        k.onSnapshot(predict(46, 40, b, 6, 3, true, 1, 0, false, 3), in);
+        boolean wrapped = k.stateCurrent();
+        k.onSnapshot(predict(47, 40, b, 6, 3, true, 1, 0, false, 4), in);
+        boolean wrappedAhead = k.stateCurrent();
+        KernelSync none = withWorld(1);
+        boolean noPredict = none.stateCurrent();
+        assertAll(
+            () -> assertFalse(inFlight, "the tick-44 change is still in flight: not valid"),
+            () -> assertFalse(currentBefore, "the state is not current"),
+            () -> assertTrue(arrived, "once it arrives: valid"),
+            () -> assertTrue(wrapped, "state tick 65539 against tag 3: the same tick on 16 bits"),
+            () -> assertFalse(wrappedAhead, "tag 4 is one later: not current"),
+            () -> assertFalse(noPredict, "no PREDICT yet: not current"));
     }
 
     @Test

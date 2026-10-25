@@ -55,6 +55,9 @@ final class KernelState {
     private final int[] ed = new int[RING];
     private final int[] etick = new int[RING];
     private long seq;
+    /** KERNEL_STATE messages written (all viewers) and the tick of the last one. */
+    private long messages;
+    private int lastTag;
 
     private final boolean[] phased;
     private final int[] team;
@@ -220,6 +223,16 @@ final class KernelState {
         return tracked;
     }
 
+    /** KERNEL_STATE messages written so far (every viewer's). */
+    long messages() {
+        return messages;
+    }
+
+    /** The tick the last message written was tagged with. */
+    int lastTag() {
+        return lastTag;
+    }
+
     /** The next sequence number. */
     long seq() {
         return seq;
@@ -248,6 +261,8 @@ final class KernelState {
                 c++;
             }
             m.end(ch);
+            messages++;
+            lastTag = t;
         }
         return c;
     }
@@ -294,11 +309,14 @@ final class KernelState {
             }
         }
         m.end(ch, true);
+        messages++;
+        lastTag = w.tick;
     }
 
     private Msg.KernelState put(ReliableChannel ch, Msg.KernelState m, int k, int a, int b, int c, int d) {
         if (!m.room()) {
             m.end(ch);
+            messages++;
             m = writer.begin(ch, w.tick);
         }
         m.add(k, a, b, c, d);

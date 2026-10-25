@@ -254,7 +254,7 @@ class SnapshotTest {
             pb.items[3] = 4;
             pb.shotTime = 4_000_000_000L - 10;
             w.beginSection(Section.PREDICT);
-            Records.Predict.put(w, pb, 4_000_000_000L, 70_000, 6, 200, 300);
+            Records.Predict.put(w, pb, 4_000_000_000L, 70_000, 6, 200, 300, 70_001);
             w.endSection();
             w.beginSection(Section.PREDICT_RARE);
             Records.PredictRare.put(w, pb, 200, -7);
@@ -521,6 +521,7 @@ class SnapshotTest {
                             () -> assertEquals(6, s.appliedHash(), "the applied keys' hash"),
                             () -> assertEquals(200, s.rareVersion(), "keeps the rare version"),
                             () -> assertEquals(300 & 0xFF, s.kernelVersion(), "the kernel version mod 256"),
+                            () -> assertEquals(70_001 & 0xFFFF, s.stateTag(), "the state tag mod 2^16"),
                             () -> assertEquals(64 * 2000 + 5, pd.cy, "decodes the core"),
                             () -> assertEquals(-2.5f, pd.vx, "vx"),
                             () -> assertEquals(4_000_000_000L - 10, pd.shotTime, "shotTime from the age and frames"),
@@ -613,7 +614,7 @@ class SnapshotTest {
             if (predict) {
                 com.fulcrologic.jxpilot.common.sim.ShipBody body = new com.fulcrologic.jxpilot.common.sim.ShipBody();
                 w.beginSection(Section.PREDICT);
-                Records.Predict.put(w, body, 1000, 0, 0, 1, 1);
+                Records.Predict.put(w, body, 1000, 0, 0, 1, 1, 0);
                 w.endSection();
                 if (rare) {
                     w.beginSection(Section.PREDICT_RARE);
@@ -684,15 +685,15 @@ class SnapshotTest {
                     "radar-heavy: 332 blips at 3 bytes plus 8 ships = 1194 bytes"),
                 () -> assertTrue(radarHeavy <= Protocol.MAX_PACKET, "radar-heavy with 8 ships in view fits one datagram"),
                 () -> assertEquals(1516, radarHeavyAll, "radar-heavy with all 31 ships in view is 1516 bytes (2 parts)"),
-                () -> assertEquals(66, Records.Predict.SIZE,
-                    "PREDICT: the 63-byte core, u8 appliedHash, u8 rareVersion, u8 kernelVersion"),
+                () -> assertEquals(68, Records.Predict.SIZE,
+                    "PREDICT: the 63-byte core, u8 appliedHash, u8 rareVersion, u8 kernelVersion, u16 stateTag"),
                 () -> assertEquals(64, Records.PredictRare.SIZE,
                     "PREDICT_RARE: u8 version, i32 frameOffset, the 59-byte rare block"),
                 () -> assertEquals(16, Records.PredictKeys.SIZE, "PREDICT_KEYS: two u64 masks"),
                 () -> assertEquals(2, Records.PredictRound.SIZE, "PREDICT_ROUND: u16 roundDelay"),
-                () -> assertEquals(420 + 5 + 66, typicalPredict, "the owner's typical snapshot carries PREDICT: 491 bytes"),
-                () -> assertEquals(491 + 5 + 64, typicalRare, "and with the rare block 560 bytes"),
-                () -> assertEquals(1396 + 71, fightPredict, "the fight with PREDICT: 1467 bytes"),
+                () -> assertEquals(420 + 5 + 68, typicalPredict, "the owner's typical snapshot carries PREDICT: 493 bytes"),
+                () -> assertEquals(493 + 5 + 64, typicalRare, "and with the rare block 562 bytes"),
+                () -> assertEquals(1396 + 73, fightPredict, "the fight with PREDICT: 1469 bytes"),
                 () -> assertTrue(fightPredict + 69 + 21 + 7 <= 1800,
                     "with every PREDICT block (rare, keys, round) still within the 1.8 KB target"),
                 () -> assertTrue(typicalRare + 21 + 7 <= Protocol.MAX_PACKET,
@@ -1091,7 +1092,7 @@ class SnapshotTest {
             SnapshotWriter w = new SnapshotWriter();
             w.begin(b, 1, 1, 0, 1, 1, 0, 0);
             w.beginSection(Section.PREDICT);
-            Records.Predict.put(w, new com.fulcrologic.jxpilot.common.sim.ShipBody(), 10, rd, 0, 0, 0);
+            Records.Predict.put(w, new com.fulcrologic.jxpilot.common.sim.ShipBody(), 10, rd, 0, 0, 0, 0);
             w.endSection();
             b.flip();
             SnapshotReader r = new SnapshotReader();

@@ -156,7 +156,7 @@ class SimGameHostEventsTest {
             ByteBuffer[] parts = {ByteBuffer.allocate(Protocol.MAX_PACKET)};
             parts[0].position(PacketHeader.SIZE);
             SnapshotBuilder builder = new SnapshotBuilder(w);
-            builder.setPredict(true, 0, 1, 0, true);
+            builder.setPredict(true, 0, 1, 0, w.tick, true);
             builder.build(w.byId(bob), 0, w.events.burstSeq(), false, parts);
             byte[] ref = Arrays.copyOfRange(parts[0].array(), SimGameHost.SECTIONS_START, parts[0].position());
             SnapshotWriter wr = new SnapshotWriter();

@@ -89,4 +89,65 @@ class KernelSyncNetTest {
             () -> assertEquals(serverChanged, changed, "and KERNEL_STATE carried them"),
             () -> assertEquals(0, k.badKernel(), "nothing malformed"));
     }
+
+    @Test
+    @Timeout(value = 2, unit = TimeUnit.MINUTES)
+    @DisplayName("a lost KERNEL_STATE: while its retransmit is due, newer PREDICTs are not valid (the state gate); once"
+        + " it arrives the world has the change and PREDICT is valid again; no frame trusts a stale world")
+    void lostState() {
+        Scenario s = new Scenario(100, Scenario.Jitter.NONE, Scenario.Loss.NONE);
+        LatencyRig rig = new LatencyRig(new String[] {"--map", "../maps/war.xp", "-maxRobots", "0", "-minRobots", "0"},
+            s.direction(), s.direction(), 9, InputToPhoton.tickPhase(9));
+        long spawn = rig.runUntilPlaying(LatencyRig.START + 30 * SEC);
+        rig.runUntil(spawn + 2 * SEC);
+        World w = rig.server.world();
+        KernelSync k = rig.client.connection().kernel();
+        int cx = w.map.cannons().get(0).bx();
+        int cy = w.map.cannons().get(0).by();
+        boolean validBefore = k.valid();
+        int[] changeTick = {-1};
+        int[] phase = {0};
+        rig.onTick = (r, t) -> {
+            if (phase[0] == 0) {
+                w.map.setBlock(cx, cy, BlockType.SPACE); // logged by the next tick's scan, sent in that tick
+                r.link.down().profile().uniformLoss(1.0);
+                changeTick[0] = r.server.net.currentTick() + 1;
+                phase[0] = 1;
+            } else if (phase[0] == 1) {
+                r.link.down().profile().uniformLoss(0);
+                phase[0] = 2;
+            }
+        };
+        int[] gated = {0};
+        int[] trustedStale = {0};
+        int[] trustedFresh = {0};
+        rig.onFrame = (r, t) -> {
+            if (changeTick[0] < 0 || !k.have() || k.tick() - changeTick[0] < 0 || k.world() == null) {
+                return;
+            }
+            boolean stale = k.world().map().block(cx, cy) != BlockType.SPACE;
+            if (k.valid()) {
+                if (stale) {
+                    trustedStale[0]++;
+                } else {
+                    trustedFresh[0]++;
+                }
+            } else if (stale && !k.stateCurrent()) {
+                gated[0]++;
+            }
+        };
+        rig.runUntil(spawn + 5 * SEC);
+        int fGated = gated[0];
+        int fStale = trustedStale[0];
+        int fFresh = trustedFresh[0];
+        System.out.printf("[lost state] change at tick %d: %d frames gated, %d trusted stale, %d trusted fresh%n",
+            changeTick[0], fGated, fStale, fFresh);
+        assertAll(
+            () -> assertTrue(validBefore, "PREDICT was valid before"),
+            () -> assertTrue(fGated > 0, "frames with a PREDICT of the change's tick or later while its KERNEL_STATE was"
+                + " in flight were not valid: " + fGated),
+            () -> assertEquals(0, fStale, "no frame trusted the world without the change"),
+            () -> assertTrue(fFresh > 0, "after the retransmit the world has the change and PREDICT is valid: " + fFresh),
+            () -> assertEquals(BlockType.SPACE, k.world().map().block(cx, cy), "the client's world has the change"));
+    }
 }

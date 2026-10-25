@@ -89,6 +89,7 @@ public final class ServerNet {
     private ConfigTransfer.Blob kernelBlob;
     private String kernelClientMap;
     private int kernelVersion;
+    private byte[] kernelRaw;
     private final RateLimiter limiter;
     private final SourceKeys keys;
     private final SplittableRandom sessions;
@@ -233,7 +234,8 @@ public final class ServerNet {
      */
     public void setKernel(Options o, String clientMapData) {
         kernelClientMap = clientMapData;
-        kernelBlob = ConfigTransfer.encode(KernelConfig.encode(o, clientMapData));
+        kernelRaw = KernelConfig.encode(o, clientMapData, host::kernelOptionValue);
+        kernelBlob = ConfigTransfer.encode(kernelRaw);
         kernelVersion++;
         host.kernelVersion(kernelVersion);
     }
@@ -267,12 +269,15 @@ public final class ServerNet {
     /**
      * server-commands: an operator changed an option at run time ({@link GameHost.Sessions#optionChanged}).
      * <p>
-     * BEHAVIOR: a kernel option ({@link KernelConfig#OPTIONS}) re-encodes the kernel config as a new version.
+     * BEHAVIOR: any option change re-encodes the kernel config (the host's effective values,
+     * {@link GameHost#kernelOptionValue}); it is a new version only when the bytes differ (a kernel option changed, or
+     * an option the host applies to one, as a Move_init /set does to allowPlayerKilling).
      * BEHAVIOR: denyHosts (C tuner {@code Set_deny_hosts}) and maxClientsPerIP take their new values for the
      * next CONNECTs; other options are not the network layer's.
      */
     void optionChanged(Opt o, Options options) {
-        if (kernelClientMap != null && KernelConfig.affects(o)) {
+        if (kernelClientMap != null
+            && !java.util.Arrays.equals(kernelRaw, KernelConfig.encode(options, kernelClientMap, host::kernelOptionValue))) {
             setKernel(options, kernelClientMap);
         }
         if (o == Opt.DENY_HOSTS) {

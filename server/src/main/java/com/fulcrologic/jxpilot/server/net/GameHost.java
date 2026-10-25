@@ -153,6 +153,14 @@ public interface GameHost {
     }
 
     /**
+     * The value the simulation follows for kernel option {@code opt} whose text is {@code value} (KERNEL_CONFIG
+     * carries this one): the text itself unless the host knows better.
+     */
+    default String kernelOptionValue(com.fulcrologic.jxpilot.common.config.Opt opt, String value) {
+        return value;
+    }
+
+    /**
      * How far ahead of the server, in ticks, this player's client sends its inputs (the newest buffered entry over
      * the next tick), given each tick with {@link #input}: the snapshot's view cull adds the ship's speed times this
      * for the owner.

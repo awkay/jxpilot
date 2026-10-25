@@ -1274,7 +1274,7 @@ class ClientConnectionTest {
             w.begin(b, tick, 0, SnapshotWriter.NO_SLACK, part, 2, 0, 0, 0);
             w.beginSection(com.fulcrologic.jxpilot.common.net.Section.PREDICT);
             com.fulcrologic.jxpilot.common.net.Records.Predict.put(w, new com.fulcrologic.jxpilot.common.sim.ShipBody(),
-                100, 0, 0, 0, 0);
+                100, 0, 0, 0, 0, 0);
             w.endSection();
         });
     }

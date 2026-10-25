@@ -920,20 +920,22 @@ public final class Records {
      * {@code 0 ShipBody core block} ({@link ShipBody#encodeCore}, key flags against the input the server applied this
      * tick; flag bit {@link #FLAG_ROUND_DELAY} says a {@link PredictRound} follows), {@code 63 u8 appliedHash}
      * ({@link #hash} of that input), {@code 64 u8 rareVersion} (the {@link PredictRare} it refers to),
-     * {@code 65 u8 kernelVersion} (the KERNEL_CONFIG version it was simulated with, mod 256). The C frame clock is
-     * the snapshot tick plus the rare block's frame offset.
+     * {@code 65 u8 kernelVersion} (the KERNEL_CONFIG version it was simulated with, mod 256), {@code 66 u16 stateTag}
+     * (the tick, mod 2^16, of the newest KERNEL_STATE message the server has queued to this client: the world is the
+     * server's as of the snapshot once that one has arrived). The C frame clock is the snapshot tick plus the rare
+     * block's frame offset.
      */
     public static final class Predict extends Fly {
-        public static final int SIZE = ShipBody.CORE_SIZE + 3;
+        public static final int SIZE = ShipBody.CORE_SIZE + 5;
         /** Core flag (beyond ShipBody's): roundDelay is nonzero, in a {@link PredictRound} of the same part. */
         public static final int FLAG_ROUND_DELAY = 1 << 3;
 
         /**
          * BEHAVIOR: the core block (shot age at {@code frames}), the round-delay flag when {@code roundDelay > 0},
-         * the hash of {@code appliedKeys} and both versions mod 256.
+         * the hash of {@code appliedKeys}, both versions mod 256 and the state tag mod 2^16.
          */
         public static void put(SnapshotWriter w, ShipBody body, long frames, int roundDelay, long appliedKeys,
-                               int rareVersion, int kernelVersion) {
+                               int rareVersion, int kernelVersion, int stateTag) {
             ByteBuffer out = w.buffer();
             int p = out.position();
             body.encodeCore(out, p, frames, appliedKeys);
@@ -943,6 +945,7 @@ public final class Records {
             out.put(p + ShipBody.CORE_SIZE, (byte) hash(appliedKeys));
             out.put(p + ShipBody.CORE_SIZE + 1, (byte) rareVersion);
             out.put(p + ShipBody.CORE_SIZE + 2, (byte) kernelVersion);
+            out.putShort(p + ShipBody.CORE_SIZE + 3, (short) stateTag);
             out.position(p + SIZE);
         }
 
@@ -970,6 +973,9 @@ public final class Records {
 
         /** The kernel config version mod 256. */
         public int kernelVersion() { return u8(ShipBody.CORE_SIZE + 2); }
+
+        /** The newest queued KERNEL_STATE message's tick, mod 2^16. */
+        public int stateTag() { return u16(ShipBody.CORE_SIZE + 3); }
 
         /**
          * BEHAVIOR: decodes the core block into {@code body} ({@link ShipBody#decodeCore}: shot time against

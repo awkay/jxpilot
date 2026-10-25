@@ -74,6 +74,7 @@ public final class KernelSync {
     private boolean roundKnown;
     private int coreVersion;
     private int coreKernel;
+    private int stateTag;
     private int rareVersion = -1;
     private boolean keysKnown;
     private long predicts;
@@ -467,6 +468,7 @@ public final class KernelSync {
             }
             coreVersion = p.rareVersion();
             coreKernel = p.kernelVersion();
+            stateTag = p.stateTag();
             roundKnown = !p.roundDelaySet() || roundValue > 0;
             roundDelay = p.roundDelaySet() ? Math.max(roundValue, 0) : 0;
             have = true;
@@ -480,11 +482,25 @@ public final class KernelSync {
 
     /**
      * Whether a PREDICT has arrived, its rare block is the version it refers to, its key masks and roundDelay are
-     * known, and the kernel world is built from the KERNEL_CONFIG version it was simulated with.
+     * known, the kernel world is built from the KERNEL_CONFIG version it was simulated with, and the kernel state is
+     * the server's as of its snapshot ({@link #stateCurrent}).
      */
     public boolean valid() {
         return have && rareVersion == coreVersion && keysKnown && roundKnown && world != null
-            && (kernelVersion & 0xFF) == coreKernel;
+            && (kernelVersion & 0xFF) == coreKernel && stateCurrent();
+    }
+
+    /**
+     * Whether the newest KERNEL_STATE message the server had queued for this client when it built the newest PREDICT
+     * has arrived: its tag (PREDICT's {@code stateTag}, the low 16 bits of a tick) is not after {@link #stateTick}.
+     * Until then a change is in flight (lost and awaiting its retransmit, say) and the world is stale for that
+     * snapshot.
+     * <p>
+     * BEHAVIOR: false before any KERNEL_STATE or PREDICT; otherwise {@code (short) (stateTick - stateTag) >= 0} on 16
+     * bits (equal tags match however old; nothing stays in flight for 32768 ticks).
+     */
+    public boolean stateCurrent() {
+        return stateKnown && have && (short) (stateTick - stateTag) >= 0;
     }
 
     /** PREDICTs whose applied-input hash differed from the client's own entry for that tick. */
