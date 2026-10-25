@@ -49,7 +49,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The client's kernel world is the server's: on every shipped map, with the bundled defaults, a client that has the
  * config blob (the map as clients may see it) and the kernel config blob builds a {@link KernelWorld} and
  * ShipParams with the same {@link KernelFingerprint} as the server's {@link World}; and again after an operator
- * /sets kernel options (gravity, shipMass, friction, wormTime) through the tuner.
+ * /sets kernel options (gravity, shipMass, friction, wormTime) through the tuner. The shot-motion options
+ * ({@link KernelConfig#SHOT_MOTION}) resolve on the client to the server's parameters, before and after /sets of them.
  */
 @DisplayName("Kernel config parity (all shipped maps)")
 class KernelConfigParityTest {
@@ -70,12 +71,37 @@ class KernelConfigParityTest {
         chunk.putInt(0).put(config.compressed).flip();
         rx.onChunk(chunk);
         Options clientOptions = rx.options();
+        return KernelWorld.of(clientKernelOptions(server, clientOptions.mapData()));
+    }
+
+    /** The kernel options a client decodes from the server's kernel blob (over its config blob's map). */
+    static Options clientKernelOptions(Options server, String clientMap) {
         ConfigTransfer.Blob kernel = ConfigTransfer.encode(KernelConfig.encode(server, clientMap));
         ConfigTransfer.Receiver krx = new ConfigTransfer.Receiver(kernel.length, kernel.compressed.length, kernel.crc32);
         java.nio.ByteBuffer kc = java.nio.ByteBuffer.allocate(kernel.compressed.length + 4);
         kc.putInt(0).put(kernel.compressed).flip();
         krx.onChunk(kc);
-        return KernelWorld.of(KernelConfig.decode(krx.bytes(), clientOptions.mapData()));
+        return KernelConfig.decode(krx.bytes(), clientMap);
+    }
+
+    /** The resolved shot-motion parameters (what the server's Mover and Shots read for a player's SHOT). */
+    static String shotMotion(com.fulcrologic.jxpilot.server.world.Params p) {
+        return "life " + p.shotLife + " gravity " + p.shotsGravity
+            + " bounce " + ((p.objBounceMask & com.fulcrologic.jxpilot.common.sim.Obj.SHOT) != 0)
+            + " treasure " + ((p.objTreasureMask & com.fulcrologic.jxpilot.common.sim.Obj.SHOT) != 0)
+            + " cannon " + ((p.objCannonMask & com.fulcrologic.jxpilot.common.sim.Obj.SHOT) != 0)
+            + " target " + ((p.objTargetMask & com.fulcrologic.jxpilot.common.sim.Obj.SHOT) != 0)
+            + " maxSpeed " + Float.floatToRawIntBits(p.maxObjectWallBounceSpeed)
+            + " brake " + Float.floatToRawIntBits(p.objectWallBrakeFactor)
+            + " lifeFactor " + Float.floatToRawIntBits(p.objectWallBounceLifeFactor)
+            + " edgeBounce " + p.edgeBounce;
+    }
+
+    /** The shot-motion parameters a client resolves from its decoded kernel options. */
+    static String clientShotMotion(Options server, String clientMap, World w) {
+        Options k = clientKernelOptions(server, clientMap);
+        com.fulcrologic.jxpilot.server.world.Params p = com.fulcrologic.jxpilot.server.world.Params.from(k, w.map);
+        return shotMotion(p) + " predictable " + k.getBool(com.fulcrologic.jxpilot.common.config.Opt.PREDICTABLE_BOUNCES);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -97,10 +123,25 @@ class KernelConfigParityTest {
         int wt = t.tune("wormTime", "2.5");
         String after = KernelFingerprint.of(client(w.options, clientMap));
         String serverAfter = KernelFingerprint.of(w);
+        String shotsBefore = shotMotion(w.params) + " predictable " + s.predictableBounces;
+        String clientShotsBefore = clientShotMotion(w.options, clientMap, w);
+        int sl = t.tune("shotLife", "25");
+        int sb = t.tune("shotsWallBounce", "yes");
+        int bf = t.tune("objectWallBounceBrakeFactor", "3");
+        int lf = t.tune("objectWallBounceLifeFactor", "0.5");
+        int ms = t.tune("maxObjectWallBounceSpeed", "17");
+        String shotsAfter = shotMotion(w.params) + " predictable " + s.predictableBounces;
+        String clientShotsAfter = clientShotMotion(w.options, clientMap, w);
         assertAll(
             () -> assertEquals(serverBefore, before, map + ": the client's kernel world is the server's"),
             () -> assertEquals(Tuning.OK, g + m + f + wt - 3 * Tuning.OK, "the four /sets were accepted"),
             () -> assertTrue(!serverAfter.equals(serverBefore), "the /sets changed the server's kernel world"),
-            () -> assertEquals(serverAfter, after, map + ": and still after the /sets"));
+            () -> assertEquals(serverAfter, after, map + ": and still after the /sets"),
+            () -> assertEquals(shotsBefore, clientShotsBefore, map + ": the client's shot motion is the server's"),
+            () -> assertEquals(5 * Tuning.OK, sl + sb + bf + lf + ms, "the five shot /sets were accepted"),
+            () -> assertTrue(!shotsAfter.equals(shotsBefore), "and changed the server's shot motion: " + shotsAfter),
+            () -> assertTrue(shotsAfter.contains("brake " + Float.floatToRawIntBits(1f)),
+                "a brake factor of 3 is clamped to 1: " + shotsAfter),
+            () -> assertEquals(shotsAfter, clientShotsAfter, map + ": the client's shot motion after the /sets"));
     }
 }

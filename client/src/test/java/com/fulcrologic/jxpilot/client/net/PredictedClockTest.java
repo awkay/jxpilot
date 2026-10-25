@@ -37,7 +37,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * ceil((RTT/2 + 30 ms)/T) + 1; advances at the server's rate times (1 + dilation); the first RTT moves a running
  * clock forward to the initial lead (never back), later ones do not; slack reports set a proportional dilation
  * clamped to ±3% with a deadband, on the report corrected for the clock's own adjustment since the entries it
- * covers; a starvation jumps up by max(1, shortfall), guarded until snapshots reach the first tick sent after it;
+ * covers (ticks the report's snapshot had run); the target is 0.25 tick plus the reports' spread (the clock's moves
+ * taken out); a starvation jumps up by max(0.25, shortfall), 1 without a report, guarded until snapshots reach the first tick sent after it;
  * once per session after simHz slack reports the excess slack is removed at once; guard rails re-initialize on a
  * negative or over-long lead; reset forgets everything.
  */
@@ -125,84 +126,152 @@ class PredictedClockTest {
             () -> assertFalse(d.haveRtt(), "and NaN"));
     }
 
+    /** The dilation after one report of {@code slack16} on a fresh running clock (target 0.25: no spread yet). */
+    static double dilationAt(int slack16) {
+        PredictedClock c = clock();
+        c.snapshot(100, 0);
+        c.tick(0);
+        c.feedback(100, slack16, false, 0);
+        return c.dilation();
+    }
+
     @Test
-    @DisplayName("slack steers the dilation: deadband, proportional, clamped to 3%; the target adds 2 sigma of jitter")
+    @DisplayName("slack steers the dilation: deadband, proportional, clamped to 3%")
     void dilation() {
         PredictedClock c = clock();
         c.snapshot(100, 0);
         c.tick(0);
-        c.feedback(100, 9, false, 0, 0);
-        double inBand = c.dilation();
-        c.feedback(100, 10, false, 0, 0);
-        double edge = c.dilation();
-        c.feedback(100, 12, false, 0, 0);
-        double quarter = c.dilation();
-        c.feedback(100, 30, false, 0, 0);
-        double over = c.dilation();
-        c.feedback(100, -20, false, 0, 0);
+        c.feedback(100, -20, false, 0);
         double under = c.dilation();
-        c.feedback(100, NO, false, 0, 0);
+        c.feedback(100, NO, false, 0);
         double kept = c.dilation();
         double from = c.tick(0);
         double slow = c.tick(at(10)) - from;
         assertAll(
-            () -> assertEquals(0, inBand, 1e-12, "9/16: 0.0625 over the 0.5 target is inside the 0.125 band"),
-            () -> assertEquals(-0.0075, edge, 1e-12, "10/16: exactly 0.125 over is outside the band"),
-            () -> assertEquals(-0.015, quarter, 1e-12, "12/16: 0.25 over: half the 3%, running slow"),
-            () -> assertEquals(-0.03, over, 1e-12, "far over: -3%"),
+            () -> assertEquals(0, dilationAt(5), 1e-12, "5/16: 0.0625 over the 0.25 target is inside the 0.125 band"),
+            () -> assertEquals(-0.0075, dilationAt(6), 1e-12, "6/16: exactly 0.125 over is outside the band"),
+            () -> assertEquals(-0.015, dilationAt(8), 1e-12, "8/16: 0.25 over: half the 3%, running slow"),
+            () -> assertEquals(-0.03, dilationAt(30), 1e-12, "far over: -3%"),
+            () -> assertEquals(0, dilationAt(3), 1e-12, "3/16: 0.0625 under: inside the band"),
             () -> assertEquals(0.03, under, 1e-12, "late arrivals (negative slack): +3%"),
             () -> assertEquals(0.03, kept, 1e-12, "NO_SLACK keeps the dilation"),
             () -> assertEquals(10.3, slow, 1e-6, "10 ticks at +3% advance 10.3"),
             () -> assertEquals(-20 / 16.0, c.lastSlack(), 1e-12, "the last slack report"),
-            () -> assertEquals(0.5, c.targetSlack(Double.NaN), 1e-12, "no jitter: 0.5"),
-            () -> assertEquals(0.5 + 2 * 0.25, c.targetSlack(T / 4), 1e-9, "a quarter tick of jitter: 1.0"));
+            () -> assertEquals(0.25, clock().targetSlack(), 1e-12, "no report: the target is 0.25"));
     }
 
     @Test
-    @DisplayName("a starvation jumps up at once, by 1 or the estimated shortfall; once until snapshots reach the guard")
+    @DisplayName("the target adds 1 sigma of the reports' spread; the clock's own moves are not spread")
+    void spread() {
+        PredictedClock c = clock();
+        c.snapshot(100, 0);
+        c.tick(0);
+        for (int i = 0; i < 400; i++) {
+            c.feedback(100, i % 2 == 0 ? 0 : 16, false, 0);
+        }
+        double alternating = c.slackSpread();
+        double target = c.targetSlack();
+        PredictedClock d = clock();
+        d.snapshot(100, 0);
+        d.tick(0);
+        d.sent(101, 0);
+        d.feedback(101, 4, false, 0);
+        d.feedback(101, NO, true, 0);
+        d.sent(103, 0);
+        d.feedback(103 + 13, 20, false, 0);
+        double afterJump = d.slackSpread();
+        double estimate = d.slackEstimate();
+        PredictedClock e = clock();
+        e.snapshot(100, 0);
+        e.tick(0);
+        e.feedback(100, 4, false, 0);
+        e.feedback(100, 20, false, 0);
+        double step = e.slackSpread();
+        PredictedClock g = clock();
+        g.snapshot(100, 0);
+        g.tick(0);
+        g.feedback(100, 4, false, 0);
+        g.feedback(100, 4 + 80, false, 0);
+        double deep = g.slackSpread();
+        assertAll(
+            () -> assertEquals(0.5 * 1.2533, alternating, 0.05,
+                "reports of 0 and 1 tick in turn: a mean deviation of half a tick, 0.63 as a normal sigma"),
+            () -> assertEquals(0.25 + alternating, target, 1e-12, "the target: 0.25 + 1 sigma"),
+            () -> assertEquals(0, afterJump, 1e-12,
+                "a jump of 1, and a report 1 higher once entry 101 (before the jump) has left the window: the same"
+                    + " margin, no spread"),
+            () -> assertEquals(1.25, estimate, 1e-12, "the estimate is the new report (entry 103 had the jump)"),
+            () -> assertEquals(1.2533141373155003 * PredictedClock.SPREAD_ALPHA, step, 1e-12,
+                "a report one tick higher with no move of the clock: the running deviation takes alpha of it"),
+            () -> assertEquals(step, deep, 1e-12, "a report 5 ticks off counts as 1 (SPREAD_CLAMP)"));
+    }
+
+    @Test
+    @DisplayName("a starvation jumps up at once, by the estimated shortfall (at least 0.25, 1 without a report); once"
+        + " until snapshots reach the guard")
     void starvation() {
         PredictedClock c = clock();
         c.snapshot(100, 0);
         c.tick(0);
-        c.feedback(100, NO, true, 0, 0);
+        c.feedback(100, NO, true, 0);
         double jumped = c.tick(0);
         double stopped = c.dilation();
-        c.feedback(102, NO, true, 0, 0);
+        c.feedback(102, NO, true, 0);
         double guarded = c.tick(0);
-        c.feedback(104, -24, true, 0, 0);
+        c.feedback(104, -24, true, 0);
         double second = c.tick(0);
-        c.feedback(106, 8, false, 0, 0);
+        c.feedback(106, 4, false, 0);
         double steering = c.dilation();
+        PredictedClock d = clock();
+        d.snapshot(100, 0);
+        d.tick(0);
+        d.feedback(100, 16, true, 0);
+        double small = d.tick(0);
         assertAll(
             () -> assertEquals(103, jumped, 1e-9, "102 + 1 (no slack report: one tick)"),
             () -> assertEquals(0, stopped, 1e-12, "the dilation stops at the jump"),
             () -> assertEquals(103, guarded, 1e-9,
                 "the guard is tick 104, the first sent at a boundary after the jump: snapshot 102 is ignored"),
-            () -> assertEquals(103 + 2, second, 1e-9,
-                "at snapshot 104 (the guard) a report of -1.5 ticks, no entry recorded: 2 short of the 0.5 target, +2"),
+            () -> assertEquals(103 + 1.75, second, 1e-9,
+                "at snapshot 104 (the guard) a report of -1.5 ticks, no entry recorded: 1.75 short of the 0.25 target"),
+            () -> assertEquals(102 + PredictedClock.MIN_JUMP, small, 1e-9,
+                "a starvation with a report of 1 tick (over the target: a loss, a spike): the least jump, 0.25"),
             () -> assertEquals(2, c.jumps(), "two jumps"),
             () -> assertEquals(0, steering, 1e-12, "snapshot 106 clears the new guard; a slack at the target: no dilation"));
     }
 
     @Test
-    @DisplayName("the estimate adds the clock's own adjustment since the least-adjusted entry the report can cover")
+    @DisplayName("the estimate adds the clock's own adjustment since the least-adjusted entry the report can cover"
+        + " (ticks the report's snapshot had run, within its second)")
     void estimate() {
         PredictedClock c = clock();
         c.snapshot(100, 0);
         c.tick(0);
         double none = c.estimate(100, 0.25);
         c.sent(102, 0);
-        c.feedback(100, NO, true, 0, 0);
+        c.feedback(100, NO, true, 0);
         c.sent(103, 0);
         double afterJump = c.estimate(102, -0.75);
         double outOfWindow = c.estimate(102 + 14, 0.5);
+        PredictedClock d = clock();
+        d.snapshot(100, 0);
+        d.tick(0);
+        d.feedback(100, 30, false, 0);
+        d.sent(102, 0);
+        d.sent(103, at(10));
+        double inFlight = d.estimate(102, 0.5);
+        double covered = d.estimate(103, 0.5);
         assertAll(
             () -> assertEquals(0.25, none, 1e-12, "no entry sent: the report itself"),
             () -> assertEquals(0.25, afterJump, 1e-12,
                 "entry 102 went out before the +1 jump: its late margin -0.75 is 0.25 now"),
             () -> assertEquals(0.5, outOfWindow, 1e-12,
                 "only entries after snapshotTick - simHz count: 103 is the only one, sent after the jump"),
-            () -> assertEquals(1, c.adjustment(), 1e-12, "the adjustment is the jump"));
+            () -> assertEquals(1, c.adjustment(), 1e-12, "the adjustment is the jump"),
+            () -> assertEquals(0.5 - 0.3, inFlight, 1e-9,
+                "10 ticks at -3% after entry 102 went out: at snapshot 102 the report is 102's margin, 0.3 less now;"
+                    + " entry 103 (sent after the move, maybe in flight) does not count"),
+            () -> assertEquals(0.5, covered, 1e-9, "at snapshot 103 entry 103 counts: the report is the present slack"));
     }
 
     @Test
@@ -212,24 +281,25 @@ class PredictedClockTest {
         c.snapshot(100, 0);
         c.tick(0);
         for (int i = 0; i < HZ - 1; i++) {
-            c.feedback(100, 32, false, 0, 0);
+            c.feedback(100, 32, false, 0);
         }
         boolean before = c.settled();
-        c.feedback(100, 32, false, 0, 0);
+        c.feedback(100, 32, false, 0);
         double settled = c.tick(0);
-        c.feedback(100, 32, false, 0, 0);
+        c.feedback(100, 32, false, 0);
         double steady = c.dilation();
         PredictedClock d = clock();
         d.snapshot(100, 0);
         d.tick(0);
         for (int i = 0; i < HZ; i++) {
-            d.feedback(100, 10, false, 0, 0);
+            d.feedback(100, 5, false, 0);
         }
         assertAll(
             () -> assertFalse(before, "not before simHz reports"),
             () -> assertTrue(c.settled(), "settled at the 14th"),
-            () -> assertEquals(1.5 - 0.0625, c.settledBy(), 1e-12, "slack 2 over a 0.5 target: down by 1.5 minus half the band"),
-            () -> assertEquals(102 - 1.4375, settled, 1e-9, "the clock moved down"),
+            () -> assertEquals(1.75 - 0.0625, c.settledBy(), 1e-12,
+                "slack 2 over a 0.25 target: down by 1.75 minus half the band"),
+            () -> assertEquals(102 - 1.6875, settled, 1e-9, "the clock moved down"),
             () -> assertEquals(-0.03, steady, 1e-12,
                 "no entry was recorded, so the next report of 2 ticks still reads as too much: full slow-down"),
             () -> assertTrue(d.settled(), "a slack inside the band settles too"),
@@ -252,8 +322,8 @@ class PredictedClockTest {
         d.snapshot(100, 0);
         d.tick(0);
         for (int i = 0; i < 20; i++) {
-            d.feedback(100, NO, true, 0, 0);
-            d.feedback(200, NO, false, 0, 0);
+            d.feedback(100, NO, true, 0);
+            d.feedback(200, NO, false, 0);
         }
         double back = d.tick(0);
         d.tick(at(0.5));
@@ -272,16 +342,16 @@ class PredictedClockTest {
         PredictedClock c = clock();
         c.snapshot(100, 0);
         c.tick(0);
-        c.feedback(100, -20, false, 0, 0);
+        c.feedback(100, -20, false, 0);
         c.sent(102, 0);
-        c.feedback(105, -20, false, 0, at(10));
+        c.feedback(105, -20, false, at(10));
         double estimate = c.slackEstimate();
         PredictedClock d = clock();
         d.snapshot(100, 0);
         d.tick(0);
-        d.feedback(100, -20, false, 0, 0);
+        d.feedback(100, -20, false, 0);
         d.sent(102, at(10));
-        d.feedback(105, -20, false, 0, at(10));
+        d.feedback(105, -20, false, at(10));
         double later = d.slackEstimate();
         PredictedClock z = new PredictedClock();
         z.reset(0);
@@ -296,13 +366,13 @@ class PredictedClockTest {
     @DisplayName("feedback before the clock runs only records the slack; reset forgets everything")
     void resetAndIdle() {
         PredictedClock c = clock();
-        c.feedback(1, 8, true, 0, 0);
+        c.feedback(1, 8, true, 0);
         double slack = c.lastSlack();
         long jumps = c.jumps();
         c.snapshot(100, 0);
         c.tick(0);
         c.rtt(100 * MS, 0);
-        c.feedback(100, NO, true, 0, 0);
+        c.feedback(100, NO, true, 0);
         c.reset(HZ);
         assertAll(
             () -> assertEquals(0.5, slack, 1e-12, "the slack is recorded"),

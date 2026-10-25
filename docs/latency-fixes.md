@@ -251,9 +251,12 @@ be a misprediction of one tick of thrust or turn: ~2 px/tick² of thrust, or sev
 - **Lead control (clock sync):**
   - The client sets its initial lead from PING/PONG RTT: `ceil((RTT/2 + 30 ms)/T) + 1` ticks.
   - It then steers by *time dilation*: its predicted clock runs at simHz × (1 ± 3%), the same slew limit
-    `TickClock` already uses, aiming for `inputSlack` ≈ 0.5 tick plus 2σ of jitter.
+    `TickClock` already uses, aiming for `inputSlack` ≈ 0.5 tick plus 2σ of jitter. *(As built after the 1b
+    fix round: 0.25 tick plus 1σ of the slack reports' own spread; every tick of slack delays what the server
+    decides, a shield first. See latency-measurements.md.)*
   - On a starvation report it jumps up one tick at once and drifts back down slowly. The asymmetry is
-    deliberate: running out of input costs more than an extra few ms of lead.
+    deliberate: running out of input costs more than an extra few ms of lead. *(As built: by the estimated
+    shortfall, at least 0.25 tick.)*
   - No absolute clock sync is needed. `TickClock` (arrival-based) keeps driving the render time for
     others, and the lead loop drives the predicted clock.
 

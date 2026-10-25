@@ -129,10 +129,14 @@ class KernelConfigTest {
     }
 
     @Test
-    @DisplayName("each option in OPTIONS can change the kernel world on some map and base")
+    @DisplayName("each option in OPTIONS can change the kernel world on some map and base (the shot-motion options:"
+        + " the predicted bullets' motion, checked by KernelConfigParityTest)")
     void optionsAreNeeded() throws IOException {
         List<String> unused = new ArrayList<>();
         for (Opt o : KernelConfig.OPTIONS) {
+            if (KernelConfig.SHOT_MOTION.contains(o)) {
+                continue;
+            }
             boolean seen = false;
             for (String map : MAPS) {
                 String text = mapText(map);
@@ -153,7 +157,10 @@ class KernelConfigTest {
                 unused.add(o.name());
             }
         }
-        assertEquals(List.of(), unused, "every listed option matters somewhere");
+        assertAll(
+            () -> assertEquals(List.of(), unused, "every listed option matters somewhere"),
+            () -> assertTrue(KernelConfig.OPTIONS.containsAll(KernelConfig.SHOT_MOTION),
+                "the shot-motion options travel in the blob"));
     }
 
     @Test
