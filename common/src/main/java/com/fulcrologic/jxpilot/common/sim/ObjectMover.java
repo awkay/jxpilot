@@ -67,7 +67,8 @@ public final class ObjectMover {
         return seg;
     }
 
-    private static int blockOf(int pixel, int n) {
+    /** The block of a pixel, clamped into the map (C's {@code OBJ_X_IN_BLOCKS} with the walldist array's bounds). */
+    public static int blockOf(int pixel, int n) {
         int b = Math.floorDiv(pixel, BS);
         return b < 0 ? 0 : (b >= n ? n - 1 : b);
     }
@@ -97,23 +98,83 @@ public final class ObjectMover {
      * move uses them (the server's pool slot: a treasure hook may change them in the middle of the trace).
      */
     public boolean move(ObjectBody o, ObjectState live) {
-        traced = false;
-        int tx = Click.fromPixels(o.vx);
-        int ty = Click.fromPixels(o.vy);
-        int dist = w.wallDist(blockOf(o.cx >> Click.SHIFT, w.width()), blockOf(o.cy >> Click.SHIFT, w.height()));
-        if (dist > 2) {
-            int max = ((dist - 2) * BS) >> 1;
-            if ((float) (max * max) >= o.vx * o.vx + o.vy * o.vy) {
-                o.cx = w.wrapXClick(o.cx + tx);
-                o.cy = w.wrapYClick(o.cy + ty);
-                return false;
-            }
+        long f = freeStep(w, o.cx, o.cy, o.vx, o.vy);
+        if (f != TRACE) {
+            o.cx = freeX(f);
+            o.cy = freeY(f);
+            traced = false;
+            return false;
         }
+        return trace(o, live);
+    }
+
+    /** {@link #freeStep}'s answer when the object must be traced. */
+    public static final long TRACE = Long.MIN_VALUE;
+
+    /**
+     * Move_object's far-from-walls fast path alone, on plain values (small, so the server's per-object loop inlines
+     * it before building anything for the trace).
+     * <p>
+     * BEHAVIOR: with {@code walldist > 2} and the step shorter than {@code ((d-2)*35)>>1} px: the new clicks, wrapped,
+     * packed ({@link #freeX}, {@link #freeY}); else {@link #TRACE}.
+     */
+    public static long freeStep(ShipWorld w, int cx, int cy, float vx, float vy) {
+        int dist = w.wallDist(blockOf(cx >> Click.SHIFT, w.width()), blockOf(cy >> Click.SHIFT, w.height()));
+        if (free(dist, vx, vy)) {
+            int x = w.wrapXClick(cx + Click.fromPixels(vx));
+            int y = w.wrapYClick(cy + Click.fromPixels(vy));
+            return ((long) x << 32) | (y & 0xFFFF_FFFFL);
+        }
+        return TRACE;
+    }
+
+    /**
+     * BEHAVIOR: true when an object {@code walldist} blocks from walls moves freely at (vx, vy): walldist &gt; 2 and
+     * the step no longer than {@code ((walldist-2)*35)>>1} px (Move_object's fast path; tiny, so the server's
+     * per-object loop inlines it).
+     */
+    public static boolean free(int walldist, float vx, float vy) {
+        int max = ((walldist - 2) * BS) >> 1;
+        return walldist > 2 && (float) (max * max) >= vx * vx + vy * vy;
+    }
+
+    /** The x clicks of a {@link #freeStep} result. */
+    public static int freeX(long step) {
+        return (int) (step >> 32);
+    }
+
+    /** The y clicks of a {@link #freeStep} result. */
+    public static int freeY(long step) {
+        return (int) step;
+    }
+
+    /**
+     * The traced part of {@link #move(ObjectBody, ObjectState)}, for a caller that ran {@link #freeStep} itself (the
+     * object is not free).
+     */
+    public boolean trace(ObjectBody o, ObjectState live) {
+        boolean posUpdate = trace(o.cx, o.cy, o.vx, o.vy, o.dir, o.type, live.status(), live);
+        o.cx = ms.posX;
+        o.cy = ms.posY;
+        o.vx = ms.velX;
+        o.vy = ms.velY;
+        o.dir = ms.dir;
+        return posUpdate;
+    }
+
+    /**
+     * As {@link #trace(ObjectBody, ObjectState)} on plain values (the server's pool slot; {@code status} is the
+     * object's status as the move starts, {@code live} its life and status during it): the object's new position,
+     * velocity and heading are left in {@link #ms} ({@code posX}, {@code posY}, {@code velX}, {@code velY},
+     * {@code dir}).
+     */
+    public boolean trace(int cx, int cy, float vx, float vy, int dir, int type, int status, ObjectState live) {
+        int tx = Click.fromPixels(vx);
+        int ty = Click.fromPixels(vy);
         traced = true;
-        int type = o.type;
-        ms.status = live.status();
+        ms.status = status;
         ms.type = type;
-        ms.start(o.cx, o.cy, o.vx, o.vy, tx, ty, o.dir);
+        ms.start(cx, cy, vx, vy, tx, ty, dir);
 
         int nothingDone = 0;
         boolean posUpdate = false;
@@ -171,11 +232,6 @@ public final class ObjectMover {
                 ms.posY -= w.clickHeight();
             }
         }
-        o.cx = ms.posX;
-        o.cy = ms.posY;
-        o.vx = ms.velX;
-        o.vy = ms.velY;
-        o.dir = ms.dir;
         return posUpdate;
     }
 

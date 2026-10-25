@@ -26,7 +26,6 @@ package com.fulcrologic.jxpilot.server.sim;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.sim.Click;
 import com.fulcrologic.jxpilot.common.sim.MoveState;
-import com.fulcrologic.jxpilot.common.sim.ObjectBody;
 import com.fulcrologic.jxpilot.common.sim.ObjectMover;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.common.sim.Segment;
@@ -52,7 +51,6 @@ public final class Mover {
     private final Simulation sim;
     /** The pool objects' C Move_object (common: the client moves its bullets with the same code). */
     private final ObjectMover objects;
-    private final ObjectBody body = new ObjectBody();
     /** The moving slot's life and status, live in the pool (the balls' treasure hook changes them mid-move). */
     private final Slot live = new Slot();
 
@@ -100,16 +98,18 @@ public final class Mover {
      */
     public void moveObject(int h) {
         Objects o = w.objects;
-        Params p = w.params;
         o.remember(h);
-        ObjectBody b = body;
-        b.cx = o.cx[h];
-        b.cy = o.cy[h];
-        b.vx = o.vx[h];
-        b.vy = o.vy[h];
-        b.dir = o.missileDir[h];
+        float vx = o.vx[h];
+        float vy = o.vy[h];
+        // Move_object's fast path on the pool arrays (ObjectMover.free: the same test the client's bullets use)
+        if (ObjectMover.free(w.wallDist(ObjectMover.blockOf(o.px[h], w.width), ObjectMover.blockOf(o.py[h], w.height)),
+            vx, vy)) {
+            o.setClicks(h, w.wrapXClick(o.cx[h] + Click.fromPixels(vx)), w.wrapYClick(o.cy[h] + Click.fromPixels(vy)));
+            o.touchCell(h);
+            return;
+        }
+        Params p = w.params;
         int type = o.type[h];
-        b.type = type;
         MoveState ms = objects.ms;
         ms.pl = null;
         ms.obj = h;
@@ -127,15 +127,11 @@ public final class Mover {
         objects.maxObjectWallBounceSpeed = p.maxObjectWallBounceSpeed;
         objects.objectWallBrakeFactor = p.objectWallBrakeFactor;
         live.h = h;
-        boolean posUpdate = objects.move(b, live);
-        o.setClicks(h, b.cx, b.cy);
-        if (!objects.traced()) {
-            o.touchCell(h);
-            return;
-        }
-        o.vx[h] = b.vx;
-        o.vy[h] = b.vy;
-        o.missileDir[h] = b.dir;
+        boolean posUpdate = objects.trace(o.cx[h], o.cy[h], vx, vy, o.missileDir[h], type, o.status[h], live);
+        o.setClicks(h, ms.posX, ms.posY);
+        o.vx[h] = ms.velX;
+        o.vy[h] = ms.velY;
+        o.missileDir[h] = ms.dir;
         if (ms.crash != NOT_A_CRASH) {
             sim.crashes.objectCrashed(h, ms);
         }
