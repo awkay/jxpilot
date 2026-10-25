@@ -60,10 +60,23 @@ public final class SnapshotWriter {
     /** Header flag: this part is the last one the server will send for this tick. */
     public static final int FLAG_LAST_PART = 1;
     /**
-     * Header flag: at least one of this client's ticks since the previous snapshot to it ran without its input entry
-     * (the server held the last keys: a starvation); the client's lead is too short.
+     * Header flags bits 1-7: this client's starvation count mod 128 (ticks that ran without its input entry, the
+     * server holding the last keys). A change from the previous snapshot means the client's lead is too short; a
+     * counter rather than a flag, so a lost snapshot does not lose the report.
      */
-    public static final int FLAG_INPUT_STARVED = 2;
+    public static final int STARVE_SHIFT = 1;
+    /** Mask of the starvation counter after {@link #STARVE_SHIFT}. */
+    public static final int STARVE_MASK = 0x7F;
+
+    /** BEHAVIOR: the header flags with the starvation count {@code starvations} (mod 128) in bits 1-7. */
+    public static int starveFlags(int flags, long starvations) {
+        return flags & ~(STARVE_MASK << STARVE_SHIFT) | ((int) starvations & STARVE_MASK) << STARVE_SHIFT;
+    }
+
+    /** BEHAVIOR: the starvation counter of a header flags byte. */
+    public static int starvations(int flags) {
+        return flags >>> STARVE_SHIFT & STARVE_MASK;
+    }
 
     private ByteBuffer out;
     private int sectionPos = -1;

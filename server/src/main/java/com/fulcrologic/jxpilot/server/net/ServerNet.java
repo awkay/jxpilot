@@ -149,8 +149,6 @@ public final class ServerNet {
         boolean snapshotsOn;
         /** Inputs by the tick they are for (protocol v2). */
         InputBuffer inputs;
-        /** {@code inputs.starvations()} when the last snapshot went out (for FLAG_INPUT_STARVED). */
-        long starvationsReported;
         /** The kernel config version announced to this connection (0: none yet), and its chunks still to send. */
         int kernelVersion;
         ConfigTransfer.Sender kernelSender;
@@ -237,6 +235,7 @@ public final class ServerNet {
         kernelClientMap = clientMapData;
         kernelBlob = ConfigTransfer.encode(KernelConfig.encode(o, clientMapData));
         kernelVersion++;
+        host.kernelVersion(kernelVersion);
     }
 
     /** The current kernel config version (0 before {@link #setKernel}). */
@@ -454,7 +453,6 @@ public final class ServerNet {
             c.inputs = new InputBuffer(cfg.simHz, cfg.simHz);
         }
         c.inputs.reset();
-        c.starvationsReported = 0;
         c.kernelVersion = 0;
         c.kernelSender = null;
         active[activeCount++] = c;
@@ -678,12 +676,11 @@ public final class ServerNet {
             }
         }
         long starved = c.inputs.starvations();
-        int starvedFlag = starved != c.starvationsReported ? SnapshotWriter.FLAG_INPUT_STARVED : 0;
-        c.starvationsReported = starved;
         for (int p = 0; p < n; p++) {
             ByteBuffer b = parts[p];
             b.put(PART_COUNT_OFFSET, (byte) n);
-            b.put(FLAGS_OFFSET, (byte) ((p == n - 1 ? SnapshotWriter.FLAG_LAST_PART : 0) | starvedFlag));
+            b.put(FLAGS_OFFSET, (byte) SnapshotWriter.starveFlags(p == n - 1 ? SnapshotWriter.FLAG_LAST_PART : 0,
+                starved));
             b.flip();
             out.send(c.channel, c.addr, b);
         }

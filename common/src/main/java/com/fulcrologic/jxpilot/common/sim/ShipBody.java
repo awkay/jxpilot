@@ -253,9 +253,9 @@ public class ShipBody {
     // ---- the PREDICT codec (docs/PROTOCOL.md "PREDICT"): core every snapshot, rare block on change, keys on mismatch
 
     /** Bytes of the core block ({@link #encodeCore}). */
-    public static final int CORE_SIZE = 71;
+    public static final int CORE_SIZE = 63;
     /** Bytes of the rare block ({@link #encodeRare}): settings and counts that change seldom. */
-    public static final int RARE_SIZE = 62;
+    public static final int RARE_SIZE = 59;
     /** Bytes of the keys block ({@link #encodeKeys}): sent only when the key masks differ from the applied input. */
     public static final int KEYS_SIZE = 16;
     /** Bytes of the canonical encoding ({@link #encode}): core, rare and keys blocks. */
@@ -266,10 +266,14 @@ public class ShipBody {
     public static final int FLAG_RECEIVED_KEYS = 1 << 1;
     /** Core flag: {@link #keysCleared}. */
     public static final int FLAG_KEYS_CLEARED = 1 << 2;
+    /** Core flag bits ShipBody uses; the PREDICT record may use the others. */
+    public static final int FLAGS_MASK = 7;
     /** Largest shot age the core carries; older shots read as this old (the fire check only needs "long ago"). */
     public static final int MAX_SHOT_AGE = 0xFFFF;
+    /** Largest fuel and fuelMax on the wire (u24; C's fuel is a long in 1/256 units, far below this). */
+    public static final int MAX_FUEL = 0xFF_FFFF;
     /** Offset of the flags byte in the core block. */
-    public static final int CORE_FLAGS = 69;
+    public static final int CORE_FLAGS = 62;
 
     /** Two canonical encodings per thread for {@link #sameState} (not ShipBody state). */
     private static final ThreadLocal<ByteBuffer[]> SCRATCH = ThreadLocal.withInitial(
@@ -280,17 +284,17 @@ public class ShipBody {
      * bit where the kernel needs it.
      * <pre>
      *   i24 cx, i24 cy, f32 vx, vy, velocity, mass, floatDir, turnVel, oldTurnVel, turnAcc, u8 dir,
-     *   i32 status, have, used, f64 fuel, u16 shotAge, u16 shieldTime, stunned, shots, mods, u8 flags,
-     *   u8 rareVersion                                                                          (71 bytes)
+     *   i32 status, have, used, u24 fuel, u16 shotAge, u16 shieldTime, stunned, shots, u8 flags        (63 bytes)
      * </pre>
-     * {@code shotAge} is {@code frames - shotTime} clamped to 0..{@link #MAX_SHOT_AGE}; the u16 counts are clamped
-     * to 0..65535 (C keeps them far smaller); the clicks are signed 24-bit (±131071 px, beyond any map). The flags
-     * say whether the key masks equal {@code appliedKeys} (the input the server applied this tick, which the
-     * client has in its own history); when one does not, {@link #encodeKeys} must follow.
+     * {@code shotAge} is {@code frames - shotTime} clamped to 0..{@link #MAX_SHOT_AGE}; fuel is the integral C fuel
+     * (1/256 units) clamped to 0..{@link #MAX_FUEL}; the u16 counts are clamped to 0..65535 (C keeps them far
+     * smaller); the clicks are signed 24-bit (±131071 px, beyond any map). The flags say whether the key masks equal
+     * {@code appliedKeys} (the input the server applied this tick, which the client has in its own history); when
+     * one does not, {@link #encodeKeys} must follow.
      * <p>
      * BEHAVIOR: writes {@link #CORE_SIZE} bytes and returns that count.
      */
-    public int encodeCore(ByteBuffer b, int off, long frames, long appliedKeys, int rareVersion) {
+    public int encodeCore(ByteBuffer b, int off, long frames, long appliedKeys) {
         putI24(b, off, cx);
         putI24(b, off + 3, cy);
         b.putFloat(off + 6, vx);
@@ -305,15 +309,13 @@ public class ShipBody {
         b.putInt(off + 39, status);
         b.putInt(off + 43, have);
         b.putInt(off + 47, used);
-        b.putDouble(off + 51, fuel);
-        b.putShort(off + 59, (short) Math.clamp(frames - shotTime, 0, MAX_SHOT_AGE));
-        b.putShort(off + 61, (short) u16(shieldTime));
-        b.putShort(off + 63, (short) u16(stunned));
-        b.putShort(off + 65, (short) u16(shots));
-        b.putShort(off + 67, (short) u16(mods));
+        putI24(b, off + 51, fuel24(fuel));
+        b.putShort(off + 54, (short) Math.clamp(frames - shotTime, 0, MAX_SHOT_AGE));
+        b.putShort(off + 56, (short) u16(shieldTime));
+        b.putShort(off + 58, (short) u16(stunned));
+        b.putShort(off + 60, (short) u16(shots));
         b.put(off + CORE_FLAGS, (byte) ((prevKeys == appliedKeys ? FLAG_PREV_KEYS : 0)
             | (lastReceivedKeys == appliedKeys ? FLAG_RECEIVED_KEYS : 0) | (keysCleared ? FLAG_KEYS_CLEARED : 0)));
-        b.put(off + 70, (byte) rareVersion);
         return CORE_SIZE;
     }
 
@@ -325,25 +327,27 @@ public class ShipBody {
     /**
      * Write the rare block at {@code off}:
      * <pre>
-     *   f32 emptyMass, f64 fuelMax, f32 power, turnSpeed, turnResistance, powerS, turnSpeedS, turnResistanceS,
-     *   u16 shotMax, i8 team, i16 wormHoleDest, u8 items[Item.COUNT]                              (62 bytes)
+     *   f32 emptyMass, u24 fuelMax, f32 power, turnSpeed, turnResistance, powerS, turnSpeedS, turnResistanceS,
+     *   u16 shotMax, i8 team, i16 wormHoleDest, u16 mods, u8 items[Item.COUNT]                    (59 bytes)
      * </pre>
-     * BEHAVIOR: writes {@link #RARE_SIZE} bytes and returns that count; items are clamped to 0..255.
+     * BEHAVIOR: writes {@link #RARE_SIZE} bytes and returns that count; fuelMax as fuel in the core, mods and shotMax
+     * clamped to u16, items to 0..255.
      */
     public int encodeRare(ByteBuffer b, int off) {
         b.putFloat(off, emptyMass);
-        b.putDouble(off + 4, fuelMax);
-        b.putFloat(off + 12, power);
-        b.putFloat(off + 16, turnSpeed);
-        b.putFloat(off + 20, turnResistance);
-        b.putFloat(off + 24, powerS);
-        b.putFloat(off + 28, turnSpeedS);
-        b.putFloat(off + 32, turnResistanceS);
-        b.putShort(off + 36, (short) u16(shotMax));
-        b.put(off + 38, (byte) team);
-        b.putShort(off + 39, (short) wormHoleDest);
+        putI24(b, off + 4, fuel24(fuelMax));
+        b.putFloat(off + 7, power);
+        b.putFloat(off + 11, turnSpeed);
+        b.putFloat(off + 15, turnResistance);
+        b.putFloat(off + 19, powerS);
+        b.putFloat(off + 23, turnSpeedS);
+        b.putFloat(off + 27, turnResistanceS);
+        b.putShort(off + 31, (short) u16(shotMax));
+        b.put(off + 33, (byte) team);
+        b.putShort(off + 34, (short) wormHoleDest);
+        b.putShort(off + 36, (short) u16(mods));
         for (int i = 0; i < Item.COUNT; i++) {
-            b.put(off + 41 + i, (byte) Math.clamp(items[i], 0, 255));
+            b.put(off + 38 + i, (byte) Math.clamp(items[i], 0, 255));
         }
         return RARE_SIZE;
     }
@@ -360,7 +364,8 @@ public class ShipBody {
      * <p>
      * BEHAVIOR: every core field takes the written value; pixels and blocks follow the clicks ({@link #setClicks});
      * shotTime is {@code frames - shotAge}; a key mask whose flag is set becomes {@code appliedKeys} (the client's
-     * input for the tick), one whose flag is clear is left for {@link #decodeKeys}; returns the rare version byte.
+     * input for the tick), one whose flag is clear is left for {@link #decodeKeys}; flag bits beyond
+     * {@link #FLAGS_MASK} are ignored; returns {@link #CORE_SIZE}.
      */
     public int decodeCore(ByteBuffer b, int off, long frames, long appliedKeys) {
         setClicks(getI24(b, off), getI24(b, off + 3));
@@ -376,12 +381,11 @@ public class ShipBody {
         status = b.getInt(off + 39);
         have = b.getInt(off + 43);
         used = b.getInt(off + 47);
-        fuel = b.getDouble(off + 51);
-        shotTime = frames - (b.getShort(off + 59) & 0xFFFF);
-        shieldTime = b.getShort(off + 61) & 0xFFFF;
-        stunned = b.getShort(off + 63) & 0xFFFF;
-        shots = b.getShort(off + 65) & 0xFFFF;
-        mods = b.getShort(off + 67) & 0xFFFF;
+        fuel = getU24(b, off + 51);
+        shotTime = frames - (b.getShort(off + 54) & 0xFFFF);
+        shieldTime = b.getShort(off + 56) & 0xFFFF;
+        stunned = b.getShort(off + 58) & 0xFFFF;
+        shots = b.getShort(off + 60) & 0xFFFF;
         int flags = b.get(off + CORE_FLAGS);
         if ((flags & FLAG_PREV_KEYS) != 0) {
             prevKeys = appliedKeys;
@@ -390,24 +394,25 @@ public class ShipBody {
             lastReceivedKeys = appliedKeys;
         }
         keysCleared = (flags & FLAG_KEYS_CLEARED) != 0;
-        return b.get(off + 70) & 0xFF;
+        return CORE_SIZE;
     }
 
     /** BEHAVIOR: reads every rare field as written (team signed, items unsigned); returns {@link #RARE_SIZE}. */
     public int decodeRare(ByteBuffer b, int off) {
         emptyMass = b.getFloat(off);
-        fuelMax = b.getDouble(off + 4);
-        power = b.getFloat(off + 12);
-        turnSpeed = b.getFloat(off + 16);
-        turnResistance = b.getFloat(off + 20);
-        powerS = b.getFloat(off + 24);
-        turnSpeedS = b.getFloat(off + 28);
-        turnResistanceS = b.getFloat(off + 32);
-        shotMax = b.getShort(off + 36) & 0xFFFF;
-        team = b.get(off + 38);
-        wormHoleDest = b.getShort(off + 39);
+        fuelMax = getU24(b, off + 4);
+        power = b.getFloat(off + 7);
+        turnSpeed = b.getFloat(off + 11);
+        turnResistance = b.getFloat(off + 15);
+        powerS = b.getFloat(off + 19);
+        turnSpeedS = b.getFloat(off + 23);
+        turnResistanceS = b.getFloat(off + 27);
+        shotMax = b.getShort(off + 31) & 0xFFFF;
+        team = b.get(off + 33);
+        wormHoleDest = b.getShort(off + 34);
+        mods = b.getShort(off + 36) & 0xFFFF;
         for (int i = 0; i < Item.COUNT; i++) {
-            items[i] = b.get(off + 41 + i) & 0xFF;
+            items[i] = b.get(off + 38 + i) & 0xFF;
         }
         return RARE_SIZE;
     }
@@ -420,9 +425,9 @@ public class ShipBody {
     }
 
     /**
-     * The canonical encoding: core (keys compared with 0, rare version 0), rare and keys blocks, {@link #WIRE_SIZE}
-     * bytes at {@code off}; the shot age is taken at {@code frames}. Everything the kernel reads before it writes is
-     * here, bit for bit: floats as their IEEE bits, fuel as a double. Not here: pixels and blocks (derived from the
+     * The canonical encoding: core (keys compared with 0), rare and keys blocks, {@link #WIRE_SIZE} bytes at
+     * {@code off}; the shot age is taken at {@code frames}. Everything the kernel reads before it writes is here, bit
+     * for bit: floats as their IEEE bits, fuel and fuelMax as the integers C keeps. Not here: pixels and blocks (derived from the
      * clicks), and what the kernel only writes or never reads: the previous position, the acceleration, the busy
      * frame, the last wall touch, the tanks (the kernel only adds to the current tank's fuel, never reads it), and
      * the hull.
@@ -430,7 +435,7 @@ public class ShipBody {
      * BEHAVIOR: writes exactly {@link #WIRE_SIZE} bytes and returns that count.
      */
     public int encode(ByteBuffer b, int off, long frames) {
-        encodeCore(b, off, frames, 0, 0);
+        encodeCore(b, off, frames, 0);
         encodeRare(b, off + CORE_SIZE);
         encodeKeys(b, off + CORE_SIZE + RARE_SIZE);
         return WIRE_SIZE;
@@ -465,6 +470,14 @@ public class ShipBody {
 
     private static int u16(int v) {
         return Math.clamp(v, 0, 0xFFFF);
+    }
+
+    private static int fuel24(double f) {
+        return (int) Math.clamp(f, 0, MAX_FUEL);
+    }
+
+    private static int getU24(ByteBuffer b, int off) {
+        return (b.get(off) & 0xFF) << 16 | (b.getShort(off + 1) & 0xFFFF);
     }
 
     private static void putI24(ByteBuffer b, int off, int v) {

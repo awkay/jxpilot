@@ -314,10 +314,11 @@ In total that is roughly 2,000-2,500 lines moved and ~300 lines of new seams.
 - The kernel owns a `ShipBody` struct: clicks x/y, vx/vy, floatDir, dir, turnVel, oldTurnVel,
   turnAcc, mass, fuel, status and used bits, item counts that affect physics, and lastWallTouch.
   `ShipBody` also owns its own wire codec, so the wire can never lag behind the kernel's state. *(As built
-  in 1b: the PREDICT section is 77 bytes every snapshot, the frame clock, roundDelay and a 71-byte core;
-  PREDICT_RARE, 63 bytes, carries the engine settings, masses, team, wormhole destination and item counts
-  when they changed in the last 8 snapshots and every 14th; PREDICT_KEYS, 16 bytes, the key masks when they
-  differ from the applied input. The tanks are not sent: the kernel only adds to the current tank's fuel.
+  in 1b: the PREDICT section is 66 bytes every snapshot, a 63-byte core plus the applied input's hash and
+  the rare and kernel versions; PREDICT_ROUND, 2 bytes, the round delay while one runs; PREDICT_RARE, 64
+  bytes, carries the frame-clock offset, engine settings, masses, team, wormhole destination, modifiers and
+  item counts when they changed in the last 8 snapshots and every 14th; PREDICT_KEYS, 16 bytes, the key masks
+  when they differ from the applied input. The tanks are not sent: the kernel only adds to the current tank's fuel.
   See PROTOCOL.md.)*
 - Side effects go out through a small `KernelEvents` interface: crashed (with type), bounced, fired
   (with shot parameters), fuel spent.

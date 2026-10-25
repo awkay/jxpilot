@@ -79,6 +79,11 @@ final class TimingHost implements GameHost {
     }
 
     @Override
+    public void kernelVersion(int version) {
+        host.kernelVersion(version);
+    }
+
+    @Override
     public void tick(int tick) {
         int n = ticks;
         if (n < tickNanos.length) {

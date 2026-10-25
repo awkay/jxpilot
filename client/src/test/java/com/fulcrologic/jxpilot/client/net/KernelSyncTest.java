@@ -163,20 +163,39 @@ class KernelSyncTest {
             () -> assertEquals(0, k.badKernel(), "nothing malformed"));
     }
 
-    /** A snapshot payload (header + sections) with PREDICT, and optionally PREDICT_RARE and PREDICT_KEYS. */
+    /** The frame clock runs this far ahead of the net tick in the PREDICT tests. */
+    static final int OFFSET = 500;
+
+    /** A snapshot payload (header + sections) with PREDICT, and optionally PREDICT_RARE; kernel version 1. */
     static ByteBuffer predict(int tick, int inputTick, com.fulcrologic.jxpilot.common.sim.ShipBody b, long applied,
                               int version, boolean rare) {
+        return predict(tick, inputTick, b, applied, version, rare, 1, 7, true);
+    }
+
+    /**
+     * A snapshot payload: PREDICT (the core at frame {@code tick + OFFSET}), PREDICT_ROUND when {@code roundDelay > 0}
+     * and {@code withRound}, PREDICT_RARE after them when {@code rare}, PREDICT_KEYS when a mask differs from
+     * {@code applied}.
+     */
+    static ByteBuffer predict(int tick, int inputTick, com.fulcrologic.jxpilot.common.sim.ShipBody b, long applied,
+                              int version, boolean rare, int kernel, int roundDelay, boolean withRound) {
         ByteBuffer out = ByteBuffer.allocate(1200);
         com.fulcrologic.jxpilot.common.net.SnapshotWriter w = new com.fulcrologic.jxpilot.common.net.SnapshotWriter();
         w.begin(out, tick, inputTick, 0, 1, 1, 0, 0);
         w.beginSection(com.fulcrologic.jxpilot.common.net.Section.SHOT, 0);
         w.endSection();
         w.beginSection(com.fulcrologic.jxpilot.common.net.Section.PREDICT);
-        com.fulcrologic.jxpilot.common.net.Records.Predict.put(w, b, 500 + tick, 7, applied, version);
+        com.fulcrologic.jxpilot.common.net.Records.Predict.put(w, b, OFFSET + tick, roundDelay, applied, version,
+            kernel);
         w.endSection();
+        if (roundDelay > 0 && withRound) {
+            w.beginSection(com.fulcrologic.jxpilot.common.net.Section.PREDICT_ROUND);
+            com.fulcrologic.jxpilot.common.net.Records.PredictRound.put(w, roundDelay);
+            w.endSection();
+        }
         if (rare) {
             w.beginSection(com.fulcrologic.jxpilot.common.net.Section.PREDICT_RARE);
-            com.fulcrologic.jxpilot.common.net.Records.PredictRare.put(w, b, version);
+            com.fulcrologic.jxpilot.common.net.Records.PredictRare.put(w, b, version, OFFSET);
             w.endSection();
         }
         if (b.keysDiffer(applied)) {
@@ -186,6 +205,17 @@ class KernelSyncTest {
         }
         out.flip();
         return out;
+    }
+
+    /** A KernelSync with the kernel world of {@link #server()} built from blob version {@code version}. */
+    static KernelSync withWorld(int version) {
+        Options o = server();
+        KernelSync k = new KernelSync();
+        Options client = new Options();
+        ConfigParser.parse(o.toConfigText(clientMap(o)), "c", OptionOrigin.MAP, client);
+        k.onConfig(client);
+        deliver(k, blob(o, version));
+        return k;
     }
 
     /** A part of tick {@code tick} with an OWN_SHOTS section of {@code n} shots (ages 0.., ordinal i % 3). */
@@ -252,7 +282,7 @@ class KernelSyncTest {
     @Test
     @DisplayName("PREDICT: the body, frames and roundDelay; valid only with the rare version it names and known keys")
     void snapshots() {
-        KernelSync k = new KernelSync();
+        KernelSync k = withWorld(1);
         com.fulcrologic.jxpilot.common.net.InputHistory in = new com.fulcrologic.jxpilot.common.net.InputHistory();
         in.set(40, 6, 0, 0);
         com.fulcrologic.jxpilot.common.sim.ShipBody b = new com.fulcrologic.jxpilot.common.sim.ShipBody();
@@ -261,6 +291,7 @@ class KernelSyncTest {
         b.power = 33;
         b.prevKeys = 6;
         b.lastReceivedKeys = 6;
+        b.shotTime = OFFSET + 42 - 5;
         boolean before = k.have();
         k.onSnapshot(predict(41, 40, b, 6, 3, false), in);
         boolean noRare = k.valid();
@@ -269,6 +300,8 @@ class KernelSyncTest {
         float vx = k.body().vx;
         float power = k.body().power;
         long keysFromFlag = k.body().prevKeys;
+        long shotTime = k.body().shotTime;
+        long frames42 = k.frames();
         k.onSnapshot(predict(43, 99, b, 6, 3, false), in);
         boolean unknownKeys = k.valid();
         b.lastReceivedKeys = 9;
@@ -288,14 +321,58 @@ class KernelSyncTest {
             () -> assertEquals(2.5f, vx, "the body's velocity"),
             () -> assertEquals(33f, power, "the rare block's power"),
             () -> assertEquals(6L, keysFromFlag, "prevKeys from the flag: the client's entry for the inputTick"),
+            () -> assertEquals(OFFSET + 42, frames42, "the frame clock: the tick plus the rare block's offset"),
+            () -> assertEquals(OFFSET + 42 - 5, shotTime,
+                "the shot time against that clock, though the rare block came after the core"),
             () -> assertFalse(unknownKeys, "an inputTick the history does not hold: the keys are unknown"),
             () -> assertTrue(keysSent, "unless PREDICT_KEYS carries them"),
             () -> assertEquals(9L, received, "lastReceivedKeys from PREDICT_KEYS"),
             () -> assertEquals(44, k.tick(), "a snapshot without PREDICT (or a short one) changes nothing"),
-            () -> assertEquals(544, k.frames(), "the frame clock"),
+            () -> assertEquals(OFFSET + 44, k.frames(), "the frame clock of tick 44"),
             () -> assertEquals(7, k.roundDelay(), "roundDelay"),
             () -> assertEquals(4, k.predicts(), "four PREDICTs read"),
             () -> assertTrue(k.have(), "have"));
+    }
+
+    @Test
+    @DisplayName("PREDICT validity: the applied input's hash, the kernel version (mod 256), the world and roundDelay")
+    void validity() {
+        com.fulcrologic.jxpilot.common.net.InputHistory in = new com.fulcrologic.jxpilot.common.net.InputHistory();
+        in.set(40, 6, 0, 0);
+        com.fulcrologic.jxpilot.common.sim.ShipBody b = new com.fulcrologic.jxpilot.common.sim.ShipBody();
+        b.prevKeys = 6;
+        b.lastReceivedKeys = 6;
+        KernelSync noWorld = new KernelSync();
+        noWorld.onSnapshot(predict(41, 40, b, 6, 3, true), in);
+        KernelSync k = withWorld(257);
+        k.onSnapshot(predict(41, 40, b, 6, 3, true, 1, 0, false), in);
+        boolean wrapped = k.valid();
+        int roundOff = k.roundDelay();
+        k.onSnapshot(predict(42, 40, b, 6, 3, true, 2, 0, false), in);
+        boolean otherKernel = k.valid();
+        com.fulcrologic.jxpilot.common.sim.ShipBody s = new com.fulcrologic.jxpilot.common.sim.ShipBody();
+        s.prevKeys = 5;
+        s.lastReceivedKeys = 5;
+        k.onSnapshot(predict(43, 40, s, 5, 3, true, 1, 0, false), in);
+        boolean mismatch = k.valid();
+        long mismatches = k.keyMismatches();
+        k.onSnapshot(predict(44, 40, b, 6, 3, true, 1, 9, false), in);
+        boolean roundMissing = k.valid();
+        k.onSnapshot(predict(45, 40, b, 6, 3, true, 1, 9, true), in);
+        boolean roundSent = k.valid();
+        int round = k.roundDelay();
+        assertAll(
+            () -> assertFalse(noWorld.valid(), "no kernel world yet: not valid"),
+            () -> assertTrue(noWorld.have(), "though the PREDICT was read"),
+            () -> assertTrue(wrapped, "kernel version 257 matches the PREDICT's 1 (mod 256)"),
+            () -> assertEquals(0, roundOff, "no round-delay flag: roundDelay 0"),
+            () -> assertFalse(otherKernel, "a PREDICT simulated with another kernel version: not valid"),
+            () -> assertFalse(mismatch,
+                "the server applied keys 5 where the client's entry has 6: the flagged masks are unknown"),
+            () -> assertEquals(1, mismatches, "one hash mismatch counted"),
+            () -> assertFalse(roundMissing, "the round-delay flag without PREDICT_ROUND in the part: not valid"),
+            () -> assertTrue(roundSent, "with it: valid"),
+            () -> assertEquals(9, round, "and roundDelay is its value"));
     }
 
     @Test

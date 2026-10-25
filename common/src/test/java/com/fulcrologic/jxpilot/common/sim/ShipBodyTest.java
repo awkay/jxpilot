@@ -228,7 +228,7 @@ class ShipBodyTest {
         b.powerS = 44.4f;
         b.turnSpeedS = 22.2f;
         b.turnResistanceS = 0.33f;
-        b.fuel = 123456.5;
+        b.fuel = 123456;
         b.fuelMax = 2600 * 256 * 3;
         b.tankFuel[1] = 7;
         b.numTanks = 2;
@@ -320,7 +320,7 @@ class ShipBodyTest {
         }
 
         @Test
-        @DisplayName("the canonical layout writes nothing outside its WIRE_SIZE bytes, and every byte matters but two")
+        @DisplayName("the canonical layout writes nothing outside its WIRE_SIZE bytes, and every byte matters but one")
         void layout() {
             ByteBuffer buf = ByteBuffer.allocate(ShipBody.WIRE_SIZE + 2);
             for (int i = 0; i < buf.capacity(); i++) {
@@ -344,9 +344,9 @@ class ShipBodyTest {
             assertAll(
                 () -> assertEquals((byte) 0x5c, buf.get(0), "the byte before is untouched"),
                 () -> assertEquals((byte) 0x5c, buf.get(ShipBody.WIRE_SIZE + 1), "the byte after is untouched"),
-                () -> assertEquals(ShipBody.WIRE_SIZE - 2, sens, "flipping the low bit of any byte changes the decoded"
-                    + " state, except in the rare version byte and the flags byte (the prevKeys flag: the canonical"
-                    + " form always carries the keys block)"));
+                () -> assertEquals(ShipBody.WIRE_SIZE - 1, sens, "flipping the low bit of any byte changes the decoded"
+                    + " state, except in the flags byte (the prevKeys flag: the canonical form always carries the keys"
+                    + " block)"));
         }
 
         @Test
@@ -394,18 +394,19 @@ class ShipBodyTest {
         }
 
         @Test
-        @DisplayName("the three blocks: 71 + 62 + 16 bytes; key flags against the applied keys; the keys block on mismatch")
+        @DisplayName("the three blocks: 63 + 59 + 16 bytes; key flags against the applied keys; the keys block on mismatch")
         void blocks() {
             ShipBody a = full();
             long applied = a.prevKeys;
             ByteBuffer core = ByteBuffer.allocate(ShipBody.CORE_SIZE);
-            int n = a.encodeCore(core, 0, F, applied, 9);
+            int n = a.encodeCore(core, 0, F, applied);
             int flags = core.get(ShipBody.CORE_FLAGS);
+            core.put(ShipBody.CORE_FLAGS, (byte) (flags | ~ShipBody.FLAGS_MASK));
             boolean differ = a.keysDiffer(applied);
             ShipBody b = new ShipBody();
             b.prevKeys = 5;
             b.lastReceivedKeys = 6;
-            int version = b.decodeCore(core, 0, F, applied);
+            int coreRead = b.decodeCore(core, 0, F, applied);
             long keptReceived = b.lastReceivedKeys;
             ByteBuffer keys = ByteBuffer.allocate(ShipBody.KEYS_SIZE);
             int k = a.encodeKeys(keys, 0);
@@ -418,7 +419,7 @@ class ShipBodyTest {
             ShipBody other = full();
             other.keysCleared = false;
             ByteBuffer core2 = ByteBuffer.allocate(ShipBody.CORE_SIZE);
-            other.encodeCore(core2, 0, F, 99, 0);
+            other.encodeCore(core2, 0, F, 99);
             ShipBody d = new ShipBody();
             d.prevKeys = 5;
             d.keysCleared = true;
@@ -426,17 +427,18 @@ class ShipBodyTest {
             int rareRead = d.decodeRare(rare, 0);
             int keysRead = d.decodeKeys(keys, 0);
             assertAll(
-                () -> assertEquals(71, n, "core 71 bytes"),
-                () -> assertEquals(62, r, "rare 62 bytes"),
+                () -> assertEquals(63, n, "core 63 bytes"),
+                () -> assertEquals(59, r, "rare 59 bytes"),
                 () -> assertEquals(16, k, "keys 16 bytes"),
                 () -> assertEquals(ShipBody.FLAG_PREV_KEYS | ShipBody.FLAG_KEYS_CLEARED, flags,
                     "prevKeys equals the applied keys, lastReceivedKeys does not; keysCleared"),
                 () -> assertTrue(differ, "so the keys block must follow"),
                 () -> assertFalse(same.keysDiffer(same.prevKeys), "both equal: no keys block"),
-                () -> assertEquals(9, version, "the rare version comes back"),
+                () -> assertEquals(ShipBody.CORE_SIZE, coreRead, "decodeCore returns its size"),
                 () -> assertEquals(applied, b.prevKeys, "a flagged mask is the applied keys"),
                 () -> assertEquals(6L, keptReceived, "an unflagged one waits for the keys block"),
-                () -> assertTrue(b.sameState(a, F), "core + rare + keys restore the state"),
+                () -> assertTrue(b.sameState(a, F),
+                    "core + rare + keys restore the state (flag bits beyond FLAGS_MASK are ignored)"),
                 () -> assertEquals(ShipBody.RARE_SIZE, rareRead, "decodeRare returns its size"),
                 () -> assertEquals(ShipBody.KEYS_SIZE, keysRead, "decodeKeys returns its size"));
             ShipBody e = new ShipBody();
@@ -449,7 +451,7 @@ class ShipBodyTest {
         }
 
         @Test
-        @DisplayName("narrow fields: shot age saturates, u16 counts clamp, clicks are signed 24-bit, items clamp to a byte")
+        @DisplayName("narrow fields: shot age saturates, u16 counts clamp, clicks are signed 24-bit, items clamp to a byte, fuel is u24")
         void narrow() {
             ShipBody a = full();
             a.shotTime = F - 70_000;
@@ -457,10 +459,20 @@ class ShipBodyTest {
             a.stunned = -3;
             a.items[2] = 300;
             a.setClicks(-(1 << 23), (1 << 23) - 1);
+            a.mods = 70_000;
+            a.fuel = 20_000_000;
+            a.fuelMax = ShipBody.MAX_FUEL;
             ByteBuffer buf = ByteBuffer.allocate(ShipBody.WIRE_SIZE);
             a.encode(buf, 0, F);
             ShipBody b = new ShipBody();
             b.decode(buf, 0, F);
+            ShipBody neg = full();
+            neg.fuel = -5;
+            neg.fuelMax = 3;
+            ByteBuffer buf2 = ByteBuffer.allocate(ShipBody.WIRE_SIZE);
+            neg.encode(buf2, 0, F);
+            ShipBody c = new ShipBody();
+            c.decode(buf2, 0, F);
             ShipBody old = full();
             old.shotTime = F - 80_000;
             ShipBody older = full();
@@ -477,7 +489,12 @@ class ShipBodyTest {
                 () -> assertEquals(0, b.stunned, "a negative count clamps to 0"),
                 () -> assertEquals(255, b.items[2], "an item count clamps to 255"),
                 () -> assertEquals(-(1 << 23), b.cx, "the smallest i24 click"),
-                () -> assertEquals((1 << 23) - 1, b.cy, "the largest"));
+                () -> assertEquals((1 << 23) - 1, b.cy, "the largest"),
+                () -> assertEquals(ShipBody.MAX_FUEL, b.fuel, "fuel above the u24 range clamps to MAX_FUEL"),
+                () -> assertEquals(ShipBody.MAX_FUEL, b.fuelMax, "fuelMax keeps the largest u24"),
+                () -> assertEquals(65535, b.mods, "mods clamps to u16"),
+                () -> assertEquals(0.0, c.fuel, "negative fuel reads 0"),
+                () -> assertEquals(3.0, c.fuelMax, "a small fuelMax is exact"));
         }
     }
 }

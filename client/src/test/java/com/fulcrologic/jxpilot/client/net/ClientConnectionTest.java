@@ -1229,13 +1229,15 @@ class ClientConnectionTest {
         }
 
         @Test
-        @DisplayName("header feedback: a starvation flag jumps the clock a tick; the slack reaches the HUD; the RTT sets the lead")
+        @DisplayName("header feedback: a change of the starvation counter jumps the clock a tick; the slack reaches the HUD;"
+            + " the RTT sets the lead")
         void feedback() {
             ticking();
             c.sendInput(0, 0, at(0));
-            t.in.add(snapshot(T0 + 1, 0, 8, SnapshotWriter.FLAG_LAST_PART | SnapshotWriter.FLAG_INPUT_STARVED));
+            t.in.add(snapshot(T0 + 1, 0, 8, SnapshotWriter.starveFlags(SnapshotWriter.FLAG_LAST_PART, 1)));
             c.update(at(1));
             int jumped = c.sendInput(0, 0, at(1));
+            long firstJumps = c.predictedClock().jumps();
             double slack = c.netDiagnostics().inputSlackTicks;
             c.flush(at(1));
             ByteBuffer p = lastPing();
@@ -1245,13 +1247,22 @@ class ClientConnectionTest {
             c.update(at(1) + 100 * MS);
             int withRtt = c.sendInput(0, 0, at(1) + 100 * MS);
             double lead = c.netDiagnostics().leadTicks;
+            t.in.add(snapshot(withRtt, withRtt, 8, SnapshotWriter.starveFlags(SnapshotWriter.FLAG_LAST_PART, 1)));
+            c.update(at(1) + 101 * MS);
+            long sameCount = c.predictedClock().jumps();
+            t.in.add(snapshot(withRtt + 2, withRtt, 8, SnapshotWriter.starveFlags(SnapshotWriter.FLAG_LAST_PART, 3)));
+            c.update(at(1) + 102 * MS);
+            long afterLost = c.predictedClock().jumps();
             assertAll(
                 () -> assertEquals(E0 + 2, jumped, "one tick later and one tick up"),
-                () -> assertEquals(1, c.predictedClock().jumps(), "one jump"),
+                () -> assertEquals(1L, firstJumps, "one jump"),
                 () -> assertEquals(0.5, slack, 1e-9, "inputSlack 8/16 tick"),
                 () -> assertEquals(T0 + 7 + 3 + 6, withRtt,
                     "100 ms RTT: the server's present (snapshot + 7 ticks + RTT/2 = 3 ticks) + ceil((50+30)/16.7)+1 = 6"),
-                () -> assertEquals(6, lead, 0.1, "the HUD's lead over the server's present"));
+                () -> assertEquals(6, lead, 0.1, "the HUD's lead over the server's present"),
+                () -> assertEquals(1L, sameCount, "the counter unchanged at 1: no new report"),
+                () -> assertEquals(2L, afterLost,
+                    "1 -> 3 (the snapshot that said 2 was lost): the report still arrives, one more jump"));
         }
     }
 

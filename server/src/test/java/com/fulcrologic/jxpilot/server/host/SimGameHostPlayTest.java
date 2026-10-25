@@ -575,7 +575,7 @@ class SimGameHostPlayTest {
                 parts[i].position(PacketHeader.SIZE);
             }
             SnapshotBuilder builder = new SnapshotBuilder(w);
-            builder.setPredict(true, 0, 1, true);
+            builder.setPredict(true, 0, 1, 0, true);
             int n = builder.build(viewer, 0, burstFrom, radar, parts);
             byte[][] out = new byte[n][];
             for (int i = 0; i < n; i++) {
@@ -650,6 +650,64 @@ class SimGameHostPlayTest {
                 () -> assertFalse(keysBefore, "no keys block while the masks equal the applied keys (none yet)"),
                 () -> assertTrue(keysAfter, "a keys block once lastReceivedKeys differs"),
                 () -> assertFalse(watching, "no PREDICT while the snapshot shows another ship"));
+        }
+
+        /** Part 0's PREDICT, PREDICT_ROUND and PREDICT_RARE fields: kernel, rare version, round flag, round, offset. */
+        static int[] predictFields(SimGameHost h, int id) {
+            SnapshotWriter wr = new SnapshotWriter();
+            ByteBuffer b = netPart(wr, 0);
+            h.fillSnapshot(id, 0, false, wr);
+            b.flip();
+            b.position(PacketHeader.SIZE);
+            com.fulcrologic.jxpilot.common.net.SnapshotReader r = new com.fulcrologic.jxpilot.common.net.SnapshotReader();
+            r.begin(b);
+            int[] f = {-1, -1, -1, -1, Integer.MIN_VALUE};
+            while (r.nextSection()) {
+                switch (r.type()) {
+                    case com.fulcrologic.jxpilot.common.net.Section.PREDICT -> {
+                        Records.Predict p = new Records.Predict().wrap(r, 0);
+                        f[0] = p.kernelVersion();
+                        f[1] = p.rareVersion();
+                        f[2] = p.roundDelaySet() ? 1 : 0;
+                    }
+                    case com.fulcrologic.jxpilot.common.net.Section.PREDICT_ROUND ->
+                        f[3] = new Records.PredictRound().wrap(r, 0).roundDelay();
+                    case com.fulcrologic.jxpilot.common.net.Section.PREDICT_RARE ->
+                        f[4] = new Records.PredictRare().wrap(r, 0).frameOffset();
+                    default -> { }
+                }
+            }
+            return f;
+        }
+
+        @Test
+        @DisplayName("PREDICT carries the kernel version mod 256 and roundDelay (flag and PREDICT_ROUND when nonzero);"
+            + " the rare block carries the frame offset, and a change of it is a new rare version")
+        void predictFields() {
+            Simulation s = sim("", THREE);
+            World w = s.world;
+            SimGameHost h = new SimGameHost(s);
+            int ann = enter(h, "Ann", 0);
+            h.tick(1);
+            int[] first = predictFields(h, ann);
+            h.kernelVersion(258);
+            w.roundDelay = 40;
+            int[] round = predictFields(h, ann);
+            w.roundDelay = 0;
+            w.frames += 3;
+            int[] moved = predictFields(h, ann);
+            int[] same = predictFields(h, ann);
+            assertAll(
+                () -> assertEquals(0, first[0], "no kernel config yet: version 0"),
+                () -> assertEquals(0, first[2], "roundDelay 0: no flag"),
+                () -> assertEquals(-1, first[3], "and no PREDICT_ROUND"),
+                () -> assertEquals((int) (w.frames - 3 - 1), first[4], "the offset: frames minus the net tick 1"),
+                () -> assertEquals(2, round[0], "kernel version 258 goes out as 2"),
+                () -> assertEquals(1, round[2], "roundDelay 40: the flag"),
+                () -> assertEquals(40, round[3], "and PREDICT_ROUND with 40"),
+                () -> assertEquals(first[4] + 3, moved[4], "frames moved 3 without a tick: the offset follows"),
+                () -> assertEquals(first[1] + 1, moved[1], "a new rare version"),
+                () -> assertEquals(moved[1], same[1], "unchanged after that"));
         }
 
         /** The OWN_SHOTS records of a filled part 0, as "age:ordinal@x,y". */

@@ -120,11 +120,15 @@ public final class SimGameHost implements GameHost {
     public static final int RARE_RESEND = 8;
     /** Every this many snapshots the rare block goes out anyway. */
     public static final int RARE_REFRESH = 14;
-    private final byte[][] rareBytes = new byte[IDS][com.fulcrologic.jxpilot.common.sim.ShipBody.RARE_SIZE];
+    /** The rare block plus the i32 frame offset: what PREDICT_RARE carries. */
+    private static final int RARE_BYTES = com.fulcrologic.jxpilot.common.sim.ShipBody.RARE_SIZE + 4;
+    private final byte[][] rareBytes = new byte[IDS][RARE_BYTES];
     private final int[] rareVersion = new int[IDS];
     private final long[] rareChanged = new long[IDS];
     private final long[] snapshotsSent = new long[IDS];
-    private final ByteBuffer rareScratch = ByteBuffer.allocate(com.fulcrologic.jxpilot.common.sim.ShipBody.RARE_SIZE);
+    private final ByteBuffer rareScratch = ByteBuffer.allocate(RARE_BYTES);
+    /** The KERNEL_CONFIG version ({@link #kernelVersion(int)}), carried in PREDICT. */
+    private int kernelVersion;
     /** Next event to deliver to a viewer. */
     private final long[] cursor = new long[IDS];
     /** First burst a viewer has not seen. */
@@ -700,6 +704,12 @@ public final class SimGameHost implements GameHost {
         }
     }
 
+    /** BEHAVIOR: PREDICT carries the latest version (mod 256) from the next snapshot on. */
+    @Override
+    public void kernelVersion(int version) {
+        kernelVersion = version;
+    }
+
     // ================================================================ ticking
 
     /**
@@ -1027,16 +1037,17 @@ public final class SimGameHost implements GameHost {
      * The PREDICT sections of the next build.
      * <p>
      * BEHAVIOR: only for a viewer watching its own ship. Its rare block gets a new version (mod 256) when its bytes
-     * change; it is sent in the {@link #RARE_RESEND} snapshots from a change (and from the bind, so a newcomer has
+     * or the frame offset change; it is sent in the {@link #RARE_RESEND} snapshots from a change (and from the bind, so a newcomer has
      * it) and in every {@link #RARE_REFRESH}th one.
      */
     private void predictFor(int id, Player p, boolean own) {
         long n = snapshotsSent[id]++;
         if (!own) {
-            builder.setPredict(false, 0, 0, false);
+            builder.setPredict(false, 0, 0, 0, false);
             return;
         }
         p.encodeRare(rareScratch, 0);
+        rareScratch.putInt(com.fulcrologic.jxpilot.common.sim.ShipBody.RARE_SIZE, SnapshotBuilder.frameOffset(w));
         byte[] last = rareBytes[id];
         boolean changed = false;
         for (int i = 0; i < last.length; i++) {
@@ -1050,7 +1061,8 @@ public final class SimGameHost implements GameHost {
             rareVersion[id] = (rareVersion[id] + 1) & 0xFF;
             rareChanged[id] = n;
         }
-        builder.setPredict(true, applied[id], rareVersion[id], n - rareChanged[id] < RARE_RESEND || n % RARE_REFRESH == 0);
+        builder.setPredict(true, applied[id], rareVersion[id], kernelVersion,
+            n - rareChanged[id] < RARE_RESEND || n % RARE_REFRESH == 0);
     }
 
     // ================================================================ reliable state and events

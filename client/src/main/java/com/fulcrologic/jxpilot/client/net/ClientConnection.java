@@ -162,6 +162,8 @@ public final class ClientConnection {
     private int finalTick;
     private long finalSentAt;
     private int earlyFor = Integer.MIN_VALUE;
+    /** The header's starvation counter in the newest snapshot (the session starts at 0, as the server's). */
+    private int starveCount;
     private int repeatFor = Integer.MIN_VALUE;
     /** Keys of the previous frame, and keys that went down during the tick being collected (for taps). */
     private long frameKeys;
@@ -295,6 +297,7 @@ public final class ClientConnection {
         pressedKeys = 0;
         frameKeys = 0;
         earlyFor = Integer.MIN_VALUE;
+        starveCount = 0;
         repeatFor = Integer.MIN_VALUE;
         input.reset();
         haveInputAck = false;
@@ -770,7 +773,9 @@ public final class ClientConnection {
                 int p = in.position();
                 int applied = in.getInt(p + 4);
                 int slack = in.get(p + 8);
-                boolean starved = (in.get(p + SnapshotWriter.FLAGS_OFFSET) & SnapshotWriter.FLAG_INPUT_STARVED) != 0;
+                int count = SnapshotWriter.starvations(in.get(p + SnapshotWriter.FLAGS_OFFSET) & 0xFF);
+                boolean starved = count != starveCount;
+                starveCount = count;
                 if (input.started() && applied - input.newestTick() <= 0
                     && (!haveInputAck || applied - ackedInputTick > 0)) {
                     ackedInputTick = applied;

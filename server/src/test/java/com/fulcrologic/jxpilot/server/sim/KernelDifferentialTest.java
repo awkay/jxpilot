@@ -101,7 +101,8 @@ class KernelDifferentialTest {
 
     /** The outcome for one map. */
     record Result(String map, int[] checked, int[] excluded, int wallTouches, int gravityPhases, int wraps,
-                  int tempWormholePhases, java.util.Map<String, Integer> why, List<String> mismatches) {
+                  int tempWormholePhases, java.util.Map<String, Integer> why, List<String> mismatches,
+                  long fuelChecks, List<String> fuelErrors) {
         String line(String config) {
             return String.format(java.util.Locale.ROOT, "KERNEL %-6s %-16s keys %6d/%6d autofire %6d/%6d fly %6d/%6d"
                     + " wallTouches %5d gravity %6d wraps %3d tempWormholes %5d", config, map, checked[0],
@@ -135,6 +136,8 @@ class KernelDifferentialTest {
         long[] in = new long[w.players.length];
         Checker c = new Checker(s, in, o);
         Rng keys = new Rng(seed * 31 + 7);
+        long fuelChecks = 0;
+        List<String> fuelErrors = new ArrayList<>();
         for (int t = 0; t < TICKS; t++) {
             for (int k = 0; k < w.numPlayers; k++) {
                 Player pl = w.playerAt(k);
@@ -148,9 +151,26 @@ class KernelDifferentialTest {
             }
             c.tick = t;
             s.tick(in);
+            for (int k = 0; k < w.numPlayers; k++) {
+                Player pl = w.playerAt(k);
+                fuelChecks++;
+                if (!wireFuel(pl.fuel) || !wireFuel(pl.fuelMax)) {
+                    if (fuelErrors.size() < 5) {
+                        fuelErrors.add("tick " + t + " slot " + pl.slot + " fuel " + pl.fuel + " fuelMax " + pl.fuelMax);
+                    }
+                }
+            }
         }
         return new Result(map, c.checked, c.excluded, c.wallTouches, c.gravityPhases, c.wraps, c.tempWormholePhases,
-            c.why, c.mismatches);
+            c.why, c.mismatches, fuelChecks, fuelErrors);
+    }
+
+    /**
+     * Fuel crosses the wire as a u24 integer (PREDICT): exact only while it stays an integer in 0..MAX_FUEL, as C's
+     * long fuel (1/256 units) always is.
+     */
+    static boolean wireFuel(double f) {
+        return f == Math.rint(f) && f >= 0 && f <= ShipBody.MAX_FUEL;
     }
 
     @ParameterizedTest(name = "{0}")
@@ -167,7 +187,9 @@ class KernelDifferentialTest {
                 + flyAll + "; excluded by " + r.why() + ")"),
             () -> assertTrue(r.checked()[KernelEvents.PHASE_KEYS] * 10 >= (r.checked()[0] + r.excluded()[0]) * 9,
                 map + ": at least 90% of key phases are checked"),
-            () -> assertTrue(r.wallTouches() > 0, map + ": checked phases include wall contact"));
+            () -> assertTrue(r.wallTouches() > 0, map + ": checked phases include wall contact"),
+            () -> assertEquals(List.of(), r.fuelErrors(), map + ": fuel and fuelMax stay integers within u24"),
+            () -> assertTrue(r.fuelChecks() > 0, map + ": fuel was checked"));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -183,7 +205,10 @@ class KernelDifferentialTest {
             () -> assertTrue(fly * 10 >= flyAll, map + ": at least 10% of fly phases are checked (" + fly + " of "
                 + flyAll + ")"),
             () -> assertTrue(r.wallTouches() > 0, map + ": checked phases include wall contact"),
-            () -> assertTrue(r.checked()[KernelEvents.PHASE_KEYS] > 0, map + ": key phases were checked"));
+            () -> assertTrue(r.checked()[KernelEvents.PHASE_KEYS] > 0, map + ": key phases were checked"),
+            () -> assertEquals(List.of(), r.fuelErrors(),
+                map + ": with tanks, refuelling and item pickups, fuel and fuelMax stay integers within u24"),
+            () -> assertTrue(r.fuelChecks() > 0, map + ": fuel was checked"));
     }
 
     static List<String> maps() {
@@ -257,7 +282,7 @@ class KernelDifferentialTest {
         } else if (t == float.class) {
             f.setFloat(b, 1.5f);
         } else if (t == double.class) {
-            f.setDouble(b, 2.5);
+            f.setDouble(b, 2.0); // the double fields are fuel, which is integral (C 1/256 units, u24 on the wire)
         } else if (t == boolean.class) {
             f.setBoolean(b, true);
         } else if (t == int[].class) {

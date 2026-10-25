@@ -174,6 +174,7 @@ public final class SnapshotBuilder {
     private boolean ownShots;
     private long predictKeys;
     private int predictVersion;
+    private int predictKernel;
     private boolean predictRare;
 
     /**
@@ -181,14 +182,21 @@ public final class SnapshotBuilder {
      * when the viewer is the receiving player (not while watching another).
      *
      * @param appliedKeys the input the server applied to the viewer this tick (the key flags compare with it)
-     * @param rareVersion the version of the viewer's rare block
-     * @param sendRare    also send the rare block
+     * @param rareVersion   the version of the viewer's rare block
+     * @param kernelVersion the KERNEL_CONFIG version the sim runs with
+     * @param sendRare      also send the rare block
      */
-    public void setPredict(boolean on, long appliedKeys, int rareVersion, boolean sendRare) {
+    public void setPredict(boolean on, long appliedKeys, int rareVersion, int kernelVersion, boolean sendRare) {
         predict = on;
         predictKeys = appliedKeys;
         predictVersion = rareVersion;
+        predictKernel = kernelVersion;
         predictRare = sendRare;
+    }
+
+    /** The C frame clock minus the net tick (PREDICT_RARE's frame offset; constant while the sim runs). */
+    public static int frameOffset(World w) {
+        return (int) (w.frames - w.tick);
     }
 
     /** Set the view half-size in pixels (C view size / 2 plus a margin). */
@@ -426,7 +434,8 @@ public final class SnapshotBuilder {
     }
 
     /**
-     * BEHAVIOR: with {@link #setPredict} on: PREDICT (frames, roundDelay, the core block), PREDICT_RARE when asked
+     * BEHAVIOR: with {@link #setPredict} on: PREDICT (the core block at {@link World#frames}, the applied input's
+     * hash, the versions), PREDICT_ROUND when roundDelay is nonzero, PREDICT_RARE (with the frame offset) when asked
      * for, PREDICT_KEYS when a key mask differs from the applied input; nothing otherwise. Each call of
      * {@link #build} needs its own {@link #setPredict}: it is switched off after use.
      */
@@ -437,10 +446,13 @@ public final class SnapshotBuilder {
         }
         predict = false;
         if (need(Section.PREDICT, 0)) {
-            Records.Predict.put(wr, v, w.frames, w.roundDelay, predictKeys, predictVersion);
+            Records.Predict.put(wr, v, w.frames, w.roundDelay, predictKeys, predictVersion, predictKernel);
+        }
+        if (w.roundDelay > 0 && need(Section.PREDICT_ROUND, 0)) {
+            Records.PredictRound.put(wr, w.roundDelay);
         }
         if (predictRare && need(Section.PREDICT_RARE, 0)) {
-            Records.PredictRare.put(wr, v, predictVersion);
+            Records.PredictRare.put(wr, v, predictVersion, frameOffset(w));
         }
         if (v.keysDiffer(predictKeys) && need(Section.PREDICT_KEYS, 0)) {
             Records.PredictKeys.put(wr, v);
