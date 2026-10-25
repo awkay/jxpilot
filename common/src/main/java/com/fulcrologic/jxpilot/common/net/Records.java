@@ -377,18 +377,34 @@ public final class Records {
     }
 
     /**
-     * A bullet: {@code 0 rel x, 2 rel y, 4 i8 vx, 5 i8 vy} (whole px/frame, for client extrapolation).
-     * Kind and colour are the section variant ({@link ShotKind#variant}). 6 bytes.
+     * A bullet: {@code 0 rel x, 2 rel y}, then the velocity in 1/16 px/frame as two signed 12-bit values packed into
+     * 3 bytes: {@code 4 [vx bits 11..4], 5 [vx bits 3..0 | vy bits 11..8], 6 [vy bits 7..0]} (range -128..127.9375
+     * px/frame, for client extrapolation). Kind and colour are the section variant ({@link ShotKind#variant}). 7 bytes.
      */
     public static final class Shot extends Fly {
-        public static final int SIZE = 6;
+        public static final int SIZE = 7;
+        /** Largest velocity in 1/16 px/frame; the smallest is {@code -MAX_VEL16 - 1}. */
+        public static final int MAX_VEL16 = 0x7FF;
 
+        /**
+         * BEHAVIOR: the velocity is rounded to the nearest 1/16 px/frame (halves up: {@code floor(v * 16 + 0.5)} of
+         * the server's float) and clamped to -2048..2047 sixteenths.
+         */
         public static void put(SnapshotWriter w, double x, double y, double vx, double vy) {
             ByteBuffer out = w.buffer();
             out.putShort((short) w.relX(x));
             out.putShort((short) w.relY(y));
-            out.put((byte) Wire.velToI8(vx));
-            out.put((byte) Wire.velToI8(vy));
+            int qx = vel16(vx) & 0xFFF;
+            int qy = vel16(vy) & 0xFFF;
+            out.put((byte) (qx >> 4));
+            out.put((byte) ((qx & 0xF) << 4 | qy >> 8));
+            out.put((byte) qy);
+        }
+
+        /** BEHAVIOR: {@code floor(v * 16 + 0.5)} clamped to -2048..2047. */
+        public static int vel16(double v) {
+            double q = Math.floor(v * 16 + 0.5);
+            return (int) Math.max(-MAX_VEL16 - 1, Math.min(MAX_VEL16, q));
         }
 
         public Shot wrap(SnapshotReader r, int i) {
@@ -400,9 +416,33 @@ public final class Records {
 
         public float y() { return relY(2); }
 
-        public int vx() { return b.get(o + 4); }
+        /** The x velocity in 1/16 px/frame (-2048..2047). */
+        public int vx16() {
+            int q = (b.get(o + 4) & 0xFF) << 4 | (b.get(o + 5) & 0xFF) >> 4;
+            return q << 20 >> 20;
+        }
 
-        public int vy() { return b.get(o + 5); }
+        /** The y velocity in 1/16 px/frame (-2048..2047). */
+        public int vy16() {
+            int q = (b.get(o + 5) & 0x0F) << 8 | b.get(o + 6) & 0xFF;
+            return q << 20 >> 20;
+        }
+
+        /** The x velocity in px/frame, exact to 1/16. */
+        public float vxf() { return vx16() / 16f; }
+
+        /** The y velocity in px/frame, exact to 1/16. */
+        public float vyf() { return vy16() / 16f; }
+
+        /** The x velocity rounded to whole px/frame (halves up), clamped to -127..127 (the version 1 record's). */
+        public int vx() { return whole(vx16()); }
+
+        /** The y velocity rounded to whole px/frame (halves up), clamped to -127..127. */
+        public int vy() { return whole(vy16()); }
+
+        private static int whole(int v16) {
+            return Math.max(-127, Math.min(127, Math.floorDiv(v16 + 8, 16)));
+        }
     }
 
     /**

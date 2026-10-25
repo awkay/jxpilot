@@ -316,7 +316,7 @@ Quantization (`Wire`): **rel** = i16 half pixels relative to the view centre, wr
 |---|---|---|---|
 | 1 | SELF | 47 | u16 id, u16 flags, f32 x, y, vx, vy, heading, fuel, fuelMax, u16 lockId, u8 numTanks, u8 currentTank, u16 respawnFrames (absolute, full precision), u8 power, u8 turnSpeed, u8 turnResistance*255 (C PKT_SELF rounding), u16 lockDist (px, 0 = lock not shown), u8 lockDir (RES), u8 check (next checkpoint), u16 mods (weapon modifier bits: 0 nuclear, 1 full nuclear, 2 cluster, 3 implosion, 4-5 velocity, 6-7 mini, 8-9 spread, 10-11 power, 12 laser stun, 13 laser blind). Fields from power on were appended; a reader of an older 38-byte record gets 0 |
 | 2 | SHIP | 14 | u16 id, u16 flags (`ShipFlags`), rel x, rel y, ang heading, vel16 vx, vel16 vy. A PAUSED ship is still, so its vx carries C's pause count (`Send_paused(.., pl->count)`: frames left, 0 when spent; vy is 0): the client blinks the P while it is above 0 and never moves the ship by it. It rides the 1/16 px/frame velocity, so counts above 2047 frames clamp |
-| 3 | SHOT | 6 | rel x, rel y, i8 vx, i8 vy (whole px/frame). **variant = harmless << 7 \| kind << 4 \| colour** *(S1 fix round: bit 7 `ShotKind.FLAG_HARMLESS` = this shot cannot hurt the receiver, C frame.c's friendly colour: team immune owner, paused owner, an unowned shot of the receiver's team in team play, or the receiver's own shot with selfImmunity; kinds are 3 bits: 0 SHOT, 1 CANNON_SHOT, 2 CLUSTER, 3 PULSE, 4 NUCLEAR = any shot with nuclear modifiers, which the client draws as a red X/+ teamshot when the tick has bit 1 set, C frame.c:830)* |
+| 3 | SHOT | 7 | rel x, rel y, then vx and vy as signed 12-bit values in 1/16 px/frame packed into 3 bytes (`[vx 11..4] [vx 3..0 \| vy 11..8] [vy 7..0]`, range -128..127.9375 px/frame; the server rounds its float velocity to the nearest 1/16, halves up, and clamps). *(Protocol v2; v1 sent i8 whole px/frame. `Records.Shot.vx16()/vxf()` give the precise value, `vx()` the whole pixels as before.)* **variant = harmless << 7 \| kind << 4 \| colour** *(S1 fix round: bit 7 `ShotKind.FLAG_HARMLESS` = this shot cannot hurt the receiver, C frame.c's friendly colour: team immune owner, paused owner, an unowned shot of the receiver's team in team play, or the receiver's own shot with selfImmunity; kinds are 3 bits: 0 SHOT, 1 CANNON_SHOT, 2 CLUSTER, 3 PULSE, 4 NUCLEAR = any shot with nuclear modifiers, which the client draws as a red X/+ teamshot when the tick has bit 1 set, C frame.c:830)* |
 | 4 | BURST | 27 | rel x, rel y, vel16 vx, vy, u32 seed, u8 kind, u8 colour, u16 count, u8 minDir, u8 dirSpan (RES), u16 minSpeed, maxSpeed (1/16), u16 minLife, maxLife (frames), u8 age (sim ticks since spawn) |
 | 5 | CANNON | 3 | u16 index, u8 flags (dead, phasing, shield) |
 | 6 | FUEL | 4 | u16 index, frac level (of 500) |
@@ -487,16 +487,16 @@ the hull (it comes with PLAYER_JOIN). The canonical encoding (core + rare + keys
 
 | scene | bytes | datagrams |
 |---|---|---|
-| Fight: 15 thrusting ships, 150 shots (3 colour groups), 400 debris as 5 explosion bursts, 15 radar blips | **1396** (1346 without radar) | 2 |
-| Typical: 4 ships, 30 shots, 2 bursts, 8 blips | **420** | 1 |
+| Fight: 15 thrusting ships, 150 shots (3 colour groups), 400 debris as 5 explosion bursts, 15 radar blips | **1546** (1496 without radar) | 2 |
+| Typical: 4 ships, 30 shots, 2 bursts, 8 blips | **450** | 1 |
 | Radar-heavy: 32 players + 300 objects on radar (332 blips), 8 ships in view | **1194** | 1 |
 | Radar-heavy with all 31 other ships in view | **1516** | 2 |
 
-The owner's snapshot adds PREDICT (5 + 68 = 73 bytes): typical **493**, fight **1469**; PREDICT_RARE adds
-69 bytes in the snapshots that carry it (typical 562), PREDICT_KEYS 21 when the key masks differ and
+The owner's snapshot adds PREDICT (5 + 68 = 73 bytes): typical **523**, fight **1619**; PREDICT_RARE adds
+69 bytes in the snapshots that carry it (typical 592), PREDICT_KEYS 21 when the key masks differ and
 PREDICT_ROUND 7 while a round delay runs.
 
-At 30 Hz the fight is ≈ 330 kbit/s per client (at the default 14 Hz tick rate ≈ 155 kbit/s). The original per-particle layout needed ~4.7 KB per snapshot.
+At 30 Hz the fight is ≈ 370 kbit/s per client (at the default 14 Hz tick rate ≈ 173 kbit/s). The original per-particle layout needed ~4.7 KB per snapshot.
 
 ## Extending
 

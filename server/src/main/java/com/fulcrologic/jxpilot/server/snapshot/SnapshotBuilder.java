@@ -566,14 +566,17 @@ public final class SnapshotBuilder {
 
     /**
      * BEHAVIOR: how many more SHOT records fit in the open part and the unused buffers, keeping
-     * {@link #SHOT_SECTIONS_PER_PART} section headers of room per part.
+     * {@link #SHOT_SECTIONS_PER_PART} section headers of room per part; counted part by part (a record does not
+     * span parts, so each part's remainder below a record is lost).
      */
     int shotRoom() {
-        int bytes = parts[part].remaining() - SHOT_SECTIONS_PER_PART * Section.HEADER_SIZE;
+        int n = Math.max(0, parts[part].remaining() - SHOT_SECTIONS_PER_PART * Section.HEADER_SIZE)
+            / Records.Shot.SIZE;
         for (int p = part + 1; p < maxParts; p++) {
-            bytes += parts[p].remaining() - SnapshotWriter.HEADER_SIZE - SHOT_SECTIONS_PER_PART * Section.HEADER_SIZE;
+            n += Math.max(0, parts[p].remaining() - SnapshotWriter.HEADER_SIZE
+                - SHOT_SECTIONS_PER_PART * Section.HEADER_SIZE) / Records.Shot.SIZE;
         }
-        return Math.max(0, bytes / Records.Shot.SIZE);
+        return n;
     }
 
     /** Shots in view, nearest cells first, up to the room left; then grouped by variant. */
