@@ -1246,7 +1246,8 @@ public final class ClientWorld {
      * server moves bullets ({@link com.fulcrologic.jxpilot.client.game.predict.ShotMotion}: gravity, walls) for the
      * gap to the predicted tick, the last fraction blended; its velocity is its move of the last tick when it was
      * linked to the frame before (and that agrees with the wire's whole-pixel velocity within
-     * {@link #LINK_VEL_SLACK}), else the wire's (or the estimate).
+     * {@link #LINK_VEL_SLACK}), else the wire's (or the estimate). Its team: the own team for a bullet the server
+     * colours TEAM, else none (an enemy's team is not on the wire: its own cannons and targets crash it here).
      * <p>
      * BEHAVIOR: the gap is capped at the own ship's lead over the server's tick now plus 2 snapshot intervals; a shot
      * that ends on the way (a wall) is drawn where it ends; the own bullets are the provisional shots' (left out
@@ -1296,8 +1297,11 @@ public final class ClientWorld {
             int y = com.fulcrologic.jxpilot.common.sim.Click.fromPixels(n.shotY[j]);
             boolean alive = true;
             boolean cannon = Records.ShotKind.kindOf(n.shotVariant[j]) == Records.ShotKind.CANNON_SHOT;
+            // the server marks a team mate's (or own team cannon's) bullet TEAM: the own team; any other is not ours
+            int team = Records.ShotKind.colorOf(n.shotVariant[j]) == Records.ObjColor.TEAM ? predictor.shots().team()
+                : com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET;
             for (int k = 0; k < whole && alive; k++) {
-                alive = m.tick(x, y, vx, vy, Long.MAX_VALUE, cannon, shotStep);
+                alive = m.tick(x, y, vx, vy, Long.MAX_VALUE, cannon, team, shotStep);
                 if (alive) {
                     x = shotStep.x;
                     y = shotStep.y;
@@ -1307,7 +1311,7 @@ public final class ClientWorld {
             }
             double px = x / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK;
             double py = y / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK;
-            if (alive && frac > 0 && m.tick(x, y, vx, vy, Long.MAX_VALUE, cannon, shotStep)) {
+            if (alive && frac > 0 && m.tick(x, y, vx, vy, Long.MAX_VALUE, cannon, team, shotStep)) {
                 px += frac * XMath.wrapDelta(shotStep.x / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK - px,
                     worldW, wrap);
                 py += frac * XMath.wrapDelta(shotStep.y / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK - py,

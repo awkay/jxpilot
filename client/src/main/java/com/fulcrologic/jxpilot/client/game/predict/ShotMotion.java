@@ -35,7 +35,9 @@ public interface ShotMotion {
      *
      * @param cannon a cannon's shot (CANNON_SHOT, FROMCANNON: it flies through cannons outside team play), else a
      *               player's SHOT
+     * @param team   the bullet's team (its cannons and, without targetTeamCollision, its targets let it through in
+     *               team play), {@code Const.TEAM_NOT_SET} when unknown
      * @return false when it ends in that tick (a crash, a fatal bounce, its life out)
      */
-    boolean tick(int x, int y, float vx, float vy, long life, boolean cannon, ShotStep out);
+    boolean tick(int x, int y, float vx, float vy, long life, boolean cannon, int team, ShotStep out);
 }

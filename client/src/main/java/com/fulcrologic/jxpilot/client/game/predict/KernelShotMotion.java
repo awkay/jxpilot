@@ -38,7 +38,9 @@ import com.fulcrologic.jxpilot.common.sim.ObjectMover;
  * through the map with the server's own C {@code Move_object} ({@link ObjectMover}, common), and the expiry's tick of
  * life. The crash rules are the server's masks for a SHOT (or a CANNON_SHOT, FROMCANNON) from the server's options:
  * walls bounce with shotsWallBounce; cannons and targets crash a SHOT, and a cannon's shot with allowPlayerKilling;
- * treasures crash a bouncing shot. Ties draw 0.5 (the server draws its random stream). Allocation free.
+ * treasures crash a bouncing shot; the bullet's team passes its own cannons (and targets) as on the server. Ties draw
+ * 0.5 (the server draws its random stream), and wormholes use the countdown and last destination the client has.
+ * Allocation free.
  */
 public final class KernelShotMotion implements ShotMotion {
     private final KernelWorld world;
@@ -49,7 +51,10 @@ public final class KernelShotMotion implements ShotMotion {
     private boolean edgeBounce = true;
     private boolean killings = true;
 
-    /** BEHAVIOR: the shot rules from the server's visible options, C's defaults without them. */
+    /**
+     * BEHAVIOR: the shot rules from the server's visible options, C's defaults without them; the bounce speed limit
+     * clamped to [0, the world's diagonal] and the brake and life factors to [0, 1], as the server does.
+     */
     public KernelShotMotion(KernelWorld w, Options o) {
         world = w;
         mover = new ObjectMover(w, () -> 0.5);
@@ -61,10 +66,16 @@ public final class KernelShotMotion implements ShotMotion {
             wallBounce = o.getBool(Opt.SHOTS_WALL_BOUNCE);
             edgeBounce = o.getBool(Opt.EDGE_BOUNCE);
             killings = o.getBool(Opt.ALLOW_PLAYER_KILLING);
-            mover.objectWallBounceLifeFactor = (float) o.getDouble(Opt.OBJECT_WALL_BOUNCE_LIFE_FACTOR);
-            mover.maxObjectWallBounceSpeed = (float) o.getDouble(Opt.MAX_OBJECT_WALL_BOUNCE_SPEED);
-            mover.objectWallBrakeFactor = (float) o.getDouble(Opt.OBJECT_WALL_BOUNCE_BRAKE_FACTOR);
+            // clamped as the server's Params.resolve (walls.c Move_init)
+            mover.objectWallBounceLifeFactor = (float) clamp(o.getDouble(Opt.OBJECT_WALL_BOUNCE_LIFE_FACTOR), 0, 1);
+            mover.maxObjectWallBounceSpeed = (float) clamp(o.getDouble(Opt.MAX_OBJECT_WALL_BOUNCE_SPEED), 0,
+                w.shipParams().hypotenuse);
+            mover.objectWallBrakeFactor = (float) clamp(o.getDouble(Opt.OBJECT_WALL_BOUNCE_BRAKE_FACTOR), 0, 1);
         }
+    }
+
+    private static double clamp(double v, double lo, double hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
     }
 
     /**
@@ -72,7 +83,7 @@ public final class KernelShotMotion implements ShotMotion {
      * it, a bounce killed it, or its life ran out.
      */
     @Override
-    public boolean tick(int x, int y, float vx, float vy, long life, boolean cannon, ShotStep out) {
+    public boolean tick(int x, int y, float vx, float vy, long life, boolean cannon, int team, ShotStep out) {
         int px = x >> Click.SHIFT;
         int py = y >> Click.SHIFT;
         if (gravity) {
@@ -101,8 +112,8 @@ public final class KernelShotMotion implements ShotMotion {
         ms.treasureCrashes = wallBounce;
         ms.wormholeWarps = true;
         ms.phased = false;
-        ms.team = Const.TEAM_NOT_SET;
-        ms.targetTeam = Const.TEAM_NOT_SET;
+        ms.team = team;
+        ms.targetTeam = team;
         world.movingPx = px;
         world.movingPy = py;
         mover.move(b);

@@ -84,6 +84,8 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
     private ShotMotion motion;
     private final ShotStep step = new ShotStep();
     private int shotLife = OwnShipPredictor.DEFAULT_SHOT_LIFE;
+    /** The own team (the predicted ship's): the own bullets' team for its cannons and targets. */
+    int team = com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET;
 
     // the next state of one shot (scratch for draw and step)
     private int nx;
@@ -115,6 +117,14 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
         shotLife = o == null ? OwnShipPredictor.DEFAULT_SHOT_LIFE : o.getInt(Opt.SHOT_LIFE);
         clear();
     }
+
+    /** BEHAVIOR: the own bullets' team from now on (the predictor sets the predicted ship's). */
+    public void setTeam(int t) {
+        team = t;
+    }
+
+    /** The own team the own bullets move with. */
+    public int team() { return team; }
 
     /** How shots move ({@link ShotMotion}); null before a world. */
     public ShotMotion motion() { return motion; }
@@ -316,7 +326,7 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
 
     /** One server tick of a shot ({@link ShotMotion}) into the scratch fields; false when it ends in that tick. */
     private boolean oneTick(int x, int y, float svx, float svy, long l) {
-        boolean alive = motion.tick(x, y, svx, svy, l, false, step);
+        boolean alive = motion.tick(x, y, svx, svy, l, false, team, step);
         nx = step.x;
         ny = step.y;
         nvx = step.vx;

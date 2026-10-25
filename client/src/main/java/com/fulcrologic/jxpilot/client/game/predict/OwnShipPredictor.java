@@ -265,6 +265,7 @@ public final class OwnShipPredictor {
             return;
         }
         ShipBody cur = ring[idx(head)];
+        shots.setTeam(cur.team);
         if (!predictableState(cur)) {
             return;
         }

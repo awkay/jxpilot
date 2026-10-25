@@ -584,6 +584,55 @@ class ProvisionalShotsTest {
     @Nested
     @DisplayName("KernelShotMotion")
     class Motion2 {
+        /** Team play: a team 1 base, a cannon below it (team 1 by teamCannons) and a team 1 target, inside walls. */
+        static final String[] TEAM = {"xxxxxxx", "x  1  x", "x     x", "x  r !x", "xxxxxxx"};
+
+        @Test
+        @DisplayName("team play: a bullet of the cannon's and target's team passes them (teamImmunity, no target"
+            + " team collision); another team's, or one of unknown team, crashes")
+        void teams() {
+            Options o = options("gravity: 0\nteamPlay: yes\nteamCannons: yes\nteamImmunity: yes\n"
+                + "targetTeamCollision: no", TEAM);
+            KernelWorld w = KernelWorld.of(o);
+            KernelShotMotion m = new KernelShotMotion(w, o);
+            ShotStep out = new ShotStep();
+            int cx = Click.fromPixels(3 * 35 + 17.5f);
+            int tx = Click.fromPixels(5 * 35 + 17.5f);
+            int y = Click.fromPixels(2 * 35 + 10f); // above the target's block (35..70), going down into it
+            int cy = Click.fromPixels(35 + 11f); // inside the cannon's block, leaving it upwards (a cannon's own shot)
+            boolean ownCannon = m.tick(cx, cy, 0, 20, 100, false, 1, out);
+            boolean otherCannon = m.tick(cx, cy, 0, 20, 100, false, 2, out);
+            boolean unknownCannon = m.tick(cx, cy, 0, 20, 100, false, com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET,
+                out);
+            boolean ownTarget = m.tick(tx, y, 0, -25, 100, false, 1, out);
+            boolean otherTarget = m.tick(tx, y, 0, -25, 100, false, 2, out);
+            int cannonTeam = w.map().cannons().get(0).team();
+            int targetTeam = w.targetTeam(0);
+            assertAll(
+                () -> assertEquals(1, cannonTeam, "the cannon is team 1's"),
+                () -> assertEquals(1, targetTeam, "the target is team 1's"),
+                () -> assertTrue(ownCannon, "team 1's bullet passes team 1's cannon"),
+                () -> assertTrue(!otherCannon, "team 2's crashes into it"),
+                () -> assertTrue(!unknownCannon, "an unknown team's crashes into it"),
+                () -> assertTrue(ownTarget, "team 1's bullet passes team 1's target"),
+                () -> assertTrue(!otherTarget, "team 2's crashes into it"));
+        }
+
+        @Test
+        @DisplayName("the bounce rules are clamped as the server's: factors to [0, 1], the speed limit to the diagonal")
+        void clamps() {
+            Options o = options("gravity: 0\nshotsWallBounce: yes\nobjectWallBounceLifeFactor: 3\n"
+                + "objectWallBounceBrakeFactor: -1\nmaxObjectWallBounceSpeed: 100000", WALL);
+            KernelShotMotion m = new KernelShotMotion(KernelWorld.of(o), o);
+            ShotStep out = new ShotStep();
+            boolean alive = m.tick(Click.fromPixels(270f), Click.fromPixels(200f), 20, 0, 10, false,
+                com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET, out);
+            assertAll(
+                () -> assertTrue(alive, "a 20 px bounce under the clamped (diagonal) limit lives"),
+                () -> assertEquals(9, out.life, "life factor clamped to 1: 10, then the tick's 1"),
+                () -> assertEquals(0f, Math.abs(out.vx), "brake clamped to 0: stopped"));
+        }
+
         @Test
         @DisplayName("a cannon's shot flies through cannons outside team play; a player's shot crashes into one")
         void cannonShot() throws java.io.IOException {
@@ -596,9 +645,9 @@ class ProvisionalShotsTest {
             ShotStep out = new ShotStep();
             int x = Click.fromPixels(787f);
             int y = Click.fromPixels(81f);
-            boolean cannon = m.tick(x, y, 6, 20, 100, true, out);
+            boolean cannon = m.tick(x, y, 6, 20, 100, true, com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET, out);
             float cannonY = out.y / (float) Click.CLICK;
-            boolean player = m.tick(x, y, 6, 20, 100, false, out);
+            boolean player = m.tick(x, y, 6, 20, 100, false, com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET, out);
             assertAll(
                 () -> assertTrue(cannon, "the cannon's shot leaves its cannon"),
                 () -> assertTrue(cannonY > 95, "moving up: " + cannonY),
