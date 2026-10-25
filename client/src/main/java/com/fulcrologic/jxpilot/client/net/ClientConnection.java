@@ -275,11 +275,14 @@ public final class ClientConnection implements com.fulcrologic.jxpilot.client.ga
     public KernelSync kernel() { return kernel; }
 
     @Override
-    public boolean predictValid() { return kernel.valid(); }
+    public boolean predictValid() { return kernel.usable(); }
 
-    /** BEHAVIOR: a KERNEL_STATE has arrived and none newer than {@code tick}. */
+    /**
+     * BEHAVIOR: the kernel state is current for the newest PREDICT ({@link KernelSync#stateCurrent}) and no
+     * KERNEL_STATE newer than {@code tick} has arrived.
+     */
     @Override
-    public boolean worldAsOf(int tick) { return kernel.stateKnown() && kernel.stateTick() - tick <= 0; }
+    public boolean worldAsOf(int tick) { return kernel.stateCurrent() && kernel.stateTick() - tick <= 0; }
 
     @Override
     public long predicts() { return kernel.predicts(); }

@@ -251,6 +251,20 @@ the option makes no measurable difference on these courses.
 - not predicted at all (drawn from the snapshots): dead, paused, round delay, warping, autopilot, a PAUSE
   key, an XPilot-protocol server. A PREDICT that cannot be used (its rare part or key masks lost) is
   skipped and the ring rides on.
+- a stale kernel world: a PREDICT whose world state is not the server's at its tick (a KERNEL_STATE in
+  flight, `KernelSync.stateCurrent()` false, or a newer one already applied) is adopted and replayed like any
+  other but not judged: the server's ship is the truth at its tick, and only replay ticks that touch the
+  changed blocks, cannons or wormholes can differ. Riding on instead cost up to 3 s of unreconciled drift
+  per lost KERNEL_STATE under bursty loss (dogfight 300/spk/5%b own error p95 48.8 px against 34.0).
+
+**Reliable channel stall** (found by the state gate, present on main since phase 0): `ReliableChannel.wantsSend`
+looked only at the in-flight window, but overflowing messages move into the window only inside `write`. Once a
+loss burst filled the 32-message window, the overflow queued behind it; when the acks emptied the window,
+`wantsSend` was false, `ServerNet` never called `write` again and the client got no reliable message for the
+rest of the session (KERNEL_STATE, scores, chat, events: 8 KERNEL_STATEs then none on the dogfight at 0/0/5%b,
+the overflow growing to 208). `wantsSend` is now also true while messages overflow and the window has room.
+With both fixes the 5% bursty dogfight cells are at p95 0.2-34 px (bound 60), gravity well 300/s15/5%b 0.0
+(bound 30).
 
 **Provisional shots** come from the kernel's own fire, so their spawn and velocity are exact, and move as
 the server moves a SHOT, with the server's own `Move_object` (moved into `common.sim.ObjectMover`; the

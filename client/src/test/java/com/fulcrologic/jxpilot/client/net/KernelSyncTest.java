@@ -380,8 +380,8 @@ class KernelSyncTest {
     }
 
     @Test
-    @DisplayName("the state gate: PREDICT names the newest KERNEL_STATE queued; valid only once it has arrived; the tags"
-        + " compare on 16 bits across the wrap")
+    @DisplayName("the state gate: PREDICT names the newest KERNEL_STATE queued; valid only once it has arrived (usable"
+        + " before); the tags compare on 16 bits across the wrap")
     void stateGate() {
         com.fulcrologic.jxpilot.common.net.InputHistory in = new com.fulcrologic.jxpilot.common.net.InputHistory();
         in.set(40, 6, 0, 0);
@@ -392,6 +392,7 @@ class KernelSyncTest {
         k.onSnapshot(predict(45, 40, b, 6, 3, true, 1, 0, false, 44), in);
         boolean inFlight = k.valid();
         boolean currentBefore = k.stateCurrent();
+        boolean usableInFlight = k.usable();
         deliver(k, stateAt(44, Msg.KernelState.CANNON, 0, 0, 1, 0));
         boolean arrived = k.valid();
         deliver(k, stateAt(65_536 + 3, Msg.KernelState.CANNON, 0, 0, 0, 0));
@@ -404,6 +405,7 @@ class KernelSyncTest {
         assertAll(
             () -> assertFalse(inFlight, "the tick-44 change is still in flight: not valid"),
             () -> assertFalse(currentBefore, "the state is not current"),
+            () -> assertTrue(usableInFlight, "but the PREDICT is usable (its ship can be adopted)"),
             () -> assertTrue(arrived, "once it arrives: valid"),
             () -> assertTrue(wrapped, "state tick 65539 against tag 3: the same tick on 16 bits"),
             () -> assertFalse(wrappedAhead, "tag 4 is one later: not current"),

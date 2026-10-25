@@ -37,16 +37,16 @@ import com.fulcrologic.jxpilot.common.sim.ShipBody;
  */
 public interface PredictionSource {
     /**
-     * Whether the newest PREDICT can be used: its rare part matches the core and the key masks are known (the
-     * {@code predict*} accessors below are then meaningful).
+     * Whether the newest PREDICT can be used: its rare part matches the core, the key masks and roundDelay are known
+     * and the kernel world is built from the KERNEL_CONFIG it ran with (the {@code predict*} accessors below are then
+     * meaningful). The world's state may still differ from the server's at its tick ({@link #worldAsOf}).
      */
     boolean predictValid();
 
     /**
-     * Whether the kernel world is the server's as of tick {@code tick} (no world-state change newer than it has
-     * arrived, and the initial state has): a replay from a PREDICT of that tick may use it. The other direction of
-     * {@link #predictValid}'s state check (the world not older than the newest snapshot): together, a replay runs on
-     * the world exactly as the server had it.
+     * Whether the kernel world's state is the server's as of tick {@code tick}: every KERNEL_STATE the server had
+     * queued by the newest PREDICT has arrived, and none newer than {@code tick}. Only then is a replay from that
+     * PREDICT the server's exactly (and judged).
      */
     boolean worldAsOf(int tick);
 

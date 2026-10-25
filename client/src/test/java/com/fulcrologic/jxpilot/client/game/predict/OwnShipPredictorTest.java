@@ -188,7 +188,7 @@ class OwnShipPredictorTest {
             s.world = null;
             p.update(s, 0);
             s.world = w;
-            s.predict(12, 102, ship(100, 100, 0));
+            s.predict(12, 101, ship(100, 100, 0));
             p.update(s, 0);
             assertAll(
                 () -> assertEquals(0, p.reconciliations(), "the PREDICT after a reset is a seed, not a comparison"),
@@ -218,7 +218,8 @@ class OwnShipPredictorTest {
         }
 
         @Test
-        @DisplayName("a PREDICT whose world state is not the client's (a newer or missing KERNEL_STATE) is not compared")
+        @DisplayName("a PREDICT whose world state is not the client's (a newer or missing KERNEL_STATE) is adopted but"
+            + " not judged")
         void worldNotAsOf() {
             Source s = open();
             s.hold(11, 12, 0, 0);
@@ -227,15 +228,19 @@ class OwnShipPredictorTest {
             s.worldAsOf = false;
             s.predict(12, 101, ship(100, 100, 0));
             p.update(s, 0);
-            long skipped = p.reconciliations();
-            double x = p.x();
+            long unjudged = p.reconciliations();
+            long unjudgedCorrections = p.corrections();
+            double offset = p.smoother().offsetPx();
             s.worldAsOf = true;
             s.predict(12, 101, ship(100, 100, 0));
             p.update(s, 0);
             assertAll(
-                () -> assertEquals(0, skipped, "skipped"),
-                () -> assertEquals(200, x, 1e-9, "the ring rode on"),
-                () -> assertEquals(1, p.reconciliations(), "compared once the world is as of its tick"));
+                () -> assertEquals(0, unjudged, "not counted as a comparison"),
+                () -> assertEquals(0, unjudgedCorrections, "nor as a correction"),
+                () -> assertEquals(Math.hypot(100, 100), offset, 1e-6, "the ring took the server's ship: its move from"
+                    + " (200, 200) to (100, 100) is smoothed"),
+                () -> assertEquals(1, p.reconciliations(), "compared once the world is as of its tick"),
+                () -> assertEquals(1, p.exactReconciliations(), "and then exact: the ring holds the adopted state"));
         }
 
         @Test
@@ -246,7 +251,7 @@ class OwnShipPredictorTest {
             OwnShipPredictor p = new OwnShipPredictor();
             p.update(s, 0);
             s.world = com.fulcrologic.jxpilot.common.sim.KernelWorld.of(s.options);
-            s.predict(12, 102, ship(100, 100, 0));
+            s.predict(12, 101, ship(100, 100, 0));
             p.update(s, 0);
             assertAll(
                 () -> assertTrue(p.active(), "active on the new world"),
