@@ -411,7 +411,7 @@ class ClientWorldTest {
 
         /** Frame {@code tick}: the own ship 7 at (x, 50) and every kind of line with an end on it. */
         static void ownLines(WorldFixture f, int tick, double x) {
-            f.begin(tick).self(7, 0, (float) x, 50, 4, 0, 0)
+            f.begin(tick).self(7, ShipFlags.REFUELING, (float) x, 50, 4, 0, 0)
                 .connector(300, 50, x, 50, Records.Connector.KIND_REFUEL)
                 .connector(90, 40, x, 50, Records.Connector.KIND_BALL)
                 .connector(x + 4, 46, 200, 100, Records.Connector.KIND_TRACTOR)
@@ -447,6 +447,57 @@ class ClientWorldTest {
                 () -> assertEquals(200f, o.get(c, 2, 2), 1e-3, "the beamer far away stays"),
                 () -> assertEquals(sx, o.get(ObjectLists.TRANSPORTER, 0, 0), 1e-3, "transporter: the victim end follows"),
                 () -> assertEquals(250f, o.get(ObjectLists.TRANSPORTER, 0, 2), 1e-3, "the thief's end stays"));
+        }
+
+        @Test
+        @DisplayName("line ends near the own ship that are not its own stay: another's refuel line while we are not"
+            + " refuelling; nothing while our ship is dead or respawns (jumps between the frames)")
+        void notOwnLines() {
+            WorldFixture f = new WorldFixture(true);
+            for (int tick : new int[] {100, 102}) {
+                double x = tick;
+                f.begin(tick).self(7, 0, (float) x, 50, 4, 0, 0)
+                    .connector(300, 50, x + 6, 50, Records.Connector.KIND_REFUEL)
+                    .connector(90, 40, x, 50, Records.Connector.KIND_BALL).ingestAtTick(tick);
+            }
+            f.world.update(at(103.5));
+            double renderSelf = 100 + 2 * (f.world.renderTick() - 100) / 2.0;
+            float refuelEnd = f.world.objects().get(ObjectLists.CONNECTOR, 0, 2);
+            float ballEnd = f.world.objects().get(ObjectLists.CONNECTOR, 1, 2);
+            float drawn = f.world.selfX();
+
+            WorldFixture g = new WorldFixture(false); // no wrap: the 400 px jump is not 300 px the other way
+            g.begin(100).self(7, 0, 100, 50, 4, 0, 0).connector(90, 40, 100, 50, Records.Connector.KIND_BALL)
+                .ingestAtTick(100);
+            g.begin(102).self(7, 0, 500, 50, 4, 0, 0).connector(90, 40, 500, 50, Records.Connector.KIND_BALL)
+                .ingestAtTick(102);
+            g.world.update(at(103.5));
+            float jumpEnd = g.world.objects().get(ObjectLists.CONNECTOR, 0, 2);
+            float jumpDrawn = g.world.selfX();
+            double jumpRender = g.world.renderTick();
+
+            WorldFixture d = new WorldFixture(true);
+            for (int tick : new int[] {100, 102}) { // a dead ship drawn as the newest SELF has it (104)
+                float x = 100 + 2 * (tick - 100);
+                d.begin(tick).self(7, ShipFlags.DEAD | ShipFlags.REFUELING, x, 50, 4, 0, 0)
+                    .connector(300, 50, x, 50, Records.Connector.KIND_REFUEL).ingestAtTick(tick);
+            }
+            d.world.update(at(103.5));
+            float deadEnd = d.world.objects().get(ObjectLists.CONNECTOR, 0, 2);
+            double deadLine = 100 + 4 * (d.world.renderTick() - 100) / 2.0;
+            float deadDrawn = d.world.selfX();
+            assertAll(
+                () -> assertTrue(drawn - renderSelf > 1, "the own ship is drawn ahead (" + drawn + " vs " + renderSelf
+                    + ")"),
+                () -> assertEquals(renderSelf + 6, refuelEnd, 1e-3, "another's refuel line 6 px off: where the frames"
+                    + " have it"),
+                () -> assertEquals(drawn, ballEnd, 1e-3, "while our ball pick-up line follows the drawn ship"),
+                () -> assertTrue(jumpRender > 100 && jumpRender < 102, "render tick between the frames: " + jumpRender),
+                () -> assertEquals(100f, jumpEnd, 1e-3, "a respawn jump (400 px): the line as the frames have it (A's: it"
+                    + " jumped too far to interpolate), not moved toward the ship drawn at " + jumpDrawn),
+                () -> assertTrue(Math.abs(deadDrawn - deadLine) > 1, "the dead ship is drawn off the line's end ("
+                    + deadDrawn + " vs " + deadLine + ")"),
+                () -> assertEquals(deadLine, deadEnd, 1e-3, "a dead own ship: the line as the frames have it"));
         }
 
         @Test

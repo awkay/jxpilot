@@ -1389,13 +1389,28 @@ public final class ClientWorld {
      * or of a TRANSPORTER (both ends) within {@link #OWN_LINE_PX} of the own ship at the render tick (A's SELF moved
      * towards B's as the lines are, else A's) is moved by the drawn position minus that one: an end at the ship lands
      * on the drawn ship, a hull point keeps its offset. Other ends (the fuel station, the ball) are not moved.
+     * BEHAVIOR: the records carry no owner, so nearness decides, except a refuel line: only while A's SELF is
+     * REFUELING (another ship refuelling next to ours is not ours). Nothing moves while A's SELF is dead or when it
+     * jumped more than {@link #TELEPORT_PX} from A to B (a respawn: the render tick's position is meaningless).
      */
     private void anchorOwnLines(SnapshotFrame a, SnapshotFrame b) {
         if (!outSelf || a == null || !a.hasSelf || a.selfId != outSelfId || players.selfId() != Protocol.NO_ID
             && outSelfId != players.selfId()) {
             return;
         }
-        double t = b == null || !b.hasSelf || b.selfId != a.selfId ? 0 : (renderTick - a.tick) / (double) (b.tick - a.tick);
+        if ((a.selfFlags & Records.ShipFlags.DEAD) != 0) {
+            return;
+        }
+        boolean withB = b != null && b.hasSelf && b.selfId == a.selfId;
+        if (withB) {
+            double jx = XMath.wrapDelta(b.selfX - a.selfX, worldW, wrap);
+            double jy = XMath.wrapDelta(b.selfY - a.selfY, worldH, wrap);
+            if (jx * jx + jy * jy > TELEPORT_PX * TELEPORT_PX) {
+                return;
+            }
+        }
+        boolean refueling = (a.selfFlags & Records.ShipFlags.REFUELING) != 0;
+        double t = !withB ? 0 : (renderTick - a.tick) / (double) (b.tick - a.tick);
         double rx = a.selfX;
         double ry = a.selfY;
         if (t > 0) {
@@ -1411,7 +1426,7 @@ public final class ClientWorld {
             if (tractor) {
                 anchorEnd(o, ObjectLists.CONNECTOR, i, 0, rx, ry, a.selfX, a.selfY, dx, dy);
             }
-            if (tractor || kind == Records.Connector.KIND_REFUEL || kind == Records.Connector.KIND_BALL) {
+            if (tractor || kind == Records.Connector.KIND_REFUEL && refueling || kind == Records.Connector.KIND_BALL) {
                 anchorEnd(o, ObjectLists.CONNECTOR, i, 2, rx, ry, a.selfX, a.selfY, dx, dy);
             }
         }
