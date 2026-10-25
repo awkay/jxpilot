@@ -1462,6 +1462,50 @@ class ClientConnectionTest {
                 () -> assertEquals(12, cc.latestTick(), "later datagrams of the batch were still read"));
         }
 
+        /** A REJECT datagram with header version {@code version} (the v1.1.1 header and REJECT layout). */
+        static byte[] foreignReject(int version, int nonce, String text) {
+            byte[] a = pkt(PacketType.REJECT, 0, 0, b -> {
+                Msg.Reject r = new Msg.Reject();
+                r.nonce = nonce;
+                r.reason = Msg.Reject.REASON_VERSION;
+                r.text.append(text);
+                r.write(b);
+            });
+            a[2] = (byte) version;
+            return a;
+        }
+
+        @Test
+        @DisplayName("a REJECT from a server of another protocol version is shown while connecting: an older (v1) or"
+            + " newer one; a stale nonce and a truncated body are not")
+        void foreignReject() {
+            c.start(0);
+            int nonce = c.connect.nonce;
+            t.in.add(foreignReject(1, nonce + 1, "incompatible version"));
+            c.update(MS);
+            ConnectionState stale = c.state();
+            byte[] cut = foreignReject(1, nonce, "x");
+            t.in.add(java.util.Arrays.copyOf(cut, PacketHeader.SIZE + 4));
+            c.update(MS);
+            long cutMalformed = c.malformed();
+            t.in.add(foreignReject(1, nonce, "incompatible version"));
+            c.update(2 * MS);
+            String older = c.status().toString();
+            ConnectionState olderState = c.state();
+            ClientConnection d = new ClientConnection(t, rec, "srv:1", 99);
+            d.start(3 * MS);
+            t.in.add(foreignReject(3, d.connect.nonce, "incompatible version"));
+            d.update(4 * MS);
+            assertAll(
+                () -> assertEquals(ConnectionState.CONNECTING, stale, "another attempt's nonce: ignored"),
+                () -> assertEquals(1, cutMalformed, "a foreign header too short for a REJECT body is malformed"),
+                () -> assertEquals("Rejected by srv:1: server runs an older JXPilot protocol (v1); this client speaks v"
+                    + Protocol.VERSION, older, "a v1 server's REJECT says so"),
+                () -> assertEquals(ConnectionState.CLOSED, olderState, "and closes"),
+                () -> assertEquals("Rejected by srv:1: server runs a newer JXPilot protocol (v3); this client speaks v"
+                    + Protocol.VERSION, d.status().toString(), "a newer one likewise"));
+        }
+
         @Test
         @DisplayName("server text in the status line is cut at 80 chars")
         void longReject() {
