@@ -765,7 +765,8 @@ class SimGameHostPlayTest {
         }
 
         @Test
-        @DisplayName("the owner's view is widened by its speed times its input lead")
+        @DisplayName("the owner's view is extended ahead of it by its velocity times its input lead: at most 8 ticks,"
+            + " at most 160 px, only in the direction of motion")
         void leadMargin() {
             Simulation s = sim("", THREE);
             World w = s.world;
@@ -776,17 +777,37 @@ class SimGameHostPlayTest {
             Player a = w.byId(ann);
             Player b = w.byId(bob);
             double edge = a.viewWidth / 2.0 + SnapshotBuilder.VIEW_MARGIN;
-            b.setClicks((int) ((a.cx / 64.0 + edge + 60) * 64), a.cy);
+            double ax = a.cx / 64.0;
+            java.util.function.IntFunction<Boolean> seesBobAt = dx -> {
+                b.setClicks((int) ((ax + edge + dx) * 64), a.cy);
+                return types(h, ann).contains(com.fulcrologic.jxpilot.common.net.Section.SHIP);
+            };
             a.vx = 20;
             a.vy = 0;
-            boolean without = types(h, ann).contains(com.fulcrologic.jxpilot.common.net.Section.SHIP);
+            boolean without = seesBobAt.apply(60);
             h.inputLead(ann, 4);
-            boolean with = types(h, ann).contains(com.fulcrologic.jxpilot.common.net.Section.SHIP);
+            boolean with = seesBobAt.apply(60);
+            boolean beyond = seesBobAt.apply(90);
+            a.vx = -20;
+            boolean behind = seesBobAt.apply(60);
+            a.vx = 20;
+            h.inputLead(ann, 14);
+            boolean capTicks = seesBobAt.apply(150);
+            boolean capTicksBeyond = seesBobAt.apply(170);
+            a.vx = 40;
+            boolean capPx = seesBobAt.apply(155);
+            boolean capPxBeyond = seesBobAt.apply(170);
             h.inputLead(ann, -3);
-            boolean negative = types(h, ann).contains(com.fulcrologic.jxpilot.common.net.Section.SHIP);
+            boolean negative = seesBobAt.apply(60);
             assertAll(
                 () -> assertFalse(without, "60 px beyond the view: Bob is culled"),
-                () -> assertTrue(with, "4 ticks of lead at 20 px/tick widen it by 80 px: Bob is in"),
+                () -> assertTrue(with, "4 ticks of lead at 20 px/tick extend it 80 px ahead: Bob is in"),
+                () -> assertFalse(beyond, "but not 90 px"),
+                () -> assertFalse(behind, "flying away from Bob: the side behind is not extended"),
+                () -> assertTrue(capTicks, "14 ticks of lead count as 8: 160 px at 20 px/tick reaches 150"),
+                () -> assertFalse(capTicksBeyond, "not 170"),
+                () -> assertTrue(capPx, "at 40 px/tick, 8 ticks would be 320 px: capped at 160, reaches 155"),
+                () -> assertFalse(capPxBeyond, "not 170"),
                 () -> assertFalse(negative, "a negative lead counts as 0"));
         }
 

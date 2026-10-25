@@ -108,6 +108,10 @@ public final class SimGameHost implements GameHost {
     private final long[] inKeys = new long[IDS];
     private final long[] inTaps = new long[IDS];
     private final boolean[] queued = new boolean[IDS];
+    /** Most ticks of input lead the owner's view cull follows (a client chooses its lead, up to 14 ticks). */
+    public static final int MAX_CULL_LEAD = 8;
+    /** Most pixels the owner's view is extended by (in the direction of motion). */
+    public static final double MAX_CULL_MARGIN = 160;
     /** The client's input lead in ticks ({@link #inputLead}), for the owner's view cull. */
     private final int[] leadOf = new int[IDS];
     /** Kernel state changes (KERNEL_STATE) and each viewer's cursor into them. */
@@ -1013,7 +1017,7 @@ public final class SimGameHost implements GameHost {
             Player view = sim.locks.viewOf(p);
             builder.setViewSize(p.viewWidth, p.viewHeight);
             if (view == p) {
-                builder.extendView(Math.hypot(p.vx, p.vy) * leadOf[viewerId]);
+                extendForLead(p, leadOf[viewerId]);
             }
             predictFor(viewerId, p, view == p);
             sim.locks.hudLock(view, p.viewWidth, p.viewHeight);
@@ -1031,6 +1035,24 @@ public final class SimGameHost implements GameHost {
             dst.put(src.get(i));
         }
         return part < scratchParts - 1;
+    }
+
+    /**
+     * The owner's view cull for its input lead.
+     * <p>
+     * BEHAVIOR: the view is extended by the ship's velocity times the lead (at most {@link #MAX_CULL_LEAD} ticks), in
+     * the direction of motion only, and by at most {@link #MAX_CULL_MARGIN} pixels.
+     */
+    private void extendForLead(Player p, int lead) {
+        int l = Math.min(lead, MAX_CULL_LEAD);
+        double mx = p.vx * l;
+        double my = p.vy * l;
+        double m = Math.hypot(mx, my);
+        if (m > MAX_CULL_MARGIN) {
+            mx *= MAX_CULL_MARGIN / m;
+            my *= MAX_CULL_MARGIN / m;
+        }
+        builder.extendView(mx, my);
     }
 
     /**

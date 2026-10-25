@@ -192,7 +192,10 @@ be allocation-free (SPEC GC rules): the ring holds preallocated kernel state str
   state. Otherwise there are two ships.
 - **View culling:** the server culls around *its* ship position, and the predicted view runs ahead by up
   to lead × speed (≈ 6 ticks × 30 px = 180 px at high speed). `SnapshotBuilder` should add
-  `|v| · leadTicks` to its view half-size, which costs a few lines.
+  `|v| · leadTicks` to its view half-size, which costs a few lines. *(As built in 1b: the view is extended by
+  v · lead only on the sides the ship flies towards, the lead clamped to 8 ticks and the extension to 160 px.
+  Measured, owner in a 12-robot arena fight at 20 px/tick: 386 B mean at lead 0, 396 B at lead 4, 400 B at
+  lead 8 and beyond; before the clamp lead 14 gave 494 B.)*
 
 **Testing:** the kernel bit-equality oracle (§4.4). A headless predictor on the lossy-link emulator
 (§7) must hold "zero corrections" on a no-contact course at RTT 300, jitter 30 and loss 5%, and give

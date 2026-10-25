@@ -448,16 +448,22 @@ public final class Msg {
         public static final int RESET = 6;
         /** Bytes per entry. */
         public static final int ENTRY = 11;
+        /** Bytes before the entries: {@code u32 tick, u8 count}. */
+        public static final int HEADER = 5;
         /** Entries per message. */
-        public static final int MAX_ENTRIES = (Protocol.MAX_RELIABLE_MESSAGE - 1) / ENTRY;
+        public static final int MAX_ENTRIES = (Protocol.MAX_RELIABLE_MESSAGE - HEADER) / ENTRY;
 
         private ByteBuffer b;
         private int countPos;
         private int n;
 
-        /** Start a message; returns this writer. */
-        public KernelState begin(ReliableChannel ch) {
+        /**
+         * Start a message whose entries take effect at net tick {@code tick} (the world is as they say from the
+         * snapshot of that tick on); returns this writer.
+         */
+        public KernelState begin(ReliableChannel ch, int tick) {
             b = ch.begin(ReliableType.KERNEL_STATE);
+            b.putInt(tick);
             countPos = b.position();
             b.put((byte) 0);
             n = 0;
@@ -475,7 +481,12 @@ public final class Msg {
 
         /** BEHAVIOR: an empty message is not sent. */
         public void end(ReliableChannel ch) {
-            if (n == 0) {
+            end(ch, false);
+        }
+
+        /** BEHAVIOR: an empty message is sent only with {@code evenEmpty} (it still carries its tick). */
+        public void end(ReliableChannel ch, boolean evenEmpty) {
+            if (n == 0 && !evenEmpty) {
                 ch.abort();
                 return;
             }
@@ -485,15 +496,20 @@ public final class Msg {
 
         /** Entries in a received payload (at its position), or -1 if it is truncated. */
         public static int count(ByteBuffer p) {
-            if (p.remaining() < 1) {
+            if (p.remaining() < HEADER) {
                 return -1;
             }
-            int n = p.get(p.position()) & 0xFF;
-            return p.remaining() < 1 + n * ENTRY ? -1 : n;
+            int n = p.get(p.position() + 4) & 0xFF;
+            return p.remaining() < HEADER + n * ENTRY ? -1 : n;
+        }
+
+        /** The net tick a received payload's entries take effect at (check {@link #count} first). */
+        public static int tick(ByteBuffer p) {
+            return p.getInt(p.position());
         }
 
         private static int at(ByteBuffer p, int i) {
-            return p.position() + 1 + i * ENTRY;
+            return p.position() + HEADER + i * ENTRY;
         }
 
         public static int kind(ByteBuffer p, int i) { return p.get(at(p, i)) & 0xFF; }

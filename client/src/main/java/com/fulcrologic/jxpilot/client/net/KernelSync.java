@@ -110,6 +110,8 @@ public final class KernelSync {
     private int[] blockType = new int[16];
     private int[] blockItem = new int[16];
     private int blocks;
+    private int stateTick;
+    private boolean stateKnown;
     private ShipGeom hull = ShipGeom.defaultShip();
     private final Msg.PlayerJoin join = new Msg.PlayerJoin();
 
@@ -128,6 +130,7 @@ public final class KernelSync {
         kernelOptions = null;
         world = null;
         clearState();
+        stateKnown = false;
         hull = ShipGeom.defaultShip();
         body.ship = hull;
     }
@@ -215,6 +218,8 @@ public final class KernelSync {
             badKernel++;
             return;
         }
+        stateTick = Msg.KernelState.tick(p);
+        stateKnown = true;
         for (int i = 0; i < n; i++) {
             int k = Msg.KernelState.kind(p, i);
             int a = Msg.KernelState.a(p, i);
@@ -364,6 +369,17 @@ public final class KernelSync {
 
     /** The version of the kernel config the world was built from (0: none). */
     public int kernelVersion() { return kernelVersion; }
+
+    /**
+     * The net tick of the newest KERNEL_STATE message: the mirrored state (and the world's) is the server's as of the
+     * snapshot of that tick. Messages come on the reliable channel, so they can arrive before or after that
+     * snapshot; a predictor starting from snapshot S has the world as of S when {@code stateTick() - S <= 0} and no
+     * newer message is due. Meaningful only when {@link #stateKnown()}.
+     */
+    public int stateTick() { return stateTick; }
+
+    /** Whether a KERNEL_STATE message (the server sends one with the initial state) has arrived since the reset. */
+    public boolean stateKnown() { return stateKnown; }
 
     /** Worlds built since the reset (the first, each KERNEL_CONFIG after it, each RESET). */
     public long rebuilds() { return rebuilds; }

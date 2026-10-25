@@ -105,8 +105,13 @@ class KernelSyncTest {
     }
 
     static List<ByteBuffer[]> state(int... entries) {
+        return stateAt(0, entries);
+    }
+
+    /** A KERNEL_STATE message of {@code entries} (5 ints each) tagged with {@code tick}. */
+    static List<ByteBuffer[]> stateAt(int tick, int... entries) {
         ReliableChannel ch = new ReliableChannel();
-        Msg.KernelState w = new Msg.KernelState().begin(ch);
+        Msg.KernelState w = new Msg.KernelState().begin(ch, tick);
         for (int i = 0; i < entries.length; i += 5) {
             w.add(entries[i], entries[i + 1], entries[i + 2], entries[i + 3], entries[i + 4]);
         }
@@ -216,6 +221,31 @@ class KernelSyncTest {
         k.onConfig(client);
         deliver(k, blob(o, version));
         return k;
+    }
+
+    @Test
+    @DisplayName("KERNEL_STATE ticks: the newest message's tick, an empty message included; unknown before one and"
+        + " after a reset; a truncated header is malformed")
+    void stateTicks() {
+        KernelSync k = new KernelSync();
+        boolean before = k.stateKnown();
+        deliver(k, stateAt(40, Msg.KernelState.CANNON, 0, 0, 1, 0));
+        int first = k.stateTick();
+        ReliableChannel ch = new ReliableChannel();
+        new Msg.KernelState().begin(ch, 55).end(ch, true);
+        deliver(k, messages(ch));
+        int empty = k.stateTick();
+        k.onReliable(ReliableType.KERNEL_STATE, ByteBuffer.allocate(4), 7);
+        long bad = k.badKernel();
+        int afterBad = k.stateTick();
+        k.reset();
+        assertAll(
+            () -> assertFalse(before, "unknown before any message"),
+            () -> assertEquals(40, first, "the message's tick"),
+            () -> assertEquals(55, empty, "an empty message (the initial state of a fresh world) still sets it"),
+            () -> assertEquals(1, bad, "a 4-byte payload is shorter than the header: malformed"),
+            () -> assertEquals(55, afterBad, "and changes nothing"),
+            () -> assertFalse(k.stateKnown(), "a reset forgets it"));
     }
 
     /** A part of tick {@code tick} with an OWN_SHOTS section of {@code n} shots (ages 0.., ordinal i % 3). */
@@ -397,9 +427,9 @@ class KernelSyncTest {
         int movedBx = k.world().wormholeBx(2);
         int item = k.world().map().itemId(4, 1);
         ReliableChannel ch = new ReliableChannel();
-        Msg.KernelState writer = new Msg.KernelState().begin(ch);
+        Msg.KernelState writer = new Msg.KernelState().begin(ch, 0);
         writer.end(ch);
-        ByteBuffer zero = ByteBuffer.allocate(1);
+        ByteBuffer zero = ByteBuffer.allocate(Msg.KernelState.HEADER);
         k.onReliable(ReliableType.KERNEL_STATE, zero, 7);
         long bad = k.badKernel();
         deliver(k, state(Msg.KernelState.RESET, 0, 0, 0, 0));
