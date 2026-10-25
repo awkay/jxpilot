@@ -785,7 +785,7 @@ public final class ClientConnection {
                 if (slack != SnapshotWriter.NO_SLACK) {
                     diagnostics.inputSlackTicks = slack / 16.0;
                 }
-                clock.feedback(tick, slack, starved, diagnostics.jitterMs() * 1e6, now);
+                clock.feedback(tick, slack, starved, now);
                 kernel.onSnapshot(in, input);
             }
         } else {

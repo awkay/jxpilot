@@ -74,7 +74,7 @@ class LeadControlTest {
                 PredictedClock k = c.predictedClock();
                 times.add(new long[] {t, r.server.net.inputStarvations(playerId), r.server.net.inputLate(playerId),
                     k.jumps()});
-                lead.add(new double[] {k.leadTicks(t), k.lastSlack(), k.targetSlack(c.netDiagnostics().jitterMs() * 1e6), k.slackEstimate()});
+                lead.add(new double[] {k.leadTicks(t), k.lastSlack(), k.targetSlack(), k.slackEstimate()});
                 int tick = r.server.net.currentTick();
                 long starved = r.server.net.inputStarvations(playerId);
                 com.fulcrologic.jxpilot.server.world.Player p = r.server.world().byId(playerId);
@@ -182,7 +182,7 @@ class LeadControlTest {
 
     @Test
     @Timeout(value = 3, unit = TimeUnit.MINUTES)
-    @DisplayName("RTT 100 -> 300 -> 100 ms: up converges in under 2 s with an immediate jump; no starvation once converged;"
+    @DisplayName("RTT 100 -> 300 -> 100 ms: up converges in under 2.5 s with an immediate jump; no starvation once converged;"
         + " down drains at 3%")
     void rttSteps() {
         Run r = new Run(new Scenario(100, Scenario.Jitter.NONE, Scenario.Loss.NONE), 11);
@@ -222,7 +222,8 @@ class LeadControlTest {
             () -> assertEquals(0, errBefore + errUp + errEnd, 1 / 16.0 + 1e-9,
                 "on a steady link the estimate is the server's report (within its 1/16 tick resolution)"),
             () -> assertTrue(fj >= 0 && fj < 600 * MS, "the step up starves and the clock jumps within ~RTT: " + fj / 1e6),
-            () -> assertTrue(upConverged < 2 * SEC, "the step up converges in under 2 s: " + upConverged / 1e6 + " ms"),
+            // the lean target (S4) starves a few more ticks on the step and jumps by the shortfall: 2.1 s measured
+            () -> assertTrue(upConverged < 2500 * MS, "the step up converges in under 2.5 s: " + upConverged / 1e6 + " ms"),
             () -> assertEquals(0, starvedAfterUp, "no starvation after converging at 300 ms"),
             () -> assertEquals(0, starvedAfterDown, "the step down never starves (the lead only drifts down)"),
             () -> assertTrue(downSettled > 0 && downSettled - down < 8 * SEC,

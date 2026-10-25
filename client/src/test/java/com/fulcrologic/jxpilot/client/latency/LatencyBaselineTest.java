@@ -110,7 +110,7 @@ class LatencyBaselineTest {
     }
 
     @Test
-    @DisplayName("own-ship I2P on clean links: mean RTT + 75..100 ms, p50 RTT + 70..100 ms, p95 at most RTT + 135 ms")
+    @DisplayName("own-ship I2P on clean links: mean RTT + 60..90 ms, p50 RTT + 60..90 ms, p95 at most RTT + 120 ms")
     void cleanI2p() {
         List<Executable> checks = new ArrayList<>();
         for (MetricTable.Row r : ROWS) {
@@ -123,11 +123,12 @@ class LatencyBaselineTest {
             // phase 0: RTT + T/2 (36 ms, the wait for the next 14 Hz tick) + about half a frame each for the key poll
             // and the draw, about 44 ms (seeds 1-3: mean RTT + 43.3..45.8). Phase 1b: the wait for the predicted
             // tick (T/2) + the input slack the lead controller holds (0.5 tick + half its 0.125 deadband, ~40 ms)
-            // + the frames: seed 1 measured mean RTT + 80..93, p50 RTT + 80..92, p95 at most RTT + 124
+            // + the frames: seed 1 measured mean RTT + 80..93, p50 RTT + 80..92, p95 at most RTT + 124. With the lean
+            // target (0.25 tick + the reports' spread, S4): mean RTT + 67..80, p50 RTT + 66..80, p95 at most RTT + 112
             double mean = r.i2p().mean();
-            checks.add(() -> assertTrue(mean >= rtt + 75 && mean <= rtt + 100, cell + "mean " + mean));
-            checks.add(() -> assertTrue(s.p50() >= rtt + 70 && s.p50() <= rtt + 100, cell + "p50 " + s.p50()));
-            checks.add(() -> assertTrue(s.p95() <= rtt + 135, cell + "p95 " + s.p95()));
+            checks.add(() -> assertTrue(mean >= rtt + 60 && mean <= rtt + 90, cell + "mean " + mean));
+            checks.add(() -> assertTrue(s.p50() >= rtt + 60 && s.p50() <= rtt + 90, cell + "p50 " + s.p50()));
+            checks.add(() -> assertTrue(s.p95() <= rtt + 120, cell + "p95 " + s.p95()));
             checks.add(() -> assertTrue(s.percentile(0) >= rtt, cell + "no key shows sooner than one round trip: "
                 + s.percentile(0)));
             for (ControlKey k : new ControlKey[] {ControlKey.TURN_LEFT, ControlKey.THRUST}) {

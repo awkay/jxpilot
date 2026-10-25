@@ -1234,7 +1234,7 @@ class ClientConnectionTest {
         void feedback() {
             ticking();
             c.sendInput(0, 0, at(0));
-            t.in.add(snapshot(T0 + 1, 0, 8, SnapshotWriter.starveFlags(SnapshotWriter.FLAG_LAST_PART, 1)));
+            t.in.add(snapshot(T0 + 1, 0, -16, SnapshotWriter.starveFlags(SnapshotWriter.FLAG_LAST_PART, 1)));
             c.update(at(1));
             int jumped = c.sendInput(0, 0, at(1));
             long firstJumps = c.predictedClock().jumps();
@@ -1254,9 +1254,10 @@ class ClientConnectionTest {
             c.update(at(1) + 102 * MS);
             long afterLost = c.predictedClock().jumps();
             assertAll(
-                () -> assertEquals(E0 + 2, jumped, "one tick later and one tick up"),
+                () -> assertEquals(E0 + 2, jumped,
+                    "one tick later, and up by the shortfall: a slack of -1 tick is 1.25 under the 0.25 target"),
                 () -> assertEquals(1L, firstJumps, "one jump"),
-                () -> assertEquals(0.5, slack, 1e-9, "inputSlack 8/16 tick"),
+                () -> assertEquals(-1.0, slack, 1e-9, "inputSlack -16/16 tick"),
                 () -> assertEquals(T0 + 7 + 3 + 6, withRtt,
                     "100 ms RTT: the server's present (snapshot + 7 ticks + RTT/2 = 3 ticks) + ceil((50+30)/16.7)+1 = 6"),
                 () -> assertEquals(6, lead, 0.1, "the HUD's lead over the server's present"),

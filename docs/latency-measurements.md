@@ -98,6 +98,95 @@ The lead controller itself (`LeadControlTest`, virtual time, real server and cli
   uniform loss; 3-9 per 20 s (1-3% of ticks) with 5% bursty loss; 1-3 with Pareto spikes. Every late entry
   was a starved tick's (late = starved in every cell).
 
+### The lean lead target (1b fix round, S4/S5)
+
+Every tick of input slack is a tick later that the server applies a key, and no client prediction hides that
+for what the server decides: a shield comes up `slack` later than it could. The target is now 0.25 tick plus
+1 σ of the slack reports' own spread (the uplink's variation of the server's window minimum, the clock's moves
+taken out, a robust running deviation), replacing 0.5 tick + 2 × the downlink snapshot jitter (the report is
+already the uplink's minimum margin, so the old target counted the margin twice, and in the wrong direction).
+A starvation jumps by the shortfall (at least 0.25 tick), and the estimate counts only entries the report can
+cover (ticks the report's snapshot had run), so a move down no longer reads as slack until it arrives (S5).
+
+Press-to-apply, a key down to the server tick that applies it (`ShieldReactionTest`, free flight, 48 trials
+per cell stratified over the tick phase; it is T/2 ≈ 36 ms of tick-grid wait + RTT/2 + the slack):
+
+| RTT | clean, mean / p95 before | clean, after | σ 15 ms, before | σ 15 ms, after |
+|---|---|---|---|---|
+| 0 | 88 / 120 | 67 / 99 | 115 / 147 | 88 / 120 |
+| 100 | 132 / 164 | 121 / 153 | 180 / 212 | 141 / 177 |
+| 300 | 226 / 259 | 212 / 244 | 275 / 309 | 241 / 277 |
+
+Own-ship I2P (seed 1, 4 courses), minus RTT:
+
+| link | before | after |
+|---|---|---|
+| clean, mean | 80..93 | 67..76 |
+| clean, p95 | at most 124 | at most 107 |
+| σ 15 ms, p50 | 121..135 | 79..97 |
+| Pareto spikes, p50 / p95 | 92..124 / at most 287 | 86..99 / at most 253 |
+| reordering (10% held 40 ms), p50 | 114..136 | 97..109 |
+| 5% bursty loss, p95 | at most 328 | at most 208 (no jitter), 203 (σ15), 336 (spikes) |
+
+The cost (`LeadControlTest`): the RTT step 100 → 300 ms starves 9 ticks instead of 5 and converges in 2.1 s
+instead of 1.7 s; the loss/jitter matrix (20 s after a 6 s settle, starved/late, the lead at the end):
+
+```
+[lead matrix] cell: starved/late in the 20 s after a 6 s settle (lead ticks at the end)
+  0/0/0          0/0   (lead 0.43)
+  0/0/1%u        0/0   (lead 0.49)
+  0/0/5%b        8/8   (lead 2.01)
+  0/s15/0        0/0   (lead 0.66)
+  0/s15/1%u      0/0   (lead 0.61)
+  0/s15/5%b      8/8   (lead 4.73)
+  0/spk/0        3/3   (lead 1.41)
+  0/spk/1%u      2/2   (lead 1.30)
+  0/spk/5%b      3/3   (lead 2.10)
+  0/ro/0         0/0   (lead 0.72)
+  0/ro/1%u       1/1   (lead 1.12)
+  0/ro/5%b       5/5   (lead 2.73)
+  100/0/0        0/0   (lead 1.24)
+  100/0/1%u      0/0   (lead 1.31)
+  100/0/5%b      5/5   (lead 1.98)
+  100/s15/0      0/0   (lead 1.43)
+  100/s15/1%u    0/0   (lead 1.43)
+  100/s15/5%b    6/6   (lead 2.41)
+  100/spk/0      5/5   (lead 2.26)
+  100/spk/1%u    4/4   (lead 2.00)
+  100/spk/5%b    6/6   (lead 1.80)
+  100/ro/0       0/0   (lead 1.51)
+  100/ro/1%u     0/0   (lead 1.42)
+  100/ro/5%b     6/6   (lead 1.62)
+  200/0/0        0/0   (lead 1.84)
+  200/0/1%u      0/0   (lead 1.88)
+  200/0/5%b      7/7   (lead 2.82)
+  200/s15/0      0/0   (lead 2.13)
+  200/s15/1%u    0/0   (lead 2.21)
+  200/s15/5%b    4/4   (lead 2.48)
+  200/spk/0      2/2   (lead 2.17)
+  200/spk/1%u    3/3   (lead 2.65)
+  200/spk/5%b    7/7   (lead 2.64)
+  200/ro/0       0/0   (lead 2.04)
+  200/ro/1%u     0/0   (lead 2.05)
+  200/ro/5%b     4/4   (lead 2.60)
+  300/0/0        0/0   (lead 2.58)
+  300/0/1%u      0/0   (lead 2.78)
+  300/0/5%b     10/10  (lead 3.22)
+  300/s15/0      0/0   (lead 2.79)
+  300/s15/1%u    0/0   (lead 2.93)
+  300/s15/5%b    8/8   (lead 4.20)
+  300/spk/0      2/2   (lead 3.18)
+  300/spk/1%u    2/2   (lead 3.19)
+  300/spk/5%b    7/7   (lead 3.76)
+  300/ro/0       0/0   (lead 2.82)
+  300/ro/1%u     0/0   (lead 2.88)
+  300/ro/5%b     7/7   (lead 4.40)
+```
+
+Loss-free cells and 1% uniform loss stay at 0 starvations up to σ 15 ms (one at 0/ro/1%u); Pareto spikes
+2-5 per 20 s, 5% bursty loss 4-10. Reordered inputs (`reorderedInputs`): every tick applies the client's final
+entry (0 misapplied of ~278 per cell, 59-83 of ~800 datagrams reordered).
+
 ## Method
 
 `client/src/test/java/com/fulcrologic/jxpilot/client/latency/`:

@@ -40,14 +40,20 @@ import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
  *   <li>the snapshot header's {@code inputSlack} is the smallest margin by which entries arrived over the server's
  *   last second, so it lags every change the clock makes. The clock keeps its own adjustment (jumps, settles and
  *   dilation, in ticks) at the time each final entry went out ({@link #sent}) and estimates the present slack as
- *   the report plus the adjustment since the smallest one among the entries the report can cover. That is exact
- *   on a steady link (whichever entry made the minimum, it went out with at least that adjustment), and it lets
- *   the steering act at once instead of waiting a second per correction;</li>
- *   <li>the estimate is held near {@code 0.5 tick + 2σ} of jitter ({@link #targetSlack}): above it the clock runs
- *   slow, below it fast, proportionally and up to ±3% (no change within {@link #DEADBAND});</li>
- *   <li>a starvation report (the header's starvation counter changed) jumps the clock up at once, by one tick or
- *   by the estimate's shortfall below the target when that is more; further reports are ignored until snapshots
- *   reach the first tick sent at a boundary after the jump (they describe entries sent before it);</li>
+ *   the report plus the adjustment since the smallest one among the entries the report can cover: those for ticks
+ *   the server had run by the report's snapshot (they had all arrived) within its one-second window. That is exact
+ *   on a steady link (whichever entry made the minimum, it went out with at least that adjustment), after a move
+ *   either way (entries still in flight are left out, so a move down does not read as slack until it arrives), and
+ *   it lets the steering act at once instead of waiting a second per correction;</li>
+ *   <li>the estimate is held near {@code 0.25 tick + 1σ} ({@link #targetSlack}), σ the spread of the reports
+ *   themselves (the uplink's variation of the window minimum, the clock's own moves taken out, a robust running
+ *   deviation, {@link #slackSpread}): above it the clock runs slow, below it fast, proportionally and up to ±3% (no change
+ *   within {@link #DEADBAND}). The report is already the uplink's minimum margin, so no downlink jitter is added:
+ *   every tick of slack is a tick the server applies the input later (a shield comes up later);</li>
+ *   <li>a starvation report (the header's starvation counter changed) jumps the clock up at once, by the
+ *   estimate's shortfall below the target, at least {@link #MIN_JUMP} (one tick without an estimate); further
+ *   reports are ignored until snapshots reach the first tick sent at a boundary after the jump (they describe
+ *   entries sent before it);</li>
  *   <li>once per session, after {@code simHz} slack reports, the clock settles: an estimate above the target by
  *   more than {@link #DEADBAND} is removed at once (down to half the deadband above the target), as the initial
  *   lead is deliberately generous and draining it at 3% would take seconds.</li>
@@ -60,10 +66,18 @@ import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
 public final class PredictedClock {
     /** Largest time dilation either way (the slew limit {@link TickClock} uses). */
     public static final double DILATION = 0.03;
-    /** Slack (ticks) the steering aims for, before the jitter margin. */
-    public static final double BASE_SLACK = 0.5;
-    /** Jitter standard deviations added to {@link #BASE_SLACK}. */
-    public static final double JITTER_SIGMAS = 2;
+    /** Slack (ticks) the steering aims for, before the spread margin. */
+    public static final double BASE_SLACK = 0.25;
+    /** Standard deviations of the slack reports' spread added to {@link #BASE_SLACK}. */
+    public static final double SPREAD_SIGMAS = 1;
+    /** Weight of a report in the spread's running mean and mean deviation (about 2 s of reports at 14 Hz). */
+    public static final double SPREAD_ALPHA = 1.0 / 32;
+    /** Largest deviation (ticks) one report adds to the spread: a late copy's deep margin is an outlier, not jitter. */
+    public static final double SPREAD_CLAMP = 1;
+    /** Standard deviations per mean absolute deviation of a normal distribution (sqrt(pi/2)). */
+    static final double SIGMA_PER_MAD = 1.2533141373155003;
+    /** Smallest starvation jump (ticks) when the estimate is not short of the target (a loss, a spike). */
+    public static final double MIN_JUMP = 0.25;
     /** Safety margin of the initial lead over half the RTT. */
     public static final long INITIAL_MARGIN_NANOS = 30_000_000L;
     /** Slack error (ticks) within which the dilation is 0. */
@@ -96,6 +110,10 @@ public final class PredictedClock {
     private double settledBy;
     private double lastSlack = Double.NaN;
     private double estimate = Double.NaN;
+    /** Running mean and mean absolute deviation of the reports with the clock's own moves taken out (ticks). */
+    private boolean haveSpread;
+    private double spreadMean;
+    private double spreadMad;
 
     /** A new game (WELCOME) or session: forget everything but the rate. */
     public void reset(double simHz) {
@@ -116,6 +134,9 @@ public final class PredictedClock {
         settledBy = 0;
         lastSlack = Double.NaN;
         estimate = Double.NaN;
+        haveSpread = false;
+        spreadMean = 0;
+        spreadMad = 0;
     }
 
     public double simHz() { return simHz; }
@@ -177,18 +198,45 @@ public final class PredictedClock {
         return present(nowNanos) + initialLead();
     }
 
-    /** The slack the steering aims for: {@link #BASE_SLACK} + {@link #JITTER_SIGMAS} × jitter (ticks). */
-    public double targetSlack(double jitterNanos) {
-        double j = jitterNanos >= 0 ? jitterNanos / tickNanos : 0;
-        return BASE_SLACK + JITTER_SIGMAS * j;
+    /** The slack the steering aims for: {@link #BASE_SLACK} + {@link #SPREAD_SIGMAS} × {@link #slackSpread} (ticks). */
+    public double targetSlack() {
+        return BASE_SLACK + SPREAD_SIGMAS * slackSpread();
+    }
+
+    /**
+     * The spread (ticks) of the slack reports, the clock's own moves taken out: their running mean absolute
+     * deviation as a normal standard deviation ({@link #SIGMA_PER_MAD}); 0 before a report.
+     */
+    public double slackSpread() {
+        return SIGMA_PER_MAD * spreadMad;
+    }
+
+    /**
+     * One report's slack with the clock's moves taken out ({@code estimate - adjust}: what the margin would be had
+     * the clock never moved), into the running spread.
+     * <p>
+     * BEHAVIOR: the first sample sets the mean (deviation 0); each later one, its distance from the mean clamped
+     * to {@link #SPREAD_CLAMP}, moves the mean and the mean deviation by {@link #SPREAD_ALPHA} of the difference.
+     */
+    private void spread(double base) {
+        if (!haveSpread) {
+            haveSpread = true;
+            spreadMean = base;
+            spreadMad = 0;
+            return;
+        }
+        double d = Math.clamp(base - spreadMean, -SPREAD_CLAMP, SPREAD_CLAMP);
+        spreadMean += SPREAD_ALPHA * d;
+        spreadMad += SPREAD_ALPHA * (Math.abs(d) - spreadMad);
     }
 
     /**
      * The present slack (ticks) estimated from a report taken at snapshot {@code snapshotTick}: the report plus the
-     * adjustment made since the smallest adjustment among the final entries for ticks after
-     * {@code snapshotTick - simHz} (the ones whose arrival the server's window can hold).
+     * adjustment made since the smallest adjustment among the final entries for ticks in
+     * {@code (snapshotTick - simHz, snapshotTick]} (the ones the server's window holds and had certainly arrived).
      * <p>
-     * BEHAVIOR: without such entries it is the report itself.
+     * BEHAVIOR: without such entries it is the report itself; entries for later ticks (possibly still in flight)
+     * do not count.
      */
     double estimate(int snapshotTick, double slack) {
         double least = Double.MAX_VALUE;
@@ -199,6 +247,9 @@ public final class PredictedClock {
             if (sentTick[s] - from <= 0) {
                 break;
             }
+            if (sentTick[s] - snapshotTick > 0) {
+                continue;
+            }
             least = Math.min(least, sentAdjust[s]);
         }
         return least == Double.MAX_VALUE ? slack : slack + adjust - least;
@@ -207,10 +258,11 @@ public final class PredictedClock {
     /**
      * The server's feedback from a snapshot header (part 0 of a newer tick).
      * <p>
-     * BEHAVIOR: a slack report (not {@link SnapshotWriter#NO_SLACK}) gives the estimate ({@link #estimate}).
-     * BEHAVIOR: a starvation report jumps the clock up at once by max(1, target - estimate) (1 without an
-     * estimate), unless the snapshot is older than the guard tick of the previous jump; the guard is the first
-     * tick after the one the clock reached with the jump.
+     * BEHAVIOR: a slack report (not {@link SnapshotWriter#NO_SLACK}) gives the estimate ({@link #estimate}) and a
+     * sample of the spread ({@link #slackSpread}).
+     * BEHAVIOR: a starvation report jumps the clock up at once by max({@link #MIN_JUMP}, target - estimate) (1
+     * without an estimate), unless the snapshot is older than the guard tick of the previous jump; the guard is the
+     * first tick after the one the clock reached with the jump.
      * BEHAVIOR: otherwise, once the session has {@code simHz} slack reports, the clock settles once (see the class
      * comment); every other estimate sets the dilation: 0 within {@link #DEADBAND} of the target, else
      * -(error / {@link #FULL_ERROR}) × {@link #DILATION}, clamped to ±{@link #DILATION} (too much slack runs slow).
@@ -218,9 +270,8 @@ public final class PredictedClock {
      * @param snapshotTick the snapshot's tick
      * @param slack16      the header's inputSlack (1/16 tick) or NO_SLACK
      * @param starved      the header's starvation counter changed
-     * @param jitterNanos  the current jitter estimate (NaN: none)
      */
-    public void feedback(int snapshotTick, int slack16, boolean starved, double jitterNanos, long nowNanos) {
+    public void feedback(int snapshotTick, int slack16, boolean starved, long nowNanos) {
         boolean report = slack16 != SnapshotWriter.NO_SLACK;
         if (report) {
             lastSlack = slack16 / 16.0;
@@ -229,15 +280,16 @@ public final class PredictedClock {
             return;
         }
         advance(nowNanos);
-        double target = targetSlack(jitterNanos);
         if (report) {
             estimate = estimate(snapshotTick, lastSlack);
+            spread(estimate - adjust);
         }
+        double target = targetSlack();
         if (guard && snapshotTick - guardTick >= 0) {
             guard = false;
         }
         if (starved && !guard) {
-            double by = report ? Math.max(1, target - estimate) : 1;
+            double by = report ? Math.max(MIN_JUMP, target - estimate) : 1;
             move(by);
             jumps++;
             guard = true;
