@@ -482,6 +482,49 @@ class OwnShipPredictorTest {
                 () -> assertEquals(2, s.diag.lastCorrectionPx, 0.05, "the last correction's size"),
                 () -> assertEquals(1.0, p.correctionsPerSecond(), 1e-9, "also on the predictor"));
         }
+
+        @Test
+        @DisplayName("prediction off clears the correction diagnostics (the HUD's \"-\"); on again they start afresh;"
+            + " while on but not predicting they are still published")
+        void diagnosticsOff() {
+            Source s = open();
+            ShipBody start = ship(200, 200, 0);
+            s.hold(11, 15, 0, 0);
+            OwnShipPredictor p = new OwnShipPredictor();
+            p.update(s, 0);
+            ShipBody off = reference(s, start, 12, 0);
+            off.initPixels(px(off) + 2, py(off));
+            s.predict(12, 101, off);
+            p.update(s, 500 * MS);
+            p.update(s, 1000 * MS);
+            double onRate = s.diag.correctionsPerSecond;
+            p.enabled = false;
+            p.update(s, 1100 * MS);
+            double offRate = s.diag.correctionsPerSecond;
+            double offPx = s.diag.lastCorrectionPx;
+            double offPredictorPx = p.lastCorrectionPx();
+            p.enabled = true;
+            p.update(s, 1200 * MS);
+            double againRate = s.diag.correctionsPerSecond;
+            p.update(s, 2200 * MS);
+            double againLater = s.diag.correctionsPerSecond;
+            double againPx = s.diag.lastCorrectionPx;
+            Source idle = open();
+            idle.valid = false;
+            OwnShipPredictor q = new OwnShipPredictor();
+            q.update(idle, 0);
+            q.update(idle, 1000 * MS);
+            assertAll(
+                () -> assertEquals(1.0, onRate, 1e-9, "on: one correction in the first second"),
+                () -> assertTrue(Double.isNaN(offRate), "off: no rate"),
+                () -> assertTrue(Double.isNaN(offPx), "off: no last correction"),
+                () -> assertTrue(Double.isNaN(offPredictorPx), "nor on the predictor"),
+                () -> assertTrue(Double.isNaN(againRate), "on again: no rate before a whole second"),
+                () -> assertEquals(0.0, againLater, 1e-9, "then the new window's (no corrections)"),
+                () -> assertTrue(Double.isNaN(againPx), "the old correction is not shown again"),
+                () -> assertTrue(!q.active(), "a predictor without a valid PREDICT is not predicting"),
+                () -> assertEquals(0.0, idle.diag.correctionsPerSecond, 1e-9, "but publishes its rate"));
+        }
     }
 
     @Nested

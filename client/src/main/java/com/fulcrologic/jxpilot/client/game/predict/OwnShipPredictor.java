@@ -211,11 +211,31 @@ public final class OwnShipPredictor {
      * collected entry at alpha = clamp(predicted tick - K, 0, 1).
      * BEHAVIOR: inactive while the state at K is unpredictable (see the class comment); active and frozen at the
      * crash point after a predicted crash.
+     * BEHAVIOR: the diagnostics' corrections per second and last correction are published on every enabled update
+     * (active or not: no corrections while not predicting is a rate of 0); disabled, they are cleared (NaN, the HUD's
+     * "-") and start afresh when enabled again.
      */
     public void update(PredictionSource src, long nowNanos) {
+        if (!enabled) {
+            if (seeded) {
+                reset();
+            }
+            if (src != null) {
+                clearStats(src.diagnostics());
+            }
+            active = false;
+            return;
+        }
+        run(src, nowNanos);
+        if (src != null) {
+            publish(src.diagnostics(), nowNanos);
+        }
+    }
+
+    private void run(PredictionSource src, long nowNanos) {
         boolean was = active;
         active = false;
-        if (!enabled || src == null) {
+        if (src == null) {
             if (seeded) {
                 reset();
             }
@@ -282,7 +302,6 @@ public final class OwnShipPredictor {
         draw(cur, spec, alpha, nowNanos);
         shots.draw(head, alpha);
         active = true;
-        publish(src.diagnostics(), nowNanos);
     }
 
     /**
@@ -495,6 +514,17 @@ public final class OwnShipPredictor {
      */
     private static double wrapCoord(double v, double size) {
         return v - Math.floor(v / size) * size;
+    }
+
+    private void clearStats(NetDiagnostics d) {
+        lastCorrectionPx = Double.NaN;
+        correctionsPerSecond = Double.NaN;
+        windowStart = Long.MIN_VALUE;
+        windowCorrections = 0;
+        if (d != null) {
+            d.correctionsPerSecond = Double.NaN;
+            d.lastCorrectionPx = Double.NaN;
+        }
     }
 
     private void publish(NetDiagnostics d, long nowNanos) {

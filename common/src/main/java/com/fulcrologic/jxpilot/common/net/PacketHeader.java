@@ -45,11 +45,33 @@ public final class PacketHeader {
 
     /** Write a header at the buffer's position (relative puts). */
     public static void write(ByteBuffer out, int type, int session, int reliableAck) {
+        write(out, Protocol.VERSION, type, session, reliableAck);
+    }
+
+    /**
+     * Write a header with another protocol's version byte: the REJECT that tells a peer of that version why it is
+     * refused (every version so far has this header and REJECT layout).
+     */
+    public static void write(ByteBuffer out, int version, int type, int session, int reliableAck) {
         out.putShort((short) Protocol.MAGIC);
-        out.put((byte) Protocol.VERSION);
+        out.put((byte) version);
         out.put((byte) type);
         out.putShort((short) session);
         out.putShort((short) reliableAck);
+    }
+
+    /**
+     * BEHAVIOR: the version byte of a JX header at the buffer's position (nothing is moved), or -1 when shorter than a
+     * header or not the JX magic.
+     */
+    public static int peekVersion(ByteBuffer in) {
+        int p = in.position();
+        return in.remaining() >= SIZE && (in.getShort(p) & 0xFFFF) == Protocol.MAGIC ? in.get(p + 2) & 0xFF : -1;
+    }
+
+    /** BEHAVIOR: the packet type byte of a header at the buffer's position (check {@link #peekVersion} first). */
+    public static int peekType(ByteBuffer in) {
+        return in.get(in.position() + 3) & 0xFF;
     }
 
     /**

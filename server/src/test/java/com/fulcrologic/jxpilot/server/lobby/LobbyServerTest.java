@@ -634,6 +634,30 @@ class LobbyServerTest {
         }
 
         @Test
+        @DisplayName("a v1 client's CONNECT and LOBBY_HELLO get a REJECT VERSION in the v1 header, which a v1.1.1 reader"
+            + " accepts")
+        void v1Peer() {
+            ByteBuffer c = connect(0x51, "veteran", "");
+            c.put(2, (byte) 1);
+            send(ALICE, c);
+            ByteBuffer h = hello(0x52);
+            h.put(2, (byte) 1);
+            send(BOB, h);
+            List<Sent> rejects = wire.of(PacketType.REJECT);
+            String text = com.fulcrologic.jxpilot.server.net.ServerNet.VERSION_OLDER_PEER;
+            assertAll(
+                () -> assertEquals(2, rejects.size(), "both answered"),
+                () -> assertEquals("51 " + Msg.Reject.REASON_VERSION + " " + text.substring(0,
+                    Math.min(text.length(), c.limit() - 14)),
+                    com.fulcrologic.jxpilot.server.net.RejectReader.rejectAs(1, rejects.get(0).data()),
+                    "the CONNECT: v1 header, its nonce, VERSION, the text (cut to the request)"),
+                () -> assertEquals("52 " + Msg.Reject.REASON_VERSION + " " + text.substring(0,
+                    Math.min(text.length(), h.limit() - 14)),
+                    com.fulcrologic.jxpilot.server.net.RejectReader.rejectAs(1, rejects.get(1).data()),
+                    "the HELLO likewise"));
+        }
+
+        @Test
         @DisplayName("garbage is dropped and counted, with no reply")
         void garbage() {
             send(ALICE, ByteBuffer.wrap(new byte[] {9, 9, 9, 9, 9, 9, 9, 9, 9, 9}));
@@ -892,7 +916,8 @@ class LobbyServerTest {
                 () -> assertEquals(c.limit(), wire.of(PacketType.REJECT).get(0).data().remaining(), "same size as the CONNECT"),
                 () -> assertEquals("lobby: choose a map (this server needs a lobby-aware client)".substring(0, c.limit() - 14),
                     r.text.toString(), "text cut to exactly what fits"),
-                () -> assertEquals("incompatible version".substring(0, vSize - 14), r2.text.toString(),
+                () -> assertEquals(com.fulcrologic.jxpilot.server.net.ServerNet.VERSION_NEWER_PEER.substring(0, vSize - 14),
+                    r2.text.toString(),
                     "the next reject's text is its own, cut to its request"));
         }
 

@@ -45,6 +45,7 @@ import java.util.SplittableRandom;
 import static com.fulcrologic.jxpilot.server.net.Harness.addr;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -388,6 +389,27 @@ class ServerNetTest {
                 () -> assertEquals("join refused", ServerNet.rejectText(Msg.Reject.REASON_OTHER), "text for other"));
         }
 
+
+        @Test
+        @DisplayName("a v1 client's CONNECT gets a REJECT VERSION its own v1.1.1 reader accepts: its header version,"
+            + " its nonce, the reason and a text telling it to update")
+        void v1Peer() {
+            Harness h = new Harness();
+            ByteBuffer v1 = new TestClient(0x0BADF00D).connect("Veteran", 255, "(SH: 15,0 -9,8 -9,-8)"); // ~a real one
+            v1.put(2, (byte) 1);
+            h.in(0, A, v1);
+            List<Harness.Sent> reply = h.take(A);
+            String asV1 = RejectReader.rejectAs(1, reply.get(0).data());
+            String asV2 = RejectReader.rejectAs(Protocol.VERSION, reply.get(0).data());
+            assertAll(
+                () -> assertEquals(1, reply.size(), "one reply"),
+                () -> assertEquals("badf00d " + Msg.Reject.REASON_VERSION + " " + ServerNet.VERSION_OLDER_PEER, asV1,
+                    "a v1.1.1 client reads it: its nonce, REJECT VERSION, the text"),
+                () -> assertEquals("client too old: protocol v2", ServerNet.VERSION_OLDER_PEER, "which says why"),
+                () -> assertNull(asV2, "it is not a v2 datagram"),
+                () -> assertTrue(reply.get(0).data().remaining() <= v1.limit(), "no larger than the request"));
+        }
+
         @Test
         @DisplayName("a CONNECT of another protocol version gets REJECT VERSION; other bad headers are malformed")
         void otherVersion() {
@@ -396,8 +418,7 @@ class ServerNetTest {
             v2.put(2, (byte) (Protocol.VERSION + 1));
             h.in(0, A, v2);
             List<Harness.Sent> reply = h.take(A);
-            TestClient view = new TestClient(0x01020304);
-            view.onPacket(reply.get(0).data().duplicate(), h.now);
+            String view = RejectReader.rejectAs(Protocol.VERSION + 1, reply.get(0).data());
             ByteBuffer tiny = ByteBuffer.wrap(new byte[] {0x4A, 0x58, 9, PacketType.CONNECT, 0, 0, 0, 0, 0, 0, 0, 0, 0});
             h.in(0, A, tiny);
             List<Harness.Sent> tinyReply = h.take(A);
@@ -409,8 +430,7 @@ class ServerNetTest {
             offset.flip().position(5);
             h.in(0, A, offset);
             List<Harness.Sent> offsetReply = h.take(A);
-            TestClient offsetView = new TestClient(0x11223344);
-            offsetView.onPacket(offsetReply.get(0).data().duplicate(), h.now);
+            String offsetView = RejectReader.rejectAs(9, offsetReply.get(0).data());
             ByteBuffer v2Input = new TestClient(1).bare(PacketType.INPUT);
             v2Input.put(2, (byte) (Protocol.VERSION + 1));
             h.in(0, A, v2Input);
@@ -420,14 +440,13 @@ class ServerNetTest {
             List<Harness.Sent> silent = h.take(A);
             assertAll(
                 () -> assertEquals(1, reply.size(), "one reply"),
-                () -> assertEquals(Msg.Reject.REASON_VERSION, view.rejectReason, "REJECT VERSION"),
-                () -> assertEquals(0x01020304, view.rejectNonce, "echoing the CONNECT's nonce"),
-                () -> assertEquals("incompatible version", view.rejectText, "with its text"),
+                () -> assertEquals("1020304 " + Msg.Reject.REASON_VERSION + " " + ServerNet.VERSION_NEWER_PEER, view,
+                    "REJECT VERSION in the peer's own header version, echoing its nonce, with the newer-peer text"),
                 () -> assertEquals(List.of(), tinyReply, "a 13-byte one is not answered: even a bare REJECT (14) would be larger"),
                 () -> assertEquals(4, h.net.versionRejects(), "all four, down to a bare 8-byte header, are version rejects"),
                 () -> assertEquals(14, offsetReply.get(0).data().remaining(), "a 14-byte one at buffer offset 5 gets a bare 14-byte REJECT"),
-                () -> assertEquals(0x11223344, offsetView.rejectNonce, "with the nonce read relative to the datagram start"),
-                () -> assertEquals("", offsetView.rejectText, "and no room for text"),
+                () -> assertEquals("11223344 " + Msg.Reject.REASON_VERSION + " ", offsetView,
+                    "with the nonce read relative to the datagram start, and no room for text"),
                 () -> assertEquals(List.of(), silent, "an other-version INPUT and a bad magic get no reply"),
                 () -> assertEquals(2, h.net.malformed(), "and are malformed"),
                 () -> assertEquals(0, h.net.connections(), "no session is created"),

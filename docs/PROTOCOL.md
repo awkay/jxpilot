@@ -6,7 +6,7 @@ Our own UDP protocol (no XPilot client compatibility). All code lives in
 Version 2 (`Protocol.VERSION`, latency phase 1b, docs/latency-fixes.md §4.3/§4.4) tags every input with the
 tick it is for, adds the input slack and starvation to the snapshot header, the owner's PREDICT
 sections and the kernel world transfer (KERNEL_CONFIG, KERNEL_CHUNK, KERNEL_STATE). A version 1 peer's CONNECT gets
-REJECT VERSION ("incompatible version"). The C-server path (`client.xp`, the XPilot protocol) is untouched.
+REJECT VERSION (see "Other versions" below). The C-server path (`client.xp`, the XPilot protocol) is untouched.
 
 - Byte order: big-endian (Java `ByteBuffer` default).
 - Max datagram payload: **1200 bytes** (`Protocol.MAX_PACKET`). Default port 15345.
@@ -22,13 +22,23 @@ REJECT VERSION ("incompatible version"). The C-server path (`client.xp`, the XPi
 | off | type | field |
 |---|---|---|
 | 0 | u16 | magic `0x4A58` ("JX") |
-| 2 | u8  | protocol version (1) |
+| 2 | u8  | protocol version (2) |
 | 3 | u8  | packet type (`PacketType`) |
 | 4 | u16 | session id (0 until ACCEPT) |
 | 6 | u16 | reliable ack: next reliable sequence the sender expects from the peer (cumulative) |
 
 Every packet carries the reliable ack, so INPUT (client, every frame) and SNAPSHOT (server) acknowledge
 reliable traffic for free. An idle side sends `ACK` (header only) when `ReliableChannel.consumeAckPending()`.
+
+**Other versions.** A peer drops every datagram whose version byte is not its own, except this one rule, so a
+player of another release learns why nothing happens. Every version so far has this header and the REJECT body
+(`u32 nonce, u8 reason, str8 text`). A server or lobby answers a CONNECT (a lobby also a LOBBY_HELLO) whose
+version byte differs with REJECT VERSION written with **the peer's** version byte, echoing its nonce, never larger
+than the request: "client too old: protocol v2" to an older peer, "server too old: protocol v2" to a newer one
+(27 characters: a typical v1.1.x CONNECT, with its name, real name and host name, has room for them; a shorter
+one gets the text cut, like any REJECT). A client that is connecting (or in a lobby) accepts a REJECT of any version
+byte whose nonce is its CONNECT's and shows "server runs an older (newer) JXPilot protocol (vN)". A v1.1.x client
+shows the server's text.
 
 ## Packet types
 
