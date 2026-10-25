@@ -103,14 +103,20 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
     private long crashed;
 
     /**
-     * BEHAVIOR: a new kernel world: every shot is dropped, and the shot rules are read from the server's visible
-     * options (C's defaults without them).
+     * BEHAVIOR: a new kernel world: every shot is dropped, and the shot rules (shotLife, the motion) are read from the
+     * kernel options {@code o} (KERNEL_CONFIG), allowPlayerKilling from the server's visible options (C's defaults
+     * without them).
      */
-    public void configure(KernelWorld w, Options o) {
-        configure(w, o, new KernelShotMotion(w, o));
+    public void configure(KernelWorld w, Options o, Options visible) {
+        configure(w, o, new KernelShotMotion(w, o, visible));
     }
 
-    /** As {@link #configure(KernelWorld, Options)}, moving the shots with {@code m}. */
+    /** As {@link #configure(KernelWorld, Options, Options)} with one set of options for both. */
+    public void configure(KernelWorld w, Options o) {
+        configure(w, o, o);
+    }
+
+    /** As {@link #configure(KernelWorld, Options, Options)}, moving the shots with {@code m}. */
     public void configure(KernelWorld w, Options o, ShotMotion m) {
         world = w;
         motion = m;

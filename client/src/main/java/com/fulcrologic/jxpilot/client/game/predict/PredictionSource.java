@@ -70,8 +70,8 @@ public interface PredictionSource {
     Options kernelOptions();
 
     /**
-     * The server's visible options from the config transfer (shotLife, predictableBounces and the shot rules the
-     * kernel world does not carry); null before it.
+     * The server's visible options from the config transfer (allowPlayerKilling, which KERNEL_CONFIG does not carry);
+     * null before it.
      */
     Options serverOptions();
 

@@ -229,9 +229,11 @@ public final class OwnShipPredictor {
         if (src.kernelWorld() != world) {
             world = src.kernelWorld();
             kernel = new ShipKernel(world, tieSource);
-            com.fulcrologic.jxpilot.common.config.Options o = src.serverOptions();
+            // the shot motion and predictableBounces come with the kernel world (KERNEL_CONFIG), so a /set reaches
+            // the client through the same rebuild as the server's
+            com.fulcrologic.jxpilot.common.config.Options o = src.kernelOptions();
             predictable = o != null && o.getBool(Opt.PREDICTABLE_BOUNCES);
-            shots.configure(world, o);
+            shots.configure(world, o, src.serverOptions());
             reset();
         }
         ownId = src.ownId();

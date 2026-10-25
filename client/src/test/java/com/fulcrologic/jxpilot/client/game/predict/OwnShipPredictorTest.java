@@ -964,11 +964,12 @@ class OwnShipPredictorTest {
         }
 
         @Test
-        @DisplayName("without the server's options: shotLife 60 and no predictableBounces")
-        void noServerOptions() {
-            Source s = new Source(options("shotLife: 2", OPEN)) {
+        @DisplayName("the shot rules come from the kernel options: without them shotLife 60 and no predictableBounces,"
+            + " whatever the visible options say")
+        void noKernelOptions() {
+            Source s = new Source(options("shotLife: 2\npredictableBounces: yes", OPEN)) {
                 @Override
-                public com.fulcrologic.jxpilot.common.config.Options serverOptions() {
+                public com.fulcrologic.jxpilot.common.config.Options kernelOptions() {
                     return null;
                 }
             };
@@ -985,7 +986,8 @@ class OwnShipPredictorTest {
             });
             p.update(s, 0);
             assertAll(
-                () -> assertEquals(List.of(11, 13), fired, "shotLife 60 (not the map's 2): two shots, then the cap holds"),
+                () -> assertEquals(List.of(11, 13), fired, "shotLife 60 (not the visible 2): two shots, then the cap"
+                    + " holds"),
                 () -> assertEquals(0.5, p.tie(), "no predictableBounces"));
         }
 
