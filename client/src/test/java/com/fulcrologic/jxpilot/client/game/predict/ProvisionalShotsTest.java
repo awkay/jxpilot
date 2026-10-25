@@ -582,7 +582,7 @@ class ProvisionalShotsTest {
     }
 
     @Nested
-    @DisplayName("ClientShotMotion")
+    @DisplayName("KernelShotMotion")
     class Motion2 {
         @Test
         @DisplayName("a cannon's shot flies through cannons outside team play; a player's shot crashes into one")
@@ -592,7 +592,7 @@ class ProvisionalShotsTest {
             com.fulcrologic.jxpilot.common.config.ConfigParser.parse(
                 java.nio.file.Files.readString(java.nio.file.Path.of("..", "maps", "doggy.xp"),
                     java.nio.charset.StandardCharsets.ISO_8859_1), "doggy", com.fulcrologic.jxpilot.common.config.OptionOrigin.MAP, o);
-            ClientShotMotion m = new ClientShotMotion(KernelWorld.of(o), o);
+            KernelShotMotion m = new KernelShotMotion(KernelWorld.of(o), o);
             ShotStep out = new ShotStep();
             int x = Click.fromPixels(787f);
             int y = Click.fromPixels(81f);

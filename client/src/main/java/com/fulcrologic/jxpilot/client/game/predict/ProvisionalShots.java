@@ -105,7 +105,7 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
      * options (C's defaults without them).
      */
     public void configure(KernelWorld w, Options o) {
-        configure(w, o, new ClientShotMotion(w, o));
+        configure(w, o, new KernelShotMotion(w, o));
     }
 
     /** As {@link #configure(KernelWorld, Options)}, moving the shots with {@code m}. */

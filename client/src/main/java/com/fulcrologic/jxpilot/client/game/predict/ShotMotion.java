@@ -25,8 +25,8 @@ package com.fulcrologic.jxpilot.client.game.predict;
 
 /**
  * How a bullet moves for one server tick (the server's {@code moveObjects} for a SHOT or CANNON_SHOT, then its
- * expiry): what the client steps its own provisional shots and every dead-reckoned shot with. One implementation
- * today ({@link ClientShotMotion}); the server's object mover moved into common will replace it.
+ * expiry): what the client steps its own provisional shots and every dead-reckoned shot with. Implemented by
+ * {@link KernelShotMotion} with the server's own object mover (common {@code ObjectMover}).
  */
 public interface ShotMotion {
     /**
