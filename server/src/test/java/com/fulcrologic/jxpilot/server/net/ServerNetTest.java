@@ -813,8 +813,9 @@ class ServerNetTest {
             h.tick();
             h.tick();
             h.deliver(c, A);
-            boolean flagged = c.snapshotStarved.get(c.snapshotStarved.size() - 1);
-            boolean flaggedBefore = c.snapshotStarved.get(c.snapshotStarved.size() - 2);
+            List<Integer> counts = c.snapshotStarveCounts;
+            int counted = counts.get(counts.size() - 1);
+            int countedBefore = counts.get(counts.size() - 2);
             ByteBuffer late = c.input(n + 2, 4, 0);
             h.in(0, A, late);
             h.tick();
@@ -831,10 +832,10 @@ class ServerNetTest {
                     "the header's inputTick stays at the held tick: the client sees the starvation"),
                 () -> assertEquals(2L, h.net.inputStarvations(0), "two starved ticks"),
                 () -> assertEquals(1L, h.net.inputLate(0), "the entry for n+2 came after its tick ran"),
-                () -> assertFalse(flaggedBefore, "the snapshot of n+1 (entry applied) has no starvation flag"),
-                () -> assertTrue(flagged, "the snapshot of n+2 carries FLAG_INPUT_STARVED"),
+                () -> assertEquals(0, countedBefore, "the snapshot of n+1 (entry applied): starvation counter 0"),
+                () -> assertEquals(1, counted, "the snapshot of n+2: the counter is 1"),
                 () -> assertEquals(0, lateSlack, "the late entry arrived just as its tick had run: margin 0, the window's minimum"),
-                () -> assertTrue(c.snapshotStarved.get(c.snapshotStarved.size() - 1), "n+3 starved too"));
+                () -> assertEquals(2, (int) counts.get(counts.size() - 1), "n+3 starved too: 2"));
         }
 
         @Test

@@ -192,7 +192,10 @@ be allocation-free (SPEC GC rules): the ring holds preallocated kernel state str
   state. Otherwise there are two ships.
 - **View culling:** the server culls around *its* ship position, and the predicted view runs ahead by up
   to lead × speed (≈ 6 ticks × 30 px = 180 px at high speed). `SnapshotBuilder` should add
-  `|v| · leadTicks` to its view half-size, which costs a few lines.
+  `|v| · leadTicks` to its view half-size, which costs a few lines. *(As built in 1b: the view is extended by
+  v · lead only on the sides the ship flies towards, the lead clamped to 8 ticks and the extension to 160 px.
+  Measured, owner in a 12-robot arena fight at 20 px/tick: 386 B mean at lead 0, 396 B at lead 4, 400 B at
+  lead 8 and beyond; before the clamp lead 14 gave 494 B.)*
 
 **Testing:** the kernel bit-equality oracle (§4.4). A headless predictor on the lossy-link emulator
 (§7) must hold "zero corrections" on a no-contact course at RTT 300, jitter 30 and loss 5%, and give
@@ -314,10 +317,11 @@ In total that is roughly 2,000-2,500 lines moved and ~300 lines of new seams.
 - The kernel owns a `ShipBody` struct: clicks x/y, vx/vy, floatDir, dir, turnVel, oldTurnVel,
   turnAcc, mass, fuel, status and used bits, item counts that affect physics, and lastWallTouch.
   `ShipBody` also owns its own wire codec, so the wire can never lag behind the kernel's state. *(As built
-  in 1b: the PREDICT section is 77 bytes every snapshot, the frame clock, roundDelay and a 71-byte core;
-  PREDICT_RARE, 63 bytes, carries the engine settings, masses, team, wormhole destination and item counts
-  when they changed in the last 8 snapshots and every 14th; PREDICT_KEYS, 16 bytes, the key masks when they
-  differ from the applied input. The tanks are not sent: the kernel only adds to the current tank's fuel.
+  in 1b: the PREDICT section is 66 bytes every snapshot, a 63-byte core plus the applied input's hash and
+  the rare and kernel versions; PREDICT_ROUND, 2 bytes, the round delay while one runs; PREDICT_RARE, 64
+  bytes, carries the frame-clock offset, engine settings, masses, team, wormhole destination, modifiers and
+  item counts when they changed in the last 8 snapshots and every 14th; PREDICT_KEYS, 16 bytes, the key masks
+  when they differ from the applied input. The tanks are not sent: the kernel only adds to the current tank's fuel.
   See PROTOCOL.md.)*
 - Side effects go out through a small `KernelEvents` interface: crashed (with type), bounced, fired
   (with shot parameters), fuel spent.
@@ -439,6 +443,10 @@ the default only if the friends prefer it. The numbers suggest they will at 200+
     out within one RTT.
   - Own shots are skipped in the anonymous SHOT section's association for the owner, so they are not
     drawn twice.
+  - *(1b built OWN_SHOTS (section 26, 6 B per own bullet) and then dropped it: the 1c predictor confirms a
+    provisional shot by matching the own-colour bullets of the SHOT section by position; measured worst
+    match 0.35 px, 0.8% unconfirmed, without the section's ~300 B per fight snapshot. The shot-motion
+    options go to the client in KERNEL_CONFIG instead.)*
 - **Timeline:** provisional shots live in predicted time, like the ship that fired them. With option
   4.6-B everything else does too, and nothing more is needed. Without it, your shot visibly overtakes
   an enemy that is drawn ~RTT + 110 ms in the past. Read §4.9 before "fixing" that on the server side.

@@ -149,8 +149,6 @@ public final class ServerNet {
         boolean snapshotsOn;
         /** Inputs by the tick they are for (protocol v2). */
         InputBuffer inputs;
-        /** {@code inputs.starvations()} when the last snapshot went out (for FLAG_INPUT_STARVED). */
-        long starvationsReported;
         /** The kernel config version announced to this connection (0: none yet), and its chunks still to send. */
         int kernelVersion;
         ConfigTransfer.Sender kernelSender;
@@ -237,6 +235,7 @@ public final class ServerNet {
         kernelClientMap = clientMapData;
         kernelBlob = ConfigTransfer.encode(KernelConfig.encode(o, clientMapData));
         kernelVersion++;
+        host.kernelVersion(kernelVersion);
     }
 
     /** The current kernel config version (0 before {@link #setKernel}). */
@@ -454,7 +453,6 @@ public final class ServerNet {
             c.inputs = new InputBuffer(cfg.simHz, cfg.simHz);
         }
         c.inputs.reset();
-        c.starvationsReported = 0;
         c.kernelVersion = 0;
         c.kernelSender = null;
         active[activeCount++] = c;
@@ -502,12 +500,12 @@ public final class ServerNet {
         }
         int next = tick + 1;
         double toGo = haveTickTime ? 1 - Math.clamp((now - lastTickAt) / tickNanos, 0, 1) : 1;
-        int packetTick = input.newestTick();
+        int packetSeq = input.seq();
         for (int i = input.count() - 1; i >= 0; i--) {
             int t = input.tick(i);
             double margin = (double) (t - next) + toGo;
             int m16 = (int) Math.floor(Math.clamp(margin * 16, -1e6, 1e6));
-            c.inputs.offer(t, input.keys(i), input.taps(i), input.aimTurn(i), packetTick, next, m16);
+            c.inputs.offer(t, input.keys(i), input.taps(i), input.aimTurn(i), packetSeq, next, m16);
         }
     }
 
@@ -678,12 +676,11 @@ public final class ServerNet {
             }
         }
         long starved = c.inputs.starvations();
-        int starvedFlag = starved != c.starvationsReported ? SnapshotWriter.FLAG_INPUT_STARVED : 0;
-        c.starvationsReported = starved;
         for (int p = 0; p < n; p++) {
             ByteBuffer b = parts[p];
             b.put(PART_COUNT_OFFSET, (byte) n);
-            b.put(FLAGS_OFFSET, (byte) ((p == n - 1 ? SnapshotWriter.FLAG_LAST_PART : 0) | starvedFlag));
+            b.put(FLAGS_OFFSET, (byte) SnapshotWriter.starveFlags(p == n - 1 ? SnapshotWriter.FLAG_LAST_PART : 0,
+                starved));
             b.flip();
             out.send(c.channel, c.addr, b);
         }

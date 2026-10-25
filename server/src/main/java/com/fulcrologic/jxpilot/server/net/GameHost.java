@@ -146,6 +146,13 @@ public interface GameHost {
     }
 
     /**
+     * The KERNEL_CONFIG version every connection is being brought to (each {@code ServerNet.setKernel}); PREDICT
+     * carries it mod 256 so a client knows whether its kernel world matches.
+     */
+    default void kernelVersion(int version) {
+    }
+
+    /**
      * How far ahead of the server, in ticks, this player's client sends its inputs (the newest buffered entry over
      * the next tick), given each tick with {@link #input}: the snapshot's view cull adds the ship's speed times this
      * for the owner.

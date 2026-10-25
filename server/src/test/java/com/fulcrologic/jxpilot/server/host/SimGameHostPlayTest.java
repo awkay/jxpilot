@@ -575,7 +575,7 @@ class SimGameHostPlayTest {
                 parts[i].position(PacketHeader.SIZE);
             }
             SnapshotBuilder builder = new SnapshotBuilder(w);
-            builder.setPredict(true, 0, 1, true);
+            builder.setPredict(true, 0, 1, 0, true);
             int n = builder.build(viewer, 0, burstFrom, radar, parts);
             byte[][] out = new byte[n][];
             for (int i = 0; i < n; i++) {
@@ -652,8 +652,67 @@ class SimGameHostPlayTest {
                 () -> assertFalse(watching, "no PREDICT while the snapshot shows another ship"));
         }
 
+        /** Part 0's PREDICT, PREDICT_ROUND and PREDICT_RARE fields: kernel, rare version, round flag, round, offset. */
+        static int[] predictFields(SimGameHost h, int id) {
+            SnapshotWriter wr = new SnapshotWriter();
+            ByteBuffer b = netPart(wr, 0);
+            h.fillSnapshot(id, 0, false, wr);
+            b.flip();
+            b.position(PacketHeader.SIZE);
+            com.fulcrologic.jxpilot.common.net.SnapshotReader r = new com.fulcrologic.jxpilot.common.net.SnapshotReader();
+            r.begin(b);
+            int[] f = {-1, -1, -1, -1, Integer.MIN_VALUE};
+            while (r.nextSection()) {
+                switch (r.type()) {
+                    case com.fulcrologic.jxpilot.common.net.Section.PREDICT -> {
+                        Records.Predict p = new Records.Predict().wrap(r, 0);
+                        f[0] = p.kernelVersion();
+                        f[1] = p.rareVersion();
+                        f[2] = p.roundDelaySet() ? 1 : 0;
+                    }
+                    case com.fulcrologic.jxpilot.common.net.Section.PREDICT_ROUND ->
+                        f[3] = new Records.PredictRound().wrap(r, 0).roundDelay();
+                    case com.fulcrologic.jxpilot.common.net.Section.PREDICT_RARE ->
+                        f[4] = new Records.PredictRare().wrap(r, 0).frameOffset();
+                    default -> { }
+                }
+            }
+            return f;
+        }
+
         @Test
-        @DisplayName("the owner's view is widened by its speed times its input lead")
+        @DisplayName("PREDICT carries the kernel version mod 256 and roundDelay (flag and PREDICT_ROUND when nonzero);"
+            + " the rare block carries the frame offset, and a change of it is a new rare version")
+        void predictFields() {
+            Simulation s = sim("", THREE);
+            World w = s.world;
+            SimGameHost h = new SimGameHost(s);
+            int ann = enter(h, "Ann", 0);
+            h.tick(1);
+            int[] first = predictFields(h, ann);
+            h.kernelVersion(258);
+            w.roundDelay = 40;
+            int[] round = predictFields(h, ann);
+            w.roundDelay = 0;
+            w.frames += 3;
+            int[] moved = predictFields(h, ann);
+            int[] same = predictFields(h, ann);
+            assertAll(
+                () -> assertEquals(0, first[0], "no kernel config yet: version 0"),
+                () -> assertEquals(0, first[2], "roundDelay 0: no flag"),
+                () -> assertEquals(-1, first[3], "and no PREDICT_ROUND"),
+                () -> assertEquals((int) (w.frames - 3 - 1), first[4], "the offset: frames minus the net tick 1"),
+                () -> assertEquals(2, round[0], "kernel version 258 goes out as 2"),
+                () -> assertEquals(1, round[2], "roundDelay 40: the flag"),
+                () -> assertEquals(40, round[3], "and PREDICT_ROUND with 40"),
+                () -> assertEquals(first[4] + 3, moved[4], "frames moved 3 without a tick: the offset follows"),
+                () -> assertEquals(first[1] + 1, moved[1], "a new rare version"),
+                () -> assertEquals(moved[1], same[1], "unchanged after that"));
+        }
+
+        @Test
+        @DisplayName("the owner's view is extended ahead of it by its velocity times its input lead: at most 8 ticks,"
+            + " at most 160 px, only in the direction of motion")
         void leadMargin() {
             Simulation s = sim("", THREE);
             World w = s.world;
@@ -664,17 +723,37 @@ class SimGameHostPlayTest {
             Player a = w.byId(ann);
             Player b = w.byId(bob);
             double edge = a.viewWidth / 2.0 + SnapshotBuilder.VIEW_MARGIN;
-            b.setClicks((int) ((a.cx / 64.0 + edge + 60) * 64), a.cy);
+            double ax = a.cx / 64.0;
+            java.util.function.IntFunction<Boolean> seesBobAt = dx -> {
+                b.setClicks((int) ((ax + edge + dx) * 64), a.cy);
+                return types(h, ann).contains(com.fulcrologic.jxpilot.common.net.Section.SHIP);
+            };
             a.vx = 20;
             a.vy = 0;
-            boolean without = types(h, ann).contains(com.fulcrologic.jxpilot.common.net.Section.SHIP);
+            boolean without = seesBobAt.apply(60);
             h.inputLead(ann, 4);
-            boolean with = types(h, ann).contains(com.fulcrologic.jxpilot.common.net.Section.SHIP);
+            boolean with = seesBobAt.apply(60);
+            boolean beyond = seesBobAt.apply(90);
+            a.vx = -20;
+            boolean behind = seesBobAt.apply(60);
+            a.vx = 20;
+            h.inputLead(ann, 14);
+            boolean capTicks = seesBobAt.apply(150);
+            boolean capTicksBeyond = seesBobAt.apply(170);
+            a.vx = 40;
+            boolean capPx = seesBobAt.apply(155);
+            boolean capPxBeyond = seesBobAt.apply(170);
             h.inputLead(ann, -3);
-            boolean negative = types(h, ann).contains(com.fulcrologic.jxpilot.common.net.Section.SHIP);
+            boolean negative = seesBobAt.apply(60);
             assertAll(
                 () -> assertFalse(without, "60 px beyond the view: Bob is culled"),
-                () -> assertTrue(with, "4 ticks of lead at 20 px/tick widen it by 80 px: Bob is in"),
+                () -> assertTrue(with, "4 ticks of lead at 20 px/tick extend it 80 px ahead: Bob is in"),
+                () -> assertFalse(beyond, "but not 90 px"),
+                () -> assertFalse(behind, "flying away from Bob: the side behind is not extended"),
+                () -> assertTrue(capTicks, "14 ticks of lead count as 8: 160 px at 20 px/tick reaches 150"),
+                () -> assertFalse(capTicksBeyond, "not 170"),
+                () -> assertTrue(capPx, "at 40 px/tick, 8 ticks would be 320 px: capped at 160, reaches 155"),
+                () -> assertFalse(capPxBeyond, "not 170"),
                 () -> assertFalse(negative, "a negative lead counts as 0"));
         }
 

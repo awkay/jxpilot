@@ -74,7 +74,8 @@ final class TestClient implements ReliableHandler {
     /** The snapshot header's inputTick and inputSlack of each part 0. */
     final List<Integer> snapshotInputTicks = new ArrayList<>();
     final List<Integer> snapshotInputSlacks = new ArrayList<>();
-    final List<Boolean> snapshotStarved = new ArrayList<>();
+    /** The header starvation counter of each snapshot (part 0). */
+    final List<Integer> snapshotStarveCounts = new ArrayList<>();
     final List<String> snapshotParts = new ArrayList<>();
     int radarSnapshots;
     float lastSelfX;
@@ -259,7 +260,7 @@ final class TestClient implements ReliableHandler {
             snapshotTicks.add(snap.tick());
             snapshotInputTicks.add(snap.inputTick());
             snapshotInputSlacks.add(snap.inputSlack());
-            snapshotStarved.add((snap.flags() & SnapshotWriter.FLAG_INPUT_STARVED) != 0);
+            snapshotStarveCounts.add(SnapshotWriter.starvations(snap.flags()));
             lastInputTick = snap.inputTick();
             lastAckTick = snap.tick();
         }

@@ -108,6 +108,10 @@ public final class SimGameHost implements GameHost {
     private final long[] inKeys = new long[IDS];
     private final long[] inTaps = new long[IDS];
     private final boolean[] queued = new boolean[IDS];
+    /** Most ticks of input lead the owner's view cull follows (a client chooses its lead, up to 14 ticks). */
+    public static final int MAX_CULL_LEAD = 8;
+    /** Most pixels the owner's view is extended by (in the direction of motion). */
+    public static final double MAX_CULL_MARGIN = 160;
     /** The client's input lead in ticks ({@link #inputLead}), for the owner's view cull. */
     private final int[] leadOf = new int[IDS];
     /** Kernel state changes (KERNEL_STATE) and each viewer's cursor into them. */
@@ -120,11 +124,15 @@ public final class SimGameHost implements GameHost {
     public static final int RARE_RESEND = 8;
     /** Every this many snapshots the rare block goes out anyway. */
     public static final int RARE_REFRESH = 14;
-    private final byte[][] rareBytes = new byte[IDS][com.fulcrologic.jxpilot.common.sim.ShipBody.RARE_SIZE];
+    /** The rare block plus the i32 frame offset: what PREDICT_RARE carries. */
+    private static final int RARE_BYTES = com.fulcrologic.jxpilot.common.sim.ShipBody.RARE_SIZE + 4;
+    private final byte[][] rareBytes = new byte[IDS][RARE_BYTES];
     private final int[] rareVersion = new int[IDS];
     private final long[] rareChanged = new long[IDS];
     private final long[] snapshotsSent = new long[IDS];
-    private final ByteBuffer rareScratch = ByteBuffer.allocate(com.fulcrologic.jxpilot.common.sim.ShipBody.RARE_SIZE);
+    private final ByteBuffer rareScratch = ByteBuffer.allocate(RARE_BYTES);
+    /** The KERNEL_CONFIG version ({@link #kernelVersion(int)}), carried in PREDICT. */
+    private int kernelVersion;
     /** Next event to deliver to a viewer. */
     private final long[] cursor = new long[IDS];
     /** First burst a viewer has not seen. */
@@ -700,6 +708,12 @@ public final class SimGameHost implements GameHost {
         }
     }
 
+    /** BEHAVIOR: PREDICT carries the latest version (mod 256) from the next snapshot on. */
+    @Override
+    public void kernelVersion(int version) {
+        kernelVersion = version;
+    }
+
     // ================================================================ ticking
 
     /**
@@ -1003,7 +1017,7 @@ public final class SimGameHost implements GameHost {
             Player view = sim.locks.viewOf(p);
             builder.setViewSize(p.viewWidth, p.viewHeight);
             if (view == p) {
-                builder.extendView(Math.hypot(p.vx, p.vy) * leadOf[viewerId]);
+                extendForLead(p, leadOf[viewerId]);
             }
             predictFor(viewerId, p, view == p);
             sim.locks.hudLock(view, p.viewWidth, p.viewHeight);
@@ -1024,19 +1038,38 @@ public final class SimGameHost implements GameHost {
     }
 
     /**
+     * The owner's view cull for its input lead.
+     * <p>
+     * BEHAVIOR: the view is extended by the ship's velocity times the lead (at most {@link #MAX_CULL_LEAD} ticks), in
+     * the direction of motion only, and by at most {@link #MAX_CULL_MARGIN} pixels.
+     */
+    private void extendForLead(Player p, int lead) {
+        int l = Math.min(lead, MAX_CULL_LEAD);
+        double mx = p.vx * l;
+        double my = p.vy * l;
+        double m = Math.hypot(mx, my);
+        if (m > MAX_CULL_MARGIN) {
+            mx *= MAX_CULL_MARGIN / m;
+            my *= MAX_CULL_MARGIN / m;
+        }
+        builder.extendView(mx, my);
+    }
+
+    /**
      * The PREDICT sections of the next build.
      * <p>
      * BEHAVIOR: only for a viewer watching its own ship. Its rare block gets a new version (mod 256) when its bytes
-     * change; it is sent in the {@link #RARE_RESEND} snapshots from a change (and from the bind, so a newcomer has
+     * or the frame offset change; it is sent in the {@link #RARE_RESEND} snapshots from a change (and from the bind, so a newcomer has
      * it) and in every {@link #RARE_REFRESH}th one.
      */
     private void predictFor(int id, Player p, boolean own) {
         long n = snapshotsSent[id]++;
         if (!own) {
-            builder.setPredict(false, 0, 0, false);
+            builder.setPredict(false, 0, 0, 0, false);
             return;
         }
         p.encodeRare(rareScratch, 0);
+        rareScratch.putInt(com.fulcrologic.jxpilot.common.sim.ShipBody.RARE_SIZE, SnapshotBuilder.frameOffset(w));
         byte[] last = rareBytes[id];
         boolean changed = false;
         for (int i = 0; i < last.length; i++) {
@@ -1050,7 +1083,8 @@ public final class SimGameHost implements GameHost {
             rareVersion[id] = (rareVersion[id] + 1) & 0xFF;
             rareChanged[id] = n;
         }
-        builder.setPredict(true, applied[id], rareVersion[id], n - rareChanged[id] < RARE_RESEND || n % RARE_REFRESH == 0);
+        builder.setPredict(true, applied[id], rareVersion[id], kernelVersion,
+            n - rareChanged[id] < RARE_RESEND || n % RARE_REFRESH == 0);
     }
 
     // ================================================================ reliable state and events

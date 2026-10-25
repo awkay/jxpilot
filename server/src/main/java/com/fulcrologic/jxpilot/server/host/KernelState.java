@@ -36,9 +36,10 @@ import java.util.Arrays;
  * The run-time state the ship kernel reads that the map file does not give (protocol v2, KERNEL_STATE): cannon
  * phasing, target teams, the temporary wormholes, and the blocks that change (cannons and targets destroyed and
  * revived, temporary wormholes opened and closed). Scanned once per tick against shadows into a change log
- * ({@link #RING} entries); each connection sends the entries after its cursor, and a newcomer (or a connection the
- * log ran past) first gets everything that differs from the map as loaded. Allocation free after the first
- * temporary wormhole positions are tracked.
+ * ({@link #RING} entries, each with the net tick of its scan); each connection sends the entries after its cursor,
+ * one message per tick, and a newcomer (or a connection the log ran past) first gets everything that differs from
+ * the map as loaded. A temporary wormhole's block is tracked while it differs from the map and dropped once its
+ * restore is logged. Allocation free once the tracking arrays hold the most temporary wormholes open at once.
  */
 final class KernelState {
     /** Change log entries kept. */
@@ -52,6 +53,7 @@ final class KernelState {
     private final int[] eb = new int[RING];
     private final int[] ec = new int[RING];
     private final int[] ed = new int[RING];
+    private final int[] etick = new int[RING];
     private long seq;
 
     private final boolean[] phased;
@@ -68,6 +70,8 @@ final class KernelState {
     private byte[] block0;
     private int[] item0;
     private int tracked;
+    /** Tracked entries below this are the cannons' and targets' blocks (kept for good). */
+    private final int fixed;
     private final byte[] pristineBlocks;
     private final int[] pristineItems;
 
@@ -101,8 +105,10 @@ final class KernelState {
         for (Target t : map.targets()) {
             track(map.index(t.bx(), t.by()));
         }
+        fixed = tracked;
     }
 
+    /** Track block index {@code i} unless it is already. */
     private void track(int i) {
         for (int k = 0; k < tracked; k++) {
             if (idx[k] == i) {
@@ -127,6 +133,7 @@ final class KernelState {
 
     private void log(int k, int a, int b, int c, int d) {
         int s = (int) (seq & (RING - 1));
+        etick[s] = w.tick;
         kind[s] = k;
         ea[s] = a;
         eb[s] = b;
@@ -139,8 +146,9 @@ final class KernelState {
      * Log what changed since the last scan.
      * <p>
      * BEHAVIOR: a cannon's phasing, a target's team, the wormhole count, a temporary wormhole's block and type, and
-     * a tracked block's type or item id (cannon, target and temporary wormhole positions) that differ from the
-     * shadow are logged and the shadow updated.
+     * a tracked block's type or item id (cannon, target and open temporary wormhole positions) that differ from the
+     * shadow are logged, with {@link World#tick}, and the shadow updated. A temporary wormhole's block that is back
+     * to the map's is no longer tracked.
      */
     void scan() {
         for (int i = 0; i < phased.length; i++) {
@@ -191,7 +199,25 @@ final class KernelState {
                 item[k] = it;
                 log(Msg.KernelState.BLOCK, bx, by, b & 0xFF, it);
             }
+            if (k >= fixed && b == block0[k] && it == item0[k]) {
+                untrack(k--);
+            }
         }
+    }
+
+    /** Drop tracked entry {@code k} (the last takes its place). */
+    private void untrack(int k) {
+        tracked--;
+        idx[k] = idx[tracked];
+        block[k] = block[tracked];
+        item[k] = item[tracked];
+        block0[k] = block0[tracked];
+        item0[k] = item0[tracked];
+    }
+
+    /** Blocks tracked now (the cannons', the targets' and the open temporary wormholes'). */
+    int tracked() {
+        return tracked;
     }
 
     /** The next sequence number. */
@@ -208,13 +234,15 @@ final class KernelState {
      * Send the log entries from {@code cursor} in KERNEL_STATE messages (as the sim's events: the channel queues
      * what its window cannot hold yet).
      * <p>
-     * BEHAVIOR: returns the cursor after the entries sent ({@link #seq}).
+     * BEHAVIOR: one message per scan tick (split when full), tagged with that tick; returns the cursor after the
+     * entries sent ({@link #seq}).
      */
     long drain(ReliableChannel ch, long cursor) {
         long c = cursor;
         while (c < seq) {
-            Msg.KernelState m = writer.begin(ch);
-            while (c < seq && m.room()) {
+            int t = etick[(int) (c & (RING - 1))];
+            Msg.KernelState m = writer.begin(ch, t);
+            while (c < seq && m.room() && etick[(int) (c & (RING - 1))] == t) {
                 int s = (int) (c & (RING - 1));
                 m.add(kind[s], ea[s], eb[s], ec[s], ed[s]);
                 c++;
@@ -229,11 +257,12 @@ final class KernelState {
      * messages: phased cannons, targets off their initial team, the wormhole count and every temporary wormhole,
      * and every tracked block that differs from the map's.
      * <p>
-     * BEHAVIOR: with {@code reset} (a resync of a client that has state) a RESET entry comes first; a newcomer
-     * whose world is the map as loaded gets no message.
+     * BEHAVIOR: with {@code reset} (a resync of a client that has state) a RESET entry comes first. The messages
+     * are tagged with {@link World#tick}; there is always at least one (empty for a newcomer whose world is the map
+     * as loaded), so the client knows the tick its state holds from.
      */
     void initial(ReliableChannel ch, boolean reset) {
-        Msg.KernelState m = writer.begin(ch);
+        Msg.KernelState m = writer.begin(ch, w.tick);
         if (reset) {
             m.add(Msg.KernelState.RESET, 0, 0, 0, 0);
         }
@@ -264,13 +293,13 @@ final class KernelState {
                 m = put(ch, m, Msg.KernelState.BLOCK, bx, by, b & 0xFF, it);
             }
         }
-        m.end(ch);
+        m.end(ch, true);
     }
 
     private Msg.KernelState put(ReliableChannel ch, Msg.KernelState m, int k, int a, int b, int c, int d) {
         if (!m.room()) {
             m.end(ch);
-            m = writer.begin(ch);
+            m = writer.begin(ch, w.tick);
         }
         m.add(k, a, b, c, d);
         return m;

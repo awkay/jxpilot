@@ -58,9 +58,11 @@ public final class InputBuffer {
     private final int[] tickOf = new int[RING];
     private final int[] writtenBy = new int[RING];
     private final boolean[] full = new boolean[RING];
-    /** Ticks that were taken without an entry (for counting a late arrival once). */
-    private final int[] starvedTick = new int[RING];
+    /** Ticks that were taken without an entry. */
     private final boolean[] starved = new boolean[RING];
+    /** A tick taken (with an entry, or starved) that a late copy may still be counted against, and which tick. */
+    private final boolean[] open = new boolean[RING];
+    private final int[] takenTick = new int[RING];
     private final int[] slackMin = new int[MAX_WINDOW];
     private final int maxAhead;
     private final int window;
@@ -94,6 +96,7 @@ public final class InputBuffer {
     public void reset() {
         java.util.Arrays.fill(full, false);
         java.util.Arrays.fill(starved, false);
+        java.util.Arrays.fill(open, false);
         java.util.Arrays.fill(slackMin, Integer.MAX_VALUE);
         started = false;
         anyTaken = false;
@@ -106,20 +109,23 @@ public final class InputBuffer {
     }
 
     /**
-     * An entry arrived in a packet whose newest entry is for {@code packetTick}, {@code margin16} sixteenths of a
-     * tick before entry {@code tick} is due (when it is the tick's first arrival, it counts for the slack).
+     * An entry arrived in the datagram with send sequence {@code packetSeq} (u16, INPUT's {@code seq}),
+     * {@code margin16} sixteenths of a tick before entry {@code tick} is due.
      * <p>
-     * BEHAVIOR: a tick already taken is PAST (counted late, and its margin enters the slack, once, when that tick
-     * starved); more than maxAhead ahead of {@code nextTick} is FAR_FUTURE (counted); otherwise the first copy is
-     * STORED (its margin enters the slack window), a later copy from a packet at least
-     * as new REVISED it (its margin enters the slack only when it changes the entry), and a copy from an older
-     * packet is STALE (a reordered datagram).
+     * BEHAVIOR: a tick already taken is PAST; it is counted late, and its margin enters the slack, once, when that
+     * tick starved or when the copy differs from the entry that was applied (the client's final send lost to an
+     * early copy). More than maxAhead ahead of {@code nextTick} is FAR_FUTURE (counted). Otherwise the first copy
+     * is STORED (its margin enters the slack window), a copy from a datagram sent at or after the one that wrote
+     * the entry REVISED it (its margin enters the slack only when it changes the entry), and a copy from a datagram
+     * sent before it is STALE (reordering: an early copy arriving after the final send of the same tick).
      */
-    public int offer(int tick, long keyMask, long tapMask, int aimTurn, int packetTick, int nextTick, int margin16) {
+    public int offer(int tick, long keyMask, long tapMask, int aimTurn, int packetSeq, int nextTick, int margin16) {
         int d = tick - nextTick;
         if (d < 0) {
             int s = tick & (RING - 1);
-            if (starved[s] && starvedTick[s] == tick) {
+            if (open[s] && takenTick[s] == tick && (starved[s]
+                || tickOf[s] == tick && (keys[s] != keyMask || taps[s] != tapMask || aim[s] != aimTurn))) {
+                open[s] = false;
                 starved[s] = false;
                 late++;
                 fold(margin16);
@@ -132,7 +138,7 @@ public final class InputBuffer {
         }
         int s = tick & (RING - 1);
         boolean present = full[s] && tickOf[s] == tick;
-        if (present && packetTick - writtenBy[s] < 0) {
+        if (present && (short) (packetSeq - writtenBy[s]) < 0) {
             return STALE;
         }
         boolean changed = !present || keys[s] != keyMask || taps[s] != tapMask || aim[s] != aimTurn;
@@ -140,7 +146,7 @@ public final class InputBuffer {
         taps[s] = tapMask;
         aim[s] = aimTurn;
         tickOf[s] = tick;
-        writtenBy[s] = packetTick;
+        writtenBy[s] = packetSeq & 0xFFFF;
         full[s] = true;
         if (present) {
             if (changed) {
@@ -177,6 +183,8 @@ public final class InputBuffer {
             full[s] = false;
             starved[s] = false;
             started = true;
+            open[s] = true;
+            takenTick[s] = tick;
         } else {
             outKeys = heldKeys;
             outTaps = 0;
@@ -184,7 +192,8 @@ public final class InputBuffer {
             if (started) {
                 starvations++;
                 starved[s] = true;
-                starvedTick[s] = tick;
+                open[s] = true;
+                takenTick[s] = tick;
             }
         }
         appliedTick = heldTick;
@@ -243,7 +252,7 @@ public final class InputBuffer {
     /** Ticks taken without an entry after inputs started. */
     public long starvations() { return starvations; }
 
-    /** Entries that arrived after their tick had been taken without them. */
+    /** Copies that arrived after their tick ran without them: the tick starved, or applied another copy. */
     public long late() { return late; }
 
     /** Entries dropped as more than maxAhead ticks ahead. */

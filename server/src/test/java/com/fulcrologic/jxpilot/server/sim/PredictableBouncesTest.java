@@ -38,8 +38,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * BEHAVIOR (predictableBounces, a JXPilot deviation): off, a ship's bounce tie-break draws from the world RNG (C
- * rfrac); on, from a source seeded by (net tick, player id), so the world RNG is untouched and the choice is the
- * same whatever the world RNG holds. SeededTieBreak: the same seed gives the same draws, in [0, 1); different
+ * rfrac); on, from a source reseeded by (net tick, player id) at the start of each ship's flying phase in a real
+ * tick, so the choice is the same whatever the world RNG holds. SeededTieBreak: the same seed gives the same draws, in [0, 1); different
  * ticks or ids give different ones.
  */
 @DisplayName("predictableBounces")
@@ -47,44 +47,53 @@ class PredictableBouncesTest {
     /** Like the kernel tests' LEFT_WALL: a wall at block x 1, a base at (5, 2). */
     static final String[] LEFT_WALL = {"       ", " x     ", " x   _ ", " x     ", "       "};
 
-    /** A ship whose two hull points hit the wall together (the kernel tests' tie-break case), moved once. */
-    static double[] bounce(boolean predictable, int worldSeed) {
+    /** A corner: the wall block (3, 3) whose lower-left corner the nose hits exactly (two feasible faces). */
+    static final String[] CORNER = {"       ", "       ", "   x   ", "       ", " _     ", "       "};
+
+    /**
+     * A real sim tick (Simulation.tick: keys, Ships.update, ShipKernel.fly) of a ship flying into a tie: two hull
+     * points on the wall together (LEFT_WALL) or a corner with two feasible bounces (CORNER).
+     *
+     * @return x, y, vx, vy after the tick, the seeded source's tick, id and draws, and the ship's id
+     */
+    static double[] tick(String[] map, boolean predictable, int worldSeed, int cx, int cy, float vx, float vy) {
         Simulation s = new Simulation(new com.fulcrologic.jxpilot.server.world.World(TestWorlds.options(
-            "framesPerSecond: 60\ngravity: 0\nmaxRobots: 0\npredictableBounces: " + predictable + "\n", LEFT_WALL),
+            "framesPerSecond: 60\ngravity: 0\nmaxRobots: 0\npredictableBounces: " + predictable + "\n", map),
             worldSeed));
-        Player p = s.ships.join("Ann", 0);
-        p.status = Obj.PLAYING;
+        Player p = TestWorlds.join(s, "Ann", 0);
         p.used = 0;
-        p.have = 0;
-        p.mass = 20;
-        p.setClicks(4480 + 576 + 64, 5600);
+        p.setClicks(cx, cy);
         p.remember();
         p.dir = 0;
         p.floatDir = 0;
-        p.vx = -2;
-        p.vy = 0;
-        p.velocity = 2;
-        s.world.tick = 7;
-        s.world.rng.seed(worldSeed);
-        double before = s.world.rfrac();
-        s.world.rng.seed(worldSeed);
-        s.mover.movePlayer(p);
-        double next = s.world.rfrac();
-        return new double[] {p.cx, p.cy, p.vx, p.vy, before, next};
+        p.vx = vx;
+        p.vy = vy;
+        p.velocity = (float) Math.hypot(vx, vy);
+        s.tick(7, new long[s.world.players.length]);
+        return new double[] {p.cx, p.cy, p.vx, p.vy, s.tieBreak.seedTick(), s.tieBreak.seedId(), s.tieBreak.draws(),
+            p.id};
     }
 
+    static final int BC = 35 * 64;
+
     @Test
-    @DisplayName("off: the bounce draws C's rfrac; on: the seeded source, whatever the world RNG holds")
-    void source() {
-        double[] off = bounce(false, 1);
-        double[] on1 = bounce(true, 1);
-        double[] on2 = bounce(true, 99);
+    @DisplayName("a real tick: on, the fly phase reseeds from (tick, id) and the tie draws from it, whatever the"
+        + " world RNG; off, the seeded source is never drawn")
+    void realTick() {
+        double[] off = tick(LEFT_WALL, false, 1, 4480 + 576 + 64, 5600, -2, 0);
+        double[] on1 = tick(LEFT_WALL, true, 1, 4480 + 576 + 64, 5600, -2, 0);
+        double[] on2 = tick(LEFT_WALL, true, 99, 4480 + 576 + 64, 5600, -2, 0);
+        double[] corner = tick(CORNER, true, 1, 3 * BC - 960, 3 * BC, 1, 1);
         assertAll(
-            () -> assertNotEquals(off[4], off[5], "off: the world RNG advanced (one draw)"),
-            () -> assertEquals(on1[4], on1[5], "on: the world RNG did not advance"),
-            () -> assertEquals(on1[0], on2[0], "on: the same x whatever the world seed"),
-            () -> assertEquals(on1[2], on2[2], "and the same vx"),
-            () -> assertEquals(on1[3], on2[3], "and vy"));
+            () -> assertEquals(0, off[6], "off: the seeded source is not drawn"),
+            () -> assertEquals(7, on1[4], "on: reseeded with the net tick"),
+            () -> assertEquals(on1[7], on1[5], "and the ship's id"),
+            () -> assertTrue(on1[6] >= 1, "the two-point tie drew from it (" + on1[6] + ")"),
+            () -> assertEquals(on1[0], on2[0], "the same x whatever the world seed"),
+            () -> assertEquals(on1[2], on2[2], "and vx"),
+            () -> assertEquals(on1[3], on2[3], "and vy"),
+            () -> assertEquals(7, corner[4], "the corner: reseeded with the tick"),
+            () -> assertTrue(corner[6] >= 1, "and its two feasible faces drew from it (" + corner[6] + ")"));
     }
 
     @Test

@@ -29,13 +29,20 @@ import java.util.function.DoubleSupplier;
  * The bounce tie-break source of {@code predictableBounces} (a JXPilot deviation, DEVIATIONS-server.md): instead of
  * the world RNG (C {@code rfrac()}, which a client cannot follow) the draws for a ship's move in tick T come from a
  * generator seeded by (T, player id), so the owner's predictor makes the same choices. One preallocated instance,
- * reseeded in place before each ship's move ({@link #reseed}); allocation free.
+ * reseeded in place at the start of each ship's flying phase ({@link #reseed}, before its turn and its move, which
+ * share the draws in that order); allocation free.
  */
 public final class SeededTieBreak implements DoubleSupplier {
     private long state;
+    private int seedTick;
+    private int seedId = -1;
+    private int draws;
 
-    /** Start the draws of {@code playerId}'s move in net tick {@code tick}. */
+    /** Start the draws of {@code playerId}'s flying phase in net tick {@code tick}. */
     public void reseed(int tick, int playerId) {
+        seedTick = tick;
+        seedId = playerId;
+        draws = 0;
         long z = ((long) tick << 32 | (playerId & 0xFFFF_FFFFL)) + 0x9E37_79B9_7F4A_7C15L;
         z = (z ^ (z >>> 30)) * 0xBF58_476D_1CE4_E5B9L;
         z = (z ^ (z >>> 27)) * 0x94D0_49BB_1331_11EBL;
@@ -45,10 +52,20 @@ public final class SeededTieBreak implements DoubleSupplier {
     /** BEHAVIOR: the next draw in [0, 1) (SplitMix64 steps, the top 53 bits). */
     @Override
     public double getAsDouble() {
+        draws++;
         long z = state += 0x9E37_79B9_7F4A_7C15L;
         z = (z ^ (z >>> 30)) * 0xBF58_476D_1CE4_E5B9L;
         z = (z ^ (z >>> 27)) * 0x94D0_49BB_1331_11EBL;
         z ^= z >>> 31;
         return (z >>> 11) * 0x1.0p-53;
     }
+
+    /** The tick of the last {@link #reseed}. */
+    public int seedTick() { return seedTick; }
+
+    /** The player id of the last {@link #reseed} (-1 before one). */
+    public int seedId() { return seedId; }
+
+    /** Draws since the last {@link #reseed}. */
+    public int draws() { return draws; }
 }

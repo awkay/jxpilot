@@ -320,8 +320,10 @@ class LatencyBaselineTest {
             // with it. Phase 1b (seed 1): p50 up to RTT + 168 ms (jitter raises the slack target by 2 x jitter), p95 up
             // to RTT + 353 ms without bursty loss (Pareto spikes) and RTT + 380 ms with it (the lead jumps on a
             // starvation, and the mid-tick repeat doubles the copies sent before the deadline)
+            // REORDER holds 10% of datagrams back 40 ms: the slack minimum, and so the lead, covers the held copies
+            int hold = r.scenario().jitter() == Scenario.Jitter.REORDER ? 40 : 0;
             int tail = r.scenario().loss() == Scenario.Loss.BURSTY_5 ? 600 : 400;
-            checks.add(() -> assertTrue(s.p50() <= rtt + 180, cell + "p50 " + s.p50()));
+            checks.add(() -> assertTrue(s.p50() <= rtt + 180 + hold, cell + "p50 " + s.p50()));
             checks.add(() -> assertTrue(s.p95() <= rtt + tail, cell + "p95 " + s.p95()));
         }
         assertAll(checks);

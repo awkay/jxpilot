@@ -36,7 +36,9 @@ record Scenario(int rttMs, Jitter jitter, Loss loss) {
         /** Normal jitter, sigma 15 ms per direction (FIFO: a late packet holds back the ones behind it). */
         NORMAL_15("s15"),
         /** 5% of packets get a Pareto spike (scale 20 ms, shape 1.5, mean 60 ms, capped at 300 ms). */
-        PARETO("spk");
+        PARETO("spk"),
+        /** 10% of packets are held back 40 ms and overtaken by later ones (reordering; FIFO otherwise). */
+        REORDER("ro");
 
         final String label;
 
@@ -66,6 +68,7 @@ record Scenario(int rttMs, Jitter jitter, Loss loss) {
         switch (jitter) {
             case NORMAL_15 -> p.normalJitterMs(15);
             case PARETO -> p.paretoSpikes(0.05, 20, 1.5, 300);
+            case REORDER -> p.reorder(0.10, 40);
             case NONE -> { }
         }
         switch (loss) {

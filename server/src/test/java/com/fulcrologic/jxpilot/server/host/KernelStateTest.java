@@ -41,8 +41,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * BEHAVIOR (KernelState): a scan logs what changed since the last one (cannon phasing, target team, wormhole count,
  * a temporary wormhole, a tracked block or item id) and nothing when nothing changed; drain sends the log from a
- * cursor; initial sends what differs from the map as loaded (after a RESET for a resync, nothing for a newcomer with
- * nothing to send); behind tells a cursor the ring ran past.
+ * cursor, one message per scan tick tagged with it; initial sends what differs from the map as loaded (after a RESET
+ * for a resync; an empty message for a newcomer with nothing to learn), tagged with the current tick; behind tells a
+ * cursor the ring ran past; a temporary wormhole's block is tracked only while it differs from the map.
  */
 @DisplayName("KernelState")
 class KernelStateTest {
@@ -113,22 +114,23 @@ class KernelStateTest {
         String block = B + ":" + cx + "," + cy + "," + (BlockType.SPACE & 0xFF);
         assertAll(
             () -> assertEquals(0, quiet, "nothing changed: nothing logged"),
-            () -> assertEquals(List.of("KSTATE 6:0,0,0,0"), fresh, "a fresh world: a resync is RESET alone"),
-            () -> assertEquals(List.of(), freshNewcomer, "a newcomer gets nothing"),
-            () -> assertEquals(List.of("KSTATE " + C + ":0,0,1,0 " + T + ":0,0,0,3 " + block + ","
+            () -> assertEquals(List.of("KSTATE@0 6:0,0,0,0"), fresh, "a fresh world: a resync is RESET alone"),
+            () -> assertEquals(List.of("KSTATE@0"), freshNewcomer,
+                "a newcomer with nothing to learn gets one empty message: the tick its state holds from"),
+            () -> assertEquals(List.of("KSTATE@0 " + C + ":0,0,1,0 " + T + ":0,0,0,3 " + block + ","
                 + w.map.itemId(cx, cy)), changedNewcomer, "a newcomer after changes: the differences, no RESET"),
             () -> assertEquals(3, after - quiet, "three changes: phasing, team, block"),
             () -> assertEquals(after, second, "a second scan logs nothing new"),
             () -> assertEquals(1, sent.size(), "one message"),
-            () -> assertTrue(sent.get(0).startsWith("KSTATE " + C + ":0,0,1,0 " + T + ":0,0,0,3 " + block),
+            () -> assertTrue(sent.get(0).startsWith("KSTATE@0 " + C + ":0,0,1,0 " + T + ":0,0,0,3 " + block),
                 "phased, target team 3, the cannon's block is space: " + sent),
-            () -> assertEquals(List.of("KSTATE " + block + "," + w.map.itemId(cx, cy)), fromMiddle,
+            () -> assertEquals(List.of("KSTATE@0 " + block + "," + w.map.itemId(cx, cy)), fromMiddle,
                 "from a later cursor only the rest"),
-            () -> assertTrue(changed.get(0).startsWith("KSTATE 6:0,0,0,0 " + C + ":0,0,1,0 " + T + ":0,0,0,3 " + block),
+            () -> assertTrue(changed.get(0).startsWith("KSTATE@0 6:0,0,0,0 " + C + ":0,0,1,0 " + T + ":0,0,0,3 " + block),
                 "initial after changes: RESET and the differences: " + changed),
             () -> assertTrue(revived.get(0).contains(C + ":0,0,0,0") && revived.get(0).contains(B + ":" + cx + "," + cy
                 + "," + (BlockType.CANNON & 0xFF)), "the revival is logged: " + revived),
-            () -> assertEquals(List.of("KSTATE 6:0,0,0,0 " + T + ":0,0,0,3"), back,
+            () -> assertEquals(List.of("KSTATE@0 6:0,0,0,0 " + T + ":0,0,0,3"), back,
                 "back to the map's cannon: only the team still differs"),
             () -> assertTrue(targetGone.get(0).contains(B + ":" + tx + "," + ty + "," + (BlockType.SPACE & 0xFF)),
                 "a destroyed target's block is logged: " + targetGone));
@@ -190,7 +192,8 @@ class KernelStateTest {
             () -> assertEquals(2, sent.size(), "120 entries need two messages (" + Msg.KernelState.MAX_ENTRIES + " each)"),
             () -> assertEquals(2, all.size(), "and so does the initial state"),
             () -> assertEquals(121, counted, "RESET and the 120 phased cannons"),
-            () -> assertEquals(List.of(), revived, "a revived cannon has the map's block and item id again: no difference"),
+            () -> assertEquals(List.of("KSTATE@0"), revived,
+                "a revived cannon has the map's block and item id again: no difference (the empty message only)"),
             () -> assertEquals(80, fBlocks, "80 new temporary wormhole blocks, beyond the tracked set's first capacity"));
     }
 
@@ -238,5 +241,68 @@ class KernelStateTest {
             () -> assertFalse(exactly, "exactly RING entries behind: the ring still holds them all"),
             () -> assertTrue(past, "one more and it is behind"),
             () -> assertFalse(k.behind(k.seq() - 5), "a recent cursor is not"));
+    }
+
+    @Test
+    @DisplayName("entries carry their scan's tick: one message per tick, the initial state at the current tick")
+    void ticks() {
+        Simulation s = HostFx.sim("", MAP);
+        World w = s.world;
+        KernelState k = new KernelState(w);
+        w.tick = 5;
+        w.modes.targetTeam[0] = 3;
+        w.cannonItems.used[0] |= Has.PHASING_DEVICE;
+        k.scan();
+        w.tick = 6;
+        w.modes.targetTeam[0] = 4;
+        k.scan();
+        List<String> sent = drain(k, 0);
+        w.tick = 9;
+        List<String> init = newcomer(k);
+        assertAll(
+            () -> assertEquals(List.of("KSTATE@5 " + C + ":0,0,1,0 " + T + ":0,0,0,3", "KSTATE@6 " + T + ":0,0,0,4"), sent,
+                "the tick-5 changes in one message, the tick-6 one in the next"),
+            () -> assertEquals(List.of("KSTATE@9 " + C + ":0,0,1,0 " + T + ":0,0,0,4"), init,
+                "the initial state is as of now: tick 9"));
+    }
+
+    @Test
+    @DisplayName("a temporary wormhole's blocks are tracked while open and dropped once their restore is logged;"
+        + " reopening one tracks it again")
+    void untrack() {
+        Simulation s = HostFx.sim("", MAP);
+        World w = s.world;
+        KernelState k = new KernelState(w);
+        int base = k.tracked();
+        w.worms.addTemp(2, 1, 10, 3);
+        k.scan();
+        int open = k.tracked();
+        long beforeClose = k.seq();
+        w.worms.removeTemp(w.worms.mapCount + 1);
+        w.worms.removeTemp(w.worms.mapCount);
+        k.scan();
+        String closed = String.join(" ", drain(k, beforeClose));
+        int afterClose = k.tracked();
+        for (int i = 0; i < 200; i++) {
+            w.worms.addTemp(3 + i % 5, 1, 10, 1 + i % 3);
+            k.scan();
+            w.worms.removeTemp(w.worms.mapCount + 1);
+            w.worms.removeTemp(w.worms.mapCount);
+            k.scan();
+        }
+        int cycled = k.tracked();
+        long beforeReopen = k.seq();
+        w.worms.addTemp(2, 1, 10, 3);
+        k.scan();
+        String reopened = String.join(" ", drain(k, beforeReopen));
+        assertAll(
+            () -> assertEquals(base + 2, open, "both ends tracked while open"),
+            () -> assertTrue(closed.contains(B + ":2,1," + (BlockType.SPACE & 0xFF))
+                && closed.contains(B + ":10,3," + (BlockType.SPACE & 0xFF)), "the restores are logged: " + closed),
+            () -> assertEquals(base, afterClose, "then both are dropped"),
+            () -> assertEquals(base, cycled, "200 open/close cycles leave nothing tracked"),
+            () -> assertTrue(reopened.contains(B + ":2,1," + (BlockType.WORMHOLE & 0xFF))
+                && reopened.contains(B + ":10,3," + (BlockType.WORMHOLE & 0xFF)),
+                "a wormhole reopened where one was: its blocks are logged again: " + reopened));
     }
 }

@@ -45,9 +45,9 @@ import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
  *   the steering act at once instead of waiting a second per correction;</li>
  *   <li>the estimate is held near {@code 0.5 tick + 2σ} of jitter ({@link #targetSlack}): above it the clock runs
  *   slow, below it fast, proportionally and up to ±3% (no change within {@link #DEADBAND});</li>
- *   <li>a starvation report (FLAG_INPUT_STARVED) jumps the clock up at once, by one tick or by the estimate's
- *   shortfall below the target when that is more; further reports are ignored until snapshots reach the first
- *   tick sent at a boundary after the jump (they describe entries sent before it);</li>
+ *   <li>a starvation report (the header's starvation counter changed) jumps the clock up at once, by one tick or
+ *   by the estimate's shortfall below the target when that is more; further reports are ignored until snapshots
+ *   reach the first tick sent at a boundary after the jump (they describe entries sent before it);</li>
  *   <li>once per session, after {@code simHz} slack reports, the clock settles: an estimate above the target by
  *   more than {@link #DEADBAND} is removed at once (down to half the deadband above the target), as the initial
  *   lead is deliberately generous and draining it at 3% would take seconds.</li>
@@ -217,7 +217,7 @@ public final class PredictedClock {
      *
      * @param snapshotTick the snapshot's tick
      * @param slack16      the header's inputSlack (1/16 tick) or NO_SLACK
-     * @param starved      the header's FLAG_INPUT_STARVED
+     * @param starved      the header's starvation counter changed
      * @param jitterNanos  the current jitter estimate (NaN: none)
      */
     public void feedback(int snapshotTick, int slack16, boolean starved, double jitterNanos, long nowNanos) {

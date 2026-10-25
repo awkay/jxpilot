@@ -917,21 +917,41 @@ public final class Records {
 
     /**
      * The own ship for the predictor (protocol v2, docs/PROTOCOL.md "PREDICT"):
-     * {@code 0 u32 frames (the C frame clock, not the net tick), 4 u16 roundDelay, 6 ShipBody core block}
-     * ({@link ShipBody#encodeCore}, key flags against the input the server applied this tick).
+     * {@code 0 ShipBody core block} ({@link ShipBody#encodeCore}, key flags against the input the server applied this
+     * tick; flag bit {@link #FLAG_ROUND_DELAY} says a {@link PredictRound} follows), {@code 63 u8 appliedHash}
+     * ({@link #hash} of that input), {@code 64 u8 rareVersion} (the {@link PredictRare} it refers to),
+     * {@code 65 u8 kernelVersion} (the KERNEL_CONFIG version it was simulated with, mod 256). The C frame clock is
+     * the snapshot tick plus the rare block's frame offset.
      */
     public static final class Predict extends Fly {
-        public static final int SIZE = 6 + ShipBody.CORE_SIZE;
+        public static final int SIZE = ShipBody.CORE_SIZE + 3;
+        /** Core flag (beyond ShipBody's): roundDelay is nonzero, in a {@link PredictRound} of the same part. */
+        public static final int FLAG_ROUND_DELAY = 1 << 3;
 
-        /** BEHAVIOR: frames as u32, roundDelay clamped to 0..65535, then the core block. */
+        /**
+         * BEHAVIOR: the core block (shot age at {@code frames}), the round-delay flag when {@code roundDelay > 0},
+         * the hash of {@code appliedKeys} and both versions mod 256.
+         */
         public static void put(SnapshotWriter w, ShipBody body, long frames, int roundDelay, long appliedKeys,
-                               int rareVersion) {
+                               int rareVersion, int kernelVersion) {
             ByteBuffer out = w.buffer();
             int p = out.position();
-            out.putInt((int) frames);
-            out.putShort((short) Math.clamp(roundDelay, 0, 0xFFFF));
-            body.encodeCore(out, p + 6, frames, appliedKeys, rareVersion);
+            body.encodeCore(out, p, frames, appliedKeys);
+            if (roundDelay > 0) {
+                out.put(p + ShipBody.CORE_FLAGS, (byte) (out.get(p + ShipBody.CORE_FLAGS) | FLAG_ROUND_DELAY));
+            }
+            out.put(p + ShipBody.CORE_SIZE, (byte) hash(appliedKeys));
+            out.put(p + ShipBody.CORE_SIZE + 1, (byte) rareVersion);
+            out.put(p + ShipBody.CORE_SIZE + 2, (byte) kernelVersion);
             out.position(p + SIZE);
+        }
+
+        /** BEHAVIOR: an 8-bit fold (xor of the bytes) of a key mask; any single-byte change changes it. */
+        public static int hash(long keys) {
+            long h = keys ^ keys >>> 32;
+            h ^= h >>> 16;
+            h ^= h >>> 8;
+            return (int) h & 0xFF;
         }
 
         public Predict wrap(SnapshotReader r, int i) {
@@ -939,32 +959,57 @@ public final class Records {
             return this;
         }
 
-        /** The C frame clock (u32). */
-        public long frames() { return b.getInt(o) & 0xFFFF_FFFFL; }
+        /** Whether roundDelay is nonzero (a {@link PredictRound} carries it). */
+        public boolean roundDelaySet() { return (u8(ShipBody.CORE_FLAGS) & FLAG_ROUND_DELAY) != 0; }
 
-        public int roundDelay() { return u16(4); }
+        /** {@link #hash} of the input the server applied. */
+        public int appliedHash() { return u8(ShipBody.CORE_SIZE); }
 
         /** The rare version the core refers to. */
-        public int rareVersion() { return u8(6 + ShipBody.CORE_SIZE - 1); }
+        public int rareVersion() { return u8(ShipBody.CORE_SIZE + 1); }
+
+        /** The kernel config version mod 256. */
+        public int kernelVersion() { return u8(ShipBody.CORE_SIZE + 2); }
 
         /**
-         * BEHAVIOR: decodes the core block into {@code body} ({@link ShipBody#decodeCore}, the key flags against
-         * {@code appliedKeys}, the client's own entry for the snapshot's inputTick); returns the rare version.
+         * BEHAVIOR: decodes the core block into {@code body} ({@link ShipBody#decodeCore}: shot time against
+         * {@code frames}, the key flags against {@code appliedKeys}, the client's own entry for the snapshot's
+         * inputTick).
          */
-        public int read(ShipBody body, long appliedKeys) {
-            return body.decodeCore(b, o + 6, frames(), appliedKeys);
+        public void read(ShipBody body, long frames, long appliedKeys) {
+            body.decodeCore(b, o, frames, appliedKeys);
         }
     }
 
-    /** {@code 0 u8 version, 1 ShipBody rare block} ({@link ShipBody#encodeRare}). */
-    public static final class PredictRare extends Fly {
-        public static final int SIZE = 1 + ShipBody.RARE_SIZE;
+    /** {@code 0 u16 roundDelay} of the own ship's PREDICT, sent only when nonzero (clamped to 1..65535). */
+    public static final class PredictRound extends Fly {
+        public static final int SIZE = 2;
 
-        public static void put(SnapshotWriter w, ShipBody body, int version) {
+        public static void put(SnapshotWriter w, int roundDelay) {
+            w.buffer().putShort((short) Math.clamp(roundDelay, 1, 0xFFFF));
+        }
+
+        public PredictRound wrap(SnapshotReader r, int i) {
+            bind(r, i);
+            return this;
+        }
+
+        public int roundDelay() { return u16(0); }
+    }
+
+    /**
+     * {@code 0 u8 version, 1 i32 frameOffset} (the C frame clock minus the snapshot tick: constant while the sim
+     * runs), {@code 5 ShipBody rare block} ({@link ShipBody#encodeRare}).
+     */
+    public static final class PredictRare extends Fly {
+        public static final int SIZE = 5 + ShipBody.RARE_SIZE;
+
+        public static void put(SnapshotWriter w, ShipBody body, int version, int frameOffset) {
             ByteBuffer out = w.buffer();
             int p = out.position();
             out.put((byte) version);
-            body.encodeRare(out, p + 1);
+            out.putInt(frameOffset);
+            body.encodeRare(out, p + 5);
             out.position(p + SIZE);
         }
 
@@ -975,9 +1020,11 @@ public final class Records {
 
         public int version() { return u8(0); }
 
+        public int frameOffset() { return b.getInt(o + 1); }
+
         /** BEHAVIOR: decodes the rare block into {@code body}. */
         public void read(ShipBody body) {
-            body.decodeRare(b, o + 1);
+            body.decodeRare(b, o + 5);
         }
     }
 

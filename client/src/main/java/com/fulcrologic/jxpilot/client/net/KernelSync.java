@@ -60,15 +60,24 @@ public final class KernelSync {
     private final Records.Predict predict = new Records.Predict();
     private final Records.PredictRare rare = new Records.PredictRare();
     private final Records.PredictKeys keys = new Records.PredictKeys();
+    private final Records.PredictRound round = new Records.PredictRound();
+    /** The newest snapshot tick seen and which of its parts were read. */
+    private int newestTick;
+    private boolean haveTick;
+    private long partsSeen;
     private final ShipBody body = new ShipBody();
     private boolean have;
     private int tick;
     private long frames;
+    private int frameOffset;
     private int roundDelay;
+    private boolean roundKnown;
     private int coreVersion;
+    private int coreKernel;
     private int rareVersion = -1;
     private boolean keysKnown;
     private long predicts;
+    private long keyMismatches;
 
     // ---- kernel world
     private String clientMap;
@@ -94,6 +103,8 @@ public final class KernelSync {
     private int[] blockType = new int[16];
     private int[] blockItem = new int[16];
     private int blocks;
+    private int stateTick;
+    private boolean stateKnown;
     private ShipGeom hull = ShipGeom.defaultShip();
     private final Msg.PlayerJoin join = new Msg.PlayerJoin();
 
@@ -103,12 +114,15 @@ public final class KernelSync {
         rareVersion = -1;
         keysKnown = false;
         predicts = 0;
+        keyMismatches = 0;
         clientMap = null;
+        haveTick = false;
         kernelRx = null;
         kernelVersion = 0;
         kernelOptions = null;
         world = null;
         clearState();
+        stateKnown = false;
         hull = ShipGeom.defaultShip();
         body.ship = hull;
     }
@@ -123,7 +137,13 @@ public final class KernelSync {
 
     /** The client's map text (the config's mapData, with the blocks the server hides): the base of the kernel map. */
     public void onConfig(Options clientOptions) {
+        onConfig(clientOptions, com.fulcrologic.jxpilot.common.map.WorldMap.fromOptions(clientOptions));
+    }
+
+    /** As {@link #onConfig(Options)} with the map already built (its size and wrap for view-relative records). */
+    public void onConfig(Options clientOptions, com.fulcrologic.jxpilot.common.map.WorldMap map) {
         clientMap = clientOptions.mapData();
+        reader.setWorld(map.pixelWidth(), map.pixelHeight(), map.edgeWrap());
     }
 
     /**
@@ -190,6 +210,8 @@ public final class KernelSync {
             badKernel++;
             return;
         }
+        stateTick = Msg.KernelState.tick(p);
+        stateKnown = true;
         for (int i = 0; i < n; i++) {
             int k = Msg.KernelState.kind(p, i);
             int a = Msg.KernelState.a(p, i);
@@ -340,6 +362,17 @@ public final class KernelSync {
     /** The version of the kernel config the world was built from (0: none). */
     public int kernelVersion() { return kernelVersion; }
 
+    /**
+     * The net tick of the newest KERNEL_STATE message: the mirrored state (and the world's) is the server's as of the
+     * snapshot of that tick. Messages come on the reliable channel, so they can arrive before or after that
+     * snapshot; a predictor starting from snapshot S has the world as of S when {@code stateTick() - S <= 0} and no
+     * newer message is due. Meaningful only when {@link #stateKnown()}.
+     */
+    public int stateTick() { return stateTick; }
+
+    /** Whether a KERNEL_STATE message (the server sends one with the initial state) has arrived since the reset. */
+    public boolean stateKnown() { return stateKnown; }
+
     /** Worlds built since the reset (the first, each KERNEL_CONFIG after it, each RESET). */
     public long rebuilds() { return rebuilds; }
 
@@ -350,52 +383,85 @@ public final class KernelSync {
     public ShipGeom hull() { return hull; }
 
     /**
-     * Read the PREDICT sections of a snapshot (part 0 of a tick newer than every one before), the packet body at the
-     * buffer's position (nothing is moved).
+     * Read the PREDICT sections of a snapshot part of the newest tick (the packet body at the buffer's position;
+     * nothing is moved).
+     * <p>
+     * BEHAVIOR: every part of the newest tick is read (the PREDICT sections may be in any of them, and part 1 may
+     * arrive before part 0); a part of an older tick, or one already read, is ignored.
      * <p>
      * BEHAVIOR: PREDICT decodes the core block into {@link #body}; its key flags refer to the client's own entry for
-     * the header's inputTick ({@code input}); when that entry is no longer (or not yet) in the history, the keys are
-     * unknown unless a PREDICT_KEYS section carries them. PREDICT_RARE decodes the rare block and records its
-     * version. A snapshot without PREDICT changes nothing.
+     * the header's inputTick ({@code input}); when that entry is no longer (or not yet) in the history, or its hash
+     * differs from the one the server applied (counted in {@link #keyMismatches()}), the keys are unknown unless a
+     * PREDICT_KEYS section carries them. PREDICT_RARE decodes the rare block and records its version and frame
+     * offset; the C frame clock is the snapshot tick plus that offset (the rare block may come after the core in the
+     * part). PREDICT_ROUND carries roundDelay when the core says it is nonzero; without it in the part, roundDelay is
+     * unknown. A snapshot without PREDICT changes nothing.
      */
     public void onSnapshot(ByteBuffer in, InputHistory input) {
         if (!reader.begin(in)) {
             return;
         }
+        int t = reader.tick();
+        if (haveTick && t - newestTick < 0) {
+            return;
+        }
+        if (!haveTick || t != newestTick) {
+            haveTick = true;
+            newestTick = t;
+            partsSeen = 0;
+        }
+        long bit = 1L << (reader.part() & 63);
+        if ((partsSeen & bit) != 0) {
+            return;
+        }
+        partsSeen |= bit;
         int inputTick = reader.inputTick();
         boolean known = input.has(inputTick);
         long applied = known ? input.keys(inputTick) : 0;
         boolean got = false;
         boolean keysSent = false;
+        int roundValue = -1;
         while (reader.nextSection()) {
-            int n = reader.count();
-            if (n == 0) {
+            if (reader.count() == 0) {
                 continue;
             }
             switch (reader.type()) {
                 case Section.PREDICT -> {
-                    Records.Predict p = predict.wrap(reader, 0);
-                    frames = p.frames();
-                    roundDelay = p.roundDelay();
-                    coreVersion = p.read(body, applied);
+                    predict.wrap(reader, 0);
                     got = true;
                 }
+                case Section.PREDICT_ROUND -> roundValue = round.wrap(reader, 0).roundDelay();
                 case Section.PREDICT_RARE -> {
                     Records.PredictRare r = rare.wrap(reader, 0);
                     r.read(body);
                     rareVersion = r.version();
+                    frameOffset = r.frameOffset();
                 }
                 case Section.PREDICT_KEYS -> {
-                    keys.wrap(reader, 0).read(body);
+                    keys.wrap(reader, 0);
                     keysSent = true;
                 }
                 default -> { }
             }
         }
         if (got) {
+            Records.Predict p = predict;
+            boolean match = known && Records.Predict.hash(applied) == p.appliedHash();
+            if (known && !match) {
+                keyMismatches++;
+            }
+            tick = t;
+            frames = (t + (long) frameOffset) & 0xFFFF_FFFFL;
+            p.read(body, frames, applied);
+            if (keysSent) {
+                keys.read(body); // the masks the flags could not give
+            }
+            coreVersion = p.rareVersion();
+            coreKernel = p.kernelVersion();
+            roundKnown = !p.roundDelaySet() || roundValue > 0;
+            roundDelay = p.roundDelaySet() ? Math.max(roundValue, 0) : 0;
             have = true;
-            tick = reader.tick();
-            keysKnown = known || keysSent;
+            keysKnown = match || keysSent;
             predicts++;
         }
     }
@@ -403,10 +469,17 @@ public final class KernelSync {
     /** The own ship as of {@link #tick()} (valid only when {@link #valid()}). */
     public ShipBody body() { return body; }
 
-    /** Whether a PREDICT has arrived, its rare block is the version it refers to and its key masks are known. */
+    /**
+     * Whether a PREDICT has arrived, its rare block is the version it refers to, its key masks and roundDelay are
+     * known, and the kernel world is built from the KERNEL_CONFIG version it was simulated with.
+     */
     public boolean valid() {
-        return have && rareVersion == coreVersion && keysKnown;
+        return have && rareVersion == coreVersion && keysKnown && roundKnown && world != null
+            && (kernelVersion & 0xFF) == coreKernel;
     }
+
+    /** PREDICTs whose applied-input hash differed from the client's own entry for that tick. */
+    public long keyMismatches() { return keyMismatches; }
 
     /** Whether any PREDICT has arrived since the reset. */
     public boolean have() { return have; }
@@ -414,7 +487,7 @@ public final class KernelSync {
     /** The snapshot tick of the newest PREDICT. */
     public int tick() { return tick; }
 
-    /** The C frame clock at that tick (ShipKernel's {@code frames()}, not the net tick). */
+    /** The C frame clock at that tick (ShipKernel's {@code frames()}, not the net tick): the tick plus the rare block's frame offset. */
     public long frames() { return frames; }
 
     public int roundDelay() { return roundDelay; }

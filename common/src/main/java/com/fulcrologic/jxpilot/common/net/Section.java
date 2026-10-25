@@ -88,14 +88,19 @@ public final class Section {
     public static final int TIMERS = 22;
     /**
      * {@link Records.Predict}: the receiving player's own ship as the ship kernel sees it (protocol v2, owner only,
-     * not while watching another player): the C frame clock, roundDelay and the {@link
-     * com.fulcrologic.jxpilot.common.sim.ShipBody} core block (0 or 1 record).
+     * not while watching another player): the {@link com.fulcrologic.jxpilot.common.sim.ShipBody} core block, the
+     * applied input's hash and the rare and kernel versions (0 or 1 record).
      */
     public static final int PREDICT = 23;
-    /** {@link Records.PredictRare}: the ShipBody rare block with its version (sent when it changed lately). */
+    /**
+     * {@link Records.PredictRare}: the ShipBody rare block with its version and the frame offset (sent when it
+     * changed lately).
+     */
     public static final int PREDICT_RARE = 24;
     /** {@link Records.PredictKeys}: the ShipBody key masks, when they differ from the applied input. */
     public static final int PREDICT_KEYS = 25;
+    /** {@link Records.PredictRound}: the own ship's roundDelay, with PREDICT when nonzero. */
+    public static final int PREDICT_ROUND = 27;
     /**
      * {@link Records.Sound}: sound events the receiving player hears, with their volume (C
      * {@code sound_play_queued}: {@code PKT_AUDIO} after the frame's objects). Not view culled.
@@ -136,6 +141,7 @@ public final class Section {
         SIZES[PREDICT] = Records.Predict.SIZE;
         SIZES[PREDICT_RARE] = Records.PredictRare.SIZE;
         SIZES[PREDICT_KEYS] = Records.PredictKeys.SIZE;
+        SIZES[PREDICT_ROUND] = Records.PredictRound.SIZE;
     }
 
     /** Record size this implementation writes for a type, 0 if unknown. */

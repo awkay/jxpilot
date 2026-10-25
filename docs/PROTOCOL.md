@@ -4,8 +4,8 @@ Our own UDP protocol (no XPilot client compatibility). All code lives in
 `com.fulcrologic.jxpilot.common.net`; everything below has an allocation-free codec there.
 
 Version 2 (`Protocol.VERSION`, latency phase 1b, docs/latency-fixes.md §4.3/§4.4) tags every input with the
-tick it is for, adds the input slack and starvation to the snapshot header, the owner's PREDICT sections and
-the kernel world transfer (KERNEL_CONFIG, KERNEL_CHUNK, KERNEL_STATE). A version 1 peer's CONNECT gets
+tick it is for, adds the input slack and starvation to the snapshot header, the owner's PREDICT
+sections and the kernel world transfer (KERNEL_CONFIG, KERNEL_CHUNK, KERNEL_STATE). A version 1 peer's CONNECT gets
 REJECT VERSION ("incompatible version"). The C-server path (`client.xp`, the XPilot protocol) is untouched.
 
 - Byte order: big-endian (Java `ByteBuffer` default).
@@ -208,7 +208,7 @@ Server → client:
 | 31 | PLAYER_ALLIANCE | u16 id, u8 mark (Latin-1): the alliance mark of player id as this receiver sees it, C `Send_score`'s alliance character (netserver.c:1670-1678): ' ' not in an alliance, '+' in the receiver's own alliance (when `announceAlliances` is off; other alliances then show ' '), '0'-'9' the alliance number (when `announceAlliances` is on). Sent when a player's alliance changes (C resends the score then); when the receiver's own alliance changes it gets every player's mark again (its '+' marks may all have changed), and after an operator changes `announceAlliances` every player's mark goes to everyone. Also in the initial state for players in alliances (every player after a resync). The client shows it in the score list's team column outside team play and treats equal non-blank marks as friends (blue ship, friendly lock). Ids 32-33 are reserved for server-commands |
 | 48 | KERNEL_CONFIG | u32 version, u32 length, u32 compressedLength, u32 crc32: a kernel config blob (`common.config.KernelConfig`) follows as KERNEL_CHUNKs, deflated like the config. Raw: `u32 textLength`, the config lines of every option the ship kernel's world depends on (`KernelConfig.OPTIONS`, visible or not), `u32 runs`, runs × (`u32 index, u16 length, chars`): the mapData characters the client's map hides (C `Packet_map`: gravity, wormholes, concentrators, friction), as a patch over the config's mapData. Sent to every connection after its initial state, and again (a new version) when an operator /sets a kernel option; a newer version abandons an unfinished older transfer. The client builds `KernelWorld.of` from it, exactly the server's kernel world (`KernelConfigParityTest`, all shipped maps). The owner thus learns hidden gravity and wormholes; see latency-fixes.md §4.15 |
 | 49 | KERNEL_CHUNK | as DATA_CHUNK, for the kernel config blob |
-| 50 | KERNEL_STATE | u8 n, n × (u8 kind, u16 a, u16 b, u16 c, i32 d): run-time state the kernel reads that the map does not give. kind 1 BLOCK (a bx, b by, c block type, d item id: cannons and targets destroyed and revived, temporary wormholes opened and closed), 2 CANNON (a index, c 1 phased), 3 TARGET (a index, d team), 4 WORM (a index of a temporary wormhole, b bx, c by, d type), 5 WORM_COUNT (d the map's plus the temporary wormholes), 6 RESET (forget earlier entries; what follows is everything that differs from the map as loaded). The server scans once per tick and sends the changes with the events; a newcomer gets the differences in its initial state, a connection the change log (4096 entries) ran past gets RESET and the differences. Wormholes' last destination and countdown are not sent (their destination is random) |
+| 50 | KERNEL_STATE | u32 tick, u8 n, n × (u8 kind, u16 a, u16 b, u16 c, i32 d): run-time state the kernel reads that the map does not give. kind 1 BLOCK (a bx, b by, c block type, d item id: cannons and targets destroyed and revived, temporary wormholes opened and closed), 2 CANNON (a index, c 1 phased), 3 TARGET (a index, d team), 4 WORM (a index of a temporary wormhole, b bx, c by, d type), 5 WORM_COUNT (d the map's plus the temporary wormholes), 6 RESET (forget earlier entries; what follows is everything that differs from the map as loaded). The server scans once per tick (after the sim tick) and sends the changes with the events, one message per scanned tick: `tick` is the net tick whose snapshot first shows the state (the world is as the entries say from that snapshot on). The reliable channel can deliver a message before or after that snapshot, or an RTO later; the client exposes the newest tick as `KernelSync.stateTick()`. A newcomer gets the differences in its initial state, tagged with the current tick, always at least one (possibly empty) message; a connection the change log (4096 entries) ran past gets RESET and the differences. Temporary wormhole blocks are tracked while they differ from the map and dropped once their restore is logged. Wormholes' last destination and countdown are not sent (their destination is random) |
 | 40 | WAR | u16 robotId, u16 killerId: a robot's war target changed (C `Send_war`, the id is C's PKT_WAR); killerId NO_ID ends the war. The client keeps the target (C `war_id`, also set by SEEK, cleared when the target leaves), shows it in the score list as " (NAME)" after the robot's name and, for a new target, logs "ROBOT declares war on KILLER." (C `Handle_war`). Sent to everyone as C `Robot_war` does: when a robot declares war on its killer, and (NO_ID) when a robot kills the player it was at war with; the initial state sends it for every robot already at war |
 
 Client → server:
@@ -227,8 +227,11 @@ DISPLAY and MODIFIER_BANK are client → server messages although their ids are 
 
 ## INPUT — `InputHistory` (client) / `InputReader` (server)
 
-`u32 newestTick, u8 count (1..8)`, then `count ×` (`u64 keys, u64 taps, i16 aimTurn`) newest first: entry i
-is for tick `newestTick - i`.
+`u16 seq, u32 newestTick, u8 count (1..8)`, then `count` entries newest first (entry i is for tick
+`newestTick - i`), each `u8 flags` (1 keys follow, 2 taps follow, 4 aimTurn follows; other bits are malformed)
+and only those fields: `u64 keys` (absent: the next-newer entry's keys, 0 for the newest), `u64 taps` (absent: 0),
+`i16 aimTurn` (absent: 0). `seq` counts the client's INPUT datagrams (u16, wrapping). Eight entries of one held
+mask are 23 bytes; keys changing every tick, 79.
 
 - `keys` is a `ControlKey` mask: bit = `keys_t` value − 1 (KEY_LOCK_NEXT … KEY_DEFLECTOR = 64 keys).
 - `taps` are keys that went down and came up again within the tick, so a quick tap is not lost. The server
@@ -245,11 +248,11 @@ The input collected while the predicted clock runs from N-1 to N is entry N, fin
 started the clock):
 
 - when the predicted tick passes the last final one, the entry is set and sent at once (never held back);
-- a key change within the tick sends an early copy of the next entry, as collected so far, at most every
-  1/120 s after the previous send (a change inside that gap goes with the next send);
-- half a tick after the last send, the INPUT is repeated unchanged (a second copy before the deadline:
-  redundancy only helps while the tick is still ahead, so this halves the loss of a tick's entry to a lone
-  lost datagram);
+- a key change within the tick sends an early copy of the next entry, as collected so far, once per tick and
+  not within 1/120 s of the previous send (later changes go with the next send);
+- a quarter tick after the final send the INPUT is repeated once (a second copy before the deadline:
+  redundancy only helps while the tick is still ahead), unless the slack estimate is at least 1.25 ticks, when
+  the next final send is that second copy;
 - every INPUT carries every entry newer than the newest snapshot's `inputTick`, at least 1 and at most 8;
   ticks the clock skipped hold the previous keys;
 - after a transport error (VPN drop, ICMP port unreachable) INPUT, reliable data and ACKs pause for 250 ms.
@@ -258,8 +261,11 @@ started the clock):
 the host gets entry T (`GameHost.input(id, T, keys, taps, aim)`). A missing entry repeats the last applied
 keys without taps or aim and counts a *starvation* (not before the first entry is applied). An entry for a
 tick already run is dropped (counted *late* when that tick starved); one more than simHz ticks ahead is
-dropped. A copy of an entry from an older datagram than the one that wrote it is ignored (reordering); a
-copy from the same or a newer one replaces it (an early copy revised by the final send).
+dropped. A copy of an entry from a datagram sent before the one that wrote it (`seq`, compared modulo 2^16)
+is ignored: reordering, typically an early copy arriving after the final send of the same tick, which carries
+the same newest tick. A copy from the same or a later datagram replaces it (an early copy revised by the final
+send). A copy arriving after its tick ran is counted late, once, when the tick starved or applied a different
+copy (a final send that lost to its early copy).
 
 The **input slack** is the smallest margin, in 1/16 tick, by which entries arrived before their tick over the
 last second: the margin of the copies that delivered what the server applies (an entry's first copy, a later
@@ -279,13 +285,14 @@ u16 viewY`.
   tick of the held entry.
 - `inputSlack`: the input slack (above) in 1/16 tick, clamped to -127..127; -128 = no arrival in the last
   second.
-- `flags`: 1 = last part; 2 = input starved: at least one of this receiver's ticks since the previous
-  snapshot to it ran without its entry (the client's lead is too short).
+- `flags`: bit 0 = last part; bits 1-7 = this receiver's starvation count mod 128 (ticks that ran without its
+  entry). The client compares it with the previous snapshot's: a change means its lead is too short. A
+  counter rather than a flag, so a lost snapshot does not lose the report.
 - `viewX`, `viewY`: the receiver's view centre in half pixels. `tick` T is the number of the sim tick,
 one C frame, whose result the snapshot shows: the number the network layer passed to `GameHost.tick(T)`
 and on to the simulation, so bursts' `age` and thrust-spark seeds use the same numbers. Parts are numbered
 0..63; the client treats a higher part as malformed. If a tick does not fit one datagram it is split into
-self-contained parts. Sections are written SELF, PREDICT, PREDICT_RARE, PREDICT_KEYS, SOUND, SHIP, CANNON, FUEL, TARGET, TREASURE, TEMP_WORMHOLE, RADAR, the item sections (TIMERS first), BURST, WRECKAGE, BALL/ASTEROID/CONNECTOR, then SHOT, which fills
+self-contained parts. Sections are written SELF, PREDICT, PREDICT_ROUND, PREDICT_RARE, PREDICT_KEYS, SOUND, SHIP, CANNON, FUEL, TARGET, TREASURE, TEMP_WORMHOLE, RADAR, the item sections (TIMERS first), BURST, WRECKAGE, BALL/ASTEROID/CONNECTOR, then SHOT, which fills
 the remaining room nearest first; a record that does not fit drops only itself, smaller records of later
 sections are still sent.
 
@@ -437,25 +444,33 @@ simulating every particle**; on the wire:
 
 `Rng` is a fixed xorshift32 and the cos/sin tables use `StrictMath`, so every JVM expands identically.
 
-### PREDICT, PREDICT_RARE, PREDICT_KEYS (sections 23-25, owner only)
+### PREDICT, PREDICT_ROUND, PREDICT_RARE, PREDICT_KEYS (sections 23-25 and 27, owner only)
 
 The receiving player's own ship as the ship kernel (`common.sim`) sees it, for the own-ship predictor, in part
 0 of every snapshot whose view is the receiver's own ship (none while it watches another player).
 `ShipBody` owns the codec, so the wire cannot lag behind what the kernel reads.
 
-- **PREDICT** (77 bytes, every snapshot): `u32 frames` (C `frame_loops`, the kernel's frame clock, not the net
-  tick), `u16 roundDelay`, then the 71-byte core block: `i24 cx, i24 cy` (clicks), `f32 vx, vy, velocity,
-  mass, floatDir, turnVel, oldTurnVel, turnAcc` (raw IEEE bits), `u8 dir`, `i32 status, have, used`,
-  `f64 fuel`, `u16 shotAge` (`frames - shotTime`, saturating at 65535: the fire check only needs "long
-  ago"), `u16 shieldTime, stunned, shots, mods` (clamped to 0..65535), `u8 flags` (1 prevKeys equals the
-  applied input's keys, 2 lastReceivedKeys does, 4 keysCleared), `u8 rareVersion`. The key flags compare with
-  the entry the server applied this tick, which the client has in its own input history under the header's
-  `inputTick`.
-- **PREDICT_RARE** (63 bytes): `u8 version`, then the 62-byte rare block: `f32 emptyMass, f64 fuelMax,
-  f32 power, turnSpeed, turnResistance, powerS, turnSpeedS, turnResistanceS, u16 shotMax, i8 team,
-  i16 wormHoleDest, u8 items[21]`. The version (mod 256) changes when the block's bytes change; the block is
-  sent in the 8 snapshots after a change (and after the join) and in every 14th. The client uses the core
-  only with the rare block of the version it names.
+- **PREDICT** (66 bytes, every snapshot): the 63-byte core block: `i24 cx, i24 cy` (clicks), `f32 vx, vy,
+  velocity, mass, floatDir, turnVel, oldTurnVel, turnAcc` (raw IEEE bits), `u8 dir`, `i32 status, have, used`,
+  `u24 fuel` (C's integer fuel, 1/256 units, clamped to 0..16777215; Java fuel is always integral, asserted in
+  `KernelDifferentialTest`), `u16 shotAge` (`frames - shotTime`, saturating at 65535: the fire check only needs
+  "long ago"), `u16 shieldTime, stunned, shots` (clamped to 0..65535), `u8 flags` (1 prevKeys equals the
+  applied input's keys, 2 lastReceivedKeys does, 4 keysCleared, 8 roundDelay is nonzero); then
+  `u8 appliedHash` (xor of the 8 bytes of the key mask the server applied), `u8 rareVersion` (the
+  PREDICT_RARE it refers to), `u8 kernelVersion` (the KERNEL_CONFIG version the server simulates with, mod
+  256). The key flags compare with the entry the server applied this tick, which the client has in its own
+  input history under the header's `inputTick`; when the client's entry hashes differently (the server applied
+  another copy, or held old keys), the flagged masks are unknown. The client uses PREDICT only when its rare
+  block has `rareVersion`, its masks are known, and its kernel world is built from `kernelVersion`.
+- **PREDICT_ROUND** (2 bytes, section 27): `u16 roundDelay` (frames, clamped to 1..65535), right after PREDICT
+  when flag 8 is set. Flag 8 without it in the part leaves roundDelay unknown (PREDICT unusable).
+- **PREDICT_RARE** (64 bytes): `u8 version`, `i32 frameOffset` (C `frame_loops` minus the snapshot tick:
+  constant while the sim runs; the kernel's frame clock is `tick + frameOffset`, mod 2^32), then the 59-byte
+  rare block: `f32 emptyMass, u24 fuelMax, f32 power, turnSpeed, turnResistance, powerS, turnSpeedS,
+  turnResistanceS, u16 shotMax, i8 team, i16 wormHoleDest, u16 mods, u8 items[21]`. The version (mod 256)
+  changes when the block's bytes or the frame offset change; the block is sent in the 8 snapshots after a
+  change (and after the join) and in every 14th. It may follow PREDICT in the part; the client decodes the
+  core's shot age against the frame clock after reading the whole part.
 - **PREDICT_KEYS** (16 bytes): `u64 prevKeys, u64 lastReceivedKeys`, only when a key flag is clear.
 
 Not sent: the tanks (the kernel only adds to the current tank's fuel, never reads a tank), pixels and blocks
@@ -473,8 +488,9 @@ the hull (it comes with PLAYER_JOIN). The canonical encoding (core + rare + keys
 | Radar-heavy: 32 players + 300 objects on radar (332 blips), 8 ships in view | **1194** | 1 |
 | Radar-heavy with all 31 other ships in view | **1516** | 2 |
 
-The owner's snapshot adds PREDICT (5 + 77 = 82 bytes): typical **502**, fight **1478**; PREDICT_RARE adds
-68 bytes in the snapshots that carry it (typical 570) and PREDICT_KEYS 21 when the key masks differ.
+The owner's snapshot adds PREDICT (5 + 66 = 71 bytes): typical **491**, fight **1467**; PREDICT_RARE adds
+69 bytes in the snapshots that carry it (typical 560), PREDICT_KEYS 21 when the key masks differ and
+PREDICT_ROUND 7 while a round delay runs.
 
 At 30 Hz the fight is ≈ 330 kbit/s per client (at the default 14 Hz tick rate ≈ 155 kbit/s). The original per-particle layout needed ~4.7 KB per snapshot.
 
