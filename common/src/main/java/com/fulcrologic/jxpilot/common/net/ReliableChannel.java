@@ -282,9 +282,13 @@ public final class ReliableChannel {
     }
 
     /**
-     * BEHAVIOR: true if a window message was never sent or its last send is at least the resend timeout ago.
+     * BEHAVIOR: true if a window message was never sent or its last send is at least the resend timeout ago, or
+     * overflowing messages wait for free window slots ({@link #write} moves them in and sends them).
      */
     public boolean wantsSend(long nowNanos) {
+        if (!overflow.isEmpty() && freeSlots() > 0) {
+            return true;
+        }
         for (int s = txBase; s != txNext; s++) {
             int slot = s & mask;
             if (txSends[slot] == 0 || nowNanos - txSent[slot] >= rto) {
