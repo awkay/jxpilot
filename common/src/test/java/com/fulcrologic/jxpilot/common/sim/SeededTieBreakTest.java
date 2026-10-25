@@ -60,6 +60,14 @@ class SeededTieBreakTest {
             range &= v >= 0 && v < 1;
         }
         boolean inRange = range;
+        SeededTieBreak t = new SeededTieBreak();
+        int idBefore = t.seedId();
+        t.reseed(42, 7);
+        t.getAsDouble();
+        t.getAsDouble();
+        int drawn = t.draws();
+        t.reseed(43, 8);
+        int afterReseed = t.draws();
         assertAll(
             () -> assertEquals(0.7360132832983436, a[0], "(10, 3) first draw"),
             () -> assertEquals(0.4961950214936618, a[1], "second"),
@@ -69,6 +77,11 @@ class SeededTieBreakTest {
             () -> assertEquals(0.7575932558132343, c[0], "(123456, 65535)"),
             () -> assertEquals(0.3871241409757855, b[2], "(0, 0) third"),
             () -> assertEquals(a[0], again, "a reseed restarts the sequence"),
-            () -> assertTrue(inRange, "draws in [0, 1)"));
+            () -> assertTrue(inRange, "draws in [0, 1)"),
+            () -> assertEquals(-1, idBefore, "no seed id before a reseed"),
+            () -> assertEquals(2, drawn, "two draws counted"),
+            () -> assertEquals(0, afterReseed, "a reseed zeroes the count"),
+            () -> assertEquals(43, t.seedTick(), "the last seed tick"),
+            () -> assertEquals(8, t.seedId(), "and id"));
     }
 }

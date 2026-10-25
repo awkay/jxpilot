@@ -23,3 +23,19 @@ Score: **99.4%** (500 of 503 mutants killed or timed out; 3 survivors, all equiv
 
 The previous `RateLimiter.slot` survivor is gone: slots are now the key's low bits (keys are already
 secret-keyed SplitMix64 hashes, see `SourceKeys`), and a known-answer test pins `SourceKeys.of`.
+
+## Latency phase 1b fix round: InputBuffer and KernelState
+
+PIT on `server.net.InputBuffer` and `server.host.KernelState` with the `server.net` and `server.host` tests:
+InputBuffer **68/70 (97%)**, KernelState **94/99 (95%)**. Killed afterwards (verified by hand): InputBuffer
+reset's `Arrays.fill(full, false)` (an entry buffered before a reset must not be the new session's:
+`InputBufferTest.reset`) and KernelState.track's `k < tracked` → `<=` (a wormhole reopened at once on the blocks
+just untracked: `KernelStateTest.untrack`). Equivalent:
+
+| file:line | mutator | why equivalent |
+|---|---|---|
+| InputBuffer.java:98 | `Arrays.fill(starved, false)` removed in reset | `starved` is read only behind `open`, which reset clears. |
+| KernelState.java:89 | the initial capacity sum | capacity only: `track` grows the arrays. |
+| KernelState.java:119 | `2 * tracked` → `/` (no coverage) | growth beyond cannons + targets + 64 open wormhole ends; capacity only. |
+| KernelState.java:174 | `i - mapCount` → `+` (shadow index) | equivalent: the shadow arrays grow to fit, and each wormhole slot still compares with its own shadow. |
+| KernelState.java:173 | `i < n` → `<=` | not strictly equivalent: one extra WORM entry for the slot past the count, which every reader ignores (it is beyond WORM_COUNT, and the slot is rewritten before it is counted). Harmless; not worth a test. |

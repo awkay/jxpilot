@@ -231,6 +231,7 @@ class KernelSyncTest {
         boolean before = k.stateKnown();
         deliver(k, stateAt(40, Msg.KernelState.CANNON, 0, 0, 1, 0));
         int first = k.stateTick();
+        boolean known = k.stateKnown();
         ReliableChannel ch = new ReliableChannel();
         new Msg.KernelState().begin(ch, 55).end(ch, true);
         deliver(k, messages(ch));
@@ -243,6 +244,7 @@ class KernelSyncTest {
         assertAll(
             () -> assertFalse(before, "unknown before any message"),
             () -> assertEquals(40, first, "the message's tick"),
+            () -> assertTrue(known, "known after one"),
             () -> assertEquals(55, empty, "an empty message (the initial state of a fresh world) still sets it"),
             () -> assertEquals(1, bad, "a 4-byte payload is shorter than the header: malformed"),
             () -> assertEquals(55, afterBad, "and changes nothing"),

@@ -903,6 +903,12 @@ class MessagesTest {
                 w.write(buf(), 0);
             }
             int wrapped = w.nextSeq();
+            InputHistory three = new InputHistory();
+            three.set(1, 0, 0, 0);
+            for (int i = 0; i < 3; i++) {
+                three.write(buf(), 0);
+            }
+            int afterThree = three.nextSeq();
             assertAll(
                 () -> assertEquals(7 + 9 + 7, steadySize, "8 entries of one held mask: 23 bytes"),
                 () -> assertEquals(7 + 8 * 9, changingSize, "keys changing every tick: 79 bytes"),
@@ -911,7 +917,8 @@ class MessagesTest {
                 () -> assertEquals(0, r.aimTurn(7), "no aim"),
                 () -> assertEquals(0, firstSeq, "the first datagram has sequence 0"),
                 () -> assertEquals(1, r2.seq(), "the next one 1"),
-                () -> assertEquals(0, wrapped, "the u16 sequence wraps"));
+                () -> assertEquals(0, wrapped, "the u16 sequence wraps"),
+                () -> assertEquals(3, afterThree, "three datagrams written: the next is 3"));
         }
 
         @Test
@@ -935,6 +942,15 @@ class MessagesTest {
                 .putLong(3).putLong(4).putShort((short) -5).flip();
             InputReader ex = new InputReader();
             boolean exactOk = ex.wrap(exact);
+            ByteBuffer keysNoTaps = ByteBuffer.allocate(7 + 1 + 8);
+            keysNoTaps.putShort((short) 0).putInt(1).put((byte) 1)
+                .put((byte) (InputHistory.F_KEYS | InputHistory.F_TAPS)).putLong(3).flip();
+            ByteBuffer allButAim = ByteBuffer.allocate(7 + 1 + 16);
+            allButAim.putShort((short) 0).putInt(1).put((byte) 1)
+                .put((byte) (InputHistory.F_KEYS | InputHistory.F_TAPS | InputHistory.F_AIM)).putLong(3).putLong(4)
+                .flip();
+            ByteBuffer offset = ByteBuffer.allocate(16);
+            offset.position(10);
             ByteBuffer missingEntry = ByteBuffer.allocate(7 + 1);
             missingEntry.putShort((short) 0).putInt(1).put((byte) 2).put((byte) 0).flip();
             assertAll(
@@ -945,6 +961,9 @@ class MessagesTest {
                 () -> assertFalse(new InputReader().wrap(unknown), "an unknown flag bit"),
                 () -> assertFalse(new InputReader().wrap(truncated), "keys flagged but cut short"),
                 () -> assertFalse(new InputReader().wrap(missingEntry), "fewer entries than the count"),
+                () -> assertFalse(new InputReader().wrap(keysNoTaps), "keys and taps flagged, only the keys there"),
+                () -> assertFalse(new InputReader().wrap(allButAim), "keys, taps and aim flagged, the aim missing"),
+                () -> assertFalse(new InputReader().wrap(offset), "6 bytes after a non-zero position: short"),
                 () -> assertTrue(exactOk, "a body exactly holding its fields"),
                 () -> assertEquals(5, ex.seq(), "its sequence"),
                 () -> assertEquals(3L, ex.keys(0), "keys"),

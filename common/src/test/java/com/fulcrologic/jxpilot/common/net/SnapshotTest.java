@@ -1083,6 +1083,27 @@ class SnapshotTest {
         }
     }
 
+    @Test
+    @DisplayName("PREDICT: roundDelay 0 leaves the round-delay flag clear; 1 sets it")
+    void roundFlag() {
+        java.util.function.IntFunction<Boolean> flag = rd -> {
+            ByteBuffer b = ByteBuffer.allocate(200);
+            SnapshotWriter w = new SnapshotWriter();
+            w.begin(b, 1, 1, 0, 1, 1, 0, 0);
+            w.beginSection(Section.PREDICT);
+            Records.Predict.put(w, new com.fulcrologic.jxpilot.common.sim.ShipBody(), 10, rd, 0, 0, 0);
+            w.endSection();
+            b.flip();
+            SnapshotReader r = new SnapshotReader();
+            r.begin(b);
+            r.nextSection();
+            return new Records.Predict().wrap(r, 0).roundDelaySet();
+        };
+        assertAll(
+            () -> assertFalse(flag.apply(0), "0: clear"),
+            () -> assertTrue(flag.apply(1), "1: set"));
+    }
+
     @Nested
     @DisplayName("PREDICT's applied-input hash")
     class PredictHash {

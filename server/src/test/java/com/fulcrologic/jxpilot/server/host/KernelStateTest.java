@@ -283,6 +283,14 @@ class KernelStateTest {
         k.scan();
         String closed = String.join(" ", drain(k, beforeClose));
         int afterClose = k.tracked();
+        long beforeAgain = k.seq();
+        w.worms.addTemp(2, 1, 10, 3);
+        k.scan();
+        String again = String.join(" ", drain(k, beforeAgain));
+        int openAgain = k.tracked();
+        w.worms.removeTemp(w.worms.mapCount + 1);
+        w.worms.removeTemp(w.worms.mapCount);
+        k.scan();
         for (int i = 0; i < 200; i++) {
             w.worms.addTemp(3 + i % 5, 1, 10, 1 + i % 3);
             k.scan();
@@ -300,6 +308,10 @@ class KernelStateTest {
             () -> assertTrue(closed.contains(B + ":2,1," + (BlockType.SPACE & 0xFF))
                 && closed.contains(B + ":10,3," + (BlockType.SPACE & 0xFF)), "the restores are logged: " + closed),
             () -> assertEquals(base, afterClose, "then both are dropped"),
+            () -> assertTrue(again.contains(B + ":2,1," + (BlockType.WORMHOLE & 0xFF))
+                && again.contains(B + ":10,3," + (BlockType.WORMHOLE & 0xFF)),
+                "reopened at once on the same blocks: both logged again: " + again),
+            () -> assertEquals(base + 2, openAgain, "and both tracked"),
             () -> assertEquals(base, cycled, "200 open/close cycles leave nothing tracked"),
             () -> assertTrue(reopened.contains(B + ":2,1," + (BlockType.WORMHOLE & 0xFF))
                 && reopened.contains(B + ":10,3," + (BlockType.WORMHOLE & 0xFF)),
