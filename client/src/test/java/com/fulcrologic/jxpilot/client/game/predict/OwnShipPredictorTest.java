@@ -218,6 +218,27 @@ class OwnShipPredictorTest {
         }
 
         @Test
+        @DisplayName("a PREDICT whose world state is not the client's (a newer or missing KERNEL_STATE) is not compared")
+        void worldNotAsOf() {
+            Source s = open();
+            s.hold(11, 12, 0, 0);
+            OwnShipPredictor p = new OwnShipPredictor();
+            p.update(s, 0);
+            s.worldAsOf = false;
+            s.predict(12, 101, ship(100, 100, 0));
+            p.update(s, 0);
+            long skipped = p.reconciliations();
+            double x = p.x();
+            s.worldAsOf = true;
+            s.predict(12, 101, ship(100, 100, 0));
+            p.update(s, 0);
+            assertAll(
+                () -> assertEquals(0, skipped, "skipped"),
+                () -> assertEquals(200, x, 1e-9, "the ring rode on"),
+                () -> assertEquals(1, p.reconciliations(), "compared once the world is as of its tick"));
+        }
+
+        @Test
         @DisplayName("a new kernel world rebuilds the kernel and drops the ring")
         void newWorld() {
             Source s = open();

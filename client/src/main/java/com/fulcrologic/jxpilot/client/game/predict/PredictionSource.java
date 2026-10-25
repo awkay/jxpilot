@@ -42,6 +42,12 @@ public interface PredictionSource {
      */
     boolean predictValid();
 
+    /**
+     * Whether the kernel world is the server's as of tick {@code tick} (no world-state change newer than it has
+     * arrived, and the initial state has): a replay from a PREDICT of that tick may use it.
+     */
+    boolean worldAsOf(int tick);
+
     /** PREDICTs received so far (a change means a new one). */
     long predicts();
 

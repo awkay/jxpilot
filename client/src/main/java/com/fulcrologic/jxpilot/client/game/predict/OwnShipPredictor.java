@@ -200,7 +200,8 @@ public final class OwnShipPredictor {
      * <p>
      * BEHAVIOR: inactive (and reset) when disabled, without a source, a kernel world or a final entry; the world
      * changing rebuilds the kernel and drops the ring. A PREDICT that is not valid (its rare part or key masks not
-     * known) is not compared: before the first valid one nothing is predicted, after it the ring rides on.
+     * known, or the kernel world is not the server's as of its tick) is not compared: before the first valid one nothing
+     * is predicted, after it the ring rides on.
      * BEHAVIOR: a new PREDICT for tick S: with the ring holding S, it is compared ({@link Listener}) and on a
      * difference reseeded and replayed (the predicted ship's move is the smoother's correction); without, the ring is
      * seeded at S (no correction). Only a comparison of a ship in play both in the ring and on the server is
@@ -240,8 +241,9 @@ public final class OwnShipPredictor {
             return;
         }
         InputHistory h = src.input();
-        // a PREDICT that cannot be used (its rare part or key masks were lost) is skipped: the ring rides on
-        if (src.predictValid() && src.predicts() != lastPredicts) {
+        // a PREDICT that cannot be used (its rare part or key masks were lost, or the world state it ran with has not
+        // arrived, or a newer one has) is skipped: the ring rides on
+        if (src.predictValid() && src.predicts() != lastPredicts && src.worldAsOf(src.predictTick())) {
             lastPredicts = src.predicts();
             roundDelay = src.predictRoundDelay();
             reconcile(src, h, was);

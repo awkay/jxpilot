@@ -279,6 +279,10 @@ public final class ClientConnection implements com.fulcrologic.jxpilot.client.ga
     @Override
     public boolean predictValid() { return kernel.valid(); }
 
+    /** BEHAVIOR: a KERNEL_STATE has arrived and none newer than {@code tick}. */
+    @Override
+    public boolean worldAsOf(int tick) { return kernel.stateKnown() && kernel.stateTick() - tick <= 0; }
+
     @Override
     public long predicts() { return kernel.predicts(); }
 

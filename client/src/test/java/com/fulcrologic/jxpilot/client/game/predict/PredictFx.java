@@ -137,6 +137,8 @@ final class PredictFx {
         }
 
         @Override public boolean predictValid() { return valid; }
+        boolean worldAsOf = true;
+        @Override public boolean worldAsOf(int t) { return worldAsOf; }
         @Override public long predicts() { return predicts; }
         @Override public int predictTick() { return tick; }
         @Override public ShipBody predictBody() { return body; }
