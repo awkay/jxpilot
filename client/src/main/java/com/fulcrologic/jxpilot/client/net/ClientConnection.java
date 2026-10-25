@@ -749,7 +749,13 @@ public final class ClientConnection implements com.fulcrologic.jxpilot.client.ga
         }
         packetsReceived++;
         if (reject.reason == com.fulcrologic.jxpilot.common.net.Msg.Reject.REASON_LOBBY) {
+            boolean handedOff = viaLobby && state == ConnectionState.CONNECTING;
             enterLobby();
+            if (handedOff) {
+                // the lobby answered the CONNECT it should have handed to the game: say so instead of a silent list
+                lobby.notice("Could not join " + lobby.joinedName() + " (the lobby did not hand us to the game)."
+                    + " Choose it again.");
+            }
             return;
         }
         if (reject.reason == com.fulcrologic.jxpilot.common.net.Msg.Reject.REASON_QUEUED) {

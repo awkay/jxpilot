@@ -250,7 +250,8 @@ class ClientConnectionLobbyTest {
     }
 
     @Test
-    @DisplayName("a REJECT LOBBY while connecting after a join (the route expired or the game ended) shows the lobby again, empty")
+    @DisplayName("a REJECT LOBBY while connecting after a join (the route expired or the game ended) shows the lobby again,"
+        + " empty, saying the join did not happen")
     void backToLobby() {
         intoLobby();
         greetAndList();
@@ -265,7 +266,9 @@ class ClientConnectionLobbyTest {
             () -> assertEquals(ConnectionState.LOBBY, c.state(), "in the lobby again"),
             () -> assertTrue(c.lobby().entries().isEmpty(), "with a fresh dialogue: no list yet"),
             () -> assertFalse(c.lobby().greeted(), "not greeted"),
-            () -> assertEquals(1, countOf(PacketType.LOBBY_HELLO), "greeting again"));
+            () -> assertEquals(1, countOf(PacketType.LOBBY_HELLO), "greeting again"),
+            () -> assertEquals("Could not join alpha (the lobby did not hand us to the game). Choose it again.",
+                c.lobby().message(), "and saying why the join did not happen (not a silent list)"));
     }
 
     @Test

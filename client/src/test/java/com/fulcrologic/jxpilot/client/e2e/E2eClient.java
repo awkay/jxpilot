@@ -99,6 +99,15 @@ final class E2eClient implements ConnectionListener, AutoCloseable {
                 new com.fulcrologic.jxpilot.client.net.Endpoint(host, port)), null, this, name, team, shape, false, seed);
     }
 
+    /** A native client over {@code transport} (a test's wrapper around the real socket). */
+    E2eClient(com.fulcrologic.jxpilot.client.net.Transport transport, String label, String name, int seed) {
+        this.name = name;
+        com.fulcrologic.jxpilot.client.net.ClientConnection c =
+            new com.fulcrologic.jxpilot.client.net.ClientConnection(transport, this, label, seed);
+        c.connect.name.append(name);
+        this.conn = new com.fulcrologic.jxpilot.client.xp.NativeGameConnection(c, transport);
+    }
+
     void start(long now) {
         conn.start(now);
     }

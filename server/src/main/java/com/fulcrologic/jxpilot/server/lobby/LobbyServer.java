@@ -91,14 +91,26 @@ public final class LobbyServer implements AutoCloseable {
     private static final class Route {
         final RoutedTransport target;
         final int gameId;
+        final long created;
         long lastSeen;
+        /** A game datagram went through it (the client reached the game). */
+        boolean carried;
 
-        Route(RoutedTransport target, int gameId, long lastSeen) {
+        Route(RoutedTransport target, int gameId, long now) {
             this.target = target;
             this.gameId = gameId;
-            this.lastSeen = lastSeen;
+            this.created = now;
+            this.lastSeen = now;
         }
     }
+
+    /**
+     * How long after its JOIN a route that has not carried a game datagram ignores a LIST_REQUEST: one sent before the
+     * client saw the JOIN (it confirms every list it receives, and a map that starts pushes a new list while the
+     * select waits) can arrive after the SELECT it raced, and would otherwise drop the fresh route, so the client's
+     * CONNECT met the lobby instead of the game.
+     */
+    static final long ROUTE_GRACE_NANOS = 2_000_000_000L;
 
     private static final class Peer {
         final int channel;
@@ -148,6 +160,7 @@ public final class LobbyServer implements AutoCloseable {
     private long malformed;
     private long rateLimited;
     private long stray;
+    private long staleListRequests;
 
     @SuppressWarnings("unchecked")
     private static <T> HashMap<SocketAddress, T>[] newMaps() {
@@ -394,7 +407,8 @@ public final class LobbyServer implements AutoCloseable {
      * LIST_REQUEST, SELECT and anything else must carry the cookie of the sender's address, or they are dropped
      * (counted in {@link #stray()}).
      * BEHAVIOR: an address with a route that sends a valid LIST_REQUEST or SELECT is back in the lobby: its route
-     * is dropped first.
+     * is dropped first; except a LIST_REQUEST within {@link #ROUTE_GRACE_NANOS} of the route's JOIN before any game
+     * datagram went through it, which is stale (sent before the client saw the JOIN) and ignored.
      * BEHAVIOR: LIST_REQUEST makes the sender a peer and gets the list when its version is not the current one,
      * else one empty page of that version (a keep-alive: the client times out a silent server); SELECT is
      * answered with JOIN, and on OK the address is routed to the map's game.
@@ -407,6 +421,7 @@ public final class LobbyServer implements AutoCloseable {
         if (route != null && !isLobbyType(type)) {
             data.position(start);
             route.lastSeen = now;
+            route.carried = true;
             route.target.offer(channel, from, data, now);
             return;
         }
@@ -493,6 +508,11 @@ public final class LobbyServer implements AutoCloseable {
     }
 
     private void onListRequest(int channel, SocketAddress from, long now) {
+        Route route = routes(channel).get(from);
+        if (route != null && !route.carried && now - route.created < ROUTE_GRACE_NANOS) {
+            staleListRequests++;
+            return; // sent before the client saw its JOIN: it is connecting to the game
+        }
         routes(channel).remove(from); // back in the lobby
         HashMap<SocketAddress, Peer> m = peers(channel);
         Peer p = m.get(from);
@@ -619,6 +639,11 @@ public final class LobbyServer implements AutoCloseable {
     /** Datagrams dropped by the per-source budget. */
     public long rateLimited() {
         return rateLimited;
+    }
+
+    /** LIST_REQUESTs ignored because they raced the JOIN of a fresh route ({@link #ROUTE_GRACE_NANOS}). */
+    public long staleListRequests() {
+        return staleListRequests;
     }
 
     /** Lobby datagrams dropped for a missing or wrong cookie, and other types nobody asked for. */

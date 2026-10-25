@@ -70,6 +70,8 @@ public final class LobbyClient {
     private int entriesVersion;
     private int selecting = -1;
     private String selectingName = "";
+    /** The map the last JOIN OK was for (kept across {@link #begin}). */
+    private String joinedName = "";
     private boolean joined;
     private String message = "";
     private long lastHello;
@@ -128,6 +130,11 @@ public final class LobbyClient {
     /** The map id being asked for, or -1. */
     public int selecting() {
         return selecting;
+    }
+
+    /** The name of the map the last JOIN OK was for (kept across {@link #begin}; "" before one). */
+    public String joinedName() {
+        return joinedName;
     }
 
     /**
@@ -203,7 +210,9 @@ public final class LobbyClient {
      * <p>
      * BEHAVIOR: INFO with the HELLO's nonce stores the cookie and name and asks for the list at once; any other
      * INFO is ignored. LIST pages (after INFO) feed the assembler; a completed list replaces {@link #entries()}
-     * (sorted) and is confirmed to the server at once. JOIN for the pending select: OK sets
+     * (sorted) and is confirmed to the server at once, unless a select is waiting for its JOIN: a LIST_REQUEST
+     * takes a routed address back to the lobby, and one overtaking the SELECT would undo the JOIN (the SELECT's
+     * resends keep the dialogue alive meanwhile; the next keep-alive confirms the list). JOIN for the pending select: OK sets
      * {@link #takeJoined()}; STARTING shows the start in progress; any other result shows the server's reason and
      * allows another choice. Anything that does not decode counts as malformed.
      *
@@ -233,7 +242,9 @@ public final class LobbyClient {
                         LobbyOrder.sort(sorted);
                         entries = List.copyOf(sorted);
                         entriesVersion++;
-                        sendRequest(now);
+                        if (selecting < 0) {
+                            sendRequest(now);
+                        }
                     }
                     return true;
                 }
@@ -262,6 +273,7 @@ public final class LobbyClient {
         switch (join.result) {
             case LobbyMsg.JOIN_OK -> {
                 joined = true;
+                joinedName = selectingName;
                 selecting = -1;
                 message = "Joining " + selectingName + "...";
             }
