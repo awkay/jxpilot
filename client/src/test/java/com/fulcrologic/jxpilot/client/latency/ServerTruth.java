@@ -67,6 +67,8 @@ final class ServerTruth {
     private final Map<Integer, double[]> handleLife = new HashMap<>();
     private final Map<Integer, Integer> handleId = new HashMap<>();
     private int nextShotId;
+    /** The tick each bullet id was first recorded at (its spawn, when recording ran then). */
+    private final Map<Integer, Integer> shotFirstTick = new HashMap<>();
 
     ServerTruth(int ownId) {
         this.ownId = ownId;
@@ -117,6 +119,7 @@ final class ServerTruth {
                 XMath.wrapDelta(px - prev[1], w.pixelWidth, w.wrap)
                 + XMath.wrapDelta(py - prev[2], w.pixelHeight, w.wrap) * XMath.wrapDelta(py - prev[2], w.pixelHeight, w.wrap)
                 > 100 * 100) {
+                shotFirstTick.put(nextShotId, tick);
                 handleId.put(h, nextShotId++);
                 handleLife.put(h, new double[] {o.life[h], px, py});
             } else {
@@ -135,6 +138,11 @@ final class ServerTruth {
         shotIds.put(tick, java.util.Arrays.copyOf(ids, n));
         shotXs.put(tick, java.util.Arrays.copyOf(x, n));
         shotYs.put(tick, java.util.Arrays.copyOf(y, n));
+    }
+
+    /** The tick bullet {@code id} was first recorded at, {@link Integer#MIN_VALUE} when unknown. */
+    int shotFirstTick(int id) {
+        return shotFirstTick.getOrDefault(id, Integer.MIN_VALUE);
     }
 
     /** The other bullets' ids after {@code tick} (empty when not recorded). */
