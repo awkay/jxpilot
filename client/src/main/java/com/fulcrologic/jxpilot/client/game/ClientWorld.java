@@ -323,6 +323,14 @@ public final class ClientWorld {
         outShotY = new float[shotCap];
         outShotVariant = new int[shotCap];
         outShotSrcTick = new int[shotCap];
+        drDraw = new boolean[shotCap];
+        drX = new int[shotCap];
+        drY = new int[shotCap];
+        drVx = new float[shotCap];
+        drVy = new float[shotCap];
+        drLife = new long[shotCap];
+        drCannon = new boolean[shotCap];
+        drTeams = new int[shotCap];
         outShotSrcX = new float[shotCap];
         outShotSrcY = new float[shotCap];
         outPointX = new float[shotCap];
@@ -509,6 +517,7 @@ public final class ClientWorld {
             result = LATE_TICK;
         }
         f.parts |= partBit;
+        f.version++;
         ingested++;
         boolean newest = tick == newestTick;
         int firstShip = f.ships;
@@ -1078,6 +1087,7 @@ public final class ClientWorld {
             return;
         }
         a.assocValid = true;
+        b.version++; // its links, velocity estimates and ages change
         a.assocTick = b.tick;
         a.assocParts = b.parts;
         a.assocOwnParts = a.parts;
@@ -1306,7 +1316,55 @@ public final class ClientWorld {
         double gap = Math.max(0, Math.min(target - n.tick, cap));
         int whole = (int) gap;
         double frac = gap - whole;
+        int team0 = predictor.shots().team();
+        boolean cached = drFrame == n && drVersion == n.version && drWhole == whole && drMotion == m && drTeam == team0;
+        if (!cached) {
+            drFrame = n;
+            drVersion = n.version;
+            drWhole = whole;
+            drMotion = m;
+            drTeam = team0;
+            stepWhole(n, m, whole, team0);
+            wholeSteps++;
+        }
         for (int j = 0; j < n.shots && j < shotCap; j++) {
+            if (!drDraw[j]) {
+                continue;
+            }
+            int x = drX[j];
+            int y = drY[j];
+            double px = x / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK;
+            double py = y / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK;
+            if (frac > 0 && m.tick(x, y, drVx[j], drVy[j], drLife[j], drCannon[j], drTeams[j], shotStep)) {
+                px += frac * XMath.wrapDelta(shotStep.x / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK - px,
+                    worldW, wrap);
+                py += frac * XMath.wrapDelta(shotStep.y / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK - py,
+                    worldH, wrap);
+            }
+            allowOwn = (n.shotVariant[j] & 0x7F) == OWN_SHOT;
+            putShot(wrapX(px), wrapY(py), n.shotVariant[j], n, j);
+            allowOwn = false;
+            reckoned++;
+        }
+        return true;
+    }
+
+    /** C CANNON_SHOT_LIFE_MAX bound: a cannon's bullet lives 8 + rand(24) ticks, at most 31. */
+    static final int CANNON_SHOT_LIFE_MAX = 31;
+
+    /** px per frame: the wire's velocity is rounded to whole px, a linked move must be within this of it. */
+    static final double LINK_VEL_SLACK = 1.0;
+
+
+    /**
+     * Step each drawable bullet of {@code n} by the gap's whole ticks into the dead reckoning's cache (redone only when
+     * the frame, its contents, the whole ticks, the motion or the own team changed: the per-frame work is then one
+     * fractional step per bullet).
+     */
+    private void stepWhole(SnapshotFrame n, com.fulcrologic.jxpilot.client.game.predict.ShotMotion m, int whole,
+                           int ownTeam) {
+        for (int j = 0; j < n.shots && j < shotCap; j++) {
+            drDraw[j] = false;
             boolean own = (n.shotVariant[j] & 0x7F) == OWN_SHOT;
             if (own && !(n.shotsConfirmed && !n.shotOwnMatched[j])) {
                 continue; // a provisional shot stands for it (or the frame was not reconciled: not known)
@@ -1323,15 +1381,14 @@ public final class ClientWorld {
             }
             int x = com.fulcrologic.jxpilot.common.sim.Click.fromPixels(n.shotX[j]);
             int y = com.fulcrologic.jxpilot.common.sim.Click.fromPixels(n.shotY[j]);
-            boolean alive = true;
             boolean cannon = Records.ShotKind.kindOf(n.shotVariant[j]) == Records.ShotKind.CANNON_SHOT;
             // the server marks a team mate's (or own team cannon's) bullet TEAM: the own team; any other is not ours
             int team = own || Records.ShotKind.colorOf(n.shotVariant[j]) == Records.ObjColor.TEAM
-                ? predictor.shots().team() : com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET;
+                ? ownTeam : com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET;
             // its life left after the frame's tick, as far as it is knowable: a player's bullet lives shotLife ticks
             // from the tick it was first seen (or earlier), a cannon's at most CANNON_SHOT_LIFE_MAX
             long life = (cannon ? CANNON_SHOT_LIFE_MAX : predictor.shots().shotLife()) - n.shotAge[j] - 1;
-            alive = life > 0;
+            boolean alive = life > 0;
             for (int k = 0; k < whole && alive; k++) {
                 alive = m.tick(x, y, vx, vy, life, cannon, team, shotStep);
                 if (alive) {
@@ -1345,26 +1402,40 @@ public final class ClientWorld {
             if (!alive) {
                 continue; // it ends on the way (a wall, its life): not drawn stuck at the wall
             }
-            double px = x / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK;
-            double py = y / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK;
-            if (frac > 0 && m.tick(x, y, vx, vy, life, cannon, team, shotStep)) {
-                px += frac * XMath.wrapDelta(shotStep.x / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK - px,
-                    worldW, wrap);
-                py += frac * XMath.wrapDelta(shotStep.y / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK - py,
-                    worldH, wrap);
-            }
-            allowOwn = own;
-            putShot(wrapX(px), wrapY(py), n.shotVariant[j], n, j);
-            allowOwn = false;
+            drDraw[j] = true;
+            drX[j] = x;
+            drY[j] = y;
+            drVx[j] = vx;
+            drVy[j] = vy;
+            drLife[j] = life;
+            drCannon[j] = cannon;
+            drTeams[j] = team;
         }
-        return true;
     }
 
-    /** C CANNON_SHOT_LIFE_MAX bound: a cannon's bullet lives 8 + rand(24) ticks, at most 31. */
-    static final int CANNON_SHOT_LIFE_MAX = 31;
+    private long wholeSteps;
+    private long reckoned;
 
-    /** px per frame: the wire's velocity is rounded to whole px, a linked move must be within this of it. */
-    static final double LINK_VEL_SLACK = 1.0;
+    /** Times the dead reckoning stepped its bullets' whole ticks (the cache missed). */
+    public long reckoningSteps() { return wholeSteps; }
+
+    /** Bullet-frames drawn dead-reckoned. */
+    public long reckonedShots() { return reckoned; }
+
+    // the dead reckoning's cache of the bullets' states after the gap's whole ticks
+    private SnapshotFrame drFrame;
+    private long drVersion;
+    private int drWhole;
+    private com.fulcrologic.jxpilot.client.game.predict.ShotMotion drMotion;
+    private int drTeam;
+    private final boolean[] drDraw;
+    private final int[] drX;
+    private final int[] drY;
+    private final float[] drVx;
+    private final float[] drVy;
+    private final long[] drLife;
+    private final boolean[] drCannon;
+    private final int[] drTeams;
 
     private final com.fulcrologic.jxpilot.client.game.predict.ShotStep shotStep =
         new com.fulcrologic.jxpilot.client.game.predict.ShotStep();

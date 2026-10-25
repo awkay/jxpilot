@@ -86,6 +86,10 @@ class PredictNetAllocationTest {
             }, 1000, 2000, 40_000, 2);
         }
         long correctionsBefore = p.corrections();
+        long reckonedBefore = rig.world().reckonedShots();
+        long stepsBefore = rig.world().reckoningSteps();
+        long endsBefore = p.shots().endSteps();
+        long firedBefore = p.shots().fired();
         long reconBefore = p.reconciliations();
         int start = frame[0];
         measuring[0] = true;
@@ -94,6 +98,10 @@ class PredictNetAllocationTest {
         long corrections = p.corrections() - correctionsBefore;
         long recon = p.reconciliations() - reconBefore;
         long act = active[0];
+        long reckoned = rig.world().reckonedShots() - reckonedBefore;
+        long steps = rig.world().reckoningSteps() - stepsBefore;
+        long ends = p.shots().endSteps() - endsBefore;
+        long fired = p.shots().fired() - firedBefore;
         String detail = stats[0] + " frames allocated " + stats[1] + " B, worst " + stats[2] + " B, last at frame "
             + stats[3] + " (measured from " + start + ")";
         long nonZero = stats[0];
@@ -104,6 +112,11 @@ class PredictNetAllocationTest {
                 + " of " + measured),
             () -> assertTrue(recon > 500, "PREDICTs were compared while measured: " + recon),
             () -> assertTrue(corrections > 10, "and some corrected (replays): " + corrections),
+            () -> assertTrue(reckoned > 1000, "others' bullets were dead-reckoned while measured: " + reckoned),
+            () -> assertTrue(steps > 100 && steps < reckoned, "with the whole-tick cache refilled now and then: "
+                + steps),
+            () -> assertTrue(fired > 50, "own bullets were fired (provisional shots): " + fired),
+            () -> assertTrue(ends > 10, "and their end ticks stepped out: " + ends),
             () -> assertTrue(nonZero <= MAX_NONZERO_FRAMES, "at most 3 allocating frames: " + detail),
             () -> assertTrue(worst <= MAX_FRAME_BYTES, "each at most 1 KB: " + detail),
             () -> assertTrue(last < start + measured / 2 || nonZero == 0, "none in the second half: " + detail));

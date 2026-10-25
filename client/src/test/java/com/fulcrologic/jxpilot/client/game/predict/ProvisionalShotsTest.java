@@ -725,4 +725,27 @@ class ProvisionalShotsTest {
                 () -> assertEquals(4, s.team(), "team"));
         }
     }
+
+    @Nested
+    @DisplayName("cost")
+    class Cost {
+        @Test
+        @DisplayName("a speculative bullet's end is not stepped out; free top slots are given back")
+        void cheap() {
+            ProvisionalShots s = shots("", OPEN);
+            s.fired(10, 0, 100, 100, 1, 0, false);
+            long finalSteps = s.endSteps();
+            s.fired(11, 0, 100, 120, 1, 0, true);
+            s.fired(11, 1, 100, 140, 1, 0, true);
+            long specSteps = s.endSteps();
+            int burst = s.usedSlots();
+            s.beginStep(12, true);
+            int after = s.usedSlots();
+            assertAll(
+                () -> assertEquals(1, finalSteps, "the final one stepped"),
+                () -> assertEquals(1, specSteps, "the speculative ones not"),
+                () -> assertEquals(3, burst, "three slots in use"),
+                () -> assertEquals(1, after, "the dropped speculative ones' slots given back"));
+        }
+    }
 }

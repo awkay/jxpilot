@@ -37,6 +37,8 @@ final class SnapshotFrame {
     boolean shotsConfirmed;
     /** Every part of this tick arrived. */
     boolean complete;
+    /** Bumped whenever the frame's contents change (a part, a link): caches over it compare it. */
+    long version;
     /** First tick whose thrust sparks this frame generates (later than {@link #tick} = none). */
     int sparkFrom;
 
@@ -160,6 +162,7 @@ final class SnapshotFrame {
         parts = 0;
         shotsConfirmed = false;
         complete = false;
+        version++;
         sparkFrom = sparkFromTick;
         hasSelf = false;
         ships = 0;

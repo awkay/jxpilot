@@ -103,6 +103,7 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
     private int outCount;
     private long fired;
     private long crashed;
+    private long endSteps;
 
     /**
      * BEHAVIOR: a new kernel world: every shot is dropped, and the shot rules (shotLife, the motion) are read from the
@@ -164,6 +165,7 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
                 drop(i);
             }
         }
+        trim();
     }
 
     /** Also told of every bullet (before it is kept); null for none. */
@@ -202,8 +204,11 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
         spawnVy[i] = svy;
         confirmed[i] = false;
         misses[i] = 0;
-        end[i] = endOf(i);
-        if (!speculative) {
+        if (speculative) {
+            end[i] = Integer.MIN_VALUE; // replaced when its tick is stepped for real; it gives nothing back
+        } else {
+            end[i] = endOf(i);
+            endSteps++;
             countEnd(end[i]);
         }
         fired++;
@@ -293,6 +298,7 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
                 }
             }
         }
+        trim();
     }
 
     /**
@@ -450,6 +456,7 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
                 ownMatched[jj] = (variants[jj] & 0x7F) == OWN_SHOT && taken[jj];
             }
         }
+        trim();
     }
 
     /** The own normal bullet's SHOT variant without the harmless bit. */
@@ -515,6 +522,19 @@ public final class ProvisionalShots implements PredictEvents.ShotSink {
 
     /** Its number within that tick. */
     public int firedOrdinal(int i) { return outOrdinal[i]; }
+
+    /** Final bullets whose end tick was stepped out ({@link #endingAt}). */
+    public long endSteps() { return endSteps; }
+
+    /** Slots in use up to the highest live one (the scans' bound). */
+    public int usedSlots() { return used; }
+
+    /** BEHAVIOR: the free slots at the top are given back, so the scans stay short after a burst. */
+    private void trim() {
+        while (used > 0 && state[used - 1] == FREE) {
+            used--;
+        }
+    }
 
     /** Bullets ever reported (also the replays'). */
     public long fired() { return fired; }
