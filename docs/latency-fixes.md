@@ -4,6 +4,10 @@ Status: design written 2026-10-23 against `main` at `31e9f40`. Phase 0 (measurem
 measured figures replace the first estimates in §1, §2.1, §4.1, §5 and §8. See
 [latency-measurements.md](latency-measurements.md).
 
+Progress (2026-10-25): phases 0, 1a, 1b and 1c are built on the `latency` branch, reviewed, and
+playtested on a real ~150 ms link. The branch is parked and not merged into `main`: in the playtest,
+1.1.1 played better overall. See [§10](#10-progress-and-where-it-stands).
+
 Target: friends on opposite sides of the planet, 150-300 ms round trip time (RTT), with jitter and some
 loss, playing on a JXPilot server hosted somewhere in the middle.
 
@@ -779,3 +783,72 @@ RTT: about 100-300 ms on the target links.
    blind A/B after phase 3. Do not decide on paper.
 4. **XP-layer scope.** Recommended: heading prediction only, and only if playing on C servers matters
    to the user.
+
+Decided during the build: protocol v2, yes. `OWN_SHOTS` was built and then dropped; own shots are matched
+to the server's own-colour SHOT records instead. `predictableBounces` is built, default off. Phase 4 (C
+servers) is dropped: C-server play keeps working without prediction, and 1.1.1 stays available.
+
+## 10. Progress and where it stands
+
+As of 2026-10-25. The `latency` branch is 1.1.1's `main` plus about 90 commits. Every phase below passed
+the bug-hunter and perf reviews, and the kernel move also passed a C-fidelity review. The full reactor and
+the `-Platency` profile are green. Measured figures are in
+[latency-measurements.md](latency-measurements.md).
+
+### 10.1 Built
+
+| Phase | What landed |
+|---|---|
+| 0. Measure | `LinkEmulator` (Gilbert-Elliott loss, Pareto jitter, reordering, virtual clock); headless input-to-photon (I2P) harness with stratified tick phases; shot I2P, incoming-shot threat error and shield-reaction metrics; HUD net line and RTT probe; `tools/lagproxy` |
+| 1a. Kernel | Ship kernel in `common.sim` (`ShipBody`, `ShipKernel`, `ShipMover`, `ShipKeys`, `KernelEvents`, `KernelWorld`); the server delegates to it. C `Move_object` also moved to `common.sim` (`ObjectMover`) so client bullets move by the server's code. Bit-exact on CTrace, ModeTrace, Digest and the 19-map digest, plus a differential test |
+| 1b. Protocol v2 | Tick-tagged INPUT with taps, a send sequence and one early and one repeat copy; server `InputBuffer`; `inputTick`/`inputSlack`/starvation header; `PREDICT` (73 B), `PREDICT_RARE`, `PREDICT_KEYS`; `KERNEL_CONFIG` (full map, kernel and shot options) and `KERNEL_STATE`; 7 B SHOT with 1/16 px velocity; cross-version REJECT readable by 1.1.x. `predictableBounces`, default off |
+| 1c. Predictor | `PredictedClock` (lean lead, ±3% dilation, jump on starvation); `OwnShipPredictor` (ring of 64, reconcile, replay, speculative partial tick); `CorrectionSmoother`; own shots shown on press; every other shot dead-reckoned to the predicted tick; F7 / KP_3 toggles prediction for A/B |
+| Fixes along the way | `ReliableChannel` permanent stall after a loss burst, also present in 1.1.0 and 1.1.1 (cherry-picked to `main` as `3d21237`, unreleased); JavaServerEndToEndTest robot-count race |
+| Playtest fixes | Refuel and other own-ship lines follow the drawn ship; tracers back to the gun or cannon for newly seen bullets (`showShotTracers`, default on); a lobby cold-start join hang, also in 1.1.1 (a list confirm racing the map choice dropped the route) |
+| Guide | The long-distance chapter, the compatibility table, hosting for far-away players, troubleshooting and FAQ |
+
+### 10.2 Measured
+
+On the emulator, against the 1.1.1 path:
+
+| Metric | 1.1.1 | `latency` |
+|---|---|---|
+| Own-ship I2P | RTT + 43 ms (p50) | 4 ms p50, 8 ms p95, at any RTT |
+| Shot I2P | RTT + 138 ms | 3 ms p50, 8 ms p95 |
+| Incoming-shot position error | 36-115 px | 0.2-0.3 px p50 |
+| Shield press until the server applies it | — | ≈ 114 ms p50 at RTT 100, 62 ms at RTT 0 |
+| Prediction exact (bit-equal reconcile) | — | 100% on walls, 99.3-100% elsewhere |
+| Upstream | — | 12-15 kbit/s with IP/UDP headers |
+
+### 10.3 Playtest (2026-10-25, Linode lobby, ~150 ms RTT)
+
+- Better: shields come up in time for incoming shots.
+- Worse or new artifacts:
+  - The refuel line trailed the ship. Fixed.
+  - Cannon bullets popped in mid-flight, since they are drawn one round trip into their flight. Tracers
+    were added; bullets from an off-screen shooter still pop in without one.
+  - Cannon shots looked short-lived, because the first round trip of each shot's life is not drawn. C
+    gives them 8-31 frames at random.
+  - Other artifacts the user called tolerable, not itemised.
+- Verdict: "It isn't terrible", but 1.1.1 was better overall. The Linode lobby went back to 1.1.1, and
+  the branch is parked for more work.
+
+### 10.4 Known open items
+
+- **Other ships are drawn in the past while bullets are drawn at the predicted tick.** About RTT + 90 ms
+  apart at 150 ms RTT, so an enemy's bullets appear ahead of its ship. This is the most likely cause of
+  the "worse overall" feel; it is a guess, not measured. The fix is phase 3: dead-reckon other ships to
+  the predicted tick with the kernel. The alternative is to draw others' bullets in the interpolated past
+  again, consistent with their ships, at the cost of late shield cues.
+- Other phase 2-3 items: adaptive interpolation delay, burst redundancy on the downlink, and tick-aligned
+  events (explosions and sounds at the drawn time).
+- Nits held for later:
+  - `KERNEL_STATE` mutates the world in place, which the shot-cache key doesn't cover.
+  - A replay can double-draw an own shot via `shotOwnMatched`.
+  - `pumpKernel` is held back while the reliable channel is full.
+  - SHOT velocity clamps at ±128 px/frame.
+  - An unlinked bullet with no visible source gets a full dead-reckoning life.
+  - Ball, tractor and transporter lines pick the own ship by proximity. One server bit in the connector
+    kind byte would make this exact.
+- Protocol v2 locks out 1.1.x clients and servers in both directions (with a readable REJECT). C servers
+  still work from this client, without prediction.
