@@ -173,6 +173,60 @@ class HostCommandsTest {
                 () -> assertNotEquals("", a.ship.wire, "it is not the built-in ship (it has wide-angle guns)"));
         }
 
+        /** Every geometry field of two hulls that differs (reflection over ShipGeom's instance fields). */
+        static List<String> hullDiff(ShipGeom a, ShipGeom b) throws IllegalAccessException {
+            List<String> d = new java.util.ArrayList<>();
+            for (java.lang.reflect.Field f : ShipGeom.class.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+                    continue;
+                }
+                f.setAccessible(true);
+                Object x = f.get(a);
+                Object y = f.get(b);
+                boolean same = x instanceof ShipShape sx ? sx.toWireString().equals(((ShipShape) y).toWireString())
+                    : java.util.Objects.deepEquals(x, y);
+                if (!same) {
+                    d.add(f.getName());
+                }
+            }
+            return d;
+        }
+
+        /** The hull a client builds from the PLAYER_JOIN of {@code id} that {@code viewer} receives. */
+        static ShipGeom clientHull(SimGameHost h, int viewer, int id) {
+            HostFx.Wire w = new HostFx.Wire();
+            h.initialState(viewer, w.out);
+            String line = only(w.take(), "JOIN " + id + " ").get(0);
+            String shape = line.substring(line.indexOf(" shape=") + " shape=".length());
+            return shape.isEmpty() ? ShipGeom.defaultShip() : ShipGeom.parse(shape);
+        }
+
+        @Test
+        @DisplayName("the hull a client parses from PLAYER_JOIN is the server's, field for field: a custom shape, the"
+            + " built-in ship, and the defaultShipShape")
+        void hullOverTheWire() throws IllegalAccessException {
+            Simulation s = sim("", THREE);
+            SimGameHost h = new SimGameHost(s);
+            int ann = h.join("Ann", 0, WIDE);
+            h.clientMessage(ann, ReliableType.READY, empty());
+            int bob = enter(h, "Bob", 0);
+            Simulation d = sim("allowShipShapes: no\n", THREE); // everyone wears defaultShipShape (not the built-in)
+            SimGameHost hd = new SimGameHost(d);
+            int cid = enter(hd, "Cid", 0);
+            int dan = enter(hd, "Dan", 0);
+            List<String> custom = hullDiff(clientHull(h, bob, ann), s.world.byId(ann).ship);
+            List<String> builtIn = hullDiff(clientHull(h, ann, bob), s.world.byId(bob).ship);
+            List<String> own = hullDiff(clientHull(h, ann, ann), s.world.byId(ann).ship);
+            List<String> option = hullDiff(clientHull(hd, dan, cid), d.world.byId(cid).ship);
+            assertAll(
+                () -> assertEquals(List.of(), custom, "Ann's custom shape, seen by Bob"),
+                () -> assertEquals(List.of(), builtIn, "Bob's built-in ship (sent empty)"),
+                () -> assertEquals(List.of(), own, "Ann's own JOIN (the predictor's hull)"),
+                () -> assertEquals(List.of(), option, "the defaultShipShape"),
+                () -> assertNotEquals("", d.world.byId(cid).ship.wire, "which is sent, not left empty"),
+                () -> assertTrue(ShipGeom.class.getDeclaredFields().length > 10, "the comparison covers the fields"));
+        }
+
         @Test
         @DisplayName("tankShipShape (C ship.c:416-418): its own ship with allowShipShapes, else defaultShipShape")
         void tank() {
