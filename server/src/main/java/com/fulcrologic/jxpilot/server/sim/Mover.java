@@ -26,6 +26,8 @@ package com.fulcrologic.jxpilot.server.sim;
 import com.fulcrologic.jxpilot.common.Const;
 import com.fulcrologic.jxpilot.common.sim.Click;
 import com.fulcrologic.jxpilot.common.sim.MoveState;
+import com.fulcrologic.jxpilot.common.sim.ObjectBody;
+import com.fulcrologic.jxpilot.common.sim.ObjectMover;
 import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.common.sim.Segment;
 import com.fulcrologic.jxpilot.common.sim.ShipMover;
@@ -45,33 +47,47 @@ import static com.fulcrologic.jxpilot.common.sim.MoveState.*;
  * fraction is lost exactly as in C), and velocities, friction and bounce arithmetic are C floats.
  */
 public final class Mover {
-    private static final int BS = Const.BLOCK_SZ;
 
     private final World w;
     private final Simulation sim;
-    private final Segment seg;
-    private final MoveState ms = new MoveState();
+    /** The pool objects' C Move_object (common: the client moves its bullets with the same code). */
+    private final ObjectMover objects;
+    private final ObjectBody body = new ObjectBody();
+    /** The moving slot's life and status, live in the pool (the balls' treasure hook changes them mid-move). */
+    private final Slot live = new Slot();
+
+    private final class Slot implements com.fulcrologic.jxpilot.common.sim.ObjectState {
+        int h;
+
+        @Override
+        public double life() { return w.objects.life[h]; }
+
+        @Override
+        public void life(double v) { w.objects.life[h] = v; }
+
+        @Override
+        public int status() { return w.objects.status[h]; }
+
+        @Override
+        public void status(int v) { w.objects.status[h] = v; }
+    }
 
     /** Install the ball reactions to treasures (balls exist once the simulation is built). */
     void setTreasureHook(Segment.TreasureHook hook) {
-        seg.treasureHook = hook;
+        objects.segment().treasureHook = hook;
     }
 
     public Mover(World w, Simulation sim) {
         this.w = w;
         this.sim = sim;
-        this.seg = new Segment(w, w::rfrac);
-    }
-
-    private int blockOf(int pixel, int n) {
-        int b = Math.floorDiv(pixel, BS);
-        return b < 0 ? 0 : (b >= n ? n - 1 : b);
+        this.objects = new ObjectMover(w, w::rfrac);
     }
 
     // ================================================================ objects
 
     /**
-     * Move a pool object one tick (C {@code Move_object}).
+     * Move a pool object one tick (C {@code Move_object}): the slot through the common {@link ObjectMover}, with the
+     * object's crash rules from the server's masks.
      * <p>
      * BEHAVIOR: remembers the previous position first.
      * BEHAVIOR: far from walls ({@code walldist > 2} and the step shorter than {@code ((d-2)*35)>>1} px)
@@ -86,18 +102,15 @@ public final class Mover {
         Objects o = w.objects;
         Params p = w.params;
         o.remember(h);
-        int tx = Click.fromPixels(o.vx[h]);
-        int ty = Click.fromPixels(o.vy[h]);
-        int dist = w.wallDist(blockOf(o.px[h], w.width), blockOf(o.py[h], w.height));
-        if (dist > 2) {
-            int max = ((dist - 2) * BS) >> 1;
-            if ((float) (max * max) >= o.vx[h] * o.vx[h] + o.vy[h] * o.vy[h]) {
-                o.setClicks(h, w.wrapXClick(o.cx[h] + tx), w.wrapYClick(o.cy[h] + ty));
-                o.touchCell(h);
-                return;
-            }
-        }
+        ObjectBody b = body;
+        b.cx = o.cx[h];
+        b.cy = o.cy[h];
+        b.vx = o.vx[h];
+        b.vy = o.vy[h];
+        b.dir = o.missileDir[h];
         int type = o.type[h];
+        b.type = type;
+        MoveState ms = objects.ms;
         ms.pl = null;
         ms.obj = h;
         ms.edgeWrap = w.wrap;
@@ -110,70 +123,19 @@ public final class Mover {
         ms.phased = type == Obj.BALL && sim.balls.phased(h);
         ms.team = o.team[h];
         ms.targetTeam = type == Obj.BALL ? ballTeam(h) : o.team[h];
-        ms.status = o.status[h];
-        ms.type = type;
-        ms.start(o.cx[h], o.cy[h], o.vx[h], o.vy[h], tx, ty, o.missileDir[h]);
-
-        int nothingDone = 0;
-        boolean posUpdate = false;
-        for (;;) {
-            seg.move(ms);
-            if ((ms.doneX | ms.doneY) == 0) {
-                posUpdate |= (ms.crash | ms.bounce) != 0;
-                if (ms.crash != NOT_A_CRASH) {
-                    break;
-                }
-                if (ms.bounce != NOT_A_BOUNCE && ms.bounce != BOUNCE_EDGE) {
-                    if (type != Obj.BALL) {
-                        o.life[h] = (long) ((float) o.life[h] * p.objectWallBounceLifeFactor); // C walls.c:2000 float product
-                    }
-                    if (o.life[h] <= 0) {
-                        break;
-                    }
-                    if ((o.status[h] & Obj.FROMBOUNCE) == 0 && type == Obj.SPARK) {
-                        o.status[h] &= ~Obj.OWNERIMMUNE;
-                    }
-                    if (ms.velX * ms.velX + ms.velY * ms.velY
-                        > p.maxObjectWallBounceSpeed * p.maxObjectWallBounceSpeed) {
-                        o.life[h] = 0;
-                        break;
-                    }
-                    ms.velX *= p.objectWallBrakeFactor;
-                    ms.velY *= p.objectWallBrakeFactor;
-                    ms.todoX = (int) (ms.todoX * p.objectWallBrakeFactor);
-                    ms.todoY = (int) (ms.todoY * p.objectWallBrakeFactor);
-                }
-                if (++nothingDone >= 5) {
-                    ms.crash = CRASH_UNKNOWN;
-                    break;
-                }
-            } else {
-                ms.posX += ms.doneX;
-                ms.posY += ms.doneY;
-                nothingDone = 0;
-            }
-            if ((ms.todoX | ms.todoY) == 0) {
-                break;
-            }
+        objects.objectWallBounceLifeFactor = p.objectWallBounceLifeFactor;
+        objects.maxObjectWallBounceSpeed = p.maxObjectWallBounceSpeed;
+        objects.objectWallBrakeFactor = p.objectWallBrakeFactor;
+        live.h = h;
+        boolean posUpdate = objects.move(b, live);
+        o.setClicks(h, b.cx, b.cy);
+        if (!objects.traced()) {
+            o.touchCell(h);
+            return;
         }
-        if (ms.edgeWrap) {
-            if (ms.posX < 0) {
-                ms.posX += w.clickWidth;
-            }
-            if (ms.posX >= w.clickWidth) {
-                ms.posX -= w.clickWidth;
-            }
-            if (ms.posY < 0) {
-                ms.posY += w.clickHeight;
-            }
-            if (ms.posY >= w.clickHeight) {
-                ms.posY -= w.clickHeight;
-            }
-        }
-        o.setClicks(h, ms.posX, ms.posY);
-        o.vx[h] = ms.velX;
-        o.vy[h] = ms.velY;
-        o.missileDir[h] = ms.dir;
+        o.vx[h] = b.vx;
+        o.vy[h] = b.vy;
+        o.missileDir[h] = b.dir;
         if (ms.crash != NOT_A_CRASH) {
             sim.crashes.objectCrashed(h, ms);
         }
