@@ -248,65 +248,56 @@ class KernelSyncTest {
             () -> assertFalse(k.stateKnown(), "a reset forgets it"));
     }
 
-    /** A part of tick {@code tick} with an OWN_SHOTS section of {@code n} shots (ages 0.., ordinal i % 3). */
-    static ByteBuffer ownShots(int tick, int part, int n, int first) {
+    /** Part {@code part} of tick {@code tick} (of 2), with PREDICT only when {@code withPredict}. */
+    static ByteBuffer part(int tick, int part, com.fulcrologic.jxpilot.common.sim.ShipBody b, boolean withPredict) {
         ByteBuffer out = ByteBuffer.allocate(1200);
         com.fulcrologic.jxpilot.common.net.SnapshotWriter w = new com.fulcrologic.jxpilot.common.net.SnapshotWriter();
-        w.setWorld(700, 700, true);
-        w.begin(out, tick, tick, part, 2, 0, 500, 400);
-        w.beginSection(com.fulcrologic.jxpilot.common.net.Section.OWN_SHOTS);
-        for (int i = first; i < first + n; i++) {
-            com.fulcrologic.jxpilot.common.net.Records.OwnShot.put(w, 510 + i, 395 - i * 0.5, i, i % 3);
+        w.begin(out, tick, 40, part, 2, 0, 0, 0);
+        if (withPredict) {
+            w.beginSection(com.fulcrologic.jxpilot.common.net.Section.PREDICT);
+            com.fulcrologic.jxpilot.common.net.Records.Predict.put(w, b, OFFSET + tick, 0, 6, 3, 1);
+            w.endSection();
+            w.beginSection(com.fulcrologic.jxpilot.common.net.Section.PREDICT_RARE);
+            com.fulcrologic.jxpilot.common.net.Records.PredictRare.put(w, b, 3, OFFSET);
+            w.endSection();
         }
+        w.beginSection(com.fulcrologic.jxpilot.common.net.Section.SHOT, 0);
         w.endSection();
         out.flip();
         return out;
     }
 
     @Test
-    @DisplayName("OWN_SHOTS: every part of the newest tick adds to its list; a newer tick starts over; a repeated"
-        + " part and an older tick are ignored; past the first capacity the list grows")
-    void ownShotList() {
-        KernelSync k = new KernelSync();
-        Options o = new Options();
-        ConfigParser.parse("mapWidth: 20\nmapHeight: 20\nedgeWrap: true\nmapData: \\multiline: E\n"
-            + (" ".repeat(20) + "\n").repeat(19) + "_" + " ".repeat(19) + "\nE\n", "t", OptionOrigin.MAP, o);
-        k.onConfig(o);
+    @DisplayName("parts: PREDICT is read from any part of the newest tick, the part arriving first or not; a part"
+        + " already read and a part of an older tick are ignored")
+    void parts() {
+        KernelSync k = withWorld(1);
         com.fulcrologic.jxpilot.common.net.InputHistory in = new com.fulcrologic.jxpilot.common.net.InputHistory();
-        k.onSnapshot(ownShots(50, 1, 2, 0), in);
-        k.onSnapshot(ownShots(50, 1, 2, 0), in);
-        k.onSnapshot(ownShots(50, 0, 3, 2), in);
-        k.onSnapshot(ownShots(50, 0, 3, 2), in);
-        int n50 = k.ownShots();
-        int spawn = k.shotSpawnTick(1);
-        int ordinal = k.shotOrdinal(4);
-        float x = k.shotX(3);
-        float y = k.shotY(3);
-        k.onSnapshot(ownShots(49, 0, 1, 0), in);
-        int afterOld = k.ownShots();
-        k.onSnapshot(ownShots(51, 0, 100, 0), in);
-        int many = k.ownShots();
-        int tick = k.shotsTick();
-        ByteBuffer seam = ByteBuffer.allocate(64);
-        com.fulcrologic.jxpilot.common.net.SnapshotWriter sw = new com.fulcrologic.jxpilot.common.net.SnapshotWriter();
-        sw.setWorld(700, 700, true);
-        sw.begin(seam, 52, 52, 0, 1, 1, 690, 350);
-        sw.beginSection(com.fulcrologic.jxpilot.common.net.Section.OWN_SHOTS);
-        com.fulcrologic.jxpilot.common.net.Records.OwnShot.put(sw, 5, 350, 0, 0);
-        sw.endSection();
-        seam.flip();
-        k.onSnapshot(seam, in);
-        float wrapped = k.shotX(0);
+        in.set(40, 6, 0, 0);
+        com.fulcrologic.jxpilot.common.sim.ShipBody b = new com.fulcrologic.jxpilot.common.sim.ShipBody();
+        b.prevKeys = 6;
+        b.lastReceivedKeys = 6;
+        b.vx = 1;
+        k.onSnapshot(part(50, 1, b, false), in);
+        k.onSnapshot(part(50, 0, b, true), in);
+        long afterPart0 = k.predicts();
+        float vx50 = k.body().vx;
+        b.vx = 2;
+        k.onSnapshot(part(51, 1, b, true), in);
+        long fromPart1 = k.predicts();
+        int tick = k.tick();
+        b.vx = 3;
+        k.onSnapshot(part(51, 1, b, true), in);
+        float afterRepeat = k.body().vx;
+        k.onSnapshot(part(50, 0, b, true), in);
         assertAll(
-            () -> assertEquals(5, n50, "parts 1 and 0 of tick 50: 2 + 3 shots, a repeated part (1 or 0) not again"),
-            () -> assertEquals(5f, wrapped, "a shot across the seam of the client's wrapping map decodes inside it"),
-            () -> assertEquals(49, spawn, "shot 1 has age 1: fired in tick 49"),
-            () -> assertEquals(1, ordinal, "shot index 4 (i = 4) has ordinal 4 % 3"),
-            () -> assertEquals(513f, x, "its x (510 + 3) relative to the view centre"),
-            () -> assertEquals(393.5f, y, "its y"),
-            () -> assertEquals(5, afterOld, "an older tick changes nothing"),
-            () -> assertEquals(100, many, "a newer tick replaces the list; 100 shots grow it"),
-            () -> assertEquals(51, tick, "the list's tick"));
+            () -> assertEquals(1, afterPart0, "part 0 after part 1 of the same tick: its PREDICT is read"),
+            () -> assertEquals(1f, vx50, "the body of tick 50"),
+            () -> assertEquals(2, fromPart1, "PREDICT in part 1 of a newer tick is read"),
+            () -> assertEquals(51, tick, "for tick 51"),
+            () -> assertEquals(2f, afterRepeat, "the same part again is ignored"),
+            () -> assertEquals(2, k.predicts(), "and so is a part of an older tick"),
+            () -> assertEquals(51, k.tick(), "the tick stays 51"));
     }
 
     @Test

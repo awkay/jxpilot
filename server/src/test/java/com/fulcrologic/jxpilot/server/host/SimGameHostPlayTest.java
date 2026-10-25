@@ -710,60 +710,6 @@ class SimGameHostPlayTest {
                 () -> assertEquals(moved[1], same[1], "unchanged after that"));
         }
 
-        /** The OWN_SHOTS records of a filled part 0, as "age:ordinal@x,y". */
-        static List<String> ownShots(SimGameHost h, int id) {
-            SnapshotWriter wr = new SnapshotWriter();
-            ByteBuffer b = netPart(wr, 0);
-            h.fillSnapshot(id, 0, false, wr);
-            b.flip();
-            b.position(PacketHeader.SIZE);
-            com.fulcrologic.jxpilot.common.net.SnapshotReader r = new com.fulcrologic.jxpilot.common.net.SnapshotReader();
-            r.setWorld(100_000, 100_000, false);
-            r.begin(b);
-            List<String> t = new java.util.ArrayList<>();
-            while (r.nextSection()) {
-                if (r.type() == com.fulcrologic.jxpilot.common.net.Section.OWN_SHOTS) {
-                    for (int i = 0; i < r.count(); i++) {
-                        Records.OwnShot o = new Records.OwnShot().wrap(r, i);
-                        t.add(o.age() + ":" + o.ordinal() + "@" + o.x() + "," + o.y());
-                    }
-                }
-            }
-            return t;
-        }
-
-        @Test
-        @DisplayName("OWN_SHOTS: the owner's tagged bullets in view with their age and ordinal; not to others, not"
-            + " while watching")
-        void ownShotsSection() {
-            Simulation s = sim("", THREE);
-            World w = s.world;
-            SimGameHost h = new SimGameHost(s);
-            int ann = enter(h, "Ann", 0);
-            int bob = enter(h, "Bob", 0);
-            h.tick(1);
-            Player a = w.byId(ann);
-            float x = (float) (a.cx / 64.0 + 20);
-            float y = (float) (a.cy / 64.0);
-            s.kernel.shooter.fire(a, x, y, 0, s.effects);
-            s.kernel.shooter.fire(a, x + 10, y, 0, s.effects);
-            w.tick = 3;
-            List<String> own = ownShots(h, ann);
-            List<String> bobs = ownShots(h, bob);
-            a.status |= Obj.PAUSE;
-            a.lockTagged |= Player.LOCK_PLAYER;
-            a.lockPlId = bob;
-            w.items.allowViewing = true;
-            List<String> watching = ownShots(h, ann);
-            assertAll(
-                () -> assertEquals(2, own.size(), "Ann's two bullets: " + own),
-                () -> assertEquals("2:0@120.0,100.0", own.get(0), "fired in tick 1, seen at tick 3: age 2, ordinal 0,"
-                    + " 20 px ahead of the ship (offsets decoded against this test header's centre 100,100): " + own),
-                () -> assertEquals("2:1@130.0,100.0", own.get(1), "the second: ordinal 1, 10 px further"),
-                () -> assertEquals(List.of(), bobs, "Bob gets no OWN_SHOTS for Ann's bullets"),
-                () -> assertEquals(List.of(), watching, "nor Ann while she watches Bob"));
-        }
-
         @Test
         @DisplayName("the owner's view is extended ahead of it by its velocity times its input lead: at most 8 ticks,"
             + " at most 160 px, only in the direction of motion")

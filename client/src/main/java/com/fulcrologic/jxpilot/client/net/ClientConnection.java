@@ -790,7 +790,7 @@ public final class ClientConnection {
             }
         } else {
             if (tick == latestTick && in.remaining() >= SnapshotWriter.HEADER_SIZE) {
-                kernel.onSnapshot(in, input); // another part of the newest tick: its OWN_SHOTS
+                kernel.onSnapshot(in, input); // another part of the newest tick: it may hold the PREDICT sections
             }
             stats.measure(tick / slotTicks, PacketStats.DROP);
             if (tick - latestTick < 0) {

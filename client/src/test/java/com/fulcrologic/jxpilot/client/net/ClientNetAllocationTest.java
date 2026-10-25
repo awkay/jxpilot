@@ -237,7 +237,6 @@ class ClientNetAllocationTest {
             () -> assertTrue(sim.connection().kernel().predicts() - predictsBefore > MEASURED / 4,
                 "PREDICT sections were decoded while measured"),
             () -> assertTrue(!Double.isNaN(sim.connection().netDiagnostics().leadTicks), "the HUD lead was filled"),
-            () -> assertEquals(2, sim.connection().kernel().ownShots(), "OWN_SHOTS were decoded"),
             () -> assertTrue(server.pongs - pongsBefore > 10, "RTT probes went out and came back while measured: "
                 + (server.pongs - pongsBefore)),
             () -> assertTrue(sim.connection().netDiagnostics().rttMs() >= 0, "an RTT was measured"),

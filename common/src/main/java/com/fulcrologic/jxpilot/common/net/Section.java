@@ -99,11 +99,6 @@ public final class Section {
     public static final int PREDICT_RARE = 24;
     /** {@link Records.PredictKeys}: the ShipBody key masks, when they differ from the applied input. */
     public static final int PREDICT_KEYS = 25;
-    /**
-     * {@link Records.OwnShot}: the receiving player's own bullets in view, with the tick and ordinal they were fired
-     * in (protocol v2, owner only, for the predictor's provisional shots). They are in SHOT too.
-     */
-    public static final int OWN_SHOTS = 26;
     /** {@link Records.PredictRound}: the own ship's roundDelay, with PREDICT when nonzero. */
     public static final int PREDICT_ROUND = 27;
     /**
@@ -146,7 +141,6 @@ public final class Section {
         SIZES[PREDICT] = Records.Predict.SIZE;
         SIZES[PREDICT_RARE] = Records.PredictRare.SIZE;
         SIZES[PREDICT_KEYS] = Records.PredictKeys.SIZE;
-        SIZES[OWN_SHOTS] = Records.OwnShot.SIZE;
         SIZES[PREDICT_ROUND] = Records.PredictRound.SIZE;
     }
 

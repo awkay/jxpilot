@@ -50,9 +50,7 @@ import java.util.Arrays;
  *   map; rebuilt when an operator changes a kernel option;</li>
  *   <li>the run-time kernel state from KERNEL_STATE (cannon phasing, target teams, temporary wormholes, changed
  *   blocks), kept as a mirror and applied to the world (again after each rebuild);</li>
- *   <li>the own ship's hull, from the PLAYER_JOIN of its own id;</li>
- *   <li>the own bullets in view of the newest tick (OWN_SHOTS, every part of it): position, the net tick each was
- *   fired in and its ordinal in that tick's fire, for the predictor's provisional shots.</li>
+ *   <li>the own ship's hull, from the PLAYER_JOIN of its own id.</li>
  * </ul>
  * Fed by {@link ClientConnection}. The snapshot path is allocation free; the reliable messages are rare and may
  * allocate (a world rebuild does).
@@ -63,15 +61,10 @@ public final class KernelSync {
     private final Records.PredictRare rare = new Records.PredictRare();
     private final Records.PredictKeys keys = new Records.PredictKeys();
     private final Records.PredictRound round = new Records.PredictRound();
-    private final Records.OwnShot ownShot = new Records.OwnShot();
-    private int shotsTick;
-    private boolean haveShots;
+    /** The newest snapshot tick seen and which of its parts were read. */
+    private int newestTick;
+    private boolean haveTick;
     private long partsSeen;
-    private int shots;
-    private int[] shotSpawn = new int[64];
-    private int[] shotOrdinal = new int[64];
-    private float[] shotX = new float[64];
-    private float[] shotY = new float[64];
     private final ShipBody body = new ShipBody();
     private boolean have;
     private int tick;
@@ -123,8 +116,7 @@ public final class KernelSync {
         predicts = 0;
         keyMismatches = 0;
         clientMap = null;
-        haveShots = false;
-        shots = 0;
+        haveTick = false;
         kernelRx = null;
         kernelVersion = 0;
         kernelOptions = null;
@@ -148,7 +140,7 @@ public final class KernelSync {
         onConfig(clientOptions, com.fulcrologic.jxpilot.common.map.WorldMap.fromOptions(clientOptions));
     }
 
-    /** As {@link #onConfig(Options)} with the map already built (its size and wrap decode OWN_SHOTS positions). */
+    /** As {@link #onConfig(Options)} with the map already built (its size and wrap for view-relative records). */
     public void onConfig(Options clientOptions, com.fulcrologic.jxpilot.common.map.WorldMap map) {
         clientMap = clientOptions.mapData();
         reader.setWorld(map.pixelWidth(), map.pixelHeight(), map.edgeWrap());
@@ -391,11 +383,11 @@ public final class KernelSync {
     public ShipGeom hull() { return hull; }
 
     /**
-     * Read the PREDICT and OWN_SHOTS sections of a snapshot part of the newest tick (the packet body at the buffer's
-     * position; nothing is moved).
+     * Read the PREDICT sections of a snapshot part of the newest tick (the packet body at the buffer's position;
+     * nothing is moved).
      * <p>
-     * BEHAVIOR: a part of a tick older than the newest one seen is ignored, and so is a part already read; a newer
-     * tick starts a new own-shot list, which every part of that tick adds to.
+     * BEHAVIOR: every part of the newest tick is read (the PREDICT sections may be in any of them, and part 1 may
+     * arrive before part 0); a part of an older tick, or one already read, is ignored.
      * <p>
      * BEHAVIOR: PREDICT decodes the core block into {@link #body}; its key flags refer to the client's own entry for
      * the header's inputTick ({@code input}); when that entry is no longer (or not yet) in the history, or its hash
@@ -410,14 +402,13 @@ public final class KernelSync {
             return;
         }
         int t = reader.tick();
-        if (haveShots && t - shotsTick < 0) {
+        if (haveTick && t - newestTick < 0) {
             return;
         }
-        if (!haveShots || t != shotsTick) {
-            haveShots = true;
-            shotsTick = t;
+        if (!haveTick || t != newestTick) {
+            haveTick = true;
+            newestTick = t;
             partsSeen = 0;
-            shots = 0;
         }
         long bit = 1L << (reader.part() & 63);
         if ((partsSeen & bit) != 0) {
@@ -431,8 +422,7 @@ public final class KernelSync {
         boolean keysSent = false;
         int roundValue = -1;
         while (reader.nextSection()) {
-            int n = reader.count();
-            if (n == 0) {
+            if (reader.count() == 0) {
                 continue;
             }
             switch (reader.type()) {
@@ -450,12 +440,6 @@ public final class KernelSync {
                 case Section.PREDICT_KEYS -> {
                     keys.wrap(reader, 0);
                     keysSent = true;
-                }
-                case Section.OWN_SHOTS -> {
-                    for (int i = 0; i < n; i++) {
-                        Records.OwnShot s = ownShot.wrap(reader, i);
-                        addShot(t - s.age(), s.ordinal(), s.x(), s.y());
-                    }
                 }
                 default -> { }
             }
@@ -481,37 +465,6 @@ public final class KernelSync {
             predicts++;
         }
     }
-
-    private void addShot(int spawn, int ordinal, float x, float y) {
-        if (shots == shotSpawn.length) {
-            int cap = 2 * shots;
-            shotSpawn = Arrays.copyOf(shotSpawn, cap);
-            shotOrdinal = Arrays.copyOf(shotOrdinal, cap);
-            shotX = Arrays.copyOf(shotX, cap);
-            shotY = Arrays.copyOf(shotY, cap);
-        }
-        shotSpawn[shots] = spawn;
-        shotOrdinal[shots] = ordinal;
-        shotX[shots] = x;
-        shotY[shots] = y;
-        shots++;
-    }
-
-    /** Own bullets in view of {@link #shotsTick()} (OWN_SHOTS, all parts read so far). */
-    public int ownShots() { return shots; }
-
-    /** The snapshot tick the own-shot list is for. */
-    public int shotsTick() { return shotsTick; }
-
-    /** Net tick own bullet {@code i} was fired in (snapshot tick minus its age; an age of 255 means at least that old). */
-    public int shotSpawnTick(int i) { return shotSpawn[i]; }
-
-    /** Its index among the ship's bullets of that tick (ShipShooter order). */
-    public int shotOrdinal(int i) { return shotOrdinal[i]; }
-
-    public float shotX(int i) { return shotX[i]; }
-
-    public float shotY(int i) { return shotY[i]; }
 
     /** The own ship as of {@link #tick()} (valid only when {@link #valid()}). */
     public ShipBody body() { return body; }

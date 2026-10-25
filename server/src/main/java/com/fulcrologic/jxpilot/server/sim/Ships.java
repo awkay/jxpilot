@@ -533,7 +533,6 @@ public final class Ships {
         pl.shieldTime = 0;
         pl.lastWallTouch = 0;
         pl.shots = 0;
-        pl.shotOrdinalTick = Integer.MIN_VALUE;
         pl.shotMax = p.maxPlayerShots;
         pl.shotTime = 0;
         pl.score = 0;

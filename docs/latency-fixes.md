@@ -443,9 +443,10 @@ the default only if the friends prefer it. The numbers suggest they will at 200+
     out within one RTT.
   - Own shots are skipped in the anonymous SHOT section's association for the owner, so they are not
     drawn twice.
-  - *(As built in 1b: OWN_SHOTS is section 26, 6 bytes per own bullet in view: rel x/y as SHOT, a u8 age
-    instead of the u32 tick, and the u8 ordinal; the server tags each bullet in `Shots.playerShot`. Own
-    bullets stay in SHOT too. See PROTOCOL.md.)*
+  - *(1b built OWN_SHOTS (section 26, 6 B per own bullet) and then dropped it: the 1c predictor confirms a
+    provisional shot by matching the own-colour bullets of the SHOT section by position; measured worst
+    match 0.35 px, 0.8% unconfirmed, without the section's ~300 B per fight snapshot. The shot-motion
+    options go to the client in KERNEL_CONFIG instead.)*
 - **Timeline:** provisional shots live in predicted time, like the ship that fired them. With option
   4.6-B everything else does too, and nothing more is needed. Without it, your shot visibly overtakes
   an enemy that is drawn ~RTT + 110 ms in the past. Read §4.9 before "fixing" that on the server side.
