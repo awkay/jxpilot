@@ -146,13 +146,13 @@ class AllocationTest {
     }
 
     private void input(int i) {
-        history.record(ControlKey.THRUST.mask(), i & 0xFF);
+        history.set(i, ControlKey.THRUST.mask(), i & 3, i & 0xFF);
         buf.clear();
-        history.write(buf, i, 4);
+        history.write(buf, i - 4);
         buf.flip();
         inputReader.wrap(buf);
         for (int k = inputReader.count() - 1; k >= 0; k--) {
-            checksum += inputReader.keys(k) + inputReader.aimTurn(k);
+            checksum += inputReader.keys(k) + inputReader.taps(k) + inputReader.aimTurn(k);
         }
     }
 

@@ -91,3 +91,24 @@ reactor; module configs): common 2434/2526 (96%), server 11233/12275 (92%), clie
 Equivalent survivors left: `SnapshotBuilder.writeSelf` `count > 0` → `>= 0` (0 either way); `KeyBindings`
 `glfwKey >= 0` → `> 0` (no GLFW key 0) and the `<init>`/`rebuild` loop bounds; `ObjectLists.key` `f >= 0`
 (id fields are 4 and 5).
+
+## Latency phase 1b fix round: PredictedClock, KernelSync, ClientConnection
+
+PIT on the three classes with the `client.net` tests (`*AllocationTest*` excluded): PredictedClock **127/136
+(93%)**, KernelSync **141/160 (88%)**, ClientConnection **311/341 (91%)**. Killed afterwards (verified by
+hand): ClientConnection's `clock.sent(...)` per final entry (`KernelFeed.finalsRecordAdjustment`: a report
+covering entries sent before a jump reads the jump), the later-part path into KernelSync
+(`KernelFeed.laterParts`), and `KernelSync.stateKnown` → false. Survivors in 1b code:
+
+| file:line | mutator | why acceptable |
+|---|---|---|
+| PredictedClock.java:306 | `e > DEADBAND` → `>=` (settle) | at exactly the band edge the settle moves by half a band or the dilation is 0: within the deadband either way. |
+| PredictedClock.java:341, 343 (6) | the guard-rail bounds | equality cases (a lead of exactly 0 or simHz - 1) re-initialize to the same lead; the arithmetic mutants only matter at those edges. Old code, unchanged since 1b. |
+| PredictedClock.java:170, 354 | `max(0, initial - tick)`, `dt > 0` | 0 at equality either way; old code. |
+| ClientConnection.java:503 | `slack >= REPEAT_SKIP_SLACK` → `>` | equality at exactly 1.25 ticks of estimate only shifts which of two equal choices is taken. |
+| ClientConnection.java:481, 764, 779, 792, 796 | boundaries and negations of the tick comparisons | ticks are equal only for the same snapshot or entry, which the next branch handles the same way; the newest-tick and ack paths are covered end to end by `PredictRoundTripTest` and `LeadControlTest` (latency suite, outside this PIT run). |
+| ClientConnection.java:305, 848, 872 | `clock.reset`, `kernel.onConfig` removed | the next WELCOME / session resets them again; covered end to end by the latency suite. |
+| KernelSync.java:130, 138, 152 | `clearState`/`fill`/`setWorld` removed | reset is followed by a new KERNEL_CONFIG (rebuild) in every real session; the reader's world is set again on config. |
+| KernelSync.java:276, 283, 291, 313, 331, 349-355 | growth and bounds boundaries | capacity growth only, or indices that equal a bound only beyond the map (ignored either way). |
+| KernelSync.java:470 | `roundValue > 0` → `>= 0` | PREDICT_ROUND clamps to 1..65535: 0 never arrives. |
+| KernelSync.java:174, 241, 255, 296, 318 | no coverage in this run | the KERNEL_CHUNK completion and world-wormhole paths are exercised by `KernelSyncNetTest` (latency suite). |

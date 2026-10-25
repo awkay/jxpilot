@@ -393,7 +393,7 @@ class ServerNetTest {
         void otherVersion() {
             Harness h = new Harness();
             ByteBuffer v2 = new TestClient(0x01020304).connect("Future", 255, "x".repeat(30));
-            v2.put(2, (byte) 2);
+            v2.put(2, (byte) (Protocol.VERSION + 1));
             h.in(0, A, v2);
             List<Harness.Sent> reply = h.take(A);
             TestClient view = new TestClient(0x01020304);
@@ -412,7 +412,7 @@ class ServerNetTest {
             TestClient offsetView = new TestClient(0x11223344);
             offsetView.onPacket(offsetReply.get(0).data().duplicate(), h.now);
             ByteBuffer v2Input = new TestClient(1).bare(PacketType.INPUT);
-            v2Input.put(2, (byte) 2);
+            v2Input.put(2, (byte) (Protocol.VERSION + 1));
             h.in(0, A, v2Input);
             ByteBuffer badMagic = new TestClient(1).connect("x", 255, "");
             badMagic.put(0, (byte) 0);
@@ -768,84 +768,195 @@ class ServerNetTest {
     @DisplayName("input")
     class Input {
         @Test
-        @DisplayName("each input reaches the host once, in order, despite redundancy and loss")
-        void sequencing() {
+        @DisplayName("each tick gets its own entry once; redundancy recovers a lost packet; a replay changes nothing")
+        void byTick() {
             Harness h = new Harness();
             TestClient c = new TestClient(1);
             h.join(c, 0, A, "a");
-            h.host.calls.clear();
-            h.in(0, A, c.input(1));
-            h.in(0, A, c.input(2));
-            c.input(4);                        // lost
-            ByteBuffer late = c.input(8);
-            ByteBuffer replay = late.duplicate();
-            h.in(0, A, late);
-            h.in(0, A, replay);
-            h.tick();
-            h.tick();
             h.deliver(c, A);
-            int seqOffset = c.inputs.latestSeq() - 4;
-            assertAll(
-                () -> assertEquals(List.of(
-                        "input 0 seq=" + (seqOffset + 1) + " keys=1 aim=0",
-                        "input 0 seq=" + (seqOffset + 2) + " keys=2 aim=0",
-                        "input 0 seq=" + (seqOffset + 3) + " keys=4 aim=0",
-                        "input 0 seq=" + (seqOffset + 4) + " keys=8 aim=0"), h.host.callsStartingWith("input"),
-                    "redundant copies are skipped, a lost packet is recovered from redundancy, replays are ignored"),
-                () -> assertEquals(seqOffset + 4, (int) c.snapshotInputSeqs.get(c.snapshotInputSeqs.size() - 1),
-                    "the next snapshot reports the last applied input"));
-        }
-
-        @Test
-        @DisplayName("sequence comparison survives the 32-bit wrap; snapshots report the last applied input")
-        void wrap() {
-            Harness h = new Harness();
-            TestClient c = new TestClient(1);
-            h.join(c, 0, A, "a");
             h.host.calls.clear();
-            h.in(0, A, rawInput(c, Integer.MAX_VALUE, 5));
-            h.in(0, A, rawInput(c, Integer.MIN_VALUE, 6));
-            h.in(0, A, rawInput(c, Integer.MAX_VALUE, 7));
-            while (h.net.currentTick() % 2 != 1) {
+            int n = h.net.currentTick();
+            h.in(0, A, c.input(n + 1, 1, 0));
+            h.in(0, A, c.input(n + 2, 2, 0));
+            c.input(n + 3, 4, 0);                   // lost
+            ByteBuffer last = c.input(n + 4, 8, 16);
+            ByteBuffer replay = last.duplicate();
+            h.in(0, A, last);
+            h.in(0, A, replay);
+            for (int i = 0; i < 4; i++) {
                 h.tick();
             }
-            h.take(A);
-            h.tick();
             h.deliver(c, A);
             assertAll(
-                () -> assertEquals(List.of("input 0 seq=" + Integer.MAX_VALUE + " keys=5 aim=0",
-                        "input 0 seq=" + Integer.MIN_VALUE + " keys=6 aim=0"), h.host.callsStartingWith("input"),
-                    "MIN_VALUE follows MAX_VALUE; the older MAX_VALUE is then stale"),
-                () -> assertEquals(Integer.MIN_VALUE, (int) c.snapshotInputSeqs.get(c.snapshotInputSeqs.size() - 1),
-                    "the snapshot header carries the last applied sequence"));
-        }
-
-        private ByteBuffer rawInput(TestClient c, int seq, long keys) {
-            ByteBuffer b = ByteBuffer.allocate(64);
-            PacketHeader.write(b, PacketType.INPUT, c.session, c.ch.ack());
-            b.putInt(seq).putInt(0).put((byte) 1).putLong(keys).putShort((short) 0);
-            return b.flip();
+                () -> assertEquals(List.of(
+                        "input 0 tick=" + (n + 1) + " keys=1 taps=0 aim=0",
+                        "input 0 tick=" + (n + 2) + " keys=2 taps=0 aim=0",
+                        "input 0 tick=" + (n + 3) + " keys=4 taps=0 aim=0",
+                        "input 0 tick=" + (n + 4) + " keys=8 taps=16 aim=0"), h.host.callsStartingWith("input"),
+                    "one call per tick with that tick's entry, the lost one recovered from the redundancy"),
+                () -> assertEquals(n + 4, (int) c.snapshotInputTicks.get(c.snapshotInputTicks.size() - 1),
+                    "the snapshot header reports the tick whose input was applied"),
+                () -> assertEquals(0L, h.net.inputStarvations(0), "no tick went without its entry"),
+                () -> assertEquals(-1L, h.net.inputStarvations(9), "an id with no connection has no counter"));
         }
 
         @Test
-        @DisplayName("redundancy entries are applied oldest first; the verifying INPUT itself is applied")
-        void oldestFirst() {
+        @DisplayName("a missing entry holds the last mask without taps, counts a starvation and shows in the header")
+        void starvation() {
+            Harness h = new Harness();
+            TestClient c = new TestClient(1);
+            h.join(c, 0, A, "a");
+            h.deliver(c, A);
+            h.host.calls.clear();
+            int n = h.net.currentTick();
+            h.in(0, A, c.input(n + 1, 8, 16));
+            h.tick();
+            h.tick();
+            h.deliver(c, A);
+            List<Integer> counts = c.snapshotStarveCounts;
+            int counted = counts.get(counts.size() - 1);
+            int countedBefore = counts.get(counts.size() - 2);
+            ByteBuffer late = c.input(n + 2, 4, 0);
+            h.in(0, A, late);
+            h.tick();
+            h.deliver(c, A);
+            List<Integer> ticks = c.snapshotInputTicks;
+            int lateSlack = c.snapshotInputSlacks.get(c.snapshotInputSlacks.size() - 1);
+            assertAll(
+                () -> assertEquals(List.of(
+                        "input 0 tick=" + (n + 1) + " keys=8 taps=16 aim=0",
+                        "input 0 tick=" + (n + 2) + " keys=8 taps=0 aim=0",
+                        "input 0 tick=" + (n + 3) + " keys=8 taps=0 aim=0"), h.host.callsStartingWith("input"),
+                    "ticks n+2 and n+3 hold 8 without the taps; the late entry for n+2 is not applied"),
+                () -> assertEquals(n + 1, (int) ticks.get(ticks.size() - 1),
+                    "the header's inputTick stays at the held tick: the client sees the starvation"),
+                () -> assertEquals(2L, h.net.inputStarvations(0), "two starved ticks"),
+                () -> assertEquals(1L, h.net.inputLate(0), "the entry for n+2 came after its tick ran"),
+                () -> assertEquals(0, countedBefore, "the snapshot of n+1 (entry applied): starvation counter 0"),
+                () -> assertEquals(1, counted, "the snapshot of n+2: the counter is 1"),
+                () -> assertEquals(0, lateSlack, "the late entry arrived just as its tick had run: margin 0, the window's minimum"),
+                () -> assertEquals(2, (int) counts.get(counts.size() - 1), "n+3 starved too: 2"));
+        }
+
+        @Test
+        @DisplayName("inputSlack: the smallest arrival margin, in 1/16 tick")
+        void slack() {
+            Harness h = new Harness();
+            TestClient c = new TestClient(1);
+            h.join(c, 0, A, "a");
+            h.deliver(c, A);
+            int n = h.net.currentTick();
+            for (int i = 0; i < 20; i++) {
+                h.in(0, A, c.input(h.net.currentTick() + 3, 0, 0));
+                h.tick();
+            }
+            h.deliver(c, A);
+            List<Integer> sl = c.snapshotInputSlacks;
+            assertAll(
+                () -> assertEquals(2 * 16 + 16, (int) sl.get(sl.size() - 1),
+                    "sent just after a tick for the tick 3 ahead: 2 whole ticks + the full interval to go = 3 ticks"),
+                () -> assertTrue(n > 0, "the join ran ticks"));
+        }
+
+        @Test
+        @DisplayName("an INPUT from a fresh peer verifies the session; its entries are applied at their ticks with aim")
+        void freshPeer() {
             Harness h = new Harness();
             TestClient c = new TestClient(1);
             h.in(0, A, c.connect("a", 255, ""));
             h.deliver(c, A);
+            int n = h.net.currentTick();
             InputHistory hist = new InputHistory();
-            hist.record(10, 1);
-            hist.record(20, 2);
-            hist.record(30, 3);
+            hist.set(n + 1, 10, 0, 1);
+            hist.set(n + 2, 20, 0, 2);
             ByteBuffer b = ByteBuffer.allocate(128);
             PacketHeader.write(b, PacketType.INPUT, c.session, c.ch.ack());
-            hist.write(b, 0, 4);
+            hist.write(b, 0);
             h.in(0, A, b.flip());
+            boolean verified = h.net.isVerified(0, A);
+            h.tick();
+            h.tick();
             assertAll(
-                () -> assertEquals(List.of("input 0 seq=1 keys=10 aim=1", "input 0 seq=2 keys=20 aim=2", "input 0 seq=3 keys=30 aim=3"),
-                    h.host.callsStartingWith("input"), "a fresh peer gets all three entries oldest first, with aim turns"),
-                () -> assertTrue(h.net.isVerified(0, A), "the INPUT also verified the session"));
+                () -> assertTrue(verified, "the INPUT verified the session"),
+                () -> assertEquals(List.of("input 0 tick=" + (n + 1) + " keys=10 taps=0 aim=1",
+                        "input 0 tick=" + (n + 2) + " keys=20 taps=0 aim=2"),
+                    h.host.callsStartingWith("input"), "each entry at its own tick, with its aim turn"));
+        }
+
+        @Test
+        @DisplayName("before any entry nothing goes to the host; a malformed INPUT is counted")
+        void notStarted() {
+            Harness h = new Harness();
+            TestClient c = new TestClient(1);
+            h.in(0, A, c.connect("a", 255, ""));
+            h.deliver(c, A);
+            h.tick();
+            ByteBuffer b = ByteBuffer.allocate(64);
+            PacketHeader.write(b, PacketType.INPUT, c.session, c.ch.ack());
+            b.putInt(5).put((byte) 0);
+            long before = h.net.malformed();
+            h.in(0, A, b.flip());
+            h.tick();
+            long malformed = h.net.malformed() - before;
+            assertAll(
+                () -> assertEquals(List.of(), h.host.callsStartingWith("input"), "no input call without an entry"),
+                () -> assertEquals(1L, malformed, "an INPUT with no entry is malformed"),
+                () -> assertEquals(0L, h.net.inputStarvations(0), "ticks before the first entry are no starvation"));
+        }
+    }
+
+    @Nested
+    @DisplayName("kernel config")
+    class Kernel {
+        @Test
+        @DisplayName("after the initial state every peer gets the kernel blob; a /set that changes the encoded kernel"
+            + " config (a kernel option, or the host's effective value of one) sends a new version, another does not")
+        void kernel() {
+            Harness h = new Harness();
+            com.fulcrologic.jxpilot.common.config.Options o = new com.fulcrologic.jxpilot.common.config.Options();
+            com.fulcrologic.jxpilot.common.config.ConfigParser.parse("mapWidth: 10\nmapHeight: 10\nmapData: \\multiline: E\n"
+                + "xxxxxxxxxx\nx  ++    x\nx        x\nxxxxxxxxxx\nE\n", "t",
+                com.fulcrologic.jxpilot.common.config.OptionOrigin.MAP, o);
+            String clientMap = o.mapData().replace('+', ' ');
+            h.net.setKernel(o, clientMap);
+            TestClient c = new TestClient(1);
+            h.join(c, 0, A, "a");
+            for (int i = 0; i < 5; i++) {
+                h.step(c, 0, A, 0);
+            }
+            List<String> first = new ArrayList<>(c.reliableLog);
+            com.fulcrologic.jxpilot.common.config.Options decoded =
+                com.fulcrologic.jxpilot.common.config.KernelConfig.decode(c.kernelBytes, clientMap);
+            o.force(com.fulcrologic.jxpilot.common.config.Opt.GRAVITY, "-0.9");
+            h.net.optionChanged(com.fulcrologic.jxpilot.common.config.Opt.GRAVITY, o);
+            h.net.optionChanged(com.fulcrologic.jxpilot.common.config.Opt.MAX_ROBOTS, o);
+            for (int i = 0; i < 5; i++) {
+                h.step(c, 0, A, 0);
+            }
+            com.fulcrologic.jxpilot.common.config.Options after =
+                com.fulcrologic.jxpilot.common.config.KernelConfig.decode(c.kernelBytes, clientMap);
+            int afterSets = h.net.kernelVersion();
+            long sentTwo = c.reliableLog.stream().filter(x -> x.equals("KERNEL 2")).count();
+            h.host.killingValue = "no";
+            h.net.optionChanged(com.fulcrologic.jxpilot.common.config.Opt.MAX_ROBOTS, o);
+            int afterEffective = h.net.kernelVersion();
+            for (int i = 0; i < 5; i++) {
+                h.step(c, 0, A, 0);
+            }
+            boolean killing = com.fulcrologic.jxpilot.common.config.KernelConfig.decode(c.kernelBytes, clientMap)
+                .getBool(com.fulcrologic.jxpilot.common.config.Opt.ALLOW_PLAYER_KILLING);
+            int initialAt = first.indexOf("JOIN 0 self");
+            assertAll(
+                () -> assertTrue(first.indexOf("KERNEL 1") > initialAt, "KERNEL_CONFIG version 1 after the initial state: " + first),
+                () -> assertTrue(first.contains("KERNEL done"), "and its chunks"),
+                () -> assertEquals(o.mapData(), decoded.mapData(), "the blob restores the hidden blocks"),
+                () -> assertEquals(2, afterSets, "the gravity /set made version 2, maxRobots nothing"),
+                () -> assertEquals(1, sentTwo, "sent once"),
+                () -> assertEquals(-0.9, after.getDouble(com.fulcrologic.jxpilot.common.config.Opt.GRAVITY), 1e-12,
+                    "with the new gravity"),
+                () -> assertEquals(3, afterEffective,
+                    "an option whose /set changes a kernel option's effective value (the host's): version 3"),
+                () -> assertFalse(killing, "the blob carries the host's effective value"));
         }
     }
 
@@ -1134,6 +1245,7 @@ class ServerNetTest {
             h.host.throwOnInput = new IllegalStateException("host bug");
             h.host.throwOnKeys = 77;
             h.in(0, A, c.input(77));
+            h.tick();
             ByteBuffer m = c.ch.begin(ReliableType.CHAT);
             m.put((byte) 0).putShort((short) 0).putShort((short) 9);
             c.ch.end();
@@ -1308,8 +1420,8 @@ class ServerNetTest {
                     "the reused slot logs its own name, not the previous one's: " + h.log),
                 () -> assertEquals("mapName: test\n", b.configText, "the new peer gets the full config again"),
                 () -> assertEquals(List.of("WELCOME 1", "MAP", "JOIN 1 self"), b.reliableLog, "and its own initial state"),
-                () -> assertEquals("input 1 seq=1 keys=0 aim=0", h.host.callsStartingWith("input").get(0),
-                    "its input sequencing starts fresh (seq 1 is applied after the previous peer's higher sequences)"));
+                () -> assertTrue(h.host.callsStartingWith("input 1 ").get(0).endsWith(" keys=0 taps=0 aim=0"),
+                    "its input buffer starts fresh, without the previous peer's held keys (3)"));
         }
     }
 

@@ -27,6 +27,8 @@ import com.fulcrologic.jxpilot.common.Item;
 import com.fulcrologic.jxpilot.common.math.DebrisBurst;
 import com.fulcrologic.jxpilot.common.math.XMath;
 
+import com.fulcrologic.jxpilot.common.sim.ShipBody;
+
 import java.nio.ByteBuffer;
 
 /**
@@ -375,18 +377,34 @@ public final class Records {
     }
 
     /**
-     * A bullet: {@code 0 rel x, 2 rel y, 4 i8 vx, 5 i8 vy} (whole px/frame, for client extrapolation).
-     * Kind and colour are the section variant ({@link ShotKind#variant}). 6 bytes.
+     * A bullet: {@code 0 rel x, 2 rel y}, then the velocity in 1/16 px/frame as two signed 12-bit values packed into
+     * 3 bytes: {@code 4 [vx bits 11..4], 5 [vx bits 3..0 | vy bits 11..8], 6 [vy bits 7..0]} (range -128..127.9375
+     * px/frame, for client extrapolation). Kind and colour are the section variant ({@link ShotKind#variant}). 7 bytes.
      */
     public static final class Shot extends Fly {
-        public static final int SIZE = 6;
+        public static final int SIZE = 7;
+        /** Largest velocity in 1/16 px/frame; the smallest is {@code -MAX_VEL16 - 1}. */
+        public static final int MAX_VEL16 = 0x7FF;
 
+        /**
+         * BEHAVIOR: the velocity is rounded to the nearest 1/16 px/frame (halves up: {@code floor(v * 16 + 0.5)} of
+         * the server's float) and clamped to -2048..2047 sixteenths.
+         */
         public static void put(SnapshotWriter w, double x, double y, double vx, double vy) {
             ByteBuffer out = w.buffer();
             out.putShort((short) w.relX(x));
             out.putShort((short) w.relY(y));
-            out.put((byte) Wire.velToI8(vx));
-            out.put((byte) Wire.velToI8(vy));
+            int qx = vel16(vx) & 0xFFF;
+            int qy = vel16(vy) & 0xFFF;
+            out.put((byte) (qx >> 4));
+            out.put((byte) ((qx & 0xF) << 4 | qy >> 8));
+            out.put((byte) qy);
+        }
+
+        /** BEHAVIOR: {@code floor(v * 16 + 0.5)} clamped to -2048..2047. */
+        public static int vel16(double v) {
+            double q = Math.floor(v * 16 + 0.5);
+            return (int) Math.max(-MAX_VEL16 - 1, Math.min(MAX_VEL16, q));
         }
 
         public Shot wrap(SnapshotReader r, int i) {
@@ -398,9 +416,33 @@ public final class Records {
 
         public float y() { return relY(2); }
 
-        public int vx() { return b.get(o + 4); }
+        /** The x velocity in 1/16 px/frame (-2048..2047). */
+        public int vx16() {
+            int q = (b.get(o + 4) & 0xFF) << 4 | (b.get(o + 5) & 0xFF) >> 4;
+            return q << 20 >> 20;
+        }
 
-        public int vy() { return b.get(o + 5); }
+        /** The y velocity in 1/16 px/frame (-2048..2047). */
+        public int vy16() {
+            int q = (b.get(o + 5) & 0x0F) << 8 | b.get(o + 6) & 0xFF;
+            return q << 20 >> 20;
+        }
+
+        /** The x velocity in px/frame, exact to 1/16. */
+        public float vxf() { return vx16() / 16f; }
+
+        /** The y velocity in px/frame, exact to 1/16. */
+        public float vyf() { return vy16() / 16f; }
+
+        /** The x velocity rounded to whole px/frame (halves up), clamped to -127..127 (the version 1 record's). */
+        public int vx() { return whole(vx16()); }
+
+        /** The y velocity rounded to whole px/frame (halves up), clamped to -127..127. */
+        public int vy() { return whole(vy16()); }
+
+        private static int whole(int v16) {
+            return Math.max(-127, Math.min(127, Math.floorDiv(v16 + 8, 16)));
+        }
     }
 
     /**
@@ -911,6 +953,147 @@ public final class Records {
         public int index() { return u16(0); }
 
         public int flags() { return u8(2); }
+    }
+
+    /**
+     * The own ship for the predictor (protocol v2, docs/PROTOCOL.md "PREDICT"):
+     * {@code 0 ShipBody core block} ({@link ShipBody#encodeCore}, key flags against the input the server applied this
+     * tick; flag bit {@link #FLAG_ROUND_DELAY} says a {@link PredictRound} follows), {@code 63 u8 appliedHash}
+     * ({@link #hash} of that input), {@code 64 u8 rareVersion} (the {@link PredictRare} it refers to),
+     * {@code 65 u8 kernelVersion} (the KERNEL_CONFIG version it was simulated with, mod 256), {@code 66 u16 stateTag}
+     * (the tick, mod 2^16, of the newest KERNEL_STATE message the server has queued to this client: the world is the
+     * server's as of the snapshot once that one has arrived). The C frame clock is the snapshot tick plus the rare
+     * block's frame offset.
+     */
+    public static final class Predict extends Fly {
+        public static final int SIZE = ShipBody.CORE_SIZE + 5;
+        /** Core flag (beyond ShipBody's): roundDelay is nonzero, in a {@link PredictRound} of the same part. */
+        public static final int FLAG_ROUND_DELAY = 1 << 3;
+
+        /**
+         * BEHAVIOR: the core block (shot age at {@code frames}), the round-delay flag when {@code roundDelay > 0},
+         * the hash of {@code appliedKeys}, both versions mod 256 and the state tag mod 2^16.
+         */
+        public static void put(SnapshotWriter w, ShipBody body, long frames, int roundDelay, long appliedKeys,
+                               int rareVersion, int kernelVersion, int stateTag) {
+            ByteBuffer out = w.buffer();
+            int p = out.position();
+            body.encodeCore(out, p, frames, appliedKeys);
+            if (roundDelay > 0) {
+                out.put(p + ShipBody.CORE_FLAGS, (byte) (out.get(p + ShipBody.CORE_FLAGS) | FLAG_ROUND_DELAY));
+            }
+            out.put(p + ShipBody.CORE_SIZE, (byte) hash(appliedKeys));
+            out.put(p + ShipBody.CORE_SIZE + 1, (byte) rareVersion);
+            out.put(p + ShipBody.CORE_SIZE + 2, (byte) kernelVersion);
+            out.putShort(p + ShipBody.CORE_SIZE + 3, (short) stateTag);
+            out.position(p + SIZE);
+        }
+
+        /** BEHAVIOR: an 8-bit fold (xor of the bytes) of a key mask; any single-byte change changes it. */
+        public static int hash(long keys) {
+            long h = keys ^ keys >>> 32;
+            h ^= h >>> 16;
+            h ^= h >>> 8;
+            return (int) h & 0xFF;
+        }
+
+        public Predict wrap(SnapshotReader r, int i) {
+            bind(r, i);
+            return this;
+        }
+
+        /** Whether roundDelay is nonzero (a {@link PredictRound} carries it). */
+        public boolean roundDelaySet() { return (u8(ShipBody.CORE_FLAGS) & FLAG_ROUND_DELAY) != 0; }
+
+        /** {@link #hash} of the input the server applied. */
+        public int appliedHash() { return u8(ShipBody.CORE_SIZE); }
+
+        /** The rare version the core refers to. */
+        public int rareVersion() { return u8(ShipBody.CORE_SIZE + 1); }
+
+        /** The kernel config version mod 256. */
+        public int kernelVersion() { return u8(ShipBody.CORE_SIZE + 2); }
+
+        /** The newest queued KERNEL_STATE message's tick, mod 2^16. */
+        public int stateTag() { return u16(ShipBody.CORE_SIZE + 3); }
+
+        /**
+         * BEHAVIOR: decodes the core block into {@code body} ({@link ShipBody#decodeCore}: shot time against
+         * {@code frames}, the key flags against {@code appliedKeys}, the client's own entry for the snapshot's
+         * inputTick).
+         */
+        public void read(ShipBody body, long frames, long appliedKeys) {
+            body.decodeCore(b, o, frames, appliedKeys);
+        }
+    }
+
+    /** {@code 0 u16 roundDelay} of the own ship's PREDICT, sent only when nonzero (clamped to 1..65535). */
+    public static final class PredictRound extends Fly {
+        public static final int SIZE = 2;
+
+        public static void put(SnapshotWriter w, int roundDelay) {
+            w.buffer().putShort((short) Math.clamp(roundDelay, 1, 0xFFFF));
+        }
+
+        public PredictRound wrap(SnapshotReader r, int i) {
+            bind(r, i);
+            return this;
+        }
+
+        public int roundDelay() { return u16(0); }
+    }
+
+    /**
+     * {@code 0 u8 version, 1 i32 frameOffset} (the C frame clock minus the snapshot tick: constant while the sim
+     * runs), {@code 5 ShipBody rare block} ({@link ShipBody#encodeRare}).
+     */
+    public static final class PredictRare extends Fly {
+        public static final int SIZE = 5 + ShipBody.RARE_SIZE;
+
+        public static void put(SnapshotWriter w, ShipBody body, int version, int frameOffset) {
+            ByteBuffer out = w.buffer();
+            int p = out.position();
+            out.put((byte) version);
+            out.putInt(frameOffset);
+            body.encodeRare(out, p + 5);
+            out.position(p + SIZE);
+        }
+
+        public PredictRare wrap(SnapshotReader r, int i) {
+            bind(r, i);
+            return this;
+        }
+
+        public int version() { return u8(0); }
+
+        public int frameOffset() { return b.getInt(o + 1); }
+
+        /** BEHAVIOR: decodes the rare block into {@code body}. */
+        public void read(ShipBody body) {
+            body.decodeRare(b, o + 5);
+        }
+    }
+
+    /** {@code 0 u64 prevKeys, 8 u64 lastReceivedKeys} ({@link ShipBody#encodeKeys}). */
+    public static final class PredictKeys extends Fly {
+        public static final int SIZE = ShipBody.KEYS_SIZE;
+
+        public static void put(SnapshotWriter w, ShipBody body) {
+            ByteBuffer out = w.buffer();
+            int p = out.position();
+            body.encodeKeys(out, p);
+            out.position(p + SIZE);
+        }
+
+        public PredictKeys wrap(SnapshotReader r, int i) {
+            bind(r, i);
+            return this;
+        }
+
+        /** BEHAVIOR: decodes both key masks into {@code body}. */
+        public void read(ShipBody body) {
+            body.decodeKeys(b, o);
+        }
     }
 
     /** Temporary wormhole. {@code 0 u16 bx, 2 u16 by, 4 u8 type (Wormhole.Type ordinal)}. */

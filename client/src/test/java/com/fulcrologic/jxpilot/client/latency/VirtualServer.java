@@ -76,6 +76,7 @@ final class VirtualServer {
         ServerNetConfig cfg = ServerNetConfig.of(options, map);
         hz = cfg.simHz;
         net = new ServerNet(cfg, host, out, log::add, blob);
+        net.setKernel(options, ClientMap.of(options.mapData(), options));
     }
 
     World world() {

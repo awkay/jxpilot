@@ -36,6 +36,7 @@ import com.fulcrologic.jxpilot.common.net.ReliableChannel;
 import com.fulcrologic.jxpilot.common.net.ReliableHandler;
 import com.fulcrologic.jxpilot.common.net.ReliableType;
 import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
+import com.fulcrologic.jxpilot.common.sim.Obj;
 import com.fulcrologic.jxpilot.server.sim.RandomPilot;
 import com.fulcrologic.jxpilot.server.world.World;
 import org.junit.jupiter.api.DisplayName;
@@ -69,6 +70,8 @@ class AllocationTest {
         long kills;
         long messages;
         long joins;
+        long kernelStates;
+        long kernelEntries;
 
         @Override
         public void onReliableMessage(int type, ByteBuffer payload) {
@@ -78,6 +81,9 @@ class AllocationTest {
                 messages++;
             } else if (type == ReliableType.PLAYER_JOIN) {
                 joins++;
+            } else if (type == ReliableType.KERNEL_STATE) {
+                kernelStates++;
+                kernelEntries += Math.max(0, Msg.KernelState.count(payload));
             }
         }
     }
@@ -114,6 +120,9 @@ class AllocationTest {
         final SnapshotWriter writer = new SnapshotWriter();
         final ByteBuffer[] chats = {chat("hello everyone"), chat("zzz:nobody here"), chat("3:team three"), chat("god:log")};
         final Seen seen = new Seen();
+        final com.fulcrologic.jxpilot.common.net.SnapshotReader reader = new com.fulcrologic.jxpilot.common.net.SnapshotReader();
+        /** PREDICT, PREDICT_RARE, PREDICT_KEYS sections in the snapshot parts written. */
+        final long[] predictSections = new long[3];
         long now = 1_000_000_000L;
         int tick;
         int seq;
@@ -155,6 +164,17 @@ class AllocationTest {
         void step(boolean measured) {
             tick++;
             long a = MX.getCurrentThreadAllocatedBytes();
+            if (measured && tick % 500 == 250) {
+                // a cannon dies (its block is logged for KERNEL_STATE); it comes back cannonDeadTime later
+                host.simulation().crashes.cannonDies((tick / 500) % w.map.cannons().size(), Obj.NO_ID);
+            }
+            if (measured && tick % 700 == 350) {
+                // the human dies: after the respawn its key masks are cleared while the pilot holds keys, so
+                // PREDICT_KEYS goes out
+                w.byId(id).status |= Obj.KILLED;
+            }
+            record("scenario", MX.getCurrentThreadAllocatedBytes() - a, measured);
+            a = MX.getCurrentThreadAllocatedBytes();
             host.input(id, ++seq, pilot.next()[0], 0);
             if (tick % 97 == 0) {
                 ByteBuffer c = chats[(tick / 97) % chats.length];
@@ -175,7 +195,9 @@ class AllocationTest {
                 PacketHeader.write(b, PacketType.SNAPSHOT, 1, client.ack());
                 writer.begin(b, tick, seq, part, 0, 0, vx, vy);
                 partsSent++;
-                if (!host.fillSnapshot(id, part, radar, writer)) {
+                boolean more = host.fillSnapshot(id, part, radar, writer);
+                countInto(this, b);
+                if (!more) {
                     break;
                 }
             }
@@ -198,8 +220,29 @@ class AllocationTest {
         }
     }
 
+    /** Count the PREDICT sections of a written part (the reader is allocation free). */
+    static void countInto(Loop l, ByteBuffer b) {
+        int end = b.position();
+        int limit = b.limit();
+        b.limit(end).position(PacketHeader.SIZE);
+        boolean ok = l.reader.begin(b);
+        while (ok && l.reader.nextSection()) {
+            if (l.reader.count() == 0) {
+                continue;
+            }
+            switch (l.reader.type()) {
+                case com.fulcrologic.jxpilot.common.net.Section.PREDICT -> l.predictSections[0]++;
+                case com.fulcrologic.jxpilot.common.net.Section.PREDICT_RARE -> l.predictSections[1]++;
+                case com.fulcrologic.jxpilot.common.net.Section.PREDICT_KEYS -> l.predictSections[2]++;
+                default -> { }
+            }
+        }
+        b.limit(limit).position(end);
+    }
+
     @Test
-    @DisplayName("one human (input every tick, chat now and then) and 8 robots on doggy.xp: 0 bytes per tick")
+    @DisplayName("one human (input every tick, chat now and then, killed now and then) and 8 robots on doggy.xp,"
+        + " cannons destroyed: 0 bytes per tick, with every PREDICT section and KERNEL_STATE in the window")
     void hostHotPath() throws IOException {
         Loop loop = new Loop();
         for (int i = 0; i < WARMUP; i++) {
@@ -213,6 +256,9 @@ class AllocationTest {
         long kills0 = loop.seen.kills;
         long messages0 = loop.seen.messages;
         long parts0 = loop.partsSent;
+        long[] predict0 = loop.predictSections.clone();
+        long kstate0 = loop.seen.kernelStates;
+        long kentries0 = loop.seen.kernelEntries;
         long before = MX.getCurrentThreadAllocatedBytes();
         for (int i = 0; i < MEASURED; i++) {
             loop.step(true);
@@ -221,10 +267,16 @@ class AllocationTest {
         long kills = loop.seen.kills - kills0;
         long messages = loop.seen.messages - messages0;
         long parts = loop.partsSent - parts0;
+        long predicts = loop.predictSections[0] - predict0[0];
+        long rares = loop.predictSections[1] - predict0[1];
+        long keys = loop.predictSections[2] - predict0[2];
+        long kstates = loop.seen.kernelStates - kstate0;
+        long kentries = loop.seen.kernelEntries - kentries0;
         String firstBad = loop.badTick < 0 ? "none"
             : "tick " + loop.badTick + " phase " + loop.badPhase + ": " + loop.badBytes + " bytes";
         System.out.println("host allocation: " + allocated + " bytes over " + MEASURED + " ticks; robots " + robots
-            + ", kills " + kills + ", messages " + messages + ", snapshot parts " + parts);
+            + ", kills " + kills + ", messages " + messages + ", snapshot parts " + parts + "; PREDICT " + predicts
+            + ", RARE " + rares + ", KEYS " + keys + "; KERNEL_STATE " + kstates + " (" + kentries + " entries)");
         assertAll(
             // one tick may allocate a little: a C2 compile request resolves constants and loads signature classes on
             // the requesting thread (see server.AllocationTest); anything more is a real allocation
@@ -235,6 +287,12 @@ class AllocationTest {
             () -> assertTrue(kills > 0, "the robots fought: " + kills + " kills"),
             () -> assertTrue(messages > MEASURED / 97, "messages flowed (chat and game talk): " + messages),
             () -> assertTrue(parts >= MEASURED, "a snapshot every tick: " + parts + " parts"),
+            () -> assertTrue(predicts > MEASURED / 2, "PREDICT was written in the window: " + predicts),
+            () -> assertTrue(rares > 0, "PREDICT_RARE too: " + rares),
+            () -> assertTrue(keys > 0, "and PREDICT_KEYS (keys differ after a respawn): " + keys),
+            () -> assertTrue(kstates > 0 && kentries >= 2 * (MEASURED / 500),
+                "KERNEL_STATE scanned, drained and sent in the window (the cannons' deaths and revivals): " + kstates
+                    + " messages, " + kentries + " entries"),
             () -> assertEquals(0, loop.server.unacked(), "the client acknowledged everything"),
             () -> assertTrue(loop.w.byId(loop.id) != null && loop.w.byId(loop.id).spawned, "the human is still in the game"));
     }

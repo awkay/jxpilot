@@ -46,7 +46,8 @@ public final class SnapshotReader {
     private int pos;
     private int end;
     private int tick;
-    private int lastInputSeq;
+    private int inputTick;
+    private int inputSlack;
     private int part;
     private int partCount;
     private int flags;
@@ -98,12 +99,13 @@ public final class SnapshotReader {
             return false;
         }
         tick = in.getInt(p);
-        lastInputSeq = in.getInt(p + 4);
-        part = in.get(p + 8) & 0xFF;
-        partCount = in.get(p + 9) & 0xFF;
-        flags = in.get(p + 10) & 0xFF;
-        viewX = Wire.u16ToPos(in.getShort(p + 11));
-        viewY = Wire.u16ToPos(in.getShort(p + 13));
+        inputTick = in.getInt(p + 4);
+        inputSlack = in.get(p + 8);
+        part = in.get(p + 9) & 0xFF;
+        partCount = in.get(p + 10) & 0xFF;
+        flags = in.get(p + 11) & 0xFF;
+        viewX = Wire.u16ToPos(in.getShort(p + 12));
+        viewY = Wire.u16ToPos(in.getShort(p + 14));
         pos = p + SnapshotWriter.HEADER_SIZE;
         return true;
     }
@@ -139,7 +141,11 @@ public final class SnapshotReader {
     public int tick() { return tick; }
 
     /** Newest client input sequence the server had applied when producing this snapshot. */
-    public int lastInputSeq() { return lastInputSeq; }
+    /** The tick whose input the server applied in this snapshot's tick (the held tick on starvation). */
+    public int inputTick() { return inputTick; }
+
+    /** The server's input slack report in 1/16 tick, {@link SnapshotWriter#NO_SLACK} for none. */
+    public int inputSlack() { return inputSlack; }
 
     public int part() { return part; }
 

@@ -192,7 +192,10 @@ be allocation-free (SPEC GC rules): the ring holds preallocated kernel state str
   state. Otherwise there are two ships.
 - **View culling:** the server culls around *its* ship position, and the predicted view runs ahead by up
   to lead × speed (≈ 6 ticks × 30 px = 180 px at high speed). `SnapshotBuilder` should add
-  `|v| · leadTicks` to its view half-size, which costs a few lines.
+  `|v| · leadTicks` to its view half-size, which costs a few lines. *(As built in 1b: the view is extended by
+  v · lead only on the sides the ship flies towards, the lead clamped to 8 ticks and the extension to 160 px.
+  Measured, owner in a 12-robot arena fight at 20 px/tick: 386 B mean at lead 0, 396 B at lead 4, 400 B at
+  lead 8 and beyond; before the clamp lead 14 gave 494 B.)*
 
 **Testing:** the kernel bit-equality oracle (§4.4). A headless predictor on the lossy-link emulator
 (§7) must hold "zero corrections" on a no-contact course at RTT 300, jitter 30 and loss 5%, and give
@@ -248,9 +251,12 @@ be a misprediction of one tick of thrust or turn: ~2 px/tick² of thrust, or sev
 - **Lead control (clock sync):**
   - The client sets its initial lead from PING/PONG RTT: `ceil((RTT/2 + 30 ms)/T) + 1` ticks.
   - It then steers by *time dilation*: its predicted clock runs at simHz × (1 ± 3%), the same slew limit
-    `TickClock` already uses, aiming for `inputSlack` ≈ 0.5 tick plus 2σ of jitter.
+    `TickClock` already uses, aiming for `inputSlack` ≈ 0.5 tick plus 2σ of jitter. *(As built after the 1b
+    fix round: 0.25 tick plus 1σ of the slack reports' own spread; every tick of slack delays what the server
+    decides, a shield first. See latency-measurements.md.)*
   - On a starvation report it jumps up one tick at once and drifts back down slowly. The asymmetry is
-    deliberate: running out of input costs more than an extra few ms of lead.
+    deliberate: running out of input costs more than an extra few ms of lead. *(As built: by the estimated
+    shortfall, at least 0.25 tick.)*
   - No absolute clock sync is needed. `TickClock` (arrival-based) keeps driving the render time for
     others, and the lead loop drives the predicted clock.
 
@@ -299,14 +305,27 @@ and static map data.
 - `MoveState`, `Click`, `Trig`, `WallDist`, and the parts of `World` and `Params` they read (click
   sizes, wrap, wall distance, the map, and target, cannon and treasure blocking state).
 
+**Correction (phase 1a/1b as built):** refuel fuel accounting did *not* move. Device drain and timers
+(phasing, cloak, emergency shield and thrust, deflector cost), refuel and tank moves stay in the server's
+upkeep (`Ships.update` outside `ShipKernel.step`), so the predictor mispredicts fuel, mass and the `used`
+bits they change until the next PREDICT corrects them. Phase 1c measures how much (§8); moving them into the
+kernel is a later decision. The kernel's world comes to the client as the KERNEL_CONFIG blob (the kernel
+options and the map blocks the client's map hides) and KERNEL_STATE (cannon phasing, target teams, changed
+blocks, temporary wormholes); the frame clock and roundDelay ride in PREDICT.
+
 In total that is roughly 2,000-2,500 lines moved and ~300 lines of new seams.
 
 **Seams:**
 
 - The kernel owns a `ShipBody` struct: clicks x/y, vx/vy, floatDir, dir, turnVel, oldTurnVel,
   turnAcc, mass, fuel, status and used bits, item counts that affect physics, and lastWallTouch.
-  `ShipBody` also owns its own wire codec (a new `PREDICT` snapshot section, ~70 bytes, sent only to its
-  owner). The wire therefore can never lag behind the kernel's state.
+  `ShipBody` also owns its own wire codec, so the wire can never lag behind the kernel's state. *(As built
+  in 1b: the PREDICT section is 68 bytes every snapshot, a 63-byte core plus the applied input's hash,
+  the rare and kernel versions and the newest queued KERNEL_STATE's tick; PREDICT_ROUND, 2 bytes, the round delay while one runs; PREDICT_RARE, 64
+  bytes, carries the frame-clock offset, engine settings, masses, team, wormhole destination, modifiers and
+  item counts when they changed in the last 8 snapshots and every 14th; PREDICT_KEYS, 16 bytes, the key masks
+  when they differ from the applied input. The tanks are not sent: the kernel only adds to the current tank's fuel.
+  See PROTOCOL.md.)*
 - Side effects go out through a small `KernelEvents` interface: crashed (with type), bounced, fired
   (with shot parameters), fuel spent.
   - The server implementation calls `Crashes.playerCrashed`, `Shots.fire`, sparks and scoring as today.
@@ -427,6 +446,10 @@ the default only if the friends prefer it. The numbers suggest they will at 200+
     out within one RTT.
   - Own shots are skipped in the anonymous SHOT section's association for the owner, so they are not
     drawn twice.
+  - *(1b built OWN_SHOTS (section 26, 6 B per own bullet) and then dropped it: the 1c predictor confirms a
+    provisional shot by matching the own-colour bullets of the SHOT section by position; measured worst
+    match 0.35 px, 0.8% unconfirmed, without the section's ~300 B per fight snapshot. The shot-motion
+    options go to the client in KERNEL_CONFIG instead.)*
 - **Timeline:** provisional shots live in predicted time, like the ship that fired them. With option
   4.6-B everything else does too, and nothing more is needed. Without it, your shot visibly overtakes
   an enemy that is drawn ~RTT + 110 ms in the past. Read §4.9 before "fixing" that on the server side.
@@ -579,6 +602,16 @@ The server stays fully authoritative. Clients send only keys.
   ~180 px more. XPilot has no line-of-sight occlusion, so there is little to leak. The whole-world radar
   already leaks more.
 - **What would weaken trust:** rewind (§4.9) and client-reported hit claims. Neither is recommended.
+- **Hidden map information (a trade-off taken in phase 1b).** The own-ship kernel needs the real gravity
+  field, wormholes and friction blocks, and the kernel options, to predict exactly. So every client gets the
+  kernel config blob (PROTOCOL.md KERNEL_CONFIG): the blocks `Packet_map` hides with gravityVisible,
+  wormholeVisible, itemConcentratorVisible, asteroidConcentratorVisible and blockFrictionVisible off, and
+  the kernel options (`KernelConfig.OPTIONS`), visible or not, with their live `/set` updates. The stock
+  client still draws the masked map and shows only the visible options; a modified client could show the
+  hidden ones. What leaks is map layout and physics, not other players' state, and an attentive player
+  learns most of it by flying anyway (gravity pulls the ship). Withholding it would make every gravity block
+  and hidden wormhole a visible correction under prediction. A server that wants the old secrecy has no
+  switch for it yet; adding one would mean sending a masked kernel world and accepting those corrections.
 
 For a friends server this is low priority, and the plan does not make it worse.
 

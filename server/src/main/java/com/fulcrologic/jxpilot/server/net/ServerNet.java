@@ -23,6 +23,7 @@
  */
 package com.fulcrologic.jxpilot.server.net;
 
+import com.fulcrologic.jxpilot.common.config.KernelConfig;
 import com.fulcrologic.jxpilot.common.config.Opt;
 import com.fulcrologic.jxpilot.common.config.Options;
 import com.fulcrologic.jxpilot.common.net.ConfigTransfer;
@@ -33,6 +34,7 @@ import com.fulcrologic.jxpilot.common.net.PacketType;
 import com.fulcrologic.jxpilot.common.net.Protocol;
 import com.fulcrologic.jxpilot.common.net.ReliableChannel;
 import com.fulcrologic.jxpilot.common.net.ReliableHandler;
+import com.fulcrologic.jxpilot.common.net.ReliableType;
 import com.fulcrologic.jxpilot.common.net.SnapshotWriter;
 import com.fulcrologic.jxpilot.common.net.Wire;
 
@@ -67,9 +69,9 @@ public final class ServerNet {
     /** Upper bound on snapshot datagrams per viewer per tick. */
     public static final int MAX_SNAPSHOT_PARTS = 4;
     /** Offset of the snapshot partCount byte within a SNAPSHOT datagram. */
-    static final int PART_COUNT_OFFSET = PacketHeader.SIZE + 9;
+    static final int PART_COUNT_OFFSET = PacketHeader.SIZE + SnapshotWriter.PART_COUNT_OFFSET;
     /** Offset of the snapshot flags byte within a SNAPSHOT datagram. */
-    static final int FLAGS_OFFSET = PacketHeader.SIZE + 10;
+    static final int FLAGS_OFFSET = PacketHeader.SIZE + SnapshotWriter.FLAGS_OFFSET;
     /** PING body: u32 id, u64 nanos. */
     static final int PING_SIZE = 12;
     /** DISCONNECT is sent this many times (it is unreliable). */
@@ -84,6 +86,10 @@ public final class ServerNet {
     private final Datagrams out;
     private final NetLog log;
     private final ConfigTransfer.Blob blob;
+    private ConfigTransfer.Blob kernelBlob;
+    private String kernelClientMap;
+    private int kernelVersion;
+    private byte[] kernelRaw;
     private final RateLimiter limiter;
     private final SourceKeys keys;
     private final SplittableRandom sessions;
@@ -110,6 +116,10 @@ public final class ServerNet {
     private final ByteBuffer[] parts = new ByteBuffer[MAX_SNAPSHOT_PARTS];
 
     private int tick;
+    /** When the last tick ran (nanos), for the input margins. */
+    private long lastTickAt;
+    private boolean haveTickTime;
+    private final double tickNanos;
     private boolean shutdownDue;
     private long malformed;
     private long rateLimited;
@@ -138,8 +148,11 @@ public final class ServerNet {
         boolean initialSent;
         int syncSequence;
         boolean snapshotsOn;
-        boolean hasInput;
-        int lastInputSeq;
+        /** Inputs by the tick they are for (protocol v2). */
+        InputBuffer inputs;
+        /** The kernel config version announced to this connection (0: none yet), and its chunks still to send. */
+        int kernelVersion;
+        ConfigTransfer.Sender kernelSender;
 
         /** A host that throws on a message must not wedge the channel: the message counts as malformed. */
         @Override
@@ -188,6 +201,7 @@ public final class ServerNet {
         this.sessions = new SplittableRandom(sessionSeed);
         this.sessionPerNano = cfg.sessionRatePerSecond / 1e9;
         this.reliablePerTick = cfg.reliablePacketsPerTick();
+        this.tickNanos = 1e9 / cfg.simHz;
         active = new Connection[cfg.maxConnections];
         free = new Connection[cfg.maxConnections];
         for (int i = 0; i < cfg.maxConnections; i++) {
@@ -211,12 +225,61 @@ public final class ServerNet {
     }
 
     /**
+     * The kernel config every connection gets after its initial state (protocol v2, {@link KernelConfig}): the
+     * kernel options of {@code o} and the map characters {@code clientMapData} (the map the config blob carries)
+     * hides. Not a hot path: encoding deflates.
+     * <p>
+     * BEHAVIOR: a new version replaces the blob; every connection past its initial state gets it next (an
+     * unfinished transfer of an older version is abandoned).
+     */
+    public void setKernel(Options o, String clientMapData) {
+        kernelClientMap = clientMapData;
+        kernelRaw = KernelConfig.encode(o, clientMapData, host::kernelOptionValue);
+        kernelBlob = ConfigTransfer.encode(kernelRaw);
+        kernelVersion++;
+        host.kernelVersion(kernelVersion);
+    }
+
+    /** The current kernel config version (0 before {@link #setKernel}). */
+    public int kernelVersion() {
+        return kernelVersion;
+    }
+
+    /**
+     * BEHAVIOR: a connection behind the current kernel version gets KERNEL_CONFIG (version, sizes, CRC) and then
+     * KERNEL_CHUNKs as the reliable window allows, keeping {@code configReserveSlots} free.
+     */
+    private void pumpKernel(Connection c) {
+        if (kernelBlob == null) {
+            return;
+        }
+        if (c.kernelVersion != kernelVersion) {
+            if (c.ch.freeSlots() <= cfg.configReserveSlots) {
+                return;
+            }
+            c.kernelVersion = kernelVersion;
+            Msg.KernelConfigBegin.send(c.ch, kernelVersion, kernelBlob);
+            c.kernelSender = new ConfigTransfer.Sender(kernelBlob, ReliableType.KERNEL_CHUNK);
+        }
+        if (c.kernelSender != null && c.kernelSender.pump(c.ch, cfg.configReserveSlots)) {
+            c.kernelSender = null;
+        }
+    }
+
+    /**
      * server-commands: an operator changed an option at run time ({@link GameHost.Sessions#optionChanged}).
      * <p>
+     * BEHAVIOR: any option change re-encodes the kernel config (the host's effective values,
+     * {@link GameHost#kernelOptionValue}); it is a new version only when the bytes differ (a kernel option changed, or
+     * an option the host applies to one, as a Move_init /set does to allowPlayerKilling).
      * BEHAVIOR: denyHosts (C tuner {@code Set_deny_hosts}) and maxClientsPerIP take their new values for the
      * next CONNECTs; other options are not the network layer's.
      */
     void optionChanged(Opt o, Options options) {
+        if (kernelClientMap != null
+            && !java.util.Arrays.equals(kernelRaw, KernelConfig.encode(options, kernelClientMap, host::kernelOptionValue))) {
+            setKernel(options, kernelClientMap);
+        }
         if (o == Opt.DENY_HOSTS) {
             cfg.denyHosts = DenyList.parse(options.getString(Opt.DENY_HOSTS));
         } else if (o == Opt.MAX_CLIENTS_PER_IP) {
@@ -308,7 +371,7 @@ public final class ServerNet {
                         malformed++;
                     }
                 }
-                case PacketType.INPUT -> onInput(c, data);
+                case PacketType.INPUT -> onInput(c, data, now);
                 case PacketType.PING -> onPing(c, data);
                 case PacketType.DISCONNECT -> drop(c, Msg.Disconnect.REASON_QUIT, "quit", false);
                 case PacketType.ACK -> { }
@@ -391,8 +454,12 @@ public final class ServerNet {
         c.sender = null;
         c.initialSent = false;
         c.snapshotsOn = false;
-        c.hasInput = false;
-        c.lastInputSeq = 0;
+        if (c.inputs == null) {
+            c.inputs = new InputBuffer(cfg.simHz, cfg.simHz);
+        }
+        c.inputs.reset();
+        c.kernelVersion = 0;
+        c.kernelSender = null;
         active[activeCount++] = c;
         peers(channel).put(from, c);
         sendAccept(c);
@@ -426,22 +493,24 @@ public final class ServerNet {
         return n;
     }
 
-    private void onInput(Connection c, ByteBuffer data) {
+    /**
+     * INPUT v2: each entry goes into the connection's {@link InputBuffer} under its tick, oldest first. The margin of
+     * an entry is how long before its tick runs it arrived: whole ticks to the next tick, plus the part of the current
+     * tick interval still to go.
+     */
+    private void onInput(Connection c, ByteBuffer data, long now) {
         if (!input.wrap(data)) {
             malformed++;
             return;
         }
+        int next = tick + 1;
+        double toGo = haveTickTime ? 1 - Math.clamp((now - lastTickAt) / tickNanos, 0, 1) : 1;
+        int packetSeq = input.seq();
         for (int i = input.count() - 1; i >= 0; i--) {
-            int s = input.seq(i);
-            if (!c.hasInput || s - c.lastInputSeq > 0) {
-                c.lastInputSeq = s;
-                c.hasInput = true;
-                try {
-                    host.input(c.playerId, s, input.keys(i), input.aimTurn(i));
-                } catch (RuntimeException e) {
-                    malformed++;
-                }
-            }
+            int t = input.tick(i);
+            double margin = (double) (t - next) + toGo;
+            int m16 = (int) Math.floor(Math.clamp(margin * 16, -1e6, 1e6));
+            c.inputs.offer(t, input.keys(i), input.taps(i), input.aimTurn(i), packetSeq, next, m16);
         }
     }
 
@@ -481,6 +550,9 @@ public final class ServerNet {
      */
     public void tick(long now) {
         tick++;
+        lastTickAt = now;
+        haveTickTime = true;
+        applyInputs();
         host.tick(tick);
         if (host.shutdownDue()) {
             shutdownDue = true;
@@ -504,6 +576,46 @@ public final class ServerNet {
         }
     }
 
+    /**
+     * Every connection's input for this tick goes to the host before the tick runs: the buffered entry, or the held
+     * mask when it is missing (a starvation). Nothing goes out for a connection whose inputs have not started.
+     */
+    private void applyInputs() {
+        for (int i = 0; i < activeCount; i++) {
+            Connection c = active[i];
+            c.inputs.take(tick);
+            if (c.verified && c.inputs.started()) {
+                try {
+                    host.input(c.playerId, tick, c.inputs.keys(), c.inputs.taps(), c.inputs.aimTurn());
+                    host.inputLead(c.playerId, c.inputs.lead(tick + 1));
+                } catch (RuntimeException e) {
+                    malformed++;
+                }
+            }
+        }
+    }
+
+    /** Input starvations of {@code playerId}'s connection (ticks with no entry after its inputs started); -1 unknown. */
+    public long inputStarvations(int playerId) {
+        Connection c = connectionOf(playerId);
+        return c == null ? -1 : c.inputs.starvations();
+    }
+
+    /** Late inputs of {@code playerId}'s connection (entries arriving after their tick starved); -1 unknown. */
+    public long inputLate(int playerId) {
+        Connection c = connectionOf(playerId);
+        return c == null ? -1 : c.inputs.late();
+    }
+
+    private Connection connectionOf(int playerId) {
+        for (int i = 0; i < activeCount; i++) {
+            if (active[i].playerId == playerId) {
+                return active[i];
+            }
+        }
+        return null;
+    }
+
     private void resendAccept(Connection c, long now) {
         if (now - c.nextAcceptAt < 0) {
             return;
@@ -525,6 +637,7 @@ public final class ServerNet {
                 c.syncSequence = c.ch.nextSequence();
             }
         } else {
+            pumpKernel(c);
             host.drainEvents(c.playerId, c.ch);
             if (!c.snapshotsOn && c.ch.allAckedBefore(c.syncSequence)) {
                 c.snapshotsOn = true;
@@ -558,7 +671,7 @@ public final class ServerNet {
             ByteBuffer b = parts[part];
             b.clear();
             PacketHeader.write(b, PacketType.SNAPSHOT, c.session, c.ch.ack());
-            writer.begin(b, tick, c.lastInputSeq, part, 0, 0, vx, vy);
+            writer.begin(b, tick, c.inputs.appliedTick(), c.inputs.slack16(), part, 0, 0, vx, vy);
             n = part + 1;
             if (!host.fillSnapshot(c.playerId, part, radar, writer)) {
                 break;
@@ -567,10 +680,12 @@ public final class ServerNet {
                 truncatedSnapshots++;
             }
         }
+        long starved = c.inputs.starvations();
         for (int p = 0; p < n; p++) {
             ByteBuffer b = parts[p];
             b.put(PART_COUNT_OFFSET, (byte) n);
-            b.put(FLAGS_OFFSET, (byte) (p == n - 1 ? SnapshotWriter.FLAG_LAST_PART : 0));
+            b.put(FLAGS_OFFSET, (byte) SnapshotWriter.starveFlags(p == n - 1 ? SnapshotWriter.FLAG_LAST_PART : 0,
+                starved));
             b.flip();
             out.send(c.channel, c.addr, b);
         }

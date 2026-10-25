@@ -128,16 +128,45 @@ public interface GameHost {
     void clientMessage(int playerId, int type, ByteBuffer payload);
 
     /**
-     * One control input, called for each new input sequence in order, oldest first, with no
-     * duplicates. Lost inputs beyond the client's redundancy are skipped. Several inputs may
-     * arrive between ticks; derive press/release edges by comparing consecutive masks. An input the
-     * host throws on is counted as malformed and not offered again.
+     * The control input for tick {@code tick} (protocol v2): called once per tick for each connection whose inputs
+     * have started, just before {@link #tick} runs that tick. The entry the client sent for this tick, or the held
+     * mask with no taps and no aim when it is missing. Apply {@code keys | taps}, then {@code keys}, so a key tapped
+     * within the tick still gives its press and release edges. An input the host throws on is counted as malformed.
      *
-     * @param seq     the client's input sequence number (increasing)
-     * @param keys    {@code ControlKey} mask
-     * @param aimTurn pointer-control turn in u16 angle units (0 = none)
+     * @param tick    the tick about to run
+     * @param keys    {@code ControlKey} mask held
+     * @param taps    keys pressed and released within the tick
+     * @param aimTurn pointer movement summed over the tick (0 = none)
      */
-    void input(int playerId, int seq, long keys, int aimTurn);
+    void input(int playerId, int tick, long keys, long taps, int aimTurn);
+
+    /** {@link #input(int, int, long, long, int)} without taps (tests and simple hosts). */
+    default void input(int playerId, int tick, long keys, int aimTurn) {
+        input(playerId, tick, keys, 0, aimTurn);
+    }
+
+    /**
+     * The KERNEL_CONFIG version every connection is being brought to (each {@code ServerNet.setKernel}); PREDICT
+     * carries it mod 256 so a client knows whether its kernel world matches.
+     */
+    default void kernelVersion(int version) {
+    }
+
+    /**
+     * The value the simulation follows for kernel option {@code opt} whose text is {@code value} (KERNEL_CONFIG
+     * carries this one): the text itself unless the host knows better.
+     */
+    default String kernelOptionValue(com.fulcrologic.jxpilot.common.config.Opt opt, String value) {
+        return value;
+    }
+
+    /**
+     * How far ahead of the server, in ticks, this player's client sends its inputs (the newest buffered entry over
+     * the next tick), given each tick with {@link #input}: the snapshot's view cull adds the ship's speed times this
+     * for the owner.
+     */
+    default void inputLead(int playerId, int ticks) {
+    }
 
     /**
      * Advance the simulation one C frame (the server ticks at the map's framesPerSecond, so dt = 1).

@@ -744,64 +744,231 @@ class MessagesTest {
     }
 
     @Nested
-    @DisplayName("Input history/reader")
+    @DisplayName("Input history/reader (v2)")
     class Input {
-        @Test
-        @DisplayName("writes newest-first redundant entries that the reader decodes")
-        void roundTrip() {
-            InputHistory h = new InputHistory();
-            for (int i = 1; i <= 10; i++) {
-                h.record(ControlKey.THRUST.mask() * i, -i);
-            }
+        static final long T = ControlKey.THRUST.mask();
+        static final long F = ControlKey.FIRE_SHOT.mask();
+
+        static InputReader read(InputHistory h, int acked) {
             ByteBuffer b = buf();
-            h.write(b, 555, 3);
+            h.write(b, acked);
             b.flip();
             InputReader r = new InputReader();
-            boolean ok = r.wrap(b);
-            InputHistory seqs = new InputHistory();
-            int firstSeq = seqs.record(1L, 0);
-            int secondSeq = seqs.record(2L, 0);
-            InputHistory few = new InputHistory();
-            few.record(1L, 0);
-            ByteBuffer b2 = buf();
-            few.write(b2, 0, 8);
-            b2.flip();
-            InputReader r2 = new InputReader();
-            r2.wrap(b2);
+            return r.wrap(b) ? r : null;
+        }
+
+        @Test
+        @DisplayName("writes the entries newer than the acked tick, newest first, which the reader decodes")
+        void roundTrip() {
+            InputHistory h = new InputHistory();
+            for (int t = 100; t < 110; t++) {
+                h.set(t, T * (t - 99), F * (t & 1), 99 - t);
+            }
             ByteBuffer wb = buf();
-            h.write(wb, 0, 3);
+            int n = h.write(wb, 106);
             int written = wb.position();
-            ByteBuffer headerOnly = ByteBuffer.allocate(InputHistory.HEADER_SIZE);
-            headerOnly.putInt(1).putInt(1).put((byte) 0).flip();
-            ByteBuffer eight = buf();
-            h.write(eight, 0, 8);
-            eight.flip();
-            boolean eightOk = new InputReader().wrap(eight);
-            ByteBuffer shortB = ByteBuffer.allocate(5);
-            ByteBuffer lying = ByteBuffer.allocate(20);
-            lying.putInt(1).putInt(1).put((byte) 3).flip();
-            ByteBuffer tooMany = ByteBuffer.allocate(200);
-            tooMany.putInt(1).putInt(1).put((byte) 9).position(200).flip();
+            wb.flip();
+            InputReader r = new InputReader();
+            boolean ok = r.wrap(wb);
             assertAll(
                 () -> assertTrue(ok, "accepts a well formed body"),
-                () -> assertEquals(1, firstSeq, "record returns sequence 1 first"),
-                () -> assertEquals(2, secondSeq, "record returns increasing sequences"),
-                () -> assertEquals(10, r.latestSeq(), "carries the newest sequence"),
-                () -> assertEquals(10, h.latestSeq(), "history reports the newest sequence"),
-                () -> assertEquals(555, r.ackTick(), "carries the acked tick"),
-                () -> assertEquals(3, r.count(), "limits entries to the requested redundancy"),
-                () -> assertEquals(9, r.seq(1), "entry i has sequence latest - i"),
-                () -> assertEquals(ControlKey.THRUST.mask() * 10, r.keys(0), "newest entry first"),
-                () -> assertEquals(ControlKey.THRUST.mask() * 8, r.keys(2), "older entries follow"),
-                () -> assertEquals(-9, r.aimTurn(1), "keeps signed aim turns"),
-                () -> assertEquals(1, r2.count(), "never sends more entries than recorded"),
-                () -> assertFalse(new InputReader().wrap(shortB), "rejects a short body"),
-                () -> assertFalse(new InputReader().wrap(lying), "rejects a count larger than the body"),
-                () -> assertFalse(new InputReader().wrap(tooMany), "rejects more than MAX_REDUNDANCY entries"),
-                () -> assertEquals(InputHistory.HEADER_SIZE + 3 * InputHistory.ENTRY_SIZE, written,
-                    "write emits exactly header + n entries"),
-                () -> assertTrue(new InputReader().wrap(headerOnly), "a body with zero entries is valid"),
-                () -> assertTrue(eightOk, "exactly MAX_REDUNDANCY entries are accepted"));
+                () -> assertEquals(3, n, "ticks 107..109 are newer than the acked 106"),
+                () -> assertEquals(7 + 19 + 11 + 19, written,
+                    "header 7, then each entry's flags and the fields that differ: 109 and 107 with taps, 108 without"),
+                () -> assertEquals(109, r.newestTick(), "carries the newest tick"),
+                () -> assertEquals(109, h.newestTick(), "the history reports the newest tick"),
+                () -> assertEquals(3, r.count(), "count"),
+                () -> assertEquals(108, r.tick(1), "entry i is for newest - i"),
+                () -> assertEquals(T * 10, r.keys(0), "newest entry first"),
+                () -> assertEquals(T * 8, r.keys(2), "older entries follow"),
+                () -> assertEquals(F, r.taps(0), "taps of tick 109"),
+                () -> assertEquals(0L, r.taps(1), "no taps in tick 108"),
+                () -> assertEquals(-9, r.aimTurn(1), "signed aim turn"));
+        }
+
+        @Test
+        @DisplayName("redundancy: at least 1, at most 8, never before the first tick set, 0 before any")
+        void redundancy() {
+            InputHistory h = new InputHistory();
+            int none = h.write(buf(), 0);
+            int pendingNone = h.pending(0);
+            h.set(50, T, 0, 0);
+            int firstOnly = h.pending(0);
+            for (int t = 51; t < 70; t++) {
+                h.set(t, T, 0, 0);
+            }
+            InputReader r = read(h, 0);
+            int acked = h.pending(69);
+            int ahead = h.pending(75);
+            assertAll(
+                () -> assertEquals(0, none, "nothing written before the first entry"),
+                () -> assertEquals(0, pendingNone, "nothing pending before the first entry"),
+                () -> assertEquals(1, firstOnly, "only tick 50 exists, though the ack is far older"),
+                () -> assertEquals(8, r.count(), "at most MAX_REDUNDANCY entries"),
+                () -> assertEquals(62, r.tick(7), "the 8 newest ticks"),
+                () -> assertEquals(1, acked, "the newest entry is always sent, even when acked"),
+                () -> assertEquals(1, ahead, "an ack past the newest still sends one"));
+        }
+
+        @Test
+        @DisplayName("set: replaces the newest, fills skipped ticks with the held keys, ignores older ticks, clamps aim")
+        void set() {
+            InputHistory h = new InputHistory();
+            h.set(10, T, F, 3);
+            long firstTaps = h.taps(10);
+            h.set(10, F, 0, 4);
+            boolean newer = h.set(13, 0, 0, 100_000);
+            boolean older = h.set(12, T, T, 1);
+            long t10 = h.taps(10);
+            boolean newestHeld = h.has(13);
+            boolean started = h.started();
+            long k10 = h.keys(10);
+            int a10 = h.aimTurn(10);
+            long k11 = h.keys(11);
+            long t12 = h.taps(12);
+            int a12 = h.aimTurn(12);
+            int a13 = h.aimTurn(13);
+            boolean far = h.set(100, T, 0, -100_000);
+            assertAll(
+                () -> assertEquals(F, k10, "a second entry for tick 10 replaces the first"),
+                () -> assertEquals(0L, t10, "with its own (no) taps"),
+                () -> assertTrue(newestHeld, "the newest tick is remembered"),
+                () -> assertTrue(started, "started after an entry"),
+                () -> assertEquals(4, a10, "its aim too"),
+                () -> assertEquals(F, firstTaps, "taps are kept per entry"),
+                () -> assertTrue(newer, "a newer tick is accepted"),
+                () -> assertEquals(F, k11, "skipped tick 11 holds the keys of 10"),
+                () -> assertEquals(0L, t12, "a filled tick has no taps (the older set of 12 was ignored)"),
+                () -> assertEquals(0, a12, "and no aim"),
+                () -> assertFalse(older, "an older tick is rejected"),
+                () -> assertEquals(32767, a13, "aim clamps to i16 max"),
+                () -> assertTrue(far, "a tick far ahead is accepted"),
+                () -> assertEquals(-32768, h.aimTurn(100), "aim clamps to i16 min"),
+                () -> assertEquals(0L, h.keys(99), "the held keys (tick 13: none) fill up to tick 99"),
+                () -> assertTrue(h.has(69), "the last 32 ticks are remembered"),
+                () -> assertFalse(h.has(68), "older ticks are forgotten"),
+                () -> assertFalse(h.has(101), "a tick not yet set is not remembered"));
+        }
+
+        @Test
+        @DisplayName("reset forgets everything; the tick counter wraps")
+        void resetAndWrap() {
+            InputHistory h = new InputHistory();
+            h.set(5, T, 0, 0);
+            h.reset();
+            boolean started = h.started();
+            boolean older = h.set(1, F, 0, 0);
+            int pending = h.pending(0);
+            InputHistory w = new InputHistory();
+            w.set(Integer.MAX_VALUE - 1, T, 0, 0);
+            boolean wrapped = w.set(Integer.MIN_VALUE + 1, F, 0, 0);
+            InputReader r = read(w, Integer.MAX_VALUE - 2);
+            assertAll(
+                () -> assertFalse(started, "not started after reset"),
+                () -> assertTrue(older, "after reset an older tick starts a new history"),
+                () -> assertEquals(1, pending, "and only it is pending"),
+                () -> assertTrue(wrapped, "MIN_VALUE + 1 is newer than MAX_VALUE - 1"),
+                () -> assertEquals(T, w.keys(Integer.MIN_VALUE), "the skipped ticks across the wrap hold T"),
+                () -> assertEquals(4, r.count(), "MAX-1, MAX, MIN, MIN+1 are newer than the ack MAX-2"),
+                () -> assertEquals(Integer.MAX_VALUE, r.tick(2), "entry 2 is MAX_VALUE"));
+        }
+
+        @Test
+        @DisplayName("compact entries: steady keys cost one byte per older entry; the send sequence counts and wraps")
+        void compact() {
+            InputHistory steady = new InputHistory();
+            InputHistory changing = new InputHistory();
+            for (int t = 1; t <= 8; t++) {
+                steady.set(t, T, 0, 0);
+                changing.set(t, t, 0, 0);
+            }
+            ByteBuffer a = buf();
+            steady.write(a, 0);
+            int steadySize = a.position();
+            ByteBuffer b = buf();
+            changing.write(b, 0);
+            int changingSize = b.position();
+            a.flip();
+            InputReader r = new InputReader();
+            r.wrap(a);
+            int firstSeq = r.seq();
+            ByteBuffer c = buf();
+            steady.write(c, 0);
+            c.flip();
+            InputReader r2 = new InputReader();
+            r2.wrap(c);
+            InputHistory w = new InputHistory();
+            w.set(1, 0, 0, 0);
+            for (int i = 0; i < 65_536; i++) {
+                w.write(buf(), 0);
+            }
+            int wrapped = w.nextSeq();
+            InputHistory three = new InputHistory();
+            three.set(1, 0, 0, 0);
+            for (int i = 0; i < 3; i++) {
+                three.write(buf(), 0);
+            }
+            int afterThree = three.nextSeq();
+            assertAll(
+                () -> assertEquals(7 + 9 + 7, steadySize, "8 entries of one held mask: 23 bytes"),
+                () -> assertEquals(7 + 8 * 9, changingSize, "keys changing every tick: 79 bytes"),
+                () -> assertEquals(T, r.keys(7), "the oldest entry's keys are the next-newer's"),
+                () -> assertEquals(0L, r.taps(7), "no taps"),
+                () -> assertEquals(0, r.aimTurn(7), "no aim"),
+                () -> assertEquals(0, firstSeq, "the first datagram has sequence 0"),
+                () -> assertEquals(1, r2.seq(), "the next one 1"),
+                () -> assertEquals(0, wrapped, "the u16 sequence wraps"),
+                () -> assertEquals(3, afterThree, "three datagrams written: the next is 3"));
+        }
+
+        @Test
+        @DisplayName("the reader rejects short, empty, overlong, unknown-flag and truncated bodies")
+        void malformed() {
+            ByteBuffer shortB = ByteBuffer.allocate(6);
+            ByteBuffer zero = ByteBuffer.allocate(7);
+            zero.putShort((short) 0).putInt(1).put((byte) 0).flip();
+            ByteBuffer nine = ByteBuffer.allocate(7 + 9);
+            nine.putShort((short) 0).putInt(1).put((byte) 9).position(nine.capacity()).flip();
+            ByteBuffer eight = ByteBuffer.allocate(7 + 8);
+            eight.putShort((short) 0).putInt(1).put((byte) 8).position(eight.capacity()).flip();
+            ByteBuffer unknown = ByteBuffer.allocate(8);
+            unknown.putShort((short) 0).putInt(1).put((byte) 1).put((byte) 8).flip();
+            ByteBuffer truncated = ByteBuffer.allocate(7 + 1 + 7);
+            truncated.putShort((short) 0).putInt(1).put((byte) 1).put((byte) InputHistory.F_KEYS)
+                .position(truncated.capacity()).flip();
+            ByteBuffer exact = ByteBuffer.allocate(7 + 1 + 8 + 8 + 2);
+            exact.putShort((short) 5).putInt(1).put((byte) 1)
+                .put((byte) (InputHistory.F_KEYS | InputHistory.F_TAPS | InputHistory.F_AIM))
+                .putLong(3).putLong(4).putShort((short) -5).flip();
+            InputReader ex = new InputReader();
+            boolean exactOk = ex.wrap(exact);
+            ByteBuffer keysNoTaps = ByteBuffer.allocate(7 + 1 + 8);
+            keysNoTaps.putShort((short) 0).putInt(1).put((byte) 1)
+                .put((byte) (InputHistory.F_KEYS | InputHistory.F_TAPS)).putLong(3).flip();
+            ByteBuffer allButAim = ByteBuffer.allocate(7 + 1 + 16);
+            allButAim.putShort((short) 0).putInt(1).put((byte) 1)
+                .put((byte) (InputHistory.F_KEYS | InputHistory.F_TAPS | InputHistory.F_AIM)).putLong(3).putLong(4)
+                .flip();
+            ByteBuffer offset = ByteBuffer.allocate(16);
+            offset.position(10);
+            ByteBuffer missingEntry = ByteBuffer.allocate(7 + 1);
+            missingEntry.putShort((short) 0).putInt(1).put((byte) 2).put((byte) 0).flip();
+            assertAll(
+                () -> assertFalse(new InputReader().wrap(shortB), "shorter than the header"),
+                () -> assertFalse(new InputReader().wrap(zero), "no entry"),
+                () -> assertFalse(new InputReader().wrap(nine), "more than MAX_REDUNDANCY entries"),
+                () -> assertTrue(new InputReader().wrap(eight), "exactly MAX_REDUNDANCY flag-only entries"),
+                () -> assertFalse(new InputReader().wrap(unknown), "an unknown flag bit"),
+                () -> assertFalse(new InputReader().wrap(truncated), "keys flagged but cut short"),
+                () -> assertFalse(new InputReader().wrap(missingEntry), "fewer entries than the count"),
+                () -> assertFalse(new InputReader().wrap(keysNoTaps), "keys and taps flagged, only the keys there"),
+                () -> assertFalse(new InputReader().wrap(allButAim), "keys, taps and aim flagged, the aim missing"),
+                () -> assertFalse(new InputReader().wrap(offset), "6 bytes after a non-zero position: short"),
+                () -> assertTrue(exactOk, "a body exactly holding its fields"),
+                () -> assertEquals(5, ex.seq(), "its sequence"),
+                () -> assertEquals(3L, ex.keys(0), "keys"),
+                () -> assertEquals(4L, ex.taps(0), "taps"),
+                () -> assertEquals(-5, ex.aimTurn(0), "aim"));
         }
     }
 

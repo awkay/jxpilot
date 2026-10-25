@@ -133,7 +133,7 @@ public final class StubGameHost implements GameHost {
     }
 
     @Override
-    public void input(int playerId, int seq, long keyMask, int aimTurn) {
+    public void input(int playerId, int tick, long keyMask, long taps, int aimTurn) {
         keys[playerId] = keyMask;
     }
 

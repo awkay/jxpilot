@@ -170,6 +170,7 @@ public final class GameApp {
         this.label = label;
         this.script = script;
         this.frame = new ClientFrame(game, conn, keys, new SceneData(), new RadarBlips(1024));
+        game.predictor().enabled = opts.predict();
         this.frame.setLobbyPick(opts.lobbyMap());
         this.palette = frame.palette();
         this.style = frame.style();

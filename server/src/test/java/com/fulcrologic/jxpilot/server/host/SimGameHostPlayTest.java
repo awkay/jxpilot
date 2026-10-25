@@ -336,27 +336,31 @@ class SimGameHostPlayTest {
     @DisplayName("input and tick")
     class InputAndTick {
         @Test
-        @DisplayName("every queued mask is applied in order, so each press counts; the last one stays the input")
+        @DisplayName("a tap gives a press and a release in its tick; a held key presses once; no input holds the mask")
         void edges() {
             Simulation s = sim("", THREE);
             World w = s.world;
             SimGameHost h = new SimGameHost(s);
             int ann = enter(h, "Ann", 0);
             Player p = w.byId(ann);
-            for (long k : new long[] {DEC, 0, DEC, 0, DEC}) {
-                h.input(ann, 1, k, 7);
-            }
+            h.input(ann, 1, 0, DEC, 7);
             h.tick(1);
-            float three = p.power;
+            float tapped = p.power;
+            long afterTap = p.prevKeys;
+            h.input(ann, 2, DEC, 0, 0);
             h.tick(2);
-            float held = p.power;
-            h.input(ann, 2, DEC, 0);
+            float pressed = p.power;
             h.tick(3);
-            float stillHeld = p.power;
+            float held = p.power;
+            h.input(ann, 4, DEC, DEC, 0);
+            h.tick(4);
+            float tapWhileHeld = p.power;
             assertAll(
-                () -> assertEquals(dec(45f, 3), three, "three presses in one tick: power 45 * 0.9^3"),
-                () -> assertEquals(dec(45f, 3), held, "no new input: the last mask (DEC) is held, no new press"),
-                () -> assertEquals(dec(45f, 3), stillHeld, "DEC again after DEC is no press"),
+                () -> assertEquals(dec(45f, 1), tapped, "a tap alone is one press: power 45 * 0.9"),
+                () -> assertEquals(0L, afterTap, "after the tap the key is up again"),
+                () -> assertEquals(dec(45f, 2), pressed, "DEC held from tick 2 is a second press"),
+                () -> assertEquals(dec(45f, 2), held, "no input for tick 3: DEC is held, no new press"),
+                () -> assertEquals(dec(45f, 2), tapWhileHeld, "a tap of a held key gives no extra press"),
                 () -> assertEquals(DEC, p.prevKeys, "the held mask is the player's"));
         }
 
@@ -383,23 +387,19 @@ class SimGameHostPlayTest {
         }
 
         @Test
-        @DisplayName("a full queue keeps the oldest 15 and the newest mask")
-        void overflow() {
+        @DisplayName("a second input before the tick replaces the first")
+        void replaced() {
             Simulation s = sim("", THREE);
             World w = s.world;
             SimGameHost h = new SimGameHost(s);
             int ann = enter(h, "Ann", 0);
             Player p = w.byId(ann);
-            for (int i = 0; i < SimGameHost.INPUT_QUEUE / 2; i++) {
-                h.input(ann, i, DEC, 0);
-                h.input(ann, i, 0, 0);
-            }
-            h.input(ann, 99, INC, 0);
+            h.input(ann, 1, DEC, 0, 0);
+            h.input(ann, 1, INC, 0, 0);
             h.tick(1);
-            float expected = (float) (dec(45f, 8) * 1.10);
             assertAll(
-                () -> assertEquals(expected, p.power, "8 DEC presses, then INC replaces the 16th entry (a release)"),
-                () -> assertEquals(INC, p.prevKeys, "the newest mask is the held one"));
+                () -> assertEquals((float) (45f * 1.10), p.power, "only INC is applied"),
+                () -> assertEquals(INC, p.prevKeys, "INC is the held mask"));
         }
 
         @Test
@@ -564,14 +564,19 @@ class SimGameHostPlayTest {
             return Arrays.copyOfRange(b.array(), SimGameHost.SECTIONS_START, b.position());
         }
 
-        /** What a fresh builder writes for the viewer: the reference the host's parts must equal. */
+        /**
+         * What a fresh builder writes for the viewer: the reference the host's parts must equal (with the PREDICT
+         * sections of an own view in its first snapshots: no input yet, rare version 1, the rare block sent).
+         */
         static byte[][] reference(World w, Player viewer, long burstFrom, boolean radar) {
             ByteBuffer[] parts = new ByteBuffer[SimGameHost.SNAPSHOT_PARTS];
             for (int i = 0; i < parts.length; i++) {
                 parts[i] = ByteBuffer.allocate(Protocol.MAX_PACKET);
                 parts[i].position(PacketHeader.SIZE);
             }
-            int n = new SnapshotBuilder(w).build(viewer, 0, burstFrom, radar, parts);
+            SnapshotBuilder builder = new SnapshotBuilder(w);
+            builder.setPredict(true, 0, 1, 0, 0, true);
+            int n = builder.build(viewer, 0, burstFrom, radar, parts);
             byte[][] out = new byte[n][];
             for (int i = 0; i < n; i++) {
                 out[i] = sections(parts[i]);
@@ -582,6 +587,204 @@ class SimGameHostPlayTest {
         static void burst(Simulation s, Player near) {
             s.debris.make(near.cx / 64.0, near.cy / 64.0, 1, 0, near.id, near.team, Obj.DEBRIS, 3.5f, Obj.GRAVITY,
                 Records.ObjColor.RED, Records.BurstKind.DEBRIS, 8, 10, 10, 0, 127, 20, 30, 5, 20);
+        }
+
+        /** The section types of one filled part 0. */
+        static List<Integer> types(SimGameHost h, int id) {
+            SnapshotWriter wr = new SnapshotWriter();
+            ByteBuffer b = netPart(wr, 0);
+            h.fillSnapshot(id, 0, false, wr);
+            b.flip();
+            b.position(PacketHeader.SIZE);
+            com.fulcrologic.jxpilot.common.net.SnapshotReader r = new com.fulcrologic.jxpilot.common.net.SnapshotReader();
+            r.begin(b);
+            List<Integer> t = new java.util.ArrayList<>();
+            while (r.nextSection()) {
+                t.add(r.type());
+            }
+            return t;
+        }
+
+        static boolean has(List<Integer> types, int type) {
+            return types.contains(type);
+        }
+
+        @Test
+        @DisplayName("PREDICT: the core every snapshot; the rare block for 8 snapshots from a change and every 14th;"
+            + " the keys block when the masks differ from the applied input; nothing while watching another ship")
+        void predict() {
+            Simulation s = sim("", THREE);
+            World w = s.world;
+            SimGameHost h = new SimGameHost(s);
+            int ann = enter(h, "Ann", 0);
+            int bob = enter(h, "Bob", 0);
+            h.tick(1);
+            Player a = w.byId(ann);
+            boolean[] core = new boolean[30];
+            boolean[] rare = new boolean[30];
+            for (int i = 0; i < 30; i++) {
+                if (i == 20) {
+                    a.power += 1;
+                }
+                List<Integer> t = types(h, ann);
+                core[i] = has(t, com.fulcrologic.jxpilot.common.net.Section.PREDICT);
+                rare[i] = has(t, com.fulcrologic.jxpilot.common.net.Section.PREDICT_RARE);
+            }
+            boolean keysBefore = has(types(h, ann), com.fulcrologic.jxpilot.common.net.Section.PREDICT_KEYS);
+            a.lastReceivedKeys = 5;
+            boolean keysAfter = has(types(h, ann), com.fulcrologic.jxpilot.common.net.Section.PREDICT_KEYS);
+            a.status |= Obj.PAUSE;
+            a.lockTagged |= Player.LOCK_PLAYER;
+            a.lockPlId = bob;
+            w.items.allowViewing = true;
+            boolean watching = has(types(h, ann), com.fulcrologic.jxpilot.common.net.Section.PREDICT);
+            boolean[] fc = core;
+            boolean[] fr = rare;
+            assertAll(
+                () -> assertTrue(fc[0] && fc[13] && fc[29], "the core in every own snapshot"),
+                () -> assertTrue(fr[0] && fr[7], "the rare block in the first 8 snapshots"),
+                () -> assertFalse(fr[8] || fr[13], "not after them"),
+                () -> assertTrue(fr[14], "but in every 14th"),
+                () -> assertTrue(fr[20] && fr[27], "and in the 8 after a change (power)"),
+                () -> assertTrue(fr[28] && !fr[29], "then the 14th again (28), not 29"),
+                () -> assertFalse(keysBefore, "no keys block while the masks equal the applied keys (none yet)"),
+                () -> assertTrue(keysAfter, "a keys block once lastReceivedKeys differs"),
+                () -> assertFalse(watching, "no PREDICT while the snapshot shows another ship"));
+        }
+
+        /** Part 0's PREDICT, PREDICT_ROUND and PREDICT_RARE fields: kernel, rare version, round flag, round, offset. */
+        static int[] predictFields(SimGameHost h, int id) {
+            SnapshotWriter wr = new SnapshotWriter();
+            ByteBuffer b = netPart(wr, 0);
+            h.fillSnapshot(id, 0, false, wr);
+            b.flip();
+            b.position(PacketHeader.SIZE);
+            com.fulcrologic.jxpilot.common.net.SnapshotReader r = new com.fulcrologic.jxpilot.common.net.SnapshotReader();
+            r.begin(b);
+            int[] f = {-1, -1, -1, -1, Integer.MIN_VALUE, -1};
+            while (r.nextSection()) {
+                switch (r.type()) {
+                    case com.fulcrologic.jxpilot.common.net.Section.PREDICT -> {
+                        Records.Predict p = new Records.Predict().wrap(r, 0);
+                        f[0] = p.kernelVersion();
+                        f[1] = p.rareVersion();
+                        f[2] = p.roundDelaySet() ? 1 : 0;
+                        f[5] = p.stateTag();
+                    }
+                    case com.fulcrologic.jxpilot.common.net.Section.PREDICT_ROUND ->
+                        f[3] = new Records.PredictRound().wrap(r, 0).roundDelay();
+                    case com.fulcrologic.jxpilot.common.net.Section.PREDICT_RARE ->
+                        f[4] = new Records.PredictRare().wrap(r, 0).frameOffset();
+                    default -> { }
+                }
+            }
+            return f;
+        }
+
+        @Test
+        @DisplayName("PREDICT's state tag: the tick of the newest KERNEL_STATE queued to the viewer (the initial state's,"
+            + " then a drained change's); a quiet drain keeps it")
+        void stateTag() {
+            Simulation s = sim("", THREE);
+            World w = s.world;
+            SimGameHost h = new SimGameHost(s);
+            int ann = enter(h, "Ann", 0);
+            h.tick(1);
+            HostFx.Wire wire = new HostFx.Wire();
+            h.initialState(ann, wire.out);
+            int initial = predictFields(h, ann)[5];
+            w.params.wormTime = 100;
+            w.worms.addTemp(5, 1, 7, 1);
+            h.tick(2);
+            h.drainEvents(ann, wire.out);
+            int changed = predictFields(h, ann)[5];
+            h.tick(3);
+            h.drainEvents(ann, wire.out);
+            int quiet = predictFields(h, ann)[5];
+            List<String> sent = HostFx.only(wire.take(), "KSTATE");
+            assertAll(
+                () -> assertEquals(1, initial, "the initial state was tagged with tick 1"),
+                () -> assertEquals(2, changed, "the wormhole change scanned in tick 2"),
+                () -> assertEquals(2, quiet, "nothing new in tick 3: still 2"),
+                () -> assertTrue(sent.size() >= 2 && sent.get(sent.size() - 1).startsWith("KSTATE@2 "),
+                    "the messages queued: " + sent));
+        }
+
+        @Test
+        @DisplayName("PREDICT carries the kernel version mod 256 and roundDelay (flag and PREDICT_ROUND when nonzero);"
+            + " the rare block carries the frame offset, and a change of it is a new rare version")
+        void predictFields() {
+            Simulation s = sim("", THREE);
+            World w = s.world;
+            SimGameHost h = new SimGameHost(s);
+            int ann = enter(h, "Ann", 0);
+            h.tick(1);
+            int[] first = predictFields(h, ann);
+            h.kernelVersion(258);
+            w.roundDelay = 40;
+            int[] round = predictFields(h, ann);
+            w.roundDelay = 0;
+            w.frames += 3;
+            int[] moved = predictFields(h, ann);
+            int[] same = predictFields(h, ann);
+            assertAll(
+                () -> assertEquals(0, first[0], "no kernel config yet: version 0"),
+                () -> assertEquals(0, first[2], "roundDelay 0: no flag"),
+                () -> assertEquals(-1, first[3], "and no PREDICT_ROUND"),
+                () -> assertEquals((int) (w.frames - 3 - 1), first[4], "the offset: frames minus the net tick 1"),
+                () -> assertEquals(2, round[0], "kernel version 258 goes out as 2"),
+                () -> assertEquals(1, round[2], "roundDelay 40: the flag"),
+                () -> assertEquals(40, round[3], "and PREDICT_ROUND with 40"),
+                () -> assertEquals(first[4] + 3, moved[4], "frames moved 3 without a tick: the offset follows"),
+                () -> assertEquals(first[1] + 1, moved[1], "a new rare version"),
+                () -> assertEquals(moved[1], same[1], "unchanged after that"));
+        }
+
+        @Test
+        @DisplayName("the owner's view is extended ahead of it by its velocity times its input lead: at most 8 ticks,"
+            + " at most 160 px, only in the direction of motion")
+        void leadMargin() {
+            Simulation s = sim("", THREE);
+            World w = s.world;
+            SimGameHost h = new SimGameHost(s);
+            int ann = enter(h, "Ann", 0);
+            int bob = enter(h, "Bob", 0);
+            h.tick(1);
+            Player a = w.byId(ann);
+            Player b = w.byId(bob);
+            double edge = a.viewWidth / 2.0 + SnapshotBuilder.VIEW_MARGIN;
+            double ax = a.cx / 64.0;
+            java.util.function.IntFunction<Boolean> seesBobAt = dx -> {
+                b.setClicks((int) ((ax + edge + dx) * 64), a.cy);
+                return types(h, ann).contains(com.fulcrologic.jxpilot.common.net.Section.SHIP);
+            };
+            a.vx = 20;
+            a.vy = 0;
+            boolean without = seesBobAt.apply(60);
+            h.inputLead(ann, 4);
+            boolean with = seesBobAt.apply(60);
+            boolean beyond = seesBobAt.apply(90);
+            a.vx = -20;
+            boolean behind = seesBobAt.apply(60);
+            a.vx = 20;
+            h.inputLead(ann, 14);
+            boolean capTicks = seesBobAt.apply(150);
+            boolean capTicksBeyond = seesBobAt.apply(170);
+            a.vx = 40;
+            boolean capPx = seesBobAt.apply(155);
+            boolean capPxBeyond = seesBobAt.apply(170);
+            h.inputLead(ann, -3);
+            boolean negative = seesBobAt.apply(60);
+            assertAll(
+                () -> assertFalse(without, "60 px beyond the view: Bob is culled"),
+                () -> assertTrue(with, "4 ticks of lead at 20 px/tick extend it 80 px ahead: Bob is in"),
+                () -> assertFalse(beyond, "but not 90 px"),
+                () -> assertFalse(behind, "flying away from Bob: the side behind is not extended"),
+                () -> assertTrue(capTicks, "14 ticks of lead count as 8: 160 px at 20 px/tick reaches 150"),
+                () -> assertFalse(capTicksBeyond, "not 170"),
+                () -> assertTrue(capPx, "at 40 px/tick, 8 ticks would be 320 px: capped at 160, reaches 155"),
+                () -> assertFalse(capPxBeyond, "not 170"),
+                () -> assertFalse(negative, "a negative lead counts as 0"));
         }
 
         @Test

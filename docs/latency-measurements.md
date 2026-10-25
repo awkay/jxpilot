@@ -6,7 +6,11 @@ client pipeline, through an emulated lossy link.
 
 ## Headline
 
-**Own-ship input-to-photon today is RTT + 43 ms on average on a clean link (RTT + 43 ms at the median,
+**Since phase 1c (own-ship prediction) a key and a shot show 4 ms after the key at the median, 8 ms at p95,
+at any RTT, jitter and loss** ([After phase 1c](#after-phase-1c-own-ship-prediction)). The rest of this
+headline is phase 0's.
+
+**Own-ship input-to-photon in phase 0 was RTT + 43 ms on average on a clean link (RTT + 43 ms at the median,
 RTT + 77 ms at p95).** That is not the RTT + 135 ms that the original §2.1 of latency-fixes.md
 estimated.
 
@@ -64,7 +68,240 @@ The figures below are seeds 1-3 on the walls course, against the clean link at t
   ms. A burst can eat the INPUT that carries the key and its redundant copy one tick later; then the SELF
   that shows it is lost too, and the next one has to arrive.
 
+## After phase 1b (protocol v2)
+
+Phase 1b tags each input with the client's predicted tick and the server applies it at that tick
+(latency-fixes.md §4.3). The own ship is still drawn by F1 dead reckoning (the predictor is phase 1c), so
+own-ship I2P now pays the input lead:
+
+| link (seed 1, 4 courses, 48 trials per cell) | phase 0 | phase 1b |
+|---|---|---|
+| clean, mean | RTT + 43 | RTT + 80..93 |
+| clean, p95 | RTT + 77 | at most RTT + 124 |
+| σ 15 ms jitter, p50 | RTT + 36..64 | RTT + 124..146 |
+| Pareto spikes, p50 / p95 | RTT + 43..53 / at most RTT + 145 | RTT + 107..124 / at most RTT + 353 |
+| 5% bursty loss, p95 | RTT + 82..430 | at most RTT + 273 (no jitter), 276 (σ15), 380 (spikes) |
+
+The cause: a key goes into the entry of the next predicted tick (the same T/2 average wait as before) and that
+entry reaches the server `slack` ahead of its tick. The lead controller holds the slack at 0.5 tick plus
+2 × the measured jitter (plus up to half its 0.125-tick deadband): about 40 ms at 14 Hz on a clean link,
+about 75 ms more with σ 15 ms jitter. Today's arrival-time landing has no such margin, and it is exactly
+that margin which lets the client know the landing tick (latency-fixes.md §4.3). Bursty loss is better than
+before: a starvation jumps the lead up at once, and the mid-tick repeat sends each entry twice before its
+deadline. Phase 1c's predictor shows the own ship at the predicted tick, so the own ship's I2P drops to the
+render pipeline whatever the lead; what remains of the lead is how late others see your inputs.
+
+The lead controller itself (`LeadControlTest`, virtual time, real server and client):
+
+- **RTT step 100 → 300 ms:** the first starvation report jumps the lead after 372 ms, and the slack is back
+  in the band after 1.66 s with no starvation after.
+- **RTT step 300 → 100 ms:** no starvation; the 1.4 ticks of extra slack drain at 3% and reach the band
+  after 4.6 s. The ±3% dilation limit bounds the drain at about 0.42 tick per second.
+- **The loss/jitter matrix** (RTT 0/100/200/300 × jitter none/σ15/Pareto × loss none/1%/5% bursty, 20 s
+  after a 6 s settle): no starvation in any loss-free cell at jitter ≤ σ 15 ms, nor in any cell with 1%
+  uniform loss; 3-9 per 20 s (1-3% of ticks) with 5% bursty loss; 1-3 with Pareto spikes. Every late entry
+  was a starved tick's (late = starved in every cell).
+
+### The lean lead target (1b fix round, S4/S5; prediction off)
+
+Every tick of input slack is a tick later that the server applies a key, and no client prediction hides that
+for what the server decides: a shield comes up `slack` later than it could. The target is now 0.25 tick plus
+1 σ of the slack reports' own spread (the uplink's variation of the server's window minimum, the clock's moves
+taken out, a robust running deviation), replacing 0.5 tick + 2 × the downlink snapshot jitter (the report is
+already the uplink's minimum margin, so the old target counted the margin twice, and in the wrong direction).
+A starvation jumps by the shortfall (at least 0.25 tick), and the estimate counts only entries the report can
+cover (ticks the report's snapshot had run), so a move down no longer reads as slack until it arrives (S5).
+
+Press-to-apply (a server verdict, the same with prediction on), a key down to the server tick that applies it (`ShieldReactionTest`, free flight, 48 trials
+per cell stratified over the tick phase; it is T/2 ≈ 36 ms of tick-grid wait + RTT/2 + the slack):
+
+| RTT | clean, mean / p95 before | clean, after | σ 15 ms, before | σ 15 ms, after |
+|---|---|---|---|---|
+| 0 | 88 / 120 | 67 / 99 | 115 / 147 | 88 / 120 |
+| 100 | 132 / 164 | 121 / 153 | 180 / 212 | 141 / 177 |
+| 300 | 226 / 259 | 212 / 244 | 275 / 309 | 241 / 277 |
+
+Own-ship I2P with prediction off (seed 1, 4 courses), minus RTT; with prediction on the own ship shows a key
+in 4-8 ms whatever the lead (phase 1c, below):
+
+| link | before | after |
+|---|---|---|
+| clean, mean | 80..93 | 67..76 |
+| clean, p95 | at most 124 | at most 107 |
+| σ 15 ms, p50 | 121..135 | 79..97 |
+| Pareto spikes, p50 / p95 | 92..124 / at most 287 | 86..99 / at most 253 |
+| reordering (10% held 40 ms), p50 | 114..136 | 97..109 |
+| 5% bursty loss, p95 | at most 328 | at most 208 (no jitter), 203 (σ15), 336 (spikes) |
+
+The cost (`LeadControlTest`): the RTT step 100 → 300 ms starves 9 ticks instead of 5 and converges in 2.1 s
+instead of 1.7 s; the loss/jitter matrix (20 s after a 6 s settle, starved/late, the lead at the end):
+
+```
+[lead matrix] cell: starved/late in the 20 s after a 6 s settle (lead ticks at the end)
+  0/0/0          0/0   (lead 0.43)
+  0/0/1%u        0/0   (lead 0.49)
+  0/0/5%b        8/8   (lead 2.01)
+  0/s15/0        0/0   (lead 0.66)
+  0/s15/1%u      0/0   (lead 0.61)
+  0/s15/5%b      8/8   (lead 4.73)
+  0/spk/0        3/3   (lead 1.41)
+  0/spk/1%u      2/2   (lead 1.30)
+  0/spk/5%b      3/3   (lead 2.10)
+  0/ro/0         0/0   (lead 0.72)
+  0/ro/1%u       1/1   (lead 1.12)
+  0/ro/5%b       5/5   (lead 2.73)
+  100/0/0        0/0   (lead 1.24)
+  100/0/1%u      0/0   (lead 1.31)
+  100/0/5%b      5/5   (lead 1.98)
+  100/s15/0      0/0   (lead 1.43)
+  100/s15/1%u    0/0   (lead 1.43)
+  100/s15/5%b    6/6   (lead 2.41)
+  100/spk/0      5/5   (lead 2.26)
+  100/spk/1%u    4/4   (lead 2.00)
+  100/spk/5%b    6/6   (lead 1.80)
+  100/ro/0       0/0   (lead 1.51)
+  100/ro/1%u     0/0   (lead 1.42)
+  100/ro/5%b     6/6   (lead 1.62)
+  200/0/0        0/0   (lead 1.84)
+  200/0/1%u      0/0   (lead 1.88)
+  200/0/5%b      7/7   (lead 2.82)
+  200/s15/0      0/0   (lead 2.13)
+  200/s15/1%u    0/0   (lead 2.21)
+  200/s15/5%b    4/4   (lead 2.48)
+  200/spk/0      2/2   (lead 2.17)
+  200/spk/1%u    3/3   (lead 2.65)
+  200/spk/5%b    7/7   (lead 2.64)
+  200/ro/0       0/0   (lead 2.04)
+  200/ro/1%u     0/0   (lead 2.05)
+  200/ro/5%b     4/4   (lead 2.60)
+  300/0/0        0/0   (lead 2.58)
+  300/0/1%u      0/0   (lead 2.78)
+  300/0/5%b     10/10  (lead 3.22)
+  300/s15/0      0/0   (lead 2.79)
+  300/s15/1%u    0/0   (lead 2.93)
+  300/s15/5%b    8/8   (lead 4.20)
+  300/spk/0      2/2   (lead 3.18)
+  300/spk/1%u    2/2   (lead 3.19)
+  300/spk/5%b    7/7   (lead 3.76)
+  300/ro/0       0/0   (lead 2.82)
+  300/ro/1%u     0/0   (lead 2.88)
+  300/ro/5%b     7/7   (lead 4.40)
+```
+
+Loss-free cells and 1% uniform loss stay at 0 starvations up to σ 15 ms (one at 0/ro/1%u); Pareto spikes
+2-5 per 20 s, 5% bursty loss 4-10. Reordered inputs (`reorderedInputs`): every tick applies the client's final
+entry (0 misapplied of ~278 per cell, 59-83 of ~800 datagrams reordered).
+
+## After phase 1c (own-ship prediction)
+
+Phase 1c draws the own ship, its shots and its exhaust from the shared ship kernel at the predicted tick
+(latency-fixes.md §4.1, §4.2, §4.7, §4.8; `client/.../game/predict`). **A key now shows in the frame that
+polls it or the next: own-ship I2P p50 4 ms, p95 8 ms in every cell of the matrix, at every RTT, jitter and
+loss (seeds 1-3). A shot shows the same way: p50 3-4 ms, p95 8 ms.**
+
+| seeds 1-3, 4 courses (shots: 2), 48 trials (shots: 24) per cell | phase 1b (prediction off, before the lean lead) | phase 1c (prediction on) |
+|---|---|---|
+| own ship, clean, p50 / p95 | RTT + 76..92 / RTT + 108..129 | 4 / 8 ms |
+| own ship, σ 15 ms jitter, p50 / p95 | RTT + 115..149 / RTT + 154..189 | 4 / 8 ms |
+| own ship, Pareto spikes, p50 / p95 | RTT + 107..176 / RTT + 187..353 | 4 / 8 ms |
+| own ship, 5% bursty loss, p50 / p95 | RTT + 90..205 / RTT + 201..599 | 4 / 8 ms |
+| shot, clean, mean / p95 | RTT + 176.5..186.1 / RTT + 206..220 | 3.7..4.0 / 8 ms |
+| shot, worst cell, mean / p95 | RTT + 410.9 / RTT + 594 | 31.7 / 8 ms |
+
+The 4 ms is the key-poll wait: the frame order is now receive, send the input, update the game, draw (the
+app's `ClientFrame` and the harness's `ClientSim`), so the entry being collected is stepped speculatively
+in the same frame (lerp between the newest final tick and one step with the collected keys, by how far the
+predicted clock is past it). The prediction-off column is the snapshot timeline with the same frame order.
+
+**Exactness** (`LatencyBaselineTest` exactness runs: every course flown 60 s by an active pilot that turns,
+thrusts, fires and taps the shield every 2 s, no robots, clean links; the bit-equal share of the PREDICTs
+compared while the ship is in play, seeds 1-3):
+
+| course | RTT 0 | RTT 100 | RTT 300 | predictableBounces on | correction p95 / max |
+|---|---|---|---|---|---|
+| walls | 100% | 100% | 100% | 100% at every RTT | 0 / 0 px |
+| free flight | 99.27..100% | 100% | 99.88..100% | the same | 0 / 59 px |
+| gravity well | 99.76..100% | 99.87..100% | 99.62..99.87% | the same | 0 / 98 px |
+| dogfight | 99.55..100% | 99.55..99.86% | 99.6..100% | 99.6..100% | 0 / 124 px |
+
+Every miss is contact the client cannot know: free flight's floating items (the server drains fuel and
+pushes the ship in its collision phase, after the ship's kernel step), the gravity well's own bullets
+curving back into the ship, the dogfight map's cannons. With robots (the motion runs, 3 robots, 6 on the
+dogfight) the share drops to 56..100% and the own ship's drawn error against the server's position at the
+drawn tick has p95 up to 12 px on clean links, 50 px on the dogfight at RTT 300 with loss: the predicted
+ship lives up to an RTT ahead of the server, and every bump or hit there is a correction. Corrections glide
+(`CorrectionSmoother`: 100 ms half-life, 30 ms near walls); a snap is asked only for a respawn, a wormhole
+or a hyperjump, or when the offset passes the snapshot timeline's teleport distance (350 px). No snap was
+counted in any run (excluding deaths and teleports), and the own step change p95 stays at 0.02-0.1 px.
+
+predictableBounces needed a server fix: the per-move reseed was only in `Mover.movePlayer`, which the tick
+does not call (`ShipKernel.fly` moves the ship), so with the option on the server drew from an unreseeded
+source and walls dropped to 99.0-99.8%. `ShipEffects.begin` now reseeds at the fly phase, as the client
+does; with the option off nothing changed (parity, trace and digest tests unchanged). Bounce ties are rare:
+the option makes no measurable difference on these courses.
+
+**Known mispredictions**, all corrected by the next PREDICT and glided out:
+
+- contact (items, shots, cannons, ships, balls): measured above;
+- devices and upkeep (emergency thrust and shield timers, phasing, autopilot, refuelling, repair, device fuel
+  drain) and item damage on wall bounces: the client's `PredictEvents` leaves them to the server. The
+  pilot and courses here use none of them, so they are not measured;
+- a late input: when the server starves and holds the previous keys, the key lands a tick later than
+  predicted (a shot then appears a tick early: up to 5 of 24 presses with bursty loss, 3 otherwise);
+- not predicted at all (drawn from the snapshots): dead, paused, round delay, warping, autopilot, a PAUSE
+  key, an XPilot-protocol server. A PREDICT that cannot be used (its rare part or key masks lost) is
+  skipped and the ring rides on.
+
+**Provisional shots** come from the kernel's own fire, so their spawn and velocity are exact, and move as
+the server moves a SHOT, with the server's own `Move_object` (moved into `common.sim.ObjectMover`; the
+server's `Mover` delegates to it, its trace and digest tests bit-identical) and the shot rules from
+KERNEL_CONFIG. Each complete snapshot confirms them against its own-colour SHOT records (the server already
+marks the receiver's own bullets, so no `OWN_SHOTS` section was needed); the matched records are not drawn
+meanwhile, and an own record no provisional shot matched (a bullet the client did not predict: a press that
+landed late, a starved tick holding FIRE) is drawn dead-reckoned like the others' bullets. Over 4 courses x 3
+seeds x 60 s of the active pilot per link: 207-272 shots confirmed per link, unconfirmed 0.37% at RTT 0,
+0% at 100 and 300 and at 100/σ15/1%, 0.93% at 200/spikes/5% bursty. The largest match distance was 0.35 px
+(the wire's half pixel), so no shot was ever moved at confirmation (no adoption jump). A confirmed shot
+that leaves the snapshots (out of the view, or a hit) ends there.
+
+**Incoming shots** (`ThreatMetrics`; the user's "the shield did not come up although the shot was still
+far away"): the shield is a server verdict, so what matters is where a drawn bullet is against where the server
+will have it when an input pressed now lands (the predicted clock's tick). With prediction on, other players'
+and cannons' bullets are dead-reckoned from the newest complete snapshot to that tick with the server's mover
+(`ShotMotion` over `ObjectMover`, the gap capped at the own lead plus 2 snapshot intervals; a bullet that ends on
+the way is not drawn); off, they are interpolated an interpolation delay in the past. Each drawn bullet is
+identified by its source record (tick and half-pixel position, the server's there). Dogfight, 6 robots firing,
+seed 1, 60 s, after the 1b lean lead. Each bullet moves at its SHOT record's velocity, exact to 1/16 px per
+frame since 1b's 12-bit SHOT velocity. Before that the wire velocity was whole pixels, and the reckoning
+preferred the bullet's own move since the frame before (Δpos over the link); with the precise wire velocity
+that path is worse (0/100/300 clean: p50 0.37 / 0.72 / 1.36, p95 0.90 / 1.56 / 2.87 against 0.20 / 0.20 / 0.23
+and 0.35 / 0.37 / 0.46 wire only) and is gone. "on, Δpos" is the earlier column; cells marked * were not rerun.
+
+| link | threat error p50 / p95 px, off | on | on, Δpos | drawn after the server's end, off / on | shield reaction p50 / p95 ms |
+|---|---|---|---|---|---|
+| 0/0/0 | 35.8 / 57.7 | 0.20 / 0.35 | 0.4 / 0.9 | 4846 / 856 of ~48k | 61.5 / 92.4 |
+| 100/0/0 | 63.5 / 91.7 | 0.20 / 0.37 | 0.8 / 1.6 | 8418 / 2812 | 113.9 / 148.4 |
+| 200/0/0 | 89.1 / 122.2 | * | 1.1 / 2.3 | 8480 / 3886 | 160.3 / 191.3 |
+| 300/0/0 | 115.3 / 189.0 | 0.23 / 0.46 | 1.5 / 2.9 | 10671 / 4752 | 210.3 / 241.3 |
+| 100/s15/1%u | 70.0 / 99.3 | * | 0.9 / 1.8 | 9215 / 3318 | 140.1 / 171.0 |
+| 200/spk/5%b | 99.3 / 150.0 | 0.28 / 22.1 | 1.8 / 22.5 | 8706 / 4575 | 231.7 / 273.4 |
+
+The p95 under spikes and bursty loss is the gap cap: a spike starves the snapshots, the newest complete frame
+is old and the reckoning stops at the own lead plus 2 snapshot intervals (the velocity does not change that).
+
+The shield reaction (a SHIELD press to the server tick after which it is up) is the input lead's: prediction
+does not change it. "Drawn after the server's end" counts bullet-frames whose bullet the server destroyed before
+the input's tick (it hit something the client cannot model); the next snapshot removes it.
+
+**Allocation**: `PredictNetAllocationTest` runs 300 s of game frames against the real server over
+100/σ15/1% with 4 robots and the active pilot (prediction, replays after about 1000 corrections, the
+speculative tick, provisional shots, exhaust): no frame allocates after the warm-up.
+
 ## Shots
+
+These figures were measured before phase 1b (on the phase 0 protocol): the own-ship part of a shot then
+landed by arrival time. With 1b's tagged inputs that part pays the input lead as well (above); the shot
+figures under 1b and 1c are in the phase 1c section.
 
 **A shot shows up RTT + 138 ms after the fire key on average on a clean link (p50 RTT + 138, p95 RTT +
 167): 95 ms more than the own ship's response to the same press.**
@@ -188,8 +425,15 @@ turn and thrust trials, every press FIRE_SHOT.
     at a render frame, so RTT reads up to one frame high and the jitter has a floor of about half a frame
     on a clean link: 8.3 ms and about 4 ms at 120 Hz, more at lower frame rates. The loss is one 2 s
     window, so with bursty loss it jumps around.
-- **Not measurable before phase 1c**: correction size and prediction exactness need the predictor's
-  reconciliations. They print `n/a (1c)`. `MotionMetrics.Sink` is where the predictor reports them.
+- **correction** and **exact %**: the own-ship predictor's reconciliations (`MotionMetrics.Sink`, from
+  `OwnShipPredictor.Listener`): the size of each correction, 0 when bit-equal, and the bit-equal share.
+  Only PREDICTs of a ship in play both in the prediction and on the server are judged. They print
+  `n/a (off)` with prediction off. Since phase 1c the own and aim errors are judged after the run against
+  the recorded truth, since the predicted ship is drawn ahead of the server.
+- **Predicted detection** (phase 1c): a frame drawn by the predictor shows a key before any SELF of it, so
+  its I2P frame is the first that draws what the key does and the baseline frame does not; a fire press is
+  the first frame drawing a provisional shot, which must be the one fired in the server's fire tick
+  (`invisible` otherwise).
 - **Courses** (`Course`): each thrusts for 0.5 s after spawning and then coasts:
   - free flight: `globe.xp` (open space, the map's gravity, wormholes);
   - walls: `tournament.xp` (a small walled box; the ship keeps bouncing);
@@ -218,46 +462,66 @@ turn and thrust trials, every press FIRE_SHOT.
 
 ## Rerun
 
-The baseline is opt-in (about 65 s), so `mvn install` does not pay for it:
+The baseline is opt-in (about 90 s), so `mvn install` does not pay for it:
 
 ```
 MAVEN_OPTS= mvn -q -o -pl client -am test -Platency
 ```
 
 The `latency` profile skips every other test and runs `LatencyBaselineTest` once. The table is printed
-and written to `client/target/latency-baseline.md`. Properties:
+and written to `client/target/latency-baseline.md` (`latency-baseline-off.md` with prediction off).
+Properties:
 
 - `-Djxpilot.latency.trials=N`: I2P trials per cell (default 48);
 - `-Djxpilot.latency.seconds=S`: motion run length (default 60);
-- `-Djxpilot.latency.seed=N`: default 1.
+- `-Djxpilot.latency.seed=N`: default 1;
+- `-Djxpilot.latency.predict=false`: the snapshot timeline (the prediction-off column), checked against the
+  phase 1b bounds;
+- `-Djxpilot.latency.exactSeconds=S`: exactness run length (default 60).
 
-`LatencyBaselineTest` asserts bounds around today's design, so that added own-ship latency fails. The
-bounds were checked with seeds 1, 2 and 3:
+With prediction on (the default) it asserts phase 1c's exit criteria, checked with seeds 1, 2 and 3:
 
-- clean links:
-  - I2P mean RTT + 40..48 ms (measured 43.3..45.8);
-  - p50 RTT + 30..55 ms (measured 41..46);
-  - p95 at most RTT + 90 ms (measured at most 77);
-  - no key shows sooner than one RTT;
-- every cell:
-  - p50 at most RTT + 90 ms (measured at most 69);
-  - p95 at most RTT + 250 ms without bursty loss (measured at most 196), and at most RTT + 600 ms with it
-    (measured at most 467);
-- the HUD's RTT reads RTT..RTT + 10 ms on clean links, with 0% loss;
-- own error p95 < 20 px;
-- on clean links, own step change p95 < 0.5 px and no snaps;
-- robots are in view in every dogfight cell;
-- the harness checks: frames before t0 identical, every key shows, at most a quarter of the trials lost to
-  crashes (measured at most 7 of 48);
-- shots:
-  - on clean links mean RTT + 130..148 ms (measured 137.6..138.2), p95 at most RTT + 190 (measured at most
-    167), never under RTT + 91;
-  - every shot drawn 83-101 ms after its own-ship SELF on clean links;
-  - every press fires a server shot that is drawn; none drawn before its snapshot;
-  - at most 1 in 24 presses still lost after the retries (measured none).
+- own-ship I2P p95 at most 50 ms in every cell, never negative (measured p95 8 ms everywhere);
+- shot I2P p95 at most 50 ms in every shot cell (measured 8 ms);
+- motion runs (with robots): own error p95 < 15 px on clean links, < 30 px impaired, < 60 px on the
+  dogfight; on clean links (not the dogfight) correction p95 < 4 px, own step change p95 < 0.5 px, no snaps;
+- exactness runs: 100% bit-equal on walls with predictableBounces, at least 99% everywhere else; correction
+  p95 < 4 px; no snaps;
+- the harness checks as before; a provisional shot of another tick than the server's fire tick in at most
+  1 in 8 presses (1 in 4 with bursty loss); at most 1 in 6 shot presses lost after the retries.
 
-Phase 1c is expected to break the lower bounds on purpose. It must restate them, and record its
-before/after table in its PR, as §7.4 asks.
+Seed 3 fails "every key shows within 2 s" in up to 2 of 48 trials in some cells with 5% bursty loss, and
+all 12 shot presses of one block of free flight at RTT 300 with bursty loss, **with prediction off as well**
+(the same trials): a phase 1b harness/protocol interaction under burst loss, not prediction. Prediction
+off, seeds 2 and 3 also exceed 1b's impaired p50 bound (RTT + 180 ms) in some spike/bursty cells (up to
+RTT + 196): 1b's bounds were set from seed 1.
+
+### Mutation testing of the predictor and the shared object mover
+
+The module poms pin PIT's target classes, so these runs use PIT's API directly (`EntryPoint` over the module's
+test classpath, from the module's directory, DEFAULTS mutators):
+
+- **`client.game.predict`** (tests in the same package): 525 mutations, 485 killed, **92.4%**.
+  OwnShipPredictor 244/257, ProvisionalShots 165/178, PredictEvents 26/26, CorrectionSmoother 27/33,
+  KernelShotMotion 23/31. The survivors:
+  - equivalent: the smoother's `dt <= 0` and epsilon boundaries (a zero step and an exact epsilon decay to the
+    same values), the exhaust ring's overflow boundary (`>` vs `>=` at exactly 16 leaves the same read index),
+    the uncount `> 0` guard (a count is never below 0), the wall-touch window's `>= -1` boundary (the drawn
+    frame's tick), the end ring's sizing arithmetic for the default shotLife (a larger ring changes nothing);
+  - the C frame clock's offset in `step` (`baseFrames + (k - base - 1)`): the kernel reads the clock only
+    through differences (shot age, wall touch), so a constant shift is invisible to every comparison;
+  - the gravity guard and the cannon/team/kill flags in `KernelShotMotion` where the courses' maps make them
+    agree (no gravity on the test maps for that branch, a cannon shot in a map where killings are on);
+  - the bounce clamps' boundaries (a factor of exactly 0 or 1 clamps to itself);
+  - the replay's snap and `!known` correction details whose only effect is the counters on paths the tests
+    reach with zero offsets, and the listener call on a seed path no test reaches;
+  - `setTeam` from the predictor (the tests' maps have no team play), `motion()` and a constant tie lambda.
+- **`common.sim.ObjectMover`, `ObjectBody`, `ObjectState`** (tests in `common.sim`): 82 mutations, 71 killed,
+  **86.6%** (the server's trace and digest tests, which pin it bit for bit, are not in that run). The 11 survivors
+  are equivalent or unreachable from its own tests: the block clamp for positions inside the map (5), the
+  `walldist > 2` boundary (at 2 the free step is 0 px, the same as tracing a zero move), the five-steps-without-
+  progress `CRASH_UNKNOWN` (3; no test map produces it), and the wrap's `< 0` boundaries (a position of exactly 0
+  wraps to the width and back).
 
 ### Mutation testing of the harness parts
 
@@ -279,161 +543,190 @@ before/after table in its PR, as §7.4 asks.
 
 ## Baseline table
 
-Seed 1, 48 I2P trials and 24 shot presses per cell, 60 s motion runs. Latencies are in ms; errors and
-smoothness in px.
+Seed 1, prediction on (phase 1c), 48 I2P trials and 24 shot presses per cell, 60 s motion runs, then the
+exactness runs. Latencies are in ms; errors and smoothness in px. Rerun with
+`-Djxpilot.latency.predict=false` for the prediction-off table.
 
 - "thrust >1px" is when the drawn position leaves the no-key path.
-- "shot" columns: from the fire key to the first frame drawing the new shot. "shot - own" is that minus the
-  own-ship I2P of the same press (the interpolation delay). "shot trials" counts the measured presses and
-  how many attempts were retried in their stratum. Shots are measured on free flight and walls only ("-"
-  elsewhere).
-- "own err" is the own ship's drawn position vs the server's.
+- "shot" columns: from the fire key to the first frame drawing the new shot (a provisional shot with
+  prediction on). "shot - own" is that minus the own-ship I2P of the same press, measured with prediction
+  off only. "shot trials" counts the measured presses and how many attempts were retried in their stratum.
+  Shots are measured on free flight and walls only ("-" elsewhere).
+- "own err" is the own ship's drawn position vs the server's at its drawn tick.
 - "aim err" is a robot's drawn position vs the server's at the own ship's tick (in brackets, the number of
   robot-frames measured).
+- "correction" and "exact %": the predictor's reconciliations in the motion run (with robots).
 
-| course | RTT/jitter/loss | I2P p50 | I2P p95 | p50 - RTT | mean - RTT | turn p50 | thrust p50 | thrust >1px p50 | trials | shot mean - RTT | shot p50 | shot p95 | shot - own p50 | shot trials | own err p50/p95 | aim err p50/p95 (frames) | smooth own p95/max | smooth others p95 | snaps/min (teleports) | HUD rtt/jitter/loss | correction p95 | exact % |
+| course | RTT/jitter/loss | I2P p50 | I2P p95 | p50 - RTT | mean - RTT | turn p50 | thrust p50 | thrust >1px p50 | trials | shot mean - RTT | shot p50 | shot p95 | shot - own p50 | shot trials | own err p50/p95 | aim err p50/p95 (frames) | smooth own p95/max | smooth others p95 | snaps/min (teleports) | HUD rtt/jitter/loss | correction p95/max | exact % |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| free flight | 0/0/0 | 43 | 77 | 43 | 43.3 | 45 | 39 | 64 | 48/48 | 138.2 | 138 | 167 | 92 | 24/24 | 0.2/1.0 | 11.5/17.0 (10) | 0.02/5.1 | 0.15 | 0.0 | 8/4.1/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 0/0/1%u | 45 | 82 | 45 | 46.3 | 45 | 39 | 64 | 48/48 | 138.2 | 138 | 167 | 92 | 24/24 | 0.2/1.0 | 11.5/17.0 (10) | 0.02/5.1 | 0.15 | 0.0 | 8/4.1/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 0/0/5%b | 43 | 208 | 43 | 60.0 | 45 | 39 | 64 | 48/48 | 141.3 | 139 | 171 | 92 | 24/24 | 0.2/0.7 | 12.3/17.0 (10) | 0.02/39.1 | 0.16 | 0.0 | 8/4.0/37.9 | n/a (1c) | n/a (1c) |
-| free flight | 0/s15/0 | 53 | 90 | 53 | 55.7 | 53 | 55 | 80 | 48/48 | 147.2 | 147 | 179 | 100 | 24/24 | 0.2/0.9 | 10.8/16.7 (27) | 0.02/6.4 | 0.16 | 0.0 | 24/9.6/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 0/s15/1%u | 55 | 99 | 55 | 58.6 | 58 | 55 | 80 | 48/48 | 147.6 | 147 | 179 | 100 | 24/24 | 0.2/0.9 | 9.7/16.7 (30) | 0.02/6.4 | 0.14 | 0.0 | 23/9.6/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 0/s15/5%b | 55 | 208 | 55 | 71.6 | 53 | 55 | 80 | 48/48 | 150.3 | 147 | 193 | 100 | 24/24 | 0.2/1.3 | 9.7/16.7 (29) | 0.03/46.2 | 0.20 | 0.0 | 21/11.7/39.3 | n/a (1c) | n/a (1c) |
-| free flight | 0/spk/0 | 53 | 111 | 53 | 56.4 | 53 | 51 | 76 | 48/48 | 145.5 | 146 | 179 | 100 | 24/24 | 0.2/1.0 | 12.3/17.0 (14) | 0.02/5.6 | 0.13 | 0.0 | 19/5.3/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 0/spk/1%u | 55 | 118 | 55 | 58.6 | 53 | 55 | 80 | 48/48 | 145.5 | 146 | 179 | 100 | 24/24 | 0.2/1.0 | 12.3/17.0 (14) | 0.02/5.6 | 0.13 | 0.0 | 29/4.9/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 0/spk/5%b | 58 | 245 | 58 | 75.1 | 58 | 55 | 80 | 48/48 | 148.6 | 152 | 185 | 100 | 24/24 | 0.2/1.4 | 12.3/17.0 (11) | 0.03/26.4 | 0.15 | 0.0 | 16/5.4/25.0 | n/a (1c) | n/a (1c) |
-| free flight | 100/0/0 | 143 | 177 | 43 | 43.3 | 145 | 139 | 164 | 48/48 | 138.2 | 238 | 267 | 92 | 24/24 | 0.2/1.7 | 21.9/29.7 (167) | 0.03/31.3 | 0.18 | 0.0 (2 tp) | 100/4.1/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 100/0/1%u | 145 | 180 | 45 | 44.7 | 145 | 139 | 164 | 48/48 | 138.2 | 238 | 267 | 92 | 24/24 | 0.2/2.0 | 21.9/29.7 (167) | 0.04/31.3 | 0.18 | 0.0 (2 tp) | 100/4.0/3.6 | n/a (1c) | n/a (1c) |
-| free flight | 100/0/5%b | 145 | 182 | 45 | 50.6 | 145 | 143 | 168 | 48/48 | 171.2 | 239 | 412 | 92 | 24/24 | 0.2/3.2 | 22.3/29.7 (154) | 0.06/35.1 | 0.17 | 0.0 (2 tp) | 100/4.2/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 100/s15/0 | 154 | 205 | 54 | 49.4 | 154 | 152 | 176 | 48/48 | 149.0 | 252 | 299 | 92 | 24/24 | 0.2/2.3 | 21.9/29.7 (159) | 0.04/35.5 | 0.22 | 0.0 (2 tp) | 111/16.7/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 100/s15/1%u | 154 | 207 | 54 | 51.3 | 154 | 152 | 176 | 48/48 | 149.7 | 252 | 299 | 92 | 24/24 | 0.2/2.5 | 21.9/29.7 (158) | 0.05/35.9 | 0.20 | 0.0 (2 tp) | 111/18.5/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 100/s15/5%b | 154 | 205 | 54 | 49.4 | 154 | 152 | 176 | 48/48 | 184.0 | 258 | 421 | 100 | 24/24 | 0.2/2.8 | 22.3/29.7 (147) | 0.07/35.4 | 0.21 | 0.0 (2 tp) | 116/19.2/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 100/spk/0 | 145 | 182 | 45 | 51.5 | 145 | 139 | 164 | 48/48 | 142.7 | 239 | 271 | 100 | 24/24 | 0.2/1.9 | 21.9/29.7 (181) | 0.04/37.2 | 0.23 | 0.0 (2 tp) | 107/6.6/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 100/spk/1%u | 145 | 191 | 45 | 52.2 | 149 | 139 | 164 | 48/48 | 142.7 | 239 | 271 | 100 | 24/24 | 0.2/2.1 | 21.9/29.7 (181) | 0.04/50.3 | 0.24 | 0.0 (2 tp) | 109/6.6/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 100/spk/5%b | 145 | 191 | 45 | 56.0 | 145 | 143 | 168 | 48/48 | 175.7 | 246 | 421 | 100 | 24/24 | 0.2/3.0 | 22.6/29.7 (163) | 0.07/68.8 | 0.22 | 0.0 (2 tp) | 105/16.0/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 200/0/0 | 243 | 277 | 43 | 43.3 | 245 | 239 | 264 | 48/48 | 138.2 | 338 | 367 | 92 | 24/24 | 0.2/0.9 | -/- (0) | 0.02/10.3 | - | 0.0 | 200/4.1/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 200/0/1%u | 245 | 282 | 45 | 46.3 | 245 | 243 | 268 | 48/48 | 138.2 | 338 | 367 | 92 | 24/24 | 0.2/1.1 | -/- (0) | 0.03/10.3 | - | 0.0 | 200/4.0/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 200/0/5%b | 243 | 466 | 43 | 65.9 | 245 | 239 | 264 | 48/48 | 141.3 | 339 | 371 | 92 | 24/24 | 0.2/1.1 | -/- (0) | 0.04/44.4 | - | 0.0 | 200/4.1/7.1 | n/a (1c) | n/a (1c) |
-| free flight | 200/s15/0 | 247 | 294 | 47 | 44.9 | 250 | 243 | 268 | 48/48 | 130.6 | 331 | 360 | 92 | 24/24 | 0.2/1.0 | -/- (0) | 0.03/12.4 | - | 0.0 | 212/15.6/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 200/s15/1%u | 247 | 294 | 47 | 44.9 | 250 | 243 | 268 | 48/48 | 130.6 | 331 | 360 | 92 | 24/24 | 0.2/1.0 | -/- (0) | 0.03/11.9 | - | 0.0 | 214/17.9/3.6 | n/a (1c) | n/a (1c) |
-| free flight | 200/s15/5%b | 251 | 406 | 51 | 63.1 | 257 | 243 | 268 | 48/48 | 135.4 | 331 | 385 | 92 | 24/24 | 0.2/1.8 | -/- (0) | 0.05/43.1 | - | 0.0 | 208/13.3/7.1 | n/a (1c) | n/a (1c) |
-| free flight | 200/spk/0 | 249 | 343 | 49 | 55.3 | 249 | 239 | 264 | 48/48 | 145.5 | 339 | 379 | 100 | 24/24 | 0.2/1.0 | -/- (0) | 0.03/10.1 | - | 0.0 | 208/17.0/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 200/spk/1%u | 249 | 345 | 49 | 57.1 | 253 | 243 | 268 | 48/48 | 145.5 | 339 | 379 | 100 | 24/24 | 0.2/1.0 | -/- (0) | 0.03/10.1 | - | 0.0 | 201/14.8/3.6 | n/a (1c) | n/a (1c) |
-| free flight | 200/spk/5%b | 253 | 473 | 53 | 81.5 | 258 | 239 | 264 | 48/48 | 149.3 | 352 | 393 | 100 | 24/24 | 0.2/1.6 | -/- (0) | 0.06/55.1 | - | 0.0 | 201/15.7/10.7 | n/a (1c) | n/a (1c) |
-| free flight | 300/0/0 | 343 | 377 | 43 | 43.3 | 345 | 339 | 364 | 48/48 | 138.2 | 438 | 467 | 92 | 24/24 | 0.2/0.7 | -/- (0) | 0.02/6.1 | - | 0.0 | 300/4.1/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 300/0/1%u | 343 | 377 | 43 | 43.3 | 345 | 339 | 364 | 48/48 | 138.2 | 438 | 467 | 92 | 24/24 | 0.2/0.7 | -/- (0) | 0.02/6.1 | - | 0.0 | 300/4.0/3.6 | n/a (1c) | n/a (1c) |
-| free flight | 300/0/5%b | 345 | 380 | 45 | 44.9 | 345 | 343 | 368 | 48/48 | 189.2 | 439 | 687 | 92 | 24/24 | 0.2/1.2 | -/- (0) | 0.02/127.2 | - | 2.0 | 300/4.1/3.6 | n/a (1c) | n/a (1c) |
-| free flight | 300/s15/0 | 347 | 399 | 47 | 50.8 | 362 | 343 | 368 | 48/48 | 135.8 | 432 | 487 | 92 | 24/24 | 0.2/1.2 | -/- (0) | 0.02/6.7 | - | 0.0 | 312/22.6/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 300/s15/1%u | 347 | 399 | 47 | 50.8 | 362 | 343 | 368 | 48/48 | 135.8 | 432 | 487 | 92 | 24/24 | 0.2/1.1 | -/- (0) | 0.02/6.7 | - | 0.0 | 312/22.1/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 300/s15/5%b | 360 | 414 | 60 | 68.7 | 362 | 347 | 372 | 48/48 | 159.0 | 438 | 601 | 100 | 24/24 | 0.2/1.3 | -/- (0) | 0.03/43.8 | - | 0.0 | 302/17.5/25.0 | n/a (1c) | n/a (1c) |
-| free flight | 300/spk/0 | 349 | 393 | 49 | 49.9 | 349 | 343 | 368 | 48/48 | 145.1 | 439 | 475 | 100 | 24/24 | 0.2/0.6 | -/- (0) | 0.02/13.3 | - | 0.0 | 321/10.4/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 300/spk/1%u | 349 | 393 | 49 | 49.9 | 349 | 343 | 368 | 48/48 | 145.1 | 439 | 475 | 100 | 24/24 | 0.2/0.7 | -/- (0) | 0.02/14.0 | - | 0.0 | 317/8.7/0.0 | n/a (1c) | n/a (1c) |
-| free flight | 300/spk/5%b | 351 | 395 | 51 | 51.7 | 353 | 347 | 372 | 48/48 | 196.2 | 446 | 687 | 100 | 24/24 | 0.2/1.5 | -/- (0) | 0.02/127.5 | - | 2.0 | 330/9.1/3.6 | n/a (1c) | n/a (1c) |
-| walls | 0/0/0 | 43 | 77 | 43 | 43.3 | 45 | 39 | 64 | 48/48 | 138.2 | 138 | 167 | 92 | 24/24 (2 retried) | 0.2/1.0 | 5.6/17.8 (317) | 0.02/3.2 | 0.07 | 0.0 | 8/4.1/0.0 | n/a (1c) | n/a (1c) |
-| walls | 0/0/1%u | 45 | 82 | 45 | 46.3 | 45 | 43 | 68 | 48/48 | 138.2 | 138 | 167 | 92 | 24/24 (2 retried) | 0.2/1.1 | 5.7/18.3 (326) | 0.02/3.2 | 0.07 | 0.0 | 8/4.1/0.0 | n/a (1c) | n/a (1c) |
-| walls | 0/0/5%b | 43 | 202 | 43 | 59.7 | 45 | 39 | 64 | 48/48 | 138.2 | 138 | 167 | 92 | 24/24 (3 retried) | 0.2/8.7 | 4.2/17.1 (534) | 0.04/90.5 | 0.07 | 0.0 | 8/4.1/0.0 | n/a (1c) | n/a (1c) |
-| walls | 0/s15/0 | 55 | 91 | 55 | 55.5 | 57 | 51 | 76 | 48/48 | 146.5 | 146 | 179 | 100 | 24/24 (2 retried) | 0.2/1.1 | 5.5/17.7 (1016) | 0.02/3.0 | 0.07 | 0.0 | 20/9.9/0.0 | n/a (1c) | n/a (1c) |
-| walls | 0/s15/1%u | 56 | 99 | 56 | 58.8 | 58 | 55 | 80 | 48/48 | 146.5 | 146 | 179 | 100 | 24/24 (2 retried) | 0.2/1.1 | 5.5/17.8 (1018) | 0.03/3.0 | 0.07 | 0.0 | 20/10.6/0.0 | n/a (1c) | n/a (1c) |
-| walls | 0/s15/5%b | 56 | 212 | 56 | 70.6 | 58 | 55 | 80 | 48/48 | 146.2 | 145 | 179 | 100 | 24/24 (3 retried) | 0.2/1.1 | 4.7/17.2 (1173) | 0.03/21.9 | 0.07 | 0.0 | 26/7.8/0.0 | n/a (1c) | n/a (1c) |
-| walls | 0/spk/0 | 53 | 139 | 53 | 58.8 | 49 | 55 | 80 | 48/48 | 144.8 | 146 | 179 | 100 | 24/24 (2 retried) | 0.2/1.4 | 5.4/17.7 (527) | 0.03/7.8 | 0.07 | 0.0 | 19/7.8/0.0 | n/a (1c) | n/a (1c) |
-| walls | 0/spk/1%u | 53 | 120 | 53 | 59.7 | 53 | 55 | 80 | 48/48 | 144.8 | 146 | 179 | 100 | 24/24 (2 retried) | 0.2/1.1 | 5.5/17.8 (506) | 0.03/3.1 | 0.08 | 0.0 | 15/6.8/0.0 | n/a (1c) | n/a (1c) |
-| walls | 0/spk/5%b | 55 | 238 | 55 | 75.1 | 53 | 60 | 84 | 48/48 | 145.8 | 147 | 179 | 100 | 24/24 (3 retried) | 0.2/0.9 | 4.6/17.1 (719) | 0.03/21.1 | 0.08 | 0.0 | 15/6.5/0.0 | n/a (1c) | n/a (1c) |
-| walls | 100/0/0 | 143 | 177 | 43 | 43.3 | 145 | 139 | 164 | 48/48 | 138.2 | 238 | 267 | 92 | 24/24 (2 retried) | 0.2/0.7 | 3.7/6.9 (269) | 0.02/3.9 | 0.05 | 0.0 | 100/4.1/0.0 | n/a (1c) | n/a (1c) |
-| walls | 100/0/1%u | 145 | 180 | 45 | 44.9 | 145 | 143 | 168 | 48/48 | 141.3 | 239 | 271 | 92 | 24/24 (2 retried) | 0.2/0.8 | 3.6/6.9 (269) | 0.02/3.9 | 0.05 | 0.0 | 100/4.0/0.0 | n/a (1c) | n/a (1c) |
-| walls | 100/0/5%b | 147 | 214 | 47 | 52.2 | 145 | 147 | 172 | 48/48 | 153.1 | 239 | 387 | 92 | 24/24 (2 retried) | 0.2/0.9 | 3.7/6.9 (271) | 0.02/15.4 | 0.05 | 0.0 | 100/4.1/0.0 | n/a (1c) | n/a (1c) |
-| walls | 100/s15/0 | 153 | 205 | 53 | 48.0 | 153 | 148 | 173 | 48/48 | 150.0 | 252 | 299 | 92 | 24/24 (2 retried) | 0.2/1.1 | 3.8/6.9 (361) | 0.02/3.6 | 0.05 | 0.0 | 111/13.0/0.0 | n/a (1c) | n/a (1c) |
-| walls | 100/s15/1%u | 147 | 205 | 47 | 44.7 | 137 | 147 | 172 | 48/48 | 153.1 | 253 | 299 | 92 | 24/24 (2 retried) | 0.2/1.2 | 3.7/7.0 (359) | 0.03/3.6 | 0.05 | 0.0 | 112/13.7/0.0 | n/a (1c) | n/a (1c) |
-| walls | 100/s15/5%b | 153 | 207 | 53 | 49.9 | 153 | 155 | 176 | 48/48 | 157.3 | 252 | 306 | 92 | 24/24 (2 retried) | 0.2/1.0 | 3.7/6.9 (360) | 0.03/12.9 | 0.05 | 0.0 | 115/13.0/0.0 | n/a (1c) | n/a (1c) |
-| walls | 100/spk/0 | 145 | 185 | 45 | 47.5 | 145 | 142 | 164 | 48/48 | 143.1 | 239 | 275 | 100 | 24/24 (2 retried) | 0.2/0.7 | 3.6/6.9 (276) | 0.02/3.8 | 0.05 | 0.0 | 104/6.4/0.0 | n/a (1c) | n/a (1c) |
-| walls | 100/spk/1%u | 147 | 203 | 47 | 50.3 | 149 | 143 | 168 | 48/48 | 146.2 | 246 | 275 | 100 | 24/24 (2 retried) | 0.2/0.7 | 3.6/6.9 (272) | 0.02/3.8 | 0.05 | 0.0 | 104/6.4/0.0 | n/a (1c) | n/a (1c) |
-| walls | 100/spk/5%b | 147 | 214 | 47 | 53.6 | 145 | 147 | 172 | 48/48 | 159.0 | 246 | 395 | 100 | 24/24 (2 retried) | 0.2/0.7 | 3.7/6.9 (275) | 0.02/14.8 | 0.05 | 0.0 | 107/5.5/0.0 | n/a (1c) | n/a (1c) |
-| walls | 200/0/0 | 243 | 277 | 43 | 43.3 | 245 | 239 | 264 | 48/48 | 138.2 | 338 | 367 | 92 | 24/24 (5 retried) | 0.2/1.1 | 9.0/22.3 (4887) | 0.02/5.0 | 0.07 | 0.0 | 200/4.1/0.0 | n/a (1c) | n/a (1c) |
-| walls | 200/0/1%u | 245 | 282 | 45 | 46.3 | 245 | 239 | 264 | 48/48 | 138.2 | 338 | 367 | 92 | 24/24 (5 retried) | 0.2/1.1 | 9.0/22.3 (4887) | 0.02/5.0 | 0.07 | 0.0 | 200/4.0/3.6 | n/a (1c) | n/a (1c) |
-| walls | 200/0/5%b | 243 | 402 | 43 | 59.7 | 245 | 239 | 264 | 48/48 | 138.2 | 338 | 367 | 92 | 24/24 (5 retried) | 0.2/1.2 | 8.8/22.3 (4887) | 0.03/11.2 | 0.07 | 0.0 | 200/4.1/0.0 | n/a (1c) | n/a (1c) |
-| walls | 200/s15/0 | 249 | 292 | 49 | 48.9 | 245 | 251 | 272 | 48/48 | 139.9 | 338 | 385 | 100 | 24/24 (3 retried) | 0.2/1.2 | 9.0/22.3 (4886) | 0.02/5.5 | 0.07 | 0.0 | 211/15.3/0.0 | n/a (1c) | n/a (1c) |
-| walls | 200/s15/1%u | 255 | 308 | 55 | 55.2 | 258 | 251 | 272 | 48/48 | 140.3 | 338 | 385 | 100 | 24/24 (3 retried) | 0.2/1.2 | 9.0/22.3 (4886) | 0.02/5.5 | 0.07 | 0.0 | 209/15.6/0.0 | n/a (1c) | n/a (1c) |
-| walls | 200/s15/5%b | 251 | 398 | 51 | 64.2 | 241 | 255 | 276 | 48/48 | 175.7 | 345 | 622 | 100 | 24/24 (5 retried) | 0.2/1.4 | 8.8/22.3 (4883) | 0.03/9.7 | 0.07 | 0.0 | 222/13.6/0.0 | n/a (1c) | n/a (1c) |
-| walls | 200/spk/0 | 249 | 345 | 49 | 58.8 | 249 | 247 | 268 | 48/48 | 145.5 | 346 | 379 | 100 | 24/24 (5 retried) | 0.2/1.2 | 9.0/22.4 (4886) | 0.03/8.1 | 0.07 | 0.0 | 212/4.7/0.0 | n/a (1c) | n/a (1c) |
-| walls | 200/spk/1%u | 249 | 339 | 49 | 61.1 | 249 | 247 | 268 | 48/48 | 145.5 | 346 | 379 | 100 | 24/24 (5 retried) | 0.2/1.1 | 9.0/22.3 (4886) | 0.03/5.2 | 0.07 | 0.0 | 210/4.5/3.6 | n/a (1c) | n/a (1c) |
-| walls | 200/spk/5%b | 253 | 466 | 53 | 75.1 | 258 | 247 | 268 | 48/48 | 148.3 | 347 | 385 | 100 | 24/24 (5 retried) | 0.2/1.3 | 8.8/22.4 (4886) | 0.04/10.3 | 0.07 | 0.0 | 210/4.3/0.0 | n/a (1c) | n/a (1c) |
-| walls | 300/0/0 | 343 | 377 | 43 | 43.3 | 345 | 339 | 364 | 48/48 | 138.2 | 438 | 467 | 92 | 24/24 (4 retried) | 0.2/0.8 | 9.4/23.4 (5748) | 0.04/4.6 | 0.07 | 0.0 | 300/4.1/0.0 | n/a (1c) | n/a (1c) |
-| walls | 300/0/1%u | 343 | 377 | 43 | 43.3 | 345 | 339 | 364 | 48/48 | 138.2 | 438 | 467 | 92 | 24/24 (4 retried) | 0.2/0.9 | 9.4/23.4 (5742) | 0.04/4.6 | 0.07 | 0.0 | 300/4.1/3.6 | n/a (1c) | n/a (1c) |
-| walls | 300/0/5%b | 345 | 382 | 45 | 46.3 | 345 | 343 | 368 | 48/48 | 177.1 | 439 | 762 | 92 | 24/24 (8 retried) | 0.2/1.2 | 9.1/23.5 (5782) | 0.08/17.6 | 0.07 | 0.0 | 300/4.1/0.0 | n/a (1c) | n/a (1c) |
-| walls | 300/s15/0 | 343 | 393 | 43 | 44.0 | 345 | 334 | 359 | 48/48 | 146.2 | 445 | 499 | 92 | 24/24 (3 retried) | 0.2/1.0 | 7.5/33.6 (3380) | 0.05/4.8 | 0.07 | 0.0 | 316/16.7/0.0 | n/a (1c) | n/a (1c) |
-| walls | 300/s15/1%u | 343 | 393 | 43 | 44.0 | 345 | 334 | 359 | 48/48 | 146.2 | 445 | 499 | 92 | 24/24 (3 retried) | 0.2/0.9 | 7.5/33.6 (3380) | 0.05/4.8 | 0.07 | 0.0 | 309/18.0/3.6 | n/a (1c) | n/a (1c) |
-| walls | 300/s15/5%b | 344 | 401 | 44 | 60.5 | 349 | 335 | 360 | 48/48 | 160.8 | 445 | 601 | 92 | 24/24 (5 retried) | 0.2/1.8 | 7.2/33.5 (3365) | 0.08/18.5 | 0.08 | 0.0 | 319/11.4/0.0 | n/a (1c) | n/a (1c) |
-| walls | 300/spk/0 | 347 | 387 | 47 | 48.7 | 349 | 343 | 364 | 48/48 | 144.1 | 439 | 474 | 100 | 24/24 (4 retried) | 0.2/0.9 | 9.4/23.4 (5747) | 0.04/7.5 | 0.07 | 0.0 | 303/8.0/0.0 | n/a (1c) | n/a (1c) |
-| walls | 300/spk/1%u | 347 | 387 | 47 | 48.7 | 349 | 343 | 364 | 48/48 | 144.4 | 440 | 474 | 100 | 24/24 (4 retried) | 0.2/1.1 | 9.4/23.4 (5743) | 0.05/7.5 | 0.08 | 0.0 | 314/7.7/0.0 | n/a (1c) | n/a (1c) |
-| walls | 300/spk/5%b | 349 | 401 | 49 | 50.8 | 349 | 346 | 368 | 48/48 | 183.0 | 445 | 762 | 100 | 24/24 (8 retried) | 0.2/1.5 | 9.1/23.5 (5791) | 0.09/17.3 | 0.08 | 0.0 | 306/6.6/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 0/0/0 | 43 | 77 | 43 | 43.3 | 45 | 39 | 64 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.01/0.5 | - | 0.0 | 8/4.1/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 0/0/1%u | 45 | 82 | 45 | 46.3 | 45 | 43 | 68 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.01/0.5 | - | 0.0 | 8/4.1/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 0/0/5%b | 43 | 202 | 43 | 59.7 | 45 | 39 | 64 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.01/41.1 | - | 0.0 | 8/4.1/3.6 | n/a (1c) | n/a (1c) |
-| gravity well | 0/s15/0 | 55 | 91 | 55 | 55.5 | 57 | 51 | 76 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.01/0.3 | - | 0.0 | 22/9.9/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 0/s15/1%u | 56 | 99 | 56 | 58.8 | 58 | 55 | 80 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.01/0.3 | - | 0.0 | 22/11.0/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 0/s15/5%b | 56 | 212 | 56 | 70.6 | 58 | 55 | 80 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.02/42.5 | - | 0.0 | 21/10.5/3.6 | n/a (1c) | n/a (1c) |
-| gravity well | 0/spk/0 | 53 | 139 | 53 | 58.8 | 49 | 55 | 80 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.01/37.5 | - | 0.0 | 18/8.5/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 0/spk/1%u | 53 | 120 | 53 | 59.7 | 53 | 55 | 80 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.01/37.5 | - | 0.0 | 13/7.7/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 0/spk/5%b | 55 | 238 | 55 | 75.1 | 53 | 60 | 84 | 48/48 | - | - | - | - | 0/0 | 0.0/0.8 | -/- (0) | 0.01/69.9 | - | 0.0 | 19/8.1/3.6 | n/a (1c) | n/a (1c) |
-| gravity well | 100/0/0 | 143 | 177 | 43 | 43.3 | 145 | 139 | 164 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | 9.2/21.2 (348) | 0.01/0.9 | 0.11 | 0.0 | 100/4.1/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 100/0/1%u | 145 | 180 | 45 | 44.9 | 145 | 143 | 168 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | 9.2/21.2 (348) | 0.01/1.0 | 0.11 | 0.0 | 100/4.1/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 100/0/5%b | 147 | 214 | 47 | 52.2 | 145 | 147 | 172 | 48/48 | - | - | - | - | 0/0 | 0.0/0.7 | 9.2/21.2 (348) | 0.01/67.8 | 0.11 | 0.0 | 100/4.0/3.6 | n/a (1c) | n/a (1c) |
-| gravity well | 100/s15/0 | 153 | 205 | 53 | 48.0 | 153 | 148 | 173 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.02/0.5 | - | 0.0 | 109/14.2/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 100/s15/1%u | 147 | 205 | 47 | 44.7 | 137 | 147 | 172 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.02/3.2 | - | 0.0 | 107/14.6/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 100/s15/5%b | 153 | 207 | 53 | 49.9 | 153 | 155 | 176 | 48/48 | - | - | - | - | 0/0 | 0.0/0.7 | -/- (0) | 0.02/52.9 | - | 0.0 | 106/13.9/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 100/spk/0 | 145 | 185 | 45 | 47.5 | 145 | 142 | 164 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | 9.1/21.2 (367) | 0.01/24.3 | 0.09 | 0.0 | 134/9.5/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 100/spk/1%u | 147 | 203 | 47 | 50.3 | 149 | 143 | 168 | 48/48 | - | - | - | - | 0/0 | 0.0/0.7 | 9.1/21.2 (366) | 0.01/24.9 | 0.10 | 0.0 | 134/8.7/3.6 | n/a (1c) | n/a (1c) |
-| gravity well | 100/spk/5%b | 147 | 214 | 47 | 53.6 | 145 | 147 | 172 | 48/48 | - | - | - | - | 0/0 | 0.0/0.7 | 9.0/21.2 (359) | 0.02/67.1 | 0.10 | 0.0 | 131/8.6/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 200/0/0 | 243 | 277 | 43 | 43.3 | 245 | 239 | 264 | 48/48 | - | - | - | - | 0/0 | 0.0/0.7 | 20.3/24.4 (514) | 0.01/1.2 | 0.13 | 0.0 | 200/4.1/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 200/0/1%u | 245 | 282 | 45 | 46.3 | 245 | 239 | 264 | 48/48 | - | - | - | - | 0/0 | 0.0/0.7 | 20.3/24.4 (514) | 0.01/1.2 | 0.13 | 0.0 | 200/4.1/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 200/0/5%b | 243 | 402 | 43 | 59.7 | 245 | 239 | 264 | 48/48 | - | - | - | - | 0/0 | 0.0/0.8 | 20.3/24.4 (514) | 0.01/56.0 | 0.13 | 0.0 | 200/4.0/3.6 | n/a (1c) | n/a (1c) |
-| gravity well | 200/s15/0 | 249 | 292 | 49 | 48.9 | 245 | 251 | 272 | 48/48 | - | - | - | - | 0/0 | 0.0/0.7 | 20.3/24.4 (513) | 0.02/1.1 | 0.12 | 0.0 | 219/16.1/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 200/s15/1%u | 255 | 308 | 55 | 55.2 | 258 | 251 | 272 | 48/48 | - | - | - | - | 0/0 | 0.0/0.8 | 20.3/24.4 (514) | 0.02/2.8 | 0.14 | 0.0 | 209/14.7/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 200/s15/5%b | 251 | 398 | 51 | 64.2 | 241 | 255 | 276 | 48/48 | - | - | - | - | 0/0 | 0.0/0.8 | 20.3/24.4 (514) | 0.03/75.8 | 0.12 | 0.0 | 215/20.6/3.6 | n/a (1c) | n/a (1c) |
-| gravity well | 200/spk/0 | 249 | 345 | 49 | 58.8 | 249 | 247 | 268 | 48/48 | - | - | - | - | 0/0 | 0.0/0.7 | 20.3/24.4 (514) | 0.02/24.0 | 0.14 | 0.0 | 221/7.7/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 200/spk/1%u | 249 | 339 | 49 | 61.1 | 249 | 247 | 268 | 48/48 | - | - | - | - | 0/0 | 0.0/0.7 | 20.3/24.4 (514) | 0.02/25.7 | 0.14 | 0.0 | 213/6.8/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 200/spk/5%b | 253 | 466 | 53 | 75.1 | 258 | 247 | 268 | 48/48 | - | - | - | - | 0/0 | 0.0/0.8 | 20.3/24.4 (514) | 0.02/71.3 | 0.12 | 0.0 | 215/15.3/3.6 | n/a (1c) | n/a (1c) |
-| gravity well | 300/0/0 | 343 | 377 | 43 | 43.3 | 345 | 339 | 364 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.01/0.4 | - | 0.0 | 300/4.1/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 300/0/1%u | 343 | 377 | 43 | 43.3 | 345 | 339 | 364 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.01/0.4 | - | 0.0 | 300/4.1/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 300/0/5%b | 345 | 382 | 45 | 46.3 | 345 | 343 | 368 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.01/80.0 | - | 0.0 | 300/4.1/3.6 | n/a (1c) | n/a (1c) |
-| gravity well | 300/s15/0 | 343 | 393 | 43 | 44.0 | 345 | 334 | 359 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | 12.9/24.6 (2391) | 0.02/0.9 | 0.10 | 0.0 | 316/14.4/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 300/s15/1%u | 343 | 393 | 43 | 44.0 | 345 | 334 | 359 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | 12.9/24.6 (2391) | 0.02/1.3 | 0.10 | 0.0 | 311/13.7/3.6 | n/a (1c) | n/a (1c) |
-| gravity well | 300/s15/5%b | 344 | 401 | 44 | 60.5 | 349 | 335 | 360 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | 12.2/24.8 (2390) | 0.02/67.2 | 0.11 | 0.0 | 313/22.0/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 300/spk/0 | 347 | 387 | 47 | 48.7 | 349 | 343 | 364 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.01/31.8 | - | 0.0 | 332/10.3/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 300/spk/1%u | 347 | 387 | 47 | 48.7 | 349 | 343 | 364 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.01/32.0 | - | 0.0 | 324/9.9/0.0 | n/a (1c) | n/a (1c) |
-| gravity well | 300/spk/5%b | 349 | 401 | 49 | 50.8 | 349 | 346 | 368 | 48/48 | - | - | - | - | 0/0 | 0.0/0.6 | -/- (0) | 0.01/66.3 | - | 0.0 | 309/8.3/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 0/0/0 | 43 | 77 | 43 | 43.3 | 45 | 39 | 64 | 48/48 | - | - | - | - | 0/0 | 0.2/0.9 | 3.1/13.0 (753) | 0.07/6.0 | 0.09 | 0.0 | 8/4.1/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 0/0/1%u | 45 | 80 | 45 | 44.9 | 45 | 39 | 64 | 48/48 | - | - | - | - | 0/0 | 0.2/0.9 | 3.2/14.2 (776) | 0.07/6.0 | 0.09 | 0.0 | 8/4.0/3.6 | n/a (1c) | n/a (1c) |
-| dogfight | 0/0/5%b | 43 | 204 | 43 | 58.4 | 45 | 39 | 64 | 48/48 | - | - | - | - | 0/0 | 0.2/0.3 | 2.5/3.9 (6106) | 0.04/38.1 | 0.06 | 0.0 | 8/4.1/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 0/s15/0 | 53 | 92 | 53 | 54.6 | 49 | 55 | 80 | 48/48 | - | - | - | - | 0/0 | 0.2/0.9 | 3.1/13.2 (2862) | 0.07/6.5 | 0.09 | 0.0 | 25/8.9/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 0/s15/1%u | 58 | 95 | 58 | 58.3 | 58 | 55 | 80 | 48/48 | - | - | - | - | 0/0 | 0.2/0.9 | 3.1/13.2 (2859) | 0.07/6.4 | 0.09 | 0.0 | 36/8.9/3.6 | n/a (1c) | n/a (1c) |
-| dogfight | 0/s15/5%b | 55 | 195 | 55 | 66.4 | 53 | 55 | 80 | 48/48 | - | - | - | - | 0/0 | 0.2/1.2 | 3.1/14.3 (2965) | 0.08/38.4 | 0.10 | 0.0 | 25/10.7/3.6 | n/a (1c) | n/a (1c) |
-| dogfight | 0/spk/0 | 49 | 111 | 49 | 59.3 | 49 | 51 | 76 | 48/48 | - | - | - | - | 0/0 | 0.2/1.1 | 3.1/13.9 (1455) | 0.07/6.2 | 0.09 | 0.0 | 10/4.3/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 0/spk/1%u | 53 | 111 | 53 | 61.6 | 49 | 55 | 80 | 48/48 | - | - | - | - | 0/0 | 0.2/1.1 | 3.1/14.2 (1438) | 0.07/6.2 | 0.10 | 0.0 | 10/4.2/3.6 | n/a (1c) | n/a (1c) |
-| dogfight | 0/spk/5%b | 53 | 268 | 53 | 74.4 | 49 | 55 | 80 | 48/48 | - | - | - | - | 0/0 | 0.2/0.3 | 2.5/5.0 (6465) | 0.04/37.8 | 0.07 | 0.0 | 14/4.9/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 100/0/0 | 143 | 177 | 43 | 43.3 | 145 | 139 | 164 | 48/48 | - | - | - | - | 0/0 | 0.2/1.2 | 4.7/19.4 (12464) | 0.09/6.6 | 0.08 | 0.0 | 100/4.1/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 100/0/1%u | 143 | 177 | 43 | 43.3 | 145 | 139 | 164 | 48/48 | - | - | - | - | 0/0 | 0.2/1.4 | 4.7/19.4 (12483) | 0.09/6.6 | 0.08 | 0.0 | 100/4.1/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 100/0/5%b | 145 | 182 | 45 | 50.6 | 145 | 143 | 168 | 48/48 | - | - | - | - | 0/0 | 0.2/1.7 | 4.4/14.7 (15716) | 0.07/62.5 | 0.05 | 0.0 | 100/4.0/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 100/s15/0 | 139 | 199 | 39 | 41.8 | 128 | 143 | 168 | 48/48 | - | - | - | - | 0/0 | 0.2/1.2 | 6.1/15.0 (13326) | 0.07/5.7 | 0.09 | 0.0 | 113/11.3/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 100/s15/1%u | 143 | 199 | 43 | 43.5 | 137 | 143 | 168 | 48/48 | - | - | - | - | 0/0 | 0.2/1.2 | 6.1/15.0 (13357) | 0.07/5.7 | 0.09 | 0.0 | 106/16.3/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 100/s15/5%b | 139 | 199 | 39 | 41.8 | 128 | 143 | 168 | 48/48 | - | - | - | - | 0/0 | 0.2/1.2 | 3.7/14.1 (15108) | 0.05/37.4 | 0.08 | 0.0 | 109/16.8/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 100/spk/0 | 146 | 203 | 46 | 49.2 | 145 | 146 | 168 | 48/48 | - | - | - | - | 0/0 | 0.2/1.5 | 4.7/19.4 (13117) | 0.10/10.7 | 0.09 | 0.0 | 109/4.3/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 100/spk/1%u | 145 | 205 | 45 | 49.2 | 145 | 146 | 168 | 48/48 | - | - | - | - | 0/0 | 0.2/1.6 | 4.7/19.4 (13099) | 0.10/8.7 | 0.09 | 0.0 | 109/4.3/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 100/spk/5%b | 146 | 241 | 46 | 53.1 | 145 | 146 | 168 | 48/48 | - | - | - | - | 0/0 | 0.2/1.8 | 4.4/14.7 (16008) | 0.07/129.0 | 0.05 | 2.1 | 116/8.3/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 200/0/0 | 243 | 277 | 43 | 43.3 | 245 | 239 | 264 | 48/48 | - | - | - | - | 0/0 | 0.2/1.1 | 4.3/16.6 (26150) | 0.05/3.5 | 0.09 | 0.0 | 200/4.1/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 200/0/1%u | 245 | 282 | 45 | 46.3 | 245 | 243 | 268 | 48/48 | - | - | - | - | 0/0 | 0.2/1.1 | 4.3/16.6 (26150) | 0.05/5.4 | 0.09 | 0.0 | 200/3.9/3.6 | n/a (1c) | n/a (1c) |
-| dogfight | 200/0/5%b | 243 | 393 | 43 | 56.9 | 245 | 239 | 264 | 48/48 | - | - | - | - | 0/0 | 0.2/1.2 | 4.2/16.4 (26153) | 0.05/17.8 | 0.09 | 0.0 | 200/4.1/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 200/s15/0 | 247 | 294 | 47 | 49.8 | 241 | 251 | 272 | 48/48 | - | - | - | - | 0/0 | 0.2/1.2 | 4.3/16.6 (26167) | 0.05/4.4 | 0.09 | 0.0 | 223/12.6/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 200/s15/1%u | 253 | 308 | 53 | 56.4 | 245 | 255 | 276 | 48/48 | - | - | - | - | 0/0 | 0.2/1.3 | 4.3/16.6 (26167) | 0.05/3.3 | 0.09 | 0.0 | 227/16.0/3.6 | n/a (1c) | n/a (1c) |
-| dogfight | 200/s15/5%b | 253 | 324 | 53 | 60.2 | 249 | 255 | 273 | 48/48 | - | - | - | - | 0/0 | 0.2/1.8 | 7.5/14.8 (24961) | 0.02/29.2 | 0.05 | 0.0 | 217/15.8/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 200/spk/0 | 249 | 339 | 49 | 54.6 | 249 | 247 | 272 | 48/48 | - | - | - | - | 0/0 | 0.2/1.2 | 4.3/16.6 (26149) | 0.05/4.9 | 0.09 | 0.0 | 207/5.8/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 200/spk/1%u | 251 | 320 | 51 | 55.5 | 253 | 247 | 272 | 48/48 | - | - | - | - | 0/0 | 0.2/1.2 | 4.3/16.6 (26149) | 0.05/4.9 | 0.10 | 0.0 | 201/5.8/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 200/spk/5%b | 253 | 466 | 53 | 68.2 | 253 | 247 | 272 | 48/48 | - | - | - | - | 0/0 | 0.2/1.7 | 4.3/16.5 (26134) | 0.06/17.5 | 0.10 | 0.0 | 209/5.8/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 300/0/0 | 343 | 377 | 43 | 43.3 | 345 | 339 | 364 | 48/48 | - | - | - | - | 0/0 | 0.2/1.0 | 5.4/18.3 (19921) | 0.05/2.7 | 0.09 | 0.0 | 300/4.1/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 300/0/1%u | 343 | 377 | 43 | 43.3 | 345 | 339 | 364 | 48/48 | - | - | - | - | 0/0 | 0.2/1.1 | 5.4/18.3 (19921) | 0.05/2.7 | 0.10 | 0.0 | 300/4.1/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 300/0/5%b | 345 | 382 | 45 | 46.5 | 345 | 347 | 372 | 48/48 | - | - | - | - | 0/0 | 0.2/1.2 | 5.3/13.7 (18108) | 0.02/10.7 | 0.04 | 0.0 | 300/4.1/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 300/s15/0 | 351 | 403 | 51 | 52.2 | 357 | 343 | 363 | 48/48 | - | - | - | - | 0/0 | 0.2/1.0 | 8.3/22.9 (11346) | 0.03/6.7 | 0.10 | 0.0 | 315/16.1/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 300/s15/1%u | 351 | 403 | 51 | 52.2 | 357 | 343 | 363 | 48/48 | - | - | - | - | 0/0 | 0.2/0.9 | 8.3/22.9 (11347) | 0.03/6.7 | 0.10 | 0.0 | 323/16.1/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 300/s15/5%b | 354 | 411 | 54 | 59.3 | 362 | 338 | 360 | 48/48 | - | - | - | - | 0/0 | 0.2/1.6 | 7.3/18.7 (13829) | 0.02/44.5 | 0.05 | 0.0 | 320/22.5/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 300/spk/0 | 345 | 391 | 45 | 46.5 | 349 | 339 | 364 | 48/48 | - | - | - | - | 0/0 | 0.2/1.2 | 5.3/18.3 (19919) | 0.06/15.8 | 0.10 | 0.0 | 310/5.6/0.0 | n/a (1c) | n/a (1c) |
-| dogfight | 300/spk/1%u | 345 | 391 | 45 | 46.5 | 349 | 339 | 364 | 48/48 | - | - | - | - | 0/0 | 0.2/1.2 | 5.3/18.3 (19929) | 0.06/15.9 | 0.10 | 0.0 | 301/5.6/3.6 | n/a (1c) | n/a (1c) |
-| dogfight | 300/spk/5%b | 349 | 401 | 49 | 50.8 | 349 | 347 | 372 | 48/48 | - | - | - | - | 0/0 | 0.2/1.2 | 6.3/16.0 (13812) | 0.02/4.3 | 0.01 | 0.0 | 303/4.3/0.0 | n/a (1c) | n/a (1c) |
+| free flight | 0/0/0 | 4 | 8 | 4 | 4.3 | 4 | 2 | 6 | 48/48 | 3.8 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/4.8 | - | 0.0 | 8/4.1/0.0 | 0.0/0.0 | 99.8 |
+| free flight | 0/0/1%u | 4 | 8 | 4 | 4.3 | 4 | 2 | 6 | 48/48 | 3.8 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/4.8 | - | 0.0 | 8/4.1/0.0 | 0.0/0.0 | 99.8 |
+| free flight | 0/0/5%b | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | 3.8 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/7.3 | - | 0.0 | 8/3.8/7.1 | 0.0/0.0 | 99.7 |
+| free flight | 0/s15/0 | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | 3.8 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/2.2 | - | 0.0 | 20/14.4/0.0 | 0.0/0.4 | 99.8 |
+| free flight | 0/s15/1%u | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | 3.8 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/2.2 | - | 0.0 | 24/14.7/0.0 | 0.0/0.4 | 99.8 |
+| free flight | 0/s15/5%b | 4 | 8 | 4 | 4.3 | 4 | 2 | 13 | 48/48 | 3.8 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/11.8 | - | 0.0 | 17/13.2/0.0 | 0.0/0.7 | 99.7 |
+| free flight | 0/spk/0 | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | 3.8 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/8.0 | - | 0.0 | 14/14.8/0.0 | 0.0/0.4 | 99.8 |
+| free flight | 0/spk/1%u | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | 3.8 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/8.0 | - | 0.0 | 14/14.8/0.0 | 0.0/0.4 | 99.8 |
+| free flight | 0/spk/5%b | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | 3.8 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/12.0 | - | 0.0 | 25/12.7/0.0 | 0.0/0.7 | 99.7 |
+| free flight | 100/0/0 | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (1 retried) | 0.0/0.0 | 21.3/59.1 (789) | 0.02/5.8 | 0.07 | 0.0 | 100/4.1/0.0 | 0.0/12.1 | 99.8 |
+| free flight | 100/0/1%u | 4 | 8 | -96 | -95.7 | 4 | 2 | 6 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (1 retried) | 0.0/0.0 | 22.7/61.2 (789) | 0.02/5.8 | 0.07 | 0.0 | 100/4.1/0.0 | 0.0/12.1 | 99.8 |
+| free flight | 100/0/5%b | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (1 retried) | 0.0/0.0 | 23.1/61.4 (789) | 0.02/12.8 | 0.07 | 0.0 | 100/4.1/0.0 | 0.0/12.1 | 99.7 |
+| free flight | 100/s15/0 | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (1 retried) | 0.0/0.0 | 25.8/72.8 (789) | 0.02/5.6 | 0.08 | 0.0 | 107/17.1/0.0 | 0.0/18.1 | 99.8 |
+| free flight | 100/s15/1%u | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (1 retried) | 0.0/0.0 | 25.9/73.4 (789) | 0.02/5.6 | 0.08 | 0.0 | 110/17.2/0.0 | 0.0/12.1 | 99.8 |
+| free flight | 100/s15/5%b | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (1 retried) | 0.0/0.0 | 26.1/72.8 (790) | 0.02/15.3 | 0.07 | 0.0 | 107/17.1/0.0 | 0.0/18.1 | 99.7 |
+| free flight | 100/spk/0 | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (1 retried) | 0.0/0.0 | 25.4/90.0 (797) | 0.03/10.3 | 0.08 | 0.0 | 102/7.4/0.0 | 0.0/18.1 | 99.8 |
+| free flight | 100/spk/1%u | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (1 retried) | 0.0/0.0 | 25.9/92.7 (797) | 0.03/10.3 | 0.08 | 0.0 | 109/7.2/0.0 | 0.0/18.1 | 99.8 |
+| free flight | 100/spk/5%b | 4 | 8 | -96 | -95.7 | 4 | 2 | 10 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (1 retried) | 0.0/0.0 | 24.6/88.6 (789) | 0.02/15.1 | 0.08 | 0.0 | 111/6.7/0.0 | 0.0/12.1 | 99.7 |
+| free flight | 200/0/0 | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | -196.2 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/6.5 | - | 0.0 | 200/4.1/0.0 | 0.0/1.2 | 99.9 |
+| free flight | 200/0/1%u | 4 | 8 | -196 | -195.7 | 4 | 2 | 9 | 48/48 | -196.2 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/13.7 | - | 0.0 | 200/4.1/0.0 | 0.0/1.6 | 99.9 |
+| free flight | 200/0/5%b | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | -196.2 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/15.1 | - | 0.0 | 200/3.9/3.6 | 0.0/1.6 | 99.9 |
+| free flight | 200/s15/0 | 4 | 8 | -196 | -195.7 | 4 | 2 | 13 | 48/48 | -196.2 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/6.0 | - | 0.0 | 207/17.9/0.0 | 0.0/1.6 | 99.9 |
+| free flight | 200/s15/1%u | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | -196.2 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/6.0 | - | 0.0 | 204/17.2/0.0 | 0.0/2.0 | 99.9 |
+| free flight | 200/s15/5%b | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | -196.2 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/12.8 | - | 0.0 | 209/19.3/3.6 | 0.0/1.6 | 99.9 |
+| free flight | 200/spk/0 | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | -196.2 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/6.8 | - | 0.0 | 207/14.1/0.0 | 0.0/2.0 | 99.9 |
+| free flight | 200/spk/1%u | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | -196.2 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/6.9 | - | 0.0 | 201/11.8/0.0 | 0.0/2.0 | 99.9 |
+| free flight | 200/spk/5%b | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | -196.2 | 3 | 8 | - | 24/24 | 0.0/0.0 | -/- (0) | 0.02/8.2 | - | 0.0 | 218/10.4/3.6 | 0.0/1.6 | 99.9 |
+| free flight | 300/0/0 | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | -296.3 | 3 | 8 | - | 21/24 (9 retried) | 0.0/0.0 | -/- (0) | 0.02/9.4 | - | 0.0 | 300/4.1/0.0 | 0.0/1.0 | 99.9 |
+| free flight | 300/0/1%u | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | -296.3 | 3 | 8 | - | 21/24 (9 retried) | 0.0/0.0 | -/- (0) | 0.02/9.4 | - | 0.0 | 300/4.1/0.0 | 0.0/1.0 | 99.9 |
+| free flight | 300/0/5%b | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | -296.3 | 3 | 8 | - | 20/24 (12 retried) | 0.0/0.0 | -/- (0) | 0.02/17.4 | - | 0.0 | 300/3.9/34.5 | 0.0/1.0 | 99.9 |
+| free flight | 300/s15/0 | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | -296.3 | 3 | 8 | - | 20/24 (12 retried) | 0.0/0.0 | -/- (0) | 0.03/11.6 | - | 0.0 | 302/17.0/0.0 | 0.0/41.4 | 99.5 |
+| free flight | 300/s15/1%u | 4 | 8 | -296 | -295.7 | 4 | 2 | 9 | 48/48 | -296.3 | 3 | 8 | - | 20/24 (12 retried) | 0.0/0.0 | -/- (0) | 0.03/11.9 | - | 0.0 | 304/16.4/0.0 | 0.0/41.4 | 99.5 |
+| free flight | 300/s15/5%b | 4 | 8 | -296 | -295.7 | 4 | 2 | 13 | 48/48 | -296.3 | 3 | 8 | - | 20/24 (12 retried) | 0.0/0.2 | -/- (0) | 0.03/18.2 | - | 0.0 | 309/19.5/3.6 | 0.0/78.0 | 99.6 |
+| free flight | 300/spk/0 | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | -296.3 | 3 | 8 | - | 20/24 (12 retried) | 0.0/0.0 | -/- (0) | 0.02/8.5 | - | 0.0 | 317/27.7/0.0 | 0.0/1.2 | 99.9 |
+| free flight | 300/spk/1%u | 4 | 8 | -296 | -295.7 | 4 | 2 | 9 | 48/48 | -296.3 | 3 | 8 | - | 20/24 (12 retried) | 0.0/0.0 | -/- (0) | 0.02/8.5 | - | 0.0 | 310/5.7/0.0 | 0.0/1.2 | 99.9 |
+| free flight | 300/spk/5%b | 4 | 8 | -296 | -295.7 | 4 | 2 | 5 | 48/48 | -296.3 | 3 | 8 | - | 20/24 (12 retried) | 0.0/0.0 | -/- (0) | 0.02/8.5 | - | 0.0 | 308/26.4/23.3 | 0.0/1.2 | 99.9 |
+| walls | 0/0/0 | 4 | 8 | 4 | 4.3 | 4 | 2 | 6 | 48/48 | 3.8 | 3 | 8 | - | 24/24 (11 retried) | 0.0/0.0 | -/- (0) | 0.02/4.4 | - | 0.0 | 8/4.1/0.0 | 0.0/0.0 | 100.0 |
+| walls | 0/0/1%u | 4 | 8 | 4 | 4.3 | 4 | 2 | 6 | 48/48 | 3.8 | 3 | 8 | - | 24/24 (11 retried) | 0.0/0.0 | -/- (0) | 0.03/4.4 | - | 0.0 | 8/4.0/0.0 | 0.0/0.0 | 100.0 |
+| walls | 0/0/5%b | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | 3.8 | 3 | 8 | - | 24/24 (11 retried) | 0.0/0.0 | -/- (0) | 0.02/4.4 | - | 0.0 | 8/4.1/0.0 | 0.0/0.0 | 100.0 |
+| walls | 0/s15/0 | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | 3.8 | 3 | 8 | - | 24/24 (5 retried) | 0.0/0.0 | 7.3/13.1 (419) | 0.02/2.6 | 0.05 | 0.0 | 18/9.8/0.0 | 0.0/0.0 | 100.0 |
+| walls | 0/s15/1%u | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | 3.8 | 3 | 8 | - | 24/24 (5 retried) | 0.0/0.0 | 7.3/13.0 (419) | 0.02/2.6 | 0.05 | 0.0 | 18/9.3/0.0 | 0.0/0.0 | 100.0 |
+| walls | 0/s15/5%b | 4 | 8 | 4 | 4.3 | 4 | 2 | 10 | 48/48 | 3.8 | 3 | 8 | - | 24/24 (5 retried) | 0.0/0.0 | 9.6/16.4 (419) | 0.02/7.5 | 0.05 | 0.0 | 17/7.9/0.0 | 0.0/0.0 | 100.0 |
+| walls | 0/spk/0 | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | 3.8 | 3 | 8 | - | 24/24 (11 retried) | 0.0/0.0 | -/- (0) | 0.02/4.5 | - | 0.0 | 16/4.8/0.0 | 0.0/0.0 | 100.0 |
+| walls | 0/spk/1%u | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | 3.8 | 3 | 8 | - | 24/24 (11 retried) | 0.0/0.0 | -/- (0) | 0.03/4.4 | - | 0.0 | 14/4.9/3.6 | 0.0/0.0 | 100.0 |
+| walls | 0/spk/5%b | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | 3.8 | 3 | 8 | - | 24/24 (11 retried) | 0.0/0.0 | -/- (0) | 0.02/4.8 | - | 0.0 | 10/4.4/0.0 | 0.0/0.0 | 100.0 |
+| walls | 100/0/0 | 4 | 8 | -96 | -95.7 | 4 | 2 | 6 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (2 retried) | 0.0/0.0 | 20.8/60.0 (4929) | 0.03/5.1 | 0.07 | 0.0 | 100/4.1/0.0 | 0.0/0.0 | 100.0 |
+| walls | 100/0/1%u | 4 | 8 | -96 | -95.7 | 4 | 2 | 9 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (2 retried) | 0.0/0.0 | 21.8/61.8 (4927) | 0.02/5.1 | 0.07 | 0.0 | 100/4.0/0.0 | 0.0/0.0 | 100.0 |
+| walls | 100/0/5%b | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (1 retried) | 0.0/0.0 | 23.1/65.2 (4911) | 0.03/7.2 | 0.07 | 0.0 | 100/3.9/0.0 | 0.0/0.0 | 100.0 |
+| walls | 100/s15/0 | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (4 retried) | 0.0/0.0 | 25.8/74.1 (4919) | 0.02/5.5 | 0.07 | 0.0 | 103/15.3/0.0 | 0.0/0.0 | 100.0 |
+| walls | 100/s15/1%u | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (4 retried) | 0.0/0.0 | 25.3/72.8 (4917) | 0.02/5.5 | 0.07 | 0.0 | 113/15.4/0.0 | 0.0/0.0 | 100.0 |
+| walls | 100/s15/5%b | 4 | 8 | -96 | -95.7 | 4 | 2 | 9 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (4 retried) | 0.0/0.0 | 26.3/76.1 (4916) | 0.02/5.5 | 0.07 | 0.0 | 108/17.4/0.0 | 0.0/0.0 | 100.0 |
+| walls | 100/spk/0 | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (3 retried) | 0.0/0.0 | 24.7/92.0 (4921) | 0.02/5.1 | 0.07 | 0.0 | 105/4.4/0.0 | 0.0/0.0 | 100.0 |
+| walls | 100/spk/1%u | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (3 retried) | 0.0/0.0 | 24.3/92.7 (4913) | 0.02/5.1 | 0.07 | 0.0 | 101/7.1/0.0 | 0.0/0.0 | 100.0 |
+| walls | 100/spk/5%b | 4 | 8 | -96 | -95.7 | 4 | 2 | 10 | 48/48 | -96.2 | 3 | 8 | - | 24/24 (3 retried) | 0.0/0.0 | 25.0/93.7 (4920) | 0.03/6.9 | 0.07 | 0.0 | 112/6.6/0.0 | 0.0/0.0 | 100.0 |
+| walls | 200/0/0 | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | -196.2 | 3 | 8 | - | 24/24 (6 retried) | 0.0/0.0 | 29.0/68.2 (5482) | 0.02/5.5 | 0.07 | 0.0 | 200/4.1/0.0 | 0.0/0.0 | 100.0 |
+| walls | 200/0/1%u | 4 | 8 | -196 | -195.7 | 4 | 2 | 9 | 48/48 | -196.2 | 3 | 8 | - | 24/24 (6 retried) | 0.0/0.0 | 30.7/70.8 (5478) | 0.02/6.4 | 0.07 | 0.0 | 200/4.1/3.6 | 0.0/0.0 | 100.0 |
+| walls | 200/0/5%b | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | -196.2 | 3 | 8 | - | 24/24 (5 retried) | 0.0/0.0 | 33.5/75.3 (5481) | 0.02/6.8 | 0.08 | 0.0 | 200/4.1/0.0 | 0.0/0.0 | 100.0 |
+| walls | 200/s15/0 | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | -196.2 | 3 | 8 | - | 24/24 (5 retried) | 0.0/0.0 | 33.3/79.7 (5464) | 0.02/5.7 | 0.07 | 0.0 | 206/19.6/0.0 | 0.0/0.0 | 100.0 |
+| walls | 200/s15/1%u | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | -196.2 | 3 | 8 | - | 24/24 (5 retried) | 0.0/0.0 | 33.6/81.5 (5457) | 0.02/5.7 | 0.08 | 0.0 | 216/18.6/3.6 | 0.0/0.0 | 100.0 |
+| walls | 200/s15/5%b | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | -196.2 | 3 | 8 | - | 24/24 (5 retried) | 0.0/0.0 | 35.6/81.9 (5461) | 0.02/5.7 | 0.08 | 0.0 | 217/19.3/0.0 | 0.0/0.0 | 100.0 |
+| walls | 200/spk/0 | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | -196.2 | 3 | 8 | - | 24/24 (5 retried) | 0.0/0.0 | 34.4/85.4 (5438) | 0.02/5.3 | 0.07 | 0.0 | 207/9.0/0.0 | 0.0/0.0 | 100.0 |
+| walls | 200/spk/1%u | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | -196.2 | 3 | 8 | - | 24/24 (5 retried) | 0.0/0.0 | 34.2/89.1 (5431) | 0.02/5.3 | 0.08 | 0.0 | 213/9.2/0.0 | 0.0/0.0 | 100.0 |
+| walls | 200/spk/5%b | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | -196.2 | 3 | 8 | - | 24/24 (5 retried) | 0.0/0.0 | 34.8/83.7 (5438) | 0.02/6.3 | 0.08 | 0.0 | 208/9.1/0.0 | 0.0/0.0 | 100.0 |
+| walls | 300/0/0 | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | -296.2 | 3 | 8 | - | 24/24 (4 retried) | 0.0/0.0 | 58.7/143.9 (2742) | 0.02/7.5 | 0.06 | 0.0 | 300/4.1/0.0 | 0.0/0.0 | 100.0 |
+| walls | 300/0/1%u | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | -296.2 | 3 | 8 | - | 24/24 (4 retried) | 0.0/0.0 | 60.2/147.2 (2742) | 0.02/8.2 | 0.06 | 0.0 | 300/4.0/3.6 | 0.0/0.0 | 100.0 |
+| walls | 300/0/5%b | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | -296.2 | 3 | 8 | - | 24/24 (4 retried) | 0.0/0.0 | 72.1/173.9 (2742) | 0.02/7.5 | 0.06 | 0.0 | 300/4.1/0.0 | 0.0/0.0 | 100.0 |
+| walls | 300/s15/0 | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | -296.2 | 3 | 8 | - | 24/24 (6 retried) | 0.0/0.0 | 92.6/159.1 (2360) | 0.02/6.4 | 0.06 | 0.0 | 310/17.1/0.0 | 0.0/0.0 | 100.0 |
+| walls | 300/s15/1%u | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | -296.2 | 3 | 8 | - | 24/24 (6 retried) | 0.0/0.0 | 94.0/159.6 (2369) | 0.02/6.4 | 0.06 | 0.0 | 305/17.2/3.6 | 0.0/0.0 | 100.0 |
+| walls | 300/s15/5%b | 4 | 8 | -296 | -295.7 | 4 | 2 | 5 | 48/48 | -296.2 | 3 | 8 | - | 24/24 (6 retried) | 0.0/0.0 | 99.7/181.5 (2376) | 0.02/7.5 | 0.05 | 0.0 | 312/20.4/0.0 | 0.0/0.0 | 100.0 |
+| walls | 300/spk/0 | 4 | 8 | -296 | -295.7 | 4 | 2 | 5 | 48/48 | -296.2 | 3 | 8 | - | 24/24 (4 retried) | 0.0/0.0 | 73.9/149.6 (2750) | 0.02/6.5 | 0.06 | 0.0 | 306/5.3/0.0 | 0.0/0.0 | 100.0 |
+| walls | 300/spk/1%u | 4 | 8 | -296 | -295.7 | 4 | 2 | 5 | 48/48 | -296.2 | 3 | 8 | - | 24/24 (4 retried) | 0.0/0.0 | 75.6/150.3 (2751) | 0.02/6.5 | 0.07 | 0.0 | 304/5.1/0.0 | 0.0/0.0 | 100.0 |
+| walls | 300/spk/5%b | 4 | 8 | -296 | -295.7 | 4 | 2 | 5 | 48/48 | -296.2 | 3 | 8 | - | 24/24 (4 retried) | 0.0/0.0 | 70.1/173.5 (2742) | 0.02/6.5 | 0.07 | 0.0 | 307/4.9/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 0/0/0 | 4 | 8 | 4 | 4.3 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.00/7.1 | - | 0.0 | 8/4.1/0.0 | 0.0/0.0 | 99.9 |
+| gravity well | 0/0/1%u | 4 | 8 | 4 | 4.3 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.00/7.2 | - | 0.0 | 8/4.0/3.6 | 0.0/0.0 | 99.9 |
+| gravity well | 0/0/5%b | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.00/11.7 | - | 0.0 | 8/4.1/7.1 | 0.0/0.0 | 99.9 |
+| gravity well | 0/s15/0 | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/3.8 | - | 0.0 | 21/9.0/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 0/s15/1%u | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/3.8 | - | 0.0 | 24/9.9/3.6 | 0.0/0.0 | 100.0 |
+| gravity well | 0/s15/5%b | 4 | 8 | 4 | 4.3 | 4 | 2 | 10 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/13.4 | - | 0.0 | 19/10.9/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 0/spk/0 | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/11.7 | - | 0.0 | 29/7.7/0.0 | 0.0/7.8 | 99.9 |
+| gravity well | 0/spk/1%u | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/11.7 | - | 0.0 | 31/7.6/3.6 | 0.0/7.8 | 99.9 |
+| gravity well | 0/spk/5%b | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/11.7 | - | 0.0 | 27/7.2/7.1 | 0.0/7.8 | 99.9 |
+| gravity well | 100/0/0 | 4 | 8 | -96 | -95.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.00/3.0 | - | 0.0 | 100/4.1/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 100/0/1%u | 4 | 8 | -96 | -95.7 | 4 | 2 | 9 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/3.0 | - | 0.0 | 100/4.1/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 100/0/5%b | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/14.7 | - | 0.0 | 100/4.1/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 100/s15/0 | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/6.0 | - | 0.0 | 104/16.1/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 100/s15/1%u | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/6.0 | - | 0.0 | 106/13.2/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 100/s15/5%b | 4 | 8 | -96 | -95.7 | 4 | 2 | 9 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/13.5 | - | 0.0 | 115/14.7/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 100/spk/0 | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/14.3 | - | 0.0 | 111/8.6/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 100/spk/1%u | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/13.9 | - | 0.0 | 104/7.7/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 100/spk/5%b | 4 | 8 | -96 | -95.7 | 4 | 2 | 10 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/13.5 | - | 0.0 | 102/4.5/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 200/0/0 | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.00/6.0 | - | 0.0 | 200/4.1/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 200/0/1%u | 4 | 8 | -196 | -195.7 | 4 | 2 | 9 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/12.3 | - | 0.0 | 200/4.1/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 200/0/5%b | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/13.5 | - | 0.0 | 200/4.1/3.6 | 0.0/0.0 | 100.0 |
+| gravity well | 200/s15/0 | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/1.4 | - | 0.0 | 207/16.9/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 200/s15/1%u | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/1.4 | - | 0.0 | 205/17.4/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 200/s15/5%b | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/13.5 | - | 0.0 | 202/17.5/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 200/spk/0 | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/13.5 | - | 0.0 | 203/8.5/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 200/spk/1%u | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/13.5 | - | 0.0 | 210/9.7/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 200/spk/5%b | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/13.5 | - | 0.0 | 204/10.0/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 300/0/0 | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | 87.3/96.4 (257) | 0.00/9.7 | 0.07 | 0.0 | 300/4.1/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 300/0/1%u | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | 93.8/103.5 (251) | 0.01/9.7 | 0.08 | 0.0 | 300/4.1/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 300/0/5%b | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | 92.2/116.0 (257) | 0.00/13.2 | 0.07 | 0.0 | 300/4.1/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 300/s15/0 | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/3.0 | - | 0.0 | 313/19.8/0.0 | 0.0/0.7 | 99.3 |
+| gravity well | 300/s15/1%u | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/3.0 | - | 0.0 | 311/18.6/0.0 | 0.0/0.7 | 99.3 |
+| gravity well | 300/s15/5%b | 4 | 8 | -296 | -295.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | -/- (0) | 0.01/13.2 | - | 0.0 | 315/14.2/20.7 | 0.0/0.7 | 99.2 |
+| gravity well | 300/spk/0 | 4 | 8 | -296 | -295.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | 95.4/105.0 (258) | 0.01/13.2 | 0.08 | 0.0 | 311/8.4/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 300/spk/1%u | 4 | 8 | -296 | -295.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | 97.8/105.1 (257) | 0.01/13.3 | 0.07 | 0.0 | 309/8.2/0.0 | 0.0/0.0 | 100.0 |
+| gravity well | 300/spk/5%b | 4 | 8 | -296 | -295.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | 96.9/138.5 (283) | 0.00/13.3 | 0.08 | 0.0 | 316/23.0/0.0 | 0.0/0.0 | 100.0 |
+| dogfight | 0/0/0 | 4 | 8 | 4 | 4.3 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | 9.6/32.4 (11884) | 0.03/7.9 | 0.08 | 0.0 | 8/4.1/0.0 | 0.0/0.0 | 98.1 |
+| dogfight | 0/0/1%u | 4 | 8 | 4 | 4.3 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/0.0 | 9.8/33.6 (11881) | 0.03/7.9 | 0.09 | 0.0 | 8/4.0/0.0 | 0.0/0.0 | 98.1 |
+| dogfight | 0/0/5%b | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/1.0 | 10.3/36.8 (8991) | 0.02/8.5 | 0.09 | 0.0 | 8/4.0/10.7 | 0.0/24.6 | 97.7 |
+| dogfight | 0/s15/0 | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.7 | 12.7/39.4 (17383) | 0.03/5.9 | 0.09 | 0.0 | 19/10.6/0.0 | 0.1/8.8 | 94.7 |
+| dogfight | 0/s15/1%u | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.7 | 12.8/40.2 (17382) | 0.03/5.9 | 0.09 | 0.0 | 20/11.2/0.0 | 0.1/8.8 | 94.6 |
+| dogfight | 0/s15/5%b | 4 | 8 | 4 | 4.3 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/1.3 | 14.9/44.0 (17397) | 0.03/14.6 | 0.10 | 0.0 | 15/11.6/3.6 | 0.1/15.8 | 94.4 |
+| dogfight | 0/spk/0 | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.4 | 12.8/47.4 (11870) | 0.03/11.3 | 0.09 | 0.0 | 21/5.9/0.0 | 0.0/22.5 | 98.1 |
+| dogfight | 0/spk/1%u | 4 | 8 | 4 | 4.3 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.5 | 13.2/49.4 (11862) | 0.03/9.9 | 0.09 | 0.0 | 11/6.1/0.0 | 0.0/22.5 | 98.1 |
+| dogfight | 0/spk/5%b | 4 | 8 | 4 | 4.3 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/1.7 | 12.1/49.7 (9010) | 0.03/11.0 | 0.09 | 0.0 | 23/7.8/10.7 | 0.0/18.4 | 97.7 |
+| dogfight | 100/0/0 | 4 | 8 | -96 | -95.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/1.7 | 10.5/39.6 (20135) | 0.03/8.4 | 0.08 | 0.0 | 100/4.1/0.0 | 0.4/20.3 | 86.9 |
+| dogfight | 100/0/1%u | 4 | 8 | -96 | -95.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/1.8 | 10.9/42.4 (20129) | 0.03/5.1 | 0.09 | 0.0 | 100/4.1/0.0 | 0.4/20.3 | 86.8 |
+| dogfight | 100/0/5%b | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/2.3 | 12.0/48.7 (20091) | 0.04/9.7 | 0.09 | 0.0 | 100/4.1/3.6 | 0.5/20.3 | 86.3 |
+| dogfight | 100/s15/0 | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.8 | 18.9/57.5 (13898) | 0.02/23.2 | 0.09 | 0.0 | 103/14.9/0.0 | 0.0/39.5 | 98.5 |
+| dogfight | 100/s15/1%u | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/0.8 | 19.1/58.3 (13908) | 0.02/23.2 | 0.10 | 0.0 | 107/12.9/3.6 | 0.0/39.5 | 98.5 |
+| dogfight | 100/s15/5%b | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/4.4 | 15.1/57.2 (16545) | 0.02/13.3 | 0.06 | 0.0 | 113/15.4/0.0 | 0.0/59.2 | 97.8 |
+| dogfight | 100/spk/0 | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/2.1 | 13.2/51.7 (20083) | 0.04/8.9 | 0.09 | 0.0 | 105/4.2/0.0 | 0.5/20.3 | 86.7 |
+| dogfight | 100/spk/1%u | 4 | 8 | -96 | -95.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/2.2 | 13.2/51.3 (20098) | 0.04/8.9 | 0.10 | 0.0 | 105/4.1/3.6 | 0.5/20.3 | 86.7 |
+| dogfight | 100/spk/5%b | 4 | 8 | -96 | -95.7 | 4 | 2 | 10 | 48/48 | - | - | - | - | 0/0 | 0.0/3.5 | 14.1/53.5 (20045) | 0.04/9.4 | 0.10 | 0.0 | 107/4.1/3.6 | 0.7/26.6 | 86.2 |
+| dogfight | 200/0/0 | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/3.2 | 13.5/59.1 (12961) | 0.06/6.8 | 0.08 | 0.0 | 200/4.1/0.0 | 1.3/31.9 | 73.2 |
+| dogfight | 200/0/1%u | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/3.4 | 14.2/62.5 (12956) | 0.09/8.4 | 0.08 | 0.0 | 200/4.0/3.6 | 1.3/31.9 | 73.4 |
+| dogfight | 200/0/5%b | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.1/4.5 | 14.9/67.0 (12878) | 0.09/10.3 | 0.09 | 0.0 | 200/4.1/7.1 | 1.4/31.9 | 71.8 |
+| dogfight | 200/s15/0 | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/7.3 | 14.7/71.2 (22938) | 0.03/8.5 | 0.09 | 0.0 | 205/18.2/0.0 | 0.7/34.3 | 93.2 |
+| dogfight | 200/s15/1%u | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/7.4 | 14.9/73.2 (22945) | 0.03/9.2 | 0.09 | 0.0 | 201/13.0/3.4 | 0.8/34.3 | 93.1 |
+| dogfight | 200/s15/5%b | 4 | 8 | -196 | -195.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/14.0 | 12.8/64.6 (22864) | 0.03/8.9 | 0.05 | 0.0 | 212/17.9/0.0 | 1.4/37.4 | 90.9 |
+| dogfight | 200/spk/0 | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.1/4.8 | 15.7/74.8 (12908) | 0.08/8.6 | 0.08 | 0.0 | 215/4.3/0.0 | 1.5/42.5 | 73.4 |
+| dogfight | 200/spk/1%u | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.1/4.4 | 15.6/73.2 (12906) | 0.08/8.3 | 0.09 | 0.0 | 206/4.2/3.6 | 1.4/42.5 | 73.3 |
+| dogfight | 200/spk/5%b | 4 | 8 | -196 | -195.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.1/5.2 | 8.7/72.6 (10885) | 0.03/5.3 | 0.07 | 0.0 | 214/6.2/50.0 | 1.3/16.9 | 72.1 |
+| dogfight | 300/0/0 | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/20.9 | 21.0/96.1 (13233) | 0.06/13.7 | 0.08 | 0.0 | 300/4.1/0.0 | 0.6/48.6 | 93.7 |
+| dogfight | 300/0/1%u | 4 | 8 | -296 | -295.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/22.1 | 21.6/98.8 (13221) | 0.06/16.2 | 0.08 | 0.0 | 300/4.1/3.6 | 0.7/48.6 | 93.7 |
+| dogfight | 300/0/5%b | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/24.3 | 23.2/125.2 (7039) | 0.03/16.7 | 0.09 | 0.0 | 300/4.1/10.7 | 1.1/72.9 | 92.5 |
+| dogfight | 300/s15/0 | 4 | 8 | -296 | -295.7 | 4 | 2 | 13 | 48/48 | - | - | - | - | 0/0 | 0.0/12.0 | 14.6/94.3 (23134) | 0.08/10.2 | 0.09 | 0.0 | 311/14.4/0.0 | 1.3/67.4 | 89.0 |
+| dogfight | 300/s15/1%u | 4 | 8 | -296 | -295.7 | 4 | 2 | 14 | 48/48 | - | - | - | - | 0/0 | 0.0/12.1 | 14.6/94.7 (23127) | 0.07/9.9 | 0.09 | 0.0 | 312/13.2/0.0 | 1.8/67.4 | 89.0 |
+| dogfight | 300/s15/5%b | 4 | 8 | -296 | -295.7 | 4 | 2 | 13 | 48/48 | - | - | - | - | 0/0 | 0.0/8.9 | 9.0/65.0 (22138) | 0.03/5.2 | 0.07 | 0.0 | 296/16.2/0.0 | 0.7/44.9 | 92.0 |
+| dogfight | 300/spk/0 | 4 | 8 | -296 | -295.7 | 4 | 2 | 6 | 48/48 | - | - | - | - | 0/0 | 0.0/28.9 | 23.5/124.8 (13206) | 0.07/17.4 | 0.09 | 0.0 | 307/5.7/0.0 | 0.8/85.1 | 93.6 |
+| dogfight | 300/spk/1%u | 4 | 8 | -296 | -295.7 | 4 | 2 | 9 | 48/48 | - | - | - | - | 0/0 | 0.0/28.9 | 23.8/127.7 (13275) | 0.07/17.3 | 0.09 | 0.0 | 305/6.4/0.0 | 0.9/72.9 | 93.6 |
+| dogfight | 300/spk/5%b | 4 | 8 | -296 | -295.7 | 4 | 2 | 5 | 48/48 | - | - | - | - | 0/0 | 0.0/25.5 | 23.2/136.3 (7042) | 0.03/16.7 | 0.10 | 0.0 | 311/4.8/10.7 | 1.1/72.9 | 92.4 |
+
+| course | RTT | predictableBounces | reconciliations | exact % | correction p95/max | own err p95 | snaps/min |
+|---|---:|---|---:|---:|---:|---:|---:|
+| free flight | 0 | off | 551 | 99.27 | 0.00/0.0 | 1.57 | 0.0 |
+| free flight | 0 | on | 551 | 99.27 | 0.00/0.0 | 1.57 | 0.0 |
+| free flight | 100 | off | 794 | 100.00 | 0.00/0.0 | 0.11 | 0.0 |
+| free flight | 100 | on | 794 | 100.00 | 0.00/0.0 | 0.11 | 0.0 |
+| free flight | 300 | off | 791 | 100.00 | 0.00/0.0 | 0.01 | 0.0 |
+| free flight | 300 | on | 791 | 100.00 | 0.00/0.0 | 0.01 | 0.0 |
+| walls | 0 | off | 839 | 100.00 | 0.00/0.0 | 0.00 | 0.0 |
+| walls | 0 | on | 839 | 100.00 | 0.00/0.0 | 0.00 | 0.0 |
+| walls | 100 | off | 838 | 100.00 | 0.00/0.0 | 0.12 | 0.0 |
+| walls | 100 | on | 838 | 100.00 | 0.00/0.0 | 0.12 | 0.0 |
+| walls | 300 | off | 835 | 100.00 | 0.00/0.0 | 0.01 | 0.0 |
+| walls | 300 | on | 835 | 100.00 | 0.00/0.0 | 0.01 | 0.0 |
+| gravity well | 0 | off | 751 | 100.00 | 0.00/0.0 | 0.00 | 0.0 |
+| gravity well | 0 | on | 751 | 100.00 | 0.00/0.0 | 0.00 | 0.0 |
+| gravity well | 100 | off | 794 | 99.87 | 0.00/21.5 | 0.47 | 0.0 |
+| gravity well | 100 | on | 794 | 99.87 | 0.00/21.5 | 0.47 | 0.0 |
+| gravity well | 300 | off | 791 | 99.87 | 0.00/21.1 | 0.16 | 0.0 |
+| gravity well | 300 | on | 791 | 99.87 | 0.00/21.1 | 0.16 | 0.0 |
+| dogfight | 0 | off | 619 | 99.68 | 0.00/0.0 | 0.00 | 0.0 |
+| dogfight | 0 | on | 663 | 99.85 | 0.00/0.0 | 0.00 | 0.0 |
+| dogfight | 100 | off | 662 | 99.55 | 0.00/71.0 | 0.89 | 0.0 |
+| dogfight | 100 | on | 662 | 99.85 | 0.00/75.3 | 0.53 | 0.0 |
+| dogfight | 300 | off | 703 | 99.72 | 0.00/100.3 | 0.42 | 0.0 |
+| dogfight | 300 | on | 703 | 99.86 | 0.00/124.1 | 0.19 | 0.0 |

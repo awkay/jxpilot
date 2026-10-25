@@ -398,6 +398,10 @@
 |`+Insert+`
 |Show or hide the network diagnostics line (JXPilot).
 
+|`+keyTogglePrediction+`
+|`+KP_3+`
+|Switch own-ship prediction on or off (JXPilot).
+
 |`+keyQuit+`
 |-
 |Quit the game (JXPilot).

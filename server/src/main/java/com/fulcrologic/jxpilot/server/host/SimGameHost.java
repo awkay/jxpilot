@@ -59,8 +59,6 @@ import java.nio.ByteBuffer;
  * human is in it or with {@code rawMode} (C {@code Main_loop}: {@code NumPlayers > NumRobots || RawMode}).
  */
 public final class SimGameHost implements GameHost {
-    /** Inputs kept per player between two ticks; more overwrite the newest (several packets per tick are rare). */
-    public static final int INPUT_QUEUE = 16;
     /** Snapshot parts per viewer (as {@code ServerNet.MAX_SNAPSHOT_PARTS}). */
     static final int SNAPSHOT_PARTS = 4;
     /** Ids are 1..MAX_IDS-1. */
@@ -106,8 +104,37 @@ public final class SimGameHost implements GameHost {
     private final Player[] bound = new Player[IDS];
     /** Team for the spawn ({@code Ships.spawn}), chosen at login. */
     private final int[] spawnTeam = new int[IDS];
-    private final long[][] queue = new long[IDS][INPUT_QUEUE];
-    private final int[] queued = new int[IDS];
+    /** The input for the next tick ({@link #input}): held mask, taps, and whether one came. */
+    private final long[] inKeys = new long[IDS];
+    private final long[] inTaps = new long[IDS];
+    private final boolean[] queued = new boolean[IDS];
+    /** Most ticks of input lead the owner's view cull follows (a client chooses its lead, up to 14 ticks). */
+    public static final int MAX_CULL_LEAD = 8;
+    /** Most pixels the owner's view is extended by (in the direction of motion). */
+    public static final double MAX_CULL_MARGIN = 160;
+    /** The client's input lead in ticks ({@link #inputLead}), for the owner's view cull. */
+    private final int[] leadOf = new int[IDS];
+    /** Kernel state changes (KERNEL_STATE) and each viewer's cursor into them. */
+    private final KernelState kernelState;
+    private final long[] kernelCursor = new long[IDS];
+    /** The tick of the newest KERNEL_STATE message queued to each viewer (PREDICT's state tag). */
+    private final int[] kernelTag = new int[IDS];
+    /** The keys applied to the player at the last tick (the PREDICT key flags compare with them). */
+    private final long[] applied = new long[IDS];
+    // ---- PREDICT rare block per viewer: its last bytes, version, the snapshot it changed at, snapshots sent
+    /** Snapshots after a change of the rare block that carry it. */
+    public static final int RARE_RESEND = 8;
+    /** Every this many snapshots the rare block goes out anyway. */
+    public static final int RARE_REFRESH = 14;
+    /** The rare block plus the i32 frame offset: what PREDICT_RARE carries. */
+    private static final int RARE_BYTES = com.fulcrologic.jxpilot.common.sim.ShipBody.RARE_SIZE + 4;
+    private final byte[][] rareBytes = new byte[IDS][RARE_BYTES];
+    private final int[] rareVersion = new int[IDS];
+    private final long[] rareChanged = new long[IDS];
+    private final long[] snapshotsSent = new long[IDS];
+    private final ByteBuffer rareScratch = ByteBuffer.allocate(RARE_BYTES);
+    /** The KERNEL_CONFIG version ({@link #kernelVersion(int)}), carried in PREDICT. */
+    private int kernelVersion;
     /** Next event to deliver to a viewer. */
     private final long[] cursor = new long[IDS];
     /** First burst a viewer has not seen. */
@@ -188,6 +215,7 @@ public final class SimGameHost implements GameHost {
         sim.robots.applyMaxRobots();
         sim.ships.enterListener = this::entered;
         this.tuning = new Tuning(sim, this::optionChanged);
+        this.kernelState = new KernelState(w);
         this.commands = new Commands(this, sim, tuning);
     }
 
@@ -334,7 +362,12 @@ public final class SimGameHost implements GameHost {
         int id = pl.id;
         bound[id] = pl;
         spawnTeam[id] = t;
-        queued[id] = 0;
+        queued[id] = false;
+        leadOf[id] = 0;
+        applied[id] = 0;
+        snapshotsSent[id] = 0;
+        rareChanged[id] = 0;
+        java.util.Arrays.fill(rareBytes[id], (byte) 0);
         pendingSettings[id] = false;
         java.util.Arrays.fill(pendingBanks[id], 0);
         pl.viewWidth = Msg.Display.DEF_VIEW_SIZE;
@@ -450,7 +483,7 @@ public final class SimGameHost implements GameHost {
     private void kickNow(Player p, String reason) {
         int id = p.id;
         bound[id] = null;
-        queued[id] = 0;
+        queued[id] = false;
         keysBySlot[p.slot] = 0;
         sim.ships.leave(p);
         sessions.kick(id, reason);
@@ -488,7 +521,7 @@ public final class SimGameHost implements GameHost {
             return;
         }
         bound[playerId] = null;
-        queued[playerId] = 0;
+        queued[playerId] = false;
         keysBySlot[p.slot] = 0;
         cancelKick(playerId);
         sim.ships.leave(p);
@@ -650,13 +683,13 @@ public final class SimGameHost implements GameHost {
     }
 
     /**
-     * BEHAVIOR: a spawned player's mask is queued for the next tick (the newest replaces the last entry when
-     * {@link #INPUT_QUEUE} are waiting); input before READY and for unbound ids is dropped.
+     * BEHAVIOR: a spawned player's input is kept for the next tick (a second call before it replaces the first);
+     * input before READY and for unbound ids is dropped.
      * BEHAVIOR: a non-zero aimTurn is pointer control's movement: applied at once, as C applies PKT_POINTER_MOVE
      * when it reads it ({@link com.fulcrologic.jxpilot.server.sim.Keys#pointerMove}).
      */
     @Override
-    public void input(int playerId, int seq, long keys, int aimTurn) {
+    public void input(int playerId, int tick, long keys, long taps, int aimTurn) {
         Player p = boundPlayer(playerId);
         if (p == null || !p.spawned) {
             return;
@@ -664,12 +697,36 @@ public final class SimGameHost implements GameHost {
         if (aimTurn != 0) {
             sim.keys.pointerMove(p, aimTurn);
         }
-        int n = queued[playerId];
-        if (n == INPUT_QUEUE) {
-            n--;
+        inKeys[playerId] = keys;
+        inTaps[playerId] = taps;
+        queued[playerId] = true;
+    }
+
+    /** BEHAVIOR: the lead is kept per id for the owner's snapshot view cull; negative counts as 0. */
+    @Override
+    public void inputLead(int playerId, int ticks) {
+        if (isId(playerId)) {
+            leadOf[playerId] = Math.max(0, ticks);
         }
-        queue[playerId][n] = keys;
-        queued[playerId] = n + 1;
+    }
+
+    /** BEHAVIOR: PREDICT carries the latest version (mod 256) from the next snapshot on. */
+    @Override
+    public void kernelVersion(int version) {
+        kernelVersion = version;
+    }
+
+    /**
+     * BEHAVIOR: allowPlayerKilling is sent as the crash masks follow it: C applies a /set of it only at the next
+     * {@code Move_init} (and never restores KILLING_SHOTS once cleared), so "yes" iff a cannon's shot crashes into
+     * cannons now; every other option as its text.
+     */
+    @Override
+    public String kernelOptionValue(Opt opt, String value) {
+        if (opt == Opt.ALLOW_PLAYER_KILLING) {
+            return (w.params.objCannonMask & Obj.CANNON_SHOT) != 0 ? "yes" : "no";
+        }
+        return value;
     }
 
     // ================================================================ ticking
@@ -679,9 +736,11 @@ public final class SimGameHost implements GameHost {
      * <p>
      * BEHAVIOR: kicks asked for since the last tick happen first.
      * BEHAVIOR: the game runs only with a human in it or rawMode: then robots are enabled, each spawned human's
-     * queued masks are applied in player order (every edge counts, C Handle_keyboard per packet), the last one
-     * stays its input, robots get none, and the sim runs tick {@code tick}. Otherwise robots are disabled, the
-     * world only takes the tick number and queued input is dropped.
+     * input for the tick is applied in player order (C Handle_keyboard): taps not held go down first
+     * ({@code keys | taps}) and come up again ({@code keys}), so a key tapped within the tick still gives both
+     * edges; the held mask stays its input, a human with none keeps the last, robots get none, and the sim runs
+     * tick {@code tick}. Otherwise robots are disabled, the world only takes the tick number and the input is
+     * dropped.
      * BEHAVIOR: a connected human the sim removed during the tick (maxPauseTime) is kicked.
      * BEHAVIOR: first the shutdown countdown after a gameDuration game over (C Main_loop): once it ran out
      * nothing else happens and {@link #shutdownDue} is true. The first running tick with a human starts the
@@ -704,7 +763,7 @@ public final class SimGameHost implements GameHost {
         if (!run) {
             w.tick = tick;
             for (int id = 1; id < IDS; id++) {
-                queued[id] = 0;
+                queued[id] = false;
             }
             return;
         }
@@ -716,6 +775,7 @@ public final class SimGameHost implements GameHost {
         }
         long from = w.events.seq();
         sim.tick(tick, keysBySlot);
+        kernelState.scan();
         kickRemoved(from);
     }
 
@@ -774,13 +834,18 @@ public final class SimGameHost implements GameHost {
                 keysBySlot[p.slot] = 0;
                 continue;
             }
-            int n = queued[p.id];
-            long[] q = queue[p.id];
-            for (int i = 0; i < n; i++) {
-                sim.keys.apply(p, q[i]);
-                keysBySlot[p.slot] = q[i];
+            if (!queued[p.id]) {
+                continue;
             }
-            queued[p.id] = 0;
+            long keys = inKeys[p.id];
+            long down = inTaps[p.id] & ~keys;
+            if (down != 0) {
+                sim.keys.apply(p, keys | down);
+            }
+            sim.keys.apply(p, keys);
+            keysBySlot[p.slot] = keys;
+            applied[p.id] = keys;
+            queued[p.id] = false;
         }
     }
 
@@ -793,7 +858,7 @@ public final class SimGameHost implements GameHost {
                 int id = e.a[i];
                 if (isId(id) && bound[id] != null && !(bound[id].inUse && bound[id].id == id)) {
                     bound[id] = null;
-                    queued[id] = 0;
+                    queued[id] = false;
                     sessions.kick(id, KICK_PAUSED_TOO_LONG);
                 }
             }
@@ -966,6 +1031,10 @@ public final class SimGameHost implements GameHost {
             }
             Player view = sim.locks.viewOf(p);
             builder.setViewSize(p.viewWidth, p.viewHeight);
+            if (view == p) {
+                extendForLead(p, leadOf[viewerId]);
+            }
+            predictFor(viewerId, p, view == p);
             sim.locks.hudLock(view, p.viewWidth, p.viewHeight);
             scratchParts = builder.build(view, 0, burstCursor[viewerId], radar, scratch);
             burstCursor[viewerId] = w.events.burstSeq();
@@ -981,6 +1050,56 @@ public final class SimGameHost implements GameHost {
             dst.put(src.get(i));
         }
         return part < scratchParts - 1;
+    }
+
+    /**
+     * The owner's view cull for its input lead.
+     * <p>
+     * BEHAVIOR: the view is extended by the ship's velocity times the lead (at most {@link #MAX_CULL_LEAD} ticks), in
+     * the direction of motion only, and by at most {@link #MAX_CULL_MARGIN} pixels.
+     */
+    private void extendForLead(Player p, int lead) {
+        int l = Math.min(lead, MAX_CULL_LEAD);
+        double mx = p.vx * l;
+        double my = p.vy * l;
+        double m = Math.hypot(mx, my);
+        if (m > MAX_CULL_MARGIN) {
+            mx *= MAX_CULL_MARGIN / m;
+            my *= MAX_CULL_MARGIN / m;
+        }
+        builder.extendView(mx, my);
+    }
+
+    /**
+     * The PREDICT sections of the next build.
+     * <p>
+     * BEHAVIOR: only for a viewer watching its own ship. Its rare block gets a new version (mod 256) when its bytes
+     * or the frame offset change; it is sent in the {@link #RARE_RESEND} snapshots from a change (and from the bind, so a newcomer has
+     * it) and in every {@link #RARE_REFRESH}th one.
+     */
+    private void predictFor(int id, Player p, boolean own) {
+        long n = snapshotsSent[id]++;
+        if (!own) {
+            builder.setPredict(false, 0, 0, 0, 0, false);
+            return;
+        }
+        p.encodeRare(rareScratch, 0);
+        rareScratch.putInt(com.fulcrologic.jxpilot.common.sim.ShipBody.RARE_SIZE, SnapshotBuilder.frameOffset(w));
+        byte[] last = rareBytes[id];
+        boolean changed = false;
+        for (int i = 0; i < last.length; i++) {
+            byte v = rareScratch.get(i);
+            if (v != last[i]) {
+                last[i] = v;
+                changed = true;
+            }
+        }
+        if (changed) {
+            rareVersion[id] = (rareVersion[id] + 1) & 0xFF;
+            rareChanged[id] = n;
+        }
+        builder.setPredict(true, applied[id], rareVersion[id], kernelVersion, kernelTag[id],
+            n - rareChanged[id] < RARE_RESEND || n % RARE_REFRESH == 0);
     }
 
     // ================================================================ reliable state and events
@@ -1001,6 +1120,9 @@ public final class SimGameHost implements GameHost {
         fullState(viewerId, out, false);
         cursor[viewerId] = w.events.seq();
         burstCursor[viewerId] = w.events.burstSeq();
+        kernelState.initial(out, false);
+        kernelTag[viewerId] = kernelState.lastTag();
+        kernelCursor[viewerId] = kernelState.seq();
     }
 
     /** @param allMarks PLAYER_ALLIANCE for every player (a resync), else only for marked ones (a newcomer). */
@@ -1092,6 +1214,16 @@ public final class SimGameHost implements GameHost {
         if (motdPending[viewerId]) {
             motdPending[viewerId] = false;
             Msg.Motd.sendAll(out, motd.text()); // C sends it when the client asks, right after login
+        }
+        long messages = kernelState.messages();
+        if (kernelState.behind(kernelCursor[viewerId])) {
+            kernelState.initial(out, true);
+            kernelCursor[viewerId] = kernelState.seq();
+        } else {
+            kernelCursor[viewerId] = kernelState.drain(out, kernelCursor[viewerId]);
+        }
+        if (kernelState.messages() != messages) {
+            kernelTag[viewerId] = kernelState.lastTag();
         }
         Events e = w.events;
         long from = cursor[viewerId];

@@ -38,13 +38,24 @@ use `command grep -a ...` or `rg -a`. Key files:
 - **Snapshots:** the server snapshots every tick by default (divisor 1). Radar is sent every 3rd
   snapshot unless configured otherwise.
 - **Client rendering:** the client renders at vsync and interpolates between the two most recent
-  snapshots, rendering about one snapshot interval behind. The own ship (and the camera) is not
-  interpolated: it is predicted from the newest SELF to the estimated server tick with its velocity and
-  an acceleration estimate, and a new SELF's prediction error is blended out over a few render frames
-  (60 ms time constant; snap on death and teleport). Input prediction with server reconciliation (the
-  rest of `docs/latency-fixes.md`) is future work.
-- **Client input:** sent immediately on any key change, otherwise at about the tick rate. The server
-  applies input at the next frame, as C does.
+  snapshots, rendering about one snapshot interval behind (`TickClock`, from snapshot arrivals). The own
+  ship (and the camera) is not interpolated: it is dead-reckoned from the newest SELF to the estimated
+  server tick with its velocity and an acceleration estimate, and a new SELF's prediction error is blended
+  out over a few render frames (60 ms time constant; snap on death and teleport; `ClientWorld.predictSelf`).
+  Own-ship prediction with reconciliation (latency-fixes.md §4.1, phase 1c) will replace that path; its
+  inputs exist since phase 1b: the owner's PREDICT sections (`KernelSync.body()`), the server's kernel world
+  (`KernelSync.world()`) and the predicted clock.
+- **Predicted clock:** the client also runs `PredictedClock`, the tick its input is for: ahead of the
+  server by the input lead, so each input reaches the server before its tick runs. It starts at
+  `ceil((RTT/2 + 30 ms)/T) + 1` ticks over the server's present (the first PING goes out at once), settles
+  the excess once after a second of feedback, then holds the server-reported input slack near
+  0.5 tick + 2 × jitter by time dilation (±3%), jumping up at once on a starvation report.
+- **Client input:** one entry per predicted tick (protocol v2): the input collected while the predicted
+  clock runs from N-1 to N is entry N, sent when the clock reaches N, with an early copy on a key change,
+  a repeat half a tick later and up to 8 redundant older entries; `taps` keep a key pressed and released
+  within a tick. The server applies entry N in tick N (`InputBuffer`); a missing entry holds the last keys
+  (a starvation, reported back). C applies input at the frame after it arrives instead (a JXPilot
+  deviation, DEVIATIONS-server.md).
 - **Goal:** with the same map, options and inputs, the Java server matches the C server frame for
   frame, up to RNG sequences. This is verified against `tools/xpilot-ref` traces.
 

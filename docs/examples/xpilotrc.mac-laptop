@@ -17,3 +17,5 @@ xpilot.keyIdMode:                            ! u is detonate now; ID mode left u
 xpilot.keyReprogram:          F8             ! grave is select-item now
 xpilot.keySendMsg8:                          ! frees F8 for keyReprogram
 xpilot.keyToggleNetStats:     equal          ! net diagnostics line ("=" is free now; Insert has no Mac key)
+xpilot.keySendMsg7:                          ! frees F7 for keyTogglePrediction
+xpilot.keyTogglePrediction:   F7             ! own-ship prediction on/off (KP_3 has no Mac laptop key)

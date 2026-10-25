@@ -600,6 +600,25 @@ class ClientFrameTest {
                 () -> assertEquals(0, netLines(cf), "Insert again hides it"));
         }
 
+        @Test
+        @DisplayName("KP_3 switches own-ship prediction off and on again")
+        void predictionToggle() {
+            AppFixture f = new AppFixture(true).players();
+            f.game.onStateChange(ConnectionState.PLAYING, "Playing");
+            ClientFrame cf = frame(f);
+            boolean before = f.game.predictor().enabled;
+            cf.key(GLFW_KEY_KP_3, GLFW_PRESS, 0, T0);
+            cf.step(T0, 800, 600, 1, M, 256, 100);
+            boolean off = f.game.predictor().enabled;
+            cf.key(GLFW_KEY_KP_3, GLFW_RELEASE, 0, T0);
+            cf.key(GLFW_KEY_KP_3, GLFW_PRESS, 0, T0);
+            cf.step(T0 + 1000, 800, 600, 1, M, 256, 100);
+            assertAll(
+                () -> assertTrue(before, "on at first"),
+                () -> assertFalse(off, "off after KP_3"),
+                () -> assertTrue(f.game.predictor().enabled, "on again after a second press"));
+        }
+
         static long netLines(ClientFrame cf) {
             return java.util.stream.IntStream.range(0, cf.viewHud().textCount())
                 .filter(i -> cf.viewHud().text(i).toString().startsWith("rtt ")).count();

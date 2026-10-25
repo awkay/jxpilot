@@ -82,15 +82,32 @@ public final class ClientGame implements ConnectionListener {
     private long snapshotCount;
 
     private final ScoreObjects scoreObjects = new ScoreObjects();
+    private final com.fulcrologic.jxpilot.client.game.predict.OwnShipPredictor predictor =
+        new com.fulcrologic.jxpilot.client.game.predict.OwnShipPredictor();
+    private com.fulcrologic.jxpilot.client.game.predict.PredictionSource predictionSource;
 
     /** With default {@link ClientWorld} capacities. */
     public ClientGame() {
         world = new ClientWorld(players);
+        world.setPredictor(predictor);
     }
 
     /** With explicit capacities (see {@link ClientWorld#ClientWorld(Players, int, int, int, int)}). */
     public ClientGame(int shipCap, int shotCap, int particleCap, int radarCap) {
         world = new ClientWorld(players, shipCap, shotCap, particleCap, radarCap);
+        world.setPredictor(predictor);
+    }
+
+    /** The own-ship predictor (its {@code enabled} switch is the prediction A/B toggle). */
+    public com.fulcrologic.jxpilot.client.game.predict.OwnShipPredictor predictor() {
+        return predictor;
+    }
+
+    /** BEHAVIOR: a protocol v2 connection's feed: the predictor draws the own ship from it from now on. */
+    @Override
+    public void predictionSource(com.fulcrologic.jxpilot.client.game.predict.PredictionSource source) {
+        predictionSource = source;
+        predictor.reset();
     }
 
     public ClientWorld world() {
@@ -107,6 +124,7 @@ public final class ClientGame implements ConnectionListener {
         players.setSelfId(id);
         events.clear();
         scoreObjects.clear();
+        predictor.reset();
         if (world.configured()) {
             world.reset();
         }
@@ -315,11 +333,13 @@ public final class ClientGame implements ConnectionListener {
     /**
      * Per rendered frame.
      * <p>
-     * BEHAVIOR: updates the world for {@code nowNanos}, ages messages and score objects by
+     * BEHAVIOR: runs the own-ship predictor (protocol v2), then updates the world for {@code nowNanos}; ages
+     * messages and score objects by
      * {@code dtSeconds * gameFps} original frames, and re-sorts the scoreboard if players changed.
      */
     public void frame(long nowNanos, double dtSeconds) {
         double frames = dtSeconds * gameFps;
+        predictor.update(predictionSource, nowNanos);
         world.update(nowNanos);
         messages.tick(frames);
         scoreObjects.tick(frames);

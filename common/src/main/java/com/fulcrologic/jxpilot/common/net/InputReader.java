@@ -26,53 +26,92 @@ package com.fulcrologic.jxpilot.common.net;
 import java.nio.ByteBuffer;
 
 /**
- * Server side flyweight over an INPUT body (see {@link InputHistory}). Typical use: for
- * {@code i = count()-1 .. 0}, apply entries whose {@link #seq(int)} is newer than the last applied.
+ * Server side reader of an INPUT body (see {@link InputHistory}): entry i is for tick {@code newestTick() - i},
+ * 0 = newest. {@link #wrap} decodes the (variable-length) entries into preallocated arrays; allocation free.
  */
 public final class InputReader {
-    private ByteBuffer buf;
-    private int base;
-    private int latestSeq;
-    private int ackTick;
+    private int seq;
+    private int newestTick;
     private int count;
+    private final long[] keys = new long[InputHistory.MAX_REDUNDANCY];
+    private final long[] taps = new long[InputHistory.MAX_REDUNDANCY];
+    private final int[] aim = new int[InputHistory.MAX_REDUNDANCY];
 
     /**
-     * Wrap the body at the buffer's position.
+     * Decode the body at the buffer's position (absolute reads; the position does not move).
      * <p>
-     * BEHAVIOR: rejects bodies shorter than the header, with more than 8 entries, or shorter than the entries.
+     * BEHAVIOR: rejects bodies shorter than the header, with no entry or more than 8, with an unknown flag bit, or
+     * shorter than their entries' fields; an entry without keys has the next-newer entry's (0 for the newest), one
+     * without taps or aim has 0.
      *
      * @return false if malformed
      */
     public boolean wrap(ByteBuffer in) {
         int p = in.position();
-        if (in.remaining() < InputHistory.HEADER_SIZE) {
+        int end = in.limit();
+        if (end - p < InputHistory.HEADER_SIZE) {
             return false;
         }
-        latestSeq = in.getInt(p);
-        ackTick = in.getInt(p + 4);
-        count = in.get(p + 8) & 0xFF;
-        if (count > InputHistory.MAX_REDUNDANCY
-            || in.remaining() < InputHistory.HEADER_SIZE + count * InputHistory.ENTRY_SIZE) {
+        int n = in.get(p + 6) & 0xFF;
+        if (n == 0 || n > InputHistory.MAX_REDUNDANCY) {
             return false;
         }
-        buf = in;
-        base = p + InputHistory.HEADER_SIZE;
+        int o = p + InputHistory.HEADER_SIZE;
+        long ref = 0;
+        for (int i = 0; i < n; i++) {
+            if (o >= end) {
+                return false;
+            }
+            int f = in.get(o++) & 0xFF;
+            if ((f & ~(InputHistory.F_KEYS | InputHistory.F_TAPS | InputHistory.F_AIM)) != 0) {
+                return false;
+            }
+            int need = ((f & InputHistory.F_KEYS) != 0 ? 8 : 0) + ((f & InputHistory.F_TAPS) != 0 ? 8 : 0)
+                + ((f & InputHistory.F_AIM) != 0 ? 2 : 0);
+            if (end - o < need) {
+                return false;
+            }
+            if ((f & InputHistory.F_KEYS) != 0) {
+                ref = in.getLong(o);
+                o += 8;
+            }
+            keys[i] = ref;
+            if ((f & InputHistory.F_TAPS) != 0) {
+                taps[i] = in.getLong(o);
+                o += 8;
+            } else {
+                taps[i] = 0;
+            }
+            if ((f & InputHistory.F_AIM) != 0) {
+                aim[i] = in.getShort(o);
+                o += 2;
+            } else {
+                aim[i] = 0;
+            }
+        }
+        seq = in.getShort(p) & 0xFFFF;
+        newestTick = in.getInt(p + 2);
+        count = n;
         return true;
     }
 
-    public int latestSeq() { return latestSeq; }
+    /** The datagram's send sequence (u16). */
+    public int seq() { return seq; }
 
-    /** Newest snapshot tick the client has received. */
-    public int ackTick() { return ackTick; }
+    /** The tick of the newest entry. */
+    public int newestTick() { return newestTick; }
 
     public int count() { return count; }
 
-    /** Sequence of entry i (0 = newest). */
-    public int seq(int i) { return latestSeq - i; }
+    /** Tick of entry i (0 = newest). */
+    public int tick(int i) { return newestTick - i; }
 
     /** {@link ControlKey} mask of entry i. */
-    public long keys(int i) { return buf.getLong(base + i * InputHistory.ENTRY_SIZE); }
+    public long keys(int i) { return keys[i]; }
 
-    /** Aim turn of entry i (signed, u16 angle units). */
-    public int aimTurn(int i) { return buf.getShort(base + i * InputHistory.ENTRY_SIZE + 8); }
+    /** Keys tapped (down and up) within entry i's tick. */
+    public long taps(int i) { return taps[i]; }
+
+    /** Aim turn of entry i (pointer movement, signed). */
+    public int aimTurn(int i) { return aim[i]; }
 }

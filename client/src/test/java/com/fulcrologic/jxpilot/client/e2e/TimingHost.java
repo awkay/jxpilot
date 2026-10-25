@@ -69,8 +69,18 @@ final class TimingHost implements GameHost {
     }
 
     @Override
-    public void input(int playerId, int seq, long keys, int aimTurn) {
-        host.input(playerId, seq, keys, aimTurn);
+    public void input(int playerId, int tick, long keys, long taps, int aimTurn) {
+        host.input(playerId, tick, keys, taps, aimTurn);
+    }
+
+    @Override
+    public void inputLead(int playerId, int ticks) {
+        host.inputLead(playerId, ticks);
+    }
+
+    @Override
+    public void kernelVersion(int version) {
+        host.kernelVersion(version);
     }
 
     @Override

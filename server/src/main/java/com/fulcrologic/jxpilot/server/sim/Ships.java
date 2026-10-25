@@ -829,6 +829,9 @@ public final class Ships {
             pl.count--;
             if ((pl.status & Obj.PLAYING) == 0) {
                 transportToHome(pl);
+                if (sim.predictableBounces) {
+                    sim.tieBreak.reseed(w.tick, pl.id); // as ShipEffects.begin(PHASE_FLY) for a flying ship
+                }
                 k.mover.movePlayer(pl, sim.effects);
                 return false;
             }

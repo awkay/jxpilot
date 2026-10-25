@@ -72,7 +72,8 @@ public final class ClientSim {
     }
 
     /**
-     * One client frame at {@code nowNanos}: receive, update the game, send input, flush reliable data.
+     * One client frame at {@code nowNanos}: receive, send input, update the game (the own ship predicted with this
+     * frame's keys, as the app draws it), flush reliable data.
      * <p>
      * BEHAVIOR: the frame's elapsed time (0 for the first) ages messages and HUD timers.
      */
@@ -80,8 +81,8 @@ public final class ClientSim {
         double dt = lastNow == Long.MIN_VALUE ? 0 : (nowNanos - lastNow) / 1e9;
         lastNow = nowNanos;
         connection.update(nowNanos);
-        game.frame(nowNanos, dt);
         connection.sendInput(keysForFrame.applyAsLong(frames), 0, nowNanos);
+        game.frame(nowNanos, dt);
         connection.flush(nowNanos);
         frames++;
     }

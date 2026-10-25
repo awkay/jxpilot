@@ -215,7 +215,17 @@ public final class ClientWorld {
 
     // render outputs
     private double renderTick;
-    // own-ship prediction (F1)
+    // own-ship prediction: the kernel predictor (protocol v2), else F1
+    private com.fulcrologic.jxpilot.client.game.predict.OwnShipPredictor predictor;
+    private boolean predicted;
+    /** The snapshot's own bullets are left out (the predictor draws them). */
+    private boolean hideOwnShots;
+    /** An own bullet no provisional shot stands for is drawn anyway (set while one is put). */
+    private boolean allowOwn;
+    /** The own normal bullet's SHOT variant without the harmless bit. */
+    private static final int OWN_SHOT = Records.ShotKind.variant(Records.ShotKind.SHOT, Records.ObjColor.OWN);
+    /** Provisional own shots the last update appended to the shot list (drawn after the snapshot shots). */
+    private int provisionalShots;
     private boolean havePrediction;
     private int predTick;
     private double predX;
@@ -268,6 +278,10 @@ public final class ClientWorld {
     private final float[] outShotX;
     private final float[] outShotY;
     private final int[] outShotVariant;
+    /** Each drawn shot's source record: the snapshot tick and its position there (none: Integer.MIN_VALUE tick). */
+    private final int[] outShotSrcTick;
+    private final float[] outShotSrcX;
+    private final float[] outShotSrcY;
     private int outPoints;
     private final float[] outPointX;
     private final float[] outPointY;
@@ -308,6 +322,17 @@ public final class ClientWorld {
         outShotX = new float[shotCap];
         outShotY = new float[shotCap];
         outShotVariant = new int[shotCap];
+        outShotSrcTick = new int[shotCap];
+        drDraw = new boolean[shotCap];
+        drX = new int[shotCap];
+        drY = new int[shotCap];
+        drVx = new float[shotCap];
+        drVy = new float[shotCap];
+        drLife = new long[shotCap];
+        drCannon = new boolean[shotCap];
+        drTeams = new int[shotCap];
+        outShotSrcX = new float[shotCap];
+        outShotSrcY = new float[shotCap];
         outPointX = new float[shotCap];
         outPointY = new float[shotCap];
         outPointColor = new int[shotCap];
@@ -492,6 +517,7 @@ public final class ClientWorld {
             result = LATE_TICK;
         }
         f.parts |= partBit;
+        f.version++;
         ingested++;
         boolean newest = tick == newestTick;
         int firstShip = f.ships;
@@ -503,6 +529,14 @@ public final class ClientWorld {
             decodeSection(f, newest);
         }
         generateSparks(f, firstShip, !selfBefore && f.hasSelf);
+        int partCount = reader.partCount();
+        long all = partCount >= 64 ? -1L : (1L << partCount) - 1;
+        f.complete = partCount > 0 && (f.parts & all) == all;
+        if (predictor != null && !f.shotsConfirmed && f.complete) {
+            f.shotsConfirmed = true;
+            predictor.shots().confirm(f.tick, Math.min(f.shots, shotCap), f.shotX, f.shotY, f.shotVariant,
+                f.shotOwnMatched);
+        }
         if (f.hasSelf && (!haveSelfState || f.tick - selfStateTick >= 0)) {
             haveSelfState = true;
             selfStateTick = f.tick;
@@ -579,11 +613,14 @@ public final class ClientWorld {
                     f.shotY[k] = shotRec.y();
                     f.shotVx[k] = (byte) shotRec.vx();
                     f.shotVy[k] = (byte) shotRec.vy();
+                    f.shotWireVx[k] = shotRec.vxf();
+                    f.shotWireVy[k] = shotRec.vyf();
                     f.shotVariant[k] = variant;
                     f.shotEstVx[k] = f.shotVx[k];
                     f.shotEstVy[k] = f.shotVy[k];
                     f.shotState[k] = f.shotVx[k] != 0 || f.shotVy[k] != 0 ? Tracker.KNOWN : Tracker.UNKNOWN;
                     f.shotNext[k] = -1;
+                    f.shotAge[k] = 0;
                 }
             }
             case Section.BURST -> {
@@ -830,7 +867,7 @@ public final class ClientWorld {
             return;
         }
         int selfId = f.hasSelf ? f.selfId : players.selfId();
-        if (selfInPart && thrusting(f.selfFlags)) {
+        if (selfInPart && thrusting(f.selfFlags) && !ownSparksPredicted()) {
             emitTicks(f, f.selfId, ThrustSparkEmitter.quantizePos(f.selfX), ThrustSparkEmitter.quantizePos(f.selfY),
                 f.selfHeading, ThrustSparkEmitter.quantizeVel(f.selfVx), ThrustSparkEmitter.quantizeVel(f.selfVy),
                 true);
@@ -840,6 +877,11 @@ public final class ClientWorld {
                 emitTicks(f, f.shipId[i], f.shipX[i], f.shipY[i], f.shipHeading[i], f.shipVx[i], f.shipVy[i], false);
             }
         }
+    }
+
+    /** The predictor draws the own ship (and makes its exhaust from the predicted ticks). */
+    private boolean ownSparksPredicted() {
+        return predictor != null && predictor.active();
     }
 
     private static boolean thrusting(int flags) {
@@ -879,6 +921,8 @@ public final class ClientWorld {
      * ({@link #associate}) and interpolated; unlinked ones move by their velocity (wire, else estimated)
      * from A; with only B they are drawn at B (see {@link #drawShots}).
      * BEHAVIOR: the own ship is predicted to the server tick now ({@link #predictSelf}).
+     * BEHAVIOR: with the own-ship predictor active, shots are instead dead-reckoned to the predicted tick
+     * ({@link #drawShotsPredicted}).
      * BEHAVIOR: particles are advanced to the render tick, the own exhaust to the own ship's drawn tick.
      */
     public void update(long nowNanos) {
@@ -1044,6 +1088,7 @@ public final class ClientWorld {
             return;
         }
         a.assocValid = true;
+        b.version++; // its links, velocity estimates and ages change
         a.assocTick = b.tick;
         a.assocParts = b.parts;
         a.assocOwnParts = a.parts;
@@ -1059,6 +1104,13 @@ public final class ClientWorld {
         }
         tracker.link(sn, a.shotX, a.shotY, a.shotEstVx, a.shotEstVy, a.shotState, keyA, sm, b.shotX, b.shotY, keyB,
             frames, TRACK_PX_PER_FRAME, SHOT_AMBIGUITY_RATIO, MIN_SHOT_SPEED, worldW, worldH, wrap, a.shotNext);
+        int ticks = b.tick - a.tick;
+        for (int i = 0; i < sn; i++) {
+            int j = a.shotNext[i];
+            if (j >= 0 && j < sm && ticks > 0) {
+                b.shotAge[j] = a.shotAge[i] + ticks;
+            }
+        }
         for (int j = 0; j < sm; j++) {
             if (b.shotVx[j] != 0 || b.shotVy[j] != 0) {
                 continue;
@@ -1145,9 +1197,13 @@ public final class ClientWorld {
      */
     private void drawShots(SnapshotFrame a, SnapshotFrame b) {
         outShots = 0;
+        hideOwnShots = ownSparksPredicted();
+        if (hideOwnShots && predictor.shots().motion() != null && drawShotsPredicted()) {
+            return;
+        }
         if (a == null) {
             for (int i = 0; i < b.shots && i < shotCap; i++) {
-                putShot(b.shotX[i], b.shotY[i], b.shotVariant[i]);
+                putShot(b.shotX[i], b.shotY[i], b.shotVariant[i], b, i);
             }
             return;
         }
@@ -1157,18 +1213,19 @@ public final class ClientWorld {
             int j = b == null ? -1 : a.shotNext[i];
             if (j >= 0) {
                 putShot(wrapX(a.shotX[i] + XMath.wrapDelta(b.shotX[j] - a.shotX[i], worldW, wrap) * t),
-                    wrapY(a.shotY[i] + XMath.wrapDelta(b.shotY[j] - a.shotY[i], worldH, wrap) * t), a.shotVariant[i]);
+                    wrapY(a.shotY[i] + XMath.wrapDelta(b.shotY[j] - a.shotY[i], worldH, wrap) * t), a.shotVariant[i],
+                    a, i);
                 continue;
             }
             if (b != null && a.shotState[i] == Tracker.KNOWN) {
                 // F14: a tracked shot with no continuation died between A and B (wall, ship): drawn where A had
                 // it, as C does, instead of flying on past the impact
-                putShot(a.shotX[i], a.shotY[i], a.shotVariant[i]);
+                putShot(a.shotX[i], a.shotY[i], a.shotVariant[i], a, i);
                 continue;
             }
             double vx = a.shotEstVx[i];
             double vy = a.shotEstVy[i];
-            putShot(wrapX(a.shotX[i] + vx * dt), wrapY(a.shotY[i] + vy * dt), a.shotVariant[i]);
+            putShot(wrapX(a.shotX[i] + vx * dt), wrapY(a.shotY[i] + vy * dt), a.shotVariant[i], a, i);
         }
     }
 
@@ -1193,12 +1250,183 @@ public final class ClientWorld {
         }
     }
 
+    private void putShot(float x, float y, byte variant, SnapshotFrame src, int i) {
+        int k = outShots;
+        putShot(x, y, variant);
+        if (outShots > k) {
+            outShotSrcTick[k] = src.tick;
+            outShotSrcX[k] = src.shotX[i];
+            outShotSrcY[k] = src.shotY[i];
+        }
+    }
+
     private void putShot(float x, float y, byte variant) {
+        if (outShots >= outShotX.length || hideOwnShots && !allowOwn && (variant & 0x7F) == OWN_SHOT) {
+            return; // the predictor draws the own bullets (provisional shots) on the own ship's timeline
+        }
         int k = outShots++;
+        outShotSrcTick[k] = Integer.MIN_VALUE;
         outShotX[k] = x;
         outShotY[k] = y;
         outShotVariant[k] = variant & 0xFF;
     }
+
+    /**
+     * The shots dead-reckoned to the own ship's predicted tick (prediction on, latency-fixes.md §4.6-B for shots): so
+     * a shield pressed now is judged against the shots where they will be when the press lands, not where they were
+     * an interpolation delay ago. Each shot of the newest complete frame (else the newest) moves on from it as the
+     * server moves bullets ({@link com.fulcrologic.jxpilot.client.game.predict.ShotMotion}: gravity, walls) for the
+     * gap to the predicted tick, the last fraction blended; its velocity is the SHOT record's (exact to 1/16 px per
+     * frame; the tracker's estimate for a record without one). Its team: the own team for a bullet the server
+     * colours TEAM, else none (an enemy's team is not on the wire: its own cannons and targets crash it here).
+     * <p>
+     * BEHAVIOR: the gap is capped at the own ship's lead over the server's tick now plus 2 snapshot intervals; a shot
+     * that ends on the way (a wall, or its life: shotLife for a player's bullet from the tick it was first seen, at
+     * most {@link #CANNON_SHOT_LIFE_MAX} for a cannon's) is not drawn. The own bullets are the provisional shots',
+     * except own records no provisional shot was matched to in the frame's reconciliation (bullets the client did not
+     * predict), which are reckoned like the others. Returns false without a frame (the interpolated drawing then
+     * runs).
+     */
+    private boolean drawShotsPredicted() {
+        SnapshotFrame n = null;
+        SnapshotFrame any = null;
+        for (SnapshotFrame f : ring) {
+            if (!f.valid) {
+                continue;
+            }
+            if (any == null || f.tick - any.tick > 0) {
+                any = f;
+            }
+            if (f.complete && (n == null || f.tick - n.tick > 0)) {
+                n = f;
+            }
+        }
+        if (n == null) {
+            n = any;
+        }
+        if (n == null) {
+            return false;
+        }
+        com.fulcrologic.jxpilot.client.game.predict.ShotMotion m = predictor.shots().motion();
+        double target = predictor.drawnTick();
+        double cap = Math.max(0, target - serverTickNow) + 2 * snapshotInterval;
+        double gap = Math.max(0, Math.min(target - n.tick, cap));
+        int whole = (int) gap;
+        double frac = gap - whole;
+        int team0 = predictor.shots().team();
+        boolean cached = drFrame == n && drVersion == n.version && drWhole == whole && drMotion == m && drTeam == team0;
+        if (!cached) {
+            drFrame = n;
+            drVersion = n.version;
+            drWhole = whole;
+            drMotion = m;
+            drTeam = team0;
+            stepWhole(n, m, whole, team0);
+            wholeSteps++;
+        }
+        for (int j = 0; j < n.shots && j < shotCap; j++) {
+            if (!drDraw[j]) {
+                continue;
+            }
+            int x = drX[j];
+            int y = drY[j];
+            double px = x / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK;
+            double py = y / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK;
+            if (frac > 0 && m.tick(x, y, drVx[j], drVy[j], drLife[j], drCannon[j], drTeams[j], shotStep)) {
+                px += frac * XMath.wrapDelta(shotStep.x / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK - px,
+                    worldW, wrap);
+                py += frac * XMath.wrapDelta(shotStep.y / (double) com.fulcrologic.jxpilot.common.sim.Click.CLICK - py,
+                    worldH, wrap);
+            }
+            allowOwn = (n.shotVariant[j] & 0x7F) == OWN_SHOT;
+            putShot(wrapX(px), wrapY(py), n.shotVariant[j], n, j);
+            allowOwn = false;
+            reckoned++;
+        }
+        return true;
+    }
+
+    /** C CANNON_SHOT_LIFE_MAX bound: a cannon's bullet lives 8 + rand(24) ticks, at most 31. */
+    static final int CANNON_SHOT_LIFE_MAX = 31;
+
+
+    /**
+     * Step each drawable bullet of {@code n} by the gap's whole ticks into the dead reckoning's cache (redone only when
+     * the frame, its contents, the whole ticks, the motion or the own team changed: the per-frame work is then one
+     * fractional step per bullet).
+     */
+    private void stepWhole(SnapshotFrame n, com.fulcrologic.jxpilot.client.game.predict.ShotMotion m, int whole,
+                           int ownTeam) {
+        for (int j = 0; j < n.shots && j < shotCap; j++) {
+            drDraw[j] = false;
+            boolean own = (n.shotVariant[j] & 0x7F) == OWN_SHOT;
+            if (own && !(n.shotsConfirmed && !n.shotOwnMatched[j])) {
+                continue; // a provisional shot stands for it (or the frame was not reconciled: not known)
+            }
+            // the wire's velocity is exact to 1/16 px per frame; a record without one has the tracker's estimate
+            boolean wire = n.shotWireVx[j] != 0 || n.shotWireVy[j] != 0;
+            float vx = (wire ? n.shotWireVx[j] : n.shotEstVx[j]) * frameFraction;
+            float vy = (wire ? n.shotWireVy[j] : n.shotEstVy[j]) * frameFraction;
+            int x = com.fulcrologic.jxpilot.common.sim.Click.fromPixels(n.shotX[j]);
+            int y = com.fulcrologic.jxpilot.common.sim.Click.fromPixels(n.shotY[j]);
+            boolean cannon = Records.ShotKind.kindOf(n.shotVariant[j]) == Records.ShotKind.CANNON_SHOT;
+            // the server marks a team mate's (or own team cannon's) bullet TEAM: the own team; any other is not ours
+            int team = own || Records.ShotKind.colorOf(n.shotVariant[j]) == Records.ObjColor.TEAM
+                ? ownTeam : com.fulcrologic.jxpilot.common.Const.TEAM_NOT_SET;
+            // its life left after the frame's tick, as far as it is knowable: a player's bullet lives shotLife ticks
+            // from the tick it was first seen (or earlier), a cannon's at most CANNON_SHOT_LIFE_MAX
+            long life = (cannon ? CANNON_SHOT_LIFE_MAX : predictor.shots().shotLife()) - n.shotAge[j] - 1;
+            boolean alive = life > 0;
+            for (int k = 0; k < whole && alive; k++) {
+                alive = m.tick(x, y, vx, vy, life, cannon, team, shotStep);
+                if (alive) {
+                    x = shotStep.x;
+                    y = shotStep.y;
+                    vx = shotStep.vx;
+                    vy = shotStep.vy;
+                    life = shotStep.life;
+                }
+            }
+            if (!alive) {
+                continue; // it ends on the way (a wall, its life): not drawn stuck at the wall
+            }
+            drDraw[j] = true;
+            drX[j] = x;
+            drY[j] = y;
+            drVx[j] = vx;
+            drVy[j] = vy;
+            drLife[j] = life;
+            drCannon[j] = cannon;
+            drTeams[j] = team;
+        }
+    }
+
+    private long wholeSteps;
+    private long reckoned;
+
+    /** Times the dead reckoning stepped its bullets' whole ticks (the cache missed). */
+    public long reckoningSteps() { return wholeSteps; }
+
+    /** Bullet-frames drawn dead-reckoned. */
+    public long reckonedShots() { return reckoned; }
+
+    // the dead reckoning's cache of the bullets' states after the gap's whole ticks
+    private SnapshotFrame drFrame;
+    private long drVersion;
+    private int drWhole;
+    private com.fulcrologic.jxpilot.client.game.predict.ShotMotion drMotion;
+    private int drTeam;
+    private final boolean[] drDraw;
+    private final int[] drX;
+    private final int[] drY;
+    private final float[] drVx;
+    private final float[] drVy;
+    private final long[] drLife;
+    private final boolean[] drCannon;
+    private final int[] drTeams;
+
+    private final com.fulcrologic.jxpilot.client.game.predict.ShotStep shotStep =
+        new com.fulcrologic.jxpilot.client.game.predict.ShotStep();
 
     /** As {@link #drawShots}, for position-only point particles (no wire velocity). */
     private void drawPoints(SnapshotFrame a, SnapshotFrame b) {
@@ -1260,10 +1488,19 @@ public final class ClientWorld {
         }
         if (n == null) {
             havePrediction = false;
+            predicted = false;
             return;
         }
         outSelf = true;
         drawnSelfTick = n.tick;
+        if (predictor != null && predictor.active() && n.selfId == players.selfId()) {
+            drawPredicted(n);
+            havePrediction = false;
+            return;
+        }
+        drainExhaust(n, false);
+        predicted = false;
+        provisionalShots = 0;
         double decay = havePrediction ? Math.exp(-Math.max(0, nowNanos - lastPredictNanos) / 1e9 / ERROR_DECAY_SECONDS)
             : 0;
         lastPredictNanos = nowNanos;
@@ -1324,6 +1561,71 @@ public final class ClientWorld {
         putSelf(n, wrapX(px + errX), wrapY(py + errY), n.selfHeading);
         outSelfVx = (float) (n.selfVx + ax * dt);
         outSelfVy = (float) (n.selfVy + ay * dt);
+    }
+
+    /**
+     * The own ship as the kernel predictor draws it ({@link com.fulcrologic.jxpilot.client.game.predict}): its
+     * position, heading, velocity, fuel and the bits the own keys decide, at its drawn (predicted) tick; the rest
+     * from the newest SELF. Its exhaust comes from the newly final predicted ticks.
+     * <p>
+     * BEHAVIOR: drawn at {@link #selfDrawnTick()} = the predictor's drawn tick; flags as
+     * {@link com.fulcrologic.jxpilot.client.game.predict.OwnShipPredictor#flags}; fuel in units (C / 256).
+     * BEHAVIOR: own exhaust: one emission per predicted thrusting tick, at that tick's predicted state (quantized
+     * as the server seeds); none from SELF records meanwhile.
+     * BEHAVIOR: the provisional own shots are appended to the drawn shots (own colour), as many as fit; the
+     * snapshots' own bullets (SHOT records of colour OWN) are left out meanwhile, and each complete snapshot
+     * confirms the provisional ones ({@link com.fulcrologic.jxpilot.client.game.predict.ProvisionalShots#confirm}).
+     */
+    private void drawPredicted(SnapshotFrame n) {
+        com.fulcrologic.jxpilot.client.game.predict.OwnShipPredictor p = predictor;
+        putSelf(n, (float) p.x(), (float) p.y(), (float) p.heading());
+        outSelfFlags = p.flags(n.selfFlags);
+        outSelfVx = p.vx();
+        outSelfVy = p.vy();
+        outSelfFuel = (float) (p.fuel() / 256);
+        outSelfFuelMax = (float) (p.fuelMax() / 256);
+        drawnTick = p.drawnTick();
+        predicted = true;
+        drainExhaust(n, true);
+        com.fulcrologic.jxpilot.client.game.predict.ProvisionalShots ps = p.shots();
+        hideOwnShots = false;
+        for (int i = 0; i < ps.count() && outShots < outShotX.length; i++) {
+            putShot(ps.x(i), ps.y(i), (byte) OWN_SHOT);
+        }
+        provisionalShots = ps.count();
+    }
+
+    private void drainExhaust(SnapshotFrame n, boolean emit) {
+        if (predictor == null) {
+            return;
+        }
+        int id = n.selfId;
+        int slot = players.slotOf(id);
+        float power = slot >= 0 ? players.power(slot) : 45f;
+        int ab = slot >= 0 ? players.afterburners(slot) : 0;
+        int ex = slot >= 0 ? players.engineX(slot) : defaultEngineX;
+        int ey = slot >= 0 ? players.engineY(slot) : defaultEngineY;
+        for (int i = predictor.takeExhaust(); i >= 0; i = predictor.takeExhaust()) {
+            if (emit) {
+                sparks.emit(predictor.exhaustTick(i), id, ThrustSparkEmitter.quantizePos(predictor.exhaustX(i)),
+                    ThrustSparkEmitter.quantizePos(predictor.exhaustY(i)), predictor.exhaustHeading(i),
+                    ThrustSparkEmitter.quantizeVel(predictor.exhaustVx(i)),
+                    ThrustSparkEmitter.quantizeVel(predictor.exhaustVy(i)), power, ab, ex, ey, true, particles);
+            }
+        }
+    }
+
+    /**
+     * Provisional own shots in the drawn shot list: its last this many entries (0 unless {@link #selfPredicted}).
+     */
+    public int provisionalShotCount() { return provisionalShots; }
+
+    /** Whether the last {@link #update} drew the own ship from the kernel predictor. */
+    public boolean selfPredicted() { return predicted; }
+
+    /** The own-ship predictor the own ship is drawn from when it is active (null: F1 only). */
+    public void setPredictor(com.fulcrologic.jxpilot.client.game.predict.OwnShipPredictor p) {
+        predictor = p;
     }
 
     private static double clampAccel(double a) {
@@ -1545,6 +1847,17 @@ public final class ClientWorld {
     public float shotX(int i) { return outShotX[i]; }
 
     public float shotY(int i) { return outShotY[i]; }
+
+    /**
+     * The snapshot tick of drawn shot {@code i}'s source record (the record it was interpolated or reckoned from),
+     * Integer.MIN_VALUE for a provisional own shot.
+     */
+    public int shotSourceTick(int i) { return outShotSrcTick[i]; }
+
+    /** That record's position (the server's at that tick, to the wire's half pixel). */
+    public float shotSourceX(int i) { return outShotSrcX[i]; }
+
+    public float shotSourceY(int i) { return outShotSrcY[i]; }
 
     /** {@link Records.ShotKind} (the variant's 3 kind bits). */
     public int shotKind(int i) { return Records.ShotKind.kindOf(outShotVariant[i]); }

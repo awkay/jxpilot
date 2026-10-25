@@ -33,6 +33,12 @@ final class SnapshotFrame {
     long arrivalNanos;
     /** Bit p set once part p arrived (parts 0..63). */
     long parts;
+    /** The provisional own shots were reconciled with this (complete) frame. */
+    boolean shotsConfirmed;
+    /** Every part of this tick arrived. */
+    boolean complete;
+    /** Bumped whenever the frame's contents change (a part, a link): caches over it compare it. */
+    long version;
     /** First tick whose thrust sparks this frame generates (later than {@link #tick} = none). */
     int sparkFrom;
 
@@ -80,6 +86,16 @@ final class SnapshotFrame {
     final float[] shotEstVy;
     /** {@link Tracker} velocity state of each shot (KNOWN from the wire or a link, GUESSED seed, UNKNOWN). */
     final byte[] shotState;
+    /**
+     * The SHOT record's velocity, exact to 1/16 px per frame (0 when the record has none): the dead reckoning's
+     * velocity.
+     */
+    final float[] shotWireVx;
+    final float[] shotWireVy;
+    /** Ticks since the shot was first seen (through its links), 0 when new. */
+    final int[] shotAge;
+    /** Own bullets a provisional shot was matched to when the frame was reconciled ({@link #shotsConfirmed}). */
+    final boolean[] shotOwnMatched;
     /** Index of the same shot in the next frame of the last association, or -1. */
     final int[] shotNext;
     /** Point particles sent as positions only (C debris on the XPilot path), drawn tracked like shots. */
@@ -116,6 +132,10 @@ final class SnapshotFrame {
         shotVy = new byte[shotCap];
         shotVariant = new byte[shotCap];
         shotEstVx = new float[shotCap];
+        shotWireVx = new float[shotCap];
+        shotWireVy = new float[shotCap];
+        shotAge = new int[shotCap];
+        shotOwnMatched = new boolean[shotCap];
         shotEstVy = new float[shotCap];
         shotNext = new int[shotCap];
         shotState = new byte[shotCap];
@@ -138,6 +158,9 @@ final class SnapshotFrame {
         tick = t;
         arrivalNanos = now;
         parts = 0;
+        shotsConfirmed = false;
+        complete = false;
+        version++;
         sparkFrom = sparkFromTick;
         hasSelf = false;
         ships = 0;

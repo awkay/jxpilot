@@ -85,8 +85,9 @@ class SimGameHostEventsTest {
                 join(ann, 0), "BASE " + ann.homeBase + " 1", "SCORE 1 12.5 lives=-1 status=0",
                 join(bob, Msg.PlayerJoin.FLAG_SELF | Msg.PlayerJoin.FLAG_PAUSED), "BASE " + bob.homeBase + " 2",
                 "SCORE 2 0.0 lives=-1 status=" + (Msg.Score.STATUS_DEAD | Msg.Score.STATUS_PAUSED),
-                join(robot, Msg.PlayerJoin.FLAG_ROBOT), "BASE " + robot.homeBase + " 3", "SCORE 3 0.0 lives=-1 status=0"),
-                got, "C Handle_login's sends: each player in game order (a robot's power is its 55)");
+                join(robot, Msg.PlayerJoin.FLAG_ROBOT), "BASE " + robot.homeBase + " 3", "SCORE 3 0.0 lives=-1 status=0",
+                "KSTATE@" + w.tick), got, "C Handle_login's sends: each player in game order (a robot's power is its"
+                + " 55); then the kernel state as of now (protocol v2; empty: the map as loaded)");
         }
 
         @Test
@@ -128,7 +129,7 @@ class SimGameHostEventsTest {
             assertEquals(List.of(
                 join(ann, 0), "BASE " + ann.homeBase + " 1", "SCORE 1 0.0 lives=2 status=0",
                 join(cid, Msg.PlayerJoin.FLAG_SELF), "BASE " + cid.homeBase + " 2", "SCORE 2 0.0 lives=" + cid.life + " status=0",
-                "TEAM_SCORE 1 5.0", "TEAM_SCORE 2 -3.0"), wire.take(),
+                "TEAM_SCORE 1 5.0", "TEAM_SCORE 2 -3.0", "KSTATE@" + w.tick), wire.take(),
                 "lives are the players' own; team 0 has no members so its score is not sent");
         }
 
@@ -154,7 +155,9 @@ class SimGameHostEventsTest {
 
             ByteBuffer[] parts = {ByteBuffer.allocate(Protocol.MAX_PACKET)};
             parts[0].position(PacketHeader.SIZE);
-            new SnapshotBuilder(w).build(w.byId(bob), 0, w.events.burstSeq(), false, parts);
+            SnapshotBuilder builder = new SnapshotBuilder(w);
+            builder.setPredict(true, 0, 1, 0, w.tick, true);
+            builder.build(w.byId(bob), 0, w.events.burstSeq(), false, parts);
             byte[] ref = Arrays.copyOfRange(parts[0].array(), SimGameHost.SECTIONS_START, parts[0].position());
             SnapshotWriter wr = new SnapshotWriter();
             ByteBuffer b = ByteBuffer.allocate(Protocol.MAX_PACKET);

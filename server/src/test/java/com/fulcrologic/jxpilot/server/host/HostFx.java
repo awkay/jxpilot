@@ -237,6 +237,17 @@ final class HostFx {
                 m.read(p);
                 yield "SCORE_OBJECT " + m.score + " " + m.bx + "," + m.by + " " + m.text;
             }
+            case ReliableType.KERNEL_STATE -> {
+                int n = Msg.KernelState.count(p);
+                StringBuilder sb = new StringBuilder("KSTATE@").append(Msg.KernelState.tick(p));
+                for (int i = 0; i < n; i++) {
+                    sb.append(' ').append(Msg.KernelState.kind(p, i)).append(':').append(Msg.KernelState.a(p, i))
+                        .append(',').append(Msg.KernelState.b(p, i)).append(',').append(Msg.KernelState.c(p, i))
+                        .append(',').append(Msg.KernelState.d(p, i));
+                }
+                p.position(p.limit());
+                yield sb.toString();
+            }
             case ReliableType.MOTD -> {
                 int off = p.getInt();
                 int total = p.getInt();

@@ -70,7 +70,11 @@ public final class ConfigTransfer {
 
     /** Encode config text (Latin-1). */
     public static Blob encode(String configText) {
-        byte[] raw = configText.getBytes(StandardCharsets.ISO_8859_1);
+        return encode(configText.getBytes(StandardCharsets.ISO_8859_1));
+    }
+
+    /** Encode raw bytes (the kernel config, {@link com.fulcrologic.jxpilot.common.config.KernelConfig}). */
+    public static Blob encode(byte[] raw) {
         CRC32 crc = new CRC32();
         crc.update(raw);
         Deflater d = new Deflater(Deflater.BEST_COMPRESSION);
@@ -89,10 +93,17 @@ public final class ConfigTransfer {
     /** Server side: queues DATA_CHUNK messages as the reliable window allows. */
     public static final class Sender {
         private final Blob blob;
+        private final int type;
         private int offset;
 
         public Sender(Blob blob) {
+            this(blob, ReliableType.DATA_CHUNK);
+        }
+
+        /** A sender whose chunks are messages of {@code chunkType} (KERNEL_CHUNK for the kernel config). */
+        public Sender(Blob blob, int chunkType) {
             this.blob = blob;
+            this.type = chunkType;
         }
 
         /**
@@ -105,7 +116,7 @@ public final class ConfigTransfer {
         public boolean pump(ReliableChannel ch, int reserve) {
             while (offset < blob.compressed.length && ch.freeSlots() > reserve) {
                 int len = Math.min(Protocol.DATA_CHUNK_SIZE, blob.compressed.length - offset);
-                Msg.DataChunk.send(ch, blob.compressed, offset, len);
+                Msg.DataChunk.send(ch, type, blob.compressed, offset, len);
                 offset += len;
             }
             return offset >= blob.compressed.length;
@@ -128,13 +139,17 @@ public final class ConfigTransfer {
 
         /** BEHAVIOR: throws IllegalStateException when either announced length is outside 0..{@link #MAX_LENGTH}. */
         public Receiver(Msg.Welcome w) {
-            if (w.configCompressedLength < 0 || w.configCompressedLength > MAX_LENGTH
-                || w.configLength < 0 || w.configLength > MAX_LENGTH) {
+            this(w.configLength, w.configCompressedLength, w.configCrc32);
+        }
+
+        /** BEHAVIOR: as the WELCOME constructor, for any announced blob (the kernel config). */
+        public Receiver(int length, int compressedLength, int crc32) {
+            if (compressedLength < 0 || compressedLength > MAX_LENGTH || length < 0 || length > MAX_LENGTH) {
                 throw new IllegalStateException("config size out of range");
             }
-            this.data = new byte[w.configCompressedLength];
-            this.length = w.configLength;
-            this.crc = w.configCrc32;
+            this.data = new byte[compressedLength];
+            this.length = length;
+            this.crc = crc32;
         }
 
         /**
@@ -161,6 +176,11 @@ public final class ConfigTransfer {
 
         /** BEHAVIOR: inflates and returns the text; throws on corrupt data, wrong length or CRC mismatch. */
         public String text() {
+            return new String(bytes(), StandardCharsets.ISO_8859_1);
+        }
+
+        /** BEHAVIOR: inflates and returns the bytes; throws on corrupt data, wrong length or CRC mismatch. */
+        public byte[] bytes() {
             Inflater inf = new Inflater();
             inf.setInput(data);
             byte[] raw = new byte[length];
@@ -180,7 +200,7 @@ public final class ConfigTransfer {
             if ((int) c.getValue() != crc) {
                 throw new IllegalStateException("config CRC mismatch");
             }
-            return new String(raw, StandardCharsets.ISO_8859_1);
+            return raw;
         }
 
         /** Decode and parse into a fresh {@link Options} (as map origin). */

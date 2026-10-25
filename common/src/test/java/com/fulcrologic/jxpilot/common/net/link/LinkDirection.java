@@ -65,6 +65,7 @@ public final class LinkDirection {
     private Object lastAddress;
 
     private long sent;
+    private long sentBytes;
     private long delivered;
     private long lost;
     private long queueDrops;
@@ -126,6 +127,7 @@ public final class LinkDirection {
     public boolean send(ByteBuffer packet, long now, int packetTag, Object packetAddress) {
         sent++;
         int bytes = packet.remaining();
+        sentBytes += bytes;
         LinkProfile p = profile;
         boolean lose = rnd.chance(bad ? p.lossBad : p.lossGood);
         bad = rnd.chance(bad ? p.badToGood : p.goodToBad) != bad;
@@ -283,6 +285,9 @@ public final class LinkDirection {
 
     /** Datagrams offered to {@link #send}. */
     public long sent() { return sent; }
+
+    /** Bytes of the datagrams offered to {@link #send} (payload, before loss). */
+    public long sentBytes() { return sentBytes; }
 
     /** Copies handed out by {@link #receive}. */
     public long delivered() { return delivered; }

@@ -29,7 +29,8 @@ package com.fulcrologic.jxpilot.client.game.input;
  * defaults and help texts from {@code src/client/default.c}. Not part of the wire mask.
  * <p>
  * JXPilot deviations: {@link #HELP} (F1, the key help overlay) is new, so {@code keySendMsg1} has no
- * default key (C: F1); {@link #NET_STATS} (Insert, the network diagnostics line) is new.
+ * default key (C: F1); {@link #NET_STATS} (Insert, the network diagnostics line) and {@link #PREDICTION}
+ * (KP_3, the own-ship prediction switch) are new.
  */
 public enum ClientAction {
     TALK("keyTalk", "m", "Toggle talk window."),
@@ -77,6 +78,11 @@ public enum ClientAction {
      * the rc file).
      */
     NET_STATS("keyToggleNetStats", "Insert", "Show or hide the network diagnostics line (JXPilot)."),
+    /**
+     * JXPilot only: own-ship prediction on or off (a blind A/B switch: nothing on screen says which is on). The
+     * default is a key neither C, JXPilot nor the shipped Mac-laptop file binds (that file binds F7).
+     */
+    PREDICTION("keyTogglePrediction", "KP_3", "Switch own-ship prediction on or off (JXPilot)."),
     /**
      * JXPilot only: quit. C has no quit key (it quits by its QUIT button or the window manager); unbound by
      * default, as Escape is C's keySwapSettings.

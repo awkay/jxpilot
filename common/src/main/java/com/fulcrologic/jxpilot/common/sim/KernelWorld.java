@@ -285,15 +285,22 @@ public final class KernelWorld implements ShipWorld {
         return known(i) ? wormCountdown[i] : 0;
     }
 
-    /** BEHAVIOR: 0: this world has no pool objects (only ships are moved in it). */
+    /**
+     * The pixel position of the one object the client is moving through this world (its bullets, one at a time with
+     * {@link ObjectMover}): set before each move, so the object branch of wormholes sees where the bullet starts.
+     */
+    public int movingPx;
+    public int movingPy;
+
+    /** BEHAVIOR: {@link #movingPx} whatever the handle: this world has no pool, only the one object being moved. */
     @Override
     public int objectPx(int h) {
-        return 0;
+        return movingPx;
     }
 
-    /** BEHAVIOR: 0, as {@link #objectPx}. */
+    /** BEHAVIOR: {@link #movingPy}, as {@link #objectPx}. */
     @Override
     public int objectPy(int h) {
-        return 0;
+        return movingPy;
     }
 }

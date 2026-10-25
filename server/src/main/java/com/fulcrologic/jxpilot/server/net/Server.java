@@ -142,6 +142,7 @@ public final class Server implements AutoCloseable {
         GameHost host = s.factory.create(opts, map);
         ServerNetConfig cfg = ServerNetConfig.of(opts, map);
         ServerNet net = new ServerNet(cfg, host, transport, s.log, blob);
+        net.setKernel(opts, ClientMap.of(opts.mapData(), opts));
         transport.setReceiver(net::onDatagram);
         Server server = new Server(s, transport, udp, net, cfg.simHz, selectors, rescans, noQuit);
         s.log.log("serving map '" + map.name() + "' (" + map.width() + "x" + map.height() + " blocks) at "

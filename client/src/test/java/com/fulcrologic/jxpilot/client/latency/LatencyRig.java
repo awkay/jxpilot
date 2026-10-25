@@ -71,6 +71,23 @@ final class LatencyRig {
     private long nextFrame;
     private long keys;
     private LongUnaryOperator keyScript = t -> 0L;
+    /**
+     * Whether rigs made from now on predict the own ship (the client's A/B switch); the measurements of the
+     * snapshot path (before/after tables, the method's calibration) turn it off around their runs.
+     */
+    static volatile boolean prediction = true;
+
+    /** Run {@code body} with rigs made without (or with) own-ship prediction; the previous setting is restored. */
+    static <T> T withPrediction(boolean on, java.util.function.Supplier<T> body) {
+        boolean was = prediction;
+        prediction = on;
+        try {
+            return body.get();
+        } finally {
+            prediction = was;
+        }
+    }
+
     FrameListener onFrame = (r, t) -> { };
     TickListener onTick = (r, t) -> { };
     private boolean stop;
@@ -91,6 +108,7 @@ final class LatencyRig {
         client = new ClientSim(transport, "virtual", "Pilot", com.fulcrologic.jxpilot.common.net.Protocol.NO_TEAM,
             (int) (seed * 31 + 7));
         client.setKeys(f -> keys);
+        client.game().predictor().enabled = prediction;
         this.tickPhase = tickPhase;
         nextTick = START + tickPhase;
         nextFrame = START;
@@ -128,6 +146,32 @@ final class LatencyRig {
         return frames;
     }
 
+    /** Bytes the frame's game part allocated (the allocation test of the predicted own ship). */
+    interface GameFrameMeter {
+        void measured(long bytes);
+    }
+
+    /**
+     * When set, each render frame runs {@link ClientSim#step}'s parts itself and reports what the game frame (the
+     * own-ship predictor, the world, particles, messages) allocated on this thread; the connection's receive and
+     * send run outside the measurement (ClientNetAllocationTest covers them; the emulated link is test code).
+     */
+    GameFrameMeter gameFrameMeter;
+    private static final com.sun.management.ThreadMXBean MX =
+        (com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory.getThreadMXBean();
+    private long lastStep = Long.MIN_VALUE;
+
+    private void meteredStep(long now) {
+        double dt = lastStep == Long.MIN_VALUE ? 0 : (now - lastStep) / 1e9;
+        lastStep = now;
+        client.connection().update(now);
+        client.connection().sendInput(keys, 0, now);
+        long a = MX.getCurrentThreadAllocatedBytes();
+        client.game().frame(now, dt);
+        gameFrameMeter.measured(MX.getCurrentThreadAllocatedBytes() - a);
+        client.connection().flush(now);
+    }
+
     /** Make the running {@link #runUntil} return after the current event (a listener calls it). */
     void stop() {
         stop = true;
@@ -155,7 +199,11 @@ final class LatencyRig {
                     onTick.tick(this, next);
                 } else {
                     keys = keyScript.applyAsLong(next);
-                    client.step(next);
+                    if (gameFrameMeter != null) {
+                        meteredStep(next);
+                    } else {
+                        client.step(next);
+                    }
                     frames++;
                     nextFrame = frameTime(frames);
                     onFrame.frame(this, next);

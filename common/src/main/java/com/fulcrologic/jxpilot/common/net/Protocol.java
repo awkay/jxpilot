@@ -33,7 +33,7 @@ public final class Protocol {
     /** First two bytes of every datagram: ASCII "JX". */
     public static final int MAGIC = 0x4A58;
     /** Protocol version; bump on incompatible changes. */
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
     /** Maximum datagram payload in bytes. */
     public static final int MAX_PACKET = 1200;
     /** Default server UDP port (XPilot contact port). */

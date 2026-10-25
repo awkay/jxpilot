@@ -177,6 +177,7 @@ class ClientNetAllocationTest {
                     if (f % (2 * period) == period / 2) {
                         server.gameEvent(Msg.GameEvent.KILL, FakeServer.PLAYER_ID, FakeServer.OTHER_ID);
                         server.scoreObject(1, 3, 4, "Robby");
+                        server.kernelState((f / (2 * period)) % 4, (f / (4 * period)) % 2 == 0);
                         server.score(FakeServer.PLAYER_ID, (f / (2 * period)) % 7 + 1);
                     }
                 }
@@ -217,6 +218,10 @@ class ClientNetAllocationTest {
         int start = frameNo[0];
         measuring[0] = true;
         int pongsBefore = server.pongs;
+        long predictsBefore = sim.connection().kernel().predicts();
+        long raresBefore = sim.connection().kernel().rareBlocks();
+        long keysBefore = sim.connection().kernel().keyBlocks();
+        long statesBefore = sim.connection().kernel().stateMessages();
         for (int i = 0; i < MEASURED; i++) {
             frame.run();
         }
@@ -233,6 +238,13 @@ class ClientNetAllocationTest {
             () -> assertEquals(ConnectionState.PLAYING, sim.connection().state(), "still playing"),
             () -> assertTrue(sim.connection().snapshotsReceived() > total / 2 - 100, "snapshots flowed"),
             () -> assertTrue(server.inputPackets > 0, "INPUT reached the server"),
+            () -> assertTrue(sim.connection().kernel().predicts() - predictsBefore > MEASURED / 4,
+                "PREDICT sections were decoded while measured"),
+            () -> assertTrue(sim.connection().kernel().rareBlocks() - raresBefore > 0, "and PREDICT_RARE"),
+            () -> assertTrue(sim.connection().kernel().keyBlocks() - keysBefore > 0, "and PREDICT_KEYS"),
+            () -> assertTrue(sim.connection().kernel().stateMessages() - statesBefore > 0,
+                "and KERNEL_STATE (KernelSync.onState) while measured"),
+            () -> assertTrue(!Double.isNaN(sim.connection().netDiagnostics().leadTicks), "the HUD lead was filled"),
             () -> assertTrue(server.pongs - pongsBefore > 10, "RTT probes went out and came back while measured: "
                 + (server.pongs - pongsBefore)),
             () -> assertTrue(sim.connection().netDiagnostics().rttMs() >= 0, "an RTT was measured"),

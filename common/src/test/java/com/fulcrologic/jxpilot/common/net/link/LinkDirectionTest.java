@@ -128,6 +128,7 @@ class LinkDirectionTest {
                 () -> assertEquals(42, d.lastTag(), "the tag travels with the packet"),
                 () -> assertSame(addr, d.lastAddress(), "the address travels with the packet"),
                 () -> assertEquals(1, d.sent(), "one sent"),
+                () -> assertEquals(3, d.sentBytes(), "three bytes sent"),
                 () -> assertEquals(1, d.delivered(), "one delivered"),
                 () -> assertEquals(Long.MAX_VALUE, d.nextDue(), "nothing left in flight"),
                 () -> assertEquals(-1, d.receive(dst, 1000), "an empty link delivers nothing"));

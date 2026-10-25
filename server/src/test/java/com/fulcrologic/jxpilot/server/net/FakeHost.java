@@ -41,6 +41,14 @@ import java.util.List;
  */
 final class FakeHost implements GameHost {
     final List<String> calls = new ArrayList<>();
+    /** What kernelOptionValue reports for allowPlayerKilling (null: its text). */
+    String killingValue;
+
+    @Override
+    public String kernelOptionValue(com.fulcrologic.jxpilot.common.config.Opt opt, String value) {
+        return opt == com.fulcrologic.jxpilot.common.config.Opt.ALLOW_PLAYER_KILLING && killingValue != null
+            ? killingValue : value;
+    }
     /** server-batch2: every identity call, "id real@host address". */
     final List<String> identities = new ArrayList<>();
     boolean record = true;
@@ -162,14 +170,14 @@ final class FakeHost implements GameHost {
     }
 
     @Override
-    public void input(int playerId, int seq, long keys, int aimTurn) {
+    public void input(int playerId, int tick, long keys, long taps, int aimTurn) {
         if (throwOnInput != null && keys == throwOnKeys) {
             throw throwOnInput;
         }
         inputCount++;
         keySum += keys;
         if (record) {
-            calls.add("input " + playerId + " seq=" + seq + " keys=" + keys + " aim=" + aimTurn);
+            calls.add("input " + playerId + " tick=" + tick + " keys=" + keys + " taps=" + taps + " aim=" + aimTurn);
         }
     }
 

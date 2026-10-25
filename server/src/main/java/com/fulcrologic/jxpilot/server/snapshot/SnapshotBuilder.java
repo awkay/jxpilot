@@ -91,6 +91,11 @@ public final class SnapshotBuilder {
     private final int[] shotVariant;
     private double viewHalfX = DEFAULT_VIEW_HALF;
     private double viewHalfY = DEFAULT_VIEW_HALF;
+    /** The view's extension past the half-size on the +x, -x, +y and -y sides ({@link #extendView}). */
+    private double extPosX;
+    private double extNegX;
+    private double extPosY;
+    private double extNegY;
 
     // ---- part state
     private ByteBuffer[] parts;
@@ -104,7 +109,7 @@ public final class SnapshotBuilder {
     private int curType = -1;
     private int curVariant;
     private int tick;
-    private int lastInputSeq;
+    private int inputTick;
     private double cx;
     private double cy;
     /** The item sections (server-items). */
@@ -169,10 +174,69 @@ public final class SnapshotBuilder {
         }
     }
 
+    private boolean predict;
+    private long predictKeys;
+    private int predictVersion;
+    private int predictKernel;
+    private int predictStateTag;
+    private boolean predictRare;
+
+    /**
+     * Include the PREDICT sections for the next {@link #build} (the receiving player's own ship, protocol v2): only
+     * when the viewer is the receiving player (not while watching another).
+     *
+     * @param appliedKeys the input the server applied to the viewer this tick (the key flags compare with it)
+     * @param rareVersion   the version of the viewer's rare block
+     * @param kernelVersion the KERNEL_CONFIG version the sim runs with
+     * @param stateTag      the tick of the newest KERNEL_STATE message queued to the viewer
+     * @param sendRare      also send the rare block
+     */
+    public void setPredict(boolean on, long appliedKeys, int rareVersion, int kernelVersion, int stateTag,
+                           boolean sendRare) {
+        predict = on;
+        predictKeys = appliedKeys;
+        predictVersion = rareVersion;
+        predictKernel = kernelVersion;
+        predictStateTag = stateTag;
+        predictRare = sendRare;
+    }
+
+    /** The C frame clock minus the net tick (PREDICT_RARE's frame offset; constant while the sim runs). */
+    public static int frameOffset(World w) {
+        return (int) (w.frames - w.tick);
+    }
+
     /** Set the view half-size in pixels (C view size / 2 plus a margin). */
     public void setView(double halfWidth, double halfHeight) {
         viewHalfX = halfWidth;
         viewHalfY = halfHeight;
+        extPosX = 0;
+        extNegX = 0;
+        extPosY = 0;
+        extNegY = 0;
+    }
+
+    /**
+     * Extend the view by {@code (dx, dy)} pixels on the sides it points to: the owner's input lead (protocol v2)
+     * means its predicted ship runs ahead of this snapshot by its velocity times the lead, and what it will fly into
+     * must already be here.
+     * <p>
+     * BEHAVIOR: a positive {@code dx} extends the +x side by dx, a negative one the -x side by -dx (the other side
+     * is unchanged); likewise {@code dy}. Lasts until the next {@link #setView}/{@link #setViewSize}.
+     */
+    public void extendView(double dx, double dy) {
+        extPosX = Math.max(0, dx);
+        extNegX = Math.max(0, -dx);
+        extPosY = Math.max(0, dy);
+        extNegY = Math.max(0, -dy);
+    }
+
+    private double reachX() {
+        return viewHalfX + Math.max(extPosX, extNegX);
+    }
+
+    private double reachY() {
+        return viewHalfY + Math.max(extPosY, extNegY);
     }
 
     /**
@@ -200,11 +264,11 @@ public final class SnapshotBuilder {
      * @param burstFrom first burst sequence number the viewer has not seen
      * @param radar    include the RADAR section
      */
-    public int build(Player viewer, int lastInputSeq, long burstFrom, boolean radar, ByteBuffer[] parts) {
+    public int build(Player viewer, int inputTick, long burstFrom, boolean radar, ByteBuffer[] parts) {
         this.parts = parts;
         this.maxParts = Math.min(parts.length, MAX_PARTS);
         this.tick = w.tick;
-        this.lastInputSeq = lastInputSeq;
+        this.inputTick = inputTick;
         this.cx = viewer.cx / (double) Click.CLICK;
         this.cy = viewer.cy / (double) Click.CLICK;
         if (hashFrames != w.frames) {
@@ -216,6 +280,7 @@ public final class SnapshotBuilder {
         markVisible(viewer);
         startPart();
         writeSelf(viewer);
+        writePredict(viewer);
         writeSounds(viewer);
         writeShips(viewer);
         writeRefuel();
@@ -237,8 +302,8 @@ public final class SnapshotBuilder {
         int count = part + 1;
         for (int i = 0; i < count; i++) {
             ByteBuffer b = parts[i];
-            b.put(partStart[i] + 9, (byte) count);
-            b.put(partStart[i] + 10, (byte) (i == count - 1 ? SnapshotWriter.FLAG_LAST_PART : 0));
+            b.put(partStart[i] + SnapshotWriter.PART_COUNT_OFFSET, (byte) count);
+            b.put(partStart[i] + SnapshotWriter.FLAGS_OFFSET, (byte) (i == count - 1 ? SnapshotWriter.FLAG_LAST_PART : 0));
         }
         return count;
     }
@@ -247,7 +312,7 @@ public final class SnapshotBuilder {
         part++;
         ByteBuffer b = parts[part];
         partStart[part] = b.position();
-        wr.begin(b, tick, lastInputSeq, part, 1, 0, cx, cy);
+        wr.begin(b, tick, inputTick, part, 1, 0, cx, cy);
     }
 
     private void closeSection() {
@@ -300,7 +365,7 @@ public final class SnapshotBuilder {
     private void markVisible(Player v) {
         visRound++;
         int n = Math.min(w.objects.count(), maxVisible);
-        int range = (int) Math.ceil(Math.max(viewHalfX, viewHalfY) / Const.BLOCK_SZ) + 1;
+        int range = (int) Math.ceil(Math.max(reachX(), reachY()) / Const.BLOCK_SZ) + 1;
         cells.query(v.bx, v.by, range, n);
         for (int i = 0; i < cells.resultCount; i++) {
             visStamp[cells.result[i]] = visRound;
@@ -315,7 +380,8 @@ public final class SnapshotBuilder {
     boolean visible(double x, double y, double margin) {
         double dx = w.wrapDx(x - cx);
         double dy = w.wrapDy(y - cy);
-        return Math.abs(dx) <= viewHalfX + margin && Math.abs(dy) <= viewHalfY + margin && wr.inView(x, y);
+        return dx <= viewHalfX + extPosX + margin && -dx <= viewHalfX + extNegX + margin
+            && dy <= viewHalfY + extPosY + margin && -dy <= viewHalfY + extNegY + margin && wr.inView(x, y);
     }
 
     /** BEHAVIOR: the {@code Records.ShipFlags} of a ship as seen by {@code viewer}. */
@@ -385,6 +451,32 @@ public final class SnapshotBuilder {
             v.numTanks, v.currentTank,
             (v.status & Obj.PLAYING) == 0 && v.count > 0 ? v.count : 0, v.power, v.turnSpeed, v.turnResistance,
             itemSections.lockDist(v), itemSections.lockDir(v), v.check, ItemSections.selfMods(v.mods));
+    }
+
+    /**
+     * BEHAVIOR: with {@link #setPredict} on: PREDICT (the core block at {@link World#frames}, the applied input's
+     * hash, the versions), PREDICT_ROUND when roundDelay is nonzero, PREDICT_RARE (with the frame offset) when asked
+     * for, PREDICT_KEYS when a key mask differs from the applied input; nothing otherwise. Each call of
+     * {@link #build} needs its own {@link #setPredict}: it is switched off after use.
+     */
+    private void writePredict(Player v) {
+        if (!predict) {
+            return;
+        }
+        predict = false;
+        if (need(Section.PREDICT, 0)) {
+            Records.Predict.put(wr, v, w.frames, w.roundDelay, predictKeys, predictVersion, predictKernel,
+                predictStateTag);
+        }
+        if (w.roundDelay > 0 && need(Section.PREDICT_ROUND, 0)) {
+            Records.PredictRound.put(wr, w.roundDelay);
+        }
+        if (predictRare && need(Section.PREDICT_RARE, 0)) {
+            Records.PredictRare.put(wr, v, predictVersion, frameOffset(w));
+        }
+        if (v.keysDiffer(predictKeys) && need(Section.PREDICT_KEYS, 0)) {
+            Records.PredictKeys.put(wr, v);
+        }
     }
 
     private void writeSounds(Player v) {
@@ -474,14 +566,17 @@ public final class SnapshotBuilder {
 
     /**
      * BEHAVIOR: how many more SHOT records fit in the open part and the unused buffers, keeping
-     * {@link #SHOT_SECTIONS_PER_PART} section headers of room per part.
+     * {@link #SHOT_SECTIONS_PER_PART} section headers of room per part; counted part by part (a record does not
+     * span parts, so each part's remainder below a record is lost).
      */
     int shotRoom() {
-        int bytes = parts[part].remaining() - SHOT_SECTIONS_PER_PART * Section.HEADER_SIZE;
+        int n = Math.max(0, parts[part].remaining() - SHOT_SECTIONS_PER_PART * Section.HEADER_SIZE)
+            / Records.Shot.SIZE;
         for (int p = part + 1; p < maxParts; p++) {
-            bytes += parts[p].remaining() - SnapshotWriter.HEADER_SIZE - SHOT_SECTIONS_PER_PART * Section.HEADER_SIZE;
+            n += Math.max(0, parts[p].remaining() - SnapshotWriter.HEADER_SIZE
+                - SHOT_SECTIONS_PER_PART * Section.HEADER_SIZE) / Records.Shot.SIZE;
         }
-        return Math.max(0, bytes / Records.Shot.SIZE);
+        return n;
     }
 
     /** Shots in view, nearest cells first, up to the room left; then grouped by variant. */
@@ -491,8 +586,8 @@ public final class SnapshotBuilder {
         int n = 0;
         int vcx = (int) Math.floor(cx / ShotHash.CELL);
         int vcy = (int) Math.floor(cy / ShotHash.CELL);
-        int rx = Math.min(ShotHash.RADIUS, (int) Math.ceil(viewHalfX / ShotHash.CELL) + 1);
-        int ry = Math.min(ShotHash.RADIUS, (int) Math.ceil(viewHalfY / ShotHash.CELL) + 1);
+        int rx = Math.min(ShotHash.RADIUS, (int) Math.ceil(reachX() / ShotHash.CELL) + 1);
+        int ry = Math.min(ShotHash.RADIUS, (int) Math.ceil(reachY() / ShotHash.CELL) + 1);
         hs.beginWalk();
         for (int k = 0; k < hs.ringX.length && n < cap; k++) {
             int c = hs.cellAt(k, vcx, vcy, rx, ry);
