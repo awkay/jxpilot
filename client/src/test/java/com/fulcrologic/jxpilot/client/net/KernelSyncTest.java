@@ -238,6 +238,7 @@ class KernelSyncTest {
         k.onReliable(ReliableType.KERNEL_STATE, ByteBuffer.allocate(4), 7);
         long bad = k.badKernel();
         int afterBad = k.stateTick();
+        long stateCount = k.stateMessages();
         k.reset();
         assertAll(
             () -> assertFalse(before, "unknown before any message"),
@@ -245,7 +246,9 @@ class KernelSyncTest {
             () -> assertEquals(55, empty, "an empty message (the initial state of a fresh world) still sets it"),
             () -> assertEquals(1, bad, "a 4-byte payload is shorter than the header: malformed"),
             () -> assertEquals(55, afterBad, "and changes nothing"),
-            () -> assertFalse(k.stateKnown(), "a reset forgets it"));
+            () -> assertEquals(2, stateCount, "two well-formed messages counted"),
+            () -> assertFalse(k.stateKnown(), "a reset forgets it"),
+            () -> assertEquals(0, k.stateMessages(), "and the count"));
     }
 
     /** Part {@code part} of tick {@code tick} (of 2), with PREDICT only when {@code withPredict}. */
@@ -352,6 +355,8 @@ class KernelSyncTest {
             () -> assertEquals(OFFSET + 44, k.frames(), "the frame clock of tick 44"),
             () -> assertEquals(7, k.roundDelay(), "roundDelay"),
             () -> assertEquals(4, k.predicts(), "four PREDICTs read"),
+            () -> assertEquals(1, k.rareBlocks(), "one PREDICT_RARE"),
+            () -> assertEquals(1, k.keyBlocks(), "one PREDICT_KEYS"),
             () -> assertTrue(k.have(), "have"));
     }
 

@@ -77,6 +77,9 @@ public final class KernelSync {
     private int rareVersion = -1;
     private boolean keysKnown;
     private long predicts;
+    private long rareBlocks;
+    private long keyBlocks;
+    private long stateMessages;
     private long keyMismatches;
 
     // ---- kernel world
@@ -114,6 +117,9 @@ public final class KernelSync {
         rareVersion = -1;
         keysKnown = false;
         predicts = 0;
+        rareBlocks = 0;
+        keyBlocks = 0;
+        stateMessages = 0;
         keyMismatches = 0;
         clientMap = null;
         haveTick = false;
@@ -212,6 +218,7 @@ public final class KernelSync {
         }
         stateTick = Msg.KernelState.tick(p);
         stateKnown = true;
+        stateMessages++;
         for (int i = 0; i < n; i++) {
             int k = Msg.KernelState.kind(p, i);
             int a = Msg.KernelState.a(p, i);
@@ -436,6 +443,7 @@ public final class KernelSync {
                     r.read(body);
                     rareVersion = r.version();
                     frameOffset = r.frameOffset();
+                    rareBlocks++;
                 }
                 case Section.PREDICT_KEYS -> {
                     keys.wrap(reader, 0);
@@ -455,6 +463,7 @@ public final class KernelSync {
             p.read(body, frames, applied);
             if (keysSent) {
                 keys.read(body); // the masks the flags could not give
+                keyBlocks++;
             }
             coreVersion = p.rareVersion();
             coreKernel = p.kernelVersion();
@@ -494,4 +503,13 @@ public final class KernelSync {
 
     /** PREDICT sections read since the reset. */
     public long predicts() { return predicts; }
+
+    /** PREDICT_RARE sections read since the reset. */
+    public long rareBlocks() { return rareBlocks; }
+
+    /** PREDICT_KEYS blocks applied (with their PREDICT) since the reset. */
+    public long keyBlocks() { return keyBlocks; }
+
+    /** Well-formed KERNEL_STATE messages applied since the reset. */
+    public long stateMessages() { return stateMessages; }
 }

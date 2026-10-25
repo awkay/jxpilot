@@ -293,6 +293,14 @@ public final class FakeServer {
         o.send(channel);
     }
 
+    private final Msg.KernelState kernelState = new Msg.KernelState();
+
+    /** Queue a KERNEL_STATE with one CANNON entry (allocation free). */
+    public void kernelState(int cannon, boolean phased) {
+        kernelState.begin(channel, tick).add(Msg.KernelState.CANNON, cannon, 0, phased ? 1 : 0, 0);
+        kernelState.end(channel);
+    }
+
     /** Queue a SCORE. */
     public void score(int id, float score) {
         Msg.Score s = new Msg.Score();
