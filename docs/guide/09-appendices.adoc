@@ -195,6 +195,12 @@ firewalls on both sides; the server answers only from the address you contacted
 |Your keys take a round trip to the server, plus the wait for its next frame (up to 1/14 s). Play on a
 server closer to you, or host it half way between the players (<<04-running-a-server.adoc#hosting,Hosting for friends far away>>).
 
+|Lobby: you chose a map that was not running, and the client seems to hang (or you are back at the list);
+the map shows 0 players
+|A bug in JXPilot 1.1.1 and older lobby servers, fixed in 1.1.2: choose the map again, and it works. If it
+happens with 1.1.2, the client says `Could not join MAP (the lobby did not hand us to the game). Choose it
+again.`
+
 |Client: `jxpilot keys: ...` lines at startup
 |Your `~/.xpilotrc` (or `--keys` file) has a line JXPilot cannot use, or a key bound to more than one
 function. The message names the file and line; the rest of the file still applies. Check with
