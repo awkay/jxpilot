@@ -124,7 +124,8 @@ game server that is not a lobby never sends them and drops them as malformed.
    ignored). The lobby sends maps in display order (running maps first, then by name ignoring case); the id, not the
    position, names a map. At most 2048 maps are offered.
 5. The player chooses: `LOBBY_SELECT` with the cookie and the map id, resent every 500 ms until `LOBBY_JOIN`
-   answers (the client sends no LIST_REQUEST meanwhile). JOIN results: 0 OK (the address is routed to the map's
+   answers. The client sends no LIST_REQUEST meanwhile, not even to confirm a list the lobby pushes because the
+   chosen map started (1.1.1 and older clients did, which could undo the JOIN; see the grace rule below). JOIN results: 0 OK (the address is routed to the map's
    game; send CONNECT now), 1 STARTING (the game is being started: keep asking), 2 UNKNOWN_MAP, 3 FAILED (the text
    says why; the next SELECT tries again). Starting a map loads and encodes it on a worker thread, never on the
    socket thread.
@@ -138,7 +139,10 @@ game server that is not a lobby never sends them and drops them as malformed.
    the lobby unrouted gets REJECT LOBBY again and returns to the list. The lobby process keeps running.
 
 A LIST_REQUEST or SELECT with the right cookie from an address that has a route means the client is back in the
-lobby: the route is dropped first. A HELLO never changes a route (anyone can send one for any address).
+lobby: the route is dropped first. Exception (grace rule): a LIST_REQUEST for a route younger than 2 seconds that
+has not yet carried a game datagram is ignored (not answered, the route kept). It is a list confirm that crossed the
+SELECT on the way, and dropping the route for it would bounce the client's CONNECT with REJECT LOBBY. A HELLO never
+changes a route (anyone can send one for any address).
 
 ### Anti-reflection and limits
 

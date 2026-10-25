@@ -505,18 +505,51 @@ class LobbyServerTest {
         }
 
         @Test
-        @DisplayName("a routed address that asks for the list again is back in the lobby: its route is dropped")
+        @DisplayName("a routed address that asks for the list again is back in the lobby: its route is dropped, once it"
+            + " has played (a game datagram went through) or the grace after its JOIN has passed")
         void backToLobby() {
             long c = cookieOf(ALICE);
             send(ALICE, select(c, id("doggy")));
             send(ALICE, select(c, id("doggy")));
+            send(ALICE, dg(PacketType.ACK, x -> { })); // she reached the game
             wire.sent.clear();
             send(ALICE, listRequest(c, 0));
             int pages = wire.of(PacketType.LOBBY_LIST).size();
             send(ALICE, connect(8, "alice", ""));
+            int rejected = wire.of(PacketType.REJECT).size();
+            long b = cookieOf(BOB);
+            send(BOB, select(b, id("doggy")));
+            now += LobbyServer.ROUTE_GRACE_NANOS;
+            wire.sent.clear();
+            send(BOB, listRequest(b, 0));
+            send(BOB, connect(9, "bob", ""));
             assertAll(
                 () -> assertTrue(pages > 0, "she gets the list"),
-                () -> assertEquals(1, wire.of(PacketType.REJECT).size(), "and her CONNECT is no longer routed"));
+                () -> assertEquals(1, rejected, "and her CONNECT is no longer routed"),
+                () -> assertEquals(1, wire.of(PacketType.REJECT).size(),
+                    "bob, silent since his JOIN: after the grace his LIST_REQUEST takes him back to the lobby too"),
+                () -> assertEquals(0, lobby.staleListRequests(), "neither was stale"));
+        }
+
+        @Test
+        @DisplayName("a LIST_REQUEST that raced the JOIN (before any game datagram, within the grace) is ignored: the"
+            + " route stays and the CONNECT reaches the game (the cold-start join hang)")
+        void staleListRequest() {
+            long c = cookieOf(ALICE);
+            send(ALICE, select(c, id("doggy"))); // STARTING
+            send(ALICE, select(c, id("doggy"))); // OK: routed
+            now += LobbyServer.ROUTE_GRACE_NANOS - 1;
+            wire.sent.clear();
+            send(ALICE, listRequest(c, 0)); // the confirm of a list pushed while the select waited
+            int answered = wire.sent.size();
+            RoutedTransportProbe probe = new RoutedTransportProbe(games.get(0).transport);
+            send(ALICE, connect(8, "alice", ""));
+            probe.drain();
+            assertAll(
+                () -> assertEquals(0, answered, "not answered (she is connecting to the game)"),
+                () -> assertEquals(1, lobby.staleListRequests(), "counted as stale"),
+                () -> assertEquals(0, wire.of(PacketType.REJECT).size(), "the lobby does not answer her CONNECT"),
+                () -> assertEquals(1, probe.delivered.size(), "the game gets it"));
         }
 
         @Test

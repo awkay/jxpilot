@@ -215,6 +215,30 @@ class LobbyEndToEndTest {
     }
 
     @Test
+    @DisplayName("cold start with a list confirm racing every SELECT (as a 1.1.x client sends one when the starting map's"
+        + " list arrives): the stale LIST_REQUEST does not undo the JOIN, and the player plays")
+    void coldStartListRace() throws Exception {
+        try (Lab lab = new Lab()) {
+            DropTransport t = new DropTransport(com.fulcrologic.jxpilot.client.net.UdpTransport.open(
+                new com.fulcrologic.jxpilot.client.net.Endpoint("127.0.0.1", lab.port), null), List.of());
+            t.replayListAfterSelect = true;
+            E2eClient dee = new E2eClient(t, "127.0.0.1:" + lab.port, "dee", 5);
+            lab.clients.add(dee);
+            dee.start(System.nanoTime());
+            assertTrue(lab.until(() -> inLobbyWithList(dee), 10), "dee reached the lobby list; log " + lab.log);
+            pick(dee, "pit");
+            boolean playing = lab.until(dee::playing, 30);
+            assertAll(
+                () -> assertTrue(playing, "dee plays on the cold-started pit; state " + dee.conn.state() + " status "
+                    + dee.conn.status() + " message " + (dee.conn.lobby() == null ? "-" : dee.conn.lobby().message())
+                    + " log " + lab.log),
+                () -> assertTrue(t.replayed >= 2, "a stale LIST_REQUEST followed every SELECT: " + t.replayed),
+                () -> assertTrue(lab.lobby.staleListRequests() >= 1, "and the one after the JOINing SELECT was ignored"),
+                () -> assertTrue(lab.log.stream().anyMatch(l -> l.contains("join: player")), "the map logged the join"));
+        }
+    }
+
+    @Test
     @DisplayName("an unknown map in the lobby is refused with a message and the player can choose again")
     void unknownMap() throws Exception {
         try (Lab lab = new Lab()) {

@@ -299,6 +299,29 @@ class LobbyClientTest {
         }
 
         @Test
+        @DisplayName("a list completed while a select waits is not confirmed (the map it starts pushes one); after the"
+            + " select is answered (here: failed) the next keep-alive asks with the version held")
+        void noConfirmWhileSelecting() {
+            greet();
+            showList(1, entry(5, "doggy", false, 0));
+            lobby.select(5, "doggy", now);
+            deliver(LobbyWire.join(5, LobbyMsg.JOIN_STARTING, ""));
+            wire.sent.clear();
+            showList(2, entry(5, "doggy", true, 0)); // doggy started: the server pushes the new list
+            int whileSelecting = wire.sent.size();
+            deliver(LobbyWire.join(5, LobbyMsg.JOIN_FAILED, "boom"));
+            now += 1000 * MS;
+            lobby.tick(now);
+            assertAll(
+                () -> assertEquals(0, whileSelecting, "no LIST_REQUEST while the select waits: it could overtake the"
+                    + " SELECT and drop the route the JOIN makes"),
+                () -> assertEquals(2, lobby.version(), "the new list is shown all the same"),
+                () -> assertEquals(1, wire.sent.size(), "after the select ends, the keep-alive goes out"),
+                () -> assertEquals(PacketType.LOBBY_LIST_REQUEST, LobbyWire.type(wire.sent.get(0)), "a LIST_REQUEST"),
+                () -> assertEquals(2, LobbyWire.request(wire.sent.get(0)).haveVersion, "naming the new version"));
+        }
+
+        @Test
         @DisplayName("JOIN OK is reported once by takeJoined and ends the pending select")
         void joinOk() {
             greet();
